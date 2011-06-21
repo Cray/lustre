@@ -353,6 +353,7 @@ int filter_do_bio(struct obd_export *exp, struct inode *inode,
                                 sector_bits))
                                 nblocks++;
 
+#if 0
                         /* I only set the page to be constant only if it
                          * is mapped to a contiguous underlying disk block(s).
                          * It will then make sure the corresponding device
@@ -362,6 +363,7 @@ int filter_do_bio(struct obd_export *exp, struct inode *inode,
 			    printk("c? %d %d %d\n", (rw == OBD_BRW_WRITE),
                             (nblocks == blocks_per_page),
                             mapping_cap_page_constant_write(inode->i_mapping));
+#endif
                         if ((rw == OBD_BRW_WRITE) &&
                             (nblocks == blocks_per_page) &&
                             mapping_cap_page_constant_write(inode->i_mapping))
