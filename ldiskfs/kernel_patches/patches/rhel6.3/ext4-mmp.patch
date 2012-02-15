@@ -467,7 +467,7 @@ Index: linux-stage/fs/ext4/mmp.c
 +	 * wait for MMP interval and check mmp_seq.
 +	 */
 +	if (schedule_timeout_interruptible(msecs_to_jiffies(MSEC_PER_SEC) *
-+					   wait_time) != 0) {
++					   mmp_check_interval) != 0) {
 +		ext4_warning(sb, "MMP startup interrupted, failing mount\n");
 +		goto failed;
 +	}
