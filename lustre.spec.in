@@ -350,7 +350,7 @@ Requires: %{requires_kmod_tests_name} = %{requires_kmod_version}
 %if %{with lustre_tests_lutf}
 Requires: python3 >= 3.6.0
 %endif
-Requires: attr, rsync, perl, lsof, /usr/bin/getconf
+Requires: attr, acl, e2fsprogs, rsync, perl, pdsh, lsof, /usr/bin/getconf
 %if %{with mpi}
 %if %{mpi_name} == "mpich"
 BuildRequires: mpich-devel
