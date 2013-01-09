@@ -38,6 +38,9 @@ if SERVER
 sbin_PROGRAMS += mkfs.lustre tunefs.lustre llverdev lr_reader \
 	ll_recover_lost_found_objs ll_decode_filter_fid llog_reader
 endif
+if GETIDENTITY_NSS_BUILD
+sbin_PROGRAMS += l_getidentity_nss
+endif
 if LIBPTHREAD
 sbin_PROGRAMS += lhsmtool_posix
 endif
@@ -176,6 +179,13 @@ l_adsidentity_LDADD := $(LIBPTLCTL) $(LDAP)
 l_adsidentity_DEPENDENCIES := $(LIBPTLCTL)
 
 CONFDIR_DATA += configs/ads.conf
+endif
+
+if GETIDENTITY_NSS_BUILD
+l_getidentity_nss_SOURCES = l_getidentity_nss.c
+l_getidentity_nss_LDADD := $(LIBPTLCTL)
+l_getidentity_nss_LDFLAGS = -ldl
+l_getidentity_nss_DEPENDENCIES := $(LIBPTLCTL)
 endif
 
 ltrack_stats_SOURCES = ltrack_stats.c

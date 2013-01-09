@@ -2203,6 +2203,12 @@ AC_CHECK_LIB([ldap],
 )
 AC_SUBST(LDAP)
 
+# l_getidenity_nss
+AC_ARG_ENABLE([getidentity_nss],
+      AC_HELP_STRING([--enable-getidentity-nss],
+                      [Compile l_getidentity_nss utility with NSS modules support]),
+      [],[enable_getidentity_nss=yes])
+
 # Super safe df
 AC_MSG_CHECKING([whether to report minimum OST free space])
 AC_ARG_ENABLE([mindf],
@@ -2273,6 +2279,7 @@ AM_CONDITIONAL(GSS_PIPEFS, test x$enable_gss_pipefs = xyes)
 AM_CONDITIONAL(LIBPTHREAD, test x$enable_libpthread = xyes)
 AM_CONDITIONAL(LLITE_LLOOP, test x$enable_llite_lloop_module = xyes)
 AM_CONDITIONAL(LDAP_BUILD, test x$LDAP != x)
+AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
 ]) # LC_CONDITIONALS
 
 #
