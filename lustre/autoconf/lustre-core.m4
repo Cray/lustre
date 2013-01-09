@@ -2927,6 +2927,13 @@ AC_CHECK_LIB([ldap],
 )
 AC_SUBST(LDAP)
 
+# l_getidenity_nss
+AC_ARG_ENABLE([getidentity_nss],
+      AC_HELP_STRING([--enable-getidentity-nss],
+                      [Compile l_getidentity_nss utility with NSS modules support]),
+      [],[enable_getidentity_nss=yes])
+
+
 SELINUX=""
 
 AC_CHECK_LIB([selinux], [is_selinux_enabled],
@@ -3057,6 +3064,7 @@ AM_CONDITIONAL(GETSEPOL, test x$enable_getsepol = xyes)
 AM_CONDITIONAL(LLCRYPT, test x$enable_llcrypt = xyes)
 AM_CONDITIONAL(LIBAIO, test x$enable_libaio = xyes)
 AM_CONDITIONAL(LDAP_BUILD, test x$LDAP != x)
+AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
 ]) # LC_CONDITIONALS
 
 #
