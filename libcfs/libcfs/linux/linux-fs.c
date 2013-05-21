@@ -67,3 +67,27 @@ filp_user_write(struct file *filp, const void *buf, size_t count,
 	return size;
 }
 EXPORT_SYMBOL(filp_user_write);
+
+ssize_t
+filp_user_read(struct file *filp, char *buf, size_t count, loff_t *offset)
+{
+        mm_segment_t    fs;
+        ssize_t         ret_size = 0, size = 0;
+
+        fs = get_fs();
+        set_fs(KERNEL_DS);
+        while ((ssize_t)count > 0) {
+                size = filp->f_op->read(filp, (char *)buf, count, offset);
+                if (size <= 0)
+                        break;
+                count -= size;
+                buf += size;
+                ret_size += size;
+                size = 0;
+        }
+        set_fs(fs);
+
+        return (size < 0 ? size : ret_size);
+}
+EXPORT_SYMBOL(filp_user_read);
+
