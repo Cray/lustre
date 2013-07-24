@@ -1,0 +1,10 @@
+prefix=/opt/cray/lustre-flavor/default
+exec_prefix=${prefix}
+includedir=${prefix}/include
+libdir=${exec_prefix}/lib64
+
+Name: cray-lustre-cfsutil
+Description: To provide the paths for compiling and linking program to lustre library libcfsutil.a.
+Version: 1.0.0
+Cflags: -I${includedir}
+Libs: -L${libdir} -lcfsutil

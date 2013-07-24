@@ -1,0 +1,26 @@
+#                                               -*- Autoconf -*-
+# Process this file with autoconf to produce a configure script.
+
+AC_PREREQ(2.59)
+AC_INIT([cray-lustre], [2.4])
+AM_INIT_AUTOMAKE([foreign -Wall -Werror])
+# Checks for programs.
+
+# Checks for libraries.
+
+# Checks for header files.
+
+# Checks for typedefs, structures, and compiler characteristics.
+
+# Checks for library functions.
+
+AC_ARG_WITH([module],
+  [AS_HELP_STRING([--with-module=PATH],
+     [use $PATH as name of module file to write.])],
+  [AC_SUBST([MODULE_PATH], $withval)
+   AC_SUBST([MODULE_VERSION], [`basename $withval`])],
+  [AC_MSG_ERROR([Module path must be specified])])
+
+AC_CONFIG_FILES([Makefile
+                 module])
+AC_OUTPUT
