@@ -1,0 +1,11 @@
+#%Module
+#
+# cray-lnet-devel module
+#
+
+prepend-path PKG_CONFIG_PATH @pkgconfigdir@
+
+set cflags [ exec pkg-config --cflags cray-lnet ]
+
+setenv LNET_INCLUDE_OPTS "$cflags"
+
