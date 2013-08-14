@@ -112,9 +112,21 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define HASH_JOB_STATS_MAX_BITS 12
 
 /* Timeout definitions */
+#if defined (CONFIG_CRAY_ARIES)
+/* For Aries, use Aries Timer project data */
+#include <aries/aries_timeouts_gpl.h>
+#define OBD_TIMEOUT_DEFAULT             TIMEOUT_SECS(TO_Lustre_obd_timeout)
+#define LDLM_TIMEOUT_DEFAULT            TIMEOUT_SECS(TO_Lustre_ldlm_timeout)
+#define MDS_LDLM_TIMEOUT_DEFAULT        TIMEOUT_SECS(TO_Lustre_ldlm_timeout)
+#elif defined (CONFIG_CRAY_GEMINI)
+#define OBD_TIMEOUT_DEFAULT             100
+#define LDLM_TIMEOUT_DEFAULT            70
+#define MDS_LDLM_TIMEOUT_DEFAULT        70
+#else
 #define OBD_TIMEOUT_DEFAULT             100
 #define LDLM_TIMEOUT_DEFAULT            20
 #define MDS_LDLM_TIMEOUT_DEFAULT        6
+#endif /* CONFIG_CRAY_ARIES && CONFIG_CRAY_GEMINI */
 /* Time to wait for all clients to reconnect during recovery (hard limit) */
 #define OBD_RECOVERY_TIME_HARD          (obd_timeout * 9)
 /* Time to wait for all clients to reconnect during recovery (soft limit) */

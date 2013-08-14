@@ -92,7 +92,15 @@ EXPORT_SYMBOL(ldlm_timeout_set);
 unsigned int bulk_timeout = 100; /* seconds */
 EXPORT_SYMBOL(bulk_timeout);
 /* Adaptive timeout defs here instead of ptlrpc module for /proc/sys/ access */
+#if defined(CONFIG_CRAY_ARIES)
+/* For Aries, use Aries Timer project data */
+#include <aries/aries_timeouts_gpl.h>
+unsigned int at_min = TIMEOUT_SECS(TO_Lustre_adaptive_timeout);
+#elif defined(CONFIG_CRAY_GEMINI)
+unsigned int at_min = 70;
+#else
 unsigned int at_min = 0;
+#endif  /* CONFIG_CRAY_ARIES && CONFIG_CRAY_GEMINI */
 EXPORT_SYMBOL(at_min);
 unsigned int at_max = 600;
 EXPORT_SYMBOL(at_max);
