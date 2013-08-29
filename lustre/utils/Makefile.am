@@ -25,7 +25,8 @@ endif
 rootsbin_PROGRAMS = mount.lustre
 bin_SCRIPTS   = llstat llobdstat plot-llstat
 bin_PROGRAMS  = lfs
-sbin_PROGRAMS = lctl l_getidentity llverfs lustre_rsync ltrack_stats
+sbin_PROGRAMS = lctl l_adsidentity l_getidentity llverfs lustre_rsync \
+		ltrack_stats
 
 if TESTS
 bin_PROGRAMS  += req_layout
@@ -161,8 +162,12 @@ tunefs_lustre_DEPENDENCIES := $(mkfs_lustre_DEPENDENCIES)
 tunefs_lustre_LDFLAGS = ${MNTMODLDFLAGS}
 
 l_getidentity_SOURCES = l_getidentity.c
-l_getidentity_LDADD := $(LIBPTLCTL)
+l_getidentity_LDADD := $(LIBPTLCTL) 
 l_getidentity_DEPENDENCIES := $(LIBPTLCTL)
+
+l_adsidentity_SOURCES = l_adsidentity.c
+l_adsidentity_LDADD := $(LIBPTLCTL) -lldap
+l_adsidentity_DEPENDENCIES := $(LIBPTLCTL)
 
 ltrack_stats_SOURCES = ltrack_stats.c
 
