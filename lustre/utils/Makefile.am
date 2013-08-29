@@ -189,7 +189,7 @@ wiretest_SOURCES = wiretest.c
 
 endif # UTILS
 
-EXTRA_DIST = llstat llobdstat plot-llstat
+EXTRA_DIST = llstat llobdstat plot-llstat $(CONFDIR_DATA)
 
 # NOTE: this should only be run on i386.
 newwiretest: wirehdr.c wirecheck
