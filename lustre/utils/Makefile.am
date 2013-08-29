@@ -3,6 +3,8 @@
 AM_CFLAGS=$(LLCFLAGS)
 AM_CPPFLAGS=$(LLCPPFLAGS) -DLUSTRE_UTILS=1 -D_FILE_OFFSET_BITS=64
 AM_LDFLAGS := -L$(top_builddir)/lnet/utils
+CONFDIRdir=$(sysconfdir)/lustre
+CONFDIR_DATA =
 
 MNTMODLDFLAGS := -rdynamic -ldl
 MNTMODCFLAGS := -DPLUGIN_DIR=\"${pkglibdir}\"
@@ -164,10 +166,15 @@ tunefs_lustre_LDFLAGS = ${MNTMODLDFLAGS}
 l_getidentity_SOURCES = l_getidentity.c
 l_getidentity_LDADD := $(LIBPTLCTL) 
 l_getidentity_DEPENDENCIES := $(LIBPTLCTL)
+CONFDIR_DATA += configs/perm.conf
 
+if LDAP_BUILD
 l_adsidentity_SOURCES = l_adsidentity.c
-l_adsidentity_LDADD := $(LIBPTLCTL) -lldap
+l_adsidentity_LDADD := $(LIBPTLCTL) $(LDAP)
 l_adsidentity_DEPENDENCIES := $(LIBPTLCTL)
+
+CONFDIR_DATA += configs/ads.conf
+endif
 
 ltrack_stats_SOURCES = ltrack_stats.c
 

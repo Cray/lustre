@@ -469,6 +469,7 @@ find $RPM_BUILD_ROOT%{?rootdir}/lib/modules/%{kversion}/%{kmoddir} \
 %endif
 %{_datadir}/lustre
 %{_sysconfdir}/udev/rules.d/99-lustre.rules
+%{_sysconfdir}/lustre/*
 %config(noreplace) %{_sysconfdir}/ldev.conf
 %config(noreplace) %{_sysconfdir}/modprobe.d/ko2iblnd.conf
 
