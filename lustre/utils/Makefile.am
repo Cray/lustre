@@ -27,8 +27,7 @@ endif
 rootsbin_PROGRAMS = mount.lustre
 bin_SCRIPTS   = llstat llobdstat plot-llstat
 bin_PROGRAMS  = lfs
-sbin_PROGRAMS = lctl l_adsidentity l_getidentity llverfs lustre_rsync \
-		ltrack_stats
+sbin_PROGRAMS = lctl l_getidentity llverfs lustre_rsync ltrack_stats
 
 if TESTS
 bin_PROGRAMS  += req_layout
@@ -41,6 +40,9 @@ sbin_PROGRAMS += mkfs.lustre tunefs.lustre llverdev lr_reader \
 endif
 if LIBPTHREAD
 sbin_PROGRAMS += lhsmtool_posix
+endif
+if LDAP_BUILD
+sbin_PROGRAMS += l_adsidentity
 endif
 
 pkglib_LTLIBRARIES =
