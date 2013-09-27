@@ -129,6 +129,15 @@ SWITCH_ROOTS="lib sbin"
 if [ -e etc ]
 then
     SWITCH_ROOTS="${SWITCH_ROOTS} etc"
+    for f in lustre lnet lhbadm ldev haconfig; do
+        %{__rm} -f etc/init.d/${f}
+    done
+    %{__rm} -rf etc/ha.d etc/sysconfig etc/ldev.conf
+fi
+
+man_path="opt/cray/lustre-cray_gem_s/%{version}-%{release}/man"
+if [ -e ${man_path} ]; then
+    %{__rm} -rf ${man_path}/man5 ${man_path}/man8/lhbadm.8 ${man_path}/man8/ldev.8
 fi
 
 SWITCH_DIRS=`find ${SWITCH_ROOTS} -type d -printf "%%p "`
@@ -142,7 +151,7 @@ popd
 rm -f %{buildroot}/%{_sysconfdir}/switch.files
 for file in ${SWITCH_FILES}
 do
-	echo "${file}" >> %{buildroot}/%{_sysconfdir}/switch.files
+    echo "${file}" >> %{buildroot}/%{_sysconfdir}/switch.files
     install -D %{buildroot}/${file} %{buildroot}/%{_prefix}/${file}
     %{__rm} -f %{buildroot}/${file}
 done
