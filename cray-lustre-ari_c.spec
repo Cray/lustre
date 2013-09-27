@@ -93,10 +93,15 @@ export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
 
 make DESTDIR=${RPM_BUILD_ROOT} install 
 
+for dir in init.d sysconfig ha.d; do
+    %{__rm} -fr %{buildroot}/etc/$dir
+done
+%{__rm} -f %{buildroot}/etc/ldev.conf
+
 # Remove all the extras not needed for CNL
 for dir in %{_libdir} %{_mandir} %{_bindir} %{_includedir} %{_datadir}; do
-        find %{buildroot}$dir -type f | xargs rm -fv
-        rm -frv %{buildroot}$dir
+    find %{buildroot}$dir -type f | xargs rm -fv
+    rm -frv %{buildroot}$dir
 done
 
 # all of _prefix/sbin but lctl

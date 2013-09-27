@@ -98,6 +98,11 @@ for dir in %{_libdir} %{_mandir} %{_bindir} %{_includedir} %{_datadir}; do
         rm -frv %{buildroot}$dir
 done
 
+for dir in init.d sysconfig ha.d; do
+      %{__rm} -fr %{buildroot}/etc/$dir
+done
+%{__rm} -f %{buildroot}/etc/lustre %{buildroot}/etc/ldev.conf
+
 # all of _prefix/sbin but lctl
 find %{buildroot}%{_sbindir} -print > install_files
 find %{buildroot}%{_sbindir} -print | egrep -v '/lctl$' > install_files2

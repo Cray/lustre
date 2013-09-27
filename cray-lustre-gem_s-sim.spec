@@ -18,6 +18,7 @@ BuildRequires: kernel-syms
 BuildRequires: %{namespace}-krca-devel
 BuildRequires: lsb-cray-hss-devel
 BuildRequires: pkgconfig
+BuildRequires: -post-build-checks
 BuildRequires: module-init-tools
 Group: System/Filesystems
 License: GPL
@@ -88,6 +89,12 @@ export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
 #  /opt/cray/,.....
 
 make DESTDIR=${RPM_BUILD_ROOT} install 
+
+for dir in init.d sysconfig ha.d lustre ldev.conf; do
+    %{__rm} -fr %{buildroot}/etc/$dir
+done
+man_path="%{buildroot}/man"
+%{__rm} -rf ${man_path}/man5 ${man_path}/man8/lhbadm.8 ${man_path}/man8/ldev.8
 
 %files 
 %defattr(-,root,root)
