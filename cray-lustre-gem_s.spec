@@ -34,6 +34,7 @@ Summary: Lustre File System for Gemini Service Nodes
 Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
 Source0: %{source_name}.tar.gz
 Source1: %{flavorless_name}-switch-%{branch}.tar.gz
+Source99: cray-lustre-rpmlintrc
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %package lnet
@@ -46,6 +47,15 @@ Userspace tools and files for the Lustre file system on XT SIO nodes.
 
 %description lnet
 Userspace tools and files for Lustre networking on XT SIO nodes.
+
+%package -n cray-lustre-cray_gem_s-devel
+Group: Development/Libraries
+License: GPL
+Summary: Cray Lustre Header files
+
+%description -n cray-lustre-cray_gem_s-devel
+Development files for building against Lustre library.
+Includes headers, dynamic, and static libraries.
 
 %prep
 # using source_name here results in too deep of a macro stack, so use
@@ -143,6 +153,21 @@ fi
 SWITCH_DIRS=`find ${SWITCH_ROOTS} -type d -printf "%%p "`
 SWITCH_FILES=`find ${SWITCH_ROOTS} -type f -printf "%%p "`
 
+for header in  posix-types.h libiam.h lustreapi.h liblustreapi.h ll_fiemap.h lustre_idl.h lustre_user.h; do
+    found=`find %{buildroot} -name $header`
+    if [ -n "${found}" ]; then
+        for each in ${found}; do
+            install -D -m 0644 ${each} %{buildroot}/usr/include/`echo $each | sed 's/^.*include\///'`
+        done
+    fi
+done
+
+for file in libcfsutil.a libiam.a liblustre.a liblustre.so liblustreapi.a liblustreapi.so libptlctl.a
+do
+    found=`find %{buildroot} -name $file`
+    [ -n "${found}" ] && install -D -m 0644 ${found} %{buildroot}/usr/lib64/${file}
+done
+
 popd
 
 # file for switching in post/preun scriptlets
@@ -217,6 +242,16 @@ popd
 %{_sysconfdir}/switch.files.lnet
 %{_mandir}/man8/lctl.8
 %{_mandir}/man8/lst.8
+
+%files -n cray-lustre-cray_gem_s-devel
+%defattr(-,root,root)
+%dir /usr/include/lustre
+%dir /usr/include/libcfs
+%dir /usr/include/libcfs/posix
+/usr/include/lustre/*.h
+/usr/include/linux/lustre_user.h
+/usr/include/libcfs/posix/posix-types.h
+/usr/lib64/*
 
 %post
 for f in %{pc_files}
