@@ -102,6 +102,11 @@ export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
 
 %__make DESTDIR=${RPM_BUILD_ROOT} install 
 
+for f in lustre lnet lhbadm ldev haconfig; do
+        %{__rm} -f %{buildroot}/etc/init.d/${f}
+done
+%{__rm} -rf %{buildroot}/etc/ha.d %{buildroot}/etc/sysconfig %{buildroot}/etc/ldev.conf
+
 # Remove all the extras not needed for CNL
 for dir in %{_libdir} %{_mandir} %{_bindir} %{_includedir} %{_datadir}; do
         find %{buildroot}$dir -type f | xargs rm -fv
