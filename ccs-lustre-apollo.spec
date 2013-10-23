@@ -1,4 +1,3 @@
-%trace
 %define vendor_name lustre
 %define vendor_version 2.4
 %define flavor default
