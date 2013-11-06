@@ -44,6 +44,7 @@ endif
 if LDAP_BUILD
 sbin_PROGRAMS += l_adsidentity
 endif
+endif # UTILS
 
 pkglib_LTLIBRARIES =
 lib_LIBRARIES = liblustreapi.a
@@ -51,7 +52,6 @@ if LDISKFS_ENABLED
 lib_LIBRARIES += libiam.a
 endif
 noinst_LIBRARIES = liblustreapitmp.a
-endif # UTILS
 
 lctl_SOURCES = lustre_lfsck.c obd.c lustre_cfg.c lctl.c obdctl.h lsnapshot.c
 lctl_LDADD :=  liblustreapi.a $(LIBPTLCTL) $(PTHREAD_LIBS) $(LIBREADLINE)
