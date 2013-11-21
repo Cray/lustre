@@ -139,7 +139,7 @@ SWITCH_ROOTS="lib sbin"
 if [ -e etc ]
 then
     SWITCH_ROOTS="${SWITCH_ROOTS} etc"
-    for f in lustre lnet lhbadm ldev haconfig; do
+    for f in lustre lhbadm ldev haconfig; do
         %{__rm} -f etc/init.d/${f}
     done
     %{__rm} -rf etc/ha.d etc/sysconfig etc/ldev.conf
