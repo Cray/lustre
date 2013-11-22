@@ -102,7 +102,7 @@ export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
 
 %__make DESTDIR=${RPM_BUILD_ROOT} install 
 
-for f in lustre lnet lhbadm ldev haconfig; do
+for f in lustre lhbadm ldev haconfig; do
         %{__rm} -f %{buildroot}/etc/init.d/${f}
 done
 %{__rm} -rf %{buildroot}/etc/ha.d %{buildroot}/etc/sysconfig %{buildroot}/etc/ldev.conf
