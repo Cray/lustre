@@ -23,6 +23,7 @@ BuildRequires: lsb-cray-hss-devel
 BuildRequires: module-init-tools
 BuildRequires: ofed-devel
 BuildRequires: pkgconfig
+BuildRequires: sles-release
 BuildRequires: -post-build-checks
 Requires: cray-lustre-utils >= %{branch}-1.0000.18191.0
 Group: System/Filesystems
