@@ -124,6 +124,7 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 /lib/modules/*
 /sbin/mount.lustre
 /sbin/lctl
+/etc/init.d/lnet
 %config /etc/udev/rules.d/99-lustre.rules
 
 %files lnet
