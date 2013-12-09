@@ -1,5 +1,5 @@
 %define vendor_name lustre
-%define vendor_version 2.4
+%define vendor_version master
 %define flavor default
 
 %define intranamespace_name %{vendor_name}-%{flavor}
