@@ -1498,6 +1498,23 @@ LB_LINUX_TRY_COMPILE([
 ])
 
 #
+# 3.12 ki_left removed from struct kiocb
+#
+AC_DEFUN([LC_KIOCB_KI_LEFT],
+[AC_MSG_CHECKING([if struct kiocb with ki_left member])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/aio.h>
+],[
+	((struct kiocb*)0)->ki_left = 0;
+],[
+	AC_DEFINE(HAVE_KIOCB_KI_LEFT, 1, [ki_left exist])
+	AC_MSG_RESULT([yes])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
+#
 # LC_VFS_RENAME_6ARGS
 #
 # 3.15 has vfs_rename with 6 args
@@ -1633,6 +1650,7 @@ AC_DEFUN([LC_PROG_LINUX],
 
 	 # 3.12
 	 LC_OLDSIZE_TRUNCATE_PAGECACHE
+	 LC_KIOCB_KI_LEFT
 
 	 # 3.13
 	 LC_VFS_RENAME_5ARGS
