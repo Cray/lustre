@@ -73,7 +73,6 @@ CFLAGS="%{optflags} -Werror -fno-stack-protector $HSS_FLAGS -DCRAY_APOLLO -DCONF
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ]; then
         %configure --disable-checksum \
            --disable-liblustre \
-           --enable-cray-xt3 \
            --enable-gni \
            --with-o2ib=$O2IBPATH \
            --with-linux-obj=%{ksrc} \
