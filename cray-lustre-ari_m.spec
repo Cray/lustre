@@ -79,7 +79,6 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --disable-doc \
            --disable-liblustre \
            --disable-server \
-           --enable-cray-xt3 \
            --with-o2ib=no \
            --enable-gni \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
