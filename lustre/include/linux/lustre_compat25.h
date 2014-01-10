@@ -400,4 +400,10 @@ static inline void truncate_inode_pages_final(struct address_space *map)
 }
 #endif
 
+#ifdef HAVE_OLDSIZE_TRUNCATE_PAGECACHE
+#define ll_truncate_pagecache(inode, size) truncate_pagecache(inode, 0, size)
+#else
+#define ll_truncate_pagecache(inode, size) truncate_pagecache(inode, size)
+#endif
+
 #endif /* _COMPAT25_H */
