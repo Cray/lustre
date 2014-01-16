@@ -23,7 +23,6 @@ LINUX_FLAVORS		:= $(FLAVORS)
 RPM_FLAVORS		:= $(filter-out bw,$(FLAVORS))
 
 GEM_S_RPM_SPEC          ?= cray-lustre-gem_s.spec
-GEM_S_SIM_RPM_SPEC      ?= cray-lustre-gem_s-sim.spec
 GEM_C_RPM_SPEC          ?= cray-lustre-gem_c.spec
 ARI_S_RPM_SPEC          ?= cray-lustre-ari_s.spec
 ARI_S_COS_RPM_SPEC      ?= cray-lustre-ari_s-cos.spec
@@ -100,9 +99,6 @@ devel-rpms: $(LNET_DEVEL_SPEC) obs_variables
 	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_BRANCH) cray-lustre $<
 
 cray_gem_s-rpms: $(GEM_S_RPM_SPEC) obs_variables 
-	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_BRANCH) cray-lustre $<
-
-cray_gem_s-sim-rpms: $(GEM_S_SIM_RPM_SPEC) obs_variables 
 	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_BRANCH) cray-lustre $<
 
 cray_ari_s-rpms: $(ARI_S_RPM_SPEC) obs_variables 
