@@ -89,20 +89,11 @@ fi
 HSS_FLAGS=`pkg-config --cflags lsb-cray-hss`
 CFLAGS="%{optflags} -Werror -fno-stack-protector $HSS_FLAGS"
 
-case "%{kernel_version}" in
-  3.0.*)
-    VERSION_CONFIGURE_OPTIONS=--disable-server
-    ;;
-  *)
-    VERSION_CONFIGURE_OPTIONS=
-    ;;
-esac
-
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
         %configure --disable-checksum \
            --disable-liblustre \
            --enable-gni \
-           $VERSION_CONFIGURE_OPTIONS \
+           --disable-server \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-o2ib=${O2IBPATH} \
            --with-obd-buffer-size=16384 \
