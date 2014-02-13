@@ -1385,6 +1385,24 @@ dir_context, [
 ]) # LC_HAVE_DIR_CONTEXT
 
 #
+# LC_INVALIDATE_RANGE
+#
+# 3.11 invalidatepage requires the length of the range to invalidate
+#
+AC_DEFUN([LC_INVALIDATE_RANGE], [
+LB_CHECK_COMPILE([if 'address_space_operations.invalidatepage' requires 3 arguments],
+address_space_ops_invalidatepage_3args, [
+	#include <linux/fs.h>
+],[
+	struct address_space_operations a_ops;
+	a_ops.invalidatepage(NULL, 0, 0);
+],[
+	AC_DEFINE(HAVE_INVALIDATE_RANGE, 1,
+		[address_space_operations.invalidatepage needs 3 arguments])
+])
+]) # LC_INVALIDATE_RANGE
+
+#
 # 3.11 dentry_operations.d_compare() taken 5 arguments.
 #
 AC_DEFUN([LC_D_COMPARE_5ARGS],
@@ -1618,6 +1636,7 @@ AC_DEFUN([LC_PROG_LINUX],
 
 	 # 3.11
 	 LC_HAVE_DIR_CONTEXT
+	 LC_INVALIDATE_RANGE
 	 LC_D_COMPARE_5ARGS
 	 LC_HAVE_DCOUNT
 
