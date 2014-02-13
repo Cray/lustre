@@ -1367,6 +1367,24 @@ LB_LINUX_TRY_COMPILE([
 ])
 
 #
+# LC_HAVE_DIR_CONTEXT
+#
+# 3.11 readdir now takes the new struct dir_context
+#
+AC_DEFUN([LC_HAVE_DIR_CONTEXT], [
+LB_CHECK_COMPILE([if 'dir_context' exist],
+dir_context, [
+	#include <linux/fs.h>
+],[
+	struct dir_context ctx;
+	ctx.pos = 0;
+],[
+	AC_DEFINE(HAVE_DIR_CONTEXT, 1,
+		[dir_context exist])
+])
+]) # LC_HAVE_DIR_CONTEXT
+
+#
 # 3.11 dentry_operations.d_compare() taken 5 arguments.
 #
 AC_DEFUN([LC_D_COMPARE_5ARGS],
@@ -1599,9 +1617,7 @@ AC_DEFUN([LC_PROG_LINUX],
 	 LC_BLKDEV_RELEASE_RETURN_INT
 
 	 # 3.11
-	 LC_HAVE_DCOUNT
-
-	 # 3.11
+	 LC_HAVE_DIR_CONTEXT
 	 LC_D_COMPARE_5ARGS
 	 LC_HAVE_DCOUNT
 

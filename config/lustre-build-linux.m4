@@ -419,6 +419,26 @@ AC_DEFUN([LB_LINUX_TRY_COMPILE],
 	[$3], [$4])])
 
 #
+# LB_CHECK_COMPILE
+# $1 - checking message
+# $2 - variable name
+# $3 - header
+# $4 - body
+# $5 - do 'yes'
+# $6 - do 'no'
+#
+AC_DEFUN([LB_CHECK_COMPILE], [
+AS_VAR_PUSHDEF([lb_compile], [lb_cv_compile_$2])dnl
+AC_CACHE_CHECK([$1], lb_compile, [
+	LB_LINUX_TRY_COMPILE([$3], [$4],
+		[AS_VAR_SET([lb_compile], [yes])],
+		[AS_VAR_SET([lb_compile], [no])])
+])
+AS_VAR_IF([lb_compile], [yes], [$5], [$6])[]dnl
+AS_VAR_POPDEF([lb_compile])dnl
+]) # LB_CHECK_COMPILE
+
+#
 # LB_LINUX_CONFIG
 #
 # check if a given config option is defined

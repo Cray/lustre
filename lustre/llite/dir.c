@@ -477,12 +477,18 @@ fail:
         goto out_unlock;
 }
 
-int ll_dir_read(struct inode *inode, __u64 *_pos, void *cookie,
-		filldir_t filldir)
+#ifdef HAVE_DIR_CONTEXT
+int ll_dir_read(struct inode *inode, struct dir_context *ctx)
 {
+	__u64	pos = ctx->pos;
+#else
+int ll_dir_read(struct inode *inode, __u64 *_pos,
+		void *cookie, filldir_t filldir)
+{
+	__u64	pos = *_pos;
+#endif
         struct ll_inode_info *info       = ll_i2info(inode);
         struct ll_sb_info    *sbi        = ll_i2sbi(inode);
-	__u64                 pos        = *_pos;
         int                   api32      = ll_need_32bit_api(sbi);
         int                   hash64     = sbi->ll_flags & LL_SBI_64BIT_HASH;
         struct page          *page;
@@ -546,8 +552,13 @@ int ll_dir_read(struct inode *inode, __u64 *_pos, void *cookie,
                                  * to access the 'ent' through its 'lde_name',
                                  * so the parameter 'name' for 'filldir()' must
                                  * be part of the 'ent'. */
+#ifdef HAVE_DIR_CONTEXT
+				done = !dir_emit(ctx, ent->lde_name, namelen,
+						 ino, type);
+#else
                                 done = filldir(cookie, ent->lde_name, namelen,
                                                lhash, ino, type);
+#endif
                         }
                         next = le64_to_cpu(dp->ldp_hash_end);
                         if (!done) {
@@ -588,19 +599,27 @@ int ll_dir_read(struct inode *inode, __u64 *_pos, void *cookie,
                 }
         }
 
+#ifdef HAVE_DIR_CONTEXT
+	ctx->pos = pos;
+#else
 	*_pos = pos;
+#endif
 	ll_dir_chain_fini(&chain);
 	RETURN(rc);
 }
 
+#ifdef HAVE_DIR_CONTEXT
+static int ll_iterate(struct file *filp, struct dir_context *ctx)
+#else
 static int ll_readdir(struct file *filp, void *cookie, filldir_t filldir)
+#endif
 {
 	struct inode		*inode	= filp->f_dentry->d_inode;
 	struct ll_file_data	*lfd	= LUSTRE_FPRIVATE(filp);
 	struct ll_sb_info	*sbi	= ll_i2sbi(inode);
-	__u64			pos;
 	int			hash64	= sbi->ll_flags & LL_SBI_64BIT_HASH;
 	int			api32	= ll_need_32bit_api(sbi);
+	__u64			pos;
 	int			rc;
 	ENTRY;
 
@@ -619,20 +638,30 @@ static int ll_readdir(struct file *filp, void *cookie, filldir_t filldir)
 		 */
 		GOTO(out, rc = 0);
 
+#ifdef HAVE_DIR_CONTEXT
+	ctx->pos = pos;
+	rc = ll_dir_read(inode, ctx);
+	pos = ctx->pos;
+#else
 	rc = ll_dir_read(inode, &pos, cookie, filldir);
+#endif
 	if (lfd != NULL)
 		lfd->lfd_pos = pos;
-        if (pos == MDS_DIR_END_OFF) {
-                if (api32)
-                        filp->f_pos = LL_DIR_END_OFF_32BIT;
+
+	if (pos == MDS_DIR_END_OFF) {
+		if (api32)
+			pos = LL_DIR_END_OFF_32BIT;
                 else
-                        filp->f_pos = LL_DIR_END_OFF;
-        } else {
-                if (api32 && hash64)
-                        filp->f_pos = pos >> 32;
-                else
-                        filp->f_pos = pos;
-        }
+                        pos = LL_DIR_END_OFF;
+	} else {
+		if (api32 && hash64)
+			pos >>= 32;
+	}
+#ifdef HAVE_DIR_CONTEXT
+	ctx->pos = pos;
+#else
+	filp->f_pos = pos;
+#endif
 	filp->f_version = inode->i_version;
 
 out:
@@ -2006,11 +2035,15 @@ int ll_dir_release(struct inode *inode, struct file *file)
 }
 
 struct file_operations ll_dir_operations = {
-        .llseek   = ll_dir_seek,
-        .open     = ll_dir_open,
-        .release  = ll_dir_release,
-        .read     = generic_read_dir,
-        .readdir  = ll_readdir,
-        .unlocked_ioctl   = ll_dir_ioctl,
-        .fsync    = ll_fsync,
+	.llseek		= ll_dir_seek,
+	.open		= ll_dir_open,
+	.release	= ll_dir_release,
+	.read		= generic_read_dir,
+#ifdef HAVE_DIR_CONTEXT
+	.iterate	= ll_iterate,
+#else
+	.readdir	= ll_readdir,
+#endif
+	.unlocked_ioctl	= ll_dir_ioctl,
+	.fsync		= ll_fsync,
 };
