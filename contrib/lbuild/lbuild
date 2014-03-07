@@ -394,7 +394,7 @@ check_options() {
 compare_version () {
     [[ $1 == $2 ]] && return 1
     local IFS=.
-    local i val1=($1) val2=($2)
+    local i val1=(${1%%-*}) val2=($2)
 
     # padding zero to val1 if it needs
     for ((i=${#val1[@]}; i<${#val2[@]}; i++)); do
@@ -852,7 +852,7 @@ unpack_mlnx() {
     mlnx_distro=${mlnx_distro/-/}
     local mlnx_filename="MLNX_OFED_LINUX-${MLNX_VERSION}-${mlnx_distro}-${TARGET_ARCH}"
 
-    #if a src tarball has been give in the command line, we use it
+    #if a src tarball has been given in the command line, we use it
     #The format of the directory after untar MUST be in MLNX_OFED_SRC-${MNLX_VERSION}
     if [ -n "${OFED_SRC}" ]; then
         if ! untar "$KERNELTREE/${OFED_SRC}"; then
@@ -860,8 +860,7 @@ unpack_mlnx() {
         fi
     else
         # it's not important what distro we get the tarball since we only interest in the src
-        if ! untar "$KERNELTREE/${mlnx_filename}.tgz" \
-              "${mlnx_filename}/src/MLNX_OFED_SRC-${MLNX_VERSION}.tgz"; then
+        if ! untar "$KERNELTREE/${mlnx_filename}.tgz"; then
             return 1
         fi
         # we need to untar again to get the src since it's being wrapped inside the tarball
@@ -1341,18 +1340,19 @@ build_kernel_ib() {
     local linux="$1"
     local kib_prefix="$2"
     local kib_rpm="$3"
+    local o2ib_version="${4}"
 
     # build kernel-ib{,-devel}/compat-rdma{,-devel}
     local K_SRC="K_SRC"
     # ofed 1.3 had a bug in the rpm spec
-    if [ "$OFED_VERSION" = "1.3" ]; then
+    if [ "$o2ib_version" = "1.3" ]; then
         K_SRC="KSRC"
     fi
 
-    local OFED_CORE="--with-core-mod --with-ipoib-mod --with-sdp-mod --with-user_mad-mod --with-user_access-mod --with-addr_trans-mod"
+    local OFED_CORE="--with-core-mod --with-ipoib-mod --with-user_mad-mod --with-user_access-mod --with-addr_trans-mod"
     local OFED_HARDWARE="--with-mthca-mod --with-mlx4-mod --with-mlx4_en-mod --with-cxgb3-mod --with-nes-mod"
 
-    if compare_version $OFED_VERSION 3.0; then
+    if compare_version $o2ib_version 3.0; then
 	OFED_CORE="$OFED_CORE --with-madeye-mod --with-rds-mod"
     else
 	OFED_HARDWARE="$OFED_HARDWARE --with-cxgb4-mod"
@@ -1423,7 +1423,7 @@ EOF
     fi
 
     local linuxrelease=$(find_linux_release)
-    if compare_version $OFED_VERSION 3.0; then
+    if compare_version $o2ib_version 3.0; then
         local OFA_KERNEL_RELEASE=$(echo -n ${linuxrelease} | sed -e 's/-/_/g')
     fi
     if ! $RPMBUILD $BUILD_TYPE --define 'build_kernel_ib 1' --define 'build_kernel_ib_devel 1' \
@@ -1431,7 +1431,6 @@ EOF
                   --define "_topdir ${TOPDIR}" --target ${TARGET_ARCH} \
                   --define "KVERSION ${linuxrelease}" \
                   --define "$K_SRC ${linux}" \
-                  --define "LIB_MOD_DIR /lib/modules/${linuxrelease}/updates" \
                   ${OFA_KERNEL_RELEASE:+--define "_release $OFA_KERNEL_RELEASE"} \
                   --define "configure_options --without-quilt $OFED_CORE $OFED_HARDWARE $OFED_ISCSI" \
                   ${SOURCE} 2>&1; then
@@ -1665,42 +1664,42 @@ build_kernel_with_srpm() {
 
 build_ofed() {
     local linux="$1"
-    local ofed_version="$2"
+    local o2ib_version="$2"
     local kib_prefix
     local kib_rpm
 
     # if an ofed version is given, then it means use OFED proper,
     # not any vendor specific "inkernel" version
-    if [ -z "$ofed_version" ]; then
+    if [ -z "$o2ib_version" ]; then
         return 0
     fi
 
-    if [ "$ofed_version" = "inkernel" ]; then
+    if [ "$o2ib_version" = "inkernel" ]; then
         # see if there is a distro specific override for this and use
         # that if it exists
         # XXX we need to better integrate a distro specific override with
         #     the rest of this function so that all of the reuse cache
         #     stuff is leveraged given that 80% of this function is reuse
         if type -p build_ofed-${DISTRO}; then
-            local ofed_location
-            ofed_location=$(build_ofed-${DISTRO} ${STDOUT})
+            local o2ib_location
+            o2ib_location=$(build_ofed-${DISTRO} ${STDOUT})
             local rc=${PIPESTATUS[0]}
-            CONFIGURE_FLAGS="--with-o2ib=${ofed_location} ${CONFIGURE_FLAGS}"
+            CONFIGURE_FLAGS="--with-o2ib=${o2ib_location} ${CONFIGURE_FLAGS}"
             return $rc
         else
             return 0
         fi
-    elif compare_version $OFED_VERSION 3.0; then
-	kib_prefix="ofa_kernel"
-	kib_rpm="kernel-ib"
+    elif compare_version $o2ib_version 3.0; then
+        kib_prefix="ofa_kernel"
+        kib_rpm="kernel-ib"
     else
-	kib_prefix="compat-rdma"
-	kib_rpm="compat-rdma"
+        kib_prefix="compat-rdma"
+        kib_rpm="compat-rdma"
     fi
 
     # build kernel-ib/compat-rdma
     if $USE_BUILD_CACHE && [ -n "$REUSEBUILD" ]; then
-        local REUSE_SIGNATURE=$({ echo "$ofed_version";
+        local REUSE_SIGNATURE=$({ echo "$o2ib_version";
                                   echo "$(find_linux_release;
                                   echo "$BUILD_GEN")";
                                   cat "${linux}/include/linux/autoconf.h";
@@ -1733,7 +1732,7 @@ build_ofed() {
             create_rpmbuild_dirs
         fi
         # build it
-        build_kernel_ib "${linux}" "${kib_prefix}" "${kib_rpm}"
+        build_kernel_ib "${linux}" "${kib_prefix}" "${kib_rpm}" "${o2ib_version}"
 
         if [ -z "$REUSE_SIGNATURE" ]; then
             echo "No reuse signature was caculated so not storing the built ofed"
@@ -1756,19 +1755,23 @@ build_ofed() {
     rm -rf ${kib_rpm}-devel
     mkdir ${kib_rpm}-devel
     cd ${kib_rpm}-devel
+
     # the actual ofed RPMs don't have the -rc$n or -$date string appened that
     # might be present on the file
-    local linuxrelease=$(find_linux_release)
-    ofed_version=$(echo $ofed_version |
-                   sed -re 's/-(20[0-9]{6,6}-[0-9]{4,4}|rc[0-9]*)$//')
+    #local linuxrelease=$(find_linux_release)
+    #ofed_version=$(echo $ofed_version |
+    #               sed -re 's/-(20[0-9]{6,6}-[0-9]{4,4}|rc[0-9]*)$//')
     # FIXME
     # OFED version will have 'hyphen' for minor release. (e.g. 3.5-1, instead
     # of 3.5.1) compat-rdma and compat-rdma-devel could have same version
     # number, but currectly not. Once OFED fix this in the future release, we
     # can remove following filter.
-    ofed_version=$(echo $ofed_version |
-                   sed -re 's/-([0-9]*-[rR][cC][0-9]*)$//')
-    local rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-${ofed_version}-${linuxrelease//-/_}.*.rpm)
+    #ofed_version=$(echo $ofed_version |
+    #               sed -re 's/-([0-9]*-[rR][cC][0-9]*)$//')
+
+    # there should be only one *-devel kernel in the BUILD/RPMS directory,
+    # we don't need to specify ofed_version
+    local rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-*.rpm)
     if ! rpm2cpio < $rpm | cpio -id; then
         fatal 1 "could not unpack the ${kib_rpm}-devel rpm."
     fi
@@ -1778,6 +1781,7 @@ build_ofed() {
 }
 
 build_with_srpm() {
+    local ofed_version=${OFED_VERSION}
 
     if ! $PATCHLESS; then
         local kernel_extra_version
@@ -1841,7 +1845,8 @@ g/\(\/usr\/src\/kernels\/\)/s//$tmp\/reused\1/g
 wq
 EOF
 
-    build_ofed "${LINUXOBJ:-$LINUX}" "$OFED_VERSION" ||
+    [ -n "${MLNX_VERSION}" ] && ofed_version=${MLNX_VERSION}
+    build_ofed "${LINUXOBJ:-$LINUX}" "$ofed_version" ||
         fatal 1 "error building OFED"
 
     # now build Lustre
