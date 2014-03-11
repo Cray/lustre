@@ -277,13 +277,18 @@ struct ost_id {
 
 #define MAX_OBD_NAME 128 /* If this changes, a NEW ioctl must be added */
 
-/* Hopefully O_LOV_DELAY_CREATE does not conflict with standard O_xxx flags.
- * Previously it was defined as 0100000000 and conflicts with FMODE_NONOTIFY
- * which was added since kernel 2.6.36, so we redefine it as 020000000.
- * To be compatible with old version's statically linked binary, finally we
- * define it as (020000000 | 0100000000).
- * */
-#define O_LOV_DELAY_CREATE      0120000000
+/* Define O_LOV_DELAY_CREATE to be a mask that is not useful for regular
+ * files, but are unlikely to be used in practice and are not harmful if
+ * used incorrectly.  O_NOCTTY and FASYNC are only meaningful for character
+ * devices and are safe for use on new files. See LU-4209. */
+/* To be compatible with old statically linked binary we keep the check for
+ * the older 0100000000 flag and the 020000000 flag added as a replacement
+ * in the 2.4/2.5 releases.  These were already removed upstream.  LU-812. */
+#define O_LOV_DELAY_CREATE_1_8	0100000000 /* FMODE_NONOTIFY masked in 2.6.36 */
+#define O_LOV_DELAY_CREATE_2_4	 020000000 /* O_TMPFILE conflict in 3.11 */
+#define O_LOV_DELAY_CREATE_MASK	(O_NOCTTY | FASYNC)
+#define O_LOV_DELAY_CREATE	(O_LOV_DELAY_CREATE_1_8 | \
+				 O_LOV_DELAY_CREATE_MASK)
 
 #define LL_FILE_IGNORE_LOCK     0x00000001
 #define LL_FILE_GROUP_LOCKED    0x00000002
@@ -1127,9 +1132,9 @@ static inline int cfs_size_round (int val)
 /* Return pointer to first hai in action list */
 static inline struct hsm_action_item *hai_first(struct hsm_action_list *hal)
 {
-        return (struct hsm_action_item *)(hal->hal_fsname +
-                                          cfs_size_round(strlen(hal-> \
-                                                                hal_fsname)));
+	return (struct hsm_action_item *)(hal->hal_fsname +
+					  cfs_size_round(strlen(hal-> \
+							 hal_fsname) + 1));
 }
 /* Return pointer to next hai */
 static inline struct hsm_action_item * hai_next(struct hsm_action_item *hai)
@@ -1144,7 +1149,7 @@ static inline int hal_size(struct hsm_action_list *hal)
 	int i, sz;
 	struct hsm_action_item *hai;
 
-	sz = sizeof(*hal) + cfs_size_round(strlen(hal->hal_fsname));
+	sz = sizeof(*hal) + cfs_size_round(strlen(hal->hal_fsname) + 1);
 	hai = hai_first(hal);
 	for (i = 0 ; i < hal->hal_count ; i++, hai = hai_next(hai))
 		sz += cfs_size_round(hai->hai_len);
