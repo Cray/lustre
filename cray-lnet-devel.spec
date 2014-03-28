@@ -5,7 +5,7 @@
 %define flavor cray_ari_s
 %endif
 %define version 0.1
-%define lustre_version 2.4
+%define lustre_version master 
 %define branch trunk
 
 %define pkgbase %{namespace}-%{intranamespace_name}
