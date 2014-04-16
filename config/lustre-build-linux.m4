@@ -138,6 +138,13 @@ AS_IF([grep -q Modules.symvers $LINUX/scripts/Makefile.modpost],
 ])
 SYMVERFILE=$lb_cv_module_symvers
 AC_SUBST(SYMVERFILE)
+
+        AC_MSG_CHECKING([for symvers dir])
+        AC_ARG_WITH([symvers],
+                [AS_HELP_STRING([--with-symvers=PATH], [Use this for an out-of-tree Module.symvers])],
+                [AC_SUBST([CRAY_GNI_SYMVERS],[$withval])],
+                [])
+
 ])
 
 #

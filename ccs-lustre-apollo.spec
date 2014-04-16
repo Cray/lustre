@@ -69,11 +69,14 @@ fi
 
 HSS_FLAGS=`pkg-config --cflags lsb-cray-hss`
 CFLAGS="%{optflags} -Werror -fno-stack-protector $HSS_FLAGS -DCRAY_APOLLO -DCONFIG_CRAY_ARIES"
+gni_symvers=`pkg-config --variable=symversdir cray-gni`/default/Module.symvers
 
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ]; then
         %configure --disable-checksum \
            --disable-liblustre \
            --enable-gni \
+		   --with-symvers=$gni_symvers \
+		   --disable-server \
            --with-o2ib=$O2IBPATH \
            --with-linux-obj=%{ksrc} \
 		   --with-linux=%{ksrc} \
