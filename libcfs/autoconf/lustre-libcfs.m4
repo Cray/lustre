@@ -389,6 +389,22 @@ LB_CHECK_SYMBOL_EXPORT([sock_alloc_file], [net/socket.c],[
 ])
 
 #
+# FC19 3.12 kernel struct shrinker change
+#
+AC_DEFUN([LIBCFS_SHRINKER_COUNT],[
+LB_CHECK_COMPILE([shrinker has 'count_objects'],
+shrinker_count_objects, [
+	#include <linux/mmzone.h>
+	#include <linux/shrinker.h>
+],[
+	((struct shrinker*)0)->count_objects(NULL, NULL);
+],[
+	AC_DEFINE(HAVE_SHRINKER_COUNT, 1,
+		[shrinker has count_objects memeber])
+])
+])
+
+#
 # LIBCFS_PROG_LINUX
 #
 # LNet linux kernel checks
@@ -420,7 +436,9 @@ LIBCFS_PROCESS_NAMESPACE
 LIBCFS_I_UID_READ
 # 3.7
 LIBCFS_SOCK_ALLOC_FILE
-])
+# 3.12
+LIBCFS_SHRINKER_COUNT
+]) # LIBCFS_PROG_LINUX
 
 #
 # LIBCFS_PROG_DARWIN

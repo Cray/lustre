@@ -49,6 +49,9 @@
 #include <dt_object.h>
 #include <md_object.h>
 #include <lustre_quota.h>
+#ifdef SHRINK_STOP
+#undef SHRINK_STOP
+#endif
 
 #define _SPL_KMEM_H
 #include <sys/kstat.h>

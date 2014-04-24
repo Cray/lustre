@@ -47,6 +47,9 @@
 
 #include <lustre/lustre_idl.h>  /* OBD_OBJECT_EOF */
 #include <lustre/lustre_user.h> /* struct obd_statfs */
+#ifdef SHRINK_STOP
+#undef SHRINK_STOP
+#endif
 
 #include <sys/dnode.h>
 #include <sys/dbuf.h>
