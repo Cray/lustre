@@ -1,0 +1,65 @@
+# Administration utilities Makefile
+
+if GSS
+SUBDIRS = gss
+endif
+
+AM_CFLAGS=$(LLCFLAGS)
+AM_CPPFLAGS=$(LLCPPFLAGS) -DLUSTRE_UTILS=1 -D_FILE_OFFSET_BITS=64
+AM_LDFLAGS := -L$(top_builddir)/lnet/utils
+
+LIBPTLCTL := $(top_builddir)/lnet/utils/libptlctl.a \
+	     $(top_builddir)/libcfs/libcfs/libcfsutil.a \
+	     $(top_builddir)/libcfs/libcfs/libcfs.a
+
+sbin_scripts =
+bin_scripts = 
+
+if UTILS
+noinst_PROGRAMS =
+EXTRA_PROGRAMS =
+
+# mount only finds helpers in /sbin
+rootsbin_PROGRAMS = 
+sbin_PROGRAMS = lctl
+
+sbin_SCRIPTS = $(sbin_scripts)
+
+lib_LIBRARIES = liblustreapi.a
+if LDISKFS_ENABLED
+lib_LIBRARIES += libiam.a
+endif
+noinst_LIBRARIES = liblustreapitmp.a
+
+lctl_SOURCES = lustre_lfsck.c obd.c lustre_cfg.c lctl.c obdctl.h
+lctl_LDADD :=  liblustreapi.a $(LIBPTLCTL) $(PTHREAD_LIBS) $(LIBREADLINE)
+lctl_DEPENDENCIES := $(LIBPTLCTL) liblustreapi.a
+
+if EXT2FS_DEVEL
+EXT2FSLIB = -lext2fs
+E2PLIB = -le2p
+else
+E2PLIB =
+EXT2FSLIB =
+endif
+
+if BLKID
+BLKIDLIB = -lblkid
+else
+BLKIDLIB =
+endif
+
+endif # UTILS
+
+L_IOCTL := $(top_builddir)/libcfs/libcfs/util/l_ioctl.c
+L_KERNELCOMM := $(top_builddir)/libcfs/libcfs/kernel_user_comm.c
+liblustreapitmp_a_SOURCES = liblustreapi.c liblustreapi_hsm.c \
+			    lustreapi_internal.h \
+			    $(L_IOCTL) $(L_KERNELCOMM)
+
+# build static and shared lib lustreapi
+liblustreapi.a : liblustreapitmp.a
+	rm -f liblustreapi.a liblustreapi.so
+	$(CC) $(LDFLAGS) -shared -o liblustreapi.so `$(AR) -t liblustreapitmp.a`
+	mv liblustreapitmp.a liblustreapi.a
+
