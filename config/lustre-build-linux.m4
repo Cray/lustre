@@ -138,13 +138,23 @@ AS_IF([grep -q Modules.symvers $LINUX/scripts/Makefile.modpost],
 ])
 SYMVERFILE=$lb_cv_module_symvers
 AC_SUBST(SYMVERFILE)
+])
 
-        AC_MSG_CHECKING([for symvers dir])
-        AC_ARG_WITH([symvers],
-                [AS_HELP_STRING([--with-symvers=PATH], [Use this for an out-of-tree Module.symvers])],
-                [AC_SUBST([CRAY_GNI_SYMVERS],[$withval])],
-                [])
-
+#
+# LB_LINUX_EXTERN_SYMVERS
+#
+# Check for user-specified external Module.symvers
+#
+AC_DEFUN([LB_LINUX_EXTERN_SYMVERS], [
+AC_CACHE_CHECK([for external Module.symvers], [lb_cv_extern_symvers], [
+lb_cv_extern_symvers=""
+AC_ARG_WITH([symvers],
+        [AS_HELP_STRING([--with-symvers=PATH], [Use this for an external Module.symvers])],
+        [lb_cv_extern_symvers=$withval],
+        [])
+EXTERN_SYMVERS=$lb_cv_extern_symvers
+])
+AC_SUBST(EXTERN_SYMVERS)
 ])
 
 #
@@ -414,6 +424,7 @@ Kernel module loading support is highly recommended.
 AC_DEFUN([LB_PROG_LINUX], [
 LB_LINUX_PATH
 LB_LINUX_SYMVERFILE
+LB_LINUX_EXTERN_SYMVERS
 
 LB_CHECK_CONFIG([MODULES], [], [
 	AC_MSG_ERROR([
