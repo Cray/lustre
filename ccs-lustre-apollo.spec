@@ -109,8 +109,6 @@ done
 %files 
 %defattr(-,root,root)
 %{_prefix}
-%dir %{_libdir}
-%{_libdir}/symvers
 
 %clean
 %clean_build_root

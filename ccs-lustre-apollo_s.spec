@@ -8,6 +8,8 @@
 %define source_name %{flavorless_name}
 %define branch trunk
 
+%define clean_build_root %{nil}
+
 %define local_kernel_version %(rpm -q --qf '%{VERSION}' kernel-devel)
 %define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-devel)
 
@@ -108,8 +110,6 @@ done
 %files 
 %defattr(-,root,root)
 %{_prefix}
-%dir %{_libdir}
-%{_libdir}/symvers
 
 %clean
 %clean_build_root
