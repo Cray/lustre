@@ -1205,9 +1205,12 @@ static int server_start_targets(struct super_block *sb)
 
 	CDEBUG(D_MOUNT, "starting target %s\n", lsi->lsi_svname);
 
+	mutex_lock(&server_start_lock);
+	/* the previous MDS or OSS could be NOT destroyed yet. */
+	obd_zombie_barrier();
+
 	if (IS_MDT(lsi)) {
 		/* make sure the MDS is started */
-		mutex_lock(&server_start_lock);
 		obd = class_name2obd(LUSTRE_MDS_OBDNAME);
 		if (!obd) {
 			rc = lustre_start_simple(LUSTRE_MDS_OBDNAME,
@@ -1220,13 +1223,11 @@ static int server_start_targets(struct super_block *sb)
 				RETURN(rc);
 			}
 		}
-		mutex_unlock(&server_start_lock);
 	}
 
 	/* If we're an OST, make sure the global OSS is running */
 	if (IS_OST(lsi)) {
 		/* make sure OSS is started */
-		mutex_lock(&server_start_lock);
 		obd = class_name2obd(LUSTRE_OSS_OBDNAME);
 		if (!obd) {
 			rc = lustre_start_simple(LUSTRE_OSS_OBDNAME,
@@ -1239,8 +1240,9 @@ static int server_start_targets(struct super_block *sb)
 				RETURN(rc);
 			}
 		}
-		mutex_unlock(&server_start_lock);
 	}
+
+	mutex_unlock(&server_start_lock);
 
 	/* Set the mgc fs to our server disk.  This allows the MGC to
 	 * read and write configs locally, in case it can't talk to the MGS. */
