@@ -210,5 +210,5 @@ int osc_quotacheck(struct obd_device *unused, struct obd_export *exp,
 int osc_quota_poll_check(struct obd_export *exp, struct if_quotacheck *qchk);
 struct ldlm_lock *dlmlock_at_pgoff(const struct lu_env *env,
 				   struct osc_object *obj, pgoff_t index,
-				   int pending, int canceling);
+				   int test_lock, int canceling);
 #endif /* OSC_INTERNAL_H */

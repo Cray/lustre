@@ -1034,30 +1034,6 @@ int cl_page_flush(const struct lu_env *env, struct cl_io *io,
 EXPORT_SYMBOL(cl_page_flush);
 
 /**
- * Checks whether page is protected by any extent lock is at least required
- * mode.
- *
- * \return the same as in cl_page_operations::cpo_is_under_lock() method.
- * \see cl_page_operations::cpo_is_under_lock()
- */
-int cl_page_is_under_lock(const struct lu_env *env, struct cl_io *io,
-                          struct cl_page *page, pgoff_t *max_index)
-{
-	int rc;
-
-	PINVRNT(env, page, cl_page_invariant(page));
-
-	ENTRY;
-	rc = CL_PAGE_INVOKE_REVERSE(env, page, CL_PAGE_OP(cpo_is_under_lock),
-				    (const struct lu_env *,
-				     const struct cl_page_slice *,
-				     struct cl_io *, pgoff_t *),
-				    io, max_index);
-	RETURN(rc);
-}
-EXPORT_SYMBOL(cl_page_is_under_lock);
-
-/**
  * Tells transfer engine that only part of a page is to be transmitted.
  *
  * \see cl_page_operations::cpo_clip()

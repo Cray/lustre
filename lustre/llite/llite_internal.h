@@ -767,9 +767,6 @@ int ll_file_punch(struct inode *, loff_t, int);
 ssize_t ll_file_lockless_io(struct file *, char *, size_t, loff_t *, int);
 void ll_clear_file_contended(struct inode*);
 int ll_sync_page_range(struct inode *, struct address_space *, loff_t, size_t);
-int ll_readahead(const struct lu_env *env, struct cl_io *io,
-		 struct cl_page_list *queue, struct ll_readahead_state *ras,
-		 bool hit);
 int vvp_io_write_commit(const struct lu_env *env, struct cl_io *io);
 struct ll_cl_context *ll_cl_init(struct file *file, struct page *vmpage);
 void ll_cl_fini(struct ll_cl_context *lcc);
@@ -1244,9 +1241,6 @@ int cl_sb_fini(struct super_block *sb);
 enum cl_lock_mode  vvp_mode_from_vma(struct vm_area_struct *vma);
 void ll_io_init(struct cl_io *io, const struct file *file, int write);
 
-void ras_update(struct ll_sb_info *sbi, struct inode *inode,
-                struct ll_readahead_state *ras, unsigned long index,
-                unsigned hit);
 void ll_ra_count_put(struct ll_sb_info *sbi, unsigned long len);
 int ll_is_file_contended(struct file *file);
 void ll_ra_stats_inc(struct inode *inode, enum ra_stat which);

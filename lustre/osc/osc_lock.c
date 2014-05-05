@@ -1196,7 +1196,7 @@ int osc_lock_init(const struct lu_env *env,
  */
 struct ldlm_lock *dlmlock_at_pgoff(const struct lu_env *env,
 				   struct osc_object *obj, pgoff_t index,
-				   int pending, int canceling)
+				   int test_lock, int canceling)
 {
 	struct osc_thread_info *info = osc_env_info(env);
 	struct ldlm_res_id     *resname = &info->oti_resname;
@@ -1212,9 +1212,9 @@ struct ldlm_lock *dlmlock_at_pgoff(const struct lu_env *env,
 	osc_index2policy(policy, osc2cl(obj), index, index);
 	policy->l_extent.gid = LDLM_GID_ANY;
 
-	flags = LDLM_FL_BLOCK_GRANTED | LDLM_FL_TEST_LOCK;
-	if (pending)
-		flags |= LDLM_FL_CBPENDING;
+	flags = LDLM_FL_BLOCK_GRANTED | LDLM_FL_CBPENDING;
+	if (test_lock)
+		flags |= LDLM_FL_TEST_LOCK;
 	/*
 	 * It is fine to match any group lock since there could be only one
 	 * with a uniq gid and it conflicts with all other lock modes too
