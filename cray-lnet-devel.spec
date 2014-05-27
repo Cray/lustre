@@ -56,7 +56,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --without-sysio
 fi
 pushd %{pkgsrcbase}
-%GNUconfigure -- --with-module=%{_release_modulefile}
+%CRAYconfigure -- --with-module=%{_release_modulefile}
 
 %{__make} %_smp_mflags
 

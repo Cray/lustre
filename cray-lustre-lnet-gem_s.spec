@@ -114,7 +114,7 @@ popd
 
 # make switching file
 pushd switch
-%GNUconfigure -- --with-module=%{_release_modulefile}
+%CRAYconfigure -- --with-module=%{_release_modulefile}
 %{__make}
 popd
 
