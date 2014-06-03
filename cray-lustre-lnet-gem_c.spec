@@ -22,6 +22,7 @@ BuildRequires: %{namespace}-krca-devel
 BuildRequires: lsb-cray-hss-devel
 BuildRequires: module-init-tools
 BuildRequires: pkgconfig
+BuildRequires: libtool
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}-lnet

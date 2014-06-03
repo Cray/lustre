@@ -25,6 +25,7 @@ BuildRequires: kernel-source
 BuildRequires: kernel-syms
 BuildRequires: module-init-tools
 BuildRequires: pkgconfig
+BuildRequires: libtool
 Summary: The lnet development package
 URL: %url
 Vendor: Cray Inc.
