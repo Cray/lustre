@@ -51,22 +51,10 @@ Userspace tools and files for Lustre networking on XT compute nodes.
 %define date %(date +%%F-%%R)
 %define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 
-# remove lustre related directories
-echo "SUBDIRS=\"$(grep ^SUBDIRS autoMakefile.am)\"" > tmpFile
-echo "DIST_SUBDIRS=\"$(grep ^DIST_SUBDIRS autoMakefile.am)\"" >> tmpFile
-echo "SOURCES_SUBDIRS=\"$(grep ^SOURCES_SUBDIRS autoMakefile.am)\"" >> tmpFile
-echo "RPM_SUBDIRS=\"$(grep ^RPM_SUBDIRS autoMakefile.am)\"" >> tmpFile
-for nam in @LDISKFS_SUBDIR@ @LIBSYSIO_SUBDIR@ @SNMP_SUBDIR@ @LUSTREIOKIT_SUBDIR@ \
-           @LDISKFS_DIST_SUBDIR@ @SNMP_DIST_SUBDIR@ lustre libsysio - iokit \
-           config contrib; do
-    sed -i "s/${nam}//g" tmpFile
-done
-source ./tmpFile
-sed -i "/^SUBDIRS/c\\$SUBDIRS" autoMakefile.am
-sed -i "/^DIST_SUBDIRS/c\\$DIST_SUBDIRS" autoMakefile.am
-sed -i "/^SOURCES_SUBDIRS/c\\$SOURCES_SUBDIRS" autoMakefile.am
-sed -i "/^RPM_SUBDIRS/c\\$RPM_SUBDIRS" autoMakefile.am
-%{__rm} tmpFile
+# only keep lnet related directories
+sed -i '/^SUBDIRS/,/config contrib/d' autoMakefile.am
+sed -i '1iSUBDIRS := . @LIBCFS_SUBDIR@ lnet \nDIST_SUBDIRS := @LIBCFS_SUBDIR@ lnet' autoMakefile.am 
+
 [ -f Makefile.in ] && sed -i '/lustre/d' Makefile.in 
 export LUSTRE_VERS=%{lustre_version}
 export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
