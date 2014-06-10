@@ -97,6 +97,8 @@ for dir in init.d sysconfig ha.d; do
     %{__rm} -fr %{buildroot}/etc/$dir
 done
 %{__rm} -f %{buildroot}/etc/ldev.conf
+%{__rm} -f %{buildroot}/lib/lustre/haconfig
+%{__rm} -f %{buildroot}/lib/lustre/lc_common
 
 # Remove all the extras not needed for CNL
 for dir in %{_libdir} %{_mandir} %{_bindir} %{_includedir} %{_datadir}; do
