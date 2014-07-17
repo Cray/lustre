@@ -13,8 +13,9 @@
 
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
 %define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-source)
-%define KERNELRELEASE  %(rpm -q --qf "%{VERSION}-%{RELEASE}" kernel-source | sed 's/\.[0-9][0-9]*\.[0-9][0-9]*$//')
-%define lnet_ko_path lib/modules/%{KERNELRELEASE}-%{flavor}/updates/kernel/net/lustre
+%define full_kernel_version %(rpm -q --qf "%{VERSION}-%{RELEASE}" kernel-source | sed 's/\.[0-9][0-9]*\.[0-9][0-9]*$//')
+%define cray_kernel_version %{full_kernel_version}-%{flavor}
+%define lnet_ko_path lib/modules/%{cray_kernel_version}/updates/kernel/net/lustre
 # Override the _mandir so man pages don't end up in /man
 %define _mandir /usr/share/man
 
@@ -34,8 +35,7 @@ License: GPL
 Name: %{namespace}-%{intranamespace_name}-lnet
 Release: %{release}
 Requires: %{switch_requires}
-Summary: Lustre networking for Aries Service Nodes
-
+Summary: Lustre networking for Aries Service Nodes running CLE Rhine
 Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
 Source0: %{source_name}.tar.gz
 Source1: %{flavorless_name}-switch-%{branch}.tar.gz
@@ -130,6 +130,24 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/routerstat$|/lst
 %dir %{_mandir}
 %dir %{_mandir}/man8
 %{_mandir}/man8
+
+%post
+
+DEPMOD_OPTS=""
+if [ -f /boot/System.map-%{cray_kernel_version} ]; then
+    DEPMOD_OPTS="-F /boot/System.map-%{cray_kernel_version}"
+fi
+
+depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
+
+%postun
+
+DEPMOD_OPTS=""
+if [ -f /boot/System.map-%{cray_kernel_version} ]; then
+    DEPMOD_OPTS="-F /boot/System.map-%{cray_kernel_version}"
+fi
+
+depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
 
 %clean
 %clean_build_root
