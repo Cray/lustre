@@ -37,7 +37,7 @@ Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}
 Release: %{release}
-Requires: %{switch_requires}
+Requires: module-init-tools
 Summary: Lustre File System for Aries Service Nodes running CLE Rhine
 Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
 Source0: %{source_name}.tar.gz
