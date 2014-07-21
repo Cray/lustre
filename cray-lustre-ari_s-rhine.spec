@@ -48,6 +48,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 %package lnet
 Group: System/Filesystems
 License: GPL
+Requires: module-init-tools
 Summary: Lustre networking for Gemini Service Nodes
 
 %description
