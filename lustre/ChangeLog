@@ -22,7 +22,7 @@
 
 09-03-2014 Intel Corporation
        * version 2.5.3
-       * See http://wiki.whamcloud.com/display/PUB/Lustre+Support+Matrix
+       * See https://wiki.hpdd.intel.com/display/PUB/Lustre+Support+Matrix
        * Server support for kernels:
 	 2.6.32-431.29.2.el6 (RHEL6)
 	 3.0.101-0.35	     (SLES11SP3)
@@ -41,7 +41,7 @@
 
 06-23-2014 Intel Corporation
        * version 2.5.2
-       * See http://wiki.whamcloud.com/display/PUB/Lustre+Support+Matrix
+       * See https://wiki.hpdd.intel.com/display/PUB/Lustre+Support+Matrix
        * Server support for kernels:
 	 2.6.32-431.23.3.el6 (RHEL6)
 	 3.0.101-0.35	     (SLES11SP3)
@@ -60,7 +60,7 @@
 
 03-17-2014 Intel Corporation
        * version 2.5.1
-       * See http://wiki.whamcloud.com/display/PUB/Lustre+Support+Matrix
+       * See https://wiki.hpdd.intel.com/display/PUB/Lustre+Support+Matrix
        * Server support for kernels:
 	 2.6.32-431.17.1.el6 (RHEL6)
 	 3.0.101-0.29	     (SLES11SP3)
@@ -79,7 +79,7 @@
 
 10-31-2013 Intel Corporation
        * version 2.5.0
-       * See http://wiki.whamcloud.com/display/PUB/Lustre+Support+Matrix
+       * See https://wiki.hpdd.intel.com/display/PUB/Lustre+Support+Matrix
        * Server builds for kernels:
          2.6.32-358.18.1.el6  (RHEL6.4)
        * Client builds for unpatched kernels:
@@ -99,15 +99,14 @@
 
 05-30-2013 Intel Corporation
        * version 2.4.0
-       * See http://wiki.whamcloud.com/display/PUB/Lustre+Support+Matrix
-       * Server support for kernels:
-         2.6.32-358.6.2.el6  (RHEL6)
-       * Client support for unpatched kernels:
-         2.6.32-358.6.2.el6  (RHEL6)
-         3.0.74-0.6.6        (SLES11)
-         2.6.18-348.3.1.el5  (RHEL5)
-         3.6.10-4.fc18       (FC18)
-       * Recommended e2fsprogs version: 1.42.7.wc2 or newer
+       * See https://wiki.hpdd.intel.com/display/PUB/Lustre+Support+Matrix
+       * Server builds for kernels:
+         2.6.32-358.6.2.el6  (RHEL6.4)
+       * Client builds for unpatched kernels:
+         2.6.32-358.6.2.el6  (RHEL6.4)
+         3.0.74-0.6.6        (SLES11 SP2)
+         3.6.10-2.fc17       (FC17)
+       * Recommended e2fsprogs version: 1.42.7.wc1 or newer
        * NFS export disabled when stack size < 8192 (32-bit Lustre clients),
          since the NFSv4 export of Lustre filesystem with 4K stack may cause a
          stack overflow. For more information, please refer to bugzilla 17630.
@@ -118,7 +117,7 @@
 
 9-30-2012 Whamcloud, Inc.
        * version 2.3.0
-       * See http://wiki.whamcloud.com/display/PUB/Lustre+Support+Matrix
+       * See https://wiki.hpdd.intel.com/display/PUB/Lustre+Support+Matrix
        * Server support for kernels:
 	 2.6.32-279.5.1.el6 (RHEL6)
        * Client support for unpatched kernels:
@@ -157,7 +156,7 @@ Description: Update RHEL6.2 kernel to 2.6.32-220.7.1.el6
 
 04-30-2012 Whamcloud, Inc.
        * version 2.2.0
-       * See http://wiki.whamcloud.com/display/PUB/Lustre+Support+Matrix
+       * See https://wiki.hpdd.intel.com/display/PUB/Lustre+Support+Matrix
        * Server support for kernels:
          2.6.32-220.4.2.el6  (RHEL6)
        * Client support for unpatched kernels:
