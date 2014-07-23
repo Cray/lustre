@@ -943,7 +943,8 @@ void ll_lli_init(struct ll_inode_info *lli)
 	mutex_init(&lli->lli_och_mutex);
 	spin_lock_init(&lli->lli_agl_lock);
 	lli->lli_has_smd = false;
-	lli->lli_layout_gen = LL_LAYOUT_GEN_NONE;
+	spin_lock_init(&lli->lli_layout_lock);
+	ll_layout_version_set(lli, LL_LAYOUT_GEN_NONE);
 	lli->lli_clob = NULL;
 
 	init_rwsem(&lli->lli_xattrs_list_rwsem);
@@ -1581,12 +1582,14 @@ int ll_setattr(struct dentry *de, struct iattr *attr)
 	      !(attr->ia_mode & S_ISGID))))
 		attr->ia_valid |= ATTR_FORCE;
 
-	if ((mode & S_ISUID) &&
+	if ((attr->ia_valid & ATTR_MODE) &&
+	    (mode & S_ISUID) &&
 	    !(attr->ia_mode & S_ISUID) &&
 	    !(attr->ia_valid & ATTR_KILL_SUID))
 		attr->ia_valid |= ATTR_KILL_SUID;
 
-	if (((mode & (S_ISGID|S_IXGRP)) == (S_ISGID|S_IXGRP)) &&
+	if ((attr->ia_valid & ATTR_MODE) &&
+	    ((mode & (S_ISGID|S_IXGRP)) == (S_ISGID|S_IXGRP)) &&
 	    !(attr->ia_mode & S_ISGID) &&
 	    !(attr->ia_valid & ATTR_KILL_SGID))
 		attr->ia_valid |= ATTR_KILL_SGID;
@@ -2473,11 +2476,12 @@ void ll_dirty_page_discard_warn(struct page *page, int ioret)
 			path = ll_d_path(dentry, buf, PAGE_SIZE);
 	}
 
-	CWARN("%s: dirty page discard: %s/fid: "DFID"/%s may get corrupted "
-	      "(rc %d)\n", ll_get_fsname(page->mapping->host->i_sb, NULL, 0),
-	      s2lsi(page->mapping->host->i_sb)->lsi_lmd->lmd_dev,
-	      PFID(&obj->cob_header.coh_lu.loh_fid),
-	      (path && !IS_ERR(path)) ? path : "", ioret);
+	CDEBUG(D_WARNING,
+	       "%s: dirty page discard: %s/fid: "DFID"/%s may get corrupted "
+	       "(rc %d)\n", ll_get_fsname(page->mapping->host->i_sb, NULL, 0),
+	       s2lsi(page->mapping->host->i_sb)->lsi_lmd->lmd_dev,
+	       PFID(&obj->cob_header.coh_lu.loh_fid),
+	       (path && !IS_ERR(path)) ? path : "", ioret);
 
 	if (dentry != NULL)
 		dput(dentry);

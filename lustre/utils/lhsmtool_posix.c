@@ -32,6 +32,11 @@
  *
  * This particular tool can also import an existing HSM archive.
  */
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -153,9 +158,10 @@ static void usage(const char *name, int rc)
 	"into a Lustre filesystem.\n"
 	" Usage:\n"
 	"   %s [options] --import <src> <dst> <lustre_mount_point>\n"
-	"      import an archived subtree at\n"
-	"       <src> (relative to hsm_root) into the Lustre filesystem at\n"
-	"       <dst> (absolute)\n"
+	"      import an archived subtree from\n"
+	"       <src> (FID or relative path to hsm_root) into the Lustre\n"
+	"             filesystem at\n"
+	"       <dst> (absolute path)\n"
 	"   %s [options] --rebind <old_FID> <new_FID> <lustre_mount_point>\n"
 	"      rebind an entry in the HSM to a new FID\n"
 	"       <old_FID> old FID the HSM entry is bound to\n"
@@ -1367,17 +1373,34 @@ static int ct_import_one(const char *src, const char *dst)
 static char *path_concat(const char *dirname, const char *basename)
 {
 	char	*result;
-	int	 dirlen = strlen(dirname);
+	int	 rc;
 
-	result = malloc(dirlen + strlen(basename) + 2);
-	if (result == NULL)
+	rc = asprintf(&result, "%s/%s", dirname, basename);
+	if (rc < 0)
 		return NULL;
 
-	memcpy(result, dirname, dirlen);
-	result[dirlen] = '/';
-	strcpy(result + dirlen + 1, basename);
-
 	return result;
+}
+
+static int ct_import_fid(const lustre_fid *import_fid)
+{
+	char	fid_path[PATH_MAX];
+	int	rc;
+
+	ct_path_lustre(fid_path, sizeof(fid_path), opt.o_mnt, import_fid);
+	rc = access(fid_path, F_OK);
+	if (rc == 0 || errno != ENOENT) {
+		rc = (errno == 0) ? -EEXIST : -errno;
+		CT_ERROR(rc, "cannot import '"DFID"'", PFID(import_fid));
+		return rc;
+	}
+
+	ct_path_archive(fid_path, sizeof(fid_path), opt.o_hsm_root,
+			import_fid);
+
+	CT_TRACE("Resolving "DFID" to %s", PFID(import_fid), fid_path);
+
+	return ct_import_one(fid_path, opt.o_dst);
 }
 
 static int ct_import_recurse(const char *relpath)
@@ -1385,10 +1408,17 @@ static int ct_import_recurse(const char *relpath)
 	DIR		*dir;
 	struct dirent	 ent, *cookie = NULL;
 	char		*srcpath, *newpath;
+	lustre_fid	 import_fid;
 	int		 rc;
 
 	if (relpath == NULL)
 		return -EINVAL;
+
+	/* Is relpath a FID? In which case SFID should expand to three
+	 * elements. */
+	rc = sscanf(relpath, SFID, RFID(&import_fid));
+	if (rc == 3)
+		return ct_import_fid(&import_fid);
 
 	srcpath = path_concat(opt.o_hsm_root, relpath);
 	if (srcpath == NULL) {
@@ -1494,7 +1524,7 @@ static int ct_rebind_one(const lustre_fid *old_fid, const lustre_fid *new_fid)
 		strncat(src, ".lov", sizeof(src) - strlen(src) - 1);
 		strncat(dst, ".lov", sizeof(dst) - strlen(dst) - 1);
 		if (rename(src, dst))
-			CT_ERROR(errno, "cannot '%s' rename to '%s'", src, dst);
+			CT_ERROR(errno, "cannot rename '%s' to '%s'", src, dst);
 
 	}
 	return 0;
@@ -1748,7 +1778,8 @@ static int ct_run(void)
 			 hal->hal_fsname, hal->hal_archive_id, hal->hal_count);
 
 		if (strcmp(hal->hal_fsname, fs_name) != 0) {
-			CT_ERROR(EINVAL, "'%s' invalid fs name, expecting: %s",
+			rc = -EINVAL;
+			CT_ERROR(rc, "'%s' invalid fs name, expecting: %s",
 				 hal->hal_fsname, fs_name);
 			err_major++;
 			if (opt.o_abort_on_error)

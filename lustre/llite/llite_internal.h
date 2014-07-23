@@ -276,13 +276,32 @@ struct ll_inode_info {
 
 	/* mutex to request for layout lock exclusively. */
 	struct mutex			lli_layout_mutex;
-	/* valid only inside LAYOUT ibits lock, protected by lli_layout_mutex */
+	/* Layout version, protected by lli_layout_lock */
 	__u32				lli_layout_gen;
+	spinlock_t			lli_layout_lock;
 
 	struct rw_semaphore		lli_xattrs_list_rwsem;
 	struct mutex			lli_xattrs_enq_lock;
 	struct list_head		lli_xattrs; /* ll_xattr_entry->xe_list */
 };
+
+static inline __u32 ll_layout_version_get(struct ll_inode_info *lli)
+{
+	__u32 gen;
+
+	spin_lock(&lli->lli_layout_lock);
+	gen = lli->lli_layout_gen;
+	spin_unlock(&lli->lli_layout_lock);
+
+	return gen;
+}
+
+static inline void ll_layout_version_set(struct ll_inode_info *lli, __u32 gen)
+{
+	spin_lock(&lli->lli_layout_lock);
+	lli->lli_layout_gen = gen;
+	spin_unlock(&lli->lli_layout_lock);
+}
 
 int ll_xattr_cache_destroy(struct inode *inode);
 
@@ -829,8 +848,6 @@ int ll_fsync(struct file *file, int data);
 #else
 int ll_fsync(struct file *file, struct dentry *dentry, int data);
 #endif
-int ll_do_fiemap(struct inode *inode, struct ll_user_fiemap *fiemap,
-              int num_bytes);
 int ll_merge_lvb(const struct lu_env *env, struct inode *inode);
 int ll_get_grouplock(struct inode *inode, struct file *file, unsigned long arg);
 int ll_put_grouplock(struct inode *inode, struct file *file, unsigned long arg);

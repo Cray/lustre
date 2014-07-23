@@ -1401,7 +1401,7 @@ existing_lock:
 					 req, lock);
 				buflen = req_capsule_get_size(&req->rq_pill,
 						&RMF_DLM_LVB, RCL_SERVER);
-				if (buflen >= 0) {
+				if (buflen > 0) {
 					buflen = ldlm_lvbo_fill(lock, buf,
 								buflen);
 					if (buflen >= 0)
@@ -1411,9 +1411,9 @@ existing_lock:
 							buflen, RCL_SERVER);
 					else
 						rc = buflen;
-				}
-				else
+				} else {
 					rc = buflen;
+				}
 			}
                 } else {
                         lock_res_and_lock(lock);
@@ -2776,11 +2776,15 @@ EXPORT_SYMBOL(ldlm_destroy_export);
 static int ldlm_setup(void)
 {
 	static struct ptlrpc_service_conf	conf;
-	struct ldlm_bl_pool			*blp = NULL;
-        int rc = 0;
+	struct ldlm_bl_pool		       *blp = NULL;
 #ifdef __KERNEL__
-        int i;
+# ifdef HAVE_SERVER_SUPPORT
+	struct task_struct *task;
+# endif
+	int i;
 #endif
+	int rc = 0;
+
         ENTRY;
 
         if (ldlm_state != NULL)
@@ -2915,8 +2919,9 @@ static int ldlm_setup(void)
 	spin_lock_init(&waiting_locks_spinlock);
 	cfs_timer_init(&waiting_locks_timer, waiting_locks_callback, 0);
 
-	rc = PTR_ERR(kthread_run(expired_lock_main, NULL, "ldlm_elt"));
-	if (IS_ERR_VALUE(rc)) {
+	task = kthread_run(expired_lock_main, NULL, "ldlm_elt");
+	if (IS_ERR(task)) {
+		rc = PTR_ERR(task);
 		CERROR("Cannot start ldlm expired-lock thread: %d\n", rc);
 		GOTO(out, rc);
 	}

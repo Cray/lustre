@@ -212,18 +212,20 @@ run_test 3 "mkdir; touch; rmdir; check dir ====================="
 # LU-4471 - failed rmdir on remote directories still removes directory on MDT0
 test_4() {
 	local MDTIDX=1
-	local remote_dir=remote_dir
 
-	test_mkdir $DIR/$remote_dir ||
+	[ $MDSCOUNT -ge 2 ] && skip "skip now for LU-4690" && return #LU-4690
+	test_mkdir $DIR/$tdir ||
 		error "Create remote directory failed"
 
-	touch $DIR/$remote_dir/$tfile ||
+	touch $DIR/$tdir/$tfile ||
 		error "Create file under remote directory failed"
 
-	rmdir $DIR/$remote_dir &&
-		error "Expect error removing in-use dir $DIR/$remote_dir"
+	rmdir $DIR/$tdir &&
+		error "Expect error removing in-use dir $DIR/$tdir"
 
-	test -d $DIR/$remote_dir || error "Remote directory disappeared"
+	test -d $DIR/$tdir || error "Remote directory disappeared"
+
+	rm -rf $DIR/$tdir || error "remove remote dir error"
 }
 run_test 4 "mkdir; touch dir/file; rmdir; checkdir (expect error)"
 
@@ -445,14 +447,14 @@ test_17e() {
 run_test 17e "symlinks: create recursive symlink (should return error) ===="
 
 test_17f() {
-	test_mkdir -p $DIR/d17f
-	ln -s 1234567890/2234567890/3234567890/4234567890 $DIR/d17f/111
-	ln -s 1234567890/2234567890/3234567890/4234567890/5234567890/6234567890 $DIR/d17f/222
-	ln -s 1234567890/2234567890/3234567890/4234567890/5234567890/6234567890/7234567890/8234567890 $DIR/d17f/333
-	ln -s 1234567890/2234567890/3234567890/4234567890/5234567890/6234567890/7234567890/8234567890/9234567890/a234567890/b234567890 $DIR/d17f/444
-	ln -s 1234567890/2234567890/3234567890/4234567890/5234567890/6234567890/7234567890/8234567890/9234567890/a234567890/b234567890/c234567890/d234567890/f234567890 $DIR/d17f/555
-	ln -s 1234567890/2234567890/3234567890/4234567890/5234567890/6234567890/7234567890/8234567890/9234567890/a234567890/b234567890/c234567890/d234567890/f234567890/aaaaaaaaaa/bbbbbbbbbb/cccccccccc/dddddddddd/eeeeeeeeee/ffffffffff/ $DIR/d17f/666
-	ls -l  $DIR/d17f
+	test_mkdir -p $DIR/$tdir
+	ln -s 1234567890/2234567890/3234567890/4234567890 $DIR/$tdir/111
+	ln -s 1234567890/2234567890/3234567890/4234567890/5234567890/6234567890 $DIR/$tdir/222
+	ln -s 1234567890/2234567890/3234567890/4234567890/5234567890/6234567890/7234567890/8234567890 $DIR/$tdir/333
+	ln -s 1234567890/2234567890/3234567890/4234567890/5234567890/6234567890/7234567890/8234567890/9234567890/a234567890/b234567890 $DIR/$tdir/444
+	ln -s 1234567890/2234567890/3234567890/4234567890/5234567890/6234567890/7234567890/8234567890/9234567890/a234567890/b234567890/c234567890/d234567890/f234567890 $DIR/$tdir/555
+	ln -s 1234567890/2234567890/3234567890/4234567890/5234567890/6234567890/7234567890/8234567890/9234567890/a234567890/b234567890/c234567890/d234567890/f234567890/aaaaaaaaaa/bbbbbbbbbb/cccccccccc/dddddddddd/eeeeeeeeee/ffffffffff/ $DIR/$tdir/666
+	ls -l  $DIR/$tdir
 }
 run_test 17f "symlinks: long and very long symlink name ========================"
 
@@ -708,7 +710,7 @@ test_17o() {
 run_test 17o "stat file with incompat LMA feature"
 
 test_18() {
-	touch $DIR/f || error "Failed to touch $DIR/f: $?"
+	touch $DIR/$tfile || error "Failed to touch $DIR/$tfile: $?"
 	ls $DIR || error "Failed to ls $DIR: $?"
 }
 run_test 18 "touch .../f ; ls ... =============================="
@@ -1011,7 +1013,6 @@ test_24t() {
 run_test 24t "mkdir .../R16a/b/c; rename .../R16a/b/c .../R16a ="
 
 test_24u() { # bug12192
-	rm -rf $DIR/$tfile
 	$MULTIOP $DIR/$tfile C2w$((2048 * 1024))c || error
 	$CHECKSTAT -s $((2048 * 1024)) $DIR/$tfile || error "wrong file size"
 }
@@ -1076,7 +1077,7 @@ test_24w() { # bug21506
         dd if=/dev/zero bs=$SZ1 count=1 >> $DIR/$tfile || return 2
         dd if=$DIR/$tfile of=$DIR/${tfile}_left bs=1M skip=4097 || return 3
         SZ2=`ls -l $DIR/${tfile}_left | awk '{print $5}'`
-        [ "$SZ1" = "$SZ2" ] || \
+	[[ "$SZ1" -eq "$SZ2" ]] ||
                 error "Error reading at the end of the file $tfile"
 }
 run_test 24w "Reading a file larger than 4Gb"
@@ -1851,13 +1852,13 @@ test_27A() { # b=19102
         local restore_count=$($GETSTRIPE -c $MOUNT)
         local restore_offset=$($GETSTRIPE -i $MOUNT)
         $SETSTRIPE -c 0 -i -1 -S 0 $MOUNT
+        wait_update $HOSTNAME "$GETSTRIPE -c $MOUNT | sed 's/  *//g'" "1" 20 ||
+                error "stripe count $($GETSTRIPE -c $MOUNT) != 1"
         local default_size=$($GETSTRIPE -S $MOUNT)
-        local default_count=$($GETSTRIPE -c $MOUNT)
         local default_offset=$($GETSTRIPE -i $MOUNT)
         local dsize=$((1024 * 1024))
         [ $default_size -eq $dsize ] ||
                 error "stripe size $default_size != $dsize"
-        [ $default_count -eq 1 ] || error "stripe count $default_count != 1"
         [ $default_offset -eq -1 ] ||error "stripe offset $default_offset != -1"
         $SETSTRIPE -c $restore_count -i $restore_offset -S $restore_size $MOUNT
 }
@@ -2370,7 +2371,6 @@ test_32n() {
 run_test 32n "open d32n/symlink->tmp/symlink->lustre-root ======"
 
 test_32o() {
-	rm -fr $DIR/d32o $DIR/$tfile
 	touch $DIR/$tfile
 	test_mkdir -p $DIR/d32o/tmp
 	TMP_DIR=$DIR/d32o/tmp
@@ -3771,7 +3771,7 @@ run_test 51a "special situations: split htree with empty entry =="
 export NUMTEST=70000
 test_51b() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
-	local BASE=$DIR/$tdir
+	local BASE=$DIR/d${base}.${TESTSUITE}
 
 	# cleanup the directory
 	rm -fr $BASE
@@ -3798,7 +3798,7 @@ test_51b() {
 run_test 51b "exceed 64k subdirectory nlink limit"
 
 test_51ba() { # LU-993
-	local BASE=$DIR/$tdir
+	local BASE=$DIR/d${base}.${TESTSUITE}
 	# unlink all but 100 subdirectories, then check it still works
 	local LEFT=100
 	[ -f $BASE/fnum ] && local NUMPREV=$(cat $BASE/fnum) && rm $BASE/fnum
@@ -4017,27 +4017,39 @@ find_loop_dev() {
 	done
 }
 
+cleanup_54c() {
+	loopdev="$DIR/loop54c"
+
+	trap 0
+	$UMOUNT -d $DIR/$tdir || rc=$?
+	losetup -d $loopdev || true
+	losetup -d $LOOPDEV || true
+	rm -rf $loopdev $DIR/$tfile $DIR/$tdir
+	return $rc
+}
+
 test_54c() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
-	tfile="$DIR/f54c"
-	tdir="$DIR/d54c"
 	loopdev="$DIR/loop54c"
 
 	find_loop_dev
 	[ -z "$LOOPNUM" ] && echo "couldn't find empty loop device" && return
+	trap cleanup_54c EXIT
 	mknod $loopdev b 7 $LOOPNUM
-	echo "make a loop file system with $tfile on $loopdev ($LOOPNUM)..."
-	dd if=/dev/zero of=$tfile bs=`page_size` seek=1024 count=1 > /dev/null
-	losetup $loopdev $tfile || error "can't set up $loopdev for $tfile"
+	echo "make a loop file system with $DIR/$tfile on $loopdev ($LOOPNUM)."
+	dd if=/dev/zero of=$DIR/$tfile bs=$(get_page_size client) seek=1024 count=1 > /dev/null
+	losetup $loopdev $DIR/$tfile ||
+		error "can't set up $loopdev for $DIR/$tfile"
 	mkfs.ext2 $loopdev || error "mke2fs on $loopdev"
-	test_mkdir -p $tdir
-	mount -t ext2 $loopdev $tdir || error "error mounting $loopdev on $tdir"
-	dd if=/dev/zero of=$tdir/tmp bs=`page_size` count=30 || error "dd write"
-	df $tdir
-	dd if=$tdir/tmp of=/dev/zero bs=`page_size` count=30 || error "dd read"
-	$UMOUNT -d $tdir
-	losetup -d $loopdev
-	rm $loopdev
+	test_mkdir -p $DIR/$tdir
+	mount -t ext2 $loopdev $DIR/$tdir ||
+		error "error mounting $loopdev on $DIR/$tdir"
+	dd if=/dev/zero of=$DIR/$tdir/tmp bs=$(get_page_size client) count=30 ||
+		error "dd write"
+	df $DIR/$tdir
+	dd if=$DIR/$tdir/tmp of=/dev/zero bs=$(get_page_size client) count=30 ||
+		error "dd read"
+	cleanup_54c
 }
 run_test 54c "block device works in lustre ====================="
 
@@ -5252,8 +5264,6 @@ test_72a() { # bug 5695 - Test that on 2.6 remove_suid works properly
 		skip_env "User $RUNAS_ID does not exist - skipping"
 		return 0
 	}
-	# We had better clear the $DIR to get enough space for dd
-	rm -rf $DIR/*
 	touch $DIR/$tfile
 	chmod 777 $DIR/$tfile
 	chmod ug+s $DIR/$tfile
@@ -6165,7 +6175,7 @@ cleanup_test102() {
 }
 
 test_102a() {
-	local testfile=$DIR/xattr_testfile
+	local testfile=$DIR/$tfile
 
 	touch $testfile
 
@@ -6605,7 +6615,13 @@ test_103 () {
 	fi
 
 	echo "LU-2561 newly created file is same size as directory..."
-	run_acl_subtest 2561 || error "LU-2561 test failed"
+	if [ $(facet_fstype $SINGLEMDS) != "zfs" ]; then
+		run_acl_subtest 2561 || error "LU-2561 test failed"
+	else
+		run_acl_subtest 2561_zfs || error "LU-2561 zfs test failed"
+	fi
+
+	run_acl_subtest 4924 || error "LU-4924 test failed"
 
 	cd $SAVE_PWD
 	umask $SAVE_UMASK
@@ -6932,14 +6948,17 @@ test_116b() { # LU-2093
 		head -1 2>/dev/null)" ] && skip "no QOS" && return
 #define OBD_FAIL_MDS_OSC_CREATE_FAIL     0x147
 	local old_rr
-	old_rr=$(do_facet $SINGLEMDS lctl get_param -n lov.*mdtlov*.qos_threshold_rr)
-	do_facet $SINGLEMDS lctl set_param lov.*mdtlov*.qos_threshold_rr 0
+	old_rr=$(do_facet $SINGLEMDS lctl get_param -n \
+		lo*.$FSNAME-MDT0000-mdtlov.qos_threshold_rr | head -1)
+	do_facet $SINGLEMDS lctl set_param \
+		lo*.$FSNAME-MDT0000-mdtlov.qos_threshold_rr=0
 	mkdir -p $DIR/$tdir
 	do_facet $SINGLEMDS lctl set_param fail_loc=0x147
 	createmany -o $DIR/$tdir/f- 20 || error "can't create"
 	do_facet $SINGLEMDS lctl set_param fail_loc=0
 	rm -rf $DIR/$tdir
-	do_facet $SINGLEMDS lctl set_param lov.*mdtlov*.qos_threshold_rr $old_rr
+	do_facet $SINGLEMDS lctl set_param \
+		lo*.$FSNAME-MDT0000-mdtlov.qos_threshold_rr=$old_rr
 }
 run_test 116b "QoS shouldn't LBUG if not enough OSTs found on the 2nd pass"
 
@@ -9733,6 +9752,38 @@ test_160b() { # LU-3587
 }
 run_test 160b "Verify that very long rename doesn't crash in changelog"
 
+test_160c() {
+	local rc=0
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -gt $(version_code 2.5.57) ]] ||
+		[[ $server_version -gt $(version_code 2.5.1) &&
+		   $server_version -lt $(version_code 2.5.50) ]] ||
+		{ skip "Need MDS version at least 2.5.58 or 2.5.2+"; return; }
+	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
+
+	# Registration step
+	local USER=$(do_facet $SINGLEMDS $LCTL --device $MDT0 \
+		changelog_register -n)
+
+	rm -rf $DIR/$tdir
+	mkdir -p $DIR/$tdir
+	$MCREATE $DIR/$tdir/foo_160c
+	changelog_chmask "TRUNC"
+	$TRUNCATE $DIR/$tdir/foo_160c 200
+	changelog_chmask "TRUNC"
+	$TRUNCATE $DIR/$tdir/foo_160c 199
+	$LFS changelog $MDT0
+	TRUNCS=$($LFS changelog $MDT0 | tail -5 | grep -c "TRUNC")
+	[ $TRUNCS -eq 1 ] || err17935 "TRUNC changelog mask count $TRUNCS != 1"
+	$LFS changelog_clear $MDT0 $USER 0
+
+	# Deregistration step
+	echo "deregistering $USER"
+	do_facet $SINGLEMDS $LCTL --device $MDT0 changelog_deregister $USER
+}
+run_test 160c "verify that changelog log catch the truncate event"
+
 test_161a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
     test_mkdir -p $DIR/$tdir
@@ -11945,7 +11996,7 @@ test_232() {
 }
 run_test 232 "failed lock should not block umount"
 
-test_233() {
+test_233a() {
 	[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.3.64) ] ||
 	{ skip "Need MDS version at least 2.3.64"; return; }
 
@@ -11953,7 +12004,21 @@ test_233() {
 	stat $MOUNT/.lustre/fid/$fid > /dev/null ||
 		error "cannot access $MOUNT using its FID '$fid'"
 }
-run_test 233 "checking that OBF of the FS root succeeds"
+run_test 233a "checking that OBF of the FS root succeeds"
+
+test_233b() {
+	[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.5.90) ] ||
+	{ skip "Need MDS version at least 2.5.90"; return; }
+
+	local fid=$($LFS path2fid $MOUNT/.lustre)
+	stat $MOUNT/.lustre/fid/$fid > /dev/null ||
+		error "cannot access $MOUNT/.lustre using its FID '$fid'"
+
+	fid=$($LFS path2fid $MOUNT/.lustre/fid)
+	stat $MOUNT/.lustre/fid/$fid > /dev/null ||
+		error "cannot access $MOUNT/.lustre/fid using its FID '$fid'"
+}
+run_test 233b "checking that OBF of the FS .lustre succeeds"
 
 test_234() {
 	local p="$TMP/sanityN-$TESTNAME.parameters"
@@ -12024,6 +12089,29 @@ test_236() {
 }
 run_test 236 "Layout swap on open unlinked file"
 
+# LU-4659 linkea consistency
+test_238() {
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -gt $(version_code 2.5.57) ]] ||
+		[[ $server_version -gt $(version_code 2.5.1) &&
+		   $server_version -lt $(version_code 2.5.50) ]] ||
+		{ skip "Need MDS version at least 2.5.58 or 2.5.2+"; return; }
+
+	touch $DIR/$tfile
+	ln $DIR/$tfile $DIR/$tfile.lnk
+	touch $DIR/$tfile.new
+	mv $DIR/$tfile.new $DIR/$tfile
+	local fid1=$(lfs path2fid $DIR/$tfile)
+	local fid2=$(lfs path2fid $DIR/$tfile.lnk)
+	local path1=$(lfs fid2path $FSNAME $fid1)
+	[ $tfile == $path1 ] || error "linkea inconsistent: $tfile $fid1 $path1"
+	local path2=$(lfs fid2path $FSNAME $fid2)
+	[ $tfile.lnk == $path2 ] ||
+		error "linkea inconsistent: $tfile.lnk $fid2 $path2!"
+	rm -f $DIR/$tfile*
+}
+run_test 238 "Verify linkea consistency"
 #
 # tests that do cleanup/setup should be run at the end
 #

@@ -2010,6 +2010,32 @@ test_27b() { # b20200
 }
 run_test 27b "lfs quota/setquota should handle user/group ID (b20200)"
 
+test_27c() {
+	local limit
+
+	$LFS setquota -u $TSTID -b 30M -B 3T $DIR ||
+		error "lfs setquota failed"
+
+	limit=$($LFS quota -u $TSTID -v -h $DIR | grep $DIR | awk '{print $3}')
+	[ $limit != "30M" ] && error "softlimit $limit isn't human-readable"
+	limit=$($LFS quota -u $TSTID -v -h $DIR | grep $DIR | awk '{print $4}')
+	[ $limit != "3T" ] && error "hardlimit $limit isn't human-readable"
+
+	$LFS setquota -u $TSTID -b 1500M -B 18500G $DIR ||
+		error "lfs setquota for $TSTID failed"
+
+	limit=$($LFS quota -u $TSTID -v -h $DIR | grep $DIR | awk '{print $3}')
+	[ $limit != "1.465G" ] && error "wrong softlimit $limit"
+	limit=$($LFS quota -u $TSTID -v -h $DIR | grep $DIR | awk '{print $4}')
+	[ $limit != "18.07T" ] && error "wrong hardlimit $limit"
+
+	$LFS quota -u $TSTID -v -h $DIR | grep -q "Total allocated" ||
+		error "total allocated inode/block limit not printed"
+
+	resetquota -u $TSTUSR
+}
+run_test 27c "lfs quota should support human-readable output"
+
 test_30() {
 	local output
 	local LIMIT=4 # 4MB

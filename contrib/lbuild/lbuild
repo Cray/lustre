@@ -1768,9 +1768,9 @@ build_ofed() {
     # can remove following filter.
     #ofed_version=$(echo $ofed_version |
     #               sed -re 's/-([0-9]*-[rR][cC][0-9]*)$//')
-
-    # there should be only one *-devel kernel in the BUILD/RPMS directory,
-    # we don't need to specify ofed_version
+    #local rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-${ofed_version}-${linuxrelease//-/_}.*.rpm)
+    # I dont' know why we have gone through the trouble to filter out the name
+    # of the rpm there should only be one ${kib_rpm}-devel built
     local rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-*.rpm)
     if ! rpm2cpio < $rpm | cpio -id; then
         fatal 1 "could not unpack the ${kib_rpm}-devel rpm."

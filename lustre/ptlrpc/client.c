@@ -53,6 +53,7 @@
 #include "ptlrpc_internal.h"
 
 static int ptlrpc_send_new_req(struct ptlrpc_request *req);
+static int ptlrpcd_check_work(struct ptlrpc_request *req);
 
 /**
  * Initialize passed in client structure \a cl.
@@ -373,9 +374,11 @@ static int ptlrpc_at_recv_early_reply(struct ptlrpc_request *req)
 
 	spin_lock(&req->rq_lock);
 	olddl = req->rq_deadline;
-	/* server assumes it now has rq_timeout from when it sent the
-	 * early reply, so client should give it at least that long. */
-	req->rq_deadline = cfs_time_current_sec() + req->rq_timeout +
+	/* server assumes it now has rq_timeout from when the request
+	 * arrived, so the client should give it at least that long.
+	 * since we don't know the arrival time we'll use the original
+	 * sent time */
+	req->rq_deadline = req->rq_sent + req->rq_timeout +
 			   ptlrpc_at_get_net_latency(req);
 
 	DEBUG_REQ(D_ADAPTTO, req,
@@ -1827,7 +1830,11 @@ int ptlrpc_check_set(const struct lu_env *env, struct ptlrpc_request_set *set)
 
                 ptlrpc_req_interpret(env, req, req->rq_status);
 
-                ptlrpc_rqphase_move(req, RQ_PHASE_COMPLETE);
+		if (ptlrpcd_check_work(req)) {
+			cfs_atomic_dec(&set->set_remaining);
+			continue;
+		}
+		ptlrpc_rqphase_move(req, RQ_PHASE_COMPLETE);
 
 		CDEBUG(req->rq_reqmsg != NULL ? D_RPCTRACE : 0,
 			"Completed RPC pname:cluuid:pid:xid:nid:"
@@ -2556,10 +2563,19 @@ EXPORT_SYMBOL(ptlrpc_cleanup_client);
 void ptlrpc_resend_req(struct ptlrpc_request *req)
 {
         DEBUG_REQ(D_HA, req, "going to resend");
+	spin_lock(&req->rq_lock);
+
+	/* Request got reply but linked to the import list still.
+	   Let ptlrpc_check_set() to process it. */
+	if (ptlrpc_client_replied(req)) {
+		spin_unlock(&req->rq_lock);
+		DEBUG_REQ(D_HA, req, "it has reply, so skip it");
+		return;
+	}
+
         lustre_msg_set_handle(req->rq_reqmsg, &(struct lustre_handle){ 0 });
         req->rq_status = -EAGAIN;
 
-	spin_lock(&req->rq_lock);
         req->rq_resend = 1;
         req->rq_net_err = 0;
         req->rq_timedout = 0;
@@ -3021,22 +3037,50 @@ EXPORT_SYMBOL(ptlrpc_sample_next_xid);
  *    have delay before it really runs by ptlrpcd thread.
  */
 struct ptlrpc_work_async_args {
-        __u64   magic;
-        int   (*cb)(const struct lu_env *, void *);
-        void   *cbdata;
+	int   (*cb)(const struct lu_env *, void *);
+	void   *cbdata;
 };
 
-#define PTLRPC_WORK_MAGIC 0x6655436b676f4f44ULL /* magic code */
+static void ptlrpcd_add_work_req(struct ptlrpc_request *req)
+{
+	/* re-initialize the req */
+	req->rq_timeout		= obd_timeout;
+	req->rq_sent		= cfs_time_current_sec();
+	req->rq_deadline	= req->rq_sent + req->rq_timeout;
+	req->rq_reply_deadline	= req->rq_deadline;
+	req->rq_phase		= RQ_PHASE_INTERPRET;
+	req->rq_next_phase	= RQ_PHASE_COMPLETE;
+	req->rq_xid		= ptlrpc_next_xid();
+	req->rq_import_generation = req->rq_import->imp_generation;
+
+	ptlrpcd_add_req(req, PDL_POLICY_ROUND, -1);
+}
 
 static int work_interpreter(const struct lu_env *env,
-                            struct ptlrpc_request *req, void *data, int rc)
+			    struct ptlrpc_request *req, void *data, int rc)
 {
-        struct ptlrpc_work_async_args *arg = data;
+	struct ptlrpc_work_async_args *arg = data;
 
-        LASSERT(arg->magic == PTLRPC_WORK_MAGIC);
-        LASSERT(arg->cb != NULL);
+	LASSERT(ptlrpcd_check_work(req));
+	LASSERT(arg->cb != NULL);
 
-        return arg->cb(env, arg->cbdata);
+	rc = arg->cb(env, arg->cbdata);
+
+	cfs_list_del_init(&req->rq_set_chain);
+	req->rq_set = NULL;
+
+	if (cfs_atomic_dec_return(&req->rq_refcount) > 1) {
+		cfs_atomic_set(&req->rq_refcount, 2);
+		ptlrpcd_add_work_req(req);
+	}
+	return rc;
+}
+
+static int worker_format;
+
+static int ptlrpcd_check_work(struct ptlrpc_request *req)
+{
+	return req->rq_pill.rc_fmt == (void *)&worker_format;
 }
 
 /**
@@ -3070,6 +3114,7 @@ void *ptlrpcd_alloc_work(struct obd_import *imp,
         req->rq_receiving_reply = 0;
         req->rq_must_unlink = 0;
         req->rq_no_delay = req->rq_no_resend = 1;
+	req->rq_pill.rc_fmt = (void *)&worker_format;
 
 	spin_lock_init(&req->rq_lock);
 	CFS_INIT_LIST_HEAD(&req->rq_list);
@@ -3079,11 +3124,10 @@ void *ptlrpcd_alloc_work(struct obd_import *imp,
 	CFS_INIT_LIST_HEAD(&req->rq_exp_list);
 	init_waitqueue_head(&req->rq_reply_waitq);
 	init_waitqueue_head(&req->rq_set_waitq);
-	cfs_atomic_set(&req->rq_refcount, 1);
+	atomic_set(&req->rq_refcount, 1);
 
 	CLASSERT (sizeof(*args) <= sizeof(req->rq_async_args));
 	args = ptlrpc_req_async_args(req);
-	args->magic  = PTLRPC_WORK_MAGIC;
 	args->cb     = cb;
 	args->cbdata = cbdata;
 
@@ -3102,7 +3146,7 @@ EXPORT_SYMBOL(ptlrpcd_destroy_work);
 
 int ptlrpcd_queue_work(void *handler)
 {
-        struct ptlrpc_request *req = handler;
+	struct ptlrpc_request *req = handler;
 
         /*
          * Check if the req is already being queued.
@@ -3112,26 +3156,9 @@ int ptlrpcd_queue_work(void *handler)
          * for this purpose. This is okay because the caller should use this
          * req as opaque data. - Jinshan
          */
-        LASSERT(cfs_atomic_read(&req->rq_refcount) > 0);
-        if (cfs_atomic_read(&req->rq_refcount) > 1)
-                return -EBUSY;
-
-        if (cfs_atomic_inc_return(&req->rq_refcount) > 2) { /* race */
-                cfs_atomic_dec(&req->rq_refcount);
-                return -EBUSY;
-        }
-
-        /* re-initialize the req */
-        req->rq_timeout        = obd_timeout;
-        req->rq_sent           = cfs_time_current_sec();
-        req->rq_deadline       = req->rq_sent + req->rq_timeout;
-        req->rq_reply_deadline = req->rq_deadline;
-        req->rq_phase          = RQ_PHASE_INTERPRET;
-        req->rq_next_phase     = RQ_PHASE_COMPLETE;
-        req->rq_xid            = ptlrpc_next_xid();
-        req->rq_import_generation = req->rq_import->imp_generation;
-
-        ptlrpcd_add_req(req, PDL_POLICY_ROUND, -1);
-        return 0;
+	LASSERT(cfs_atomic_read(&req->rq_refcount) > 0);
+	if (cfs_atomic_inc_return(&req->rq_refcount) == 2)
+		ptlrpcd_add_work_req(req);
+	return 0;
 }
 EXPORT_SYMBOL(ptlrpcd_queue_work);

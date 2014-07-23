@@ -1803,13 +1803,13 @@ out:
  * Get size for inode for which FIEMAP mapping is requested.
  * Make the FIEMAP get_info call and returns the result.
  */
-int ll_do_fiemap(struct inode *inode, struct ll_user_fiemap *fiemap,
-              int num_bytes)
+static int ll_do_fiemap(struct inode *inode, struct ll_user_fiemap *fiemap,
+			size_t num_bytes)
 {
 	struct obd_export *exp = ll_i2dtexp(inode);
 	struct lov_stripe_md *lsm = NULL;
         struct ll_fiemap_info_key fm_key = { .name = KEY_FIEMAP, };
-        int vallen = num_bytes;
+	__u32 vallen = num_bytes;
         int rc;
         ENTRY;
 
@@ -3267,18 +3267,21 @@ int ll_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
         fiemap->fm_extent_count = fieinfo->fi_extents_max;
         fiemap->fm_start = start;
         fiemap->fm_length = len;
-        memcpy(&fiemap->fm_extents[0], fieinfo->fi_extents_start,
-               sizeof(struct ll_fiemap_extent));
+	if (extent_count > 0)
+		memcpy(&fiemap->fm_extents[0], fieinfo->fi_extents_start,
+		       sizeof(struct ll_fiemap_extent));
 
-        rc = ll_do_fiemap(inode, fiemap, num_bytes);
+	rc = ll_do_fiemap(inode, fiemap, num_bytes);
 
-        fieinfo->fi_flags = fiemap->fm_flags;
-        fieinfo->fi_extents_mapped = fiemap->fm_mapped_extents;
-        memcpy(fieinfo->fi_extents_start, &fiemap->fm_extents[0],
-               fiemap->fm_mapped_extents * sizeof(struct ll_fiemap_extent));
+	fieinfo->fi_flags = fiemap->fm_flags;
+	fieinfo->fi_extents_mapped = fiemap->fm_mapped_extents;
+	if (extent_count > 0)
+		memcpy(fieinfo->fi_extents_start, &fiemap->fm_extents[0],
+		       fiemap->fm_mapped_extents *
+		       sizeof(struct ll_fiemap_extent));
 
-        OBD_FREE_LARGE(fiemap, num_bytes);
-        return rc;
+	OBD_FREE_LARGE(fiemap, num_bytes);
+	return rc;
 }
 
 struct posix_acl * ll_get_acl(struct inode *inode, int type)
@@ -3561,11 +3564,24 @@ int ll_layout_conf(struct inode *inode, const struct cl_object_conf *conf)
 		LASSERT(lock != NULL);
 		LASSERT(ldlm_has_layout(lock));
 		if (result == 0) {
+			struct lustre_md *md = conf->u.coc_md;
+			__u32 gen = LL_LAYOUT_GEN_EMPTY;
+
 			/* it can only be allowed to match after layout is
 			 * applied to inode otherwise false layout would be
 			 * seen. Applying layout shoud happen before dropping
 			 * the intent lock. */
 			ldlm_lock_allow_match(lock);
+
+			lli->lli_has_smd = lsm_has_objects(md->lsm);
+			if (md->lsm != NULL)
+				gen = md->lsm->lsm_layout_gen;
+
+			CDEBUG(D_VFSTRACE,
+			       DFID ": layout version change: %u -> %u\n",
+			       PFID(&lli->lli_fid), ll_layout_version_get(lli),
+			       gen);
+			ll_layout_version_set(lli, gen);
 		}
 	}
 	RETURN(result);
@@ -3679,7 +3695,7 @@ static int ll_layout_lock_set(struct lustre_handle *lockh, ldlm_mode_t mode,
 		if (lvb_ready) {
 			/* layout_gen must be valid if layout lock is not
 			 * cancelled and stripe has already set */
-			*gen = lli->lli_layout_gen;
+			*gen = ll_layout_version_get(lli);
 			rc = 0;
 		}
 		GOTO(out, rc);
@@ -3779,32 +3795,20 @@ int ll_layout_refresh(struct inode *inode, __u32 *gen)
 	int rc;
 	ENTRY;
 
-	*gen = lli->lli_layout_gen;
-	if (!(sbi->ll_flags & LL_SBI_LAYOUT_LOCK))
+	*gen = ll_layout_version_get(lli);
+	if (!(sbi->ll_flags & LL_SBI_LAYOUT_LOCK) || *gen != LL_LAYOUT_GEN_NONE)
 		RETURN(0);
 
 	/* sanity checks */
 	LASSERT(fid_is_sane(ll_inode2fid(inode)));
 	LASSERT(S_ISREG(inode->i_mode));
 
-	/* mostly layout lock is caching on the local side, so try to match
-	 * it before grabbing layout lock mutex. */
-	mode = ll_take_md_lock(inode, MDS_INODELOCK_LAYOUT, &lockh, 0,
-			       LCK_CR | LCK_CW | LCK_PR | LCK_PW);
-	if (mode != 0) { /* hit cached lock */
-		rc = ll_layout_lock_set(&lockh, mode, inode, gen, false);
-		if (rc == 0)
-			RETURN(0);
-
-		/* better hold lli_layout_mutex to try again otherwise
-		 * it will have starvation problem. */
-	}
-
 	/* take layout lock mutex to enqueue layout lock exclusively. */
 	mutex_lock(&lli->lli_layout_mutex);
 
 again:
-	/* try again. Maybe somebody else has done this. */
+	/* mostly layout lock is caching on the local side, so try to match
+	 * it before grabbing layout lock mutex. */
 	mode = ll_take_md_lock(inode, MDS_INODELOCK_LAYOUT, &lockh, 0,
 			       LCK_CR | LCK_CW | LCK_PR | LCK_PW);
 	if (mode != 0) { /* hit cached lock */

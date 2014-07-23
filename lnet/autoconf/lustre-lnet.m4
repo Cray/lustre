@@ -360,7 +360,6 @@ AC_SUBST(MXLND)
 #
 AC_DEFUN([LN_CONFIG_O2IB],
 [AC_MSG_CHECKING([whether to use Compat RDMA])
-
 # set default
 AC_ARG_WITH([o2ib],
 	AC_HELP_STRING([--with-o2ib=path],
@@ -396,7 +395,7 @@ else
 			fi
 			o2ib_found=true
 			break
- 		fi
+		fi
 	done
 	if ! $o2ib_found; then
 		AC_MSG_RESULT([no])

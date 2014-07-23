@@ -52,6 +52,9 @@ check_and_setup_lustre
 [[ $(lustre_version_code ost1) -lt $(version_code 2.4.50) ]] &&
 	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 11 12 13 14"
 
+[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.5.59) ]] &&
+	SCRUB_ONLY="-t scrub"
+
 build_test_filter
 
 MDT_DEV="${FSNAME}-MDT0000"
@@ -63,7 +66,8 @@ scrub_start() {
 	local n
 
 	for n in $(seq $MDSCOUNT); do
-		do_facet mds$n $LCTL lfsck_start -M $(facet_svc mds$n) "$@" ||
+		do_facet mds$n $LCTL lfsck_start -M $(facet_svc mds$n) \
+			$SCRUB_ONLY "$@" ||
 			error "($error_id) Failed to start OI scrub on mds$n"
 	done
 }
@@ -85,8 +89,8 @@ scrub_status() {
 		osd-ldiskfs.$(facet_svc mds$n).oi_scrub
 }
 
-START_SCRUB="do_facet $SINGLEMDS $LCTL lfsck_start -M ${MDT_DEV}"
-START_SCRUB_ON_OST="do_facet ost1 $LCTL lfsck_start -M ${OST_DEV}"
+START_SCRUB="do_facet $SINGLEMDS $LCTL lfsck_start -M ${MDT_DEV} $SCRUB_ONLY"
+START_SCRUB_ON_OST="do_facet ost1 $LCTL lfsck_start -M ${OST_DEV} $SCRUB_ONLY"
 STOP_SCRUB="do_facet $SINGLEMDS $LCTL lfsck_stop -M ${MDT_DEV}"
 SHOW_SCRUB="do_facet $SINGLEMDS \
 		$LCTL get_param -n osd-ldiskfs.${MDT_DEV}.oi_scrub"
@@ -854,6 +858,9 @@ test_11() {
 	sleep 3
 	scrub_check_status 4 completed
 
+	declare -a checked0
+	declare -a checked1
+
 	# OI scrub should skip the new created objects for the first accessing
 	# notice we're creating a new llog for every OST on every startup
 	# new features can make this even less stable, so we only check
@@ -865,17 +872,21 @@ test_11() {
 		[ $SKIPPED -ge $MAXIMUM -o $SKIPPED -lt $MINIMUM ] &&
 			error "(5) Expect [ $MINIMUM , $MAXIMUM ) objects" \
 				"skipped on mds$n, but got $SKIPPED"
+
+		checked0[$n]=$(scrub_status $n | awk '/^checked/ { print $2 }')
 	done
 
 	# reset OI scrub start point by force
-	scrub_start -r
+	scrub_start 6 -r
 	sleep 3
 	scrub_check_status 7 completed
 
 	# OI scrub should skip the new created object only once
 	for n in $(seq $MDSCOUNT); do
 		SKIPPED=$(scrub_status $n | awk '/^noscrub/ { print $2 }')
-		[ $SKIPPED -eq 0 ] ||
+		checked1[$n]=$(scrub_status $n | awk '/^checked/ { print $2 }')
+
+		[ ${checked0[$n]} -ne ${checked1[$n]} -o $SKIPPED -eq 0 ] ||
 			error "(8) Expect 0 objects skipped on mds$n, but" \
 				"got $SKIPPED"
 	done

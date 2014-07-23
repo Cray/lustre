@@ -1274,13 +1274,16 @@ ptlrpc_at_remove_timed(struct ptlrpc_request *req)
 	array->paa_count--;
 }
 
+/*
+ * Attempt to extend the request deadline by sending an early reply to the
+ * client.
+ */
 static int ptlrpc_at_send_early_reply(struct ptlrpc_request *req)
 {
 	struct ptlrpc_service_part *svcpt = req->rq_rqbd->rqbd_svcpt;
         struct ptlrpc_request *reqcopy;
         struct lustre_msg *reqmsg;
         cfs_duration_t olddl = req->rq_deadline - cfs_time_current_sec();
-        time_t newdl;
         int rc;
         ENTRY;
 
@@ -1322,8 +1325,13 @@ static int ptlrpc_at_send_early_reply(struct ptlrpc_request *req)
 		at_measured(&svcpt->scp_at_estimate, min(at_extra,
 			    req->rq_export->exp_obd->obd_recovery_timeout / 4));
 	} else {
-		/* Fake our processing time into the future to ask the clients
-		 * for some extra amount of time */
+		/* We want to extend the request deadline by at_extra seconds,
+		 * so we set our service estimate to reflect how much time has
+		 * passed since this request arrived plus an additional
+		 * at_extra seconds. The client will calculate the new deadline
+		 * based on this service estimate (plus some additional time to
+		 * account for network latency). See ptlrpc_at_recv_early_reply
+		 */
 		at_measured(&svcpt->scp_at_estimate, at_extra +
 			    cfs_time_current_sec() -
 			    req->rq_arrival_time.tv_sec);
@@ -1340,7 +1348,6 @@ static int ptlrpc_at_send_early_reply(struct ptlrpc_request *req)
 			RETURN(-ETIMEDOUT);
 		}
 	}
-	newdl = cfs_time_current_sec() + at_get(&svcpt->scp_at_estimate);
 
 	reqcopy = ptlrpc_request_cache_alloc(GFP_NOFS);
 	if (reqcopy == NULL)
@@ -1386,13 +1393,14 @@ static int ptlrpc_at_send_early_reply(struct ptlrpc_request *req)
 
         rc = ptlrpc_send_reply(reqcopy, PTLRPC_REPLY_EARLY);
 
-        if (!rc) {
-                /* Adjust our own deadline to what we told the client */
-                req->rq_deadline = newdl;
-                req->rq_early_count++; /* number sent, server side */
-        } else {
-                DEBUG_REQ(D_ERROR, req, "Early reply send failed %d", rc);
-        }
+	if (!rc) {
+		/* Adjust our own deadline to what we told the client */
+		req->rq_deadline = req->rq_arrival_time.tv_sec +
+				   at_get(&svcpt->scp_at_estimate);
+		req->rq_early_count++; /* number sent, server side */
+	} else {
+		DEBUG_REQ(D_ERROR, req, "Early reply send failed %d", rc);
+	}
 
         /* Free the (early) reply state from lustre_pack_reply.
            (ptlrpc_send_reply takes it's own rs ref, so this is safe here) */
@@ -2665,25 +2673,31 @@ static int ptlrpc_start_hr_threads(void)
 		int	rc = 0;
 
 		for (j = 0; j < hrp->hrp_nthrs; j++) {
-			struct	ptlrpc_hr_thread *hrt = &hrp->hrp_thrs[j];
-			rc = PTR_ERR(kthread_run(ptlrpc_hr_main,
-						 &hrp->hrp_thrs[j],
-						 "ptlrpc_hr%02d_%03d",
-						 hrp->hrp_cpt,
-						 hrt->hrt_id));
-			if (IS_ERR_VALUE(rc))
-				break;
-		}
-		wait_event(ptlrpc_hr.hr_waitq,
-			       cfs_atomic_read(&hrp->hrp_nstarted) == j);
-		if (!IS_ERR_VALUE(rc))
-			continue;
+			struct ptlrpc_hr_thread *hrt = &hrp->hrp_thrs[j];
+			struct task_struct *task;
 
-		CERROR("Reply handling thread %d:%d Failed on starting: "
-		       "rc = %d\n", i, j, rc);
-		ptlrpc_stop_hr_threads();
-		RETURN(rc);
+			task = kthread_run(ptlrpc_hr_main,
+					   &hrp->hrp_thrs[j],
+					   "ptlrpc_hr%02d_%03d",
+					   hrp->hrp_cpt,
+					   hrt->hrt_id);
+			if (IS_ERR(task)) {
+				rc = PTR_ERR(task);
+				break;
+			}
+		}
+
+		wait_event(ptlrpc_hr.hr_waitq,
+			   cfs_atomic_read(&hrp->hrp_nstarted) == j);
+
+		if (rc < 0) {
+			CERROR("cannot start reply handler thread %d:%d: "
+			       "rc = %d\n", i, j, rc);
+			ptlrpc_stop_hr_threads();
+			RETURN(rc);
+		}
 	}
+
 	RETURN(0);
 }
 
@@ -2792,6 +2806,7 @@ int ptlrpc_start_thread(struct ptlrpc_service_part *svcpt, int wait)
 	struct l_wait_info	lwi = { 0 };
 	struct ptlrpc_thread	*thread;
 	struct ptlrpc_service	*svc;
+	struct task_struct	*task;
 	int			rc;
 	ENTRY;
 
@@ -2859,9 +2874,10 @@ int ptlrpc_start_thread(struct ptlrpc_service_part *svcpt, int wait)
 	}
 
 	CDEBUG(D_RPCTRACE, "starting thread '%s'\n", thread->t_name);
-	rc = PTR_ERR(kthread_run(ptlrpc_main, thread, thread->t_name));
-	if (IS_ERR_VALUE(rc)) {
-		CERROR("cannot start thread '%s': rc %d\n",
+	task = kthread_run(ptlrpc_main, thread, "%s", thread->t_name);
+	if (IS_ERR(task)) {
+		rc = PTR_ERR(task);
+		CERROR("cannot start thread '%s': rc = %d\n",
 		       thread->t_name, rc);
 		spin_lock(&svcpt->scp_lock);
 		--svcpt->scp_nthrs_starting;
