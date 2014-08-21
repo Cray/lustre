@@ -515,34 +515,24 @@ static int ll_readahead(const struct lu_env *env, struct cl_io *io,
 	}
 
 	spin_lock(&ras->ras_lock);
-        if (vio->cui_ra_window_set)
-                bead = &vio->cui_bead;
-        else
-                bead = NULL;
+	bead = vio->cui_ra_window_set ? &vio->cui_bead : NULL;
 
-        /* Enlarge the RA window to encompass the full read */
-        if (bead != NULL && ras->ras_window_start + ras->ras_window_len <
-            bead->lrr_start + bead->lrr_count) {
-                ras->ras_window_len = bead->lrr_start + bead->lrr_count -
-                                      ras->ras_window_start;
-        }
-	/* Reserve a part of the read-ahead window that we'll be issuing */
-	if (ras->ras_window_len > 0) {
-		/*
-		 * Note: other thread might rollback the ras_next_readahead,
-		 * if it can not get the full size of prepared pages, see the
-		 * end of this function. For stride read ahead, it needs to
-		 * make sure the offset is no less than ras_stride_offset,
-		 * so that stride read ahead can work correctly.
-		 */
-		if (stride_io_mode(ras))
-			start = max(ras->ras_next_readahead,
-				    ras->ras_stride_offset);
-		else
-			start = ras->ras_next_readahead;
+	/**
+	 * Note: other thread might rollback the ras_next_readahead,
+	 * if it can not get the full size of prepared pages, see the
+	 * end of this function. For stride read ahead, it needs to
+	 * make sure the offset is no less than ras_stride_offset,
+	 * so that stride read ahead can work correctly.
+	 */
+	if (stride_io_mode(ras))
+		start = max(ras->ras_next_readahead, ras->ras_stride_offset);
+	else
+		start = ras->ras_next_readahead;
+	if (ras->ras_window_len > 0)
 		end = ras->ras_window_start + ras->ras_window_len - 1;
-	}
-
+	/* Enlarge the RA window to encompass the full read */
+	if (bead != NULL && end < bead->lrr_start + bead->lrr_count - 1)
+		end = bead->lrr_start + bead->lrr_count - 1;
         if (end != 0) {
                 unsigned long rpc_boundary;
                 /*
@@ -661,7 +651,7 @@ static void ras_reset(struct inode *inode, struct ll_readahead_state *ras,
 	ras->ras_consecutive_pages = 0;
 	ras->ras_window_len = 0;
 	ras_set_start(inode, ras, index);
-	ras->ras_next_readahead = max(ras->ras_window_start, index);
+	ras->ras_next_readahead = max(ras->ras_window_start, index + 1);
 
 	RAS_CDEBUG(ras);
 }
@@ -798,7 +788,7 @@ static void ras_increase_window(struct inode *inode,
 
 static void ras_update(struct ll_sb_info *sbi, struct inode *inode,
 		       struct ll_readahead_state *ras, unsigned long index,
-		       unsigned hit)
+		       bool hit, bool is_mmap)
 {
 	struct ll_ra_info *ra = &sbi->ll_ra_info;
 	int zero = 0, stride_detect = 0, ra_miss = 0;
@@ -830,7 +820,7 @@ static void ras_update(struct ll_sb_info *sbi, struct inode *inode,
          * and only occurs once per open file.  Normal RA behavior is reverted
          * to for subsequent IO.  The mmap case does not increment
          * ras_requests and thus can never trigger this behavior. */
-        if (ras->ras_requests == 2 && !ras->ras_request_index) {
+        if (ras->ras_requests >= 2 && !ras->ras_request_index) {
                 __u64 kms_pages;
 
 		kms_pages = (i_size_read(inode) + PAGE_CACHE_SIZE - 1) >>
@@ -842,8 +832,7 @@ static void ras_update(struct ll_sb_info *sbi, struct inode *inode,
                 if (kms_pages &&
                     kms_pages <= ra->ra_max_read_ahead_whole_pages) {
                         ras->ras_window_start = 0;
-                        ras->ras_last_readpage = 0;
-                        ras->ras_next_readahead = 0;
+			ras->ras_next_readahead = index + 1;
                         ras->ras_window_len = min(ra->ra_max_pages_per_file,
                                 ra->ra_max_read_ahead_whole_pages);
                         GOTO(out_unlock, 0);
@@ -919,8 +908,11 @@ static void ras_update(struct ll_sb_info *sbi, struct inode *inode,
 
 	/* Trigger RA in the mmap case where ras_consecutive_requests
 	 * is not incremented and thus can't be used to trigger RA */
-	if (!ras->ras_window_len && ras->ras_consecutive_pages == 4) {
-		ras->ras_window_len = RAS_INCREASE_STEP(inode);
+	if (ras->ras_consecutive_pages >= 4 && is_mmap) {
+		ras_increase_window(inode, ras, ra);
+		/* reset consecutive pages so that the readahead window can
+		 * grow gradually. */
+		ras->ras_consecutive_pages = 0;
 		GOTO(out_unlock, 0);
 	}
 
@@ -1105,9 +1097,12 @@ static int ll_io_read_page(const struct lu_env *env, struct cl_io *io,
 
 	cp = cl2ccc_page(cl_object_page_slice(page->cp_obj, page));
 	if (sbi->ll_ra_info.ra_max_pages_per_file > 0 &&
-	    sbi->ll_ra_info.ra_max_pages > 0)
+	    sbi->ll_ra_info.ra_max_pages > 0) {
+		struct vvp_io *vio = vvp_env_io(env);
+
 		ras_update(sbi, inode, ras, ccc_index(cp),
-			   cp->cpg_defer_uptodate);
+			   cp->cpg_defer_uptodate, !vio->cui_ra_window_set);
+	}
 
 	if (cp->cpg_defer_uptodate) {
 		cp->cpg_ra_used = 1;
