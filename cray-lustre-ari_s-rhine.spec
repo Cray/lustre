@@ -136,7 +136,7 @@ if [ -e ${man_path} ]; then
     %{__rm} -rf ${man_path}/man5 ${man_path}/man8/lhbadm.8 ${man_path}/man8/ldev.8
 fi
 
-for header in  posix-types.h libiam.h lustreapi.h liblustreapi.h ll_fiemap.h lustre_idl.h lustre_user.h; do
+for header in  libiam.h lustreapi.h liblustreapi.h ll_fiemap.h lustre_idl.h lustre_user.h; do
     found=`find %{buildroot} -name $header`
     if [ -n "${found}" ]; then
         for each in ${found}; do
@@ -187,11 +187,8 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 %files -n cray-lustre-cray_ari_s-devel
 %defattr(-,root,root)
 %dir /usr/include/lustre
-%dir /usr/include/libcfs
-%dir /usr/include/libcfs/posix
 /usr/include/lustre/*.h
 /usr/include/linux/lustre_user.h
-/usr/include/libcfs/posix/posix-types.h
 /usr/lib64/*
 
 %post
