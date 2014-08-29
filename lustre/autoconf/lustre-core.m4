@@ -356,6 +356,26 @@ AC_DEFUN([LC_CONFIG_GSS],
  fi
 ])
 
+
+#
+# DSS (Differentiated Storage Services)
+#
+
+AC_DEFUN([LC_CONFIG_DSS],
+[AC_MSG_CHECKING([if kernel supports DSS])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/dss_types.h>
+],[
+	int class = dss_tag_file_type(NULL);
+],[
+	AC_MSG_RESULT([yes])
+	AC_DEFINE(HAVE_DSS, 1,
+		  [kernel supports DSS.])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
 # 2.6.24
 
 # 2.6.24 has bio_endio with 2 args
@@ -1349,6 +1369,7 @@ AC_DEFUN([LC_PROG_LINUX],
          LC_CAPA_CRYPTO
          LC_CONFIG_RMTCLIENT
          LC_CONFIG_GSS
+         LC_CONFIG_DSS
 
          # 2.6.24
          LC_BIO_ENDIO_2ARG

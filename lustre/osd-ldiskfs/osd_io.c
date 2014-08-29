@@ -57,6 +57,10 @@
 
 #include "osd_internal.h"
 
+#ifdef HAVE_DSS
+#include <linux/dss_types.h>
+#endif
+
 /* ext_depth() */
 #include <ldiskfs/ldiskfs_extents.h>
 
@@ -353,11 +357,14 @@ static int osd_do_bio(struct osd_device *osd, struct inode *inode,
                                 goto out;
                         }
 
-                        bio->bi_bdev = inode->i_sb->s_bdev;
-                        bio->bi_sector = sector;
+			bio->bi_bdev = inode->i_sb->s_bdev;
+			bio->bi_sector = sector;
 			bio->bi_rw = (iobuf->dr_rw == 0) ? READ : WRITE;
-                        bio->bi_end_io = dio_complete_routine;
-                        bio->bi_private = iobuf;
+			bio->bi_end_io = dio_complete_routine;
+			bio->bi_private = iobuf;
+#ifdef HAVE_DSS
+			dss_bio_tag_file_size(inode, bio);
+#endif
 
                         rc = bio_add_page(bio, page,
                                           blocksize * nblocks, page_offset);
