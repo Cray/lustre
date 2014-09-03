@@ -16,23 +16,6 @@ ALWAYS_EXCEPT="                42a  42b  42c  42d  45   51d   68b   $SANITY_EXCE
 # bug number for skipped tests: LU-2036
 ALWAYS_EXCEPT="                 76     $ALWAYS_EXCEPT"
 
-is_sles11()						# LU-4351
-{
-	if [ -r /etc/SuSE-release ]
-	then
-		local vers=`grep VERSION /etc/SuSE-release | awk '{print $3}'`
-		if [ $vers -eq 11 ]
-		then
-			return 0
-		fi
-	fi
-	return 1
-}
-
-if is_sles11; then					# LU-4351
-	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 54c"
-fi
-
 SRCDIR=$(cd $(dirname $0); echo $PWD)
 export PATH=$PATH:/sbin
 
@@ -4694,6 +4677,30 @@ test_56y() {
 
 }
 run_test 56y "lfs find -L raid0|released"
+
+test_56z() { # LU-4824
+	# This checks to make sure 'lfs find' continues after errors
+	# There are two classes of errors that should be caught:
+	# - If multiple paths are provided, all should be searched even if one
+	#   errors out
+	# - If errors are encountered during the search, it should not terminate
+	#   early
+	local i
+	test_mkdir $DIR/$tdir
+	for i in d{0..9}; do
+		test_mkdir $DIR/$tdir/$i
+	done
+	touch $DIR/$tdir/d{0..9}/$tfile
+	$LFS find $DIR/non_existent_dir $DIR/$tdir &&
+		error "$LFS find did not return an error"
+	# Make a directory unsearchable. This should NOT be the last entry in
+	# directory order.  Arbitrarily pick the 6th entry
+	chmod 700 $(lfs find $DIR/$tdir -type d | sed '6!d')
+	local count=$($RUNAS $LFS find $DIR/non_existent $DIR/$tdir | wc -l)
+	# The user should be able to see 10 directories and 9 files
+	[ $count == 19 ] || error "$LFS find did not continue after error"
+}
+run_test 56z "lfs find should continue after an error"
 
 test_57a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return

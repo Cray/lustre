@@ -859,7 +859,27 @@ test_23d () {
 }
 run_test 23d "c1 rmdir d1, M0 drop update reply and fail M0/M1, c2 mkdir d1"
 
-# end commit on sharing tests 
+test_24 () {
+	[[ $(lustre_version_code $SINGLEMDS) -gt $(version_code 2.5.2) ]] ||
+		{ skip "Need MDS version newer than 2.5.2"; return 0; }
+
+	touch $MOUNT/$tfile
+	stat $MOUNT/$tfile >&/dev/null
+# OBD_FAIL_MDS_REINT_NET_REP
+	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x119
+	$TRUNCATE $MOUNT/$tfile 100 &
+	PID=$!
+	sleep 1
+	do_facet $SINGLEMDS lctl set_param fail_loc=0
+	# sync to release rep-ack lock quickly
+	do_nodes $(comma_list $(mdts_nodes)) \
+	    "lctl set_param -n osd*.*MDT*.force_sync 1"
+	rm $MOUNT2/$tfile
+	wait
+}
+run_test 24 "reconstruct on non-existing object"
+
+# end commit on sharing tests
 
 complete $SECONDS
 SLEEP=$((`date +%s` - $NOW))

@@ -2133,6 +2133,9 @@ run_test 33 "Basic usage tracking for user & group"
 
 # usage transfer test for user & group
 test_34() {
+	[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.5.3) ]] &&
+		skip "Need MDS version at least 2.5.3" && return
+
         local BLK_CNT=2 # 2MB
 
 	setup_quota_test

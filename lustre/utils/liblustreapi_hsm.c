@@ -114,7 +114,8 @@ enum ct_event {
 };
 
 /* initialized in llapi_hsm_register_event_fifo() */
-int llapi_hsm_event_fd = -1;
+static int llapi_hsm_event_fd = -1;
+static bool created_hsm_event_fifo;
 
 static inline const char *llapi_hsm_ct_ev2str(int type)
 {
@@ -447,7 +448,7 @@ out_free:
  * \retval 0 on success.
  * \retval -errno on error.
  */
-int llapi_hsm_register_event_fifo(char *path)
+int llapi_hsm_register_event_fifo(const char *path)
 {
 	int read_fd;
 	struct stat statbuf;
@@ -469,6 +470,8 @@ int llapi_hsm_register_event_fifo(char *path)
 				    "not a pipe or has a wrong mode", path);
 			return -errno;
 		}
+	} else {
+		created_hsm_event_fifo = true;
 	}
 
 	/* Open the FIFO for read so that the subsequent open for write
@@ -508,7 +511,7 @@ int llapi_hsm_register_event_fifo(char *path)
  * \retval 0 on success.
  * \retval -errno on error.
  */
-int llapi_hsm_unregister_event_fifo(char *path)
+int llapi_hsm_unregister_event_fifo(const char *path)
 {
 	/* Noop unless the event fd was initialized */
 	if (llapi_hsm_event_fd < 0)
@@ -517,7 +520,10 @@ int llapi_hsm_unregister_event_fifo(char *path)
 	if (close(llapi_hsm_event_fd) < 0)
 		return -errno;
 
-	unlink(path);
+	if (created_hsm_event_fifo) {
+		unlink(path);
+		created_hsm_event_fifo = false;
+	}
 
 	llapi_hsm_event_fd = -1;
 
@@ -629,13 +635,13 @@ out_free:
 /** Register a copytool
  * \param[out] priv Opaque private control structure
  * \param mnt Lustre filesystem mount point
- * \param flags Open flags, currently unused (e.g. O_NONBLOCK)
  * \param archive_count
  * \param archives Which archive numbers this copytool is responsible for
+ * \param rfd_flags flags applied to read fd of pipe (e.g. O_NONBLOCK)
  */
 int llapi_hsm_copytool_register(struct hsm_copytool_private **priv,
-				const char *mnt, int flags, int archive_count,
-				int *archives)
+				const char *mnt, int archive_count,
+				int *archives, int rfd_flags)
 {
 	struct hsm_copytool_private	*ct;
 	int				 rc;
@@ -694,7 +700,7 @@ int llapi_hsm_copytool_register(struct hsm_copytool_private **priv,
 		ct->archives |= (1 << (archives[rc] - 1));
 	}
 
-	rc = libcfs_ukuc_start(&ct->kuc, KUC_GRP_HSM);
+	rc = libcfs_ukuc_start(&ct->kuc, KUC_GRP_HSM, rfd_flags);
 	if (rc < 0)
 		goto out_err;
 
@@ -774,6 +780,19 @@ int llapi_hsm_copytool_unregister(struct hsm_copytool_private **priv)
 	return 0;
 }
 
+/** Returns a file descriptor to poll/select on.
+ * \param ct Opaque private control structure
+ * \retval -EINVAL on error
+ * \retval the file descriptor for reading HSM events from the kernel
+ */
+int llapi_hsm_copytool_get_fd(struct hsm_copytool_private *ct)
+{
+	if (ct == NULL || ct->magic != CT_PRIV_MAGIC)
+		return -EINVAL;
+
+	return libcfs_ukuc_get_rfd(&ct->kuc);
+}
+
 /** Wait for the next hsm_action_list
  * \param ct Opaque private control structure
  * \param halh Action list handle, will be allocated here
@@ -798,6 +817,7 @@ int llapi_hsm_copytool_recv(struct hsm_copytool_private *ct,
 	if (kuch == NULL)
 		return -ENOMEM;
 
+repeat:
 	rc = libcfs_ukuc_msg_get(&ct->kuc, (char *)kuch,
 				 HAL_MAXSIZE + sizeof(*kuch),
 				 KUC_TRANSPORT_HSM);
@@ -841,9 +861,8 @@ int llapi_hsm_copytool_recv(struct hsm_copytool_private *ct,
 				  " ignoring this request."
 				  " Mask of served archive is 0x%.8X",
 				  hal->hal_archive_id, ct->archives);
-		rc = -EAGAIN;
 
-		goto out_free;
+		goto repeat;
 	}
 
 	*halh = hal;
@@ -910,10 +929,12 @@ static int ct_open_by_fid(const struct hsm_copytool_private *ct,
 			  const struct lu_fid *fid, int open_flags)
 {
 	char fid_name[FID_NOBRACE_LEN + 1];
+	int fd;
 
 	snprintf(fid_name, sizeof(fid_name), DFID_NOBRACE, PFID(fid));
 
-	return openat(ct->open_by_fid_fd, fid_name, open_flags);
+	fd = openat(ct->open_by_fid_fd, fid_name, open_flags);
+	return fd < 0 ? -errno : fd;
 }
 
 static int ct_stat_by_fid(const struct hsm_copytool_private *ct,
@@ -921,10 +942,12 @@ static int ct_stat_by_fid(const struct hsm_copytool_private *ct,
 			  struct stat *buf)
 {
 	char fid_name[FID_NOBRACE_LEN + 1];
+	int rc;
 
 	snprintf(fid_name, sizeof(fid_name), DFID_NOBRACE, PFID(fid));
 
-	return fstatat(ct->open_by_fid_fd, fid_name, buf, 0);
+	rc = fstatat(ct->open_by_fid_fd, fid_name, buf, 0);
+	return rc ? -errno : 0;
 }
 
 /** Create the destination volatile file for a restore operation.
@@ -1195,17 +1218,20 @@ int llapi_hsm_action_get_dfid(const struct hsm_copyaction_private *hcp,
 int llapi_hsm_action_get_fd(const struct hsm_copyaction_private *hcp)
 {
 	const struct hsm_action_item	*hai = &hcp->copy.hc_hai;
+	int fd;
 
 	if (hcp->magic != CP_PRIV_MAGIC)
 		return -EINVAL;
 
-	if (hai->hai_action == HSMA_ARCHIVE)
+	if (hai->hai_action == HSMA_ARCHIVE) {
 		return ct_open_by_fid(hcp->ct_priv, &hai->hai_dfid,
 				O_RDONLY | O_NOATIME | O_NOFOLLOW | O_NONBLOCK);
-	else if (hai->hai_action == HSMA_RESTORE)
-		return dup(hcp->data_fd);
-	else
+	} else if (hai->hai_action == HSMA_RESTORE) {
+		fd = dup(hcp->data_fd);
+		return fd < 0 ? -errno : fd;
+	} else {
 		return -EINVAL;
+	}
 }
 
 /**
@@ -1239,9 +1265,9 @@ int llapi_hsm_import(const char *dst, int archive, const struct stat *st,
 				  stripe_pattern | LOV_PATTERN_F_RELEASED,
 				  pool_name);
 	if (fd < 0) {
-		llapi_error(LLAPI_MSG_ERROR, -errno,
+		llapi_error(LLAPI_MSG_ERROR, fd,
 			    "cannot create '%s' for import", dst);
-		return -errno;
+		return fd;
 	}
 
 	/* Get the new fid in Lustre. Caller needs to use this fid
@@ -1264,8 +1290,8 @@ int llapi_hsm_import(const char *dst, int archive, const struct stat *st,
 	hui.hui_mtime_ns = st->st_mtim.tv_nsec;
 	rc = ioctl(fd, LL_IOC_HSM_IMPORT, &hui);
 	if (rc != 0) {
-		llapi_error(LLAPI_MSG_ERROR, rc, "cannot import '%s'", dst);
 		rc = -errno;
+		llapi_error(LLAPI_MSG_ERROR, rc, "cannot import '%s'", dst);
 		goto out_unlink;
 	}
 
