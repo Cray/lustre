@@ -389,7 +389,15 @@ static inline struct dentry *d_make_root(struct inode *root)
 #endif
 
 #ifndef HAVE_TRUNCATE_INODE_PAGES_FINAL
-# define truncate_inode_pages_final(map) truncate_inode_pages(map, 0)
+static inline void truncate_inode_pages_final(struct address_space *map)
+{
+	truncate_inode_pages(map, 0);
+		/* Workaround for LU-118 */
+	if (map->nrpages) {
+		spin_lock_irq(&map->tree_lock);
+		spin_unlock_irq(&map->tree_lock);
+	}	/* Workaround end */
+}
 #endif
 
 #endif /* _COMPAT25_H */
