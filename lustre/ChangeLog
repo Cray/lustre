@@ -2,9 +2,11 @@
        * version 2.5.25
        * See http://wiki.whamcloud.com/display/PUB/Lustre+Support+Matrix
        * Server support for kernels:
-	 2.6.32-431.23.3.el6 (RHEL6)
+	 2.6.32-431.23.3.el6	(RHEL6)
+	 2.6.32-504.el6		(RHEL6.6)
        * Client support for unpatched kernels:
-	 2.6.32-431.23.3.el6 (RHEL6)
+	 2.6.32-431.23.3.el6  (RHEL6)
+	 2.6.32-504.el6	      (RHEL6.6)
          3.0.93-0.5           (SLES11 SP2)
          3.0.92-0.8           (SLES11 SP3)
          3.6.10-2.fc17       (FC17)

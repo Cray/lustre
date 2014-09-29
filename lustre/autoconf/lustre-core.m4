@@ -1831,6 +1831,7 @@ lustre/include/linux/Makefile
 lustre/include/darwin/Makefile
 lustre/include/lustre/Makefile
 lustre/kernel_patches/targets/2.6-rhel6.target
+lustre/kernel_patches/targets/2.6-rhel6.6.target
 lustre/kernel_patches/targets/2.6-rhel5.target
 lustre/kernel_patches/targets/2.6-sles11.target
 lustre/kernel_patches/targets/3.0-sles11.target
