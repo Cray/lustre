@@ -365,9 +365,9 @@ int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
 
 	/* lru for osc. */
 	CFS_INIT_LIST_HEAD(&cli->cl_lru_osc);
-	cfs_atomic_set(&cli->cl_lru_shrinkers, 0);
-	cfs_atomic_set(&cli->cl_lru_busy, 0);
-	cfs_atomic_set(&cli->cl_lru_in_list, 0);
+	atomic_set(&cli->cl_lru_shrinkers, 0);
+	atomic_long_set(&cli->cl_lru_busy, 0);
+	atomic_long_set(&cli->cl_lru_in_list, 0);
 	CFS_INIT_LIST_HEAD(&cli->cl_lru_list);
 	client_obd_list_lock_init(&cli->cl_lru_list_lock);
 

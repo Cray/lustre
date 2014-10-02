@@ -168,11 +168,11 @@ static int osc_rd_cached_mb(char *page, char **start, off_t off, int count,
 	int rc;
 
 	rc = snprintf(page, count,
-		      "used_mb: %d\n"
-		      "busy_cnt: %d\n",
-		      (cfs_atomic_read(&cli->cl_lru_in_list) +
-			cfs_atomic_read(&cli->cl_lru_busy)) >> shift,
-		      cfs_atomic_read(&cli->cl_lru_busy));
+		      "used_mb: %ld\n"
+		      "busy_cnt: %ld\n",
+		      (atomic_long_read(&cli->cl_lru_in_list) +
+			atomic_long_read(&cli->cl_lru_busy)) >> shift,
+		      atomic_long_read(&cli->cl_lru_busy));
 
 	return rc;
 }
@@ -183,18 +183,25 @@ static int osc_wr_cached_mb(struct file *file, const char *buffer,
 {
 	struct obd_device *dev = data;
 	struct client_obd *cli = &dev->u.cli;
-	int pages_number, mult, rc;
+	__u64 val;
+	long pages_number;
+	long rc;
+	int mult;
 
 	mult = 1 << (20 - PAGE_CACHE_SHIFT);
 	buffer = lprocfs_find_named_value(buffer, "used_mb:", &count);
-	rc = lprocfs_write_frac_helper(buffer, count, &pages_number, mult);
+	rc = lprocfs_write_frac_u64_helper(buffer, count, &val, mult);
 	if (rc)
 		return rc;
+
+	if (val > LONG_MAX)
+		return -ERANGE;
+	pages_number = (long)val;
 
 	if (pages_number < 0)
 		return -ERANGE;
 
-	rc = cfs_atomic_read(&cli->cl_lru_in_list) - pages_number;
+	rc = atomic_long_read(&cli->cl_lru_in_list) - pages_number;
 	if (rc > 0) {
 		struct lu_env *env;
 		int refcheck;

@@ -395,12 +395,12 @@ struct client_obd {
 	/* lru for osc caching pages */
 	struct cl_client_cache	*cl_cache;
 	cfs_list_t		 cl_lru_osc; /* member of cl_cache->ccc_lru */
-	cfs_atomic_t		*cl_lru_left;
-	cfs_atomic_t		 cl_lru_busy;
-	cfs_atomic_t		 cl_lru_shrinkers;
-	cfs_atomic_t		 cl_lru_in_list;
+	atomic_long_t		*cl_lru_left;
+	atomic_long_t		 cl_lru_busy;
+	atomic_long_t		 cl_lru_in_list;
 	cfs_list_t		 cl_lru_list; /* lru page list */
 	client_obd_lock_t	 cl_lru_list_lock; /* page list protector */
+	atomic_t		 cl_lru_shrinkers;
 
         /* number of in flight destroy rpcs is limited to max_rpcs_in_flight */
         cfs_atomic_t             cl_destroy_in_flight;

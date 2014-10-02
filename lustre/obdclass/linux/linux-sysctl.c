@@ -215,6 +215,7 @@ int LL_PROC_PROTO(proc_pages_max)
 
 int LL_PROC_PROTO(proc_max_dirty_pages_in_mb)
 {
+	__u64 val;
 	int rc = 0;
 	DECLARE_LL_PROC_PPOS_DECL;
 
@@ -223,26 +224,28 @@ int LL_PROC_PROTO(proc_max_dirty_pages_in_mb)
 		return 0;
 	}
 	if (write) {
-		rc = lprocfs_write_frac_helper(buffer, *lenp,
-					       (unsigned int *)table->data,
+		rc = lprocfs_write_frac_u64_helper(buffer, *lenp, &val,
 					       1 << (20 - PAGE_CACHE_SHIFT));
+
 		/* Don't allow them to let dirty pages exceed 90% of system
 		 * memory and set a hard minimum of 4MB. */
-		if (obd_max_dirty_pages > ((totalram_pages / 10) * 9)) {
-			CERROR("Refusing to set max dirty pages to %u, which "
-			       "is more than 90%% of available RAM; setting "
-			       "to %lu\n", obd_max_dirty_pages,
+		if (val > ((totalram_pages / 10) * 9)) {
+			CERROR("Refusing to set max dirty pages to "LPU64", "
+			       "which is more than 90%% of available RAM; "
+			       "setting to %lu\n", val,
 			       ((totalram_pages / 10) * 9));
 			obd_max_dirty_pages = ((totalram_pages / 10) * 9);
-		} else if (obd_max_dirty_pages < 4 << (20 - PAGE_CACHE_SHIFT)) {
+		} else if (val < 4 << (20 - PAGE_CACHE_SHIFT)) {
 			obd_max_dirty_pages = 4 << (20 - PAGE_CACHE_SHIFT);
+		} else {
+			obd_max_dirty_pages = val;
 		}
 	} else {
 		char buf[21];
 		int len;
 
 		len = lprocfs_read_frac_helper(buf, sizeof(buf),
-					       *(unsigned int *)table->data,
+					       *(unsigned long *)table->data,
 					       1 << (20 - PAGE_CACHE_SHIFT));
 		if (len > *lenp)
 			len = *lenp;
@@ -397,7 +400,7 @@ static struct ctl_table obd_table[] = {
                 INIT_CTL_NAME(OBD_MAX_DIRTY_PAGES)
                 .procname = "max_dirty_mb",
                 .data     = &obd_max_dirty_pages,
-                .maxlen   = sizeof(int),
+                .maxlen   = sizeof(unsigned long),
                 .mode     = 0644,
                 .proc_handler = &proc_max_dirty_pages_in_mb
         },

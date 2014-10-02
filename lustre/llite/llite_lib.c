@@ -98,7 +98,7 @@ static struct ll_sb_info *ll_init_sbi(void)
 	/* initialize lru data */
 	cfs_atomic_set(&sbi->ll_cache.ccc_users, 0);
 	sbi->ll_cache.ccc_lru_max = lru_page_max;
-	cfs_atomic_set(&sbi->ll_cache.ccc_lru_left, lru_page_max);
+	atomic_long_set(&sbi->ll_cache.ccc_lru_left, lru_page_max);
 	spin_lock_init(&sbi->ll_cache.ccc_lru_lock);
 	CFS_INIT_LIST_HEAD(&sbi->ll_cache.ccc_lru);
 

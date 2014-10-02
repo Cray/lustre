@@ -286,12 +286,19 @@ static int ll_wr_max_readahead_mb(struct file *file, const char *buffer,
 {
 	struct super_block *sb = data;
 	struct ll_sb_info *sbi = ll_s2sbi(sb);
-	int mult, rc, pages_number;
+	__u64 val;
+	long pages_number;
+	int mult;
+	int rc;
 
 	mult = 1 << (20 - PAGE_CACHE_SHIFT);
-	rc = lprocfs_write_frac_helper(buffer, count, &pages_number, mult);
+	rc = lprocfs_write_frac_u64_helper(buffer, count, &val, mult);
 	if (rc)
 		return rc;
+
+	if (val > LONG_MAX)
+		return -ERANGE;
+	pages_number = (long)val;
 
 	if (pages_number < 0 || pages_number > totalram_pages / 2) {
 		/* 1/2 of RAM */
@@ -403,17 +410,17 @@ static int ll_rd_max_cached_mb(char *page, char **start, off_t off,
 	struct ll_sb_info      *sbi   = ll_s2sbi(sb);
 	struct cl_client_cache *cache = &sbi->ll_cache;
 	int shift = 20 - PAGE_CACHE_SHIFT;
-	int max_cached_mb;
-	int unused_mb;
+	long max_cached_mb;
+	long unused_mb;
 
 	*eof = 1;
 	max_cached_mb = cache->ccc_lru_max >> shift;
-	unused_mb = cfs_atomic_read(&cache->ccc_lru_left) >> shift;
+	unused_mb = atomic_long_read(&cache->ccc_lru_left) >> shift;
 	return snprintf(page, count,
 			"users: %d\n"
-			"max_cached_mb: %d\n"
-			"used_mb: %d\n"
-			"unused_mb: %d\n"
+			"max_cached_mb: %ld\n"
+			"used_mb: %ld\n"
+			"unused_mb: %ld\n"
 			"reclaim_count: %u\n",
 			cfs_atomic_read(&cache->ccc_users),
 			max_cached_mb,
@@ -429,17 +436,24 @@ static int ll_wr_max_cached_mb(struct file *file, const char *buffer,
 	struct ll_sb_info *sbi = ll_s2sbi(sb);
 	struct cl_client_cache *cache = &sbi->ll_cache;
 	struct lu_env *env;
+	__u64 val;
+	long diff = 0;
+	long nrpages = 0;
+	long pages_number;
 	int refcheck;
-	int mult, rc, pages_number;
-	int diff = 0;
-	int nrpages = 0;
+	int mult;
+	long rc;
 	ENTRY;
 
 	mult = 1 << (20 - PAGE_CACHE_SHIFT);
 	buffer = lprocfs_find_named_value(buffer, "max_cached_mb:", &count);
-	rc = lprocfs_write_frac_helper(buffer, count, &pages_number, mult);
+	rc = lprocfs_write_frac_u64_helper(buffer, count, &val, mult);
 	if (rc)
 		RETURN(rc);
+
+	if (val > LONG_MAX)
+		return -ERANGE;
+	pages_number = (long)val;
 
 	if (pages_number < 0 || pages_number > totalram_pages) {
 		CERROR("%s: can't set max cache more than %lu MB\n",
@@ -457,7 +471,7 @@ static int ll_wr_max_cached_mb(struct file *file, const char *buffer,
 
 	/* easy - add more LRU slots. */
 	if (diff >= 0) {
-		cfs_atomic_add(diff, &cache->ccc_lru_left);
+		atomic_long_add(diff, &cache->ccc_lru_left);
 		GOTO(out, rc = 0);
 	}
 
@@ -467,18 +481,18 @@ static int ll_wr_max_cached_mb(struct file *file, const char *buffer,
 
 	diff = -diff;
 	while (diff > 0) {
-		int tmp;
+		long tmp;
 
 		/* reduce LRU budget from free slots. */
 		do {
-			int ov, nv;
+			long ov, nv;
 
-			ov = cfs_atomic_read(&cache->ccc_lru_left);
+			ov = atomic_long_read(&cache->ccc_lru_left);
 			if (ov == 0)
 				break;
 
 			nv = ov > diff ? ov - diff : 0;
-			rc = cfs_atomic_cmpxchg(&cache->ccc_lru_left, ov, nv);
+			rc = atomic_long_cmpxchg(&cache->ccc_lru_left, ov, nv);
 			if (likely(ov == rc)) {
 				diff -= ov - nv;
 				nrpages += ov - nv;
@@ -507,7 +521,7 @@ out:
 		spin_unlock(&sbi->ll_lock);
 		rc = count;
 	} else {
-		cfs_atomic_add(nrpages, &cache->ccc_lru_left);
+		atomic_long_add(nrpages, &cache->ccc_lru_left);
 	}
 	return rc;
 }
