@@ -130,8 +130,6 @@ llog_reader_DEPENDENCIES := $(LIBPTLCTL)
 
 lr_reader_SOURCES = lr_reader.c
 
-if UTILS
-
 if ZFS_ENABLED
 pkglib_LTLIBRARIES += mount_osd_zfs.la
 
@@ -198,8 +196,6 @@ wirecheck_SOURCES = wirecheck.c
 wirecheck_CPPFLAGS = -DCC="\"$(CC)\""
 
 wiretest_SOURCES = wiretest.c
-
-endif # UTILS
 
 EXTRA_DIST = llstat llobdstat plot-llstat $(CONFDIR_DATA)
 
