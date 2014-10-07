@@ -154,8 +154,6 @@ ofd_access_log_reader_SOURCES = \
 	ofd_access_log_reader.c
 ofd_access_log_reader_LDADD := -lpthread
 
-if UTILS
-
 PLUGIN_LIB =
 if PLUGINS
 MNTMODLDFLAGS := -rdynamic
@@ -249,8 +247,6 @@ wirecheck_SOURCES = wirecheck.c
 wirecheck_CPPFLAGS := -DCC="\"$(CC)\""
 
 wiretest_SOURCES = wiretest.c
-
-endif # UTILS
 
 EXTRA_DIST = llstat llobdstat plot-llstat ldlm_debug_upcall liblustreapi.map
 
