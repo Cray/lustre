@@ -4564,7 +4564,7 @@ static int mdt_stack_init(const struct lu_env *env, struct mdt_device *mdt,
 	strcpy(name, dev);
 	p = strstr(name, "-MDT");
 	if (p == NULL)
-		GOTO(cleanup_mem, rc = -ENOMEM);
+		GOTO(free_bufs, rc = -ENOMEM);
 	p[3] = 'D';
 
 	snprintf(uuid, MAX_OBD_NAME, "%s_UUID", name);
@@ -4573,7 +4573,7 @@ static int mdt_stack_init(const struct lu_env *env, struct mdt_device *mdt,
 	if (lprof == NULL || lprof->lp_dt == NULL) {
 		CERROR("can't find the profile: %s\n",
 		       lustre_cfg_string(cfg, 0));
-		GOTO(cleanup_mem, rc = -EINVAL);
+		GOTO(free_bufs, rc = -EINVAL);
 	}
 
 	lustre_cfg_bufs_reset(bufs, name);
@@ -4612,7 +4612,7 @@ static int mdt_stack_init(const struct lu_env *env, struct mdt_device *mdt,
 	/* connect to MDD we just setup */
 	rc = mdt_connect_to_next(env, mdt, name, &mdt->mdt_child_exp);
 	if (rc)
-		RETURN(rc);
+		GOTO(class_detach, rc);
 
 	site = mdt->mdt_child_exp->exp_obd->obd_lu_dev->ld_site;
 	LASSERT(site);
@@ -4626,7 +4626,7 @@ static int mdt_stack_init(const struct lu_env *env, struct mdt_device *mdt,
 	snprintf(name, MAX_OBD_NAME, "%s-osd", dev);
 	rc = mdt_connect_to_next(env, mdt, name, &mdt->mdt_bottom_exp);
 	if (rc)
-		RETURN(rc);
+		GOTO(class_detach, rc);
 	mdt->mdt_bottom =
 		lu2dt_dev(mdt->mdt_bottom_exp->exp_obd->obd_lu_dev);
 
