@@ -9,12 +9,15 @@
 %bcond_without lustre_iokit
 %bcond_without lustre_modules
 %bcond_with lnet_dlc
+%bcond_without build_kmod
 
 %if %{without servers}
     # --without servers overrides --with {ldiskfs|zfs}
     # so undefine the internal variables set by bcond_*
     %undefine with_ldiskfs
     %undefine with_zfs
+%else
+    %undefine with_build_kmod
 %endif
 
 %{!?version: %global version @VERSION@}
@@ -39,6 +42,7 @@
 
 # always append the buildid, even when the caller defines %release
 %define fullrelease %{myrelease}%{buildid}
+%{!?kernel_version: %global kernel_version %kversion}
 
 # in order to get kernel symset and/or kernel module dependencies into
 # the RPM, in order to support weak-modules, the internal dependency gen-
@@ -81,6 +85,12 @@
     %endif
 %endif
 
+%if %{with build_kmod}
+	%global modules_fs_path %{kmoddir}/%{name}/fs
+%else
+	%global modules_fs_path %{kmoddir}/kernel/fs/%{name}
+%endif
+
 %if %{defined cross_path} && %{defined post_script}
 %define rpm_post_base %(dirname %{cross_path})/%{lustre_name}
 %endif
@@ -104,7 +114,11 @@ URL: https://wiki.hpdd.intel.com/
 BuildRoot: %{_tmppath}/lustre-%{version}-root
 Obsoletes: lustre-lite, lustre-lite-utils, lustre-ldap nfs-utils-lustre
 Provides: lustre-lite = %{version}, lustre-lite-utils = %{version}
+%if %{with build_kmod}
+Requires: kmod-%{name} = %{version}
+%else
 Requires: %{name}-modules = %{version}
+%endif
 BuildRequires: libtool
 %if %{with servers}
 Requires: lustre-osd
@@ -114,6 +128,9 @@ Requires: lustre-osd-mount
 Requires: %{cross_requires}
 AutoReqProv: no
 %endif
+%if %{_vendor}=="redhat"
+BuildRequires: redhat-rpm-config
+%endif
 
 %description
 Userspace tools and files for the Lustre file system.
@@ -121,6 +138,8 @@ Userspace tools and files for the Lustre file system.
 %if %{with lustre_modules}
 %package modules
 Summary: Kernel Lustre modules for Linux %{kversion}
+Group: Development/Kernel
+%if %{without build_kmod}
 %if %{defined cross_requires}
 Requires: %{cross_requires}
 AutoReqProv: no
@@ -138,7 +157,11 @@ BuildRequires: libyaml-devel
 %endif
 %endif
 %endif
-Group: Development/Kernel
+%else  #without build_kmod
+BuildRequires: %kernel_module_package_buildreqs
+# Build only for standard kernel variant(s)
+%kernel_module_package -f lustre-modules.files default
+%endif
 
 %description modules
 Lustre file system, server and network drivers for Linux %{kversion}.
@@ -247,7 +270,12 @@ systems.
 Summary: Lustre testing framework
 Group: Development/Kernel
 Provides: %{name}-tests = %{version}
-Requires: %{name} = %{version}, %{name}-modules = %{version}, lustre-iokit
+Requires: %{name} = %{version}, lustre-iokit
+%if %{without build_kmod}
+Requires: %{name}-modules = %{version}
+%else
+Requires: kmod-%{name} = %{version}
+%endif
 Requires: attr, acl, e2fsprogs, rsync, perl, pdsh, lsof, /usr/bin/getconf
 
 %description tests
@@ -302,6 +330,27 @@ ln lnet/ChangeLog ChangeLog-lnet
 
 # Set an explicit path to our Linux tree, if we can.
 cd $RPM_BUILD_DIR/lustre-%{version}
+
+:> lustre-modules.files
+echo '%defattr(-,root,root)' > lustre-modules.files
+echo '%{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/*' >> lustre-modules.files
+%if %{with lustre_tests}
+echo '%exclude %{?rootdir}/lib/modules/%{kversion}/%{modules_fs_path}/llog_test.ko' >> lustre-modules.files
+%endif
+%if %{with ldiskfs}
+echo '%exclude %{?rootdir}/lib/modules/%{kversion}/%{modules_fs_path}/ldiskfs.ko' >> lustre-modules.files
+echo '%exclude %{?rootdir}/lib/modules/%{kversion}/%{modules_fs_path}/osd_ldiskfs.ko' >> lustre-modules.files
+%endif
+%if %{with zfs}
+echo '%exclude %{?rootdir}/lib/modules/%{kversion}/%{modules_fs_path}/osd_zfs.ko' >> lustre-modules.files
+%endif
+%if %{defined rpm_post_base}
+echo '%attr(0555, root, root) %{rpm_post_base}-modules.sh' >> lustre-modules.files
+%endif
+echo '%doc COPYING' >> lustre-modules.files
+echo '%doc ChangeLog-lustre' >> lustre-modules.files
+echo '%doc ChangeLog-lnet' >> lustre-modules.files
+
 # override %optflags so that the vendor's overzealous flags don't create
 # build failures
 %define optflags -g -O2 -Werror
@@ -315,6 +364,12 @@ if [ -n "$CONFIGURE_ARGS" ]; then
 	# it will be set --with-kmp-moddir=%%kmoddir
 	CONFIGURE_ARGS=$(echo $CONFIGURE_ARGS | sed -e 's/"\?--with-kmp-moddir=[^ ][^ ]* \?//')
 fi
+
+%if %{with build_kmod}
+# kmod tools/scripts require %{name} directory with kernel modules
+# server is build with in kernel path to modules
+CONFIGURE_ARGS="$CONFIGURE_ARGS  --with-kmp-moddir=%{kmoddir}/%{name}"
+%endif
 
 # we need to eval "configure" because $CONFIGURE_ARGS could have a quoted
 # string in it which we don't want word splitted by the shell
@@ -333,8 +388,7 @@ fi
 	%{!?with_lnet_dlc:--disable-dlc} \
 	--with-release=%{release} \
 	--with-linux=%{kdir} \
-	--with-linux-obj=%{kobjdir} \
-	--with-kmp-moddir=%{kmoddir}
+	--with-linux-obj=%{kobjdir}
 
 make %{?_smp_mflags} -s %{?make_args}
 
@@ -398,7 +452,7 @@ echo '%{_bindir}/req_layout' >>lustre-tests.files
 echo '%{_sbindir}/wirecheck' >>lustre-tests.files
 echo '%{_sbindir}/wiretest' >>lustre-tests.files
 %if %{with lustre_modules}
-echo '%{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/llog_test.ko' >>lustre-tests.files
+echo '%{?rootdir}/lib/modules/%{kversion}/%{modules_fs_path}/llog_test.ko' >>lustre-tests.files
 %endif
 %endif
 
@@ -467,31 +521,15 @@ find $RPM_BUILD_ROOT%{?rootdir}/lib/modules/%{kversion}/%{kmoddir} \
 %config(noreplace) %{_sysconfdir}/modprobe.d/ko2iblnd.conf
 
 %if %{with lustre_modules}
-%files modules
-%defattr(-,root,root)
-%{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/*
-%if %{with lustre_tests}
-%exclude %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/llog_test.ko
+%if %{without build_kmod}
+%files modules -f lustre-modules.files
 %endif
-%if %{with ldiskfs}
-%exclude %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/ldiskfs.ko
-%exclude %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/osd_ldiskfs.ko
-%endif
-%if %{with zfs}
-%exclude %{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/osd_zfs.ko
-%endif
-%if %{defined rpm_post_base}
-%attr(0555, root, root) %{rpm_post_base}-modules.sh
-%endif
-%doc COPYING
-%doc ChangeLog-lustre
-%doc ChangeLog-lnet
 
 %if %{with ldiskfs}
 %files osd-ldiskfs
 %defattr(-,root,root)
-%{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/ldiskfs.ko
-%{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/osd_ldiskfs.ko
+%{?rootdir}/lib/modules/%{kversion}/%{modules_fs_path}/ldiskfs.ko
+%{?rootdir}/lib/modules/%{kversion}/%{modules_fs_path}/osd_ldiskfs.ko
 %if %{defined rpm_post_base}
 %attr(0555, root, root) %{rpm_post_base}-osd-ldiskfs.sh
 %endif
@@ -508,7 +546,7 @@ find $RPM_BUILD_ROOT%{?rootdir}/lib/modules/%{kversion}/%{kmoddir} \
 %if %{with zfs}
 %files osd-zfs
 %defattr(-,root,root)
-%{?rootdir}/lib/modules/%{kversion}/%{kmoddir}/kernel/fs/@PACKAGE@/osd_zfs.ko
+%{?rootdir}/lib/modules/%{kversion}/%{modules_fs_path}/osd_zfs.ko
 %if %{defined rpm_post_base}
 %attr(0555, root, root) %{rpm_post_base}-osd-zfs.sh
 %endif
