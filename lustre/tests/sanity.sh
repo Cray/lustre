@@ -6604,6 +6604,8 @@ test_103a() {
 	run_acl_subtest misc || error  "misc test failed"
 	echo "performing permissions..."
 	run_acl_subtest permissions || error "permissions failed"
+	echo "performing permissions xattr..."
+	run_acl_subtest permissions_xattr || error "permissions_xattr failed"
 	echo "performing setfacl..."
 	run_acl_subtest setfacl || error  "setfacl test failed"
 

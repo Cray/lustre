@@ -244,6 +244,8 @@ test_2 () {
     	run_rmtacl_subtest misc || error "misc"
     	echo "performing permissions..."
     	run_rmtacl_subtest permissions || error "permissions"
+	echo "performing permissions xattr..."
+	run_rmtacl_subtest permissions_xattr || error "permissions_xattr"
     	echo "performing setfacl..."
     	run_rmtacl_subtest setfacl || error "setfacl"
 

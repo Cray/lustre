@@ -928,7 +928,7 @@ stop:
 }
 
 static int mdd_xattr_sanity_check(const struct lu_env *env,
-				  struct mdd_object *obj)
+				  struct mdd_object *obj, const char *name)
 {
 	struct lu_attr  *tmp_la = &mdd_env_info(env)->mti_la;
 	struct lu_ucred *uc     = lu_ucred_assert(env);
@@ -942,9 +942,19 @@ static int mdd_xattr_sanity_check(const struct lu_env *env,
 	if (rc)
 		RETURN(rc);
 
-	if ((uc->uc_fsuid != tmp_la->la_uid) &&
-	    !md_capable(uc, CFS_CAP_FOWNER))
-		RETURN(-EPERM);
+	if (strncmp(XATTR_USER_PREFIX, name,
+		    sizeof(XATTR_USER_PREFIX) - 1) == 0) {
+		/* For sticky directories, only the owner and privileged user
+		 * can write attributes. */
+		if (S_ISDIR(tmp_la->la_mode) && (tmp_la->la_mode & S_ISVTX) &&
+		    (uc->uc_fsuid != tmp_la->la_uid) &&
+		    !md_capable(uc, CFS_CAP_FOWNER))
+			RETURN(-EPERM);
+	} else {
+		if ((uc->uc_fsuid != tmp_la->la_uid) &&
+		    !md_capable(uc, CFS_CAP_FOWNER))
+			RETURN(-EPERM);
+	}
 
 	RETURN(rc);
 }
@@ -1063,7 +1073,7 @@ static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
 	int			 rc;
         ENTRY;
 
-	rc = mdd_xattr_sanity_check(env, mdd_obj);
+	rc = mdd_xattr_sanity_check(env, mdd_obj, name);
 	if (rc)
 		RETURN(rc);
 
@@ -1165,7 +1175,7 @@ int mdd_xattr_del(const struct lu_env *env, struct md_object *obj,
         int  rc;
         ENTRY;
 
-        rc = mdd_xattr_sanity_check(env, mdd_obj);
+        rc = mdd_xattr_sanity_check(env, mdd_obj, name);
         if (rc)
                 RETURN(rc);
 

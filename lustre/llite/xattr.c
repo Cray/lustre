@@ -147,6 +147,14 @@ int ll_setxattr_common(struct inode *inode, const char *name,
             strcmp(name, "security.selinux") == 0)
                 RETURN(-EOPNOTSUPP);
 
+	/* In user.* namespace, only regular files and directories can have
+	 * extended attributes.
+	 */
+	if (xattr_type == XATTR_USER_T) {
+		if (!S_ISREG(inode->i_mode) && !S_ISDIR(inode->i_mode))
+			return -EPERM;
+	}
+
 #ifdef CONFIG_FS_POSIX_ACL
 	if (sbi->ll_flags & LL_SBI_RMT_CLIENT &&
 	    (xattr_type == XATTR_ACL_ACCESS_T ||
