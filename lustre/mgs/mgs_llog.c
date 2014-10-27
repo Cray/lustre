@@ -1472,6 +1472,11 @@ int mgs_write_log_direct_all(const struct lu_env *env,
 		if (server_only && strstr(dirent->name, "-client") != NULL)
 			goto next;
 
+		if (strlen(dirent->name) <= len ||
+		    strncmp(fsname, dirent->name, len) != 0 ||
+		    dirent->name[len] != '-')
+			goto next;
+
 		if (strncmp(fsname, dirent->name, len) == 0) {
 			CDEBUG(D_MGS, "Changing log %s\n", dirent->name);
                         /* Erase any old settings of this same parameter */
