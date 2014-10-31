@@ -598,6 +598,20 @@ download_ofed() {
 
 }
 
+download_mlnx() {
+	local force="${1:-false}"
+	local version="${MLNX_VERSION}"
+	local distro_name="${DISTRO}"
+	local arch="${TARGET_ARCH}"
+	local location="http://www.mellanox.com/downloads/ofed/MLNX_OFED-${version}"
+	# this is a work around for suse distro (sles11.3). what we need is
+	# sles11sp3. We really need to redesign how we use target and distro
+	[[ $distro_name =~ sles ]] && distro_name=${DISTRO/./sp}
+	local file="MLNX_OFED_LINUX-${version}-${distro_name}-${arch}.tgz"
+
+	download_file "$location/$file" "$KERNELTREE" "$force"
+}
+
 parse_mpss_info() {
     local file="$1"
     local build="$2"
@@ -836,27 +850,38 @@ untar() {
 }
 
 unpack_mlnx() {
-    local mlnx_distro=$(autodetect_distro)
-    mlnx_distro=${mlnx_distro/-/}
-    local mlnx_filename="MLNX_OFED_LINUX-${MLNX_VERSION}-${mlnx_distro}-${TARGET_ARCH}"
+	local version="${MLNX_VERSION}"
+	local distro_name="${DISTRO}"
+	local arch="${TARGET_ARCH}"
 
-    #if a src tarball has been given in the command line, we use it
-    #The format of the directory after untar MUST be in MLNX_OFED_SRC-${MNLX_VERSION}
-    if [ -n "${OFED_SRC}" ]; then
-        if ! untar "$KERNELTREE/${OFED_SRC}"; then
-            return 1
-        fi
-    else
-        # it's not important what distro we get the tarball since we only interest in the src
-        if ! untar "$KERNELTREE/${mlnx_filename}.tgz"; then
-            return 1
-        fi
-        # we need to untar again to get the src since it's being wrapped inside the tarball
-        if ! untar "${mlnx_filename}/src/MLNX_OFED_SRC-${MLNX_VERSION}.tgz"; then
-            return 1
-        fi
-    fi
-    [ -d OFED ] || ln -sf MLNX_OFED_SRC-[0-9].[0-9]* OFED
+	# this is a work around for suse distro (sles11.3). what we need is
+	# sles11sp3. We really need to redesign how we use target and distro
+	[[ $distro_name =~ sles ]] && distro_name=${DISTRO/./sp}
+	local mlnx_filename="MLNX_OFED_LINUX-${version}-${distro_name}-${arch}"
+
+	#if a src tarball has been given in the command line, we use it
+	#The format of the directory after untar MUST be in MLNX_OFED_SRC-${version}
+	if [ -n "${OFED_SRC}" ]; then
+		if ! untar "$KERNELTREE/${OFED_SRC}"; then
+			return 1
+		fi
+	else
+	# it's not important what distro we get the tarball since we only
+	# interest in the src
+		if ! untar "$KERNELTREE/${mlnx_filename}.tgz"; then
+			return 1
+		fi
+		# we need to untar again to get the src since it's being
+		# wrapped inside the tarball
+		# There are cases where the source version is different
+		# than the tarball.
+		# (ie. MLNX_OFED_LINUX-2.3-1.0.1 but MLNX_OFED_SRC-2.3-1.0.0)
+		local src=$(ls ${mlnx_filename}/src/MLNX_OFED_SRC-${version%.*}*.tgz)
+		if ! untar "$src"; then
+			return 1
+		fi
+	fi
+	[ -d OFED ] || ln -sf MLNX_OFED_SRC-[0-9].[0-9]* OFED
 }
 
 unpack_ofed() {
@@ -1354,14 +1379,19 @@ build_kernel_ib() {
         K_SRC="KSRC"
     fi
 
-    local OFED_CORE="--with-core-mod --with-ipoib-mod --with-user_mad-mod --with-user_access-mod --with-addr_trans-mod"
-    local OFED_HARDWARE="--with-mthca-mod --with-mlx4-mod --with-mlx4_en-mod --with-cxgb3-mod --with-nes-mod"
+	local OFED_CORE="--with-core-mod --with-ipoib-mod --with-user_mad-mod \
+	--with-user_access-mod --with-addr_trans-mod --with-madeye-mod"
+	local OFED_HARDWARE="--with-mthca-mod --with-mlx4-mod \
+	--with-mlx4_en-mod --with-cxgb3-mod --with-mlx4_en-mod \
+	--with-cxgb3-mod --with-nes-mod --with-mlx5-mod --with-cxgb4-mod \
+	--with-qib-mod"
 
-    if compare_version $o2ib_version 3.0; then
-	OFED_CORE="$OFED_CORE --with-madeye-mod --with-rds-mod"
-    else
-	OFED_HARDWARE="$OFED_HARDWARE --with-cxgb4-mod"
-    fi
+	# Removing the check for older version support
+    #if compare_version $o2ib_version 3.0; then
+    #    OFED_CORE="$OFED_CORE --with-madeye-mod --with-rds-mod"
+    #else
+    #    OFED_HARDWARE="$OFED_HARDWARE --with-cxgb4-mod"
+    #fi
 
     # some I/B drivers are architecture dependent and kernel-ib's configure
     # does not figure it out for us ~sigh~
@@ -1675,6 +1705,7 @@ build_ofed() {
     local o2ib_version="$2"
     local kib_prefix
     local kib_rpm
+    local pre_prefix
 
     # if an ofed version is given, then it means use OFED proper,
     # not any vendor specific "inkernel" version
@@ -1699,6 +1730,7 @@ build_ofed() {
         fi
     elif compare_version $o2ib_version 3.0; then
         kib_prefix="ofa_kernel"
+	[ -n "${MLNX_VERSION}" ] && pre_prefix="mlnx-"
         kib_rpm="kernel-ib"
     else
         kib_prefix="compat-rdma"
@@ -1740,7 +1772,7 @@ build_ofed() {
             create_rpmbuild_dirs
         fi
         # build it
-        build_kernel_ib "${linux}" "${kib_prefix}" "${kib_rpm}" "${o2ib_version}"
+        build_kernel_ib "${linux}" "${pre_prefix}${kib_prefix}" "${kib_rpm}" "${o2ib_version}"
 
         if [ -z "$REUSE_SIGNATURE" ]; then
             echo "No reuse signature was caculated so not storing the built ofed"
@@ -1783,7 +1815,9 @@ build_ofed() {
     if ! rpm2cpio < $rpm | cpio -id; then
         fatal 1 "could not unpack the ${kib_rpm}-devel rpm."
     fi
-    CONFIGURE_FLAGS="--with-o2ib=$(pwd)/usr/src/${kib_prefix} ${CONFIGURE_FLAGS}"
+	o2ib_location="$(pwd)/usr/src/${kib_prefix}"
+	[ -n "${MLNX_VERSION}" ] && o2ib_location="${o2ib_location}/default"
+	CONFIGURE_FLAGS="--with-o2ib=${o2ib_location} ${CONFIGURE_FLAGS}"
     popd >/dev/null
 
 }
@@ -2198,6 +2232,7 @@ load_target
 if [ -n "$MLNX_VERSION" ]; then
     # Don't build OFED at all since it's explicitly built Mellanox
     OFED_VERSION=""
+	download_mlnx
     unpack_mlnx || fatal 1 "Error unpacking MLNX tarball"
 fi
 
