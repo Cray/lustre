@@ -113,6 +113,12 @@ find_linux_devel_paths() {
     LINUX=$path/usr/src/linux-${lnxmaj}${lnxmin}-${lnxrel}
     LINUXOBJ=$path/usr/src/linux-${lnxmaj}${lnxmin}-${lnxrel}-obj/$(resolve_arch $TARGET_ARCH $PATCHLESS)/$RPMSMPTYPE
 
+	# We need to copy the headers from the source to the object tree for
+	# MOFED to be able to compile (a bug in ofed?)
+	if [ -e ${LINUX}/include ] && [ -e ${LINUXOBJ}/include ]; then
+		cp -rf ${LINUX}/include ${LINUXOBJ}
+	fi
+
     return 0
 }
 
