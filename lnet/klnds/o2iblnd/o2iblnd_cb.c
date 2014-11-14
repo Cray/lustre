@@ -44,7 +44,6 @@
 
 static void kiblnd_peer_alive(kib_peer_t *peer);
 static void kiblnd_peer_connect_failed(kib_peer_t *peer, int active, int error);
-static void kiblnd_check_sends_locked(kib_conn_t *conn);
 static void kiblnd_init_tx_msg(lnet_ni_t *ni, kib_tx_t *tx,
 			       int type, int body_nob);
 static int kiblnd_init_rdma(kib_conn_t *conn, kib_tx_t *tx, int type,
@@ -52,8 +51,9 @@ static int kiblnd_init_rdma(kib_conn_t *conn, kib_tx_t *tx, int type,
 static void kiblnd_queue_tx_locked(kib_tx_t *tx, kib_conn_t *conn);
 static void kiblnd_queue_tx(kib_tx_t *tx, kib_conn_t *conn);
 static void kiblnd_unmap_tx(lnet_ni_t *ni, kib_tx_t *tx);
+static void kiblnd_check_sends_locked(kib_conn_t *conn);
 
-static void
+void
 kiblnd_tx_done (lnet_ni_t *ni, kib_tx_t *tx)
 {
 	lnet_msg_t *lntmsg[2];
@@ -219,6 +219,7 @@ kiblnd_post_rx (kib_rx_t *rx, int credit)
 		conn->ibc_reserved_credits++;
 	kiblnd_check_sends_locked(conn);
 	spin_unlock(&conn->ibc_lock);
+
 out:
 	kiblnd_conn_decref(conn);
 	return rc;
@@ -3199,10 +3200,10 @@ kiblnd_check_conns (int idx)
 		kiblnd_conn_decref(conn);
 	}
 
-	/* In case we have enough credits to return via a
-	 * NOOP, but there were no non-blocking tx descs
-	 * free to do it last time... */
-	while (!list_empty(&checksends)) {
+        /* In case we have enough credits to return via a
+         * NOOP, but there were no non-blocking tx descs
+         * free to do it last time... */
+        while (!list_empty(&checksends)) {
 		conn = list_entry(checksends.next,
 				  kib_conn_t, ibc_connd_list);
 		list_del(&conn->ibc_connd_list);
