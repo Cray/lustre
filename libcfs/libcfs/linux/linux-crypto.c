@@ -201,7 +201,8 @@ static void cfs_crypto_performance_test(unsigned char alg_id,
 	unsigned char		   hash[64];
 	unsigned int		    hash_len = 64;
 
-	for (start = jiffies, end = start + sec * HZ, bcount = 0;
+	for (start = jiffies,
+	     end = start + sec * msecs_to_jiffies(MSEC_PER_SEC), bcount = 0;
 	     time_before(jiffies, end); bcount++) {
 		err = cfs_crypto_hash_digest(alg_id, buf, buf_len, NULL, 0,
 					     hash, &hash_len);
