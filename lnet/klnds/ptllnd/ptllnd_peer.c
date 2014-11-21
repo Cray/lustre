@@ -600,7 +600,9 @@ kptllnd_post_tx(kptl_peer_t *peer, kptl_tx_t *tx, int nfrag)
         }
 
 
-	tx->tx_deadline = jiffies + (*kptllnd_tunables.kptl_timeout * HZ);
+	tx->tx_deadline = jiffies +
+			  msecs_to_jiffies(*kptllnd_tunables.kptl_timeout *
+					   MSEC_PER_SEC);
 	tx->tx_active = 1;
 	tx->tx_msg_mdh = msg_mdh;
 	kptllnd_queue_tx(peer, tx);

@@ -263,7 +263,9 @@ kptllnd_active_rdma(kptl_rx_t *rx, lnet_msg_t *lntmsg, int type,
         /* lnet_finalize() will be called when tx is torn down, so I must
          * return success from here on... */
 
-	tx->tx_deadline = jiffies + (*kptllnd_tunables.kptl_timeout * HZ);
+	tx->tx_deadline = jiffies +
+			  msecs_to_jiffies(*kptllnd_tunables.kptl_timeout *
+					   MSEC_PER_SEC);
 	tx->tx_rdma_mdh = mdh;
 	tx->tx_active = 1;
 	cfs_list_add_tail(&tx->tx_list, &peer->peer_activeq);
@@ -710,7 +712,7 @@ kptllnd_watchdog(void *arg)
                                      kptllnd_data.kptl_peer_hash_size;
                         }
 
-			deadline += p * HZ;
+			deadline += msecs_to_jiffies(p * MSEC_PER_SEC);
 			stamp++;
 			continue;
                 }
