@@ -974,7 +974,11 @@ static inline __u64 kiblnd_sg_dma_address(struct ib_device *dev,
 static inline unsigned int kiblnd_sg_dma_len(struct ib_device *dev,
                                              struct scatterlist *sg)
 {
-        return ib_sg_dma_len(dev, sg);
+	unsigned int	len;
+
+	len = ib_sg_dma_len(dev, sg);
+	/* NB: some OFED versions can return zero */
+	return len != 0 ? len : sg->length;
 }
 
 /* XXX We use KIBLND_CONN_PARAM(e) as writable buffer, it's not strictly
@@ -1049,7 +1053,7 @@ struct ib_mr *kiblnd_find_dma_mr(kib_hca_dev_t *hdev,
 void kiblnd_map_rx_descs(kib_conn_t *conn);
 void kiblnd_unmap_rx_descs(kib_conn_t *conn);
 int kiblnd_map_tx(lnet_ni_t *ni, kib_tx_t *tx,
-                  kib_rdma_desc_t *rd, int nfrags);
+                  kib_rdma_desc_t *rd, int nfrags, int nob);
 void kiblnd_unmap_tx(lnet_ni_t *ni, kib_tx_t *tx);
 void kiblnd_pool_free_node(kib_pool_t *pool, cfs_list_t *node);
 cfs_list_t *kiblnd_pool_alloc_node(kib_poolset_t *ps);

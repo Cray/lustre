@@ -654,12 +654,12 @@ kiblnd_unmap_tx(lnet_ni_t *ni, kib_tx_t *tx)
 
 int
 kiblnd_map_tx(lnet_ni_t *ni, kib_tx_t *tx,
-              kib_rdma_desc_t *rd, int nfrags)
+              kib_rdma_desc_t *rd, int nfrags, int nob)
 {
         kib_hca_dev_t      *hdev  = tx->tx_pool->tpo_hdev;
         kib_net_t          *net   = ni->ni_data;
         struct ib_mr       *mr    = NULL;
-        __u32               nob;
+	__u32		    dma_len;
         int                 i;
 
         /* If rd is not tx_rd, it's going to get sent to a peer and I'm the
@@ -671,13 +671,19 @@ kiblnd_map_tx(lnet_ni_t *ni, kib_tx_t *tx,
                 kiblnd_dma_map_sg(hdev->ibh_ibdev,
                                   tx->tx_frags, tx->tx_nfrags, tx->tx_dmadir);
 
-        for (i = 0, nob = 0; i < rd->rd_nfrags; i++) {
+	for (i = 0, dma_len = 0; i < rd->rd_nfrags; i++) {
                 rd->rd_frags[i].rf_nob  = kiblnd_sg_dma_len(
                         hdev->ibh_ibdev, &tx->tx_frags[i]);
                 rd->rd_frags[i].rf_addr = kiblnd_sg_dma_address(
                         hdev->ibh_ibdev, &tx->tx_frags[i]);
-                nob += rd->rd_frags[i].rf_nob;
-        }
+		dma_len += rd->rd_frags[i].rf_nob;
+	}
+
+	if (dma_len != nob) {
+		CERROR("DMA length does not match payload size %d/%d, "
+		       "please contact vendor for help\n", dma_len, nob);
+		return -EIO;
+	}
 
         /* looking for pre-mapping MR */
         mr = kiblnd_find_rd_dma_mr(hdev, rd);
@@ -688,9 +694,9 @@ kiblnd_map_tx(lnet_ni_t *ni, kib_tx_t *tx,
         }
 
 	if (net->ibn_fmr_ps != NULL)
-		return kiblnd_fmr_map_tx(net, tx, rd, nob);
+		return kiblnd_fmr_map_tx(net, tx, rd, dma_len);
 	else if (net->ibn_pmr_ps != NULL)
-		return kiblnd_pmr_map_tx(net, tx, rd, nob);
+		return kiblnd_pmr_map_tx(net, tx, rd, dma_len);
 
 	return -EINVAL;
 }
@@ -704,6 +710,7 @@ kiblnd_setup_rd_iov(lnet_ni_t *ni, kib_tx_t *tx, kib_rdma_desc_t *rd,
         struct page        *page;
         struct scatterlist *sg;
         unsigned long       vaddr;
+	int		    tmpnob;
         int                 fragnob;
         int                 page_offset;
 
@@ -718,6 +725,7 @@ kiblnd_setup_rd_iov(lnet_ni_t *ni, kib_tx_t *tx, kib_rdma_desc_t *rd,
                 LASSERT (niov > 0);
         }
 
+	tmpnob = nob;
         sg = tx->tx_frags;
         do {
                 LASSERT (niov > 0);
@@ -730,7 +738,7 @@ kiblnd_setup_rd_iov(lnet_ni_t *ni, kib_tx_t *tx, kib_rdma_desc_t *rd,
                         return -EFAULT;
                 }
 
-                fragnob = min((int)(iov->iov_len - offset), nob);
+		fragnob = min((int)(iov->iov_len - offset), tmpnob);
                 fragnob = min(fragnob, (int)PAGE_SIZE - page_offset);
 
                 sg_set_page(sg, page, fragnob, page_offset);
@@ -743,10 +751,10 @@ kiblnd_setup_rd_iov(lnet_ni_t *ni, kib_tx_t *tx, kib_rdma_desc_t *rd,
                         iov++;
                         niov--;
                 }
-                nob -= fragnob;
-        } while (nob > 0);
+		tmpnob -= fragnob;
+	} while (tmpnob > 0);
 
-        return kiblnd_map_tx(ni, tx, rd, sg - tx->tx_frags);
+	return kiblnd_map_tx(ni, tx, rd, sg - tx->tx_frags, nob);
 }
 
 int
@@ -755,6 +763,7 @@ kiblnd_setup_rd_kiov (lnet_ni_t *ni, kib_tx_t *tx, kib_rdma_desc_t *rd,
 {
         kib_net_t          *net = ni->ni_data;
         struct scatterlist *sg;
+	int		    tmpnob;
         int                 fragnob;
 
         CDEBUG(D_NET, "niov %d offset %d nob %d\n", nkiov, offset, nob);
@@ -770,11 +779,12 @@ kiblnd_setup_rd_kiov (lnet_ni_t *ni, kib_tx_t *tx, kib_rdma_desc_t *rd,
                 LASSERT (nkiov > 0);
         }
 
+	tmpnob = nob;
         sg = tx->tx_frags;
         do {
                 LASSERT (nkiov > 0);
 
-                fragnob = min((int)(kiov->kiov_len - offset), nob);
+		fragnob = min((int)(kiov->kiov_len - offset), tmpnob);
 
                 sg_set_page(sg, kiov->kiov_page, fragnob,
                             kiov->kiov_offset + offset);
@@ -783,10 +793,10 @@ kiblnd_setup_rd_kiov (lnet_ni_t *ni, kib_tx_t *tx, kib_rdma_desc_t *rd,
                 offset = 0;
                 kiov++;
                 nkiov--;
-                nob -= fragnob;
-        } while (nob > 0);
+		tmpnob -= fragnob;
+	} while (tmpnob > 0);
 
-        return kiblnd_map_tx(ni, tx, rd, sg - tx->tx_frags);
+	return kiblnd_map_tx(ni, tx, rd, sg - tx->tx_frags, nob);
 }
 
 int
