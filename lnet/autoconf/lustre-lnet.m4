@@ -358,28 +358,53 @@ AC_SUBST(MXLND)
 #
 # LN_CONFIG_O2IB
 #
+# If current OFED installed (assume with "ofed_info") and devel
+# headers are not found, error because we assume OFED infiniband
+# driver needs to be used and we must configure/build with it.
+# Current OFED headers detection mechanism allow for non-standard
+# prefix but relies on "ofed_info" command and on "%prefix/openib"
+# link (both are ok for 1.5.x and 3.x versions), and should work
+# for both source and DKMS builds.
+#
 AC_DEFUN([LN_CONFIG_O2IB],
 [AC_MSG_CHECKING([whether to use Compat RDMA])
 # set default
 AC_ARG_WITH([o2ib],
-	AC_HELP_STRING([--with-o2ib=path],
+	AC_HELP_STRING([--with-o2ib=[yes,no,<path>]],
 	               [build o2iblnd against path]),
-	[
-		case $with_o2ib in
-		yes)    O2IBPATHS="$LINUX $LINUX/drivers/infiniband"
-			ENABLEO2IB=2
-			;;
-		no)     ENABLEO2IB=0
-			;;
-		*)      O2IBPATHS=$with_o2ib
-			ENABLEO2IB=3
-			;;
-		esac
-	],[
-		O2IBPATHS="$LINUX $LINUX/drivers/infiniband"
-		ENABLEO2IB=1
-	])
-if test $ENABLEO2IB -eq 0; then
+	[], [with_o2ib="yes"])
+
+case $with_o2ib in
+	yes)    AS_IF(which ofed_info, [
+			O2IBPATHS=$(ofed_info | egrep -w 'compat-rdma-devel|kernel-ib-devel|ofa_kernel-devel' | xargs rpm -ql | grep '/openib$')
+			AS_IF([test -z "$O2IBPATHS"], [
+				AC_MSG_ERROR([
+You seem to have an OFED installed but have not installed it's devel package.
+If you still want to build Lustre for your OFED I/B stack, you need to install its devel headers RPM.
+Instead, if you want to build Lustre for your kernel's built-in I/B stack rather than your installed OFED stack, either remove the OFED package(s) or use --with-o2ib=no.
+])
+			])
+			AS_IF([test $(echo $O2IBPATHS | wc -w) -ge 2], [
+				AC_MSG_ERROR([
+It appears that you have multiple OFED versions installed.
+If you still want to build Lustre for your OFED I/B stack, you need to install a single version with its devel headers RPM.
+Instead, if you want to build Lustre for your kernel's built-in I/B stack rather than your installed OFED stack, either remove the OFED package(s) or use --with-o2ib=no.
+])
+			])
+			OFED="yes"
+		], [
+			O2IBPATHS="$LINUX $LINUX/drivers/infiniband"
+		])
+		ENABLEO2IB="yes"
+		;;
+	no)     ENABLEO2IB="no"
+		;;
+	*)      O2IBPATHS=$with_o2ib
+		ENABLEO2IB="withpath"
+		;;
+esac
+
+if test $ENABLEO2IB = "no"; then
 	AC_MSG_RESULT([no])
 else
 	o2ib_found=false
@@ -388,10 +413,11 @@ else
 			   -f ${O2IBPATH}/include/rdma/ib_cm.h -a \
 			   -f ${O2IBPATH}/include/rdma/ib_verbs.h -a \
 			   -f ${O2IBPATH}/include/rdma/ib_fmr_pool.h \); then
-			if test \( -d ${O2IBPATH}/kernel_patches -a \
+			if test \( \( -d ${O2IBPATH}/patches -o \
+				   -d ${O2IBPATH}/kernel_patches \) -a \
 				   -f ${O2IBPATH}/Makefile \); then
 				AC_MSG_RESULT([no])
-				AC_MSG_ERROR([you appear to be trying to use the OFED distribution's source directory (${O2IBPATH}) rather than the "development/headers" directory which is likely in ${O2IBPATH%-*}])
+				AC_MSG_ERROR([trying to use the, explicit or detected, OFED distribution's source directory (${O2IBPATH}) rather than the "development/headers" directory which is likely in ${O2IBPATH%-*}])
 			fi
 			o2ib_found=true
 			break
@@ -400,9 +426,8 @@ else
 	if ! $o2ib_found; then
 		AC_MSG_RESULT([no])
 		case $ENABLEO2IB in
-			1) ;;
-			2) AC_MSG_ERROR([kernel OpenIB gen2 headers not present]);;
-			3) AC_MSG_ERROR([bad --with-o2ib path]);;
+			"yes") AC_MSG_ERROR([no OFED nor kernel OpenIB gen2 headers not present]);;
+			"withpath") AC_MSG_ERROR([bad --with-o2ib path]);;
 			*) AC_MSG_ERROR([internal error]);;
 		esac
 	else
@@ -472,16 +497,15 @@ else
 		],[
 		        AC_MSG_RESULT([no])
 		        case $ENABLEO2IB in
-		        1) ;;
-		        2) AC_MSG_ERROR([can't compile with kernel OpenIB gen2 headers]);;
-		        3) AC_MSG_ERROR([can't compile with OpenIB gen2 headers under $O2IBPATH]);;
+		        "yes") AC_MSG_ERROR([can't compile with kernel OpenIB gen2 headers]);;
+		        "withpath") AC_MSG_ERROR([can't compile with OpenIB gen2 headers under $O2IBPATH]);;
 		        *) AC_MSG_ERROR([internal error]);;
 		        esac
 		        O2IBLND=""
 		])
 		# we know at this point that the found OFED source is good
 		O2IB_SYMVER=""
-		if test $ENABLEO2IB -eq 3 ; then
+		if test $ENABLEO2IB = "withpath" -o $OFED = "yes" ; then
 			# OFED default rpm not handle sles10 Modules.symvers name
 			for name in Module.symvers Modules.symvers; do
 				if test -f $O2IBPATH/$name; then
@@ -500,7 +524,7 @@ else
 				cat $PWD/$SYMVERFILE.old $O2IBPATH/$O2IB_SYMVER > $PWD/$SYMVERFILE
 				rm $PWD/$SYMVERFILE.old
 			else
-				AC_MSG_ERROR([an external source tree was specified for o2iblnd however I could not find a $O2IBPATH/Module.symvers there])
+				AC_MSG_ERROR([an external source tree was, either specified or detected, for o2iblnd however I could not find a $O2IBPATH/Module.symvers there])
 			fi
 		fi
 
@@ -512,7 +536,7 @@ AC_SUBST(EXTRA_OFED_INCLUDE)
 AC_SUBST(O2IBLND)
 
 # In RHEL 6.2, rdma_create_id() takes the queue-pair type as a fourth argument
-if test $ENABLEO2IB -ne 0; then
+if test $ENABLEO2IB != "no"; then
 	AC_MSG_CHECKING([if rdma_create_id wants four args])
 	LB_LINUX_TRY_COMPILE([
 		#ifdef HAVE_COMPAT_RDMA
