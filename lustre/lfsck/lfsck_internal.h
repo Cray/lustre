@@ -43,7 +43,7 @@
 #include <lustre_dlm.h>
 #include <lustre_fid.h>
 
-#define HALF_SEC			(HZ >> 1)
+#define HALF_SEC			msecs_to_jiffies(MSEC_PER_SEC >> 1)
 #define LFSCK_CHECKPOINT_INTERVAL	60
 
 #define LFSCK_NAMEENTRY_DEAD    	1 /* The object has been unlinked. */

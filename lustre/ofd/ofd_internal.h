@@ -70,7 +70,7 @@ struct ofd_mod_data {
 };
 
 #define OFD_FMD_MAX_NUM_DEFAULT 128
-#define OFD_FMD_MAX_AGE_DEFAULT ((obd_timeout + 10) * HZ)
+#define OFD_FMD_MAX_AGE_DEFAULT msecs_to_jiffies((obd_timeout+10)*MSEC_PER_SEC)
 
 enum {
 	LPROC_OFD_READ_BYTES = 0,

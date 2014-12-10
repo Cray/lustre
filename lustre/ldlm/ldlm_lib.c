@@ -2083,7 +2083,7 @@ static int target_recovery_thread(void *arg)
                 target_request_copy_put(req);
         }
 
-	delta = (jiffies - delta) / HZ;
+	delta = jiffies_to_msecs(jiffies - delta) / MSEC_PER_SEC;
 	CDEBUG(D_INFO,"4: recovery completed in %lus - %d/%d reqs/locks\n",
 	      delta, obd->obd_replayed_requests, obd->obd_replayed_locks);
 	if (delta > OBD_RECOVERY_TIME_SOFT) {

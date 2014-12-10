@@ -161,7 +161,7 @@ int sptlrpc_proc_read_enc_pool(char *page, char **start, off_t off, int count,
                       "cache missing:           %lu\n"
                       "low free mark:           %lu\n"
                       "max waitqueue depth:     %u\n"
-                      "max wait time:           "CFS_TIME_T"/%u\n"
+		      "max wait time:           "CFS_TIME_T"/%lu\n"
                       ,
 		      totalram_pages,
                       PAGES_PER_POOL,
@@ -180,7 +180,8 @@ int sptlrpc_proc_read_enc_pool(char *page, char **start, off_t off, int count,
 		      page_pools.epp_st_missings,
 		      page_pools.epp_st_lowfree,
 		      page_pools.epp_st_max_wqlen,
-		      page_pools.epp_st_max_wait, HZ
+		      page_pools.epp_st_max_wait,
+		      msecs_to_jiffies(MSEC_PER_SEC)
 		     );
 
 	spin_unlock(&page_pools.epp_lock);
@@ -768,16 +769,17 @@ void sptlrpc_enc_pool_fini(void)
 
         enc_pools_free();
 
-        if (page_pools.epp_st_access > 0) {
-                CDEBUG(D_SEC,
-                       "max pages %lu, grows %u, grow fails %u, shrinks %u, "
-                       "access %lu, missing %lu, max qlen %u, max wait "
-                       CFS_TIME_T"/%d\n",
-                       page_pools.epp_st_max_pages, page_pools.epp_st_grows,
-                       page_pools.epp_st_grow_fails,
+	if (page_pools.epp_st_access > 0) {
+		CDEBUG(D_SEC,
+		       "max pages %lu, grows %u, grow fails %u, shrinks %u, "
+		       "access %lu, missing %lu, max qlen %u, max wait "
+		       CFS_TIME_T"/%lu\n",
+		       page_pools.epp_st_max_pages, page_pools.epp_st_grows,
+		       page_pools.epp_st_grow_fails,
 		       page_pools.epp_st_shrinks, page_pools.epp_st_access,
 		       page_pools.epp_st_missings, page_pools.epp_st_max_wqlen,
-		       page_pools.epp_st_max_wait, HZ);
+		       page_pools.epp_st_max_wait,
+		       msecs_to_jiffies(MSEC_PER_SEC));
 	}
 }
 

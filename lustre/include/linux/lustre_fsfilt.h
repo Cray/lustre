@@ -66,17 +66,21 @@ extern void fsfilt_put_ops(struct fsfilt_operations *fs_ops);
 
 #define __fsfilt_check_slow(obd, start, msg)                              \
 do {                                                                      \
-	if (cfs_time_before(jiffies, start + 15 * HZ))			  \
+	if (cfs_time_before(jiffies, start + msecs_to_jiffies(15 *	  \
+			    MSEC_PER_SEC)))				  \
 		break;                                                    \
-	else if (cfs_time_before(jiffies, start + 30 * HZ))		  \
+	else if (cfs_time_before(jiffies, start + msecs_to_jiffies(30 *	  \
+				 MSEC_PER_SEC)))			  \
 		CDEBUG(D_VFSTRACE, "%s: slow %s %lus\n", obd->obd_name,   \
-		       msg, (jiffies-start) / HZ);                    	  \
-	else if (cfs_time_before(jiffies, start + DISK_TIMEOUT * HZ))	  \
+		       msg, jiffies_to_msecs(jiffies-start)/MSEC_PER_SEC);\
+	else if (cfs_time_before(jiffies, start +			  \
+				 msecs_to_jiffies(DISK_TIMEOUT *	  \
+				 MSEC_PER_SEC)))			  \
 		CWARN("%s: slow %s %lus\n", obd->obd_name, msg,           \
-		      (jiffies - start) / HZ);				  \
+		      jiffies_to_msecs(jiffies - start) / MSEC_PER_SEC);  \
 	else                                                              \
 		CERROR("%s: slow %s %lus\n", obd->obd_name, msg,          \
-		       (jiffies - start) / HZ);				  \
+		       jiffies_to_msecs(jiffies - start) / MSEC_PER_SEC); \
 } while (0)
 
 #define fsfilt_check_slow(obd, start, msg)              \
