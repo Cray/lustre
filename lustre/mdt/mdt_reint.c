@@ -832,7 +832,8 @@ static int mdt_reint_unlink(struct mdt_thread_info *info,
 	 * this now because a running HSM restore on the child (unlink
 	 * victim) will hold the layout lock. See LU-4002. */
 	rc = mdt_object_lock(info, mc, child_lh,
-			     MDS_INODELOCK_LOOKUP | MDS_INODELOCK_UPDATE,
+			     MDS_INODELOCK_LOOKUP | MDS_INODELOCK_UPDATE |
+			     MDS_INODELOCK_XATTR,
 			     MDT_CROSS_LOCK);
 	if (rc != 0)
 		GOTO(put_child, rc);
