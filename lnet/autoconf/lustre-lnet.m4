@@ -401,6 +401,7 @@ Instead, if you want to build Lustre for your kernel's built-in I/B stack rather
 		;;
 	*)      O2IBPATHS=$with_o2ib
 		ENABLEO2IB="withpath"
+		OFED="yes"
 		;;
 esac
 
@@ -413,7 +414,8 @@ else
 			   -f ${O2IBPATH}/include/rdma/ib_cm.h -a \
 			   -f ${O2IBPATH}/include/rdma/ib_verbs.h -a \
 			   -f ${O2IBPATH}/include/rdma/ib_fmr_pool.h \); then
-			if test \( \( -d ${O2IBPATH}/patches -o \
+			if test \( \( \( -d ${O2IBPATH}/patches -a \
+				   \( $OFED = "yes" \) \) -o \
 				   -d ${O2IBPATH}/kernel_patches \) -a \
 				   -f ${O2IBPATH}/Makefile \); then
 				AC_MSG_RESULT([no])
