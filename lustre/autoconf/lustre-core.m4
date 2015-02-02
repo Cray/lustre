@@ -1352,6 +1352,26 @@ LB_LINUX_TRY_COMPILE([
 ])
 ])
 
+# Somewhere in 3.x radix_tree_exceptional_entry wa added
+AC_DEFUN([LC_HAVE_RADIX_EXCEPTION],
+[AC_MSG_CHECKING([if struct file has f_path.mnt])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/fs.h>
+	#include <linux/radix-tree.h>
+],[
+	struct file *fp = NULL;
+
+	radix_tree_exceptional_entry(fp);
+],[
+	AC_DEFINE(HAVE_RADIX_EXCEPTION,1,[yes])
+	AC_MSG_RESULT([yes])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
+
+
 #
 # LC_PROG_LINUX
 #
@@ -1455,6 +1475,8 @@ AC_DEFUN([LC_PROG_LINUX],
 	 # 3.9
 	 LC_HAVE_HLIST_FOR_EACH_3ARG
 	 LC_HAVE_F_PATH_MNT
+
+	 LC_HAVE_RADIX_EXCEPTION
 
 	 #
 	 if test x$enable_server != xno ; then
