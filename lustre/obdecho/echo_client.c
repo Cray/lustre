@@ -2413,7 +2413,7 @@ static int echo_client_prep_commit(const struct lu_env *env,
 {
 	struct obd_ioobj	 ioo;
 	struct niobuf_local	*lnb;
-	struct niobuf_remote	*rnb;
+	struct niobuf_remote	 rnb;
 	u64			 off;
 	u64			 npages, tot_pages;
 	int i, ret = 0, brw_flags = 0;
@@ -2426,41 +2426,36 @@ static int echo_client_prep_commit(const struct lu_env *env,
 	npages = batch >> PAGE_CACHE_SHIFT;
 	tot_pages = count >> PAGE_CACHE_SHIFT;
 
-        OBD_ALLOC(lnb, npages * sizeof(struct niobuf_local));
-        OBD_ALLOC(rnb, npages * sizeof(struct niobuf_remote));
-
-        if (lnb == NULL || rnb == NULL)
-                GOTO(out, ret = -ENOMEM);
+	OBD_ALLOC(lnb, npages * sizeof(struct niobuf_local));
+	if (lnb == NULL)
+		GOTO(out, ret = -ENOMEM);
 
 	if (rw == OBD_BRW_WRITE && async)
 		brw_flags |= OBD_BRW_ASYNC;
 
-        obdo_to_ioobj(oa, &ioo);
+	obdo_to_ioobj(oa, &ioo);
 
-        off = offset;
+	off = offset;
 
-        for(; tot_pages; tot_pages -= npages) {
-                int lpages;
+	for (; tot_pages > 0; tot_pages -= npages) {
+		int lpages;
 
-                if (tot_pages < npages)
-                        npages = tot_pages;
+		if (tot_pages < npages)
+			npages = tot_pages;
 
-		for (i = 0; i < npages; i++, off += PAGE_CACHE_SIZE) {
-			rnb[i].rnb_offset = off;
-			rnb[i].rnb_len = PAGE_CACHE_SIZE;
-			rnb[i].rnb_flags = brw_flags;
-                }
+		rnb.rnb_offset = off;
+		rnb.rnb_len = npages * PAGE_CACHE_SIZE;
+		rnb.rnb_flags = brw_flags;
+		ioo.ioo_bufcnt = 1;
+		off += npages * PAGE_CACHE_SIZE;
 
-                ioo.ioo_bufcnt = npages;
+		lpages = npages;
+		ret = obd_preprw(env, rw, exp, oa, 1, &ioo, &rnb, &lpages,
+				 lnb, oti, NULL);
+		if (ret != 0)
+			GOTO(out, ret);
 
-                lpages = npages;
-		ret = obd_preprw(env, rw, exp, oa, 1, &ioo, rnb, &lpages,
-                                 lnb, oti, NULL);
-                if (ret != 0)
-                        GOTO(out, ret);
-                LASSERT(lpages == npages);
-
-                for (i = 0; i < lpages; i++) {
+		for (i = 0; i < lpages; i++) {
 			struct page *page = lnb[i].lnb_page;
 
 			/* read past eof? */
@@ -2477,35 +2472,33 @@ static int echo_client_prep_commit(const struct lu_env *env,
 
 			if (rw == OBD_BRW_WRITE)
 				echo_client_page_debug_setup(page, rw,
-							    ostid_id(&oa->o_oi),
-							     rnb[i].rnb_offset,
-							     rnb[i].rnb_len);
+							ostid_id(&oa->o_oi),
+							lnb[i].lnb_file_offset,
+							lnb[i].lnb_len);
 			else
 				echo_client_page_debug_check(page,
-							    ostid_id(&oa->o_oi),
-							     rnb[i].rnb_offset,
-							     rnb[i].rnb_len);
+							ostid_id(&oa->o_oi),
+							lnb[i].lnb_file_offset,
+							lnb[i].lnb_len);
 		}
 
 		ret = obd_commitrw(env, rw, exp, oa, 1, &ioo,
-				   rnb, npages, lnb, oti, ret);
-                if (ret != 0)
-                        GOTO(out, ret);
+				   &rnb, npages, lnb, oti, ret);
+		if (ret != 0)
+			GOTO(out, ret);
 
-                /* Reset oti otherwise it would confuse ldiskfs. */
-                memset(oti, 0, sizeof(*oti));
+		/* Reset oti otherwise it would confuse ldiskfs. */
+		memset(oti, 0, sizeof(*oti));
 
 		/* Reuse env context. */
 		lu_context_exit((struct lu_context *)&env->le_ctx);
 		lu_context_enter((struct lu_context *)&env->le_ctx);
-        }
+	}
 
 out:
-        if (lnb)
-                OBD_FREE(lnb, npages * sizeof(struct niobuf_local));
-        if (rnb)
-                OBD_FREE(rnb, npages * sizeof(struct niobuf_remote));
-        RETURN(ret);
+	if (lnb)
+		OBD_FREE(lnb, npages * sizeof(struct niobuf_local));
+	RETURN(ret);
 }
 
 static int echo_client_brw_ioctl(const struct lu_env *env, int rw,
