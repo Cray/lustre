@@ -188,7 +188,6 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 %defattr(-,root,root)
 %dir /usr/include/lustre
 /usr/include/lustre/*.h
-/usr/include/linux/lustre_user.h
 /usr/lib64/*
 
 %post

@@ -239,7 +239,6 @@ popd
 %defattr(-,root,root)
 %dir /usr/include/lustre
 /usr/include/lustre/*.h
-/usr/include/linux/lustre_user.h
 /usr/lib64/*
 
 %post
