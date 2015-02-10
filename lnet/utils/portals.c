@@ -586,7 +586,7 @@ jt_ptl_print_peers (int argc, char **argv)
 	int                      index;
 	int                      rc;
 
-	if (!g_net_is_compatible (argv[0], SOCKLND, RALND, MXLND,
+	if (!g_net_is_compatible (argv[0], SOCKLND,
 				  O2IBLND, GNILND, PTL4LND, 0))
                 return -1;
 
@@ -603,7 +603,7 @@ jt_ptl_print_peers (int argc, char **argv)
                         id.nid = data.ioc_nid;
                         id.pid = data.ioc_u32[4];
                         printf ("%-20s [%d]%s->%s:%d #%d\n",
-                                libcfs_id2str(id), 
+				libcfs_id2str(id),
                                 data.ioc_count, /* persistence */
 				/* my ip */
 				ptl_ipaddr_2_str(data.ioc_u32[2], buffer[0],
@@ -613,14 +613,6 @@ jt_ptl_print_peers (int argc, char **argv)
 						 sizeof(buffer[1]), 1),
                                 data.ioc_u32[1], /* peer port */
                                 data.ioc_u32[3]); /* conn_count */
-                } else if (g_net_is_compatible(NULL, RALND, 0)) {
-                        printf ("%-20s [%d]@%s:%d\n",
-                                libcfs_nid2str(data.ioc_nid), /* peer nid */
-                                data.ioc_count,   /* peer persistence */
-				/* peer ip */
-				ptl_ipaddr_2_str(data.ioc_u32[0], buffer[1],
-						 sizeof(buffer[1]), 1),
-                                data.ioc_u32[1]); /* peer port */
 		} else if (g_net_is_compatible(NULL, GNILND, 0)) {
 			int disconn = data.ioc_flags >> 16;
 			char *state;
@@ -717,7 +709,7 @@ jt_ptl_del_peer (int argc, char **argv)
 	__u32                    ip = 0;
 	int                      rc;
 
-	if (!g_net_is_compatible (argv[0], SOCKLND, RALND, MXLND,
+	if (!g_net_is_compatible (argv[0], SOCKLND,
 				  O2IBLND, GNILND, PTL4LND, 0))
                 return -1;
 
@@ -772,8 +764,7 @@ jt_ptl_print_connections (int argc, char **argv)
         int                      index;
         int                      rc;
 
-	if (!g_net_is_compatible (argv[0], SOCKLND, RALND, MXLND, O2IBLND,
-				  GNILND, 0))
+	if (!g_net_is_compatible(argv[0], SOCKLND, O2IBLND, GNILND, 0))
                 return -1;
 
         for (index = 0; ; index++) {
@@ -805,10 +796,6 @@ jt_ptl_print_connections (int argc, char **argv)
                                 data.ioc_count, /* tx buffer size */
                                 data.ioc_u32[5], /* rx buffer size */
                                 data.ioc_flags ? "nagle" : "nonagle");
-                } else if (g_net_is_compatible (NULL, RALND, 0)) {
-                        printf ("%-20s [%d]\n",
-                                libcfs_nid2str(data.ioc_nid),
-                                data.ioc_u32[0] /* device id */);
                 } else if (g_net_is_compatible (NULL, O2IBLND, 0)) {
                         printf ("%s mtu %d\n",
                                 libcfs_nid2str(data.ioc_nid),
@@ -846,8 +833,7 @@ int jt_ptl_disconnect(int argc, char **argv)
                 return 0;
         }
 
-	if (!g_net_is_compatible (NULL, SOCKLND, RALND, MXLND, O2IBLND,
-				  GNILND, 0))
+	if (!g_net_is_compatible(NULL, SOCKLND, O2IBLND, GNILND, 0))
                 return 0;
 
         if (argc >= 2 &&
@@ -909,49 +895,6 @@ int jt_ptl_push_connection (int argc, char **argv)
                 return -1;
         }
 
-        return 0;
-}
-
-int
-jt_ptl_print_active_txs (int argc, char **argv)
-{
-        struct libcfs_ioctl_data data;
-        int                      index;
-        int                      rc;
-
-        if (!g_net_is_compatible (argv[0], QSWLND, 0))
-                return -1;
-
-        for (index = 0;;index++) {
-                LIBCFS_IOC_INIT(data);
-                data.ioc_net   = g_net;
-                data.ioc_count = index;
-
-                rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_GET_TXDESC, &data);
-                if (rc != 0)
-                        break;
-
-                printf ("type %u payload %6d to %s via %s by pid %6d: "
-                        "%s, %s, state %d\n",
-                        data.ioc_u32[0],
-                        data.ioc_count,
-                        libcfs_nid2str(data.ioc_nid),
-                        libcfs_nid2str(data.ioc_u64[0]),
-                        data.ioc_u32[1],
-                        (data.ioc_flags & 1) ? "delayed" : "immediate",
-                        (data.ioc_flags & 2) ? "nblk"    : "normal",
-                        data.ioc_flags >> 2);
-        }
-
-        if (index == 0) {
-                if (errno == ENOENT) {
-                        printf ("<no active descs>\n");
-                } else {
-                        fprintf(stderr, "Error getting active transmits list: "
-                                "%s: check dmesg.\n",
-                                strerror(errno));
-                }
-        }
         return 0;
 }
 
