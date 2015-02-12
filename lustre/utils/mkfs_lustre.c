@@ -526,17 +526,16 @@ int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
 			ldd->ldd_flags &= ~LDD_F_NEED_INDEX;
 			break;
 		case 'L': {
-			char *tmp;
-
-			if ((strlen(optarg) < 1) || (strlen(optarg) > 8)) {
+			rc = lustre_is_fsname_valid(optarg, 1,
+						    LUSTRE_MAXFSNAME);
+			if (rc < 0) {
 				fprintf(stderr, "%s: filesystem name must be "
-					"1-8 chars\n", progname);
+					"1-%d chars\n", progname,
+					LUSTRE_MAXFSNAME);
 				return 1;
-			}
-
-			if ((tmp = strpbrk(optarg, "/:"))) {
+			} else if (rc > 0) {
 				fprintf(stderr, "%s: char '%c' not allowed in "
-					"filesystem name\n", progname, *tmp);
+					"filesystem name\n", progname, rc);
 				return 1;
 			}
 
