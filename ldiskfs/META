@@ -1,4 +1,4 @@
-TAG=master
-VERSION=master
-BUILDID=cray_master
+TAG=2.7.0
+VERSION=2.7.0
+BUILDID=cray021115
 PRISTINE=1
