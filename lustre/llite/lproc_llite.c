@@ -430,13 +430,14 @@ static int ll_rd_max_cached_mb(char *page, char **start, off_t off,
 }
 
 static int ll_wr_max_cached_mb(struct file *file, const char *buffer,
-                               unsigned long count, void *data)
+				unsigned long nob, void *data)
 {
 	struct super_block *sb = data;
 	struct ll_sb_info *sbi = ll_s2sbi(sb);
 	struct cl_client_cache *cache = &sbi->ll_cache;
 	struct lu_env *env;
 	__u64 val;
+	size_t count = nob;
 	long diff = 0;
 	long nrpages = 0;
 	long pages_number;
