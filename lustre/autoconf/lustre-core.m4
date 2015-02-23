@@ -1370,6 +1370,25 @@ LB_LINUX_TRY_COMPILE([
 ])
 
 #
+# 3.11 need to access d_count to get dentry reference count
+#
+AC_DEFUN([LC_HAVE_DCOUNT],
+[AC_MSG_CHECKING([if d_count exist])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/dcache.h>
+],[
+	struct dentry de;
+
+	d_count(&de);
+],[
+	AC_DEFINE(HAVE_D_COUNT, 1, [d_count exist])
+	AC_MSG_RESULT([yes])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -1474,6 +1493,9 @@ AC_DEFUN([LC_PROG_LINUX],
 
 	 # 3.10
 	 LC_HAVE_ONLY_PROCFS_SEQ
+
+	 # 3.11
+	 LC_HAVE_DCOUNT
 
 	 #
 	 if test x$enable_server != xno ; then
