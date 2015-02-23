@@ -1,5 +1,5 @@
-02-17-2015 Intel Corporation
-       * version 2.5.31
+02-27-2015 Intel Corporation
+       * version 2.5.32
        * See http://wiki.whamcloud.com/display/PUB/Lustre+Support+Matrix
        * Server support for kernels:
 	 2.6.32-431.29.2.el6  (RHEL6.5)
