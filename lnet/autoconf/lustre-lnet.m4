@@ -375,7 +375,7 @@ AC_ARG_WITH([o2ib],
 	[], [with_o2ib="yes"])
 
 case $with_o2ib in
-	yes)    AS_IF(which ofed_info, [
+	yes)    AS_IF([which ofed_info 2>/dev/null], [
 			O2IBPATHS=$(ofed_info | egrep -w 'compat-rdma-devel|kernel-ib-devel|ofa_kernel-devel' | xargs rpm -ql | grep '/openib$')
 			AS_IF([test -z "$O2IBPATHS"], [
 				AC_MSG_ERROR([
@@ -410,14 +410,14 @@ if test $ENABLEO2IB = "no"; then
 else
 	o2ib_found=false
 	for O2IBPATH in $O2IBPATHS; do
-		if test \( -f ${O2IBPATH}/include/rdma/rdma_cm.h -a \
-			   -f ${O2IBPATH}/include/rdma/ib_cm.h -a \
-			   -f ${O2IBPATH}/include/rdma/ib_verbs.h -a \
-			   -f ${O2IBPATH}/include/rdma/ib_fmr_pool.h \); then
-			if test \( \( \( -d ${O2IBPATH}/patches -a \
-				   \( $OFED = "yes" \) \) -o \
+		if test -f ${O2IBPATH}/include/rdma/rdma_cm.h -a \
+			-f ${O2IBPATH}/include/rdma/ib_cm.h -a \
+			-f ${O2IBPATH}/include/rdma/ib_verbs.h -a \
+			-f ${O2IBPATH}/include/rdma/ib_fmr_pool.h; then
+			if test \( \( -d ${O2IBPATH}/patches -a \
+				   "x$OFED" = "xyes" \) -o \
 				   -d ${O2IBPATH}/kernel_patches \) -a \
-				   -f ${O2IBPATH}/Makefile \); then
+				   -f ${O2IBPATH}/Makefile; then
 				AC_MSG_RESULT([no])
 				AC_MSG_ERROR([trying to use the, explicit or detected, OFED distribution's source directory (${O2IBPATH}) rather than the "development/headers" directory which is likely in ${O2IBPATH%-*}])
 			fi
@@ -510,7 +510,7 @@ else
 		])
 		# we know at this point that the found OFED source is good
 		O2IB_SYMVER=""
-		if test $ENABLEO2IB = "withpath" -o $OFED = "yes" ; then
+		if test $ENABLEO2IB = "withpath" -o "x$OFED" = "xyes" ; then
 			# OFED default rpm not handle sles10 Modules.symvers name
 			for name in Module.symvers Modules.symvers; do
 				if test -f $O2IBPATH/$name; then
