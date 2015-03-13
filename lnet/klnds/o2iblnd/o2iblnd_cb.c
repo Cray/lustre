@@ -2248,7 +2248,7 @@ kiblnd_reject(struct rdma_cm_id *cmid, kib_rej_t *rej)
 }
 
 static int
-kiblnd_passive_connect (struct rdma_cm_id *cmid, void *priv, int priv_nob)
+kiblnd_passive_connect(struct rdma_cm_id *cmid, void *priv, int priv_nob)
 {
 	rwlock_t		*g_lock = &kiblnd_data.kib_global_lock;
         kib_msg_t             *reqmsg = priv;
@@ -2280,9 +2280,9 @@ kiblnd_passive_connect (struct rdma_cm_id *cmid, void *priv, int priv_nob)
         peer_addr = (struct sockaddr_in *)&(cmid->route.addr.dst_addr);
         if (*kiblnd_tunables.kib_require_priv_port &&
             ntohs(peer_addr->sin_port) >= PROT_SOCK) {
-                __u32 ip = ntohl(peer_addr->sin_addr.s_addr);
-                CERROR("Peer's port (%u.%u.%u.%u:%hu) is not privileged\n",
-                       HIPQUAD(ip), ntohs(peer_addr->sin_port));
+		__u32 ip = ntohl(peer_addr->sin_addr.s_addr);
+		CERROR("Peer's port (%pI4h:%hu) is not privileged\n",
+		       &ip, ntohs(peer_addr->sin_port));
                 goto failed;
         }
 
@@ -2326,11 +2326,11 @@ kiblnd_passive_connect (struct rdma_cm_id *cmid, void *priv, int priv_nob)
         if (ni == NULL ||                         /* no matching net */
             ni->ni_nid != reqmsg->ibm_dstnid ||   /* right NET, wrong NID! */
             net->ibn_dev != ibdev) {              /* wrong device */
-		CERROR("Can't accept conn from %s on %s (%s:%d:%u.%u.%u.%u): "
+		CERROR("Can't accept %s on %s (%s:%d:%pI4h): "
                        "bad dst nid %s\n", libcfs_nid2str(nid),
                        ni == NULL ? "NA" : libcfs_nid2str(ni->ni_nid),
                        ibdev->ibd_ifname, ibdev->ibd_nnets,
-                       HIPQUAD(ibdev->ibd_ifip),
+			&ibdev->ibd_ifip,
                        libcfs_nid2str(reqmsg->ibm_dstnid));
 
                 goto failed;
