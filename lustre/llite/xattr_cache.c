@@ -85,9 +85,7 @@ static void ll_xattr_cache_init(struct ll_inode_info *lli)
 	LASSERT(lli != NULL);
 
 	CFS_INIT_LIST_HEAD(&lli->lli_xattrs);
-	spin_lock(&lli->lli_lock);
 	lli->lli_flags |= LLIF_XATTR_CACHE;
-	spin_unlock(&lli->lli_lock);
 }
 
 /**
@@ -278,9 +276,7 @@ static int ll_xattr_cache_destroy_locked(struct ll_inode_info *lli)
 
 	while (ll_xattr_cache_del(&lli->lli_xattrs, NULL) == 0)
 		/* empty loop */ ;
-	spin_lock(&lli->lli_lock);
 	lli->lli_flags &= ~LLIF_XATTR_CACHE;
-	spin_unlock(&lli->lli_lock);
 
 	RETURN(0);
 }
