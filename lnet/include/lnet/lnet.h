@@ -44,7 +44,6 @@
  */
 
 #include <lnet/types.h>
-#include <lnet/api.h>
 #include <lnet/lib-dlc.h>
 #include <lnet/nidstr.h>
 

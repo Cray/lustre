@@ -24,8 +24,8 @@
  *   Amir Shehata <amir.shehata@intel.com>
  */
 
-#ifndef LIB_LUSTRE_CONFIG_API_H
-#define LIB_LUSTRE_CONFIG_API_H
+#ifndef LIB_LNET_CONFIG_API_H
+#define LIB_LNET_CONFIG_API_H
 
 #include <lnet/lnet.h>
 
@@ -250,4 +250,4 @@ int lustre_yaml_del(char *f, struct cYAML **err_rc);
 int lustre_yaml_show(char *f, struct cYAML **show_rc,
 		     struct cYAML **err_rc);
 
-#endif /* LIB_LUSTRE_CONFIG_API_H */
+#endif /* LIB_LNET_CONFIG_API_H */
