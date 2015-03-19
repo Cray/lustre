@@ -23,6 +23,7 @@ BuildRequires: lsb-cray-hss-devel
 BuildRequires: pkgconfig
 BuildRequires: -post-build-checks
 BuildRequires: module-init-tools
+BuildRequires: python-docutils
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}

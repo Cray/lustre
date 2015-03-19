@@ -24,6 +24,7 @@ BuildRequires: module-init-tools
 BuildRequires: pkgconfig
 BuildRequires: udev
 BuildRequires: libtool
+BuildRequires: python-docutils
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}

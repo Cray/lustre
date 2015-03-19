@@ -16,6 +16,7 @@ BuildRequires: cray-gni-headers-private
 BuildRequires: cray-krca-devel
 BuildRequires: kernel-source
 BuildRequires: kernel-syms
+BuildRequires: python-docutils
 BuildRequires: %{namespace}-krca-devel
 %ifarch k1om
 BuildRequires: cray-hss-knc-devel
