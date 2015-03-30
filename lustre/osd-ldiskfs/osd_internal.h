@@ -168,7 +168,7 @@ struct osd_mdobj_map {
 };
 
 #define osd_ldiskfs_add_entry(handle, child, cinode, hlock) \
-        ldiskfs_add_entry(handle, child, cinode, hlock)
+	__ldiskfs_add_entry(handle, child, cinode, hlock)
 
 #define OSD_OTABLE_IT_CACHE_SIZE	64
 #define OSD_OTABLE_IT_CACHE_MASK	(~(OSD_OTABLE_IT_CACHE_SIZE - 1))
@@ -1115,7 +1115,7 @@ static inline unsigned long osd_remote_parent_ino(struct osd_device *dev)
 # define osd_ldiskfs_append(handle, inode, nblock, err) \
 		ldiskfs_append(handle, inode, nblock)
 # define osd_ldiskfs_find_entry(dir, name, de, inlined, lock) \
-		ldiskfs_find_entry(dir, name, de, inlined, lock)
+		__ldiskfs_find_entry(dir, name, de, inlined, lock)
 # define osd_journal_start(inode, type, nblocks) \
 		ldiskfs_journal_start(inode, type, nblocks)
 # define osd_transaction_size(dev) \
@@ -1127,7 +1127,7 @@ static inline unsigned long osd_remote_parent_ino(struct osd_device *dev)
 # define osd_ldiskfs_append(handle, inode, nblock, err) \
 		ldiskfs_append(handle, inode, nblock, err)
 # define osd_ldiskfs_find_entry(dir, name, de, inlined, lock) \
-		ldiskfs_find_entry(dir, name, de, lock)
+		__ldiskfs_find_entry(dir, name, de, lock)
 # define osd_journal_start(inode, type, nblocks) \
 		ldiskfs_journal_start(inode, nblocks)
 # define osd_transaction_size(dev) \
