@@ -11,30 +11,25 @@
 
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
 %define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-source)
-%define kernel_release_major %(rpm -q --qf "%{RELEASE}" kernel-source | sed 's/\([0-9]*\).*/\1/')
+%define kernel_release_major %(rpm -q --qf "%{RELEASE}" kernel-source |  awk -F . '{print $1}')
+
 %define cray_kernel_version %{kernel_version}-%{kernel_release_major}-%{flavor}
 # Override the _mandir so man pages don't end up in /man
 %define _mandir /usr/share/man
 
 BuildRequires: kernel-source
 BuildRequires: kernel-syms
-#BuildRequires: ofed-devel
-#?BuildRequires: libselinux-devel
 BuildRequires: pkgconfig
-#?BuildRequires: sles-release
 BuildRequires: -post-build-checks
 BuildRequires: module-init-tools
-#BuildRequires: libtool
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}
 Release: %{release}
-#Requires: module-init-tools
 Summary: Lustre File System for CLFS SLES-based Nodes
 Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
 Source0: %{source_name}.tar.gz
 Source1: %{flavorless_name}-switch-%{branch}.tar.gz
-#Source99: cray-lustre-rpmlintrc
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 # Override _prefix to avoid installing into Cray locations under /opt/cray/
