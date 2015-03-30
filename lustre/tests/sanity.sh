@@ -16,6 +16,9 @@ ALWAYS_EXCEPT="                42a  42b  42c  42d  45   51d   68b   $SANITY_EXCE
 # bug number for skipped tests: LU-2036
 ALWAYS_EXCEPT="                 76      $ALWAYS_EXCEPT"
 
+# SOM doesn't function properly
+ALWAYS_EXCEPT="132 $ALWAYS_EXCEPT"
+
 SRCDIR=$(cd $(dirname $0); echo $PWD)
 export PATH=$PATH:/sbin
 
@@ -11013,31 +11016,32 @@ test_181() { # bug 22177
 run_test 181 "Test open-unlinked dir ========================"
 
 test_182() {
-	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
-	# disable MDC RPC lock wouldn't crash client
 	local fcount=1000
-	local tcount=4
+	local tcount=10
 
 	mkdir -p $DIR/$tdir || error "creating dir $DIR/$tdir"
-#define OBD_FAIL_MDC_RPCS_SEM		0x804
-	$LCTL set_param fail_loc=0x804
 
-	for (( i=0; i < $tcount; i++ )) ; do
+	$LCTL set_param mdc.*.rpc_stats=clear
+
+	for (( i = 0; i < $tcount; i++ )) ; do
 		mkdir $DIR/$tdir/$i
+	done
+
+	for (( i = 0; i < $tcount; i++ )) ; do
 		createmany -o $DIR/$tdir/$i/f- $fcount &
 	done
 	wait
 
-	for (( i=0; i < $tcount; i++ )) ; do
+	for (( i = 0; i < $tcount; i++ )) ; do
 		unlinkmany $DIR/$tdir/$i/f- $fcount &
 	done
 	wait
 
-	rm -rf $DIR/$tdir
+	$LCTL get_param mdc.*.rpc_stats
 
-	$LCTL set_param fail_loc=0
+	rm -rf $DIR/$tdir
 }
-run_test 182 "Disable MDC RPCs semaphore wouldn't crash client ================"
+run_test 182 "Test parallel modify metadata operations ================"
 
 test_183() { # LU-2275
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return

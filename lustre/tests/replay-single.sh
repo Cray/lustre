@@ -1102,6 +1102,10 @@ run_test 52 "time out lock replay (3764)"
 
 # bug 3462 - simultaneous MDC requests
 test_53a() {
+	[[ $(lctl get_param mdc.*.import |
+	     grep "connect_flags:.*multi_mod_rpc") ]] ||
+		{ skip "Need MDC with 'multi_mod_rpcs' feature"; return 0; }
+
         cancel_lru_locks mdc    # cleanup locks from former test cases
         mkdir -p $DIR/${tdir}-1
         mkdir -p $DIR/${tdir}-2
@@ -1201,6 +1205,10 @@ test_53c() {
 run_test 53c "|X| open request and close request while two MDC requests in flight"
 
 test_53d() {
+	[[ $(lctl get_param mdc.*.import |
+	     grep "connect_flags:.*multi_mod_rpc") ]] ||
+		{ skip "Need MDC with 'multi_mod_rpcs' feature"; return 0; }
+
         cancel_lru_locks mdc    # cleanup locks from former test cases
         rm -rf $DIR/${tdir}-1 $DIR/${tdir}-2
 
