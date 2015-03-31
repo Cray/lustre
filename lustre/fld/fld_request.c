@@ -434,6 +434,7 @@ again:
 
 	if (rc != 0) {
 		if (imp->imp_state != LUSTRE_IMP_CLOSED &&
+		    !imp->imp_deactive &&
 		    imp->imp_connect_flags_orig & OBD_CONNECT_MDS_MDS &&
 		    rc != -ENOTSUPP) {
 			/* Since LWP is not replayable, so it will keep
@@ -474,6 +475,7 @@ int fld_client_lookup(struct lu_client_fld *fld, u64 seq, u32 *mds,
 {
 	struct lu_seq_range res = { 0 };
 	struct lu_fld_target *target;
+	struct lu_fld_target *origin;
 	int rc;
 	ENTRY;
 
@@ -488,7 +490,8 @@ int fld_client_lookup(struct lu_client_fld *fld, u64 seq, u32 *mds,
         /* Can not find it in the cache */
         target = fld_client_get_target(fld, seq);
         LASSERT(target != NULL);
-
+	origin = target;
+again:
         CDEBUG(D_INFO, "%s: Lookup fld entry (seq: "LPX64") on "
                "target %s (idx "LPU64")\n", fld->lcf_name, seq,
                fld_target_name(target), target->ft_idx);
@@ -506,6 +509,22 @@ int fld_client_lookup(struct lu_client_fld *fld, u64 seq, u32 *mds,
 		rc = fld_client_rpc(target->ft_exp, &res, FLD_QUERY, NULL);
 	}
 
+	if (rc == -ESHUTDOWN) {
+		/* If fld lookup failed because the target has been shutdown,
+		 * then try next target in the list, until trying all targets
+		 * or fld lookup succeeds */
+		spin_lock(&fld->lcf_lock);
+		if (target->ft_chain.next == fld->lcf_targets.prev)
+			target = list_entry(fld->lcf_targets.next,
+					    struct lu_fld_target, ft_chain);
+		else
+			target = list_entry(target->ft_chain.next,
+						 struct lu_fld_target,
+						 ft_chain);
+		spin_unlock(&fld->lcf_lock);
+		if (target != origin)
+			goto again;
+	}
 	if (rc == 0) {
 		*mds = res.lsr_index;
 		fld_cache_insert(fld->lcf_cache, &res);
