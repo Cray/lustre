@@ -884,6 +884,41 @@ run_test 24 "reconstruct on non-existing object"
 
 # end commit on sharing tests
 
+test_25() {
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -ge $(version_code 2.6.53) ]] ||
+	[[ $server_version -ge $(version_code 2.5.34) &&
+	   $server_version -lt $(version_code 2.5.50) ]] ||
+	[[ $server_version -ge $(version_code 2.5.4) &&
+	   $server_version -lt $(version_code 2.5.11) ]] ||
+		{ skip "Need MDS version 2.5.4+ or 2.5.35+ or 2.6.53+"; return; }
+
+	cancel_lru_locks osc
+
+	$SETSTRIPE -i 0 -c 1 $DIR/$tfile
+
+	# get lock for the 1st client
+	dd if=/dev/zero of=$DIR/$tfile count=1 >/dev/null ||
+		error "failed to write data"
+
+	# get waiting locks for the 2nd client
+	drop_ldlm_cancel "multiop $DIR2/$tfile Ow512" &
+	sleep 1
+
+#define OBD_FAIL_OST_LDLM_REPLY_NET      0x213
+	# failover, replay and resend replayed waiting locks
+	do_facet ost1 lctl set_param fail_loc=0x80000213
+	fail ost1
+
+	# multiop does not finish because CP AST is skipped;
+	# it is ok to kill it in the test, because CP AST is already re-sent
+	# and it does not hung forever in real life
+	killall multiop
+	wait
+}
+run_test 25 "replay|resend"
+
 complete $SECONDS
 SLEEP=$((`date +%s` - $NOW))
 [ $SLEEP -lt $TIMEOUT ] && sleep $SLEEP
