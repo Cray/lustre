@@ -6,7 +6,6 @@ set -e
 #set -x
 
 export LANG=en_US
-export EJOURNAL=${EJOURNAL:-""}
 export REFORMAT=${REFORMAT:-""}
 export WRITECONF=${WRITECONF:-""}
 export VERBOSE=${VERBOSE:-false}
@@ -2961,6 +2960,12 @@ get_env_vars() {
 		fi
 	done
 
+	for var in VERBOSE; do
+		if [ -n "${!var}" ]; then
+			echo -n " $var=${!var}"
+		fi
+	done
+
 	if [ -n "$FSTYPE" ]; then
 		echo -n " FSTYPE=$FSTYPE"
 	fi
@@ -3416,9 +3421,11 @@ mkfs_opts() {
 				fs_mkfs_opts+="-O large_xattr"
 			fi
 
-			fs_mkfs_opts+=${MDSJOURNALSIZE:+" -J size=$MDSJOURNALSIZE"}
-			if [ ! -z $EJOURNAL ]; then
-				fs_mkfs_opts+=${MDSJOURNALSIZE:+" device=$EJOURNAL"}
+			var=${facet}_JRN
+			if [ -n "${!var}" ]; then
+				fs_mkfs_opts+=" -J device=${!var}"
+			else
+				fs_mkfs_opts+=${MDSJOURNALSIZE:+" -J size=$MDSJOURNALSIZE"}
 			fi
 			fs_mkfs_opts+=${MDSISIZE:+" -i $MDSISIZE"}
 		fi
@@ -3429,7 +3436,12 @@ mkfs_opts() {
 		opts+=${OSSCAPA:+" --param=ost.capa=$OSSCAPA"}
 
 		if [ $fstype == ldiskfs ]; then
-			fs_mkfs_opts+=${OSTJOURNALSIZE:+" -J size=$OSTJOURNALSIZE"}
+			var=${facet}_JRN
+			if [ -n "${!var}" ]; then
+				fs_mkfs_opts+=" -J device=${!var}"
+			else
+				fs_mkfs_opts+=${OSTJOURNALSIZE:+" -J size=$OSTJOURNALSIZE"}
+			fi
 		fi
 	fi
 
@@ -3474,39 +3486,63 @@ check_ost_indices() {
 	done
 }
 
-formatall() {
+format_mgs() {
 	local quiet
 
 	if ! $VERBOSE; then
 		quiet=yes
 	fi
+	echo "Format mgs: $(mgsdevname)"
+	reformat_external_journal mgs
+	add mgs $(mkfs_opts mgs $(mgsdevname)) --reformat \
+		$(mgsdevname) $(mgsvdevname) ${quiet:+>/dev/null} || exit 10
+}
 
+format_mdt() {
+	local num=$1
+	local quiet
+
+	if ! $VERBOSE; then
+		quiet=yes
+	fi
+	echo "Format mds$num: $(mdsdevname $num)"
+	reformat_external_journal mds$num
+	add mds$num $(mkfs_opts mds$num $(mdsdevname ${num})) \
+		--reformat $(mdsdevname $num) $(mdsvdevname $num) \
+		${quiet:+>/dev/null} || exit 10
+}
+
+format_ost() {
+	local num=$1
+
+	if ! $VERBOSE; then
+		quiet=yes
+	fi
+	echo "Format ost$num: $(ostdevname $num)"
+	reformat_external_journal ost$num
+	add ost$num $(mkfs_opts ost$num $(ostdevname ${num})) \
+		--reformat $(ostdevname $num) $(ostvdevname ${num}) \
+		${quiet:+>/dev/null} || exit 10
+}
+
+formatall() {
 	stopall
 	# We need ldiskfs here, may as well load them all
 	load_modules
 	[ "$CLIENTONLY" ] && return
 	echo Formatting mgs, mds, osts
 	if ! combined_mgs_mds ; then
-		echo "Format mgs: $(mgsdevname)"
-		add mgs $(mkfs_opts mgs $(mgsdevname)) --reformat \
-			$(mgsdevname) $(mgsvdevname) ${quiet:+>/dev/null} ||
-			exit 10
+		format_mgs
 	fi
 
 	for num in $(seq $MDSCOUNT); do
-		echo "Format mds$num: $(mdsdevname $num)"
-		add mds$num $(mkfs_opts mds$num $(mdsdevname ${num})) \
-			--reformat $(mdsdevname $num) $(mdsvdevname $num) \
-			${quiet:+>/dev/null} || exit 10
+		format_mdt $num
 	done
 
 	export OST_INDICES=($(hostlist_expand "$OST_INDEX_LIST"))
 	check_ost_indices
 	for num in $(seq $OSTCOUNT); do
-		echo "Format ost$num: $(ostdevname $num)"
-		add ost$num $(mkfs_opts ost$num $(ostdevname ${num})) \
-			--reformat $(ostdevname $num) $(ostvdevname ${num}) \
-			${quiet:+>/dev/null} || exit 10
+		format_ost $num
 	done
 }
 
@@ -6909,12 +6945,14 @@ generate_string() {
 
 reformat_external_journal() {
 	local facet=$1
+	local var
 
-	if [ ! -z ${EJOURNAL} ]; then
+	var=${facet}_JRN
+	if [ -n "${!var}" ]; then
 		local rcmd="do_facet $facet"
 
-		echo "reformat external journal on $facet:${EJOURNAL}"
-		${rcmd} mke2fs -O journal_dev ${EJOURNAL} || return 1
+		echo "reformat external journal on $facet:${!var}"
+		${rcmd} mke2fs -O journal_dev ${!var} || return 1
 	fi
 }
 
@@ -6955,13 +6993,9 @@ mds_backup_restore() {
 	${rcmd} tar zcf $metadata -C $mntpt/ . > /dev/null 2>&1 || return 3
 	# step 6: umount
 	${rcmd} $UMOUNT $mntpt || return 4
-	# step 7: reformat external journal if needed
-	reformat_external_journal $facet || return 5
 	# step 8: reformat dev
 	echo "reformat new device"
-	add $facet $(mkfs_opts $facet ${devname}) --backfstype ldiskfs \
-		--reformat ${devname} $(mdsvdevname $(facet_number $facet)) \
-		> /dev/null || exit 6
+	format_mdt $(facet_number $facet)
 	# step 9: mount dev
 	${rcmd} mount -t ldiskfs $opts $devname $mntpt || return 7
 	# step 10: restore metadata
