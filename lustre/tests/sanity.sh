@@ -13348,6 +13348,16 @@ test_243()
 }
 run_test 243 "various group lock tests"
 
+test_244()
+{
+	test_mkdir -p $DIR/$tdir
+	dd if=/dev/zero of=$DIR/$tdir/$tfile bs=1M count=35
+	sendfile_grouplock $DIR/$tdir/$tfile || \
+		error "sendfile+grouplock failed"
+	rm -rf $DIR/$tdir
+}
+run_test 244 "sendfile with group lock tests"
+
 test_247() {
 	local l1
 	local l2
