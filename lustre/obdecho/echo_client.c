@@ -2096,11 +2096,15 @@ static void echo_ucred_init(struct lu_env *env)
 	ucred->uc_suppgids[0] = -1;
 	ucred->uc_suppgids[1] = -1;
 
-	ucred->uc_uid   = ucred->uc_o_uid   = current_uid();
-	ucred->uc_gid   = ucred->uc_o_gid   = current_gid();
-	ucred->uc_fsuid = ucred->uc_o_fsuid = current_fsuid();
-	ucred->uc_fsgid = ucred->uc_o_fsgid = current_fsgid();
-	ucred->uc_cap   = cfs_curproc_cap_pack();
+	ucred->uc_uid = ucred->uc_o_uid  =
+				from_kuid(&init_user_ns, current_uid());
+	ucred->uc_gid = ucred->uc_o_gid  =
+				from_kgid(&init_user_ns, current_gid());
+	ucred->uc_fsuid = ucred->uc_o_fsuid =
+				from_kuid(&init_user_ns, current_fsuid());
+	ucred->uc_fsgid = ucred->uc_o_fsgid =
+				from_kgid(&init_user_ns, current_fsgid());
+	ucred->uc_cap = cfs_curproc_cap_pack();
 
 	/* remove fs privilege for non-root user. */
 	if (ucred->uc_fsuid)
@@ -3165,21 +3169,20 @@ static struct obd_ops echo_client_obd_ops = {
 
 int echo_client_init(void)
 {
-        struct lprocfs_static_vars lvars = { 0 };
         int rc;
 
-        lprocfs_echo_init_vars(&lvars);
-
-        rc = lu_kmem_init(echo_caches);
-        if (rc == 0) {
-                rc = class_register_type(&echo_client_obd_ops, NULL,
-                                         lvars.module_vars,
-                                         LUSTRE_ECHO_CLIENT_NAME,
-                                         &echo_device_type);
-                if (rc)
-                        lu_kmem_fini(echo_caches);
-        }
-        return rc;
+	rc = lu_kmem_init(echo_caches);
+	if (rc == 0) {
+		rc = class_register_type(&echo_client_obd_ops, NULL, NULL,
+#ifndef HAVE_ONLY_PROCFS_SEQ
+					NULL,
+#endif
+					LUSTRE_ECHO_CLIENT_NAME,
+					&echo_device_type);
+		if (rc)
+			lu_kmem_fini(echo_caches);
+	}
+	return rc;
 }
 
 void echo_client_exit(void)
@@ -3191,7 +3194,6 @@ void echo_client_exit(void)
 #ifdef __KERNEL__
 static int __init obdecho_init(void)
 {
-        struct lprocfs_static_vars lvars;
         int rc;
 
         ENTRY;
@@ -3199,17 +3201,18 @@ static int __init obdecho_init(void)
 
 	LASSERT(PAGE_CACHE_SIZE % OBD_ECHO_BLOCK_SIZE == 0);
 
-        lprocfs_echo_init_vars(&lvars);
-
 # ifdef HAVE_SERVER_SUPPORT
         rc = echo_persistent_pages_init();
         if (rc != 0)
                 goto failed_0;
 
-        rc = class_register_type(&echo_obd_ops, NULL, lvars.module_vars,
-                                 LUSTRE_ECHO_NAME, NULL);
-        if (rc != 0)
-                goto failed_1;
+	rc = class_register_type(&echo_obd_ops, NULL, NULL,
+#ifndef HAVE_ONLY_PROCFS_SEQ
+				NULL,
+#endif
+				LUSTRE_ECHO_NAME, NULL);
+	if (rc != 0)
+		goto failed_1;
 # endif
 
         rc = echo_client_init();

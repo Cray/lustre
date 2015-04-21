@@ -458,8 +458,7 @@ static int ll_intent_file_open(struct file *file, void *lmm,
                                  itp, NULL);
 
 out:
-        ptlrpc_req_finished(itp->d.lustre.it_data);
-        it_clear_disposition(itp, DISP_ENQ_COMPLETE);
+	ptlrpc_req_finished(req);
         ll_intent_drop_lock(itp);
 
         RETURN(rc);
@@ -832,10 +831,7 @@ struct obd_client_handle *ll_lease_open(struct inode *inode, struct file *file,
 	 * doesn't deal with openhandle, so normal openhandle will be leaked. */
 				LDLM_FL_NO_LRU | LDLM_FL_EXCL);
 	ll_finish_md_op_data(op_data);
-	if (req != NULL) {
-		ptlrpc_req_finished(req);
-		it_clear_disposition(&it, DISP_ENQ_COMPLETE);
-	}
+	ptlrpc_req_finished(req);
 	if (rc < 0)
 		GOTO(out_release_it, rc);
 
@@ -2267,8 +2263,8 @@ static int ll_hsm_import(struct inode *inode, struct file *file,
 
 	attr->ia_mode = hui->hui_mode & (S_IRWXU | S_IRWXG | S_IRWXO);
 	attr->ia_mode |= S_IFREG;
-	attr->ia_uid = hui->hui_uid;
-	attr->ia_gid = hui->hui_gid;
+	attr->ia_uid = make_kuid(&init_user_ns, hui->hui_uid);
+	attr->ia_gid = make_kgid(&init_user_ns, hui->hui_gid);
 	attr->ia_size = hui->hui_size;
 	attr->ia_mtime.tv_sec = hui->hui_mtime;
 	attr->ia_mtime.tv_nsec = hui->hui_mtime_ns;
@@ -3081,9 +3077,10 @@ static int ll_inode_revalidate_fini(struct inode *inode, int rc)
 		if (!S_ISREG(inode->i_mode) && !S_ISDIR(inode->i_mode))
 			return 0;
 	} else if (rc != 0) {
-		CERROR("%s: revalidate FID "DFID" error: rc = %d\n",
-		       ll_get_fsname(inode->i_sb, NULL, 0),
-		       PFID(ll_inode2fid(inode)), rc);
+		CDEBUG_LIMIT((rc == -EACCES || rc == -EIDRM) ? D_INFO : D_ERROR,
+			     "%s: revalidate FID "DFID" error: rc = %d\n",
+			     ll_get_fsname(inode->i_sb, NULL, 0),
+			     PFID(ll_inode2fid(inode)), rc);
 	}
 
 	return rc;

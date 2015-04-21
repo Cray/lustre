@@ -268,8 +268,7 @@ void sptlrpc_plain_fini(void);
 /* sec_bulk.c */
 int  sptlrpc_enc_pool_init(void);
 void sptlrpc_enc_pool_fini(void);
-int sptlrpc_proc_read_enc_pool(char *page, char **start, off_t off, int count,
-                               int *eof, void *data);
+int sptlrpc_proc_enc_pool_seq_show(struct seq_file *m, void *v);
 
 /* sec_lproc.c */
 int  sptlrpc_lproc_init(void);
@@ -287,6 +286,9 @@ void sptlrpc_conf_choose_flavor(enum lustre_sec_part from,
                                 struct sptlrpc_flavor *sf);
 int  sptlrpc_conf_init(void);
 void sptlrpc_conf_fini(void);
+
+int lustre_rename(struct dentry *dir, struct vfsmount *mnt, char *old_name,
+		  char *new_name);
 
 /* sec.c */
 int  sptlrpc_init(void);

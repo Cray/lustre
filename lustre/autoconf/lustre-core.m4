@@ -934,26 +934,6 @@ LB_LINUX_TRY_COMPILE([
 ])
 
 #
-# 3.1.1 has ext4_blocks_for_truncate
-#
-AC_DEFUN([LC_BLOCKS_FOR_TRUNCATE],
-[AC_MSG_CHECKING([if kernel has ext4_blocks_for_truncate])
-LB_LINUX_TRY_COMPILE([
-	#include <linux/fs.h>
-	#include "$LINUX/fs/ext4/ext4_jbd2.h"
-	#include "$LINUX/fs/ext4/truncate.h"
-],[
-	ext4_blocks_for_truncate(NULL);
-],[
-	AC_MSG_RESULT([yes])
-	AC_DEFINE(HAVE_BLOCKS_FOR_TRUNCATE, 1,
-		  [kernel has ext4_blocks_for_truncate])
-],[
-	AC_MSG_RESULT([no])
-])
-])
-
-#
 # 3.1 introduced generic_file_llseek_size()
 #
 AC_DEFUN([LC_FILE_LLSEEK_SIZE],
@@ -1373,6 +1353,171 @@ LB_LINUX_TRY_COMPILE([
 
 
 #
+# 3.10+ only supports procfs seq_files handling
+#
+AC_DEFUN([LC_HAVE_ONLY_PROCFS_SEQ],
+[AC_MSG_CHECKING([if procfs only supports using seq_files])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/proc_fs.h>
+],[
+	((struct proc_dir_entry *)0)->write_proc(NULL, NULL, 0, NULL);
+],[
+	AC_MSG_RESULT([no])
+],[
+	AC_DEFINE(HAVE_ONLY_PROCFS_SEQ, 1, [only seq_files supported])
+	AC_MSG_RESULT([yes])
+])
+])
+
+#
+# 3.11 need to access d_count to get dentry reference count
+#
+AC_DEFUN([LC_HAVE_DCOUNT],
+[AC_MSG_CHECKING([if d_count exist])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/dcache.h>
+],[
+	struct dentry de;
+
+	d_count(&de);
+],[
+	AC_DEFINE(HAVE_D_COUNT, 1, [d_count exist])
+	AC_MSG_RESULT([yes])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
+# 3.10 release for block device doesn't return int
+AC_DEFUN([LC_BLKDEV_RELEASE_RETURN_INT],
+[AC_MSG_CHECKING([if block_device_operations release returns int])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/blkdev.h>
+],[
+	struct block_device_operations fops;
+	int i __attribute__ ((unused));
+
+	i = fops.release(NULL,0);
+],[
+	AC_MSG_RESULT([yes])
+	AC_DEFINE(HAVE_BLKDEV_RELEASE_RETURN_INT, 1,
+		  [block device release returns int])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
+#
+# 3.11 dentry_operations.d_compare() taken 5 arguments.
+#
+AC_DEFUN([LC_D_COMPARE_5ARGS],
+[AC_MSG_CHECKING([if d_compare taken 5 arguments])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/dcache.h>
+],[
+	((struct dentry_operations*)0)->d_compare(NULL,NULL,0,NULL,NULL);
+],[
+	AC_DEFINE(HAVE_D_COMPARE_5ARGS, 1,
+		[d_compare need 5 arguments])
+	AC_MSG_RESULT([yes])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
+#
+# 3.11 need to access d_count to get dentry reference count
+#
+AC_DEFUN([LC_HAVE_DCOUNT],
+[AC_MSG_CHECKING([if d_count exist])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/dcache.h>
+],[
+	struct dentry de;
+
+	d_count(&de);
+],[
+	AC_DEFINE(HAVE_D_COUNT, 1, [d_count exist])
+	AC_MSG_RESULT([yes])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
+# 3.13 has vfs_renane with 5 args
+AC_DEFUN([LC_VFS_RENAME_5ARGS],
+[AC_MSG_CHECKING([if kernel has vfs_rename with 5 args])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/fs.h>
+],[
+	vfs_rename(NULL, NULL, NULL, NULL, NULL);
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE(HAVE_VFS_RENAME_5ARGS, 1,
+		[kernel has vfs_rename with 5 args])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
+#
+# LC_HAVE_TRUNCATE_IPAGE_FINAL
+#
+# 3.14 bring truncate_inode_pages_final for evict_inode
+#
+AC_DEFUN([LC_HAVE_TRUNCATE_IPAGES_FINAL],
+[AC_MSG_CHECKING([if Linux kernel has truncate_inode_pages_final])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/mm.h>
+],[
+	truncate_inode_pages_final(NULL);
+], [
+	AC_MSG_RESULT([yes])
+	AC_DEFINE(HAVE_TRUNCATE_INODE_PAGES_FINAL, 1,
+		[kernel has truncate_inode_pages_final])
+],[
+	AC_MSG_RESULT([no])
+])
+]) # LC_HAVE_TRUNCATE_IPAGES_FINAL
+
+#
+# 3.12 truncate_pagecache without oldsize parameter
+#
+AC_DEFUN([LC_OLDSIZE_TRUNCATE_PAGECACHE],
+[AC_MSG_CHECKING([if truncate_pagecache with old_size parameter])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/mm.h>
+],[
+	truncate_pagecache(NULL, 0, 0);
+],[
+	AC_DEFINE(HAVE_OLDSIZE_TRUNCATE_PAGECACHE, 1, [with oldsize])
+	AC_MSG_RESULT([yes])
+],[
+	AC_MSG_RESULT([no])
+])
+])
+
+#
+# LC_VFS_RENAME_6ARGS
+#
+# 3.15 has vfs_rename with 6 args
+#
+AC_DEFUN([LC_VFS_RENAME_6ARGS],
+[AC_MSG_CHECKING([if Linux kernel has 'vfs_rename' with 6 args])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/fs.h>
+],[
+	vfs_rename(NULL, NULL, NULL, NULL, NULL, NULL);
+],[
+	AC_DEFINE(HAVE_VFS_RENAME_6ARGS, 1,
+		[kernel has vfs_rename with 6 args])
+	AC_MSG_RESULT([yes])
+],[
+	AC_MSG_RESULT([no])
+])
+]) # LC_VFS_RENAME_6ARGS
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -1441,9 +1586,6 @@ AC_DEFUN([LC_PROG_LINUX],
 	 LC_FILE_LLSEEK_SIZE
 	 LC_INODE_PERMISION_2ARGS
 
-	 # 3.1.1
-	 LC_BLOCKS_FOR_TRUNCATE
-
 	 # 3.2
 	 LC_HAVE_VOID_MAKE_REQUEST_FN
 	 LC_HAVE_PROTECT_I_NLINK
@@ -1477,6 +1619,29 @@ AC_DEFUN([LC_PROG_LINUX],
 	 LC_HAVE_F_PATH_MNT
 
 	 LC_HAVE_RADIX_EXCEPTION
+
+	 # 3.10
+	 LC_HAVE_ONLY_PROCFS_SEQ
+	 LC_BLKDEV_RELEASE_RETURN_INT
+
+	 # 3.11
+	 LC_HAVE_DCOUNT
+
+	 # 3.11
+	 LC_D_COMPARE_5ARGS
+	 LC_HAVE_DCOUNT
+
+	 # 3.12
+	 LC_OLDSIZE_TRUNCATE_PAGECACHE
+
+	 # 3.13
+	 LC_VFS_RENAME_5ARGS
+
+	 # 3.14
+	 LC_HAVE_TRUNCATE_IPAGES_FINAL
+
+	 # 3.15
+	 LC_VFS_RENAME_6ARGS
 
 	 #
 	 if test x$enable_server != xno ; then
@@ -1723,7 +1888,7 @@ AC_CHECK_FUNCS([inet_ntoa])
 # libsysio/src/readlink.c
 LC_READLINK_SSIZE_T
 
-# lvfs/prng.c - depends on linux/types.h from liblustre/dir.c
+# libcfs prng.c - depends on linux/types.h from liblustre/dir.c
 AC_CHECK_HEADERS([linux/random.h], [], [],
                  [#ifdef HAVE_LINUX_TYPES_H
                   # include <linux/types.h>
@@ -1873,8 +2038,6 @@ lustre/llite/autoMakefile
 lustre/lclient/Makefile
 lustre/lov/Makefile
 lustre/lov/autoMakefile
-lustre/lvfs/Makefile
-lustre/lvfs/autoMakefile
 lustre/mdc/Makefile
 lustre/mdc/autoMakefile
 lustre/lmv/Makefile

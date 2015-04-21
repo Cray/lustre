@@ -315,9 +315,9 @@ int ll_md_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *desc,
 __u32 ll_i2suppgid(struct inode *i)
 {
 	if (in_group_p(i->i_gid))
-		return (__u32)i->i_gid;
+		return (__u32)from_kgid(&init_user_ns, i->i_gid);
 	else
-		return (__u32)(-1);
+		return (__u32) __kgid_val(INVALID_GID);
 }
 
 /* Pack the required supplementary groups into the supplied groups array.
@@ -326,35 +326,15 @@ __u32 ll_i2suppgid(struct inode *i)
  * array in case it might be useful.  Not needed if doing an MDS-side upcall. */
 void ll_i2gids(__u32 *suppgids, struct inode *i1, struct inode *i2)
 {
-#if 0
-        int i;
-#endif
+	LASSERT(i1 != NULL);
+	LASSERT(suppgids != NULL);
 
-        LASSERT(i1 != NULL);
-        LASSERT(suppgids != NULL);
+	suppgids[0] = ll_i2suppgid(i1);
 
-        suppgids[0] = ll_i2suppgid(i1);
-
-        if (i2)
-                suppgids[1] = ll_i2suppgid(i2);
-                else
-                        suppgids[1] = -1;
-
-#if 0
-        for (i = 0; i < current_ngroups; i++) {
-                if (suppgids[0] == -1) {
-                        if (current_groups[i] != suppgids[1])
-                                suppgids[0] = current_groups[i];
-                        continue;
-                }
-                if (suppgids[1] == -1) {
-                        if (current_groups[i] != suppgids[0])
-                                suppgids[1] = current_groups[i];
-                        continue;
-                }
-                break;
-        }
-#endif
+	if (i2)
+		suppgids[1] = ll_i2suppgid(i2);
+	else
+		suppgids[1] = -1;
 }
 
 /*
@@ -426,7 +406,7 @@ struct dentry *ll_splice_alias(struct inode *inode, struct dentry *de)
 			iput(inode);
 			CDEBUG(D_DENTRY,
 			       "Reuse dentry %p inode %p refc %d flags %#x\n",
-			      new, new->d_inode, d_refcount(new), new->d_flags);
+			      new, new->d_inode, ll_d_count(new), new->d_flags);
 			return new;
 		}
 	}
@@ -435,7 +415,7 @@ struct dentry *ll_splice_alias(struct inode *inode, struct dentry *de)
 		return ERR_PTR(rc);
 	d_add(de, inode);
 	CDEBUG(D_DENTRY, "Add dentry %p inode %p refc %d flags %#x\n",
-	       de, de->d_inode, d_refcount(de), de->d_flags);
+	       de, de->d_inode, ll_d_count(de), de->d_flags);
         return de;
 }
 
@@ -481,6 +461,12 @@ int ll_lookup_it_finish(struct ptlrpc_request *request,
 		if (IS_ERR(alias))
 			RETURN(PTR_ERR(alias));
 		*de = alias;
+	} else if (!it_disposition(it, DISP_LOOKUP_NEG)  &&
+		   !it_disposition(it, DISP_OPEN_CREATE)) {
+		/* With DISP_OPEN_CREATE dentry will
+		   instantiated in ll_create_it. */
+		LASSERT((*de)->d_inode == NULL);
+		d_instantiate(*de, inode);
 	}
 
 	if (!it_disposition(it, DISP_LOOKUP_NEG)) {
@@ -907,7 +893,8 @@ static int ll_new_node(struct inode *dir, struct qstr *name,
                 GOTO(err_exit, err = PTR_ERR(op_data));
 
 	err = md_create(sbi->ll_md_exp, op_data, tgt, tgt_len, mode,
-			current_fsuid(), current_fsgid(),
+			from_kuid(&init_user_ns, current_fsuid()),
+			from_kgid(&init_user_ns, current_fsgid()),
 			cfs_curproc_cap_pack(), rdev, &request);
 	ll_finish_md_op_data(op_data);
         if (err)

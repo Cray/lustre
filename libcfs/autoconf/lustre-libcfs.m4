@@ -332,6 +332,38 @@ LB_LINUX_TRY_COMPILE([
 ])
 
 #
+# LIBCFS_PROCESS_NAMESPACE
+#
+# 3.5 introduced process namespace
+AC_DEFUN([LIBCFS_PROCESS_NAMESPACE], [
+LB_CHECK_LINUX_HEADER([linux/uidgid.h], [
+	AC_DEFINE(HAVE_UIDGID_HEADER, 1, [uidgid.h is present])
+])
+])
+
+#
+# LIBCFS_I_UID_READ
+#
+# 3.5 added helpers to read the new uid/gid types from VFS structures
+# SLE11 SP3 has uidgid.h but not the helpers
+#
+AC_DEFUN([LIBCFS_I_UID_READ], [
+AC_MSG_CHECKING([if 'i_uid_read' is present])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/fs.h>
+],[
+	i_uid_read(NULL);
+],[
+	AC_MSG_RESULT(yes)
+	AC_DEFINE(HAVE_I_UID_READ, 1, [i_uid_read is present])
+],[
+	AC_MSG_RESULT(no)
+])
+])
+
+#
+# LIBCFS_SOCK_ALLOC_FILE
+#
 # FC18 3.7.2-201 unexport sock_map_fd() change to
 # use sock_alloc_file().
 # upstream commit 56b31d1c9f1e6a3ad92e7bfe252721e05d92b285
@@ -383,6 +415,9 @@ LIBCFS_ADD_WAIT_QUEUE_EXCLUSIVE
 LC_SK_SLEEP
 # 2.6.40 fc15
 LC_SHRINK_CONTROL
+# 3.5
+LIBCFS_PROCESS_NAMESPACE
+LIBCFS_I_UID_READ
 # 3.7
 LIBCFS_SOCK_ALLOC_FILE
 ])

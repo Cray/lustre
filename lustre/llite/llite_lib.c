@@ -672,7 +672,7 @@ void lustre_dump_dentry(struct dentry *dentry, int recur)
                " flags=0x%x, fsdata=%p, %d subdirs\n", dentry,
                dentry->d_name.len, dentry->d_name.name,
                dentry->d_parent->d_name.len, dentry->d_parent->d_name.name,
-	       dentry->d_parent, dentry->d_inode, d_refcount(dentry),
+	       dentry->d_parent, dentry->d_inode, ll_d_count(dentry),
                dentry->d_flags, dentry->d_fsdata, subdirs);
         if (dentry->d_inode != NULL)
                 ll_dump_inode(dentry->d_inode);
@@ -1435,7 +1435,7 @@ int ll_setattr_raw(struct dentry *dentry, struct iattr *attr, bool hsm_import)
 
 	/* POSIX: check before ATTR_*TIME_SET set (from inode_change_ok) */
 	if (attr->ia_valid & TIMES_SET_FLAGS) {
-		if (current_fsuid() != inode->i_uid &&
+		if ((!uid_eq(current_fsuid(), inode->i_uid)) &&
 		    !cfs_capable(CFS_CAP_FOWNER))
 			RETURN(-EPERM);
 	}
@@ -1770,9 +1770,9 @@ void ll_update_inode(struct inode *inode, struct lustre_md *md)
                 inode->i_blkbits = inode->i_sb->s_blocksize_bits;
         }
 	if (body->valid & OBD_MD_FLUID)
-		inode->i_uid = body->uid;
+		inode->i_uid = make_kuid(&init_user_ns, body->uid);
 	if (body->valid & OBD_MD_FLGID)
-		inode->i_gid = body->gid;
+		inode->i_gid = make_kgid(&init_user_ns, body->gid);
 	if (body->valid & OBD_MD_FLFLAGS)
 		inode->i_flags = ll_ext_to_inode_flags(body->flags);
 	if (body->valid & OBD_MD_FLNLINK)
@@ -1910,12 +1910,11 @@ void ll_delete_inode(struct inode *inode)
 	ENTRY;
 
 	if (S_ISREG(inode->i_mode) && lli->lli_clob != NULL)
-		/* discard all dirty pages before truncating them, required by
-		 * osc_extent implementation at LU-1030. */
-		cl_sync_file_range(inode, 0, OBD_OBJECT_EOF,
-				   CL_FSYNC_DISCARD, 1);
+		/* It is last chance to write out dirty pages,
+		 * otherwise we may lose data while umount */
+		cl_sync_file_range(inode, 0, OBD_OBJECT_EOF, CL_FSYNC_LOCAL, 1);
 
-        truncate_inode_pages(&inode->i_data, 0);
+	truncate_inode_pages_final(&inode->i_data);
 
         /* Workaround for LU-118 */
         if (inode->i_data.nrpages) {
@@ -2035,7 +2034,8 @@ int ll_flush_ctx(struct inode *inode)
 {
 	struct ll_sb_info  *sbi = ll_i2sbi(inode);
 
-	CDEBUG(D_SEC, "flush context for user %d\n", current_uid());
+	CDEBUG(D_SEC, "flush context for user %d\n",
+	       from_kuid(&init_user_ns, current_uid()));
 
 	obd_set_info_async(NULL, sbi->ll_md_exp,
 			   sizeof(KEY_FLUSH_CTX), KEY_FLUSH_CTX,
@@ -2252,31 +2252,28 @@ out_statfs:
 
 int ll_process_config(struct lustre_cfg *lcfg)
 {
-        char *ptr;
-        void *sb;
-        struct lprocfs_static_vars lvars;
-        unsigned long x;
-        int rc = 0;
+	struct super_block *sb;
+	unsigned long x;
+	int rc = 0;
+	char *ptr;
 
-        lprocfs_llite_init_vars(&lvars);
+	/* The instance name contains the sb: lustre-client-aacfe000 */
+	ptr = strrchr(lustre_cfg_string(lcfg, 0), '-');
+	if (!ptr || !*(++ptr))
+		return -EINVAL;
+	if (sscanf(ptr, "%lx", &x) != 1)
+		return -EINVAL;
+	sb = (struct super_block *)x;
+	/* This better be a real Lustre superblock! */
+	LASSERT(s2lsi(sb)->lsi_lmd->lmd_magic == LMD_MAGIC);
 
-        /* The instance name contains the sb: lustre-client-aacfe000 */
-        ptr = strrchr(lustre_cfg_string(lcfg, 0), '-');
-        if (!ptr || !*(++ptr))
-                return -EINVAL;
-        if (sscanf(ptr, "%lx", &x) != 1)
-                return -EINVAL;
-        sb = (void *)x;
-        /* This better be a real Lustre superblock! */
-        LASSERT(s2lsi((struct super_block *)sb)->lsi_lmd->lmd_magic == LMD_MAGIC);
-
-        /* Note we have not called client_common_fill_super yet, so
-           proc fns must be able to handle that! */
-        rc = class_process_proc_param(PARAM_LLITE, lvars.obd_vars,
-                                      lcfg, sb);
-        if (rc > 0)
-                rc = 0;
-        return(rc);
+	/* Note we have not called client_common_fill_super yet, so
+	   proc fns must be able to handle that! */
+	rc = class_process_proc_seq_param(PARAM_LLITE, lprocfs_llite_obd_vars,
+					  lcfg, sb);
+	if (rc > 0)
+		rc = 0;
+	return rc;
 }
 
 /* this function prepares md_op_data hint for passing ot down to MD stack. */
@@ -2312,8 +2309,8 @@ struct md_op_data * ll_prep_md_op_data(struct md_op_data *op_data,
 	op_data->op_namelen = namelen;
 	op_data->op_mode = mode;
 	op_data->op_mod_time = cfs_time_current_sec();
-	op_data->op_fsuid = current_fsuid();
-	op_data->op_fsgid = current_fsgid();
+	op_data->op_fsuid = from_kuid(&init_user_ns, current_fsuid());
+	op_data->op_fsgid = from_kgid(&init_user_ns, current_fsgid());
 	op_data->op_cap = cfs_curproc_cap_pack();
 	op_data->op_bias = 0;
 	op_data->op_cli_flags = 0;

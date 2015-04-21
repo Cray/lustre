@@ -1120,8 +1120,8 @@ static void osd_object_delete(const struct lu_env *env, struct lu_object *l)
         osd_index_fini(obj);
         if (inode != NULL) {
 		struct qsd_instance	*qsd = osd_obj2dev(obj)->od_quota_slave;
-		qid_t			 uid = inode->i_uid;
-		qid_t			 gid = inode->i_gid;
+		qid_t			 uid = i_uid_read(inode);
+		qid_t			 gid = i_gid_read(inode);
 
                 iput(inode);
                 obj->oo_inode = NULL;
@@ -1610,26 +1610,26 @@ static struct timespec *osd_inode_time(const struct lu_env *env,
 
 
 static void osd_inode_getattr(const struct lu_env *env,
-                              struct inode *inode, struct lu_attr *attr)
+			      struct inode *inode, struct lu_attr *attr)
 {
-        attr->la_valid      |= LA_ATIME | LA_MTIME | LA_CTIME | LA_MODE |
-                               LA_SIZE | LA_BLOCKS | LA_UID | LA_GID |
-                               LA_FLAGS | LA_NLINK | LA_RDEV | LA_BLKSIZE |
-			       LA_TYPE;
+	attr->la_valid	|= LA_ATIME | LA_MTIME | LA_CTIME | LA_MODE |
+			   LA_SIZE | LA_BLOCKS | LA_UID | LA_GID |
+			   LA_FLAGS | LA_NLINK | LA_RDEV | LA_BLKSIZE |
+			   LA_TYPE;
 
-        attr->la_atime      = LTIME_S(inode->i_atime);
-        attr->la_mtime      = LTIME_S(inode->i_mtime);
-        attr->la_ctime      = LTIME_S(inode->i_ctime);
-        attr->la_mode       = inode->i_mode;
-        attr->la_size       = i_size_read(inode);
-        attr->la_blocks     = inode->i_blocks;
-        attr->la_uid        = inode->i_uid;
-        attr->la_gid        = inode->i_gid;
-        attr->la_flags      = LDISKFS_I(inode)->i_flags;
-        attr->la_nlink      = inode->i_nlink;
-        attr->la_rdev       = inode->i_rdev;
-	attr->la_blksize    = 1 << inode->i_blkbits;
-	attr->la_blkbits    = inode->i_blkbits;
+	attr->la_atime	 = LTIME_S(inode->i_atime);
+	attr->la_mtime	 = LTIME_S(inode->i_mtime);
+	attr->la_ctime	 = LTIME_S(inode->i_ctime);
+	attr->la_mode	 = inode->i_mode;
+	attr->la_size	 = i_size_read(inode);
+	attr->la_blocks	 = inode->i_blocks;
+	attr->la_uid	 = i_uid_read(inode);
+	attr->la_gid	 = i_gid_read(inode);
+	attr->la_flags	 = LDISKFS_I(inode)->i_flags;
+	attr->la_nlink	 = inode->i_nlink;
+	attr->la_rdev	 = inode->i_rdev;
+	attr->la_blksize = 1 << inode->i_blkbits;
+	attr->la_blkbits = inode->i_blkbits;
 }
 
 static int osd_attr_get(const struct lu_env *env,
@@ -1660,6 +1660,8 @@ static int osd_declare_attr_set(const struct lu_env *env,
 	struct osd_object      *obj;
 	struct osd_thread_info *info = osd_oti_get(env);
 	struct lquota_id_info  *qi = &info->oti_qi;
+	qid_t			uid;
+	qid_t			gid;
 	long long               bspace;
 	int			rc = 0;
 	bool			enforce;
@@ -1693,8 +1695,9 @@ static int osd_declare_attr_set(const struct lu_env *env,
 	if (attr->la_valid & LA_UID || attr->la_valid & LA_GID) {
 		/* USERQUOTA */
 		qi->lqi_type = USRQUOTA;
+		uid = i_uid_read(obj->oo_inode);
 		enforce = (attr->la_valid & LA_UID) &&
-			  (attr->la_uid != obj->oo_inode->i_uid);
+			  (attr->la_uid != uid);
 		/* inode accounting */
 		qi->lqi_is_blk = false;
 
@@ -1709,7 +1712,7 @@ static int osd_declare_attr_set(const struct lu_env *env,
 			RETURN(rc);
 
 		/* and one less inode for the current uid */
-		qi->lqi_id.qid_uid = obj->oo_inode->i_uid;
+		qi->lqi_id.qid_uid = uid;
 		qi->lqi_space      = -1;
 		rc = osd_declare_qid(env, oh, qi, obj, enforce, NULL);
 		if (rc == -EDQUOT || rc == -EINPROGRESS)
@@ -1734,7 +1737,7 @@ static int osd_declare_attr_set(const struct lu_env *env,
 			RETURN(rc);
 
 		/* and finally less blocks for the current uid */
-		qi->lqi_id.qid_uid = obj->oo_inode->i_uid;
+		qi->lqi_id.qid_uid = uid;
 		qi->lqi_space      = -bspace;
 		rc = osd_declare_qid(env, oh, qi, obj, enforce, NULL);
 		if (rc == -EDQUOT || rc == -EINPROGRESS)
@@ -1744,8 +1747,9 @@ static int osd_declare_attr_set(const struct lu_env *env,
 
 		/* GROUP QUOTA */
 		qi->lqi_type = GRPQUOTA;
+		gid = i_gid_read(obj->oo_inode);
 		enforce = (attr->la_valid & LA_GID) &&
-			  (attr->la_gid != obj->oo_inode->i_gid);
+			  (attr->la_gid != gid);
 
 		/* inode accounting */
 		qi->lqi_is_blk = false;
@@ -1760,7 +1764,7 @@ static int osd_declare_attr_set(const struct lu_env *env,
 			RETURN(rc);
 
 		/* and one less inode for the current gid */
-		qi->lqi_id.qid_gid = obj->oo_inode->i_gid;
+		qi->lqi_id.qid_gid = gid;
 		qi->lqi_space      = -1;
 		rc = osd_declare_qid(env, oh, qi, obj, enforce, NULL);
 		if (rc == -EDQUOT || rc == -EINPROGRESS)
@@ -1781,7 +1785,7 @@ static int osd_declare_attr_set(const struct lu_env *env,
 			RETURN(rc);
 
 		/* and finally less blocks for the current gid */
-		qi->lqi_id.qid_gid = obj->oo_inode->i_gid;
+		qi->lqi_id.qid_gid = gid;
 		qi->lqi_space      = -bspace;
 		rc = osd_declare_qid(env, oh, qi, obj, enforce, NULL);
 		if (rc == -EDQUOT || rc == -EINPROGRESS)
@@ -1817,17 +1821,17 @@ static int osd_inode_setattr(const struct lu_env *env,
         if (bits & LA_BLOCKS)
                 inode->i_blocks = attr->la_blocks;
 #endif
-        if (bits & LA_MODE)
-                inode->i_mode   = (inode->i_mode & S_IFMT) |
-                        (attr->la_mode & ~S_IFMT);
-        if (bits & LA_UID)
-                inode->i_uid    = attr->la_uid;
-        if (bits & LA_GID)
-                inode->i_gid    = attr->la_gid;
-        if (bits & LA_NLINK)
+	if (bits & LA_MODE)
+		inode->i_mode = (inode->i_mode & S_IFMT) |
+				(attr->la_mode & ~S_IFMT);
+	if (bits & LA_UID)
+		i_uid_write(inode, attr->la_uid);
+	if (bits & LA_GID)
+		i_gid_write(inode, attr->la_gid);
+	if (bits & LA_NLINK)
 		set_nlink(inode, attr->la_nlink);
-        if (bits & LA_RDEV)
-                inode->i_rdev   = attr->la_rdev;
+	if (bits & LA_RDEV)
+		inode->i_rdev = attr->la_rdev;
 
         if (bits & LA_FLAGS) {
                 /* always keep S_NOCMTIME */
@@ -1839,8 +1843,8 @@ static int osd_inode_setattr(const struct lu_env *env,
 
 static int osd_quota_transfer(struct inode *inode, const struct lu_attr *attr)
 {
-	if ((attr->la_valid & LA_UID && attr->la_uid != inode->i_uid) ||
-	    (attr->la_valid & LA_GID && attr->la_gid != inode->i_gid)) {
+	if ((attr->la_valid & LA_UID && attr->la_uid != i_uid_read(inode)) ||
+	    (attr->la_valid & LA_GID && attr->la_gid != i_gid_read(inode))) {
 		struct iattr	iattr;
 		int		rc;
 
@@ -1850,8 +1854,8 @@ static int osd_quota_transfer(struct inode *inode, const struct lu_attr *attr)
 			iattr.ia_valid |= ATTR_UID;
 		if (attr->la_valid & LA_GID)
 			iattr.ia_valid |= ATTR_GID;
-		iattr.ia_uid = attr->la_uid;
-		iattr.ia_gid = attr->la_gid;
+		iattr.ia_uid = make_kuid(&init_user_ns, attr->la_uid);
+		iattr.ia_gid = make_kgid(&init_user_ns, attr->la_gid);
 
 		rc = ll_vfs_dq_transfer(inode, &iattr);
 		if (rc) {
@@ -2382,13 +2386,13 @@ static int osd_declare_object_destroy(const struct lu_env *env,
 	osd_trans_declare_op(env, oh, OSD_OT_DELETE,
 			     osd_dto_credits_noquota[DTO_INDEX_DELETE] + 3);
 	/* one less inode */
-	rc = osd_declare_inode_qid(env, inode->i_uid, inode->i_gid, -1, oh,
-				   obj, false, NULL, false);
+	rc = osd_declare_inode_qid(env, i_uid_read(inode), i_gid_read(inode),
+				   -1, oh, obj, false, NULL, false);
 	if (rc)
 		RETURN(rc);
 	/* data to be truncated */
-	rc = osd_declare_inode_qid(env, inode->i_uid, inode->i_gid, 0, oh,
-				   obj, true, NULL, false);
+	rc = osd_declare_inode_qid(env, i_uid_read(inode), i_gid_read(inode),
+				   0, oh, obj, true, NULL, false);
 	RETURN(rc);
 }
 
@@ -3059,16 +3063,16 @@ static struct obd_capa *osd_capa_get(const struct lu_env *env,
 	case LC_ID_NONE:
 		RETURN(NULL);
 	case LC_ID_PLAIN:
-		capa->lc_uid = obj->oo_inode->i_uid;
-		capa->lc_gid = obj->oo_inode->i_gid;
+		capa->lc_uid = i_uid_read(obj->oo_inode);
+		capa->lc_gid = i_gid_read(obj->oo_inode);
 		capa->lc_flags = LC_ID_PLAIN;
 		break;
 	case LC_ID_CONVERT: {
 		__u32 d[4], s[4];
 
-		s[0] = obj->oo_inode->i_uid;
+		s[0] = i_uid_read(obj->oo_inode);
 		cfs_get_random_bytes(&(s[1]), sizeof(__u32));
-		s[2] = obj->oo_inode->i_gid;
+		s[2] = i_uid_read(obj->oo_inode);
 		cfs_get_random_bytes(&(s[3]), sizeof(__u32));
 		rc = capa_encrypt_id(d, s, key->lk_key, CAPA_HMAC_KEY_MAX_LEN);
 		if (unlikely(rc))
@@ -3449,8 +3453,8 @@ static int osd_index_declare_ea_delete(const struct lu_env *env,
 	inode = osd_dt_obj(dt)->oo_inode;
 	LASSERT(inode);
 
-	rc = osd_declare_inode_qid(env, inode->i_uid, inode->i_gid, 0, oh,
-				   osd_dt_obj(dt), true, NULL, false);
+	rc = osd_declare_inode_qid(env, i_uid_read(inode), i_gid_read(inode),
+				   0, oh, osd_dt_obj(dt), true, NULL, false);
 	RETURN(rc);
 }
 
@@ -4240,9 +4244,9 @@ static int osd_index_declare_ea_insert(const struct lu_env *env,
 		/* We ignore block quota on meta pool (MDTs), so needn't
 		 * calculate how many blocks will be consumed by this index
 		 * insert */
-		rc = osd_declare_inode_qid(env, inode->i_uid, inode->i_gid, 0,
-					   oh, osd_dt_obj(dt), true, NULL,
-					   false);
+		rc = osd_declare_inode_qid(env, i_uid_read(inode),
+					   i_gid_read(inode), 0, oh,
+					   osd_dt_obj(dt), true, NULL, false);
 	}
 
 	if (fid == NULL)
@@ -5522,11 +5526,6 @@ static void osd_umount(const struct lu_env *env, struct osd_device *o)
 {
 	ENTRY;
 
-	if (o->od_fsops) {
-		fsfilt_put_ops(o->od_fsops);
-		o->od_fsops = NULL;
-	}
-
 	if (o->od_mnt != NULL) {
 		shrink_dcache_sb(osd_sb(o));
 		osd_sync(env, &o->od_dt_dev);
@@ -5561,13 +5560,6 @@ static int osd_mount(const struct lu_env *env,
 	if (strlen(dev) >= sizeof(o->od_mntdev))
 		RETURN(-E2BIG);
 	strcpy(o->od_mntdev, dev);
-
-	o->od_fsops = fsfilt_get_ops(mt_str(LDD_MT_LDISKFS));
-	if (IS_ERR(o->od_fsops)) {
-		CERROR("%s: Can't find fsfilt_ldiskfs\n", name);
-		o->od_fsops = NULL;
-		RETURN(-ENOTSUPP);
-	}
 
 	OBD_PAGE_ALLOC(__page, GFP_IOFS);
 	if (__page == NULL)
@@ -5648,8 +5640,6 @@ out_mnt:
 out:
 	if (__page)
 		OBD_PAGE_FREE(__page);
-	if (rc)
-		fsfilt_put_ops(o->od_fsops);
 
 	return rc;
 }
@@ -5985,9 +5975,11 @@ static int __init osd_mod_init(void)
 	if (rc)
 		return rc;
 
-	rc = class_register_type(&osd_obd_device_ops, NULL,
-				 lprocfs_osd_module_vars,
-				 LUSTRE_OSD_LDISKFS_NAME, &osd_device_type);
+	rc = class_register_type(&osd_obd_device_ops, NULL, NULL,
+#ifndef HAVE_ONLY_PROCFS_SEQ
+				lprocfs_osd_module_vars,
+#endif
+				LUSTRE_OSD_LDISKFS_NAME, &osd_device_type);
 	if (rc)
 		lu_kmem_fini(ldiskfs_caches);
 	return rc;

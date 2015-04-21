@@ -105,25 +105,6 @@ static inline void ll_set_fs_pwd(struct fs_struct *fs, struct vfsmount *mnt,
 	 generic_permission(inode, mask, check_acl)
 #endif
 
-#ifdef HAVE_DENTRY_OPEN_USE_PATH
-#define ll_dentry_open(a,b,c)	dentry_open(a,b,c)
-#else
-/*
- * dentry_open handles its own reference counting since Linux v3.6
- * (commit 765927b2). Callers should free their own references.
- *
- * Prior versions expected the caller to increment the references.
- * The references are retained on success and freed on error.
- */
-static inline struct file *ll_dentry_open(struct path *path, int flags,
-					  const struct cred *cred)
-{
-	mntget(path->mnt);
-	dget(path->dentry);
-	return dentry_open(path->dentry, path->mnt, flags, cred);
-}
-#endif
-
 #ifdef HAVE_4ARGS_VFS_SYMLINK
 #define ll_vfs_symlink(dir, dentry, mnt, path, mode) \
                 vfs_symlink(dir, dentry, path, mode)
@@ -399,6 +380,32 @@ static inline struct dentry *d_make_root(struct inode *root)
 # define ll_dirty_inode(inode, flag)	(inode)->i_sb->s_op->dirty_inode((inode), flag)
 #else
 # define ll_dirty_inode(inode, flag)	(inode)->i_sb->s_op->dirty_inode((inode))
+#endif
+
+#ifdef HAVE_VFS_RENAME_5ARGS
+#define ll_vfs_rename(a, b, c, d) vfs_rename(a, b, c, d, NULL)
+#elif defined HAVE_VFS_RENAME_6ARGS
+#define ll_vfs_rename(a, b, c, d) vfs_rename(a, b, c, d, NULL, 0)
+#else
+#define ll_vfs_rename(a, b, c, d) vfs_rename(a, b, c, d)
+#endif
+
+#ifndef HAVE_TRUNCATE_INODE_PAGES_FINAL
+static inline void truncate_inode_pages_final(struct address_space *map)
+{
+	truncate_inode_pages(map, 0);
+		/* Workaround for LU-118 */
+	if (map->nrpages) {
+		spin_lock_irq(&map->tree_lock);
+		spin_unlock_irq(&map->tree_lock);
+	}	/* Workaround end */
+}
+#endif
+
+#ifdef HAVE_OLDSIZE_TRUNCATE_PAGECACHE
+#define ll_truncate_pagecache(inode, size) truncate_pagecache(inode, 0, size)
+#else
+#define ll_truncate_pagecache(inode, size) truncate_pagecache(inode, size)
 #endif
 
 #endif /* _COMPAT25_H */

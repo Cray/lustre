@@ -112,6 +112,11 @@ EXPORT_SYMBOL(obd_dirty_transit_pages);
 char obd_jobid_var[JOBSTATS_JOBID_VAR_MAX_LEN + 1] = JOBSTATS_DISABLE;
 EXPORT_SYMBOL(obd_jobid_var);
 
+#ifdef LPROCFS
+struct lprocfs_stats *obd_memory = NULL;
+EXPORT_SYMBOL(obd_memory);
+#endif
+
 /* Get jobid of current process by reading the environment variable
  * stored in between the "env_start" & "env_end" of task struct.
  *
@@ -138,7 +143,8 @@ int lustre_get_jobid(char *jobid)
 	/* Use process name + fsuid as jobid */
 	if (strcmp(obd_jobid_var, JOBSTATS_PROCNAME_UID) == 0) {
 		snprintf(jobid, JOBSTATS_JOBID_SIZE, "%s.%u",
-			 current_comm(), current_fsuid());
+			 current_comm(),
+			 from_kuid(&init_user_ns, current_fsuid()));
 		RETURN(0);
 	}
 

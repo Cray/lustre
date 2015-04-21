@@ -252,8 +252,8 @@ static int qmt_device_init0(const struct lu_env *env, struct qmt_device *qmt,
 	LASSERT(type != NULL);
 
 	/* register proc directory associated with this qmt */
-	qmt->qmt_proc = lprocfs_register(qmt->qmt_svname, type->typ_procroot,
-					 NULL, NULL);
+	qmt->qmt_proc = lprocfs_seq_register(qmt->qmt_svname, type->typ_procroot,
+						NULL, NULL);
 	if (IS_ERR(qmt->qmt_proc)) {
 		rc = PTR_ERR(qmt->qmt_proc);
 		CERROR("%s: failed to create qmt proc entry (%d)\n",
@@ -466,8 +466,11 @@ int qmt_glb_init(void)
 	int rc;
 	ENTRY;
 
-	rc = class_register_type(&qmt_obd_ops, NULL, NULL, LUSTRE_QMT_NAME,
-				 &qmt_device_type);
+	rc = class_register_type(&qmt_obd_ops, NULL, NULL,
+#ifndef HAVE_ONLY_PROCFS_SEQ
+				NULL,
+#endif
+				LUSTRE_QMT_NAME, &qmt_device_type);
 	RETURN(rc);
 }
 

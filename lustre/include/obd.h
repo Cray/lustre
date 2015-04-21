@@ -68,6 +68,7 @@
 #include <lustre_fid.h>
 #include <lustre_fld.h>
 #include <lustre_capa.h>
+#include <lvfs.h>
 
 #define MAX_OBD_DEVICES 8192
 
@@ -896,7 +897,6 @@ struct obd_device {
 	spinlock_t		obd_dev_lock; /* protect OBD bitfield above */
 	struct mutex		obd_dev_mutex;
 	__u64			obd_last_committed;
-	struct fsfilt_operations *obd_fsops;
 	spinlock_t		obd_osfs_lock;
 	struct obd_statfs	obd_osfs;       /* locked by obd_osfs_lock */
 	__u64			obd_osfs_age;
@@ -958,10 +958,12 @@ struct obd_device {
 	unsigned int	       obd_md_cntr_base;
 	struct lprocfs_stats  *obd_md_stats;
 
-        cfs_proc_dir_entry_t  *obd_proc_entry;
-        cfs_proc_dir_entry_t  *obd_proc_exports_entry;
-        cfs_proc_dir_entry_t  *obd_svc_procroot;
-        struct lprocfs_stats  *obd_svc_stats;
+	struct proc_dir_entry	*obd_proc_entry;
+	struct proc_dir_entry	*obd_proc_exports_entry;
+	void			*obd_proc_private;	/* type private PDEs */
+	struct proc_dir_entry	*obd_svc_procroot;
+	struct lprocfs_stats	*obd_svc_stats;
+	struct lprocfs_seq_vars	*obd_vars;
 	cfs_atomic_t           obd_evict_inprogress;
 	wait_queue_head_t      obd_evict_inprogress_waitq;
 	cfs_list_t             obd_evict_list; /* protected with pet_lock */

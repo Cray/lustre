@@ -15,32 +15,30 @@
  *
  * You should have received a copy of the GNU General Public License
  * version 2 along with this program; If not, see
- * http://www.sun.com/software/products/lustre/docs/GPLv2.pdf
- *
- * Please contact Sun Microsystems, Inc., 4150 Network Circle, Santa Clara,
- * CA 95054 USA or visit www.sun.com if you need additional information or
- * have any questions.
+ * http://www.gnu.org/licenses/gpl-2.0.html
  *
  * GPL HEADER END
  */
 /*
- * Copyright (c) 2005, 2010, Oracle and/or its affiliates. All rights reserved.
- * Use is subject to license terms.
+ * Authors: James Simmons <jsimmons@infradead.org>
  */
-/*
- * This file is part of Lustre, http://www.lustre.org/
- * Lustre is a trademark of Sun Microsystems, Inc.
- *
- * lustre/include/darwin/lustre_fsfilt.h
- *
- * Filesystem interface helper.
- */
+#include <libcfs/params_tree.h>
 
-#ifndef _DARWIN_LUSTRE_FSFILT_H
-#define _DARWIN_LUSTRE_FSFILT_H
+int seq_printf(struct seq_file *m, const char *f, ...)
+{
+	va_list args;
+	int len;
 
-#ifndef _LUSTRE_FSFILT_H
-#error Do not #include this file directly. #include <lustre_fsfilt.h> instead
-#endif
-
-#endif
+	if (m->count < m->size) {
+		va_start(args, f);
+		len = vsnprintf(m->buf + m->count, m->size - m->count, f, args);
+		va_end(args);
+		if (m->count + len < m->size) {
+			m->count += len;
+			return 0;
+		}
+	}
+	m->count = m->size;
+	return -1;
+}
+EXPORT_SYMBOL(seq_printf);

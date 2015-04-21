@@ -82,6 +82,12 @@
 #include <rdma/ib_verbs.h>
 #include <rdma/ib_fmr_pool.h>
 
+#define DEBUG_SUBSYSTEM S_LND
+
+#include <libcfs/libcfs.h>
+#include <lnet/lnet.h>
+#include <lnet/lib-lnet.h>
+
 #define IBLND_PEER_HASH_SIZE		101	/* # peer lists */
 /* # scheduler loops before reschedule */
 #define IBLND_RESCHED			100

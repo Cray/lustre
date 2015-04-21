@@ -57,9 +57,6 @@
 #include <ldiskfs/ldiskfs.h>
 #include <ldiskfs/ldiskfs_jbd2.h>
 
-/* fsfilt_{get|put}_ops */
-#include <lustre_fsfilt.h>
-
 /* LUSTRE_OSD_NAME */
 #include <obd.h>
 /* class_register_type(), class_unregister_type(), class_get_type() */
@@ -259,7 +256,6 @@ struct osd_device {
         struct obd_statfs         od_statfs;
 	spinlock_t		  od_osfs_lock;
 
-	struct fsfilt_operations *od_fsops;
 	int			  od_connects;
 	struct lu_site		  od_site;
 
@@ -734,6 +730,28 @@ static inline bool is_quota_glb_feat(const struct dt_index_features *feat)
 		feat == &dt_quota_igrp_features ||
 		feat == &dt_quota_bgrp_features) ? true : false;
 }
+
+#ifndef HAVE_I_UID_READ
+static inline uid_t i_uid_read(const struct inode *inode)
+{
+	return inode->i_uid;
+}
+
+static inline gid_t i_gid_read(const struct inode *inode)
+{
+	return inode->i_gid;
+}
+
+static inline void i_uid_write(struct inode *inode, uid_t uid)
+{
+	inode->i_uid = uid;
+}
+
+static inline void i_gid_write(struct inode *inode, gid_t gid)
+{
+	inode->i_gid = gid;
+}
+#endif
 
 /*
  * Invariants, assertions.

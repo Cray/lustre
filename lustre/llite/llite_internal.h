@@ -717,16 +717,12 @@ int lprocfs_register_mountpoint(struct proc_dir_entry *parent,
                                 struct super_block *sb, char *osc, char *mdc);
 void lprocfs_unregister_mountpoint(struct ll_sb_info *sbi);
 void ll_stats_ops_tally(struct ll_sb_info *sbi, int op, int count);
-void lprocfs_llite_init_vars(struct lprocfs_static_vars *lvars);
+extern struct lprocfs_seq_vars lprocfs_llite_obd_vars[];
 #else
 static inline int lprocfs_register_mountpoint(struct proc_dir_entry *parent,
                         struct super_block *sb, char *osc, char *mdc){return 0;}
 static inline void lprocfs_unregister_mountpoint(struct ll_sb_info *sbi) {}
 static void ll_stats_ops_tally(struct ll_sb_info *sbi, int op, int count) {}
-static void lprocfs_llite_init_vars(struct lprocfs_static_vars *lvars)
-{
-        memset(lvars, 0, sizeof(*lvars));
-}
 #endif
 
 
@@ -869,13 +865,6 @@ void ll_intent_release(struct lookup_intent *);
 void ll_invalidate_aliases(struct inode *);
 void ll_frob_intent(struct lookup_intent **itp, struct lookup_intent *deft);
 void ll_lookup_finish_locks(struct lookup_intent *it, struct dentry *dentry);
-#ifdef HAVE_D_COMPARE_7ARGS
-int ll_dcompare(const struct dentry *parent, const struct inode *pinode,
-		const struct dentry *dentry, const struct inode *inode,
-		unsigned int len, const char *str, const struct qstr *d_name);
-#else
-int ll_dcompare(struct dentry *parent, struct qstr *d_name, struct qstr *name);
-#endif
 int ll_revalidate_it_finish(struct ptlrpc_request *request,
                             struct lookup_intent *it, struct dentry *de);
 
@@ -1359,7 +1348,7 @@ ll_statahead_mark(struct inode *dir, struct dentry *dentry)
 }
 
 static inline int
-ll_need_statahead(struct inode *dir, struct dentry *dentryp)
+d_need_statahead(struct inode *dir, struct dentry *dentryp)
 {
 	struct ll_inode_info  *lli;
 	struct ll_dentry_data *ldd;
@@ -1404,7 +1393,7 @@ ll_statahead_enter(struct inode *dir, struct dentry **dentryp, int only_unplug)
 {
 	int ret;
 
-	ret = ll_need_statahead(dir, *dentryp);
+	ret = d_need_statahead(dir, *dentryp);
 	if (ret <= 0)
 		return ret;
 
@@ -1629,12 +1618,12 @@ static inline void d_lustre_invalidate(struct dentry *dentry, int nested)
 {
 	CDEBUG(D_DENTRY, "invalidate dentry %.*s (%p) parent %p inode %p "
 	       "refc %d\n", dentry->d_name.len, dentry->d_name.name, dentry,
-	       dentry->d_parent, dentry->d_inode, d_refcount(dentry));
+	       dentry->d_parent, dentry->d_inode, ll_d_count(dentry));
 
 	spin_lock_nested(&dentry->d_lock,
 			 nested ? DENTRY_D_LOCK_NESTED : DENTRY_D_LOCK_NORMAL);
 	__d_lustre_invalidate(dentry);
-	if (d_refcount(dentry) == 0)
+	if (ll_d_count(dentry) == 0)
 		__d_drop(dentry);
 	spin_unlock(&dentry->d_lock);
 }
