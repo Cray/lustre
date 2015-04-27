@@ -1890,6 +1890,8 @@ void ll_update_inode(struct inode *inode, struct lustre_md *md)
 	if (body->valid & OBD_MD_TSTATE) {
 		if (body->t_state & MS_RESTORE)
 			lli->lli_flags |= LLIF_FILE_RESTORING;
+		else
+			lli->lli_flags &= ~LLIF_FILE_RESTORING;
 	}
 }
 
