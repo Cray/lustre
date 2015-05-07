@@ -1479,21 +1479,6 @@ static inline int obd_enqueue_rqset(struct obd_export *exp,
         RETURN(rc);
 }
 
-static inline int obd_enqueue(struct obd_export *exp,
-                              struct obd_info *oinfo,
-                              struct ldlm_enqueue_info *einfo,
-                              struct ptlrpc_request_set *set)
-{
-        int rc;
-        ENTRY;
-
-        EXP_CHECK_DT_OP(exp, enqueue);
-        EXP_COUNTER_INCREMENT(exp, enqueue);
-
-        rc = OBP(exp->exp_obd, enqueue)(exp, oinfo, einfo, set);
-        RETURN(rc);
-}
-
 static inline int obd_change_cbdata(struct obd_export *exp,
                                     struct lov_stripe_md *lsm,
                                     ldlm_iterator_t it, void *data)

@@ -76,17 +76,6 @@ struct osc_fsync_args {
 	void                *fa_cookie;
 };
 
-struct osc_enqueue_args {
-        struct obd_export        *oa_exp;
-	__u64                    *oa_flags;
-        obd_enqueue_update_f      oa_upcall;
-        void                     *oa_cookie;
-        struct ost_lvb           *oa_lvb;
-        struct lustre_handle     *oa_lockh;
-        struct ldlm_enqueue_info *oa_ei;
-        unsigned int              oa_agl:1;
-};
-
 extern void osc_update_enqueue(struct lustre_handle *lov_lockhp,
 			       struct lov_oinfo *loi, __u64 flags,
 			       struct ost_lvb *lvb, __u32 mode, int rc);

@@ -758,14 +758,14 @@ test_32a() { # bug 11270
         log "checking cached lockless truncate"
         $TRUNCATE $DIR1/$tfile 8000000
         $CHECKSTAT -s 8000000 $DIR2/$tfile || error "wrong file size"
-        [ $(calc_osc_stats lockless_truncate) -eq 0 ] ||
-                error "lockless truncate doesn't use cached locks"
+	[ $(calc_osc_stats lockless_truncate) -ne 0 ] ||
+		error "cached truncate isn't lockless"
 
         log "checking not cached lockless truncate"
         $TRUNCATE $DIR2/$tfile 5000000
         $CHECKSTAT -s 5000000 $DIR1/$tfile || error "wrong file size"
-        [ $(calc_osc_stats lockless_truncate) -ne 0 ] ||
-                error "not cached trancate isn't lockless"
+	[ $(calc_osc_stats lockless_truncate) -ne 0 ] ||
+		error "not cached truncate isn't lockless"
 
         log "disabled lockless truncate"
         enable_lockless_truncate 0
@@ -2340,12 +2340,12 @@ test_51c() {
 
 	# change the layout of testing file
 	echo "Setting layout ..."
-	$LFS setstripe -c $OSTCOUNT $DIR1/$tfile &
-	pid=$!
+	$LFS setstripe -c $OSTCOUNT $DIR1/$tfile
 	sleep 1
 
 	# get layout of this file should wait until dd is finished
 	local stripecnt=`$LFS getstripe -c $DIR2/$tfile`
+	echo "stripecnt: $stripecnt"
 	[ $stripecnt -eq $OSTCOUNT ] || error "layout wrong"
 
 	rm -f $DIR1/$tfile

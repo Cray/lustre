@@ -1438,3 +1438,4 @@ void ldlm_resource_dump(int level, struct ldlm_resource *res)
                         LDLM_DEBUG_LIMIT(level, lock, "###");
         }
 }
+EXPORT_SYMBOL(ldlm_resource_dump);

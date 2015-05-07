@@ -106,13 +106,15 @@ void osc_update_next_shrink(struct client_obd *cli);
 
 extern struct ptlrpc_request_set *PTLRPCD_SET;
 
+typedef int (*osc_enqueue_upcall_f)(void *cookie, struct lustre_handle *lockh,
+				    int rc);
+
 int osc_enqueue_base(struct obd_export *exp, struct ldlm_res_id *res_id,
 		     __u64 *flags, ldlm_policy_data_t *policy,
-                     struct ost_lvb *lvb, int kms_valid,
-                     obd_enqueue_update_f upcall,
-                     void *cookie, struct ldlm_enqueue_info *einfo,
-                     struct lustre_handle *lockh,
-                     struct ptlrpc_request_set *rqset, int async, int agl);
+		     struct ost_lvb *lvb, int kms_valid,
+		     osc_enqueue_upcall_f upcall,
+		     void *cookie, struct ldlm_enqueue_info *einfo,
+		     struct ptlrpc_request_set *rqset, int async, int agl);
 int osc_cancel_base(struct lustre_handle *lockh, __u32 mode);
 
 int osc_match_base(struct obd_export *exp, struct ldlm_res_id *res_id,
@@ -206,4 +208,7 @@ int osc_quotactl(struct obd_device *unused, struct obd_export *exp,
 int osc_quotacheck(struct obd_device *unused, struct obd_export *exp,
                    struct obd_quotactl *oqctl);
 int osc_quota_poll_check(struct obd_export *exp, struct if_quotacheck *qchk);
+struct ldlm_lock *dlmlock_at_pgoff(const struct lu_env *env,
+				   struct osc_object *obj, pgoff_t index,
+				   int pending, int canceling);
 #endif /* OSC_INTERNAL_H */

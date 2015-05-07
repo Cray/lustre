@@ -104,11 +104,8 @@ blkcnt_t dirty_cnt(struct inode *inode)
 int cl_glimpse_lock(const struct lu_env *env, struct cl_io *io,
                     struct inode *inode, struct cl_object *clob, int agl)
 {
-        struct cl_lock_descr *descr = &ccc_env_info(env)->cti_descr;
         struct cl_inode_info *lli   = cl_i2info(inode);
         const struct lu_fid  *fid   = lu_object_fid(&clob->co_lu);
-        struct ccc_io        *cio   = ccc_env_io(env);
-        struct cl_lock       *lock;
         int result;
 
         ENTRY;
@@ -116,6 +113,9 @@ int cl_glimpse_lock(const struct lu_env *env, struct cl_io *io,
         if (!(lli->lli_flags & LLIF_MDS_SIZE_LOCK)) {
                 CDEBUG(D_DLMTRACE, "Glimpsing inode "DFID"\n", PFID(fid));
 		if (lli->lli_has_smd) {
+			struct cl_lock *lock = ccc_env_lock(env);
+			struct cl_lock_descr *descr = &lock->cll_descr;
+
                         /* NOTE: this looks like DLM lock request, but it may
                          *       not be one. Due to CEF_ASYNC flag (translated
                          *       to LDLM_FL_HAS_INTENT by osc), this is
@@ -131,11 +131,7 @@ int cl_glimpse_lock(const struct lu_env *env, struct cl_io *io,
                          *       attributes are returned anyway. */
                         *descr = whole_file;
                         descr->cld_obj   = clob;
-                        descr->cld_mode  = CLM_PHANTOM;
-                        descr->cld_enq_flags = CEF_ASYNC | CEF_MUST;
-                        if (agl)
-                                descr->cld_enq_flags |= CEF_AGL;
-                        cio->cui_glimpse = 1;
+			descr->cld_mode  = CLM_READ;
 			/*
 			 * CEF_ASYNC is used because glimpse sub-locks cannot
 			 * deadlock (because they never conflict with other
@@ -144,19 +140,15 @@ int cl_glimpse_lock(const struct lu_env *env, struct cl_io *io,
 			 * CEF_MUST protects glimpse lock from conversion into
 			 * a lockless mode.
 			 */
-			lock = cl_lock_request(env, io, descr, "glimpse",
-					       current);
-			cio->cui_glimpse = 0;
+			descr->cld_enq_flags = CEF_ASYNC | CEF_MUST;
+			if (agl)
+				descr->cld_enq_flags |= CEF_AGL;
 
-			if (lock == NULL)
-				RETURN(0);
+			result = cl_lock_request(env, io, lock);
+			if (result < 0)
+				RETURN(result);
 
-			if (IS_ERR(lock))
-				RETURN(PTR_ERR(lock));
-
-			LASSERT(agl == 0);
-			result = cl_wait(env, lock);
-			if (result == 0) {
+			if (!agl) {
 				cl_merge_lvb(env, inode);
 				if (cl_isize_read(inode) > 0 &&
 				    inode->i_blocks == 0) {
@@ -168,9 +160,8 @@ int cl_glimpse_lock(const struct lu_env *env, struct cl_io *io,
 					 */
 					inode->i_blocks = dirty_cnt(inode);
 				}
-				cl_unuse(env, lock);
 			}
-			cl_lock_release(env, lock, "glimpse", current);
+			cl_lock_release(env, lock);
 		} else {
 			CDEBUG(D_DLMTRACE, "No objects for inode\n");
 			cl_merge_lvb(env, inode);
@@ -251,10 +242,7 @@ int cl_local_size(struct inode *inode)
 {
         struct lu_env           *env = NULL;
         struct cl_io            *io  = NULL;
-        struct ccc_thread_info  *cti;
         struct cl_object        *clob;
-        struct cl_lock_descr    *descr;
-        struct cl_lock          *lock;
         int                      result;
         int                      refcheck;
 
@@ -272,19 +260,16 @@ int cl_local_size(struct inode *inode)
         if (result > 0)
                 result = io->ci_result;
 	else if (result == 0) {
-		cti = ccc_env_info(env);
-		descr = &cti->cti_descr;
+		struct cl_lock *lock = ccc_env_lock(env);
 
-		*descr = whole_file;
-		descr->cld_obj = clob;
-		lock = cl_lock_peek(env, io, descr, "localsize", current);
-		if (lock != NULL) {
+		lock->cll_descr = whole_file;
+		lock->cll_descr.cld_enq_flags = CEF_PEEK;
+		lock->cll_descr.cld_obj = clob;
+		result = cl_lock_request(env, io, lock);
+		if (result == 0) {
 			cl_merge_lvb(env, inode);
-			cl_unuse(env, lock);
-			cl_lock_release(env, lock, "localsize", current);
-			result = 0;
-		} else
-			result = -ENODATA;
+			cl_lock_release(env, lock);
+		}
 	}
 	cl_io_fini(env, io);
 	cl_env_put(env, &refcheck);

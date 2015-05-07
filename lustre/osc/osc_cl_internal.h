@@ -73,14 +73,17 @@ struct osc_io {
         struct cl_io_slice oi_cl;
         /** true if this io is lockless. */
         int                oi_lockless;
+	/** how many LRU pages are reserved for this IO */
+	int oi_lru_reserved;
+
 	/** active extents, we know how many bytes is going to be written,
 	 * so having an active extent will prevent it from being fragmented */
 	struct osc_extent *oi_active;
 	/** partially truncated extent, we need to hold this extent to prevent
 	 * page writeback from happening. */
 	struct osc_extent *oi_trunc;
-
-	int oi_lru_reserved;
+	/** write osc_lock for this IO, used by osc_extent_find(). */
+	struct osc_lock   *oi_write_osclock;
 
 	struct obd_info    oi_info;
 	struct obdo        oi_oa;
@@ -120,6 +123,7 @@ struct osc_thread_info {
 	 */
 	pgoff_t			oti_next_index;
 	pgoff_t			oti_fn_index; /* first non-overlapped index */
+	struct cl_sync_io	oti_anchor;
 };
 
 struct osc_object {
@@ -183,6 +187,10 @@ struct osc_object {
 	struct radix_tree_root	oo_tree;
 	spinlock_t		oo_tree_lock;
 	unsigned long		oo_npages;
+
+	/* Protect osc_lock this osc_object has */
+	spinlock_t		oo_ol_spin;
+	cfs_list_t		oo_ol_list;
 };
 
 static inline void osc_object_lock(struct osc_object *obj)
@@ -213,8 +221,6 @@ enum osc_lock_state {
         OLS_ENQUEUED,
         OLS_UPCALL_RECEIVED,
         OLS_GRANTED,
-        OLS_RELEASED,
-        OLS_BLOCKED,
         OLS_CANCELLED
 };
 
@@ -223,10 +229,8 @@ enum osc_lock_state {
  *
  * Interaction with DLM.
  *
- * CLIO enqueues all DLM locks through ptlrpcd (that is, in "async" mode).
- *
  * Once receive upcall is invoked, osc_lock remembers a handle of DLM lock in
- * osc_lock::ols_handle and a pointer to that lock in osc_lock::ols_lock.
+ * osc_lock::ols_handle and a pointer to that lock in osc_lock::ols_dlmlock.
  *
  * This pointer is protected through a reference, acquired by
  * osc_lock_upcall0(). Also, an additional reference is acquired by
@@ -263,17 +267,26 @@ enum osc_lock_state {
  * future.
  */
 struct osc_lock {
-        struct cl_lock_slice     ols_cl;
-        /** underlying DLM lock */
-        struct ldlm_lock        *ols_lock;
-        /** lock value block */
-        struct ost_lvb           ols_lvb;
-        /** DLM flags with which osc_lock::ols_lock was enqueued */
-	__u64                    ols_flags;
-        /** osc_lock::ols_lock handle */
-        struct lustre_handle     ols_handle;
-        struct ldlm_enqueue_info ols_einfo;
-        enum osc_lock_state      ols_state;
+	struct cl_lock_slice	ols_cl;
+	/** Owner sleeps on this channel for state change */
+	struct cl_sync_io	*ols_owner;
+	/** waiting list for this lock to be cancelled */
+	cfs_list_t		ols_waiting_list;
+	/** wait entry of ols_waiting_list */
+	cfs_list_t		ols_wait_entry;
+	/** list entry for osc_object::oo_ol_list */
+	cfs_list_t		ols_nextlock_oscobj;
+
+	/** DLM flags with which osc_lock::ols_dlmlock was enqueued */
+	__u64			ols_flags;
+	/** underlying DLM lock */
+	struct ldlm_lock	*ols_dlmlock;
+	/** ldlm lock handle */
+	struct lustre_handle     ols_handle;
+	struct ldlm_enqueue_info ols_einfo;
+	enum osc_lock_state      ols_state;
+	/** lock value block */
+	struct ost_lvb		ols_lvb;
 
         /**
          * true, if ldlm_lock_addref() was called against
@@ -304,12 +317,6 @@ struct osc_lock {
          */
                                  ols_locklessable:1,
         /**
-         * set by osc_lock_use() to wait until blocking AST enters into
-         * osc_ldlm_blocking_ast0(), so that cl_lock mutex can be used for
-         * further synchronization.
-         */
-                                 ols_ast_wait:1,
-        /**
          * If the data of this lock has been flushed to server side.
          */
                                  ols_flush:1,
@@ -326,15 +333,6 @@ struct osc_lock {
          * For async glimpse lock.
          */
                                  ols_agl:1;
-        /**
-         * IO that owns this lock. This field is used for a dead-lock
-         * avoidance by osc_lock_enqueue_wait().
-         *
-         * XXX: unfortunately, the owner of a osc_lock is not unique, 
-         * the lock may have multiple users, if the lock is granted and
-         * then matched.
-         */
-        struct osc_io           *ols_owner;
 };
 
 
@@ -629,6 +627,8 @@ struct osc_extent {
 	unsigned int       oe_intree:1,
 	/** 0 is write, 1 is read */
 			   oe_rw:1,
+	/** sync extent, queued by osc_queue_sync_pages() */
+			   oe_sync:1,
 			   oe_srvlock:1,
 			   oe_memalloc:1,
 	/** an ACTIVE extent is going to be truncated, so when this extent
@@ -670,7 +670,7 @@ struct osc_extent {
 	 * state has changed. */
 	wait_queue_head_t        oe_waitq;
 	/** lock covering this extent */
-	struct cl_lock    *oe_osclock;
+	struct ldlm_lock    *oe_dlmlock;
 	/** terminator of this extent. Must be true if this extent is in IO. */
 	struct task_struct        *oe_owner;
 	/** return value of writeback. If somebody is waiting for this extent,
@@ -684,14 +684,14 @@ int osc_extent_finish(const struct lu_env *env, struct osc_extent *ext,
 		      int sent, int rc);
 int osc_extent_release(const struct lu_env *env, struct osc_extent *ext);
 
-int osc_lock_discard_pages(const struct lu_env *env, struct osc_lock *lock);
+int osc_lock_discard_pages(const struct lu_env *env, struct osc_object *osc,
+			   pgoff_t start, pgoff_t end, enum cl_lock_mode mode);
 
 typedef int (*osc_page_gang_cbt)(const struct lu_env *, struct cl_io *,
 				 struct osc_page *, void *);
 int osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 			 struct osc_object *osc, pgoff_t start, pgoff_t end,
 			 osc_page_gang_cbt cb, void *cbdata);
-
 /** @} osc */
 
 #endif /* OSC_CL_INTERNAL_H */

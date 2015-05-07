@@ -163,7 +163,6 @@ static int cl_io_init0(const struct lu_env *env, struct cl_io *io,
 
         io->ci_type = iot;
         CFS_INIT_LIST_HEAD(&io->ci_lockset.cls_todo);
-        CFS_INIT_LIST_HEAD(&io->ci_lockset.cls_curr);
         CFS_INIT_LIST_HEAD(&io->ci_lockset.cls_done);
         CFS_INIT_LIST_HEAD(&io->ci_layers);
 
@@ -242,45 +241,11 @@ int cl_io_rw_init(const struct lu_env *env, struct cl_io *io,
 }
 EXPORT_SYMBOL(cl_io_rw_init);
 
-static inline const struct lu_fid *
-cl_lock_descr_fid(const struct cl_lock_descr *descr)
-{
-        return lu_object_fid(&descr->cld_obj->co_lu);
-}
-
 static int cl_lock_descr_sort(const struct cl_lock_descr *d0,
                               const struct cl_lock_descr *d1)
 {
-        return lu_fid_cmp(cl_lock_descr_fid(d0), cl_lock_descr_fid(d1)) ?:
-                __diff_normalize(d0->cld_start, d1->cld_start);
-}
-
-static int cl_lock_descr_cmp(const struct cl_lock_descr *d0,
-                             const struct cl_lock_descr *d1)
-{
-        int ret;
-
-        ret = lu_fid_cmp(cl_lock_descr_fid(d0), cl_lock_descr_fid(d1));
-        if (ret)
-                return ret;
-        if (d0->cld_end < d1->cld_start)
-                return -1;
-        if (d0->cld_start > d0->cld_end)
-                return 1;
-        return 0;
-}
-
-static void cl_lock_descr_merge(struct cl_lock_descr *d0,
-                                const struct cl_lock_descr *d1)
-{
-        d0->cld_start = min(d0->cld_start, d1->cld_start);
-        d0->cld_end = max(d0->cld_end, d1->cld_end);
-
-        if (d1->cld_mode == CLM_WRITE && d0->cld_mode != CLM_WRITE)
-                d0->cld_mode = CLM_WRITE;
-
-        if (d1->cld_mode == CLM_GROUP && d0->cld_mode != CLM_GROUP)
-                d0->cld_mode = CLM_GROUP;
+	return lu_fid_cmp(lu_object_fid(&d0->cld_obj->co_lu),
+			  lu_object_fid(&d1->cld_obj->co_lu));
 }
 
 /*
@@ -305,7 +270,7 @@ static void cl_io_locks_sort(struct cl_io *io)
                                              cill_linkage) {
                         if (prev != NULL) {
                                 switch (cl_lock_descr_sort(&prev->cill_descr,
-                                                          &curr->cill_descr)) {
+							   &curr->cill_descr)) {
                                 case 0:
                                         /*
                                          * IMPOSSIBLE: Identical locks are
@@ -330,134 +295,61 @@ static void cl_io_locks_sort(struct cl_io *io)
         EXIT;
 }
 
-/**
- * Check whether \a queue contains locks matching \a need.
- *
- * \retval +ve there is a matching lock in the \a queue
- * \retval   0 there are no matching locks in the \a queue
- */
-int cl_queue_match(const cfs_list_t *queue,
-                   const struct cl_lock_descr *need)
+static void cl_lock_descr_merge(struct cl_lock_descr *d0,
+				const struct cl_lock_descr *d1)
 {
-       struct cl_io_lock_link *scan;
+	d0->cld_start = min(d0->cld_start, d1->cld_start);
+	d0->cld_end = max(d0->cld_end, d1->cld_end);
 
-       ENTRY;
-       cfs_list_for_each_entry(scan, queue, cill_linkage) {
-               if (cl_lock_descr_match(&scan->cill_descr, need))
-                       RETURN(+1);
-       }
-       RETURN(0);
-}
-EXPORT_SYMBOL(cl_queue_match);
+	if (d1->cld_mode == CLM_WRITE && d0->cld_mode != CLM_WRITE)
+		d0->cld_mode = CLM_WRITE;
 
-static int cl_queue_merge(const cfs_list_t *queue,
-                          const struct cl_lock_descr *need)
-{
-       struct cl_io_lock_link *scan;
-
-       ENTRY;
-       cfs_list_for_each_entry(scan, queue, cill_linkage) {
-               if (cl_lock_descr_cmp(&scan->cill_descr, need))
-                       continue;
-               cl_lock_descr_merge(&scan->cill_descr, need);
-               CDEBUG(D_VFSTRACE, "lock: %d: [%lu, %lu]\n",
-                      scan->cill_descr.cld_mode, scan->cill_descr.cld_start,
-                      scan->cill_descr.cld_end);
-               RETURN(+1);
-       }
-       RETURN(0);
-
-}
-
-static int cl_lockset_match(const struct cl_lockset *set,
-                            const struct cl_lock_descr *need)
-{
-        return cl_queue_match(&set->cls_curr, need) ||
-               cl_queue_match(&set->cls_done, need);
+	if (d1->cld_mode == CLM_GROUP && d0->cld_mode != CLM_GROUP)
+		d0->cld_mode = CLM_GROUP;
 }
 
 static int cl_lockset_merge(const struct cl_lockset *set,
                             const struct cl_lock_descr *need)
 {
-        return cl_queue_merge(&set->cls_todo, need) ||
-               cl_lockset_match(set, need);
-}
+	struct cl_io_lock_link *scan;
 
-static int cl_lockset_lock_one(const struct lu_env *env,
-                               struct cl_io *io, struct cl_lockset *set,
-                               struct cl_io_lock_link *link)
-{
-        struct cl_lock *lock;
-        int             result;
+	ENTRY;
+	cfs_list_for_each_entry(scan, &set->cls_todo, cill_linkage) {
+		if (!cl_object_same(scan->cill_descr.cld_obj, need->cld_obj))
+			continue;
 
-        ENTRY;
-
-	lock = cl_lock_request(env, io, &link->cill_descr, "io", io);
-
-        if (!IS_ERR(lock)) {
-                link->cill_lock = lock;
-                cfs_list_move(&link->cill_linkage, &set->cls_curr);
-                if (!(link->cill_descr.cld_enq_flags & CEF_ASYNC)) {
-                        result = cl_wait(env, lock);
-                        if (result == 0)
-                                cfs_list_move(&link->cill_linkage,
-                                              &set->cls_done);
-                } else
-                        result = 0;
-        } else
-                result = PTR_ERR(lock);
-        RETURN(result);
-}
-
-static void cl_lock_link_fini(const struct lu_env *env, struct cl_io *io,
-                              struct cl_io_lock_link *link)
-{
-        struct cl_lock *lock = link->cill_lock;
-
-        ENTRY;
-        cfs_list_del_init(&link->cill_linkage);
-        if (lock != NULL) {
-                cl_lock_release(env, lock, "io", io);
-                link->cill_lock = NULL;
-        }
-        if (link->cill_fini != NULL)
-                link->cill_fini(env, link);
-        EXIT;
+		/* Merge locks for the same object because ldlm lock server
+		 * may expand the lock extent, otherwise there is a deadlock
+		 * case if two conflicted locks are queueud for the same object
+		 * and lock server expands one lock to overlap the another.
+		 * The side effect is that it can generate a multi-stripe lock
+		 * that may cause casacading problem */
+		cl_lock_descr_merge(&scan->cill_descr, need);
+		CDEBUG(D_VFSTRACE, "lock: %d: [%lu, %lu]\n",
+		       scan->cill_descr.cld_mode, scan->cill_descr.cld_start,
+		       scan->cill_descr.cld_end);
+		RETURN(+1);
+	}
+	RETURN(0);
 }
 
 static int cl_lockset_lock(const struct lu_env *env, struct cl_io *io,
                            struct cl_lockset *set)
 {
-        struct cl_io_lock_link *link;
-        struct cl_io_lock_link *temp;
-        struct cl_lock         *lock;
-        int result;
+	struct cl_io_lock_link *link;
+	struct cl_io_lock_link *temp;
+	int result;
 
-        ENTRY;
-        result = 0;
-        cfs_list_for_each_entry_safe(link, temp, &set->cls_todo, cill_linkage) {
-                if (!cl_lockset_match(set, &link->cill_descr)) {
-                        /* XXX some locking to guarantee that locks aren't
-                         * expanded in between. */
-                        result = cl_lockset_lock_one(env, io, set, link);
-                        if (result != 0)
-                                break;
-                } else
-                        cl_lock_link_fini(env, io, link);
+	ENTRY;
+	result = 0;
+	cfs_list_for_each_entry_safe(link, temp, &set->cls_todo, cill_linkage) {
+		result = cl_lock_request(env, io, &link->cill_lock);
+		if (result < 0)
+			break;
+
+		cfs_list_move(&link->cill_linkage, &set->cls_done);
         }
-        if (result == 0) {
-                cfs_list_for_each_entry_safe(link, temp,
-                                             &set->cls_curr, cill_linkage) {
-                        lock = link->cill_lock;
-                        result = cl_wait(env, lock);
-                        if (result == 0)
-                                cfs_list_move(&link->cill_linkage,
-                                              &set->cls_done);
-                        else
-                                break;
-                }
-        }
-        RETURN(result);
+	RETURN(result);
 }
 
 /**
@@ -513,16 +405,19 @@ void cl_io_unlock(const struct lu_env *env, struct cl_io *io)
         ENTRY;
         set = &io->ci_lockset;
 
-        cfs_list_for_each_entry_safe(link, temp, &set->cls_todo, cill_linkage)
-                cl_lock_link_fini(env, io, link);
+	cfs_list_for_each_entry_safe(link, temp, &set->cls_todo, cill_linkage) {
+		cfs_list_del_init(&link->cill_linkage);
+		if (link->cill_fini != NULL)
+			link->cill_fini(env, link);
+	}
 
-        cfs_list_for_each_entry_safe(link, temp, &set->cls_curr, cill_linkage)
-                cl_lock_link_fini(env, io, link);
+	cfs_list_for_each_entry_safe(link, temp, &set->cls_done, cill_linkage) {
+		cfs_list_del_init(&link->cill_linkage);
+		cl_lock_release(env, &link->cill_lock);
+		if (link->cill_fini != NULL)
+			link->cill_fini(env, link);
+	}
 
-        cfs_list_for_each_entry_safe(link, temp, &set->cls_done, cill_linkage) {
-                cl_unuse(env, link->cill_lock);
-                cl_lock_link_fini(env, io, link);
-        }
         cl_io_for_each_reverse(scan, io) {
                 if (scan->cis_iop->op[io->ci_type].cio_unlock != NULL)
                         scan->cis_iop->op[io->ci_type].cio_unlock(env, scan);
@@ -646,21 +541,21 @@ static void cl_free_io_lock_link(const struct lu_env *env,
 int cl_io_lock_alloc_add(const struct lu_env *env, struct cl_io *io,
                          struct cl_lock_descr *descr)
 {
-        struct cl_io_lock_link *link;
-        int result;
+	struct cl_io_lock_link *link;
+	int result;
 
-        ENTRY;
-        OBD_ALLOC_PTR(link);
-        if (link != NULL) {
-                link->cill_descr     = *descr;
-                link->cill_fini      = cl_free_io_lock_link;
-                result = cl_io_lock_add(env, io, link);
-                if (result) /* lock match */
-                        link->cill_fini(env, link);
-        } else
-                result = -ENOMEM;
+	ENTRY;
+	OBD_ALLOC_PTR(link);
+	if (link != NULL) {
+		link->cill_descr = *descr;
+		link->cill_fini  = cl_free_io_lock_link;
+		result = cl_io_lock_add(env, io, link);
+		if (result) /* lock match */
+			link->cill_fini(env, link);
+	} else
+		result = -ENOMEM;
 
-        RETURN(result);
+	RETURN(result);
 }
 EXPORT_SYMBOL(cl_io_lock_alloc_add);
 

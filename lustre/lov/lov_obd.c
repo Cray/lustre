@@ -1604,63 +1604,6 @@ static int lov_brw(int cmd, struct obd_export *exp, struct obd_info *oinfo,
         RETURN(rc);
 }
 
-static int lov_enqueue_interpret(struct ptlrpc_request_set *rqset,
-                                 void *data, int rc)
-{
-        struct lov_request_set *lovset = (struct lov_request_set *)data;
-        ENTRY;
-        rc = lov_fini_enqueue_set(lovset, lovset->set_ei->ei_mode, rc, rqset);
-        RETURN(rc);
-}
-
-static int lov_enqueue(struct obd_export *exp, struct obd_info *oinfo,
-                       struct ldlm_enqueue_info *einfo,
-                       struct ptlrpc_request_set *rqset)
-{
-        ldlm_mode_t mode = einfo->ei_mode;
-        struct lov_request_set *set;
-        struct lov_request *req;
-        cfs_list_t *pos;
-        struct lov_obd *lov;
-        ldlm_error_t rc;
-        ENTRY;
-
-        LASSERT(oinfo);
-        ASSERT_LSM_MAGIC(oinfo->oi_md);
-        LASSERT(mode == (mode & -mode));
-
-        /* we should never be asked to replay a lock this way. */
-        LASSERT((oinfo->oi_flags & LDLM_FL_REPLAY) == 0);
-
-        if (!exp || !exp->exp_obd)
-                RETURN(-ENODEV);
-
-        lov = &exp->exp_obd->u.lov;
-        rc = lov_prep_enqueue_set(exp, oinfo, einfo, &set);
-        if (rc)
-                RETURN(rc);
-
-        cfs_list_for_each (pos, &set->set_list) {
-                req = cfs_list_entry(pos, struct lov_request, rq_link);
-
-                rc = obd_enqueue(lov->lov_tgts[req->rq_idx]->ltd_exp,
-                                 &req->rq_oi, einfo, rqset);
-                if (rc != ELDLM_OK)
-                        GOTO(out, rc);
-        }
-
-        if (rqset && !cfs_list_empty(&rqset->set_requests)) {
-                LASSERT(rc == 0);
-                LASSERT(rqset->set_interpret == NULL);
-                rqset->set_interpret = lov_enqueue_interpret;
-                rqset->set_arg = (void *)set;
-                RETURN(rc);
-        }
-out:
-        rc = lov_fini_enqueue_set(set, mode, rc, rqset);
-        RETURN(rc);
-}
-
 static int lov_change_cbdata(struct obd_export *exp,
                              struct lov_stripe_md *lsm, ldlm_iterator_t it,
                              void *data)
@@ -2863,7 +2806,6 @@ struct obd_ops lov_obd_ops = {
         .o_adjust_kms          = lov_adjust_kms,
         .o_punch               = lov_punch,
         .o_sync                = lov_sync,
-        .o_enqueue             = lov_enqueue,
         .o_change_cbdata       = lov_change_cbdata,
         .o_find_cbdata         = lov_find_cbdata,
         .o_cancel              = lov_cancel,

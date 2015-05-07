@@ -310,8 +310,6 @@ static int lov_delete_empty(const struct lu_env *env, struct lov_object *lov,
 	LASSERT(lov->lo_type == LLT_EMPTY || lov->lo_type == LLT_RELEASED);
 
 	lov_layout_wait(env, lov);
-
-	cl_locks_prune(env, &lov->lo_cl, 0);
 	return 0;
 }
 
@@ -379,7 +377,7 @@ static int lov_delete_raid0(const struct lu_env *env, struct lov_object *lov,
                         struct lovsub_object *los = r0->lo_sub[i];
 
                         if (los != NULL) {
-				cl_locks_prune(env, &los->lso_cl, 1);
+				cl_object_prune(env, &los->lso_cl);
                                 /*
                                  * If top-level object is to be evicted from
                                  * the cache, so are its sub-objects.
@@ -388,7 +386,6 @@ static int lov_delete_raid0(const struct lu_env *env, struct lov_object *lov,
 			}
 		}
 	}
-	cl_locks_prune(env, &lov->lo_cl, 0);
 	RETURN(0);
 }
 

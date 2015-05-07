@@ -378,8 +378,8 @@ static const struct cl_page_operations slp_transient_page_ops = {
  */
 
 static int slp_lock_enqueue(const struct lu_env *env,
-                           const struct cl_lock_slice *slice,
-                           struct cl_io *unused, __u32 enqflags)
+			    const struct cl_lock_slice *slice,
+			    struct cl_io *unused, struct cl_sync_io *anchor)
 {
         CLOBINVRNT(env, slice->cls_obj, ccc_object_invariant(slice->cls_obj));
 
@@ -388,12 +388,8 @@ static int slp_lock_enqueue(const struct lu_env *env,
 }
 
 static const struct cl_lock_operations slp_lock_ops = {
-        .clo_delete    = ccc_lock_delete,
         .clo_fini      = ccc_lock_fini,
         .clo_enqueue   = slp_lock_enqueue,
-        .clo_wait      = ccc_lock_wait,
-        .clo_unuse     = ccc_lock_unuse,
-        .clo_fits_into = ccc_lock_fits_into,
 };
 
 /*****************************************************************************
