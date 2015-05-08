@@ -1682,6 +1682,11 @@ ll_get_grouplock(struct inode *inode, struct file *file, unsigned long arg)
 		RETURN(-EINVAL);
 	}
 
+	if(arg == 0) {
+		CWARN("group id for group lock must not be 0\n");
+		RETURN(-EINVAL);
+	}
+
         if (ll_file_nolock(file))
                 RETURN(-EOPNOTSUPP);
 
