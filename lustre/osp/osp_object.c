@@ -1169,8 +1169,6 @@ static int __osp_xattr_set(const struct lu_env *env, struct dt_object *dt,
 	int			rc;
 	ENTRY;
 
-	LASSERT(buf->lb_len > 0 && buf->lb_buf != NULL);
-
 	update = dt_update_request_find_or_create(th, dt);
 	if (IS_ERR(update)) {
 		CERROR("%s: Get OSP update buf failed "DFID": rc = %d\n",
