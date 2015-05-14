@@ -213,9 +213,10 @@ remount_client() {
 }
 
 umount_client() {
-	local MOUNTPATH=$1
-	echo "umount lustre on ${MOUNTPATH}....."
-	zconf_umount `hostname` $MOUNTPATH || return 97
+	local mountpath=$1
+	shift
+	echo "umount lustre on $mountpath....."
+	zconf_umount $HOSTNAME $mountpath $@ || return 97
 }
 
 manual_umount_client(){
@@ -338,7 +339,8 @@ test_4() {
 	setup
 	touch $DIR/$tfile || return 85
 	stop_ost -f
-	cleanup
+	umount_client $MOUNT -f || error “unmount $MOUNT failed”
+	cleanup_nocli
 	eno=$?
 	# ok for ost to fail shutdown
 	if [ 202 -ne $eno ]; then
@@ -358,7 +360,7 @@ test_5a() {	# was test_5
 	# cleanup may return an error from the failed
 	# disconnects; for now I'll consider this successful
 	# if all the modules have unloaded.
-	umount -d $MOUNT &
+	umount -f -d $MOUNT &
 	UMOUNT_PID=$!
 	sleep 6
 	echo "killing umount"
@@ -367,7 +369,7 @@ test_5a() {	# was test_5
 	wait $UMOUNT_PID
 	if grep " $MOUNT " /proc/mounts; then
 		echo "test 5: /proc/mounts after failed umount"
-		umount $MOUNT &
+		umount -f $MOUNT &
 		UMOUNT_PID=$!
 		sleep 2
 		echo "killing umount"
@@ -457,7 +459,8 @@ test_5d() {
 	start_mds
 	stop_ost -f
 	mount_client $MOUNT || rc=1
-	cleanup  || rc=$?
+	umount_client $MOUNT -f || rc=${PIPESTATUS[0]}
+	cleanup_nocli || rc=${PIPESTATUS[0]}
 	grep " $MOUNT " /etc/mtab && \
 		error "$MOUNT entry in mtab after unmount" && rc=11
 	return $rc
@@ -791,7 +794,7 @@ test_22() {
 	# check_mount will block trying to contact ost
 	mcreate $DIR/$tfile || return 40
 	rm -f $DIR/$tfile || return 42
-	umount_client $MOUNT
+	umount_client $MOUNT -f
 	pass
 
 	echo Client mount with a running ost
@@ -3166,7 +3169,7 @@ test_50f() {
 	    stop_ost2 || error "Unable to stop OST2"
 	fi
 
-	umount_client $MOUNT || error "Unable to unmount client"
+	umount_client $MOUNT -f || error "Unable to unmount client"
 	stop_ost || error "Unable to stop OST1"
 	stop_mds || error "Unable to stop MDS"
 	#writeconf to remove all ost2 traces for subsequent tests
@@ -3257,7 +3260,8 @@ test_51() {
 	start_ost2 || return 2
 	wait $pid
 	stop_ost2 || return 3
-	cleanup
+	umount_client $MOUNT -f || error “unmount $MOUNT failed”
+	cleanup_nocli || error “stop server failed”
 	#writeconf to remove all ost2 traces for subsequent tests
 	writeconf_or_reformat
 }
