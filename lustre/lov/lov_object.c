@@ -786,7 +786,6 @@ static int lov_layout_change(const struct lu_env *unused,
 	const struct lov_layout_operations *old_ops;
 	const struct lov_layout_operations *new_ops;
 
-	void *cookie;
 	struct lu_env *env;
 	int refcheck;
 	ENTRY;
@@ -797,12 +796,9 @@ static int lov_layout_change(const struct lu_env *unused,
 		llt = lov_type(conf->u.coc_md->lsm);
 	LASSERT(0 <= llt && llt < ARRAY_SIZE(lov_dispatch));
 
-	cookie = cl_env_reenter();
 	env = cl_env_get(&refcheck);
-	if (IS_ERR(env)) {
-		cl_env_reexit(cookie);
+	if (IS_ERR(env))
 		RETURN(PTR_ERR(env));
-	}
 
 	CDEBUG(D_INODE, DFID" from %s to %s\n",
 	       PFID(lu_object_fid(lov2lu(lov))),
@@ -841,7 +837,6 @@ static int lov_layout_change(const struct lu_env *unused,
 
 out:
 	cl_env_put(env, &refcheck);
-	cl_env_reexit(cookie);
 	RETURN(result);
 }
 
