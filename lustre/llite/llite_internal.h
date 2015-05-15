@@ -669,6 +669,8 @@ struct ll_file_data {
 	 * true: failure is known, not report again.
 	 * false: unknown failure, should report. */
 	bool fd_write_failed;
+	rwlock_t fd_lock; /* protect lcc list */
+	struct list_head fd_lccs; /* list of ll_cl_context */
 };
 
 struct lov_stripe_md;
@@ -768,8 +770,9 @@ ssize_t ll_file_lockless_io(struct file *, char *, size_t, loff_t *, int);
 void ll_clear_file_contended(struct inode*);
 int ll_sync_page_range(struct inode *, struct address_space *, loff_t, size_t);
 int vvp_io_write_commit(const struct lu_env *env, struct cl_io *io);
-struct ll_cl_context *ll_cl_init(struct file *file, struct page *vmpage);
-void ll_cl_fini(struct ll_cl_context *lcc);
+struct ll_cl_context *ll_cl_find(struct file *file);
+void ll_cl_add(struct file *file, const struct lu_env *env, struct cl_io *io);
+void ll_cl_remove(struct file *file, const struct lu_env *env);
 
 /* llite/file.c */
 extern struct file_operations ll_file_operations;
@@ -1037,12 +1040,11 @@ struct vvp_io_args {
 };
 
 struct ll_cl_context {
-        void           *lcc_cookie;
-        struct cl_io   *lcc_io;
-        struct cl_page *lcc_page;
-        struct lu_env  *lcc_env;
-        int             lcc_refcheck;
-        int             lcc_created;
+	cfs_list_t		 lcc_list;
+	void			*lcc_cookie;
+	const struct lu_env	*lcc_env;
+	struct cl_io		*lcc_io;
+	struct cl_page		*lcc_page;
 };
 
 struct vvp_thread_info {
