@@ -129,7 +129,6 @@ static void ll_invalidatepage(struct page *vmpage,
 static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
 {
 	struct lu_env		*env;
-	void			*cookie;
 	struct cl_object	*obj;
 	struct cl_page		*page;
 	struct address_space	*mapping;
@@ -155,7 +154,6 @@ static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
 	if (page == NULL)
 		return 1;
 
-	cookie = cl_env_reenter();
 	env = cl_env_percpu_get();
 	LASSERT(!IS_ERR(env));
 
@@ -181,7 +179,6 @@ static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
 	cl_page_put(env, page);
 
 	cl_env_percpu_put(env);
-	cl_env_reexit(cookie);
 	return result;
 }
 
@@ -373,6 +370,7 @@ static ssize_t ll_direct_IO_26(int rw, struct kiocb *iocb,
                                const struct iovec *iov, loff_t file_offset,
                                unsigned long nr_segs)
 {
+	struct ll_cl_context *lcc;
         struct lu_env *env;
         struct cl_io *io;
         struct file *file = iocb->ki_filp;
@@ -383,7 +381,6 @@ static ssize_t ll_direct_IO_26(int rw, struct kiocb *iocb,
         struct ll_inode_info *lli = ll_i2info(inode);
         unsigned long seg = 0;
         long size = MAX_DIO_SIZE;
-        int refcheck;
         ENTRY;
 
 	if (!lli->lli_has_smd)
@@ -406,9 +403,13 @@ static ssize_t ll_direct_IO_26(int rw, struct kiocb *iocb,
                         RETURN(-EINVAL);
         }
 
-        env = cl_env_get(&refcheck);
+	lcc = ll_cl_find(file);
+	if (lcc == NULL)
+		RETURN(-EIO);
+
+        env = (typeof(env))lcc->lcc_env;
         LASSERT(!IS_ERR(env));
-        io = ccc_env_io(env)->cui_cl.cis_io;
+        io = lcc->lcc_io;
         LASSERT(io != NULL);
 
 	/* 0. Need locking between buffered and direct access. and race with
@@ -488,8 +489,6 @@ out:
 		/* no commit async for direct IO */
 		cio->u.write.cui_written += tot_bytes;
 	}
-
-	cl_env_put(env, &refcheck);
 	RETURN(tot_bytes ? : result);
 }
 

@@ -92,30 +92,24 @@ struct vm_area_struct *our_vma(struct mm_struct *mm, unsigned long addr,
 
 /**
  * API independent part for page fault initialization.
- * \param vma - virtual memory area addressed to page fault
  * \param env - corespondent lu_env to processing
- * \param nest - nested level
+ * \param vma - virtual memory area addressed to page fault
  * \param index - page index corespondent to fault.
  * \parm ra_flags - vma readahead flags.
  *
- * \return allocated and initialized env for fault operation.
- * \retval EINVAL if env can't allocated
- * \return other error codes from cl_io_init.
+ * \return error codes from cl_io_init.
  */
-struct cl_io *ll_fault_io_init(struct vm_area_struct *vma,
-			       struct lu_env **env_ret,
-			       struct cl_env_nest *nest,
+struct cl_io *ll_fault_io_init(struct lu_env *env,
+			       struct vm_area_struct *vma,
 			       pgoff_t index, unsigned long *ra_flags)
 {
 	struct file	       *file = vma->vm_file;
 	struct inode	       *inode = file->f_dentry->d_inode;
 	struct cl_io	       *io;
 	struct cl_fault_io     *fio;
-	struct lu_env	       *env;
 	int			rc;
 	ENTRY;
 
-        *env_ret = NULL;
         if (ll_file_nolock(file))
                 RETURN(ERR_PTR(-EOPNOTSUPP));
 
@@ -126,12 +120,6 @@ struct cl_io *ll_fault_io_init(struct vm_area_struct *vma,
          * stomping on existing context, optionally force an allocation of a new
          * one.
          */
-        env = cl_env_nested_get(nest);
-        if (IS_ERR(env))
-                 RETURN(ERR_PTR(-EINVAL));
-
-        *env_ret = env;
-
         io = ccc_env_thread_io(env);
         io->ci_obj = ll_i2info(inode)->lli_clob;
         LASSERT(io->ci_obj != NULL);
@@ -167,7 +155,6 @@ struct cl_io *ll_fault_io_init(struct vm_area_struct *vma,
 	} else {
 		LASSERT(rc < 0);
 		cl_io_fini(env, io);
-		cl_env_nested_put(nest, env);
 		io = ERR_PTR(rc);
 	}
 
@@ -181,16 +168,19 @@ static int ll_page_mkwrite0(struct vm_area_struct *vma, struct page *vmpage,
 	struct lu_env           *env;
 	struct cl_io            *io;
 	struct vvp_io           *vio;
-	struct cl_env_nest       nest;
 	int                      result;
+	int			 refcheck;
 	sigset_t		 set;
 	struct inode             *inode;
 	struct ll_inode_info     *lli;
 	ENTRY;
 
 	LASSERT(vmpage != NULL);
+	env = cl_env_get(&refcheck);
+	if (IS_ERR(env))
+		RETURN(PTR_ERR(env));
 
-	io = ll_fault_io_init(vma, &env,  &nest, vmpage->index, NULL);
+	io = ll_fault_io_init(env, vma, vmpage->index, NULL);
 	if (IS_ERR(io))
 		GOTO(out, result = PTR_ERR(io));
 
@@ -260,8 +250,8 @@ static int ll_page_mkwrite0(struct vm_area_struct *vma, struct page *vmpage,
 
 out_io:
 	cl_io_fini(env, io);
-	cl_env_nested_put(&nest, env);
 out:
+	cl_env_put(env, &refcheck);
 	CDEBUG(D_MMAP, "%s mkwrite with %d\n", current->comm, result);
 	LASSERT(ergo(result == 0, PageLocked(vmpage)));
 
@@ -305,14 +295,18 @@ static int ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
         struct vvp_io           *vio = NULL;
         struct page             *vmpage;
         unsigned long            ra_flags;
-        struct cl_env_nest       nest;
-        int                      result;
+        int                      result = 0;
         int                      fault_ret = 0;
+	int			 refcheck;
         ENTRY;
 
-        io = ll_fault_io_init(vma, &env,  &nest, vmf->pgoff, &ra_flags);
+	env = cl_env_get(&refcheck);
+	if (IS_ERR(env))
+		RETURN(PTR_ERR(env));
+
+        io = ll_fault_io_init(env, vma, vmf->pgoff, &ra_flags);
         if (IS_ERR(io))
-		RETURN(to_fault_error(PTR_ERR(io)));
+		GOTO(out, result = PTR_ERR(io));
 
         result = io->ci_result;
 	if (result == 0) {
@@ -336,14 +330,15 @@ static int ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
 		}
         }
 	cl_io_fini(env, io);
-	cl_env_nested_put(&nest, env);
 
 	vma->vm_flags |= ra_flags;
+
+out:
+	cl_env_put(env, &refcheck);
 	if (result != 0 && !(fault_ret & VM_FAULT_RETRY))
 		fault_ret |= to_fault_error(result);
 
-	CDEBUG(D_MMAP, "%s fault %d/%d\n",
-	       current->comm, fault_ret, result);
+	CDEBUG(D_MMAP, "%s fault %d/%d\n", current->comm, fault_ret, result);
 	RETURN(fault_ret);
 }
 

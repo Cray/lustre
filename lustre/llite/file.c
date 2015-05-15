@@ -2031,11 +2031,11 @@ restart:
  */
 int ll_hsm_release(struct inode *inode)
 {
-	struct cl_env_nest nest;
 	struct lu_env *env;
 	struct obd_client_handle *och = NULL;
 	__u64 data_version = 0;
 	int rc;
+	int refcheck;
 	ENTRY;
 
 	CDEBUG(D_INODE, "%s: Releasing file "DFID".\n",
@@ -2051,12 +2051,12 @@ int ll_hsm_release(struct inode *inode)
 	if (rc != 0)
 		GOTO(out, rc);
 
-	env = cl_env_nested_get(&nest);
+	env = cl_env_get(&refcheck);
 	if (IS_ERR(env))
 		GOTO(out, rc = PTR_ERR(env));
 
 	ll_merge_lvb(env, inode);
-	cl_env_nested_put(&nest, env);
+	cl_env_put(env, &refcheck);
 
 	/* Release the file.
 	 * NB: lease lock handle is released in mdc_hsm_release_pack() because
@@ -2761,19 +2761,19 @@ int ll_flush(struct file *file, fl_owner_t id)
 int cl_sync_file_range(struct inode *inode, loff_t start, loff_t end,
 		       enum cl_fsync_mode mode, int ignore_layout)
 {
-	struct cl_env_nest nest;
 	struct lu_env *env;
 	struct cl_io *io;
 	struct obd_capa *capa = NULL;
 	struct cl_fsync_io *fio;
 	int result;
+	int refcheck;
 	ENTRY;
 
 	if (mode != CL_FSYNC_NONE && mode != CL_FSYNC_LOCAL &&
 	    mode != CL_FSYNC_DISCARD && mode != CL_FSYNC_ALL)
 		RETURN(-EINVAL);
 
-	env = cl_env_nested_get(&nest);
+	env = cl_env_get(&refcheck);
 	if (IS_ERR(env))
 		RETURN(PTR_ERR(env));
 
@@ -2799,7 +2799,7 @@ int cl_sync_file_range(struct inode *inode, loff_t start, loff_t end,
 	if (result == 0)
 		result = fio->fi_nr_written;
 	cl_io_fini(env, io);
-	cl_env_nested_put(&nest, env);
+	cl_env_put(env, &refcheck);
 
 	capa_put(capa);
 
@@ -3574,20 +3574,20 @@ enum llioc_iter ll_iocontrol_call(struct inode *inode, struct file *file,
 int ll_layout_conf(struct inode *inode, const struct cl_object_conf *conf)
 {
 	struct ll_inode_info *lli = ll_i2info(inode);
-	struct cl_env_nest nest;
 	struct lu_env *env;
 	int result;
+	int refcheck;
 	ENTRY;
 
 	if (lli->lli_clob == NULL)
 		RETURN(0);
 
-	env = cl_env_nested_get(&nest);
+	env = cl_env_get(&refcheck);
 	if (IS_ERR(env))
 		RETURN(PTR_ERR(env));
 
 	result = cl_conf_set(env, lli->lli_clob, conf);
-	cl_env_nested_put(&nest, env);
+	cl_env_put(env, &refcheck);
 
 	if (conf->coc_opc == OBJECT_CONF_SET) {
 		struct ldlm_lock *lock = conf->coc_lock;

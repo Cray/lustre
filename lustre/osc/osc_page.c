@@ -755,17 +755,17 @@ long osc_lru_shrink(const struct lu_env *env, struct client_obd *cli,
 
 long osc_lru_reclaim(struct client_obd *cli)
 {
-	struct cl_env_nest nest;
 	struct lu_env *env;
 	struct cl_client_cache *cache = cli->cl_cache;
 	long rc = 0;
+	int refcheck;
 	int max_scans;
 	ENTRY;
 
 	LASSERT(cache != NULL);
 	LASSERT(!cfs_list_empty(&cache->ccc_lru));
 
-	env = cl_env_nested_get(&nest);
+	env = cl_env_get(&refcheck);
 	if (IS_ERR(env))
 		RETURN(rc);
 
@@ -814,7 +814,7 @@ long osc_lru_reclaim(struct client_obd *cli)
 	spin_unlock(&cache->ccc_lru_lock);
 
 out:
-	cl_env_nested_put(&nest, env);
+	cl_env_put(env, &refcheck);
 	CDEBUG(D_CACHE, "%s: cli %p freed %ld pages.\n",
 		cli->cl_import->imp_obd->obd_name, cli, rc);
 	return rc;

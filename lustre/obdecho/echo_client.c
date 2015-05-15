@@ -666,16 +666,10 @@ static void echo_thread_key_fini(const struct lu_context *ctx,
         OBD_SLAB_FREE_PTR(info, echo_thread_kmem);
 }
 
-static void echo_thread_key_exit(const struct lu_context *ctx,
-                         struct lu_context_key *key, void *data)
-{
-}
-
 static struct lu_context_key echo_thread_key = {
         .lct_tags = LCT_CL_THREAD,
         .lct_init = echo_thread_key_init,
         .lct_fini = echo_thread_key_fini,
-        .lct_exit = echo_thread_key_exit
 };
 
 static void *echo_session_key_init(const struct lu_context *ctx,
@@ -696,16 +690,10 @@ static void echo_session_key_fini(const struct lu_context *ctx,
         OBD_SLAB_FREE_PTR(session, echo_session_kmem);
 }
 
-static void echo_session_key_exit(const struct lu_context *ctx,
-                                 struct lu_context_key *key, void *data)
-{
-}
-
 static struct lu_context_key echo_session_key = {
         .lct_tags = LCT_SESSION,
         .lct_init = echo_session_key_init,
         .lct_fini = echo_session_key_fini,
-        .lct_exit = echo_session_key_exit
 };
 
 LU_TYPE_INIT_FINI(echo, &echo_thread_key, &echo_session_key);
