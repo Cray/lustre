@@ -292,6 +292,7 @@ struct vvp_page {
 	struct cl_page_slice vpg_cl;
 	unsigned	vpg_defer_uptodate:1,
 			vpg_ra_used:1,
+			vpg_ra_updated:1,
 			vpg_write_queued:1;
 	/**
 	 * Non-empty iff this page is already counted in

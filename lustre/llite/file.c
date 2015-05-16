@@ -1023,9 +1023,19 @@ int ll_merge_attr(const struct lu_env *env, struct inode *inode)
 
 	ll_inode_size_lock(inode);
 
-	/* merge timestamps the most recently obtained from mds with
-	   timestamps obtained from osts */
-	LTIME_S(inode->i_atime) = lli->lli_atime;
+	/* Merge timestamps the most recently obtained from MDS with
+	 * timestamps obtained from OSTs.
+	 *
+	 * Do not overwrite atime of inode because it may be refreshed
+	 * by file_accessed() function. If the read was served by cache
+	 * data, there is no RPC to be sent so that atime may not be
+	 * transferred to OSTs at all. MDT only updates atime at close time
+	 * if it's at least 'mdd.*.atime_diff' older.
+	 * All in all, the atime in Lustre does not strictly comply with
+	 * POSIX. Solving this problem needs to send an RPC to MDT for each
+	 * read, this will hurt performance. */
+	if (LTIME_S(inode->i_atime) < lli->lli_atime)
+		LTIME_S(inode->i_atime) = lli->lli_atime;
 	LTIME_S(inode->i_mtime) = lli->lli_mtime;
 	LTIME_S(inode->i_ctime) = lli->lli_ctime;
 
@@ -1195,7 +1205,7 @@ restart:
 			LBUG();
 		}
 
-		ll_cl_add(file, env, io);
+		ll_cl_add(file, env, io, LCC_RW);
 		rc = cl_io_loop(env, io);
 		ll_cl_remove(file, env);
 
@@ -1337,37 +1347,123 @@ static int ll_file_get_iov_count(const struct iovec *iov,
 	return 0;
 }
 
+/**
+ * The purpose of fast read is to overcome per I/O overhead and improve IOPS
+ * especially for small I/O.
+ *
+ * To serve a read request, CLIO has to create and initialize a cl_io and
+ * then request DLM lock. This has turned out to have siginificant overhead
+ * and affects the performance of small I/O dramatically.
+ *
+ * It's not necessary to create a cl_io for each I/O. Under the help of read
+ * ahead, most of the pages being read are already in memory cache and we can
+ * read those pages directly because if the pages exist, the corresponding DLM
+ * lock must exist so that page content must be valid.
+ *
+ * In fast read implementation, the llite speculatively finds and reads pages
+ * in memory cache. There are three scenarios for fast read:
+ *   - If the page exists and is uptodate, kernel VM will provide the data and
+ *     CLIO won't be intervened;
+ *   - If the page was brought into memory by read ahead, it will be exported
+ *     and read ahead parameters will be updated;
+ *   - Otherwise the page is not in memory, we can't do fast read. Therefore,
+ *     it will go back and invoke normal read, i.e., a cl_io will be created
+ *     and DLM lock will be requested.
+ *
+ * POSIX compliance: posix standard states that read is intended to be atomic.
+ * Lustre read implementation is in line with Linux kernel read implementation
+ * and neither of them complies with POSIX standard in this matter. Fast read
+ * doesn't make the situation worse on single node but it may interleave write
+ * results from multiple nodes due to short read handling in ll_file_aio_read().
+ *
+ * \param iocb - kiocb from kernel
+ * \param iov - user space buffers where the data will be copied
+ * \param nr_segs - number of vectors of iov
+ * \param pos - file position the read starts
+ *
+ * \retval - number of bytes have been read, or error code if error occurred.
+ */
+static ssize_t ll_do_fast_read(const struct lu_env *env,
+			       struct kiocb *iocb, const struct iovec *iov,
+			       unsigned long nr_segs, loff_t pos)
+{
+	ssize_t result;
+
+	if (!ll_sbi_has_fast_read(ll_i2sbi(iocb->ki_filp->f_dentry->d_inode)))
+		return 0;
+
+	/* NB: we can't do direct IO for fast read because it will need a lock
+	 * to make IO engine happy. */
+	if (iocb->ki_filp->f_flags & O_DIRECT)
+		return 0;
+
+	ll_cl_add(iocb->ki_filp, env, NULL, LCC_RW);
+	result = generic_file_aio_read(iocb, iov, nr_segs, pos);
+	ll_cl_remove(iocb->ki_filp, env);
+
+	/* If the first page is not in cache, generic_file_aio_read() will be
+	 * returned with -ENODATA.
+	 * See corresponding code in ll_readpage(). */
+	if (result == -ENODATA)
+		result = 0;
+
+	if (result > 0)
+		ll_stats_ops_tally(ll_i2sbi(iocb->ki_filp->f_dentry->d_inode),
+				   LPROC_LL_READ_BYTES, result);
+	return result;
+}
+
 static ssize_t ll_file_aio_read(struct kiocb *iocb, const struct iovec *iov,
 				unsigned long nr_segs, loff_t pos)
 {
-	struct iovec *local_iov;
+	struct lu_env *env;
+	struct iovec *local_iov = NULL;
 	struct iov_iter *to;
 	size_t iov_count;
 	ssize_t result;
+	ssize_t	result2;
+	int refcheck;
 	ENTRY;
 
 	result = ll_file_get_iov_count(iov, &nr_segs, &iov_count);
-	if (result)
+	if (result < 0)
 		RETURN(result);
 
-	if (nr_segs == 1) {
-		struct lu_env *env;
-		int refcheck;
+	env = cl_env_get(&refcheck);
+	if (IS_ERR(env))
+		RETURN(PTR_ERR(env));
 
-		env = cl_env_get(&refcheck);
-		if (IS_ERR(env))
-			RETURN(PTR_ERR(env));
+	result = ll_do_fast_read(env, iocb, iov, nr_segs, pos);
+	if (result == iov_count || result < 0)
+		GOTO(out, result);
 
-		local_iov = &vvp_env_info(env)->vti_local_iov;
-		*local_iov = *iov;
+	/* If this is a short read, we can't do fast read because other clients
+	 * may have grown file size. */
+	if (result > 0) {
+		/* advance iov by number of result bytes */
+		result2 = result;
+		while (result2 > 0) {
+			if (iov->iov_len > result2) {
+				OBD_ALLOC(local_iov, sizeof(*iov) * nr_segs);
+				if (local_iov == NULL)
+					GOTO(out, result);
 
-		cl_env_put(env, &refcheck);
-	} else {
-		OBD_ALLOC(local_iov, sizeof(*iov) * nr_segs);
-		if (local_iov == NULL)
-			RETURN(-ENOMEM);
+				memcpy(local_iov, iov, sizeof(*iov) * nr_segs);
+				local_iov->iov_len -= result2;
+				local_iov->iov_base += result2;
 
-		memcpy(local_iov, iov, sizeof(*iov) * nr_segs);
+				iov = local_iov;
+				break;
+			}
+
+			result2 -= iov->iov_len;
+			nr_segs--;
+			iov++;
+		}
+
+		iov_count -= result;
+		LASSERTF(iov_count > 0, "result = %zd, count = %zd\n",
+			result, iov_count);
 	}
 
 	OBD_ALLOC_PTR(to);
@@ -1376,18 +1472,23 @@ static ssize_t ll_file_aio_read(struct kiocb *iocb, const struct iovec *iov,
 		goto out;
 	}
 # ifdef HAVE_IOV_ITER_INIT_DIRECTION
-	iov_iter_init(to, READ, local_iov, nr_segs, iov_count);
+	iov_iter_init(to, READ, iov, nr_segs, iov_count);
 # else /* !HAVE_IOV_ITER_INIT_DIRECTION */
-	iov_iter_init(to, local_iov, nr_segs, iov_count, 0);
+	iov_iter_init(to, iov, nr_segs, iov_count, 0);
 # endif /* HAVE_IOV_ITER_INIT_DIRECTION */
 
-	result = ll_file_read_iter(iocb, to);
+	result2 = ll_file_read_iter(iocb, to);
 
 	OBD_FREE_PTR(to);
-out:
-	if (nr_segs > 1)
-		OBD_FREE(local_iov, sizeof(*iov) * nr_segs);
 
+	if (result <= 0)
+		result = result2;
+	else if (result2 > 0)
+		result += result2;
+out:
+	cl_env_put(env, &refcheck);
+	if (local_iov != NULL)
+		OBD_FREE(local_iov, sizeof(*iov) * nr_segs);
 	RETURN(result);
 }
 
