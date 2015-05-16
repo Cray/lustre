@@ -140,6 +140,7 @@ static struct ll_sb_info *ll_init_sbi(void)
         cfs_atomic_set(&sbi->ll_sa_wrong, 0);
         cfs_atomic_set(&sbi->ll_agl_total, 0);
         sbi->ll_flags |= LL_SBI_AGL_ENABLED;
+	sbi->ll_flags |= LL_SBI_FAST_READ;
 
         RETURN(sbi);
 }

@@ -72,6 +72,8 @@ enum {
          LPROC_LL_OPEN,
          LPROC_LL_RELEASE,
          LPROC_LL_MAP,
+	 LPROC_LL_FAULT,
+	 LPROC_LL_MKWRITE,
          LPROC_LL_LLSEEK,
          LPROC_LL_FSYNC,
          LPROC_LL_READDIR,

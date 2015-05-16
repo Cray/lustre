@@ -304,6 +304,23 @@ static int ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
 	if (IS_ERR(env))
 		RETURN(PTR_ERR(env));
 
+	if (ll_sbi_has_fast_read(ll_i2sbi(vma->vm_file->f_dentry->d_inode))) {
+		/* do fast fault */
+		ll_cl_add(vma->vm_file, env, NULL, LCC_MMAP);
+		fault_ret = filemap_fault(vma, vmf);
+		ll_cl_remove(vma->vm_file, env);
+
+		/* - If there is no error, then the page was found in cache and
+		 *   uptodate;
+		 * - If VM_FAULT_RETRY is set, the page existed but failed to
+		 *   lock. It will return to kernel and retry;
+		 * - Otherwise, it should try normal fault under DLM lock. */
+		if ((fault_ret & VM_FAULT_RETRY) || !(fault_ret & VM_FAULT_ERROR))
+			GOTO(out, result = 0);
+
+		fault_ret = 0;
+	}
+
         io = ll_fault_io_init(env, vma, vmf->pgoff, &ra_flags);
         if (IS_ERR(io))
 		GOTO(out, result = PTR_ERR(io));
@@ -316,7 +333,7 @@ static int ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
 		vio->u.fault.fault.ft_vmf = vmf;
 
 		/* May call ll_readpage() */
-		ll_cl_add(vma->vm_file, env, io);
+		ll_cl_add(vma->vm_file, env, io, LCC_MMAP);
 
 		result = cl_io_loop(env, io);
 
@@ -354,10 +371,12 @@ static int ll_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	 * other signals. */
 	set = cfs_block_sigsinv(sigmask(SIGKILL) | sigmask(SIGTERM));
 
+	ll_stats_ops_tally(ll_i2sbi(vma->vm_file->f_dentry->d_inode),
+			   LPROC_LL_FAULT, 1);
+
 restart:
         result = ll_fault0(vma, vmf);
-        LASSERT(!(result & VM_FAULT_LOCKED));
-        if (result == 0) {
+	if (!(result & (VM_FAULT_RETRY | VM_FAULT_ERROR | VM_FAULT_LOCKED))) {
                 struct page *vmpage = vmf->page;
 
                 /* check if this page has been truncated */
@@ -389,6 +408,9 @@ static int ll_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
         bool printed = false;
         bool retry;
         int result;
+
+	ll_stats_ops_tally(ll_i2sbi(vma->vm_file->f_dentry->d_inode),
+			   LPROC_LL_MKWRITE, 1);
 
         do {
                 retry = false;

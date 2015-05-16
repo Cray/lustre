@@ -437,6 +437,7 @@ enum stats_track_type {
 #define LL_SBI_LAYOUT_LOCK    0x20000 /* layout lock support */
 #define LL_SBI_USER_FID2PATH  0x40000 /* allow fid2path by unprivileged users */
 #define LL_SBI_XATTR_CACHE    0x80000 /* support for xattr cache */
+#define LL_SBI_FAST_READ     0x100000 /* fast read support */
 
 #define LL_SBI_FLAGS { 	\
 	"nolck",	\
@@ -459,6 +460,7 @@ enum stats_track_type {
 	"layout",	\
 	"user_fid2path",\
 	"xattr",	\
+	"fast_read",	\
 }
 
 /* default value for ll_sb_info->contention_time */
@@ -770,9 +772,12 @@ ssize_t ll_file_lockless_io(struct file *, char *, size_t, loff_t *, int);
 void ll_clear_file_contended(struct inode*);
 int ll_sync_page_range(struct inode *, struct address_space *, loff_t, size_t);
 int vvp_io_write_commit(const struct lu_env *env, struct cl_io *io);
-struct ll_cl_context *ll_cl_find(struct file *file);
-void ll_cl_add(struct file *file, const struct lu_env *env, struct cl_io *io);
+
+enum lcc_type;
+void ll_cl_add(struct file *file, const struct lu_env *env, struct cl_io *io,
+	       enum lcc_type type);
 void ll_cl_remove(struct file *file, const struct lu_env *env);
+struct ll_cl_context *ll_cl_find(struct file *file);
 
 /* llite/file.c */
 extern struct file_operations ll_file_operations;
@@ -1039,12 +1044,18 @@ struct vvp_io_args {
         } u;
 };
 
+enum lcc_type {
+	LCC_RW = 1,
+	LCC_MMAP
+};
+
 struct ll_cl_context {
 	cfs_list_t		 lcc_list;
 	void			*lcc_cookie;
 	const struct lu_env	*lcc_env;
 	struct cl_io		*lcc_io;
 	struct cl_page		*lcc_page;
+	enum lcc_type		 lcc_type;
 };
 
 struct vvp_thread_info {
@@ -1671,5 +1682,10 @@ void ll_xattr_fini(void);
 
 int ll_page_sync_io(const struct lu_env *env, struct cl_io *io,
 		    struct cl_page *page, enum cl_req_type crt);
+
+static inline bool ll_sbi_has_fast_read(struct ll_sb_info *sbi)
+{
+	return !!(sbi->ll_flags & LL_SBI_FAST_READ);
+}
 
 #endif /* LLITE_INTERNAL_H */

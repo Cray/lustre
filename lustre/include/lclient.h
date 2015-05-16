@@ -230,9 +230,10 @@ struct ccc_object {
  */
 struct ccc_page {
 	struct cl_page_slice cpg_cl;
-	unsigned	cpg_defer_uptodate:1,
-			cpg_ra_used:1,
-			cpg_write_queued:1;
+	unsigned int         cpg_defer_uptodate:1,
+			     cpg_ra_used:1,
+			     cpg_ra_updated:1,
+			     cpg_write_queued:1;
 	/**
 	 * Non-empty iff this page is already counted in
 	 * ccc_object::cob_pending_list. Protected by
@@ -240,7 +241,7 @@ struct ccc_page {
 	 * that is, never iterated through, only checked for list_empty(), but
 	 * having a list is useful for debugging.
 	 */
-	cfs_list_t	cpg_pending_linkage;
+	cfs_list_t           cpg_pending_linkage;
 	/** VM page */
 	struct page	*cpg_page;
 };
