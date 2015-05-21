@@ -2742,7 +2742,7 @@ static int osc_import_event(struct obd_device *obd,
 
 			cfs_hash_for_each_nolock(ns->ns_rs_hash,
 						 osc_ldlm_resource_invalidate,
-						 env);
+						 env, 0);
 			cl_env_put(env, &refcheck);
 
 			ldlm_namespace_cleanup(ns, LDLM_FL_LOCAL_ONLY);
