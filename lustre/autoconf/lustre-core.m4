@@ -1689,6 +1689,36 @@ direct_io_iter, [
 ]) # LC_DIRECTIO_USE_ITER
 
 #
+# LC_NFS_FILLDIR_USE_CTX
+#
+# 3.18 kernel moved from void cookie to struct dir_context
+#
+AC_DEFUN([LC_NFS_FILLDIR_USE_CTX], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if filldir_t uses struct dir_context],
+filldir_ctx, [
+	#include <linux/fs.h>
+],[
+	int filldir(struct dir_context *ctx, const char* name,
+		    int i, loff_t off, u64 tmp, unsigned temp)
+	{
+		return 0;
+	}
+
+	struct dir_context ctx = {
+		.actor = filldir,
+	};
+
+	ctx.actor(NULL, "test", 0, (loff_t) 0, 0, 0);
+],[
+	AC_DEFINE(HAVE_FILLDIR_USE_CTX, 1,
+		[filldir_t needs struct dir_context as argument])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_NFS_FILLDIR_USE_CTX
+
+#
 # LC_HAVE_IOV_ITER_INIT_DIRECTION
 #
 #
@@ -1927,6 +1957,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 3.18
 	LC_PERCPU_COUNTER_INIT
+	LC_NFS_FILLDIR_USE_CTX
 
 	# 4.1.0
 	LC_IOV_ITER_RW
