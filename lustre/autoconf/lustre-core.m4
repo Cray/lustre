@@ -1774,6 +1774,23 @@ EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_DQUOT_QC_DQBLK
 
 #
+# LC_CANCEL_DIRTY_PAGE
+#
+# 4.0.0 kernel removed cancle_dirty_page
+#
+AC_DEFUN([LC_CANCEL_DIRTY_PAGE], [
+LB_CHECK_COMPILE([if cancel_dirty_page still exist],
+cancel_dirty_page, [
+	#include <linux/mm.h>
+],[
+	cancel_dirty_page(NULL, PAGE_SIZE);
+],[
+	AC_DEFINE(HAVE_CANCEL_DIRTY_PAGE, 1,
+		[cancel_dirty_page is still available])
+])
+]) # LC_CANCEL_DIRTY_PAGE
+
+#
 # LC_IOV_ITER_RW
 #
 # 4.1 kernel has iov_iter_rw
@@ -1935,6 +1952,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 3.19
 	LC_HAVE_DQUOT_QC_DQBLK
+
+	# 4.0.0
+	LC_CANCEL_DIRTY_PAGE
 
 	# 4.1.0
 	LC_IOV_ITER_RW
