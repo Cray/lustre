@@ -96,11 +96,11 @@ static struct ll_sb_info *ll_init_sbi(void)
 	lru_page_max = pages / 2;
 
 	/* initialize lru data */
-	cfs_atomic_set(&sbi->ll_cache.ccc_users, 0);
-	sbi->ll_cache.ccc_lru_max = lru_page_max;
-	atomic_long_set(&sbi->ll_cache.ccc_lru_left, lru_page_max);
-	spin_lock_init(&sbi->ll_cache.ccc_lru_lock);
-	CFS_INIT_LIST_HEAD(&sbi->ll_cache.ccc_lru);
+	sbi->ll_cache = cl_cache_init(lru_page_max);
+	if (sbi->ll_cache == NULL) {
+		OBD_FREE(sbi, sizeof(*sbi));
+		RETURN(NULL);
+	}
 
         sbi->ll_ra_info.ra_max_pages_per_file = min(pages / 32,
                                            SBI_DEFAULT_READAHEAD_MAX);
@@ -154,6 +154,10 @@ void ll_free_sbi(struct super_block *sb)
 		spin_lock(&ll_sb_lock);
 		cfs_list_del(&sbi->ll_list);
 		spin_unlock(&ll_sb_lock);
+		if (sbi->ll_cache != NULL) {
+			cl_cache_decref(sbi->ll_cache);
+			sbi->ll_cache = NULL;
+		}
 		OBD_FREE(sbi, sizeof(*sbi));
 	}
 	EXIT;
@@ -568,8 +572,8 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
         cl_sb_init(sb);
 
 	err = obd_set_info_async(NULL, sbi->ll_dt_exp, sizeof(KEY_CACHE_SET),
-				 KEY_CACHE_SET, sizeof(sbi->ll_cache),
-				 &sbi->ll_cache, NULL);
+				 KEY_CACHE_SET, sizeof(*sbi->ll_cache),
+				 sbi->ll_cache, NULL);
 
 	sb->s_root = d_make_root(root);
 	if (sb->s_root == NULL) {
@@ -615,8 +619,6 @@ out_lock_cn_cb:
 out_dt:
         obd_disconnect(sbi->ll_dt_exp);
         sbi->ll_dt_exp = NULL;
-	/* Make sure all OScs are gone, since cl_cache is accessing sbi. */
-	obd_zombie_barrier();
 out_md_fid:
 	obd_fid_fini(sbi->ll_md_exp->exp_obd);
 out_md:
@@ -747,9 +749,6 @@ void client_common_put_super(struct super_block *sb)
 	obd_fid_fini(sbi->ll_dt_exp->exp_obd);
         obd_disconnect(sbi->ll_dt_exp);
         sbi->ll_dt_exp = NULL;
-	/* wait till all OSCs are gone, since cl_cache is accessing sbi.
-	 * see LU-2543. */
-	obd_zombie_barrier();
 
         lprocfs_unregister_mountpoint(sbi);
 

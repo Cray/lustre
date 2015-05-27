@@ -439,7 +439,8 @@ void ccc_inode_lsm_put(struct inode *inode, struct lov_stripe_md *lsm);
  */
 struct cl_client_cache {
 	/**
-	 * # of users (OSCs)
+	 * # of client cache refcount
+	 * # of users (OSCs) + 2 (held by llite and lov)
 	 */
 	atomic_t		ccc_users;
 	/**
@@ -464,4 +465,10 @@ struct cl_client_cache {
 	spinlock_t		ccc_lru_lock;
 };
 
+/**
+ * cl_cache functions
+ */
+struct cl_client_cache *cl_cache_init(unsigned long lru_page_max);
+void cl_cache_incref(struct cl_client_cache *cache);
+void cl_cache_decref(struct cl_client_cache *cache);
 #endif /*LCLIENT_H */

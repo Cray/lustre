@@ -499,7 +499,8 @@ static int osc_cache_too_much(struct client_obd *cli)
 	long pages = atomic_long_read(&cli->cl_lru_in_list);
 	unsigned long budget;
 
-	budget = cache->ccc_lru_max / cfs_atomic_read(&cache->ccc_users);
+	LASSERT(cache != NULL);
+	budget = cache->ccc_lru_max / (atomic_read(&cache->ccc_users) - 2);
 
 	/* if it's going to run out LRU slots, we should free some, but not
 	 * too much to maintain faireness among OSCs. */
@@ -790,7 +791,7 @@ long osc_lru_reclaim(struct client_obd *cli)
 	cache->ccc_lru_shrinkers++;
 	cfs_list_move_tail(&cli->cl_lru_osc, &cache->ccc_lru);
 
-	max_scans = cfs_atomic_read(&cache->ccc_users);
+	max_scans = cfs_atomic_read(&cache->ccc_users) - 2;
 	while (--max_scans > 0 && !cfs_list_empty(&cache->ccc_lru)) {
 		cli = cfs_list_entry(cache->ccc_lru.next, struct client_obd,
 					cl_lru_osc);

@@ -386,7 +386,7 @@ static int ll_max_cached_mb_seq_show(struct seq_file *m, void *v)
 {
 	struct super_block     *sb    = m->private;
 	struct ll_sb_info      *sbi   = ll_s2sbi(sb);
-	struct cl_client_cache *cache = &sbi->ll_cache;
+	struct cl_client_cache *cache = sbi->ll_cache;
 	int shift = 20 - PAGE_CACHE_SHIFT;
 	long max_cached_mb;
 	long unused_mb;
@@ -413,7 +413,7 @@ ll_max_cached_mb_seq_write(struct file *file, const char *buffer,
 	struct seq_file *m = file->private_data;
 	struct super_block *sb = m->private;
 	struct ll_sb_info *sbi = ll_s2sbi(sb);
-	struct cl_client_cache *cache = &sbi->ll_cache;
+	struct cl_client_cache *cache = sbi->ll_cache;
 	struct lu_env *env;
 	__u64 val;
 	long diff = 0;
