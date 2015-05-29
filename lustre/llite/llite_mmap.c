@@ -100,7 +100,7 @@ ll_fault_io_init(const struct lu_env *env, struct vm_area_struct *vma,
 		 pgoff_t index, unsigned long *ra_flags)
 {
 	struct file	       *file = vma->vm_file;
-	struct inode	       *inode = file->f_dentry->d_inode;
+	struct inode	       *inode = file->f_path.dentry->d_inode;
 	struct cl_io	       *io;
 	struct cl_fault_io     *fio;
 	int			rc;
@@ -213,9 +213,6 @@ static int ll_page_mkwrite0(struct vm_area_struct *vma, struct page *vmpage,
 	cfs_restore_sigs(set);
 
         if (result == 0) {
-		struct inode *inode = vma->vm_file->f_dentry->d_inode;
-		struct ll_inode_info *lli = ll_i2info(inode);
-
                 lock_page(vmpage);
                 if (vmpage->mapping == NULL) {
                         unlock_page(vmpage);
@@ -306,7 +303,8 @@ static int ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
 	if (IS_ERR(env))
 		RETURN(to_fault_error(PTR_ERR(env)));
 
-	if (ll_sbi_has_fast_read(ll_i2sbi(vma->vm_file->f_dentry->d_inode))) {
+	if (ll_sbi_has_fast_read(
+			ll_i2sbi(vma->vm_file->f_path.dentry->d_inode))) {
 		/* do fast fault */
 		ll_cl_add(vma->vm_file, env, NULL, LCC_MMAP);
 		fault_ret = filemap_fault(vma, vmf);
@@ -379,7 +377,7 @@ static int ll_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	 * other signals. */
 	set = cfs_block_sigsinv(sigmask(SIGKILL) | sigmask(SIGTERM));
 
-	ll_stats_ops_tally(ll_i2sbi(vma->vm_file->f_dentry->d_inode),
+	ll_stats_ops_tally(ll_i2sbi(vma->vm_file->f_path.dentry->d_inode),
 			   LPROC_LL_FAULT, 1);
 
 restart:
@@ -417,7 +415,7 @@ static int ll_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
         bool retry;
         int result;
 
-	ll_stats_ops_tally(ll_i2sbi(vma->vm_file->f_dentry->d_inode),
+	ll_stats_ops_tally(ll_i2sbi(vma->vm_file->f_path.dentry->d_inode),
 			   LPROC_LL_MKWRITE, 1);
 
         do {
@@ -425,10 +423,12 @@ static int ll_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
                 result = ll_page_mkwrite0(vma, vmf->page, &retry);
 
                 if (!printed && ++count > 16) {
+			const struct dentry *de = vma->vm_file->f_path.dentry;
+
 			CWARN("app(%s): the page %lu of file "DFID" is under"
 			      " heavy contention\n",
 			      current->comm, vmf->pgoff,
-			      PFID(ll_inode2fid(vma->vm_file->f_dentry->d_inode)));
+			      PFID(ll_inode2fid(de->d_inode)));
                         printed = true;
                 }
         } while (retry);
@@ -462,7 +462,7 @@ static int ll_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
  */
 static void ll_vm_open(struct vm_area_struct * vma)
 {
-	struct inode *inode    = vma->vm_file->f_dentry->d_inode;
+	struct inode *inode    = vma->vm_file->f_path.dentry->d_inode;
 	struct vvp_object *vob = cl_inode2vvp(inode);
 
 	ENTRY;
@@ -477,7 +477,7 @@ static void ll_vm_open(struct vm_area_struct * vma)
  */
 static void ll_vm_close(struct vm_area_struct *vma)
 {
-	struct inode      *inode = vma->vm_file->f_dentry->d_inode;
+	struct inode      *inode = vma->vm_file->f_path.dentry->d_inode;
 	struct vvp_object *vob   = cl_inode2vvp(inode);
 
 	ENTRY;
@@ -513,7 +513,7 @@ static const struct vm_operations_struct ll_file_vm_ops = {
 
 int ll_file_mmap(struct file *file, struct vm_area_struct * vma)
 {
-        struct inode *inode = file->f_dentry->d_inode;
+	struct inode *inode = file->f_path.dentry->d_inode;
         int rc;
         ENTRY;
 

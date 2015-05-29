@@ -1095,7 +1095,7 @@ void ll_cl_remove(struct file *file, const struct lu_env *env)
 static int ll_io_read_page(const struct lu_env *env, struct cl_io *io,
 			   struct cl_page *page, struct file *file)
 {
-	struct inode              *inode  = file->f_dentry->d_inode;
+	struct inode              *inode  = file->f_path.dentry->d_inode;
 	struct ll_sb_info         *sbi    = ll_i2sbi(inode);
 	struct ll_file_data       *fd     = LUSTRE_FPRIVATE(file);
 	struct ll_readahead_state *ras    = &fd->fd_ras;
@@ -1153,7 +1153,8 @@ static int ll_io_read_page(const struct lu_env *env, struct cl_io *io,
 
 int ll_readpage(struct file *file, struct page *vmpage)
 {
-	struct cl_object *clob = ll_i2info(file->f_dentry->d_inode)->lli_clob;
+	struct inode *inode = file->f_path.dentry->d_inode;
+	struct cl_object *clob = ll_i2info(inode)->lli_clob;
 	struct ll_cl_context *lcc;
 	const struct lu_env  *env;
 	struct cl_io   *io;
@@ -1170,7 +1171,7 @@ int ll_readpage(struct file *file, struct page *vmpage)
 	env = lcc->lcc_env;
 	io  = lcc->lcc_io;
 	if (io == NULL) { /* fast read */
-		struct inode *inode = file->f_dentry->d_inode;
+		struct inode *inode = file->f_path.dentry->d_inode;
 		struct ll_file_data *fd = LUSTRE_FPRIVATE(file);
 		struct ll_readahead_state *ras = &fd->fd_ras;
 		struct vvp_page *cp;

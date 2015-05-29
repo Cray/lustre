@@ -56,7 +56,7 @@
 #include <linux/posix_acl_xattr.h>
 
 #define filp_size(f)					\
-	(i_size_read((f)->f_dentry->d_inode))
+	(i_size_read((f)->f_path.dentry->d_inode))
 #define filp_poff(f)					\
 	(&(f)->f_pos)
 
@@ -71,7 +71,7 @@
 	vfs_fsync_range(fp, start, end, datasync)
 #else
 #define ll_vfs_fsync_range(fp, start, end, datasync) \
-	vfs_fsync_range(fp, (fp)->f_dentry, start, end, datasync)
+	vfs_fsync_range(fp, (fp)->f_path.dentry, start, end, datasync)
 #endif
 
 #define flock_type(fl)			((fl)->fl_type)
