@@ -240,17 +240,25 @@ static inline int obd_ioctl_pack(struct obd_ioctl_data *data, char **pbuf,
 	memcpy(*pbuf, data, sizeof(*data));
 
 	ptr = overlay->ioc_bulk;
-	if (data->ioc_inlbuf1 != NULL)
+	if (data->ioc_inlbuf1 != NULL) {
+		overlay->ioc_inlbuf1 = ptr;
 		LOGL(data->ioc_inlbuf1, data->ioc_inllen1, ptr);
+	}
 
-	if (data->ioc_inlbuf2 != NULL)
+	if (data->ioc_inlbuf2 != NULL) {
+		overlay->ioc_inlbuf2 = ptr;
 		LOGL(data->ioc_inlbuf2, data->ioc_inllen2, ptr);
+	}
 
-	if (data->ioc_inlbuf3 != NULL)
+	if (data->ioc_inlbuf3 != NULL) {
+		overlay->ioc_inlbuf3 = ptr;
 		LOGL(data->ioc_inlbuf3, data->ioc_inllen3, ptr);
+	}
 
-	if (data->ioc_inlbuf4 != NULL)
+	if (data->ioc_inlbuf4 != NULL) {
+		overlay->ioc_inlbuf4 = ptr;
 		LOGL(data->ioc_inlbuf4, data->ioc_inllen4, ptr);
+	}
 
 	if (obd_ioctl_is_invalid(overlay)) {
 		fprintf(stderr, "invalid ioctl data: ioc_len = %u, "
