@@ -347,8 +347,7 @@ static int mdt_coordinator_cb(const struct lu_env *env,
 
 		larr->arr_status = ARS_CANCELED;
 		larr->arr_req_change = now;
-		rc = llog_write(hsd->mti->mti_env, llh, hdr,
-				hdr->lrh_index);
+		rc = llog_write(hsd->mti->mti_env, llh, hdr, hdr->lrh_index);
 		if (rc < 0)
 			CERROR("%s: cannot update agent log: rc = %d\n",
 			       mdt_obd_name(mdt), rc);

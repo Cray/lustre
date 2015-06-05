@@ -284,35 +284,6 @@ int mdt_agent_record_update(const struct lu_env *env, struct mdt_device *mdt,
 	RETURN(rc);
 }
 
-/**
- * update a llog record
- *  cdt_llog_lock must be hold
- * \param env [IN] environment
- * \param mdt [IN] mdt device
- * \param llh [IN] llog handle, must be a catalog handle
- * \param larr [IN] record
- * \retval 0 success
- * \retval -ve failure
- */
-int mdt_agent_llog_update_rec(const struct lu_env *env,
-			      struct mdt_device *mdt, struct llog_handle *llh,
-			      struct llog_agent_req_rec *larr)
-{
-	struct llog_rec_hdr	 saved_hdr;
-	int			 rc;
-	ENTRY;
-
-	/* saved old record info */
-	saved_hdr = larr->arr_hdr;
-	/* add new record with updated values */
-	larr->arr_hdr.lrh_id = 0;
-	larr->arr_hdr.lrh_index = 0;
-	rc = llog_cat_add(env, llh->u.phd.phd_cat_handle, &larr->arr_hdr,
-			  NULL);
-	larr->arr_hdr = saved_hdr;
-	RETURN(rc);
-}
-
 /*
  * Agent actions /proc seq_file methods
  * As llog processing uses a callback for each entry, we cannot do a sequential
