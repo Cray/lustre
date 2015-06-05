@@ -205,12 +205,10 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
 	struct llog_agent_req_rec	*larr;
 	struct data_update_cb		*ducb;
 	int				 rc, i;
-	int				 found;
 	ENTRY;
 
 	larr = (struct llog_agent_req_rec *)hdr;
 	ducb = data;
-	found = 0;
 
 	/* check if all done */
 	if (ducb->cookies_count == ducb->cookies_done)
@@ -237,10 +235,8 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
 
 			larr->arr_status = ducb->status;
 			larr->arr_req_change = ducb->change_time;
-			rc = mdt_agent_llog_update_rec(env, ducb->mdt, llh,
-						       larr);
+			rc = llog_write(env, llh, hdr, hdr->lrh_index);
 			ducb->cookies_done++;
-			found = 1;
 			break;
 		}
 	}
@@ -248,9 +244,6 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
 	if (rc < 0)
 		CERROR("%s: mdt_agent_llog_update_rec() failed, rc = %d\n",
 		       mdt_obd_name(ducb->mdt), rc);
-
-	if (found == 1)
-		RETURN(LLOG_DEL_RECORD);
 
 	RETURN(rc);
 }
