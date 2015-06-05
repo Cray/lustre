@@ -941,6 +941,7 @@ void class_unlink_export(struct obd_export *exp)
 	spin_unlock(&exp->exp_obd->obd_dev_lock);
 	class_export_put(exp);
 }
+EXPORT_SYMBOL(class_unlink_export);
 
 /* Import management functions */
 static void class_import_destroy(struct obd_import *imp)
