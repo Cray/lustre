@@ -474,6 +474,7 @@ struct osd_it_quota {
 #define MAX_BLOCKS_PER_PAGE (PAGE_CACHE_SIZE / 512)
 
 struct osd_iobuf {
+	struct osd_thread_info *owner;
 	wait_queue_head_t  dr_wait;
 	atomic_t       dr_numreqs;  /* number of reqs being processed */
 	int                dr_max_pages;
@@ -577,7 +578,8 @@ struct osd_thread_info {
 		struct filter_fid	oti_ff_new;
 	};
 	/** 0-copy IO */
-	struct osd_iobuf       oti_iobuf;
+	spinlock_t	       oti_iobuf_lock;
+	struct osd_iobuf       *oti_iobuf;
 	/* used to access objects in /O */
 	struct inode          *oti_inode;
 #define OSD_FID_REC_SZ 32

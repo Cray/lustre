@@ -966,7 +966,7 @@ static struct thandle *osd_trans_create(const struct lu_env *env,
 					struct dt_device *d)
 {
 	struct osd_thread_info	*oti = osd_oti_get(env);
-	struct osd_iobuf	*iobuf = &oti->oti_iobuf;
+	struct osd_iobuf	*iobuf = oti->oti_iobuf;
 	struct osd_thandle	*oh;
 	struct thandle		*th;
 	ENTRY;
@@ -1131,7 +1131,7 @@ static int osd_trans_stop(const struct lu_env *env, struct dt_device *dt,
 	int                     rc = 0;
 	struct osd_thandle     *oh;
 	struct osd_thread_info *oti = osd_oti_get(env);
-	struct osd_iobuf       *iobuf = &oti->oti_iobuf;
+	struct osd_iobuf       *iobuf = oti->oti_iobuf;
 	struct osd_device      *osd = osd_dt_dev(th->th_dev);
 	struct qsd_instance    *qsd = osd->od_quota_slave;
 	struct lquota_trans    *qtrans;
@@ -5864,8 +5864,18 @@ static void *osd_key_init(const struct lu_context *ctx,
         if (info->oti_hlock == NULL)
                 goto out_free_ea;
 
+	OBD_ALLOC_PTR(info->oti_iobuf);
+	if (info->oti_iobuf == NULL)
+		goto out_free_hlock;
+
+	info->oti_iobuf->owner = info;
+
+	spin_lock_init(&info->oti_iobuf_lock);
+
         return info;
 
+ out_free_hlock:
+	ldiskfs_htree_lock_free(info->oti_hlock);
  out_free_ea:
         OBD_FREE(info->oti_it_ea_buf, OSD_IT_EA_BUFSIZE);
  out_free_info:
@@ -5883,8 +5893,11 @@ static void osd_key_fini(const struct lu_context *ctx,
 	if (info->oti_hlock != NULL)
 		ldiskfs_htree_lock_free(info->oti_hlock);
 	OBD_FREE(info->oti_it_ea_buf, OSD_IT_EA_BUFSIZE);
-	lu_buf_free(&info->oti_iobuf.dr_pg_buf);
-	lu_buf_free(&info->oti_iobuf.dr_bl_buf);
+	spin_lock(&info->oti_iobuf_lock);
+	lu_buf_free(&info->oti_iobuf->dr_pg_buf);
+	lu_buf_free(&info->oti_iobuf->dr_bl_buf);
+	OBD_FREE_PTR(info->oti_iobuf);
+	spin_unlock(&info->oti_iobuf_lock);
 	lu_buf_free(&info->oti_big_buf);
 	OBD_FREE_PTR(info);
 }

@@ -204,8 +204,10 @@ static void dio_complete_routine(struct bio *bio, int error)
 		iobuf->dr_elapsed = jiffies - iobuf->dr_start_time;
 		iobuf->dr_elapsed_valid = 1;
 	}
+	spin_lock(&iobuf->owner->oti_iobuf_lock);
 	if (atomic_dec_and_test(&iobuf->dr_numreqs))
 		wake_up(&iobuf->dr_wait);
+	spin_unlock(&iobuf->owner->oti_iobuf_lock);
 
 	/* Completed bios used to be chained off iobuf->dr_bios and freed in
 	 * filter_clear_dreq().  It was then possible to exhaust the biovec-256
@@ -968,7 +970,7 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
                           struct niobuf_local *lnb, int npages)
 {
         struct osd_thread_info *oti   = osd_oti_get(env);
-        struct osd_iobuf       *iobuf = &oti->oti_iobuf;
+	struct osd_iobuf       *iobuf = oti->oti_iobuf;
         struct inode           *inode = osd_dt_obj(dt)->oo_inode;
         struct osd_device      *osd   = osd_obj2dev(osd_dt_obj(dt));
         struct timeval          start;
@@ -1183,7 +1185,7 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                             struct thandle *thandle)
 {
         struct osd_thread_info *oti = osd_oti_get(env);
-        struct osd_iobuf *iobuf = &oti->oti_iobuf;
+	struct osd_iobuf *iobuf = oti->oti_iobuf;
         struct inode *inode = osd_dt_obj(dt)->oo_inode;
         struct osd_device  *osd = osd_obj2dev(osd_dt_obj(dt));
         loff_t isize;
@@ -1276,7 +1278,7 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
                          struct niobuf_local *lnb, int npages)
 {
         struct osd_thread_info *oti = osd_oti_get(env);
-        struct osd_iobuf *iobuf = &oti->oti_iobuf;
+	struct osd_iobuf *iobuf = oti->oti_iobuf;
         struct inode *inode = osd_dt_obj(dt)->oo_inode;
         struct osd_device *osd = osd_obj2dev(osd_dt_obj(dt));
         struct timeval start, end;
