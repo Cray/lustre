@@ -24,6 +24,12 @@ require_dsh_mds || exit 0
 # bug number:  17466 18857      LU-1473
 ALWAYS_EXCEPT="61d   33a 33b    62	$REPLAY_SINGLE_EXCEPT"
 
+case "$(lsb_release -sr)" in	# only disable tests for el7
+7*)	# bug number:  LU-6455-----
+	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 28"
+	;;
+esac
+
 #                                                  63 min  7 min  AT AT AT AT"
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="1 2 3 4 6 12 16 44a      44b    65 66 67 68"
 
