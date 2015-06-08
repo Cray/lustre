@@ -60,6 +60,11 @@ EXTRA_VERSION=
 STAGEDIR=
 TMPDIR=${TMPDIR:-"/var/tmp"}
 TIMESTAMP=
+# default OFED
+OFED_TYPE="inkernel"
+# this is a dir to try reuse old kernel RPMs in (although, it seems to be
+# unused in any real manner
+REUSERPM=
 # this is the dir that should be used to store reuse products
 REUSEBUILD=
 # should cached products be used or force rebuilding?
@@ -175,6 +180,24 @@ Usage: ${0##*/} [OPTION]... [-- <lustre configure options>]
     Do not build a .src.rpm, a full kernel patch, or a patched kernel
     tarball.
 
+  --ofed-type
+    Type of OFED to build with lustre: inkernel, ofa, mlnx, ifs
+    ofa: OpenFabrics Alliance
+    mlnx: Mellanox
+    ifs: Intel True Scale Fabric
+
+  --ofed-version
+    Version of external OFED to build with lustre
+
+  --mlnx-version
+    Version of external Mellanox OFED to build with lustre
+
+  --ofed-src
+    Tarball for either OFED. Tarball must follow below format
+    OFED-<ofed-version>.tgz regardless of vendors
+    It's likely that you need to reconstruct the directory name
+    It must be placed under KERNELTREE directory
+
   --ldiskfs
     Build with ldiskfs support. (Deprecated, always true)
 
@@ -262,6 +285,23 @@ check_options() {
     if [ -z "$LUSTRE" -o ! -r "$LUSTRE" ]; then
         usage 1 "Could not find Lustre source tarball '$LUSTRE'."
     fi
+
+	if [ -n "${OFED_SRC}" ]; then
+		if [ -z "${OFED_VERSION}" ]; then
+			usage 1 "Need to provide version for file ${OFED_SRC}."
+		fi
+		if [ "${OFED_TYPE}" = "inkernel" ]; then
+			usage 1 "Need to provide ofed type for file ${OFED_SRC}."
+		fi
+	else
+		if [ "${OFED_TYPE}" != "inkernel" -a -z "${OFED_VERSION}" ]; then
+			usage 1 "Need to provide version for $OFED_TYPE OFED"
+		fi
+
+		if [ "${OFED_TYPE}" = "inkernel" -a -n "${OFED_VERSION}" ]; then
+			usage 1 "Can not specify version with inkernel OFED"
+		fi
+	fi
 
     if [ -z "$DISTRO" ] ; then
         DISTRO=$(autodetect_distro)
@@ -540,54 +580,68 @@ download_file() {
 }
 
 download_ofed() {
-    local force="${1:-false}"
-
-    if [ -z "$OFED_VERSION" -o "$OFED_VERSION" = "inkernel" ]; then
-        return 0
-    fi
-
-    local OFED_BASE_VERSION=$OFED_VERSION
-    if [[ $OFED_VERSION = *.*.*.* ]]; then
-        OFED_BASE_VERSION=${OFED_VERSION%.*}
-    fi
-
-    local location="https://www.openfabrics.org/downloads/OFED/ofed-${OFED_BASE_VERSION}/"
-
-    if [[ $OFED_VERSION = *-[rR][cC][0-9] ]]; then
-        local Mmv
-        Mmv=${OFED_VERSION%%-[rR][cC][0-9]}
-        location="https://www.openfabrics.org/downloads/OFED/ofed-${Mmv}/"
-    fi
-
-    if [[ $OFED_VERSION = daily-* ]]; then
-        local Mmv
-        Mmv=${OFED_VERSION/daily-/}
-        daily=${OFED_VERSION##$Mmv-}
-        location="https://www.openfabrics.org/downloads/OFED/ofed-${Mmv}-daily/"
-        # find the filename for the version for the date specified
-        OFED_VERSION=$(curl -s "$location" | sed -nre "/${Mmv}-/s/.*href=\"OFED-(${Mmv}-[0-9]{8,8}-[0-9]{4,4}).tgz.*$/\1/p" | tail -1)
-        if [ -z "$OFED_VERSION" ]; then
-            fatal 1 "Could not determine the filename of the OFED snapshot for ${daily}"
-        fi
-    fi
-
-    local file="OFED-${OFED_VERSION}.tgz"
-    download_file "$location/$file" "$KERNELTREE" "$force"
-
-}
-
-download_mlnx() {
-	local force="${1:-false}"
-	local version="${MLNX_VERSION}"
+	local ofed_type="$1"
+	local ofed_version="$2"
+	local force="${3:-false}"
 	local distro_name="${DISTRO}"
 	local arch="${TARGET_ARCH}"
-	local location="http://www.mellanox.com/downloads/ofed/MLNX_OFED-${version}"
-	# this is a work around for suse distro (sles11.3). what we need is
-	# sles11sp3. We really need to redesign how we use target and distro
-	[[ $distro_name =~ sles ]] && distro_name=${DISTRO/./sp}
-	local file="MLNX_OFED_LINUX-${version}-${distro_name}-${arch}.tgz"
+	local location
+	local file
 
-	download_file "$location/$file" "$KERNELTREE" "$force"
+	if [ -z "$OFED_VERSION" -o "$OFED_VERSION" = "inkernel" ]; then
+	return 0
+	fi
+
+	#if a src tarball has been given in the command line, we use it
+	#The format of the tarball must be OFED-${OFED_VERSION}.tgz
+	[ -n "${OFED_SRC}" ] && return 0
+
+	case $ofed_type in
+		ofa)
+			location="https://www.openfabrics.org/downloads/OFED/ofed-${ofed_version}/"
+			# version include RC
+			if [[ $ofed_version = *-[rR][cC][0-9] ]]; then
+				local Mmv
+				Mmv=${OFED_VERSION%%-[rR][cC][0-9]}
+				location="https://www.openfabrics.org/downloads/OFED/ofed-${Mmv}/"
+			fi
+			# daily build
+			if [[ $OFED_VERSION = daily-* ]]; then
+				local Mmv daily
+				ofed_version=${ofed_version/daily-/}
+				Mmv=${ofed_version%%-*}
+				daily=${ofed_version##$Mmv-}
+				location="https://www.openfabrics.org/downloads/OFED/ofed-${Mmv}-daily/"
+				# find the filename for the version for the date specified
+				ofed_version=$(curl -s "$location" | sed -nre "/${daily}-/s/.*href=\"OFED-(${Mmv//./\\.}-[0-9]{8}-[0-9]{4}).tgz.*$/\1/p" | tail -1)
+				if [ -z "$ofed_version" ]; then
+					fatal 1 "Could not determine the filename of the OFED snapshot for ${daily}"
+				fi
+			fi
+
+			file="OFED-${ofed_version}.tgz"
+			download_file "$location/$file" "$KERNELTREE" "$force"
+			;;
+		mlnx)
+			location="http://www.mellanox.com/downloads/ofed/MLNX_OFED-${ofed_version}"
+			# this is a work around for suse distro (sles11.3). what we need is
+			# sles11sp3. We really need to redesign how we use target and distro
+			[[ $distro_name =~ sles ]] && distro_name=${DISTRO/./sp}
+			file="MLNX_OFED_LINUX-${ofed_version}-${distro_name}-${arch}.tgz"
+			download_file "$location/$file" "$KERNELTREE" "$force"
+			;;
+		ifs)
+			location="http://downloadmirror.intel.com/24625/eng/"
+			file="IntelIB-Basic.$(echo ${distro_name%%.*} | tr '[:lower:]' '[:upper:]')-${arch}.${ofed_version}.tgz"
+			download_file "$location/$file" "$KERNELTREE" "$force"
+			;;
+		*)
+			fatal 1 "Error: unknown OFED type: $ofed_type"
+
+	esac
+	# version might change due to detect daily version
+	OFED_VERSION=${ofed_version}
+
 }
 
 parse_mpss_info() {
@@ -827,48 +881,64 @@ untar() {
 
 }
 
-unpack_mlnx() {
-	local version="${MLNX_VERSION}"
+unpack_ofed() {
+	local ofed_type="$1"
+	local ofed_version="$2"
 	local distro_name="${DISTRO}"
 	local arch="${TARGET_ARCH}"
-
-	# this is a work around for suse distro (sles11.3). what we need is
-	# sles11sp3. We really need to redesign how we use target and distro
-	[[ $distro_name =~ sles ]] && distro_name=${DISTRO/./sp}
-	local mlnx_filename="MLNX_OFED_LINUX-${version}-${distro_name}-${arch}"
+	local file
 
 	#if a src tarball has been given in the command line, we use it
-	#The format of the directory after untar MUST be in MLNX_OFED_SRC-${version}
+	#The format of the directory after untar MUST be in OFED-${version}
+	#even if it's from MLNX or IFS...or whatever
 	if [ -n "${OFED_SRC}" ]; then
 		if ! untar "$KERNELTREE/${OFED_SRC}"; then
 			return 1
-		fi
-	else
-	# it's not important what distro we get the tarball since we only
-	# interest in the src
-		if ! untar "$KERNELTREE/${mlnx_filename}.tgz"; then
-			return 1
-		fi
-		# we need to untar again to get the src since it's being
-		# wrapped inside the tarball
-		# There are cases where the source version is different
-		# than the tarball.
-		# (ie. MLNX_OFED_LINUX-2.3-1.0.1 but MLNX_OFED_SRC-2.3-1.0.0)
-		local src=$(ls ${mlnx_filename}/src/MLNX_OFED_SRC-${version%.*}*.tgz)
-		if ! untar "$src"; then
-			return 1
+		else
+			[ -d OFED ] || ln -sf OFED-[0-9].[0-9]* OFED
 		fi
 	fi
-	[ -d OFED ] || ln -sf MLNX_OFED_SRC-[0-9].[0-9]* OFED
-}
+	case $ofed_type in
+		ofa)
+			file="OFED-${ofed_version}"
+			if ! untar "$KERNELTREE/${file}.tgz"; then
+				return 1
+			fi
+			[ -d OFED ] || ln -sf OFED-[0-9].[0-9]* OFED
+			;;
+		mlnx)
+			# this is a work around for suse distro (sles11.3). what we need is
+			# sles11sp3. We really need to redesign how we use target and distro
+			[[ $distro_name =~ sles ]] && distro_name=${DISTRO/./sp}
+			file="MLNX_OFED_LINUX-${ofed_version}-${distro_name}-${arch}"
 
-unpack_ofed() {
-
-    if ! untar "$KERNELTREE/OFED-${OFED_VERSION}.tgz"; then
-        return 1
-    fi
-    [ -d OFED ] || ln -sf OFED-[0-9].[0-9]* OFED
-
+			# it's not important what distro we get the tarball since we only
+			# interest in the src
+			if ! untar "$KERNELTREE/${file}.tgz"; then
+				return 1
+			fi
+			# we need to untar again to get the src since it's being
+			# wrapped inside the tarball
+			# There are cases where the source version is different
+			# than the tarball.
+			# (ie. MLNX_OFED_LINUX-2.3-1.0.1 but MLNX_OFED_SRC-2.3-1.0.0)
+			local src=$(ls ${file}/src/MLNX_OFED_SRC-${ofed_version%.*}*.tgz)
+			if ! untar "$src"; then
+				return 1
+			fi
+			[ -d OFED ] || ln -sf MLNX_OFED_SRC-[0-9].[0-9]* OFED
+			;;
+		ifs)
+			file="IntelIB-Basic.$(echo ${distro_name%%.*} | tr '[:lower:]' '[:upper:]')-${arch}.${ofed_version}"
+			if ! untar "$KERNELTREE/${file}.tgz"; then
+				return 1
+			fi
+			[ -d OFED ] || ln -sf $file/IntelIB-OFED.$(echo ${distro_name%%.*} | tr '[:lower:]' '[:upper:]')-${arch}.* OFED
+			ofed_version="$(cat OFED/Version)"
+			;;
+	esac
+	# version might change due to detect daily version
+	OFED_VERSION=${ofed_version}
 }
 
 unpack_lustre() {
@@ -1355,13 +1425,11 @@ build_kernel_ib() {
     local linux="$1"
     local kib_prefix="$2"
     local kib_rpm="$3"
+    local ofed_type="${4}"
+    local ofed_version="${5}"
 
-    # build kernel-ib{,-devel}/compat-rdma{,-devel}
-    local K_SRC="K_SRC"
-    # ofed 1.3 had a bug in the rpm spec
-    if [ "$OFED_VERSION" = "1.3" ]; then
-        K_SRC="KSRC"
-    fi
+	# build kernel-ib{,-devel}/compat-rdma{,-devel}
+	local K_SRC="K_SRC"
 
 	local OFED_CORE="--with-core-mod --with-ipoib-mod --with-user_mad-mod \
 	--with-user_access-mod --with-addr_trans-mod --with-madeye-mod"
@@ -1442,15 +1510,17 @@ EOF
     fi
 
     local linuxrelease=$(find_linux_release)
-    if compare_version $OFED_VERSION 3.0; then
-        local OFA_KERNEL_RELEASE=$(echo -n ${linuxrelease} | sed -e 's/-/_/g')
-    fi
+	# a place to change/add any unique config
+	case $ofed_type in
+		ofa) local K_SRC_OBJ="K_SRC_OBJ"
+			;;
+	esac
     if ! $RPMBUILD $BUILD_TYPE --define 'build_kernel_ib 1' --define 'build_kernel_ib_devel 1' \
                   ${FIND_REQUIRES:+--define "__find_requires $FIND_REQUIRES"} \
                   --define "_topdir ${TOPDIR}" --target ${TARGET_ARCH} \
                   --define "KVERSION ${linuxrelease}" \
                   --define "$K_SRC ${linux}" \
-                  --define "LIB_MOD_DIR /lib/modules/${linuxrelease}/updates" \
+                  ${K_SRC_OBJ:+--define "$K_SRC_OBJ ${linux}"} \
                   ${OFA_KERNEL_RELEASE:+--define "_release $OFA_KERNEL_RELEASE"} \
                   --define "configure_options --without-quilt $OFED_CORE $OFED_HARDWARE $OFED_ISCSI" \
                   ${SOURCE} 2>&1; then
@@ -1686,37 +1756,32 @@ build_kernel_with_srpm() {
 #    CONFIGURE_FLAGS
 
 build_ofed() {
-    local linux="$1"
-    local ofed_version="$2"
-    local kib_prefix
-    local kib_rpm
-    local pre_prefix
+	local linux="$1"
+	local ofed_type="$2"
+	local ofed_version="$3"
+	local kib_prefix
+	local kib_rpm
+	local pre_prefix
+	local o2ib_location
 
-    # if an ofed version is given, then it means use OFED proper,
-    # not any vendor specific "inkernel" version
-    if [ -z "$ofed_version" ]; then
-        return 0
-    fi
-
-    if [ "$ofed_version" = "inkernel" ]; then
+    if [ "$ofed_type" = "inkernel" ]; then
         # see if there is a distro specific override for this and use
         # that if it exists
         # XXX we need to better integrate a distro specific override with
         #     the rest of this function so that all of the reuse cache
         #     stuff is leveraged given that 80% of this function is reuse
         if type -p build_ofed-$DISTROMAJ; then
-            local ofed_location
-            ofed_location=$(build_ofed-$DISTROMAJ ${STDOUT})
+            o2ib_location=$(build_ofed-$DISTROMAJ $STDOUT)
             local rc=${PIPESTATUS[0]}
             CONFIGURE_FLAGS="--with-o2ib=${ofed_location} ${CONFIGURE_FLAGS}"
             return $rc
         else
             return 0
         fi
-    elif compare_version $o2ib_version 3.0; then
+    elif compare_version $ofed_version 3.0; then
         kib_prefix="ofa_kernel"
-	[ -n "${MLNX_VERSION}" ] && pre_prefix="mlnx-"
-        kib_rpm="kernel-ib"
+	[ "$ofed_type" = "mlnx" ] && pre_prefix="mlnx-"
+        kib_rpm="${pre_prefix}${kib_prefix}"
     else
 	kib_prefix="compat-rdma"
 	kib_rpm="compat-rdma"
@@ -1757,7 +1822,7 @@ build_ofed() {
             create_rpmbuild_dirs
         fi
         # build it
-        build_kernel_ib "${linux}" "${pre_prefix}${kib_prefix}" "${kib_rpm}" "${o2ib_version}"
+        build_kernel_ib "${linux}" "${pre_prefix}${kib_prefix}" "${kib_rpm}" "${ofed_type}"
 
         if [ -z "$REUSE_SIGNATURE" ]; then
             echo "No reuse signature was caculated so not storing the built ofed"
@@ -1795,18 +1860,20 @@ build_ofed() {
     #local rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-${ofed_version}-${linuxrelease//-/_}.*.rpm)
     # I dont' know why we have gone through the trouble to filter out the name
     # of the rpm there should only be one ${kib_rpm}-devel built
-    local rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-*.rpm)
+    local rpm=$(ls $TOPDIR/RPMS/*/*-devel-*.rpm)
     if ! rpm2cpio < $rpm | cpio -id; then
         fatal 1 "could not unpack the ${kib_rpm}-devel rpm."
     fi
 	o2ib_location="$(pwd)/usr/src/${kib_prefix}"
-	[ -n "${MLNX_VERSION}" ] && o2ib_location="${o2ib_location}/default"
+	[ "${ofed_type}" = "mlnx" ] && o2ib_location="${o2ib_location}/default"
 	CONFIGURE_FLAGS="--with-o2ib=${o2ib_location} ${CONFIGURE_FLAGS}"
     popd >/dev/null
 
 }
 
 build_with_srpm() {
+	local ofed_type="$1"
+	local ofed_version="$2"
 
     if ! $PATCHLESS; then
         local kernel_extra_version
@@ -1870,7 +1937,7 @@ g/\(\/usr\/src\/kernels\/\)/s//$tmp\/reused\1/g
 wq
 EOF
 
-    build_ofed "${LINUXOBJ:-$LINUX}" "$OFED_VERSION" ||
+    build_ofed "${LINUXOBJ:-$LINUX}" "$ofed_type" "$ofed_version" ||
         fatal 1 "error building OFED"
 
     # now build Lustre
@@ -2031,7 +2098,7 @@ set -E
 
 [ -r ~/.lbuildrc ] && . ~/.lbuildrc
 
-options=$(getopt -o D:h -l kerneltree:,distro:,kernelrpm:,reusebuild:,patchless,ccache,norpm,external-patches:,timestamp:,extraversion:,kerneldir:,linux:,lustre:,nodownload,nosrc,noiokit,ofed-version:,mpss-version:,publish,disable-zfs,release,set-value:,src,stage:,target:,target-archs:,with-linux:,xen -- "$@")
+options=$(getopt -o D:h -l kerneltree:,distro:,kernelrpm:,reusebuild:,patchless,ldiskfs,ccache,reuse:,norpm,disable-datestamp,external-patches:,timestamp:,extraversion:,kerneldir:,linux:,lustre:,nodownload,nosrc,noiokit,ofed-type:,ofed-version:,mlnx-version:,ofed-src:,mpss-version:,publish,release,set-value:,src,stage:,tag:,target:,target-archs:,with-linux:,xen -- "$@")
 
 if [ $? != 0 ]; then
     usage 1
@@ -2129,6 +2196,14 @@ while [ "$1" ]; do
             OFED_VERSION="$2"
             shift 2
             ;;
+        --ofed-type)
+            OFED_TYPE="$2"
+            shift 2
+            ;;
+        --ofed-src)
+            OFED_SRC="$2"
+            shift 2
+            ;;
         --mpss-version)
             MPSS_VERSION="$2"
             shift 2
@@ -2194,16 +2269,9 @@ BUILDID=$(sed -n -e 's/^BUILDID = //p' lustre/META)
 
 load_target
 
-if [ -n "$MLNX_VERSION" ]; then
-    # Don't build OFED at all since it's explicitly built Mellanox
-    OFED_VERSION=""
-	download_mlnx
-    unpack_mlnx || fatal 1 "Error unpacking MLNX tarball"
-fi
-
-if [ -n "$OFED_VERSION" -a "$OFED_VERSION" != "inkernel" ]; then
-    download_ofed
-    unpack_ofed || fatal 1 "Error unpacking OFED tarball"
+if [ -n "$OFED_TYPE" -a "$OFED_TYPE" != "inkernel" ]; then
+    download_ofed "$OFED_TYPE" "$OFED_VERSION"
+    unpack_ofed "$OFED_TYPE" "$OFED_VERSION" || fatal 1 "Error unpacking OFED tarball"
 fi
 
 if [ -n "$MPSS_VERSION" ]; then
@@ -2276,10 +2344,7 @@ create_rpmbuild_dirs
 # if an unpacked kernel source tree was given on the command line
 # just build lustre with it (nothing distro kernel specific here)
 if [ -n "$LINUX" ]; then
-    find_linux_release() {
-        _find_linux_release $LINUX
-    }
-    build_ofed "${LINUXOBJ:-$LINUX}" "$OFED_VERSION" ||
+    build_ofed "${LINUXOBJ:-$LINUX}" "$OFED_TYPE" "$OFED_VERSION" ||
         fatal 1 "error building OFED"
     build_lustre "$LINUX" "$LINUXOBJ"
 else
@@ -2287,7 +2352,7 @@ else
         fatal 1 "${LBUILD_DIR}/lbuild-$DISTROMAJ not found"
     fi
     source ${LBUILD_DIR}/lbuild-$DISTROMAJ
-    build_with_srpm || fatal 1 "Failed to build_with_srpm"
+    build_with_srpm "$OFED_TYPE" "$OFED_VERSION" || fatal 1 "Failed to build_with_srpm"
 fi
 
 stage
