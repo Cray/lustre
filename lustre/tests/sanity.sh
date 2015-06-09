@@ -9386,10 +9386,6 @@ test_133f() {
 		fi
 	done
 
-	local facet
-
-	remote_mds_nodsh && skip "remote MDS with nodsh" && return
-	remote_ost_nodsh && skip "remote OST with nodsh" && return
 	# First without trusting modes.
 	find $proc_dirs -exec cat '{}' \; &> /dev/null
 
@@ -9398,8 +9394,34 @@ test_133f() {
 		-type f \
 		-exec cat '{}' \; &> /dev/null ||
 			error "proc file read failed"
+        # Verifing bad io area writes/reads.
+        find $proc_dirs \
+                -type f \
+                -not -name force_lbug \
+                -not -name changelog_mask \
+                -exec badarea_io '{}' \; &> /dev/null ||
+                error "find $proc_dirs failed"
+
+}
+run_test 133f "check reads/writes of client lustre proc files, including bad io area"
+
+test_133g() {
+	local proc_dirs
+
+	local dirs="/proc/fs/lustre/ /proc/sys/lnet/ /proc/sys/lustre/ \
+/sys/fs/lustre/ /sys/fs/lnet/"
+
+	local facet
+
+	[ $(lustre_version_code $SINGLEMDS) -le $(version_code 2.5.54) ] &&
+		skip "Too old lustre on MDS" && return
+
+	[ $(lustre_version_code ost1) -le $(version_code 2.5.54) ] &&
+		skip "Too old lustre on ost1" && return
 
 	for facet in $SINGLEMDS ost1; do
+		proc_dirs=$(do_facet $facet "for dir in $dirs; \
+			do [ -d \\\$dir ] && echo \\\$dir || true; done ")
 		do_facet $facet find $proc_dirs \
 			! -name req_history \
 			-exec cat '{}' \\\; &> /dev/null
@@ -9409,46 +9431,12 @@ test_133f() {
 			-type f \
 			-exec cat '{}' \\\; &> /dev/null ||
 				error "proc file read failed"
-	done
-}
-run_test 133f "Check for LBUGs/Oopses/unreadable files in /proc"
-
-test_133g() {
-	local proc_dirs
-
-	local dirs="/proc/fs/lustre/ /proc/sys/lnet/ /proc/sys/lustre/ \
-/sys/fs/lustre/ /sys/fs/lnet/"
-	local dir
-	for dir in $dirs; do
-		if [ -d $dir ]; then
-			proc_dirs="$proc_dirs $dir"
-		fi
-	done
-
-	local facet
-
-	# Second verifying readability.
-	find $proc_dirs \
-		-type f \
-		-not -name force_lbug \
-		-not -name changelog_mask \
-		-exec badarea_io '{}' \; &> /dev/null ||
-		error "find $proc_dirs failed"
-
-	[ $(lustre_version_code $SINGLEMDS) -le $(version_code 2.5.54) ] &&
-		skip "Too old lustre on MDS" && return
-
-	[ $(lustre_version_code ost1) -le $(version_code 2.5.54) ] &&
-		skip "Too old lustre on ost1" && return
-
-	for facet in $SINGLEMDS ost1; do
 		do_facet $facet find $proc_dirs \
 			-type f \
 			-not -name force_lbug \
 			-not -name changelog_mask \
 			-exec badarea_io '{}' \\\; &> /dev/null ||
-		error "$facet find $proc_dirs failed"
-
+				error "$facet find $proc_dirs failed"
 	done
 
 	# remount the FS in case writes/reads /proc break the FS
@@ -9456,7 +9444,7 @@ test_133g() {
 	setup || error "failed to setup"
 	true
 }
-run_test 133g "Check for Oopses on bad io area writes/reads in /proc"
+run_test 133g "Check reads/writes of server lustre proc files, including bad io area"
 
 test_140() { #bug-17379
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
