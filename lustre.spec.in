@@ -158,7 +158,7 @@ Summary: osd-ldiskfs contains both ldiskfs and its osd interface in Lustre.
 Requires: lustre-modules = %{version}
 Requires: modutils >= 2.4.10
 Requires: ldiskfsprogs >= 1.42.7.wc1
-Requires: lustre-osd-ldiskfs-mount
+Requires: lustre-osd-ldiskfs-mount = %{version}
 Provides: lustre-osd
 Obsoletes: lustre-ldiskfs
 Group: Development/Kernel
@@ -184,7 +184,7 @@ LDISKFS hooks for mount/mkfs into a dynamic library.
 %package osd-zfs
 Summary: osd-zfs is the mandatory glue for ZFS support in Lustre.
 Requires: lustre-modules = %{version}, zfs-kmod
-Requires: lustre-osd-zfs-mount
+Requires: lustre-osd-zfs-mount = %{version}
 Provides: lustre-osd
 Group: Development/Kernel
 
