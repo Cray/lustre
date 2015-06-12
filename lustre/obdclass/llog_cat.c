@@ -894,9 +894,6 @@ int llog_cat_init_and_process(const struct lu_env *env,
 	int rc;
 
 	rc = llog_init_handle(env, llh, LLOG_F_IS_CAT, NULL);
-	if (rc)
-		RETURN(rc);
-
-	RETURN(0);
+	RETURN(rc);
 }
 EXPORT_SYMBOL(llog_cat_init_and_process);
