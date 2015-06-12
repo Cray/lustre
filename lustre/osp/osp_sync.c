@@ -1238,6 +1238,12 @@ static int osp_sync_thread(void *_arg)
 	}
 
 	rc = llog_cat_process(&env, llh, osp_sync_process_queues, d, 0, 0);
+	if (rc < 0) {
+		CERROR("%s: llog process with osp_sync_process_queues "
+		       "failed: %d\n", d->opd_obd->obd_name, rc);
+		GOTO(close, rc);
+	}
+
 	LASSERTF(rc == 0 || rc == LLOG_PROC_BREAK,
 		 "%lu changes, %u in progress, %u in flight: %d\n",
 		 d->opd_syn_changes, d->opd_syn_rpc_in_progress,
@@ -1267,6 +1273,7 @@ static int osp_sync_thread(void *_arg)
 
 	}
 
+close:
 	llog_cat_close(&env, llh);
 	rc = llog_cleanup(&env, ctxt);
 	if (rc)
