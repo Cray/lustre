@@ -3473,6 +3473,8 @@ struct llog_log_hdr {
 #define LLOG_BITMAP_SIZE(llh)  (__u32)((llh->llh_hdr.lrh_len -		\
 					llh->llh_bitmap_offset -	\
 					sizeof(llh->llh_tail)) * 8)
+#define LLOG_HDR_BITMAP(llh)    (__u32 *)((char *)(llh) +               \
+					  (llh)->llh_bitmap_offset)
 
 /** log cookies are used to reference a specific log file and a record therein */
 struct llog_cookie {
