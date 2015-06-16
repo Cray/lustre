@@ -13,6 +13,13 @@ source ${LBUILD_DIR}/lbuild-sles
 # LU-6490 work around
 CONFIGURE_ARGS="$CONFIGURE_ARGS --disable-gss"
 
+kernel_srpm_location() {
+
+    local site="http://mgmt/cobbler/repo_mirror/updates-sles12.0-src"
+    echo "$site/src/"
+
+}
+
 edit_specs() {
 
     # edit the SPECs with our changes
@@ -22,7 +29,7 @@ edit_specs() {
         #cp $TOPDIR/SOURCES/kernel-$spec.spec{,.orig}
         sed -i -e "s/^\(Release: *\).*$/\1${lnxrel}_${buildid}/" \
                -e '/^%setup /a\
-cp  %_sourcedir/linux-3.0-lustre.patch %_builddir/%{name}-%{version}/lustre.patch\
+cp  %_sourcedir/linux-3.12-lustre.patch %_builddir/%{name}-%{version}/lustre.patch\
 ! grep -q lustre.patch %_sourcedir/series.conf && echo -e "\\n\\tlustre.patch" >> %_sourcedir/series.conf' \
           SOURCES/kernel-${spec}.spec || \
             fatal 1 "Error while editing SOURCES/kernel-${spec}.spec"
@@ -76,6 +83,11 @@ unpack_linux_devel_rpm-sles12() {
 
     if ! rpm2cpio < "$rpmdir/$kernelrpm" | cpio -id > /dev/null 2>&1; then
         fatal 1 "Unpack error for $kernelrpm"
+    fi
+
+    if [ -d "${rpmdir}/../noarch" ]; then
+	rpmdir="${rpmdir%/*}"
+	rpmdir="${rpmdir}/noarch"
     fi
 
     if ! kernelrpm=$(find_rpm "$rpmdir" provides "^kernel-(lustre-)?devel = $wanted_kernel"); then

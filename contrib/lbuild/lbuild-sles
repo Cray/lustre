@@ -135,15 +135,3 @@ mcpu_rpmbuild_opt() {
 find_linux_release() {
     _find_linux_release $LINUXOBJ
 }
-
-kernel_srpm_location() {
-
-    local PLEV=$(sed -n -e 's/^PATCHLEVEL = //p' /etc/SuSE-release)
-    local site="https://nu.novell.com/repo/\$RCE/SLES11-SP${PLEV}-Updates/sle-11-$(resolve_arch $TARGET_ARCH)/rpm/src/"
-    if [ "SP${PLEV}" = "SP4" ]; then
-	site="http://mgmt/cobbler/repo_mirror/local-sles11.4-src/suse/src/"
-    fi
-
-    echo $site
-
-}
