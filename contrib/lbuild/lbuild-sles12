@@ -13,8 +13,8 @@ source ${LBUILD_DIR}/lbuild-sles
 
 kernel_srpm_location() {
 
-    local PLEV=$(sed -n -e 's/^PATCHLEVEL = //p' /etc/SuSE-release)
-    echo "https://nu.novell.com/repo/\$RCE/SLES11-SP${PLEV}-Updates/sle-11-$(resolve_arch $TARGET_ARCH)/rpm/src/"
+    local site="http://mgmt/cobbler/repo_mirror/updates-sles12.1-src"
+    echo "$site/src/"
 
 }
 
@@ -27,7 +27,7 @@ edit_specs() {
         #cp $TOPDIR/SOURCES/kernel-$spec.spec{,.orig}
         sed -i -e "s/^\(Release: *\).*$/\1${lnxrel}_${buildid}/" \
                -e '/^%setup /a\
-cp  %_sourcedir/linux-3.0-lustre.patch %_builddir/%{name}-%{version}/lustre.patch\
+cp  %_sourcedir/linux-3.12-lustre.patch %_builddir/%{name}-%{version}/lustre.patch\
 ! grep -q lustre.patch %_sourcedir/series.conf && echo -e "\\n\\tlustre.patch" >> %_sourcedir/series.conf' \
           SOURCES/kernel-${spec}.spec || \
             fatal 1 "Error while editing SOURCES/kernel-${spec}.spec"
@@ -65,7 +65,7 @@ curl ftp://ftp.kernel.org/pub/linux/kernel/people/akpm/patches/2.6/2.6.17/2.6.17
     done
 }
 
-unpack_linux_devel_rpm-sles11() {
+unpack_linux_devel_rpm-sles12() {
     local callers_rpm="$1"
 
     local rpmdir="${callers_rpm%/*}"
@@ -83,6 +83,19 @@ unpack_linux_devel_rpm-sles11() {
         fatal 1 "Unpack error for $kernelrpm"
     fi
 
+    if [ -d "${rpmdir}/../noarch" ]; then
+	rpmdir="${rpmdir%/*}"
+	rpmdir="${rpmdir}/noarch"
+    fi
+
+    if ! kernelrpm=$(find_rpm "$rpmdir" provides "^kernel-(lustre-)?devel = $wanted_kernel"); then
+        fatal 1 "Could not find the kernel-devel in $rpmdir/"
+    fi
+
+    if ! rpm2cpio < "$rpmdir/$kernelrpm" | cpio -id > /dev/null 2>&1; then
+        fatal 1 "Unpack error for $kernelrpm"
+    fi
+
     # SLES also needs the kernel-source together with the kernel-default-devel
     if ! kernelrpm=$(find_rpm "$rpmdir" provides "^kernel-source = $wanted_kernel"); then
         fatal 1 "Could not find the kernel-source in $rpmdir/"
@@ -94,20 +107,22 @@ unpack_linux_devel_rpm-sles11() {
 
 }
 
-find_linux_rpm-sles11() {
+find_linux_rpm-sles12() {
     local prefix="$1"
     local wanted_kernel="$2"
     local pathtorpms=${3:-"$KERNELRPMSBASE/$lnxmaj/$DISTROMAJ/$TARGET_ARCH"}
 
-    local PLEV=$(sed -n -e 's/^PATCHLEVEL = //p' /etc/SuSE-release)
-    local site="https://nu.novell.com/repo/\$RCE/SLES11-SP${PLEV}-Updates/sle-11-$(resolve_arch $TARGET_ARCH)/rpm/$(resolve_arch $TARGET_ARCH)"
-
+    local site="http://mgmt/cobbler/repo_mirror/updates-sles12.1-x86_64"
     if [ ! -f $pathtorpms/kernel-default-devel-$wanted_kernel.$(resolve_arch $TARGET_ARCH).rpm ]; then
-        fetch_url "$site/kernel-default-devel-$wanted_kernel.$(resolve_arch $TARGET_ARCH).rpm" $pathtorpms
+        fetch_url "$site/x86_64/kernel-default-devel-$wanted_kernel.$(resolve_arch $TARGET_ARCH).rpm" $pathtorpms
+    fi
+    # SLES 12 also needs kernel-devel in addition to kernel-default-devel
+    if [ ! -f $pathtorpms/kernel-devel-$wanted_kernel.noarch.rpm ]; then
+        fetch_url "$site/noarch/kernel-devel-$wanted_kernel.noarch.rpm" $pathtorpms
     fi
     # SLES also needs the kernel-source along with kernel-devel
-    if [ ! -f $pathtorpms/kernel-source-$wanted_kernel.$(resolve_arch $TARGET_ARCH).rpm ]; then
-        fetch_url "$site/kernel-source-$wanted_kernel.$(resolve_arch $TARGET_ARCH).rpm" $pathtorpms
+    if [ ! -f $pathtorpms/kernel-source-$wanted_kernel.noarch.rpm ]; then
+        fetch_url "$site/noarch/kernel-source-$wanted_kernel.noarch.rpm" $pathtorpms
     fi
     echo "kernel-default-devel-$wanted_kernel.$(resolve_arch $TARGET_ARCH).rpm"
 

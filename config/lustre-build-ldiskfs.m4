@@ -2,11 +2,17 @@
 # LDISKFS_LINUX_SERIES
 #
 AC_DEFUN([LDISKFS_LINUX_SERIES], [
-LDISKFS_SERIES=
 AC_MSG_CHECKING([which ldiskfs series to use])
+case x$LDISKFS_SERIES in
+	x)			# not set
+		;;
+	*.series)		# set externally
+		;;
+	*) LDISKFS_SERIES=
+esac
+AS_IF([test -z "$LDISKFS_SERIES"], [
 AS_IF([test x$RHEL_KERNEL = xyes], [
 	case $RHEL_RELEASE_NO in
-	72)	LDISKFS_SERIES="3.10-rhel7.2.series"	;;
 	71)	LDISKFS_SERIES="3.10-rhel7.series"	;;
 	67)	LDISKFS_SERIES="2.6-rhel6.7.series"	;;
 	66)	LDISKFS_SERIES="2.6-rhel6.6.series"	;;
@@ -15,6 +21,7 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 	6[0-3])	LDISKFS_SERIES="2.6-rhel6.series"	;;
 	esac
 ], [test x$SUSE_KERNEL = xyes], [
+	AS_VERSION_COMPARE([$LINUXRELEASE],[3.12.0],[
 	AS_VERSION_COMPARE([$LINUXRELEASE],[3.0.0],[
 	AS_VERSION_COMPARE([$LINUXRELEASE],[2.6.32], [],
 	[LDISKFS_SERIES="2.6-sles11.series"],[LDISKFS_SERIES="2.6-sles11.series"])],
@@ -26,7 +33,16 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 		3|4) LDISKFS_SERIES="3.0-sles11sp3.series"
 			;;
 		esac
+	])],[LDISKFS_SERIES="3.12-sles12.series"],[
+		PLEV=$(grep PATCHLEVEL /etc/SuSE-release | sed -e 's/.*= *//')
+		case $PLEV in
+		1) LDISKFS_SERIES="3.12-sles12sp1.series"
+			;;
+		*) LDISKFS_SERIES="3.12-sles12.series"
+			;;
+		esac
 	])
+])
 ])
 AS_IF([test -z "$LDISKFS_SERIES"],
 	[AC_MSG_WARN([Unknown kernel version $LDISKFS_VERSIONRELEASE])])
@@ -202,7 +218,7 @@ AM_CONDITIONAL([LDISKFS_ENABLED], [test x$enable_ldiskfs = xyes])
 #
 # LB_VALIDATE_EXT4_SRC_DIR
 #
-# Spot check the existance of several source files common to ext4.
+# Spot check the existence of several source files common to ext4.
 # Detecting this at configure time allows us to avoid a potential build
 # failure and provide a useful error message to explain what is wrong.
 #
