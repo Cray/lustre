@@ -516,12 +516,19 @@ out:
  * actual records are larger than minimum size) we just skip
  * some more records.
  */
-static void llog_skip_over(__u64 *off, int curr, int goal)
+static inline void llog_skip_over(struct llog_log_hdr *llh, __u64 *off,
+				  int curr, int goal, __u32 chunk_size)
 {
-	if (goal <= curr)
-		return;
-	*off = (*off + (goal - curr - 1) * LLOG_MIN_REC_SIZE) &
-		~(LLOG_CHUNK_SIZE - 1);
+	if (goal > curr) {
+		if (llh->llh_size == 0) {
+			/* variable size records */
+			*off = (*off + (goal - curr - 1) * LLOG_MIN_REC_SIZE);
+		} else {
+			*off = chunk_size + (goal - 1) * llh->llh_size;
+		}
+	}
+	/* always align with lower chunk boundary*/
+	*off &= ~(chunk_size - 1);
 }
 
 /* sets:
@@ -567,7 +574,8 @@ static int llog_osd_next_block(const struct lu_env *env,
 		struct llog_rec_hdr	*rec, *last_rec;
 		struct llog_rec_tail	*tail;
 
-		llog_skip_over(cur_offset, *cur_idx, next_idx);
+		llog_skip_over(loghandle->lgh_hdr, cur_offset, *cur_idx,
+			       next_idx, LLOG_CHUNK_SIZE);
 
 		/* read up to next LLOG_CHUNK_SIZE block */
 		lgi->lgi_buf.lb_len = LLOG_CHUNK_SIZE -
@@ -683,7 +691,8 @@ static int llog_osd_prev_block(const struct lu_env *env,
 	LASSERT(dt);
 
 	cur_offset = LLOG_CHUNK_SIZE;
-	llog_skip_over(&cur_offset, 0, prev_idx);
+	llog_skip_over(loghandle->lgh_hdr, &cur_offset, 0, prev_idx,
+		       LLOG_CHUNK_SIZE);
 
 	rc = dt_attr_get(env, o, &lgi->lgi_attr, BYPASS_CAPA);
 	if (rc)
