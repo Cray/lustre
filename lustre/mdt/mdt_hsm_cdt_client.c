@@ -177,7 +177,7 @@ static int hsm_find_compatible(const struct lu_env *env, struct mdt_device *mdt,
 	hcdcb.cdt = &mdt->mdt_coordinator;
 	hcdcb.hals = hals;
 
-	rc = cdt_llog_process(env, mdt, hsm_find_compatible_cb, &hcdcb);
+	rc = cdt_llog_process(env, mdt, hsm_find_compatible_cb, &hcdcb, READ);
 
 	RETURN(rc);
 }
