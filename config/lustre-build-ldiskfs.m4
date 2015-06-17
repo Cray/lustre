@@ -254,8 +254,9 @@ AS_IF([test -e "$linux_src/fs/ext4/super.c"], [
 	EXT4_SRC_DIR="$linux_src/fs/ext4"
 ], [
 	# Kernel ext source provided by kernel-debuginfo-common package
-	linux_src=$(ls -1d /usr/src/debug/*/linux-$LINUXRELEASE \
-		2>/dev/null | tail -1)
+	KERNEL_VERSION=$(sed -e 's/\(@<:@23@:>@\.@<:@0-9@:>@*\.@<:@0-9@:>@*\).*/\1/' <<< $LINUXRELEASE)
+	linux_src=$(ls -1d /usr/src/debug/linux-${KERNEL_VERSION} \
+ 		2>/dev/null | tail -1)
 	AS_IF([test -e "$linux_src/fs/ext4/super.c"],
 		[EXT4_SRC_DIR="$linux_src/fs/ext4"],
 		[EXT4_SRC_DIR=""])

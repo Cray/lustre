@@ -1,33 +1,33 @@
 %define vendor_name lustre
-%define vendor_version 2.7
-%define flavor cray_ari_s_cos
+%define vendor_version 2.5
+%define flavor default
+
 %define intranamespace_name %{vendor_name}-%{flavor}
 %define flavorless_name %{namespace}-%{vendor_name}
 # use non-customized version so source doesn't need to be repackaged for custom versions.
 %define source_name %{flavorless_name}
 %define branch trunk
 
-%define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
-%define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-source)
+%define clean_build_root %{nil}
 
-BuildRequires: cray-gni-devel
-BuildRequires: cray-gni-headers
-BuildRequires: cray-gni-headers-private
-BuildRequires: cray-krca-devel
+%define local_kernel_version %(rpm -q --qf '%{VERSION}' kernel-devel)
+%define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-devel)
+
+BuildRequires: kernel-devel
+BuildRequires: redhat-rpm-config
 BuildRequires: ofed-devel
-BuildRequires: kernel-source
-BuildRequires: kernel-syms
-BuildRequires: %{namespace}-krca-devel
-BuildRequires: lsb-cray-hss-devel
+BuildRequires: libselinux-devel
 BuildRequires: pkgconfig
 BuildRequires: -post-build-checks
 BuildRequires: module-init-tools
+BuildRequires: kernel-debug-headers
+BuildRequires: python-docutils
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}
 Release: %release
-Summary: Lustre File System for Aries CentOS Nodes
-Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
+Summary: Lustre File System for CLFS CentOS Nodes
+Version: %{vendor_version}_%{local_kernel_version}_%{kernel_release}
 Source: %{source_name}.tar.gz
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
@@ -36,7 +36,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 %define _prefix    /
 
 %description
-Userspace tools and files for the Lustre file system on Baker CentOS nodes.
+Userspace tools and files for the Lustre file system on Apollo CentOS nodes.
 
 %prep
 # using source_name here results in too deep of a macro stack, so use
@@ -57,7 +57,6 @@ if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         ./autogen.sh
 fi
 
-export GNICPPFLAGS=`pkg-config --cflags cray-gni cray-gni-headers cray-krca lsb-cray-hss`
 if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
     O2IBPATH=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}
 elif [ -d /usr/src/ofed/%{_target_cpu}/%{flavor} ]; then
@@ -66,16 +65,14 @@ else
     O2IBPATH=no
 fi
 
-HSS_FLAGS=`pkg-config --cflags lsb-cray-hss`
-CFLAGS="%{optflags} -Werror -fno-stack-protector $HSS_FLAGS"
+CFLAGS="%{optflags} -Werror"
+%define ksrc /usr/src/kernels/%{local_kernel_version}-%{kernel_release}.%{_target_cpu}
 
-if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
+if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ]; then
         %configure --disable-checksum \
-           --disable-liblustre \
-           --enable-gni \
-           --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
-           --with-obd-buffer-size=16384 \
-           --without-sysio
+           --with-linux=%{ksrc} \
+           --enable-ldiskfs \
+           --disable-liblustre 
 fi
 %{__make} %_smp_mflags
 
@@ -98,9 +95,19 @@ done
 %{__mkdir_p} %{buildroot}/usr/sbin
 %{__ln_s} -f /sbin/l_getidentity %{buildroot}/usr/sbin/l_getidentity
 
-%files 
+%{__install} -D Module.symvers ${RPM_BUILD_ROOT}/%{_libdir}/symvers/Module.symvers
+
+%files
 %defattr(-,root,root)
 %{_prefix}
+%dir %attr(555, root, root) /
+%dir %attr(555, root, root) /bin/
+%dir %attr(555, root, root) /lib/
+%dir %attr(555, root, root) /lib/modules/
+%dir %attr(555, root, root) /lib64/
+%dir %attr(555, root, root) /sbin/
+%dir %attr(555, root, root) /usr/lib/
+%dir %attr(555, root, root) /usr/sbin/
 
 %clean
 %clean_build_root
