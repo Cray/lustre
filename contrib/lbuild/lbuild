@@ -1858,11 +1858,10 @@ build_ofed() {
     #ofed_version=$(echo $ofed_version |
     #               sed -re 's/-([0-9]*-[rR][cC][0-9]*)$//')
     #local rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-${ofed_version}-${linuxrelease//-/_}.*.rpm)
-    # I dont' know why we have gone through the trouble to filter out the name
-    # of the rpm there should only be one ${kib_rpm}-devel built
-    local rpm=$(ls $TOPDIR/RPMS/*/*-devel-*.rpm)
+    # since we set build_kernel_ib=1 during configure, we expect to have kernel-ib-devel rpm
+    local rpm=$(ls $TOPDIR/RPMS/*/kernel-ib-devel-*.rpm)
     if ! rpm2cpio < $rpm | cpio -id; then
-        fatal 1 "could not unpack the ${kib_rpm}-devel rpm."
+        fatal 1 "could not unpack the kernel-ib-devel rpm."
     fi
 	o2ib_location="$(pwd)/usr/src/${kib_prefix}"
 	[ "${ofed_type}" = "mlnx" ] && o2ib_location="${o2ib_location}/default"
