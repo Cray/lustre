@@ -322,7 +322,7 @@ mxlnd_init_mx(lnet_ni_t *ni)
                 ifname = *kmxlnd_tunables.kmx_default_ipif;
         }
 
-        ret = libcfs_ipif_query(ifname, &if_up, &ip, &netmask);
+	ret = lnet_ipif_query(ifname, &if_up, &ip, &netmask);
         if (ret != 0) {
                 CERROR("Can't query IPoMX interface %s: %d\n",
                        ifname, ret);

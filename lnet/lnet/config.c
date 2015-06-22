@@ -1153,7 +1153,7 @@ lnet_ipaddr_enumerate (__u32 **ipaddrsp)
         __u32     *ipaddrs2;
         int        nip;
         char     **ifnames;
-        int        nif = libcfs_ipif_enumerate(&ifnames);
+	int        nif = lnet_ipif_enumerate(&ifnames);
         int        i;
         int        rc;
 
@@ -1163,7 +1163,7 @@ lnet_ipaddr_enumerate (__u32 **ipaddrsp)
         LIBCFS_ALLOC(ipaddrs, nif * sizeof(*ipaddrs));
         if (ipaddrs == NULL) {
                 CERROR("Can't allocate ipaddrs[%d]\n", nif);
-                libcfs_ipif_free_enumeration(ifnames, nif);
+		lnet_ipif_free_enumeration(ifnames, nif);
                 return -ENOMEM;
         }
 
@@ -1171,7 +1171,7 @@ lnet_ipaddr_enumerate (__u32 **ipaddrsp)
                 if (!strcmp(ifnames[i], "lo"))
                         continue;
 
-                rc = libcfs_ipif_query(ifnames[i], &up,
+		rc = lnet_ipif_query(ifnames[i], &up,
                                        &ipaddrs[nip], &netmask);
                 if (rc != 0) {
                         CWARN("Can't query interface %s: %d\n",
@@ -1188,7 +1188,7 @@ lnet_ipaddr_enumerate (__u32 **ipaddrsp)
                 nip++;
         }
 
-        libcfs_ipif_free_enumeration(ifnames, nif);
+	lnet_ipif_free_enumeration(ifnames, nif);
 
         if (nip == nif) {
                 *ipaddrsp = ipaddrs;
@@ -1271,7 +1271,7 @@ lnet_set_ip_niaddr (lnet_ni_t *ni)
                         return -EPERM;
                 }
 
-                rc = libcfs_ipif_query(ni->ni_interfaces[0],
+		rc = lnet_ipif_query(ni->ni_interfaces[0],
                                        &up, &ip, &netmask);
                 if (rc != 0) {
                         CERROR("Net %s can't query interface %s: %d\n",
@@ -1289,7 +1289,7 @@ lnet_set_ip_niaddr (lnet_ni_t *ni)
                 return 0;
         }
 
-        n = libcfs_ipif_enumerate(&names);
+	n = lnet_ipif_enumerate(&names);
         if (n <= 0) {
                 CERROR("Net %s can't enumerate interfaces: %d\n",
                        libcfs_net2str(net), n);
@@ -1300,7 +1300,7 @@ lnet_set_ip_niaddr (lnet_ni_t *ni)
                 if (!strcmp(names[i], "lo")) /* skip the loopback IF */
                         continue;
 
-                rc = libcfs_ipif_query(names[i], &up, &ip, &netmask);
+		rc = lnet_ipif_query(names[i], &up, &ip, &netmask);
 
                 if (rc != 0) {
                         CWARN("Net %s can't query interface %s: %d\n",
@@ -1314,13 +1314,13 @@ lnet_set_ip_niaddr (lnet_ni_t *ni)
                         continue;
                 }
 
-                libcfs_ipif_free_enumeration(names, n);
+		lnet_ipif_free_enumeration(names, n);
                 ni->ni_nid = LNET_MKNID(net, ip);
                 return 0;
         }
 
         CERROR("Net %s can't find any interfaces\n", libcfs_net2str(net));
-        libcfs_ipif_free_enumeration(names, n);
+	lnet_ipif_free_enumeration(names, n);
         return -ENOENT;
 }
 EXPORT_SYMBOL(lnet_set_ip_niaddr);
