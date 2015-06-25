@@ -276,7 +276,6 @@ extern int llapi_mv(char *path, struct find_param *param);
 struct mntent;
 #define HAVE_LLAPI_IS_LUSTRE_MNT
 extern int llapi_is_lustre_mnt(struct mntent *mnt);
-extern int llapi_quotachown(char *path, int flag);
 extern int llapi_quotacheck(char *mnt, int check_type);
 extern int llapi_poll_quotacheck(char *mnt, struct if_quotacheck *qchk);
 extern int llapi_quotactl(char *mnt, struct if_quotactl *qctl);
