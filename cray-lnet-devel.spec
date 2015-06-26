@@ -54,6 +54,9 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-o2ib=no \
            --with-obd-buffer-size=16384 \
+%ifarch k1om
+           --disable-manpages \
+%endif
            --without-sysio
 fi
 pushd %{pkgsrcbase}
