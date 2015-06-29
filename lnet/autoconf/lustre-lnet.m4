@@ -463,6 +463,18 @@ else
 				EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_SLES_11_$SP"
 			fi
 		fi
+
+		LB_CHECK_COMPILE([if Linux kernel has kthread_worker],
+		linux_kthread_worker, [
+			#include <linux/kthread.h>
+		],[
+			struct kthread_work	*kth_wrk __attribute__ ((unused));
+			flush_kthread_work(kth_wrk);
+		],[
+			EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_IS_KTHREAD"
+			AC_DEFINE(HAVE_KTHREAD_WORK, 1, [kthread_worker found])
+		])
+
 		AC_MSG_CHECKING([whether to use any OFED backport headers])
 		if test -n "$BACKPORT_INCLUDES"; then
 			OFED_BACKPORT_PATH="$O2IBPATH/${BACKPORT_INCLUDES/*\/kernel_addons/kernel_addons}/"
