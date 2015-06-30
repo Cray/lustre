@@ -360,59 +360,56 @@ int mdt_hsm_agent_send(struct mdt_thread_info *mti,
 	fail_request = false;
 	hai = hai_first(hal);
 	for (i = 0; i < hal->hal_count; i++, hai = hai_next(hai)) {
-		if (hai->hai_action != HSMA_CANCEL) {
-			struct mdt_object *obj;
-			struct md_hsm hsm;
+		struct mdt_object *obj;
+		struct md_hsm hsm;
 
-			obj = mdt_hsm_get_md_hsm(mti, &hai->hai_fid, &hsm);
-			if (!IS_ERR(obj) && obj != NULL) {
-				mdt_object_put(mti->mti_env, obj);
-			} else {
-				if (hai->hai_action == HSMA_REMOVE)
-					continue;
+		if (hai->hai_action == HSMA_CANCEL)
+			continue;
 
-				if (obj == NULL) {
-					fail_request = true;
-					rc = mdt_agent_record_update(
-							     mti->mti_env, mdt,
-							     &hai->hai_cookie,
-							     1, ARS_FAILED);
-					if (rc) {
-						CERROR(
-					      "%s: mdt_agent_record_update() "
-					      "failed, cannot update "
-					      "status to %s for cookie "
-					      LPX64": rc = %d\n",
-					      mdt_obd_name(mdt),
-					      agent_req_status2name(ARS_FAILED),
-					      hai->hai_cookie, rc);
-						GOTO(out_buf, rc);
-					}
-					continue;
-				}
-				GOTO(out_buf, rc = PTR_ERR(obj));
+		obj = mdt_hsm_get_md_hsm(mti, &hai->hai_fid, &hsm);
+		if (!IS_ERR(obj)) {
+			mdt_object_put(mti->mti_env, obj);
+		} else if (PTR_ERR(obj) == -ENOENT) {
+			if (hai->hai_action == HSMA_REMOVE)
+				continue;
+
+			fail_request = true;
+			rc = mdt_agent_record_update(mti->mti_env, mdt,
+						     &hai->hai_cookie,
+						     1, ARS_FAILED);
+			if (rc < 0) {
+				CERROR("%s: mdt_agent_record_update() failed, "
+				       "cannot update status to %s for cookie "
+				       LPX64": rc = %d\n",
+				       mdt_obd_name(mdt),
+				       agent_req_status2name(ARS_FAILED),
+				       hai->hai_cookie, rc);
+				GOTO(out_buf, rc);
 			}
 
-			if (!mdt_hsm_is_action_compat(hai, hal->hal_archive_id,
-						      hal->hal_flags, &hsm)) {
-				/* incompatible request, we abort the request */
-				/* next time coordinator will wake up, it will
-				 * make the same compound with valid only
-				 * records */
-				fail_request = true;
-				rc = mdt_agent_record_update(mti->mti_env, mdt,
-							     &hai->hai_cookie,
-							     1, ARS_FAILED);
-				if (rc) {
-					CERROR("%s: mdt_agent_record_update() "
-					      "failed, cannot update "
-					      "status to %s for cookie "
-					      LPX64": rc = %d\n",
-					      mdt_obd_name(mdt),
-					      agent_req_status2name(ARS_FAILED),
-					      hai->hai_cookie, rc);
-					GOTO(out_buf, rc);
-				}
+			continue;
+		} else {
+			GOTO(out_buf, rc = PTR_ERR(obj));
+		}
+
+		if (!mdt_hsm_is_action_compat(hai, hal->hal_archive_id,
+					      hal->hal_flags, &hsm)) {
+			/* incompatible request, we abort the request.
+			 * next time coordinator will wake up, it will
+			 * make the same compound with valid only
+			 * records */
+			fail_request = true;
+			rc = mdt_agent_record_update(mti->mti_env, mdt,
+						     &hai->hai_cookie, 1,
+						     ARS_FAILED);
+			if (rc < 0) {
+				CERROR("%s: mdt_agent_record_update() failed, "
+				       "cannot update status to %s for cookie "
+				       LPX64": rc = %d\n",
+				       mdt_obd_name(mdt),
+				       agent_req_status2name(ARS_FAILED),
+				       hai->hai_cookie, rc);
+				GOTO(out_buf, rc);
 			}
 		}
 	}
@@ -423,7 +420,7 @@ int mdt_hsm_agent_send(struct mdt_thread_info *mti,
 	 * So no need the rebuild a full valid compound request now
 	 */
 	if (fail_request)
-		GOTO(out_buf, rc = 0);
+		GOTO(out_buf, rc = -ECANCELED);
 
 	/* Cancel memory registration is useless for purge
 	 * non registration avoid a deadlock :
@@ -437,7 +434,7 @@ int mdt_hsm_agent_send(struct mdt_thread_info *mti,
 		is_registered = true;
 		rc = mdt_hsm_add_hal(mti, hal, &uuid);
 		if (rc)
-			GOTO(out_buf, rc);
+			GOTO(out, rc);
 	}
 
 	/* Uses the ldlm reverse import; this rpc will be seen by
@@ -452,7 +449,7 @@ int mdt_hsm_agent_send(struct mdt_thread_info *mti,
 		       " rc = %d\n",
 		       mdt_obd_name(mdt), obd_uuid2str(&uuid), rc);
 		mdt_hsm_agent_unregister(mti, &uuid);
-		GOTO(out, rc);
+		GOTO(out_exp, rc);
 	}
 
 	/* send request to agent */
@@ -466,13 +463,15 @@ int mdt_hsm_agent_send(struct mdt_thread_info *mti,
 		CERROR("%s: cannot send request to agent '%s': rc = %d\n",
 		       mdt_obd_name(mdt), obd_uuid2str(&uuid), rc);
 
-	class_export_put(exp);
-
 	if (rc == -EPIPE) {
 		CDEBUG(D_HSM, "Lost connection to agent '%s', unregistering\n",
 		       obd_uuid2str(&uuid));
 		mdt_hsm_agent_unregister(mti, &uuid);
 	}
+
+out_exp:
+	if (exp != NULL)
+		class_export_put(exp);
 
 out:
 	if (rc != 0 && is_registered) {
