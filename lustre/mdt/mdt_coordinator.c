@@ -1069,8 +1069,6 @@ int mdt_hsm_add_hal(struct mdt_thread_info *mti,
 			struct md_hsm hsm;
 
 			obj = mdt_hsm_get_md_hsm(mti, &hai->hai_fid, &hsm);
-			if (IS_ERR(obj) && (PTR_ERR(obj) == -ENOENT))
-				continue;
 			if (IS_ERR(obj))
 				GOTO(out, rc = PTR_ERR(obj));
 
@@ -1089,8 +1087,10 @@ int mdt_hsm_add_hal(struct mdt_thread_info *mti,
 			GOTO(out, rc = PTR_ERR(car));
 
 		rc = mdt_cdt_add_request(cdt, car);
-		if (rc != 0)
+		if (rc < 0) {
 			mdt_cdt_free_request(car);
+			GOTO(out, rc);
+		}
 	}
 out:
 	RETURN(rc);
