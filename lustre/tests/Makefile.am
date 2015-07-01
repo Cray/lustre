@@ -73,7 +73,7 @@ noinst_PROGRAMS += ll_sparseness_write mrename ll_dirstripe_verify mkdirmany
 noinst_PROGRAMS += openfilleddirunlink rename_many memhog
 noinst_PROGRAMS += mmap_sanity writemany reads flocks_test flock_deadlock
 noinst_PROGRAMS += write_time_limit rwv lgetxattr_size_check checkfiemap
-noinst_PROGRAMS += listxattr_size_check
+noinst_PROGRAMS += listxattr_size_check hsm_remove_by_fid
 
 
 bin_PROGRAMS = mcreate munlink
@@ -90,6 +90,7 @@ LIBLUSTREAPI = $(top_builddir)/lustre/utils/liblustreapi.a
 multiop_LDADD=$(LIBLUSTREAPI) -lrt $(PTHREAD_LIBS) $(LIBCFS)
 it_test_LDADD=$(LIBCFS)
 rwv_LDADD=$(LIBCFS)
+hsm_remove_by_fid_LDADD=$(LIBLUSTREAPI)
 
 ll_dirstripe_verify_SOURCES= ll_dirstripe_verify.c
 ll_dirstripe_verify_LDADD= -L$(top_builddir)/lustre/utils $(PTHREAD_LIBS) -llustreapi $(LIBCFS)
