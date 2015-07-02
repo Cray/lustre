@@ -140,23 +140,6 @@ __add_wait_queue_exclusive, [
 ]) # LIBCFS_ADD_WAIT_QUEUE_EXCLUSIVE
 
 #
-# LC_SK_SLEEP
-#
-# 2.6.35 kernel has sk_sleep function
-#
-AC_DEFUN([LC_SK_SLEEP], [
-LB_CHECK_COMPILE([if Linux kernel has 'sk_sleep'],
-sk_sleep, [
-	#include <net/sock.h>
-],[
-	sk_sleep(NULL);
-],[
-	AC_DEFINE(HAVE_SK_SLEEP, 1,
-		[kernel has sk_sleep])
-])
-]) # LC_SK_SLEEP
-
-#
 # LIBCFS_DUMP_TRACE_ADDRESS
 #
 # 2.6.39 adds a base pointer address argument to dump_trace
@@ -317,8 +300,6 @@ LC_SHRINKER_WANT_SHRINK_PTR
 LIBCFS_SYSCTL_CTLNAME
 # 2.6.34
 LIBCFS_ADD_WAIT_QUEUE_EXCLUSIVE
-# 2.6.35
-LC_SK_SLEEP
 # 2.6.39
 LIBCFS_DUMP_TRACE_ADDRESS
 # 2.6.40 fc15

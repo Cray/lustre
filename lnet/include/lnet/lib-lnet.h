@@ -41,6 +41,8 @@
 #ifndef __LNET_LIB_LNET_H__
 #define __LNET_LIB_LNET_H__
 
+#include <net/sock.h>
+
 #include <libcfs/libcfs.h>
 #include <lnet/types.h>
 #include <lnet/lnet.h>

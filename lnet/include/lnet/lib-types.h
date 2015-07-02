@@ -45,7 +45,6 @@
 #ifdef __KERNEL__
 # include <linux/uio.h>
 # include <linux/types.h>
-# include <net/sock.h>
 #else /* !__KERNEL__ */
 # include <sys/types.h>
 #endif /* __KERNEL__ */
