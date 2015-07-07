@@ -14,7 +14,7 @@ ALWAYS_EXCEPT="                42a  42b  42c  42d  45   51d   68b   $SANITY_EXCE
 
 # with LOD/OSP landing
 # bug number for skipped tests: LU-2036
-ALWAYS_EXCEPT="                 76     $ALWAYS_EXCEPT"
+ALWAYS_EXCEPT="                 76      $ALWAYS_EXCEPT"
 
 SRCDIR=$(cd $(dirname $0); echo $PWD)
 export PATH=$PATH:/sbin
@@ -8990,6 +8990,8 @@ som_mode_switch() {
 test_132() { #1028, SOM
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	[ $(lustre_version_code $SINGLEMDS) -gt $(version_code 2.7.50) ] &&
+		skip "SOM is removed from 2.7.51" && return
 	local mdtidx=$($LFS getstripe -M $DIR)
 	local facet=mds$((mdtidx + 1))
 
