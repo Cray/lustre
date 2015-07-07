@@ -65,7 +65,7 @@ static struct llog_handle *llog_alloc_handle(void)
 		return NULL;
 
 	init_rwsem(&loghandle->lgh_lock);
-	spin_lock_init(&loghandle->lgh_hdr_lock);
+	mutex_init(&loghandle->lgh_hdr_mutex);
 	INIT_LIST_HEAD(&loghandle->u.phd.phd_entry);
 	atomic_set(&loghandle->lgh_refcount, 1);
 
@@ -194,6 +194,56 @@ out_trans:
 }
 EXPORT_SYMBOL(llog_destroy);
 
+static int llog_cancel_rec_internal(const struct lu_env *env,
+				    struct llog_handle *loghandle, int index)
+{
+	struct dt_device	*dt;
+	struct llog_log_hdr	*llh = loghandle->lgh_hdr;
+	struct thandle		*th;
+	int			 rc;
+
+	ENTRY;
+
+	LASSERT(loghandle);
+	LASSERT(loghandle->lgh_ctxt);
+	LASSERT(loghandle->lgh_obj != NULL);
+
+	dt = lu2dt_dev(loghandle->lgh_obj->do_lu.lo_dev);
+
+	th = dt_trans_create(env, dt);
+	if (IS_ERR(th))
+		RETURN(PTR_ERR(th));
+
+	rc = llog_declare_write_rec(env, loghandle, &llh->llh_hdr, index, th);
+	if (rc < 0)
+		GOTO(out_trans, rc);
+
+	rc = dt_trans_start_local(env, dt, th);
+	if (rc < 0)
+		GOTO(out_trans, rc);
+
+	down_write(&loghandle->lgh_lock);
+	/* clear bitmap */
+	mutex_lock(&loghandle->lgh_hdr_mutex);
+	if (!ext2_clear_bit(index, LLOG_HDR_BITMAP(llh))) {
+		CDEBUG(D_RPCTRACE, "Catalog index %u already clear?\n", index);
+		GOTO(out_unlock, rc);
+	}
+	/* update header */
+	rc = llog_write_rec(env, loghandle, &llh->llh_hdr, NULL,
+			    LLOG_HEADER_IDX, th);
+	if (rc == 0)
+		loghandle->lgh_hdr->llh_count--;
+	else
+		ext2_set_bit(index, LLOG_HDR_BITMAP(llh));
+out_unlock:
+	mutex_unlock(&loghandle->lgh_hdr_mutex);
+	up_write(&loghandle->lgh_lock);
+out_trans:
+	dt_trans_stop(env, dt, th);
+	RETURN(rc);
+}
+
 /* returns negative on error; 0 if success; 1 if success & log destroyed */
 int llog_cancel_rec(const struct lu_env *env, struct llog_handle *loghandle,
 		    int index)
@@ -210,14 +260,15 @@ int llog_cancel_rec(const struct lu_env *env, struct llog_handle *loghandle,
                 RETURN(-EINVAL);
         }
 
-	spin_lock(&loghandle->lgh_hdr_lock);
-	if (!ext2_clear_bit(index, llh->llh_bitmap)) {
-		spin_unlock(&loghandle->lgh_hdr_lock);
-		CDEBUG(D_RPCTRACE, "Catalog index %u already clear?\n", index);
-		RETURN(-ENOENT);
+	rc = llog_cancel_rec_internal(env, loghandle, index);
+	if (rc < 0) {
+		CERROR("%s: fail to write header for llog #"DOSTID
+		       "#%08x: rc = %d\n",
+		       loghandle->lgh_ctxt->loc_obd->obd_name,
+		       POSTID(&loghandle->lgh_id.lgl_oi),
+		       loghandle->lgh_id.lgl_ogen, rc);
+		RETURN(rc);
 	}
-
-	llh->llh_count--;
 
 	if ((llh->llh_flags & LLOG_F_ZAP_WHEN_EMPTY) &&
 	    (llh->llh_count == 1) &&
@@ -227,36 +278,23 @@ int llog_cancel_rec(const struct lu_env *env, struct llog_handle *loghandle,
 		loghandle))) {
 		/* never try to destroy it again */
 		llh->llh_flags &= ~LLOG_F_ZAP_WHEN_EMPTY;
-		spin_unlock(&loghandle->lgh_hdr_lock);
 		rc = llog_destroy(env, loghandle);
 		if (rc < 0) {
+			/* Sigh, can not destroy the final plain llog, but
+			 * the bitmap has been clearly, so the record can not
+			 * be accessed anymore, let's return 0 for now, and
+			 * the orphan will be handled by LFSCK. */
 			CERROR("%s: can't destroy empty llog #"DOSTID
 			       "#%08x: rc = %d\n",
 			       loghandle->lgh_ctxt->loc_obd->obd_name,
 			       POSTID(&loghandle->lgh_id.lgl_oi),
 			       loghandle->lgh_id.lgl_ogen, rc);
-			GOTO(out_err, rc);
+			RETURN(0);
 		}
 		RETURN(LLOG_DEL_PLAIN);
 	}
-	spin_unlock(&loghandle->lgh_hdr_lock);
 
-	rc = llog_write(env, loghandle, &llh->llh_hdr, LLOG_HEADER_IDX);
-	if (rc < 0) {
-		CERROR("%s: fail to write header for llog #"DOSTID
-		       "#%08x: rc = %d\n",
-		       loghandle->lgh_ctxt->loc_obd->obd_name,
-		       POSTID(&loghandle->lgh_id.lgl_oi),
-		       loghandle->lgh_id.lgl_ogen, rc);
-		GOTO(out_err, rc);
-	}
 	RETURN(0);
-out_err:
-	spin_lock(&loghandle->lgh_hdr_lock);
-	ext2_set_bit(index, llh->llh_bitmap);
-	llh->llh_count++;
-	spin_unlock(&loghandle->lgh_hdr_lock);
-	return rc;
 }
 
 static int llog_read_header(const struct lu_env *env,

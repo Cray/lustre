@@ -296,7 +296,7 @@ struct llog_operations {
 /* In-memory descriptor for a log object or log catalog */
 struct llog_handle {
 	struct rw_semaphore	 lgh_lock;
-	spinlock_t		 lgh_hdr_lock; /* protect lgh_hdr data */
+	struct mutex		 lgh_hdr_mutex; /* protect lgh_hdr data */
 	struct llog_logid	 lgh_id; /* id of this log */
 	struct llog_log_hdr	*lgh_hdr;
 	struct dt_object	*lgh_obj;

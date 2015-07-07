@@ -509,17 +509,16 @@ static int llog_osd_write_rec(const struct lu_env *env,
 	lrt->lrt_len = rec->lrh_len;
 	lrt->lrt_index = rec->lrh_index;
 
-	/* the lgh_hdr_lock protects llog header data from concurrent
+	/* the lgh_hdr_mutex protects llog header data from concurrent
 	 * update/cancel, the llh_count and llh_bitmap are protected */
-	spin_lock(&loghandle->lgh_hdr_lock);
+	mutex_lock(&loghandle->lgh_hdr_mutex);
 	if (ext2_set_bit(index, llh->llh_bitmap)) {
 		CERROR("%s: index %u already set in log bitmap\n",
 		       o->do_lu.lo_dev->ld_obd->obd_name, index);
-		spin_unlock(&loghandle->lgh_hdr_lock);
+		mutex_unlock(&loghandle->lgh_hdr_mutex);
 		LBUG(); /* should never happen */
 	}
 	llh->llh_count++;
-	spin_unlock(&loghandle->lgh_hdr_lock);
 
 	if (lgi->lgi_attr.la_size == 0) {
 		lgi->lgi_off = 0;
@@ -527,8 +526,10 @@ static int llog_osd_write_rec(const struct lu_env *env,
 		lgi->lgi_buf.lb_buf = &llh->llh_hdr;
 		rc = dt_record_write(env, o, &lgi->lgi_buf, &lgi->lgi_off, th);
 		if (rc != 0)
-			GOTO(out, rc);
+			GOTO(out_unlock, rc);
 	} else {
+		__u32	*bitmap = LLOG_HDR_BITMAP(llh);
+
 		/* Note: If this is not initialization (size == 0), then do not
 		 * write the whole header (8k bytes), only update header/tail
 		 * and bits needs to be updated. Because this update might be
@@ -542,24 +543,29 @@ static int llog_osd_write_rec(const struct lu_env *env,
 		lgi->lgi_buf.lb_buf = &llh->llh_count;
 		rc = dt_record_write(env, o, &lgi->lgi_buf, &lgi->lgi_off, th);
 		if (rc != 0)
-			GOTO(out, rc);
+			GOTO(out_unlock, rc);
 
-		lgi->lgi_off = offsetof(typeof(*llh),
-			llh_bitmap[index / (sizeof(*llh->llh_bitmap) * 8)]);
-		lgi->lgi_buf.lb_len = sizeof(*llh->llh_bitmap);
-		lgi->lgi_buf.lb_buf =
-			&llh->llh_bitmap[index/(sizeof(*llh->llh_bitmap)*8)];
+		lgi->lgi_off = llh->llh_bitmap_offset +
+			      (index / (sizeof(*bitmap) * 8)) * sizeof(*bitmap);
+		lgi->lgi_buf.lb_len = sizeof(*bitmap);
+		lgi->lgi_buf.lb_buf = &bitmap[index/(sizeof(*bitmap)*8)];
 		rc = dt_record_write(env, o, &lgi->lgi_buf, &lgi->lgi_off, th);
 		if (rc != 0)
-			GOTO(out, rc);
+			GOTO(out_unlock, rc);
 
 		lgi->lgi_off = offsetof(typeof(*llh), llh_tail);
 		lgi->lgi_buf.lb_len = sizeof(llh->llh_tail);
 		lgi->lgi_buf.lb_buf = &llh->llh_tail;
 		rc = dt_record_write(env, o, &lgi->lgi_buf, &lgi->lgi_off, th);
 		if (rc != 0)
-			GOTO(out, rc);
+			GOTO(out_unlock, rc);
 	}
+
+out_unlock:
+	/* unlock here for remote object */
+	mutex_unlock(&loghandle->lgh_hdr_mutex);
+	if (rc)
+		GOTO(out, rc);
 
 	/* computed index can be used to determine offset for fixed-size
 	 * records. This also allows to handle Catalog wrap around case */
@@ -597,10 +603,10 @@ static int llog_osd_write_rec(const struct lu_env *env,
 	RETURN(rc);
 out:
 	/* cleanup llog for error case */
-	spin_lock(&loghandle->lgh_hdr_lock);
+	mutex_lock(&loghandle->lgh_hdr_mutex);
 	ext2_clear_bit(index, llh->llh_bitmap);
 	llh->llh_count--;
-	spin_unlock(&loghandle->lgh_hdr_lock);
+	mutex_unlock(&loghandle->lgh_hdr_mutex);
 
 	/* restore llog last_idx */
 	if (--loghandle->lgh_last_idx == 0 &&
