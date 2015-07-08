@@ -22,7 +22,7 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 		case $PLEV in
 		2) SER="3.0-sles11.series"
 			;;
-		3) SER="3.0-sles11sp3.series"
+		3|4) SER="3.0-sles11sp3.series"
 			;;
 		esac
 	])
