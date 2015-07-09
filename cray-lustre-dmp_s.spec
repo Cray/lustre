@@ -1,5 +1,5 @@
 %define vendor_name lustre
-%define vendor_version 2.5
+%define vendor_version 2.7
 %define flavor default
 
 %define intranamespace_name %{vendor_name}-%{flavor}
@@ -23,7 +23,7 @@ BuildRequires: module-init-tools
 BuildRequires: kernel-debug-headers
 BuildRequires: python-docutils
 Group: System/Filesystems
-License: GPL
+License: GPLv2
 Name: %{namespace}-%{intranamespace_name}
 Release: %release
 Summary: Lustre File System for CLFS CentOS Nodes
@@ -33,7 +33,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 # override OBS _prefix to allow us to munge things 
 %{expand:%%global OBS_prefix %{_prefix}}
-%define _prefix    /
+%define _prefix    /usr
 
 %description
 Userspace tools and files for the Lustre file system on Apollo CentOS nodes.
@@ -71,8 +71,7 @@ CFLAGS="%{optflags} -Werror"
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ]; then
         %configure --disable-checksum \
            --with-linux=%{ksrc} \
-           --enable-ldiskfs \
-           --disable-liblustre 
+           --enable-ldiskfs
 fi
 %{__make} %_smp_mflags
 
@@ -91,23 +90,34 @@ for dir in var man/man5 etc/init.d etc/sysconfig etc/ha.d; do
 done
 %{__rm} -f %{buildroot}/etc/lustre %{buildroot}/etc/ldev.conf
 
-# set l_getidentity to the default location
-%{__mkdir_p} %{buildroot}/usr/sbin
-%{__ln_s} -f /sbin/l_getidentity %{buildroot}/usr/sbin/l_getidentity
-
 %{__install} -D Module.symvers ${RPM_BUILD_ROOT}/%{_libdir}/symvers/Module.symvers
+
+%post
+/sbin/depmod -a
+
+%postun
+/sbin/depmod -a
 
 %files
 %defattr(-,root,root)
-%{_prefix}
-%dir %attr(555, root, root) /
-%dir %attr(555, root, root) /bin/
-%dir %attr(555, root, root) /lib/
-%dir %attr(555, root, root) /lib/modules/
-%dir %attr(555, root, root) /lib64/
-%dir %attr(555, root, root) /sbin/
-%dir %attr(555, root, root) /usr/lib/
-%dir %attr(555, root, root) /usr/sbin/
+/lib/modules
+%exclude %dir /lib/modules
+/sbin/mount.lustre
+/etc/udev/rules.d
+%{_bindir}
+%exclude %dir %{_bindir}
+%{_includedir}
+%exclude %dir %{_includedir}
+%{_libdir}
+%exclude %dir %{_libdir}
+%{_libexecdir}
+%exclude %dir %{_libexecdir}
+%{_mandir}
+%exclude %dir %{_mandir}
+%{_sbindir}
+%exclude %dir %{_sbindir}
+%{_datadir}
+%exclude %dir %{_datadir} 
 
 %clean
 %clean_build_root
