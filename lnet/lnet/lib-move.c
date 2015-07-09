@@ -704,12 +704,16 @@ lnet_peer_is_alive (lnet_peer_t *lp, cfs_time_t now)
 
         LASSERT (lnet_peer_aliveness_enabled(lp));
 
+        CDEBUG(D_NET, "lp 0x%p->%s alive %d count %d last_alive %lu stamp %lu\n",
+               lp, libcfs_nid2str(lp->lp_nid), lp->lp_alive,
+               lp->lp_alive_count, lp->lp_last_alive, lp->lp_timestamp);
+
         /* Trust lnet_notify() if it has more recent aliveness news, but
          * ignore the initial assumed death (see lnet_peers_start_down()).
          */
         if (!lp->lp_alive && lp->lp_alive_count > 0 &&
             cfs_time_aftereq(lp->lp_timestamp, lp->lp_last_alive))
-                return 0;
+                RETURN(0);
 
         deadline = cfs_time_add(lp->lp_last_alive,
                                 cfs_time_seconds(lp->lp_ni->ni_peertimeout));
@@ -723,7 +727,7 @@ lnet_peer_is_alive (lnet_peer_t *lp, cfs_time_t now)
             !(lnet_isrouter(lp) && lp->lp_alive_count == 0))
                 lnet_notify_locked(lp, 0, 1, lp->lp_last_alive);
 
-        return alive;
+        RETURN(alive);
 }
 
 
