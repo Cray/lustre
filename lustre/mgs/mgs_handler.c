@@ -1384,12 +1384,13 @@ static struct lu_device *mgs_device_fini(const struct lu_env *env,
 	ptlrpc_unregister_service(mgs->mgs_service);
 	mutex_unlock(&mgs->mgs_health_mutex);
 
+	mgs_params_fsdb_cleanup(env, mgs);
+	mgs_cleanup_fsdb_list(mgs);
+
 	obd_exports_barrier(obd);
 	obd_zombie_barrier();
 
 	tgt_fini(env, &mgs->mgs_lut);
-	mgs_params_fsdb_cleanup(env, mgs);
-	mgs_cleanup_fsdb_list(mgs);
 	lproc_mgs_cleanup(mgs);
 
 	ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
