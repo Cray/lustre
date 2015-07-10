@@ -342,7 +342,7 @@ run_compilebench() {
 }
 
 run_metabench() {
-
+	local dir=${1:-$DIR}
     METABENCH=${METABENCH:-$(which metabench 2> /dev/null || true)}
     mbench_NFILES=${mbench_NFILES:-30400}
     # threads per client
@@ -357,7 +357,7 @@ run_metabench() {
 
     print_opts METABENCH clients mbench_NFILES mbench_THREADS
 
-    local testdir=$DIR/d0.metabench
+	local testdir=$dir/d0.metabench
     mkdir -p $testdir
     # mpi_run uses mpiuser
     chmod 0777 $testdir
@@ -488,7 +488,7 @@ run_mdtest() {
 }
 
 run_connectathon() {
-
+	local dir=${1:-$DIR}
     cnt_DIR=${cnt_DIR:-""}
     cnt_NRUN=${cnt_NRUN:-10}
 
@@ -500,7 +500,7 @@ run_connectathon() {
     [ -e $cnt_DIR/runtests ] || \
         { skip_env "No connectathon runtests found" && return; }
 
-    local testdir=$DIR/d0.connectathon
+	local testdir=$dir/d0.connectathon
     mkdir -p $testdir
 
     local savePWD=$PWD
@@ -547,6 +547,8 @@ run_connectathon() {
 
 run_ior() {
     local type=${1:="ssf"}
+	local dir=${2:-$DIR}
+	local testdir=$dir/d0.ior.$type
 
     IOR=${IOR:-$(which IOR 2> /dev/null || true)}
     # threads per client
@@ -560,7 +562,7 @@ run_ior() {
     [ x$IOR = x ] &&
         { skip_env "IOR not found" && return; }
 
-    local space=$(df -P $DIR | tail -n 1 | awk '{ print $4 }')
+	local space=$(df -P $dir | tail -n 1 | awk '{ print $4 }')
     local total_threads=$(( num_clients * ior_THREADS ))
     echo "+ $ior_blockSize * 1024 * 1024 * $total_threads "
     if [ $((space / 2)) -le \
@@ -578,7 +580,6 @@ run_ior() {
 
     print_opts IOR ior_THREADS ior_DURATION MACHINEFILE
 
-    local testdir=$DIR/d0.ior.$type
     mkdir -p $testdir
     # mpi_run uses mpiuser
     chmod 0777 $testdir
