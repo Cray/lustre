@@ -156,17 +156,11 @@ command_t cmdlist[] = {
 	 "		   [--layout|-L]\n"
 	 "		   <directory|filename> ..."},
 	{"setdirstripe", lfs_setdirstripe, 0,
-	 "To create a striped directory on a specified MDT. This can only\n"
+	 "To create a directory on a specified MDT. This can only\n"
 	 "be done on MDT0 with the right of administrator.\n"
-	 "usage: setdirstripe <--count|-c stripe_count>\n"
-	 "		[--index|-i mdt_index] [--hash-type|-t hash_type]\n"
-	 "		[--default_stripe|-D ] [--mode|-m mode] <dir>\n"
-	 "\tstripe_count: stripe count of the striped directory\n"
+	 "usage: setdirstripe [--index|-i mdt_index]\n"
+	 "		[--mode|-m mode] <dir>\n"
 	 "\tmdt_index:	MDT index of first stripe\n"
-	 "\thash_type:	hash type of the striped directory. Hash types:\n"
-	 "	fnv_1a_64 FNV-1a hash algorithm (default)\n"
-	 "	all_char  sum of characters % MDT_COUNT (not recommended)\n"
-	 "\tdefault_stripe: set default dirstripe of the directory\n"
 	 "\tmode: the mode of the directory\n"},
 	{"getdirstripe", lfs_getdirstripe, 0,
 	 "To list the striping info for a given directory\n"
@@ -175,17 +169,11 @@ command_t cmdlist[] = {
 	 "		 [--count|-c ] [--index|-i ] [--raw|-R]\n"
 	 "		 [--recursive | -r] [ --default_stripe | -D ] <dir> "},
 	{"mkdir", lfs_setdirstripe, 0,
-	 "To create a striped directory on a specified MDT. This can only\n"
+	 "To create a directory on a specified MDT. This can only\n"
 	 "be done on MDT0 with the right of administrator.\n"
-	 "usage: mkdir <--count|-c stripe_count>\n"
-	 "		[--index|-i mdt_index] [--hash-type|-t hash_type]\n"
-	 "		[--default_stripe|-D ] [--mode|-m mode] <dir>\n"
-	 "\tstripe_count: stripe count of the striped directory\n"
+	 "usage: setdirstripe [--index|-i mdt_index]\n"
+	 "		[--mode|-m mode] <dir>\n"
 	 "\tmdt_index:	MDT index of first stripe\n"
-	 "\thash_type:	hash type of the striped directory. Hash types:\n"
-	 "	fnv_1a_64 FNV-1a hash algorithm (default)\n"
-	 "	all_char  sum of characters % MDT_COUNT (not recommended)\n"
-	 "\tdefault_stripe: set default dirstripe of the directory\n"
 	 "\tmode: the mode of the directory\n"},
 	{"rm_entry", lfs_rmentry, 0,
 	 "To remove the name entry of the remote directory. Note: This\n"
@@ -1627,40 +1615,48 @@ static int lfs_setdirstripe(int argc, char **argv)
 	bool			delete = false;
 
 	struct option long_opts[] = {
-		{"count",	required_argument, 0, 'c'},
+		{"count",	no_argument, 0, 'c'},
 		{"delete",	no_argument, 0, 'd'},
 		{"index",	required_argument, 0, 'i'},
 		{"mode",	required_argument, 0, 'm'},
-		{"hash-type",	required_argument, 0, 't'},
+		{"hash-type",	no_argument, 0, 't'},
 		{"default_stripe", no_argument, 0, 'D'},
 		{0, 0, 0, 0}
 	};
 
-	while ((c = getopt_long(argc, argv, "c:dDi:m:t:", long_opts,
+	while ((c = getopt_long(argc, argv, "cdDi:m:t", long_opts,
 				NULL)) >= 0) {
 		switch (c) {
 		case 0:
 			/* Long options. */
 			break;
-		case 'c':
+		/*case 'c':
 			stripe_count_opt = optarg;
-			break;
-		case 'd':
+			break;*/
+		/*case 'd':
 			delete = true;
 			default_stripe = true;
-			break;
-		case 'D':
+			break;*/
+		/*case 'D':
 			default_stripe = true;
-			break;
+			break;*/
 		case 'i':
 			stripe_offset_opt = optarg;
 			break;
 		case 'm':
 			mode_opt = optarg;
 			break;
-		case 't':
+		/*case 't':
 			stripe_hash_opt = optarg;
-			break;
+			break;*/
+		/* DNE 2 options */
+		case 'c':
+		case 'd':
+		case 'D':
+		case 't':
+			fprintf(stderr, "error: %s: option '%s' requires DNE 2"
+				".\n", argv[0], argv[optind - 1]);
+			return CMD_HELP;
 		default:
 			fprintf(stderr, "error: %s: option '%s' "
 					"unrecognized\n",

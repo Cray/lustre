@@ -6,45 +6,17 @@ lfs setdirstripe, mkdir \- set striping pattern of a directory.
 [\fIOPTION\fR]... \fIDIR\fR...
 .br
 .SH DESCRIPTION
-Create a striped directory with specified striping pattern. This lfs utility
+Create a remote directory on a specified mdt. This lfs utility
 is similar to
 .B lfs setstripe
-, but is used to create striped directory.
+, but is used to create remote directories.
 .B lfs mkdir
 is an alias for this command.
 .SH OPTIONS
 .TP
-\fB\-c\fR, \fB\-\-count\fR=\fICOUNT\fR
-Stripe over
-.I COUNT
-MDTs.
-.TP
-\fB\-i\fR, \fB\-\-index\fR=\fISTART_MDT_INDEX\fR
-Stripe from the MDT, whose index is
-.I START_MDT_INDEX.
-.TP
-\fB\-t\fR, \fB\-\-hash\-type\fR=\fIHASH_TYPE\fR
-the hash_type of the striped directory.
-.RS 1.2i
-.TP
-.B fnv_1a_64
-Fowler-Noll-Vo (FNV-1a) hash algorithm.  This provides
-reasonably uniform, but not cryptographically strong,
-hashing of the filename. (default)
-.TP
-.B all_char
-Sum of ASCII characters modulo number of MDTs. This
-provides weak hashing of the filename, and is suitable
-for only testing or when the input is known to have
-perfectly uniform distribution (e.g. sequential numbers).
-.RE
-.TP
-.B \-D, \-\-default_stripe
-Set the default striping pattern of the directory. Newly created
-sub-directories will use the new default striping pattern,
-but existing sub-directories will not be affected.  The newly
-created sub-directories will also inherit the current default
-striping pattern. Only default stripe count is supported for now.
+\fB\-i\fR, \fB\-\-index\fR=\fIMDT_INDEX\fR
+Create a remote directory on MDT whose index is
+.I MDT_INDEX.
 .TP
 \fB\-m\fR, \fB\-\-mode\fR=\fIMODE\fR
 Set the file access mode of the new directory to the specified
@@ -71,15 +43,12 @@ intermediate path components on a series different MDTs and become unavailable
 if any of the intermediate MDTs are offline.
 .SH EXAMPLES
 .TP
-.B $ lfs setdirstripe -c 2 -i 1 -t all_char /mnt/lustre/dir1
-This creates a directory striped on two MDTs, whose first stripe is on
-.B MDT0001
-(MDT index 1), and whose hash type is
-.BR all_char .
-.SH BUGS
-Default stripe cannot be deleted once it is set.
+.B $ lfs setdirstripe -i 1 /mnt/lustre/dir1
+This creates a remote directory on MDT1.
 .SH AVAILABILITY
 The lfs setdirstripe command is part of the Lustre filesystem.
+Note that the DNE2 in Cray b2_7 (normally accessed with setdirstripe) is
+disabled.  This means the options -c, -t, -d, and -D are not available.
 .SH SEE ALSO
 .BR lfs (1),
 .BR lfs-getdirstripe (1),
