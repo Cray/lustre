@@ -339,7 +339,7 @@ int osc_setattr_async_base(struct obd_export *exp, struct obd_info *oinfo,
         /* do mds to ost setattr asynchronously */
         if (!rqset) {
                 /* Do not wait for response. */
-                ptlrpcd_add_req(req, PDL_POLICY_ROUND, -1);
+		ptlrpcd_add_req(req);
         } else {
                 req->rq_interpret_reply =
                         (ptlrpc_interpterer_t)osc_setattr_interpret;
@@ -351,7 +351,7 @@ int osc_setattr_async_base(struct obd_export *exp, struct obd_info *oinfo,
                 sa->sa_cookie = cookie;
 
                 if (rqset == PTLRPCD_SET)
-                        ptlrpcd_add_req(req, PDL_POLICY_ROUND, -1);
+			ptlrpcd_add_req(req);
                 else
                         ptlrpc_set_add_req(rqset, req);
         }
@@ -470,14 +470,14 @@ int osc_punch_base(struct obd_export *exp, struct obd_info *oinfo,
         CLASSERT (sizeof(*sa) <= sizeof(req->rq_async_args));
         sa = ptlrpc_req_async_args(req);
         sa->sa_oa     = oinfo->oi_oa;
-        sa->sa_upcall = upcall;
-        sa->sa_cookie = cookie;
-        if (rqset == PTLRPCD_SET)
-                ptlrpcd_add_req(req, PDL_POLICY_ROUND, -1);
-        else
-                ptlrpc_set_add_req(rqset, req);
+	sa->sa_upcall = upcall;
+	sa->sa_cookie = cookie;
+	if (rqset == PTLRPCD_SET)
+		ptlrpcd_add_req(req);
+	else
+		ptlrpc_set_add_req(rqset, req);
 
-        RETURN(0);
+	RETURN(0);
 }
 
 static int osc_sync_interpret(const struct lu_env *env,
@@ -541,7 +541,7 @@ int osc_sync_base(struct obd_export *exp, struct obd_info *oinfo,
 	fa->fa_cookie = cookie;
 
 	if (rqset == PTLRPCD_SET)
-		ptlrpcd_add_req(req, PDL_POLICY_ROUND, -1);
+		ptlrpcd_add_req(req);
 	else
 		ptlrpc_set_add_req(rqset, req);
 
@@ -684,9 +684,9 @@ static int osc_destroy(const struct lu_env *env, struct obd_export *exp,
                 }
         }
 
-        /* Do not wait for response */
-        ptlrpcd_add_req(req, PDL_POLICY_ROUND, -1);
-        RETURN(0);
+	/* Do not wait for response */
+	ptlrpcd_add_req(req);
+	RETURN(0);
 }
 
 static void osc_announce_cached(struct client_obd *cli, struct obdo *oa,
@@ -1584,7 +1584,7 @@ static int osc_brw_redo_request(struct ptlrpc_request *request,
 	 * to add a series of BRW RPCs into a self-defined ptlrpc_request_set
 	 * and wait for all of them to be finished. We should inherit request
 	 * set from old request. */
-	ptlrpcd_add_req(new_req, PDL_POLICY_SAME, -1);
+	ptlrpcd_add_req(new_req);
 
 	DEBUG_REQ(D_INFO, new_req, "new request");
 	RETURN(0);
@@ -1747,7 +1747,7 @@ static int brw_interpret(const struct lu_env *env,
 	osc_wake_cache_waiters(cli);
 	spin_unlock(&cli->cl_loi_list_lock);
 
-	osc_io_unplug(env, cli, NULL, PDL_POLICY_SAME);
+	osc_io_unplug(env, cli, NULL);
 	RETURN(rc);
 }
 
@@ -1775,7 +1775,7 @@ static void brw_commit(struct ptlrpc_request *req)
  * Extents in the list must be in OES_RPC state.
  */
 int osc_build_rpc(const struct lu_env *env, struct client_obd *cli,
-		  struct list_head *ext_list, int cmd, pdl_policy_t pol)
+		  struct list_head *ext_list, int cmd)
 {
 	struct ptlrpc_request		*req = NULL;
 	struct osc_extent		*ext;
@@ -1941,19 +1941,7 @@ int osc_build_rpc(const struct lu_env *env, struct client_obd *cli,
 		  page_count, aa, cli->cl_r_in_flight,
 		  cli->cl_w_in_flight);
 
-	/* XXX: Maybe the caller can check the RPC bulk descriptor to
-	 * see which CPU/NUMA node the majority of pages were allocated
-	 * on, and try to assign the async RPC to the CPU core
-	 * (PDL_POLICY_PREFERRED) to reduce cross-CPU memory traffic.
-	 *
-	 * But on the other hand, we expect that multiple ptlrpcd
-	 * threads and the initial write sponsor can run in parallel,
-	 * especially when data checksum is enabled, which is CPU-bound
-	 * operation and single ptlrpcd thread cannot process in time.
-	 * So more ptlrpcd threads sharing BRW load
-	 * (with PDL_POLICY_ROUND) seems better.
-	 */
-	ptlrpcd_add_req(req, pol, -1);
+	ptlrpcd_add_req(req);
 	rc = 0;
 	EXIT;
 
@@ -2251,17 +2239,17 @@ no_match:
 				aa->oa_flags  = NULL;
 			}
 
-                        req->rq_interpret_reply =
-                                (ptlrpc_interpterer_t)osc_enqueue_interpret;
-                        if (rqset == PTLRPCD_SET)
-                                ptlrpcd_add_req(req, PDL_POLICY_ROUND, -1);
-                        else
-                                ptlrpc_set_add_req(rqset, req);
-                } else if (intent) {
-                        ptlrpc_req_finished(req);
-                }
-                RETURN(rc);
-        }
+			req->rq_interpret_reply =
+				(ptlrpc_interpterer_t)osc_enqueue_interpret;
+			if (rqset == PTLRPCD_SET)
+				ptlrpcd_add_req(req);
+			else
+				ptlrpc_set_add_req(rqset, req);
+		} else if (intent) {
+			ptlrpc_req_finished(req);
+		}
+		RETURN(rc);
+	}
 
 	rc = osc_enqueue_fini(req, upcall, cookie, &lockh, einfo->ei_mode,
 			      flags, agl, rc);
@@ -2710,15 +2698,16 @@ static int osc_set_info_async(const struct lu_env *env, struct obd_export *exp,
                 req->rq_interpret_reply = osc_shrink_grant_interpret;
         }
 
-        ptlrpc_request_set_replen(req);
-        if (!KEY_IS(KEY_GRANT_SHRINK)) {
-                LASSERT(set != NULL);
-                ptlrpc_set_add_req(set, req);
-                ptlrpc_check_set(NULL, set);
-        } else
-                ptlrpcd_add_req(req, PDL_POLICY_ROUND, -1);
+	ptlrpc_request_set_replen(req);
+	if (!KEY_IS(KEY_GRANT_SHRINK)) {
+		LASSERT(set != NULL);
+		ptlrpc_set_add_req(set, req);
+		ptlrpc_check_set(NULL, set);
+	} else {
+		ptlrpcd_add_req(req);
+	}
 
-        RETURN(0);
+	RETURN(0);
 }
 
 static int osc_reconnect(const struct lu_env *env,
@@ -2810,7 +2799,7 @@ static int osc_import_event(struct obd_device *obd,
                         cli = &obd->u.cli;
                         /* all pages go to failing rpcs due to the invalid
                          * import */
-			osc_io_unplug(env, cli, NULL, PDL_POLICY_ROUND);
+			osc_io_unplug(env, cli, NULL);
 
                         ldlm_namespace_cleanup(ns, LDLM_FL_LOCAL_ONLY);
                         cl_env_put(env, &refcheck);
@@ -2876,7 +2865,7 @@ static int brw_queue_work(const struct lu_env *env, void *data)
 
 	CDEBUG(D_CACHE, "Run writeback work for client obd %p.\n", cli);
 
-	osc_io_unplug(env, cli, NULL, PDL_POLICY_SAME);
+	osc_io_unplug(env, cli, NULL);
 	RETURN(0);
 }
 
