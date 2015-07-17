@@ -116,6 +116,8 @@ init_agt_vars() {
 copytool_device() {
 	local facet=$1
 	local dev=AGTDEV$(facet_number $facet)
+	[[ ! -z ${!dev} ]] ||
+		error "Value echo-ed by copytool_device() is empty"
 
 	echo -n ${!dev}
 }
@@ -759,11 +761,11 @@ parse_json_event() {
 	echo $raw_event | python -c "$json_parser"
 }
 
-# populate MDT device array
-get_mdt_devices
-
 # initiate variables
 init_agt_vars
+
+# populate MDT device array
+get_mdt_devices
 
 # cleanup from previous bad setup
 search_and_kill_copytool
