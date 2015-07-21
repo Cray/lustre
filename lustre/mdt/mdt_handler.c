@@ -5960,10 +5960,17 @@ static int mdt_path_current(struct mdt_thread_info *info,
 	 * so checking root_fid can only happen on MDT0. */
 	while (!lu_fid_eq(&mdt->mdt_md_root_fid,
 			  &pli->pli_fids[pli->pli_fidcount])) {
-		mdt_obj = mdt_object_find(info->mti_env, mdt,
-					  &pli->pli_fids[pli->pli_fidcount]);
-		if (IS_ERR(mdt_obj))
-			GOTO(out, rc = PTR_ERR(mdt_obj));
+		if (lu_fid_eq(mdt_object_fid(pli->pli_mdt_obj),
+					&pli->pli_fids[pli->pli_fidcount])) {
+			mdt_obj = pli->pli_mdt_obj;
+			mdt_object_get(info->mti_env, mdt_obj);
+		} else {
+			mdt_obj = mdt_object_find(info->mti_env, mdt,
+					&pli->pli_fids[pli->pli_fidcount]);
+			if (IS_ERR(mdt_obj))
+				GOTO(out, rc = PTR_ERR(mdt_obj));
+		}
+
 		if (mdt_object_remote(mdt_obj)) {
 			mdt_object_put(info->mti_env, mdt_obj);
 			GOTO(remote_out, rc = -EREMOTE);
