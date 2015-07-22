@@ -742,11 +742,10 @@ static void cleanup_resource(struct ldlm_resource *res, struct list_head *q,
                         if (rc)
                                 CERROR("ldlm_cli_cancel: %d\n", rc);
                 } else {
-                        ldlm_resource_unlink_lock(lock);
                         unlock_res(res);
                         LDLM_DEBUG(lock, "Freeing a lock still held by a "
                                    "client node");
-                        ldlm_lock_destroy(lock);
+			ldlm_lock_cancel(lock);
                 }
                 LDLM_LOCK_RELEASE(lock);
         } while (1);
@@ -894,6 +893,7 @@ void ldlm_namespace_free_prior(struct ldlm_namespace *ns,
         }
         EXIT;
 }
+EXPORT_SYMBOL(ldlm_namespace_free_prior);
 
 /**
  * Performs freeing memory structures related to \a ns. This is only done
@@ -925,6 +925,7 @@ void ldlm_namespace_free_post(struct ldlm_namespace *ns)
 	ldlm_put_ref();
 	EXIT;
 }
+EXPORT_SYMBOL(ldlm_namespace_free_post);
 
 /**
  * Cleanup the resource, and free namespace.

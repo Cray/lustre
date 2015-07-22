@@ -534,6 +534,10 @@ static int __init init_obdclass(void)
         for (i = CAPA_SITE_CLIENT; i < CAPA_SITE_MAX; i++)
 		INIT_LIST_HEAD(&capa_list[i]);
 
+	spin_lock_init(&obd_stale_export_lock);
+	INIT_LIST_HEAD(&obd_stale_exports);
+	atomic_set(&obd_stale_export_num, 0);
+
         LCONSOLE_INFO("Lustre: Build Version: "BUILD_VERSION"\n");
 
 	spin_lock_init(&obd_types_lock);
@@ -689,6 +693,7 @@ static void cleanup_obdclass(void)
         class_handle_cleanup();
         class_exit_uuidlist();
         obd_zombie_impexp_stop();
+	LASSERT(list_empty(&obd_stale_exports));
 
         memory_leaked = obd_memory_sum();
         pages_leaked = obd_pages_sum();
