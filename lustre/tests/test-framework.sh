@@ -242,6 +242,7 @@ init_test_env() {
     # Ubuntu, at least, has a truncate command in /usr/bin
     # so fully path our truncate command.
     export TRUNCATE=${TRUNCATE:-$LUSTRE/tests/truncate}
+	export FSX=${FSX:-$LUSTRE/tests/fsx}
     export MDSRATE=${MDSRATE:-"$LUSTRE/tests/mpi/mdsrate"}
     [ ! -f "$MDSRATE" ] && export MDSRATE=$(which mdsrate 2> /dev/null)
     if ! echo $PATH | grep -q $LUSTRE/tests/racer; then
@@ -3296,6 +3297,7 @@ cleanup_echo_devs () {
 
 cleanupall() {
     nfs_client_mode && return
+	cifs_client_mode && return
 
     stopall $*
     cleanup_echo_devs
@@ -3534,6 +3536,7 @@ setupall() {
     local arg1=$1
 
     nfs_client_mode && return
+	cifs_client_mode && return
 
     sanity_mount_check ||
         error "environments are insane!"
@@ -3804,6 +3807,11 @@ nfs_client_mode () {
     return 1
 }
 
+cifs_client_mode () {
+	[ x$CIFSCLIENT = xyes ] &&
+		echo "CIFSCLIENT=$CIFSCLIENT mode: setup, cleanup, check config skipped"
+}
+
 check_config_client () {
     local mntpt=$1
 
@@ -3851,6 +3859,7 @@ check_config_clients () {
 	local mntpt=$1
 
 	nfs_client_mode && return
+	cifs_client_mode && return
 
 	do_rpc_nodes "$clients" check_config_client $mntpt
 
@@ -3898,6 +3907,7 @@ is_empty_fs() {
 check_and_setup_lustre() {
 	validate_parameters
     nfs_client_mode && return
+	cifs_client_mode && return
 
     local MOUNTED=$(mounted_lustre_filesystems)
 
@@ -7357,4 +7367,13 @@ check_clients_evicted() {
 	done
 
         [ $rc -eq 0 ] || error "client not evicted from OST"
+}
+
+killall_process () {
+	local clients=${1:-$(hostname)}
+	local name=$2
+	local signal=$3
+	local rc=0
+
+	do_nodes $clients "killall $signal $name"
 }
