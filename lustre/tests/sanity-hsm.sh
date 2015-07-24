@@ -2795,6 +2795,23 @@ test_58() {
 }
 run_test 58 "Truncate a released file will trigger restore"
 
+test_59() {
+	# test needs a running copytool
+	copytool_setup
+
+	mkdir -p $DIR/$tdir
+	local f=$DIR/$tdir/$tfile
+	local fid=$(copy_file /etc/passwd $f)
+	cdt_disable
+	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
+	rm -f $f
+	cdt_enable
+	wait_request_state $fid ARCHIVE FAILED
+
+	copytool_cleanup
+}
+run_test 59 "Waiting archive of a removed file should fail"
+
 test_60() {
 	# This test validates the fix for LU-4512. Ensure that the -u
 	# option changes the progress reporting interval from the
@@ -3987,6 +4004,43 @@ test_251() {
 	copytool_cleanup
 }
 run_test 251 "Coordinator request timeout"
+
+test_252() {
+	# test needs a running copytool
+	copytool_setup
+
+	mkdir -p $DIR/$tdir
+	local f=$DIR/$tdir/$tfile
+	local fid=$(make_large_for_cancel $f)
+
+	cdt_disable
+	# to have a short test
+	local old_to=$(get_hsm_param active_request_timeout)
+	set_hsm_param active_request_timeout 20
+	# to be sure the cdt will wake up frequently so
+	# it will be able to cancel the "old" request
+	local old_loop=$(get_hsm_param loop_period)
+	set_hsm_param loop_period 2
+	cdt_enable
+
+	# clear locks to avoid extra delay caused by flush/cancel
+	# and thus prevent early copytool death to timeout.
+	cancel_lru_locks osc
+
+	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
+	wait_request_state $fid ARCHIVE STARTED
+	rm -f $f
+
+	# wait but less than active_request_timeout+grace_delay
+	sleep 25
+	wait_request_state $fid ARCHIVE CANCELED
+
+	set_hsm_param active_request_timeout $old_to
+	set_hsm_param loop_period $old_loop
+
+	copytool_cleanup
+}
+run_test 252 "Timeout'ed running archive of a removed file should be canceled"
 
 test_300() {
 	# the only way to test ondisk conf is to restart MDS ...
