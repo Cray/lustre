@@ -108,18 +108,21 @@ resolve_arch() {
 }
 
 find_linux_devel_paths() {
-    local path="$1"
+	local path="$1"
+	local linuxobjpath=$path/usr/src/linux-${lnxmaj}${lnxmin}-${lnxrel}-obj/$(resolve_arch $TARGET_ARCH $PATCHLESS)/$RPMSMPTYPE
 
-    LINUX=$path/usr/src/linux-${lnxmaj}${lnxmin}-${lnxrel}
-    LINUXOBJ=$path/usr/src/linux-${lnxmaj}${lnxmin}-${lnxrel}-obj/$(resolve_arch $TARGET_ARCH $PATCHLESS)/$RPMSMPTYPE
+	LINUX=$path/usr/src/linux-${lnxmaj}${lnxmin}-${lnxrel}
+	LINUXOBJ=$path/usr/src/linux-obj/$(resolve_arch $TARGET_ARCH $PATCHLESS)/$RPMSMPTYPE
 
+	# symlink the linux-obj to linux-version-obj
+	ln -s $linuxobjpath $LINUXOBJ
 	# We need to copy the headers from the source to the object tree for
 	# MOFED to be able to compile (a bug in ofed?)
 	if [ -e ${LINUX}/include ] && [ -e ${LINUXOBJ}/include ]; then
 		cp -rf ${LINUX}/include ${LINUXOBJ}
 	fi
 
-    return 0
+	return 0
 }
 
 mcpu_rpmbuild_opt() {

@@ -1511,19 +1511,32 @@ EOF
 	# a place to change/add any unique config
 	case $ofed_type in
 		ofa) local K_SRC_OBJ="K_SRC_OBJ"
-			;;
+		if ! $RPMBUILD $BUILD_TYPE --define 'build_kernel_ib 1' \
+			--define 'build_kernel_ib_devel 1' \
+			${FIND_REQUIRES:+--define "__find_requires $FIND_REQUIRES"} \
+			--define "_topdir ${TOPDIR}" --target ${TARGET_ARCH} \
+			--define "KVERSION ${linuxrelease}" \
+			--define "$K_SRC ${linux}" \
+			${K_SRC_OBJ:+--define "$K_SRC_OBJ ${linux}"} \
+			${OFA_KERNEL_RELEASE:+--define "_release $OFA_KERNEL_RELEASE"} \
+			--define "configure_options --without-quilt $OFED_CORE $OFED_HARDWARE $OFED_ISCSI" \
+			${SOURCE} 2>&1; then
+			fatal 1 "Error building ${kib_rpm}"
+		fi
+		;;
+		mlnx)
+		if ! $RPMBUILD $BUILD_TYPE \
+			${FIND_REQUIRES:+--define "__find_requires $FIND_REQUIRES"} \
+			--define "_topdir ${TOPDIR}" --target ${TARGET_ARCH} \
+			--define "KVERSION ${linuxrelease}" \
+			--define "$K_SRC ${linux}" \
+			${OFA_KERNEL_RELEASE:+--define "_release $OFA_KERNEL_RELEASE"} \
+			--define "configure_options --without-quilt $OFED_CORE $OFED_HARDWARE $OFED_ISCSI" \
+			${SOURCE} 2>&1; then
+			fatal 1 "Error building ${kib_rpm}"
+		fi
+		;;
 	esac
-    if ! $RPMBUILD $BUILD_TYPE --define 'build_kernel_ib 1' --define 'build_kernel_ib_devel 1' \
-                  ${FIND_REQUIRES:+--define "__find_requires $FIND_REQUIRES"} \
-                  --define "_topdir ${TOPDIR}" --target ${TARGET_ARCH} \
-                  --define "KVERSION ${linuxrelease}" \
-                  --define "$K_SRC ${linux}" \
-                  ${K_SRC_OBJ:+--define "$K_SRC_OBJ ${linux}"} \
-                  ${OFA_KERNEL_RELEASE:+--define "_release $OFA_KERNEL_RELEASE"} \
-                  --define "configure_options --without-quilt $OFED_CORE $OFED_HARDWARE $OFED_ISCSI" \
-                  ${SOURCE} 2>&1; then
-        fatal 1 "Error building ${kib_rpm}"
-    fi
 
 }
 
