@@ -1160,3 +1160,22 @@ out_close:
 	RETURN(rc);
 }
 EXPORT_SYMBOL(llog_backup);
+
+/* Get size of llog */
+__u64 llog_size(const struct lu_env *env, struct llog_handle *llh)
+{
+	int rc;
+	struct lu_attr la;
+
+	rc = llh->lgh_obj->do_ops->do_attr_get(env, llh->lgh_obj, &la,
+					       BYPASS_CAPA);
+	if (rc) {
+		CERROR("%s: attr_get failed, rc = %d\n",
+		       llh->lgh_ctxt->loc_obd->obd_name, rc);
+		return 0;
+	}
+
+	return la.la_size;
+}
+EXPORT_SYMBOL(llog_size);
+
