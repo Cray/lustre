@@ -97,6 +97,7 @@ for dir in init.d sysconfig ha.d; do
     %{__rm} -fr %{buildroot}/etc/$dir
 done
 %{__rm} -f %{buildroot}/etc/ldev.conf
+%{__rm} -f %{buildroot}/etc/modprobe.d/ko2iblnd.conf
 %{__rm} -f %{buildroot}/lib/lustre/haconfig
 %{__rm} -f %{buildroot}/lib/lustre/lc_common
 

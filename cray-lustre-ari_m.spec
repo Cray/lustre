@@ -105,6 +105,7 @@ for f in lustre lhbadm ldev haconfig; do
         %{__rm} -f %{buildroot}/etc/init.d/${f}
 done
 %{__rm} -rf %{buildroot}/etc/ha.d %{buildroot}/etc/sysconfig %{buildroot}/etc/ldev.conf
+%{__rm} -f %{buildroot}/etc/modprobe.d/ko2iblnd.conf
 
 # Remove all the extras not needed for CNL
 for dir in %{_libdir} %{_mandir} %{_bindir} %{_includedir} %{_datadir}; do
