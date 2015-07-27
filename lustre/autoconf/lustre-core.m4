@@ -1180,31 +1180,35 @@ LB_LINUX_TRY_COMPILE([
 ])
 
 #
+# LC_LLITE_DATA_IS_LIST
+#
 # 3.6 switch i_dentry/d_alias from list to hlist
 #
-AC_DEFUN([LC_HAVE_DENTRY_D_ALIAS_HLIST],
-[AC_MSG_CHECKING([if i_dentry/d_alias uses hlist])
+# In the upstream kernels d_alias first changes
+# to a hlist and then in later version, 3.11, gets
+# moved to the union d_u. Due to some distros having
+# d_alias in the d_u union as a struct list, which
+# has never existed upstream stream, we can't test
+# if d_alias is a list or hlist directly. If ever
+# i_dentry and d_alias even up different combos then
+# the build will fail. In that case then we will need
+# to separate out the i_dentry and d_alias test below.
+#
+AC_DEFUN([LC_DATA_FOR_LLITE_IS_LIST], [
 tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
-LB_LINUX_TRY_COMPILE([
+LB_CHECK_COMPILE([if 'i_dentry/d_alias' uses 'list'],
+i_dentry_d_alias_list, [
 	#include <linux/fs.h>
-	#include <linux/list.h>
 ],[
 	struct inode inode;
-	struct dentry dentry;
-	struct hlist_head head;
-	struct hlist_node node;
-	inode.i_dentry = head;
-	dentry.d_alias = node;
+	INIT_LIST_HEAD(&inode.i_dentry);
 ],[
-	AC_DEFINE(HAVE_DENTRY_D_ALIAS_HLIST, 1,
-		  [have i_dentry/d_alias uses hlist])
-	AC_MSG_RESULT([yes])
-],[
-	AC_MSG_RESULT([no])
+	AC_DEFINE(DATA_FOR_LLITE_IS_LIST, 1,
+		[both i_dentry/d_alias uses list])
 ])
 EXTRA_KCFLAGS="$tmp_flags"
-])
+]) # LC_DATA_FOR_LLITE_IS_LIST
 
 #
 # 3.6 dentry_open uses struct path as first argument
@@ -1278,9 +1282,10 @@ LB_LINUX_TRY_COMPILE([
 	#include <linux/list.h>
 	#include <linux/fs.h>
 ],[
+	struct hlist_head *head = NULL;
 	struct inode *inode;
-	struct dentry *dentry;
-	hlist_for_each_entry(dentry, &inode->i_dentry, d_alias) {
+
+	hlist_for_each_entry(inode, head, i_hash) {
 		continue;
 	}
 ],[
@@ -1438,6 +1443,62 @@ LB_LINUX_TRY_COMPILE([
 	AC_MSG_RESULT([no])
 ])
 ])
+
+#
+# LC_HAVE_DENTRY_D_U_D_ALIAS
+#
+# 3.11 kernel moved d_alias to the union d_u in struct dentry
+#
+# Some distros move d_alias to d_u but it is still a struct list
+#
+AC_DEFUN([LC_HAVE_DENTRY_D_U_D_ALIAS], [
+AS_IF([test "x$lb_cv_compile_i_dentry_d_alias_list" = xyes], [
+	LB_CHECK_COMPILE([if list 'dentry.d_u.d_alias' exist],
+	d_alias, [
+		#include <linux/list.h>
+		#include <linux/dcache.h>
+	],[
+		struct dentry de;
+		INIT_LIST_HEAD(&de.d_u.d_alias);
+	],[
+		AC_DEFINE(HAVE_DENTRY_D_U_D_ALIAS, 1,
+			[list dentry.d_u.d_alias exist])
+	])
+],[
+	LB_CHECK_COMPILE([if hlist 'dentry.d_u.d_alias' exist],
+	d_alias, [
+		#include <linux/list.h>
+		#include <linux/dcache.h>
+	],[
+		struct dentry de;
+		INIT_HLIST_NODE(&de.d_u.d_alias);
+	],[
+		AC_DEFINE(HAVE_DENTRY_D_U_D_ALIAS, 1,
+			[hlist dentry.d_u.d_alias exist])
+	])
+])
+]) # LC_HAVE_DENTRY_D_U_D_ALIAS
+
+#
+# LC_HAVE_DENTRY_D_CHILD
+#
+# 3.11 kernel d_child has been moved out of the union d_u
+# in struct dentry
+#
+AC_DEFUN([LC_HAVE_DENTRY_D_CHILD], [
+LB_CHECK_COMPILE([if 'dentry.d_child' exist],
+d_child, [
+	#include <linux/list.h>
+	#include <linux/dcache.h>
+],[
+	struct dentry de;
+	INIT_LIST_HEAD(&de.d_child);
+],[
+	AC_DEFINE(HAVE_DENTRY_D_CHILD, 1,
+		[dentry.d_child exist])
+])
+]) # LC_HAVE_DENTRY_D_CHILD
+
 
 # 3.13 has vfs_renane with 5 args
 AC_DEFUN([LC_VFS_RENAME_5ARGS],
@@ -1618,7 +1679,7 @@ AC_DEFUN([LC_PROG_LINUX],
 	 LC_FILE_LLSEEK_SIZE_5ARG
 
 	 # 3.6
-	 LC_HAVE_DENTRY_D_ALIAS_HLIST
+	 LC_DATA_FOR_LLITE_IS_LIST
 	 LC_DENTRY_OPEN_USE_PATH
 	 LC_HAVE_IOP_ATOMIC_OPEN
 
@@ -1639,6 +1700,8 @@ AC_DEFUN([LC_PROG_LINUX],
 	 LC_INVALIDATE_RANGE
 	 LC_D_COMPARE_5ARGS
 	 LC_HAVE_DCOUNT
+	 LC_HAVE_DENTRY_D_U_D_ALIAS
+	 LC_HAVE_DENTRY_D_CHILD
 
 	 # 3.12
 	 LC_OLDSIZE_TRUNCATE_PAGECACHE
