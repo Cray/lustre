@@ -75,7 +75,6 @@ int lustre_lnet_config_ni_system(bool up, bool load_ni_from_mod,
 	opc = up ? IOC_LIBCFS_CONFIGURE : IOC_LIBCFS_UNCONFIGURE;
 
 	rc = l_ioctl(LNET_DEV_ID, opc, &data);
-
 	if (rc != 0) {
 		snprintf(err_str,
 			sizeof(err_str),
@@ -160,10 +159,10 @@ int lustre_lnet_config_route(char *nw, char *gw, int hops, int prio,
 
 	rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_ADD_ROUTE, &data);
 	if (rc != 0) {
+		rc = -errno;
 		snprintf(err_str,
 			 sizeof(err_str),
 			 "\"cannot add route: %s\"", strerror(errno));
-		rc = -errno;
 		goto out;
 	}
 
@@ -218,10 +217,10 @@ int lustre_lnet_del_route(char *nw, char *gw,
 
 	rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_DEL_ROUTE, &data);
 	if (rc != 0) {
+		rc = -errno;
 		snprintf(err_str,
 			 sizeof(err_str),
 			 "\"cannot delete route: %s\"", strerror(errno));
-		rc = -errno;
 		goto out;
 	}
 
@@ -238,6 +237,7 @@ int lustre_lnet_show_route(char *nw, char *gw, int hops, int prio, int detail,
 	struct lnet_ioctl_config_data data;
 	lnet_nid_t gateway_nid;
 	int rc = LUSTRE_CFG_RC_OUT_OF_MEM;
+	int l_errno = 0;
 	__u32 net = LNET_NIDNET(LNET_NID_ANY);
 	int i;
 	struct cYAML *root = NULL, *route = NULL, *item = NULL;
@@ -299,8 +299,10 @@ int lustre_lnet_show_route(char *nw, char *gw, int hops, int prio, int detail,
 		data.cfg_count = i;
 
 		rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_GET_ROUTE, &data);
-		if (rc != 0)
+		if (rc != 0) {
+			l_errno = errno;
 			break;
+		}
 
 		/* filter on provided data */
 		if (net != LNET_NIDNET(LNET_NID_ANY) &&
@@ -362,12 +364,12 @@ int lustre_lnet_show_route(char *nw, char *gw, int hops, int prio, int detail,
 	if (show_rc == NULL)
 		cYAML_print_tree(root);
 
-	if (errno != ENOENT) {
+	if (l_errno != ENOENT) {
 		snprintf(err_str,
 			 sizeof(err_str),
 			 "\"cannot get routes: %s\"",
-			 strerror(errno));
-		rc = -errno;
+			 strerror(l_errno));
+		rc = -l_errno;
 		goto out;
 	} else
 		rc = LUSTRE_CFG_RC_NO_ERR;
@@ -412,7 +414,7 @@ int lustre_lnet_config_net(char *net, char *intf, char *ip2net,
 	struct lnet_ioctl_config_data *data;
 	size_t ioctl_size = sizeof(*data);
 	char buf[LNET_MAX_STR_LEN];
-	int rc = LUSTRE_CFG_RC_NO_ERR, num_of_nets = 0;
+	int rc = LUSTRE_CFG_RC_NO_ERR;
 	char err_str[LNET_MAX_STR_LEN];
 
 	snprintf(err_str, sizeof(err_str), "\"success\"");
@@ -477,19 +479,17 @@ int lustre_lnet_config_net(char *net, char *intf, char *ip2net,
 		memcpy(lnd, lnd_tunables, sizeof(*lnd_tunables));
 	}
 
-	rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_ADD_NET, data);
+	rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_ADD_NET, &data);
 	if (rc < 0) {
 		rc = -errno;
 		snprintf(err_str,
 			 sizeof(err_str),
 			 "\"cannot add network: %s\"", strerror(errno));
-		rc = -errno;
 	}
 	free(data);
 
 out:
-	cYAML_build_error((num_of_nets > 0) ? num_of_nets : rc,
-			 seq_no, ADD_CMD, "net", err_str, err_rc);
+	cYAML_build_error(rc, seq_no, ADD_CMD, "net", err_str, err_rc);
 
 	return rc;
 }
@@ -525,10 +525,10 @@ int lustre_lnet_del_net(char *nw, int seq_no, struct cYAML **err_rc)
 
 	rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_DEL_NET, &data);
 	if (rc != 0) {
+		rc = -errno;
 		snprintf(err_str,
 			 sizeof(err_str),
 			 "\"cannot delete network: %s\"", strerror(errno));
-		rc = -errno;
 		goto out;
 	}
 
@@ -547,6 +547,7 @@ int lustre_lnet_show_net(char *nw, int detail, int seq_no,
 	struct lnet_ioctl_net_config *net_config;
 	__u32 net = LNET_NIDNET(LNET_NID_ANY);
 	int rc = LUSTRE_CFG_RC_OUT_OF_MEM, i, j;
+	int l_errno = 0;
 	struct cYAML *root = NULL, *tunables = NULL, *net_node = NULL,
 		*interfaces = NULL, *item = NULL, *first_seq = NULL;
 	int str_buf_len = LNET_MAX_SHOW_NUM_CPT * 2;
@@ -598,8 +599,10 @@ int lustre_lnet_show_net(char *nw, int detail, int seq_no,
 		data->cfg_count = i;
 
 		rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_GET_NET, data);
-		if (rc != 0)
+		if (rc != 0) {
+			l_errno = errno;
 			break;
+		}
 
 		/* filter on provided data */
 		if (net != LNET_NIDNET(LNET_NID_ANY) &&
@@ -703,12 +706,12 @@ int lustre_lnet_show_net(char *nw, int detail, int seq_no,
 	if (show_rc == NULL)
 		cYAML_print_tree(root);
 
-	if (errno != ENOENT) {
+	if (l_errno != ENOENT) {
 		snprintf(err_str,
 			 sizeof(err_str),
 			 "\"cannot get networks: %s\"",
-			 strerror(errno));
-		rc = -errno;
+			 strerror(l_errno));
+		rc = -l_errno;
 		goto out;
 	} else
 		rc = LUSTRE_CFG_RC_NO_ERR;
@@ -756,11 +759,11 @@ int lustre_lnet_enable_routing(int enable, int seq_no, struct cYAML **err_rc)
 
 	rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_CONFIG_RTR, &data);
 	if (rc != 0) {
+		rc = -errno;
 		snprintf(err_str,
 			 sizeof(err_str),
 			 "\"cannot %s routing %s\"",
 			 (enable) ? "enable" : "disable", strerror(errno));
-		rc = -errno;
 		goto out;
 	}
 
@@ -797,10 +800,10 @@ int lustre_lnet_config_buffers(int tiny, int small, int large, int seq_no,
 
 	rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_ADD_BUF, &data);
 	if (rc != 0) {
+		rc = -errno;
 		snprintf(err_str,
 			 sizeof(err_str),
 			 "\"cannot configure buffers: %s\"", strerror(errno));
-		rc = -errno;
 		goto out;
 	}
 
@@ -816,6 +819,7 @@ int lustre_lnet_show_routing(int seq_no, struct cYAML **show_rc,
 	struct lnet_ioctl_config_data *data;
 	struct lnet_ioctl_pool_cfg *pool_cfg = NULL;
 	int rc = LUSTRE_CFG_RC_OUT_OF_MEM;
+	int l_errno = 0;
 	char *buf;
 	char *pools[LNET_NRBPOOLS] = {"tiny", "small", "large"};
 	int buf_count[LNET_NRBPOOLS] = {0};
@@ -850,8 +854,10 @@ int lustre_lnet_show_routing(int seq_no, struct cYAML **show_rc,
 		data->cfg_count = i;
 
 		rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_GET_BUF, data);
-		if (rc != 0)
+		if (rc != 0) {
+			l_errno = errno;
 			break;
+		}
 
 		exist = true;
 
@@ -921,12 +927,12 @@ int lustre_lnet_show_routing(int seq_no, struct cYAML **show_rc,
 	if (show_rc == NULL)
 		cYAML_print_tree(root);
 
-	if (errno != ENOENT) {
+	if (l_errno != ENOENT) {
 		snprintf(err_str,
 			 sizeof(err_str),
 			 "\"cannot get routing information: %s\"",
-			 strerror(errno));
-		rc = -errno;
+			 strerror(l_errno));
+		rc = -l_errno;
 		goto out;
 	} else
 		rc = LUSTRE_CFG_RC_NO_ERR;
@@ -965,6 +971,7 @@ int lustre_lnet_show_peer_credits(int seq_no, struct cYAML **show_rc,
 {
 	struct lnet_ioctl_peer peer_info;
 	int rc = LUSTRE_CFG_RC_OUT_OF_MEM, ncpt = 0, i = 0, j = 0;
+	int l_errno = 0;
 	struct cYAML *root = NULL, *peer = NULL, *first_seq = NULL,
 		     *peer_root = NULL;
 	char err_str[LNET_MAX_STR_LEN];
@@ -989,8 +996,10 @@ int lustre_lnet_show_peer_credits(int seq_no, struct cYAML **show_rc,
 			peer_info.pr_lnd_u.pr_peer_credits.cr_ncpt = j;
 			rc = l_ioctl(LNET_DEV_ID,
 				     IOC_LIBCFS_GET_PEER_INFO, &peer_info);
-			if (rc != 0)
+			if (rc != 0) {
+				l_errno = errno;
 				break;
+			}
 
 			if (ncpt_set != 0) {
 				ncpt = peer_info.pr_lnd_u.pr_peer_credits.
@@ -1059,12 +1068,12 @@ int lustre_lnet_show_peer_credits(int seq_no, struct cYAML **show_rc,
 				goto out;
 		}
 
-		if (errno != ENOENT) {
+		if (l_errno != ENOENT) {
 			snprintf(err_str,
 				sizeof(err_str),
 				"\"cannot get peer information: %s\"",
-				strerror(errno));
-			rc = -errno;
+				strerror(l_errno));
+			rc = -l_errno;
 			goto out;
 		}
 
@@ -1114,6 +1123,7 @@ int lustre_lnet_show_stats(int seq_no, struct cYAML **show_rc,
 {
 	struct lnet_ioctl_lnet_stats data;
 	int rc = LUSTRE_CFG_RC_OUT_OF_MEM;
+	int l_errno;
 	char err_str[LNET_MAX_STR_LEN];
 	struct cYAML *root = NULL, *stats = NULL;
 
@@ -1123,11 +1133,12 @@ int lustre_lnet_show_stats(int seq_no, struct cYAML **show_rc,
 
 	rc = l_ioctl(LNET_DEV_ID, IOC_LIBCFS_GET_LNET_STATS, &data);
 	if (rc != 0) {
+		l_errno = errno;
 		snprintf(err_str,
 			 sizeof(err_str),
 			 "\"cannot get lnet statistics: %s\"",
-			 strerror(errno));
-		rc = -errno;
+			 strerror(l_errno));
+		rc = -l_errno;
 		goto out;
 	}
 
