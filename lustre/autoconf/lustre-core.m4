@@ -1811,6 +1811,17 @@ iov_iter_rw, [
 ]) # LC_IOV_ITER_RW
 
 #
+# LC_HAVE_SYNC_READ_WRITE
+#
+# 4.1 new_sync_[read|write] no longer exported
+#
+AC_DEFUN([LC_HAVE_SYNC_READ_WRITE], [
+LB_CHECK_EXPORT([new_sync_read], [fs/read_write.c],
+	[AC_DEFINE(HAVE_SYNC_READ_WRITE, 1,
+			[new_sync_[read|write] is exported by the kernel])])
+]) # LC_HAVE_SYNC_READ_WRITE
+
+#
 # LC_NEW_CANCEL_DIRTY_PAGE
 #
 # 4.2 kernel has new cancel_dirty_page
@@ -1993,6 +2004,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 4.1.0
 	LC_IOV_ITER_RW
+	LC_HAVE_SYNC_READ_WRITE
 
 	# 4.2
 	LC_NEW_CANCEL_DIRTY_PAGE
