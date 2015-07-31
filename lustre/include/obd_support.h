@@ -531,6 +531,12 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_LLITE_FLOCK_UNLOCK_RACE            0x140a
 #define OBD_FAIL_LLITE_FLOCK_BL_GRANT_RACE	    0x140b
 
+#define OBD_FAIL_LLITE_NO_CHECK_DEAD		    0x1408
+#define OBD_FAIL_GETATTR_DELAY			    0x1409
+#define OBD_FAIL_LLITE_CREATE_FILE_PAUSE	    0x1409
+#define OBD_FAIL_LLITE_NEWNODE_PAUSE		    0x140a
+#define OBD_FAIL_LLITE_SETDIRSTRIPE_PAUSE	    0x140b
+
 #define OBD_FAIL_FID_INDIR	0x1501
 #define OBD_FAIL_FID_INLMA	0x1502
 #define OBD_FAIL_FID_IGIF	0x1504
