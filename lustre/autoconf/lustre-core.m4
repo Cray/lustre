@@ -1753,6 +1753,24 @@ iov_iter_rw, [
 ]) # LC_IOV_ITER_RW
 
 #
+# LC_KEY_MATCH_DATA
+#
+# 3.17	replaces key_type::match with match_preparse
+#	and has new struct key_match_data
+#
+AC_DEFUN([LC_KEY_MATCH_DATA], [
+LB_CHECK_COMPILE([if struct key_match field exist],
+key_match, [
+	#include <linux/key-type.h>
+],[
+	struct key_match_data data;
+],[
+	AC_DEFINE(HAVE_KEY_MATCH_DATA, 1,
+		[struct key_match_data exist])
+])
+]) # LC_KEY_MATCH_DATA
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -1890,6 +1908,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 4.1.0
 	LC_IOV_ITER_RW
+
+	# 3.17
+	LC_KEY_MATCH_DATA
 
 	#
 	AS_IF([test "x$enable_server" != xno], [
