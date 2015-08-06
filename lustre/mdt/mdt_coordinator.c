@@ -1644,6 +1644,8 @@ static int mdt_cancel_all_cb(const struct lu_env *env,
 int hsm_cancel_all_actions(struct mdt_device *mdt,
 	const struct obd_uuid *uuid, int cl_evicted, int agent_unregistered)
 {
+	struct lu_env			 env;
+	struct lu_context		 session;
 	struct mdt_thread_info		*mti;
 	struct coordinator		*cdt = &mdt->mdt_coordinator;
 	struct cdt_agent_req		*car;
@@ -1657,8 +1659,25 @@ int hsm_cancel_all_actions(struct mdt_device *mdt,
 
 	ENTRY;
 
-	/* retrieve coordinator context */
-	mti = lu_context_key_get(&cdt->cdt_env.le_ctx, &mdt_thread_key);
+	rc = lu_env_init(&env, LCT_MD_THREAD);
+	if (rc < 0)
+		RETURN(rc);
+
+	/* for mdt_ucred(), lu_ucred stored in lu_ucred_key */
+	rc = lu_context_init(&session, LCT_SERVER_SESSION);
+	if (rc < 0)
+		GOTO(out_env, rc);
+
+	lu_context_enter(&session);
+	env.le_ses = &session;
+
+	mti = lu_context_key_get(&env.le_ctx, &mdt_thread_key);
+	LASSERT(mti != NULL);
+
+	mti->mti_env = &env;
+	mti->mti_mdt = mdt;
+
+	hsm_init_ucred(mdt_ucred(mti));
 
 	/* disable coordinator */
 	rc = set_cdt_state(cdt, CDT_DISABLE, &old_state);
@@ -1699,7 +1718,7 @@ int hsm_cancel_all_actions(struct mdt_device *mdt,
 			if (hal == NULL) {
 				mdt_cdt_put_request(car);
 				up_read(&cdt->cdt_request_lock);
-				GOTO(out, rc = -ENOMEM);
+				GOTO(out_cdt_state, rc = -ENOMEM);
 			}
 		}
 
@@ -1727,7 +1746,7 @@ int hsm_cancel_all_actions(struct mdt_device *mdt,
 			obj = mdt_hsm_get_md_hsm(mti, &car->car_hai->hai_fid, &mh);
 			if (IS_ERR(obj))
 				/* object removed */
-				goto out;
+				goto out_cdt_state;
 
 			mutex_lock(&cdt->cdt_restore_lock);
 			crh = hsm_restore_hdl_find(cdt, &car->car_hai->hai_fid);
@@ -1788,7 +1807,7 @@ int hsm_cancel_all_actions(struct mdt_device *mdt,
 
 	rc = cdt_llog_process(mti->mti_env, mti->mti_mdt,
 			      mdt_cancel_all_cb, &hcad, WRITE);
-out:
+out_cdt_state:
 	/* Put down the obj ref count, normally incase
 	 * of evicted client and for restore operation */
 	if (obj != NULL && !IS_ERR(obj))
@@ -1796,6 +1815,10 @@ out:
 
 	/* Enable coordinator, unless the coordinator was stopping. */
 	set_cdt_state(cdt, old_state, NULL);
+	lu_context_exit(&session);
+	lu_context_fini(&session);
+out_env:
+	lu_env_fini(&env);
 
 	RETURN(rc);
 }
