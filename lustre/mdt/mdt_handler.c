@@ -2739,6 +2739,8 @@ void mdt_save_lock(struct mdt_thread_info *info, struct lustre_handle *h,
  * \param o mdt object
  * \param lh mdt lock handle referencing regular and PDO locks
  * \param decref force immediate lock releasing
+ *
+ * XXX o is not used and may be NULL, see hsm_cdt_request_completed().
  */
 void mdt_object_unlock(struct mdt_thread_info *info, struct mdt_object *o,
                        struct mdt_lock_handle *lh, int decref)
