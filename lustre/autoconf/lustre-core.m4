@@ -1801,6 +1801,45 @@ percpu_counter_init, [
 ]) # LC_PERCPU_COUNTER_INIT
 
 #
+# LC_BACKING_DEV_INFO_REMOVAL
+#
+# 3.20 kernel removed backing_dev_info from address_space
+#
+AC_DEFUN([LC_BACKING_DEV_INFO_REMOVAL], [
+LB_CHECK_COMPILE([if struct address_space has backing_dev_info],
+backing_dev_info, [
+	#include <linux/fs.h>
+],[
+	struct address_space mapping;
+
+	mapping.backing_dev_info = NULL;
+],[
+	AC_DEFINE(HAVE_BACKING_DEV_INFO, 1, [backing_dev_info exist])
+])
+]) # LC_BACKING_DEV_INFO_REMOVAL
+
+#
+# LC_HAVE_BDI_CAP_MAP_COPY
+#
+# 3.20  removed mmap handling for backing devices since
+#	it breaks on non-MMU systems. See kernel commit
+#	b4caecd48005fbed3949dde6c1cb233142fd69e9
+#
+AC_DEFUN([LC_HAVE_BDI_CAP_MAP_COPY], [
+LB_CHECK_COMPILE([if have 'BDI_CAP_MAP_COPY'],
+bdi_cap_map_copy, [
+	#include <linux/backing-dev.h>
+],[
+	struct backing_dev_info info;
+
+	info.capabilities = BDI_CAP_MAP_COPY;
+],[
+	AC_DEFINE(HAVE_BDI_CAP_MAP_COPY, 1,
+		[BDI_CAP_MAP_COPY exist])
+])
+]) # LC_HAVE_BDI_CAP_MAP_COPY
+
+#
 # LC_CANCEL_DIRTY_PAGE
 #
 # 4.0.0 kernel removed cancle_dirty_page
@@ -2051,6 +2090,10 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 3.18
 	LC_PERCPU_COUNTER_INIT
 	LC_NFS_FILLDIR_USE_CTX
+
+	# 3.20
+	LC_BACKING_DEV_INFO_REMOVAL
+	LC_HAVE_BDI_CAP_MAP_COPY
 
 	# 4.0.0
 	LC_CANCEL_DIRTY_PAGE
