@@ -285,6 +285,14 @@ static struct ctl_table obd_table[] = {
 	},
 	{
 		INIT_CTL_NAME
+		.procname	= "lbug_on_eviction",
+		.data		= &obd_lbug_on_eviction,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec
+	},
+	{
+		INIT_CTL_NAME
 		.procname	= "memused",
 		.data		= NULL,
 		.maxlen		= 0,
