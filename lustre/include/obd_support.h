@@ -119,30 +119,34 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_TIMEOUT_DEFAULT             TIMEOUT_SECS(TO_Lustre_obd_timeout)
 #define LDLM_TIMEOUT_DEFAULT            TIMEOUT_SECS(TO_Lustre_ldlm_timeout)
 #define MDS_LDLM_TIMEOUT_DEFAULT        TIMEOUT_SECS(TO_Lustre_ldlm_timeout)
+#define PING_INTERVAL			25U
+#define PING_EVICT_TIMEOUT		450U
 #elif defined (CONFIG_CRAY_GEMINI)
 #define OBD_TIMEOUT_DEFAULT             100
 #define LDLM_TIMEOUT_DEFAULT            70
 #define MDS_LDLM_TIMEOUT_DEFAULT        70
+#define PING_INTERVAL			25U
+#define PING_EVICT_TIMEOUT		450U
 #else
 #define OBD_TIMEOUT_DEFAULT             100
 #define LDLM_TIMEOUT_DEFAULT            20
 #define MDS_LDLM_TIMEOUT_DEFAULT        6
-#endif /* CONFIG_CRAY_ARIES && CONFIG_CRAY_GEMINI */
-/* Time to wait for all clients to reconnect during recovery (hard limit) */
-#define OBD_RECOVERY_TIME_HARD          (obd_timeout * 9)
-/* Time to wait for all clients to reconnect during recovery (soft limit) */
-/* Should be very conservative; must catch the first reconnect after reboot */
-#define OBD_RECOVERY_TIME_SOFT          (obd_timeout * 3)
 /* Change recovery-small 26b time if you change this */
 #define PING_INTERVAL max(obd_timeout / 4, 1U)
-/* a bit more than maximal journal commit time in seconds */
-#define PING_INTERVAL_SHORT min(PING_INTERVAL, 7U)
 /* Client may skip 1 ping; we must wait at least 2.5. But for multiple
  * failover targets the client only pings one server at a time, and pings
  * can be lost on a loaded network. Since eviction has serious consequences,
  * and there's no urgent need to evict a client just because it's idle, we
  * should be very conservative here. */
 #define PING_EVICT_TIMEOUT (PING_INTERVAL * 6)
+#endif /* CONFIG_CRAY_ARIES && CONFIG_CRAY_GEMINI */
+/* Time to wait for all clients to reconnect during recovery (hard limit) */
+#define OBD_RECOVERY_TIME_HARD          (obd_timeout * 9)
+/* Time to wait for all clients to reconnect during recovery (soft limit) */
+/* Should be very conservative; must catch the first reconnect after reboot */
+#define OBD_RECOVERY_TIME_SOFT          (obd_timeout * 3)
+/* a bit more than maximal journal commit time in seconds */
+#define PING_INTERVAL_SHORT min(PING_INTERVAL, 7U)
 #define DISK_TIMEOUT 50          /* Beyond this we warn about disk speed */
 #define CONNECTION_SWITCH_MIN 5U /* Connection switching rate limiter */
  /* Max connect interval for nonresponsive servers; ~50s to avoid building up
