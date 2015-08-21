@@ -202,7 +202,20 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
         /* indicate the features supported by this client */
         data->ocd_connect_flags = OBD_CONNECT_IBITS    | OBD_CONNECT_NODEVOH  |
                                   OBD_CONNECT_ATTRFID  |
+#if defined(CONFIG_CRAY_COMPUTE)
+				/*
+				 * LELUS-138: 256 page mds_readpage RPCs cause
+				 * increased MDS processing time that worsens
+				 * with concurrent unlinks.  We want to retain
+				 * any speedup the large readdir RPCs provide on
+				 * the interactive (login) nodes.  Therefore, we
+				 * only disable large readdir support on compute
+				 * nodes.
+				 */
+				  OBD_CONNECT_VERSION  |
+#else
                                   OBD_CONNECT_VERSION  | OBD_CONNECT_BRW_SIZE |
+#endif /* CONFIG_CRAY_COMPUTE */
                                   OBD_CONNECT_MDS_CAPA | OBD_CONNECT_OSS_CAPA |
                                   OBD_CONNECT_CANCELSET | OBD_CONNECT_FID     |
                                   OBD_CONNECT_AT       | OBD_CONNECT_LOV_V3   |
@@ -260,7 +273,12 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
         if (sbi->ll_flags & LL_SBI_RMT_CLIENT)
                 data->ocd_connect_flags |= OBD_CONNECT_RMT_CLIENT_FORCE;
 
+#if defined(CONFIG_CRAY_COMPUTE)
+	/* LELUS-138, see details above */
+	data->ocd_brw_size = PAGE_CACHE_SIZE;
+#else
 	data->ocd_brw_size = MD_MAX_BRW_SIZE;
+#endif /* CONFIG_CRAY_COMPUTE */
 
         err = obd_connect(NULL, &sbi->ll_md_exp, obd, &sbi->ll_sb_uuid, data, NULL);
         if (err == -EBUSY) {
