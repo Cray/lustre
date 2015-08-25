@@ -1776,7 +1776,7 @@ EXTRA_KCFLAGS="$tmp_flags"
 #
 # LC_CANCEL_DIRTY_PAGE
 #
-# 4.0.0 kernel removed cancle_dirty_page
+# 4.0.0 kernel removed cancel_dirty_page
 #
 AC_DEFUN([LC_CANCEL_DIRTY_PAGE], [
 LB_CHECK_COMPILE([if cancel_dirty_page still exist],
@@ -1809,6 +1809,23 @@ iov_iter_rw, [
 		[iov_iter_rw exist])
 ])
 ]) # LC_IOV_ITER_RW
+
+#
+# LC_NEW_CANCEL_DIRTY_PAGE
+#
+# 4.2 kernel has new cancel_dirty_page
+#
+AC_DEFUN([LC_NEW_CANCEL_DIRTY_PAGE], [
+LB_CHECK_COMPILE([if cancel_dirty_page with one argument exist],
+new_cancel_dirty_page, [
+	#include <linux/mm.h>
+],[
+	cancel_dirty_page(NULL);
+],[
+	AC_DEFINE(HAVE_NEW_CANCEL_DIRTY_PAGE, 1,
+		[cancel_dirty_page with one arguement is available])
+])
+]) # LC_NEW_CANCEL_DIRTY_PAGE
 
 #
 # LC_PROG_LINUX
@@ -1958,6 +1975,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 4.1.0
 	LC_IOV_ITER_RW
+
+	# 4.2
+	LC_NEW_CANCEL_DIRTY_PAGE
 
 	#
 	AS_IF([test "x$enable_server" != xno], [
