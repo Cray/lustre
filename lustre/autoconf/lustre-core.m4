@@ -1837,6 +1837,25 @@ key_match, [
 ]) # LC_KEY_MATCH_DATA
 
 #
+# LC_NEW_CANCEL_DIRTY_PAGE
+#
+
+#
+# 4.2 kernel has new cancel_dirty_page
+#
+AC_DEFUN([LC_NEW_CANCEL_DIRTY_PAGE], [
+LB_CHECK_COMPILE([if cancel_dirty_page with one argument exist],
+new_cancel_dirty_page, [
+	#include <linux/mm.h>
+],[
+	cancel_dirty_page(NULL);
+],[
+	AC_DEFINE(HAVE_NEW_CANCEL_DIRTY_PAGE, 1,
+		[cancel_dirty_page with one arguement is available])
+])
+]) # LC_NEW_CANCEL_DIRTY_PAGE
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -1984,6 +2003,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 3.17
 	LC_KEY_MATCH_DATA
+
+	# 4.2
+	LC_NEW_CANCEL_DIRTY_PAGE
 
 	#
 	AS_IF([test "x$enable_server" != xno], [
