@@ -3107,7 +3107,7 @@ static void ll_file_flock_async_cb(struct ldlm_flock_info *args, int err)
 	struct file_lock *file_lock = args->fa_fl;
 	struct file_lock *flc = &args->fa_flc;
 	struct file *file = args->fa_file;
-	struct inode *inode = file->f_dentry->d_inode;
+	struct inode *inode = file->f_path.dentry->d_inode;
 	int (*notify)(struct file_lock *, struct file_lock *, int);
 	int rc = 0;
 	int rc2;

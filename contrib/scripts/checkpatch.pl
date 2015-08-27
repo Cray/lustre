@@ -448,6 +448,7 @@ my %dep_functions = (
 	'OBD_FREE_LARGE',		'OBD_FREE',
 	'= seq_printf',			'seq_printf',
 	'return seq_printf',		'seq_printf',
+	'f_dentry',			'f_path.dentry',
 );
 
 my @rawlines = ();
