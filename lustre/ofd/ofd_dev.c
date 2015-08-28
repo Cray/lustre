@@ -2649,6 +2649,11 @@ static struct tgt_opc_slice ofd_common_slice[] = {
 		.tos_hs		= tgt_lfsck_handlers
 	},
 	{
+		.tos_opc_start  = SEC_FIRST_OPC,
+		.tos_opc_end    = SEC_LAST_OPC,
+		.tos_hs         = tgt_sec_ctx_handlers
+	},
+	{
 		.tos_hs		= NULL
 	}
 };
