@@ -792,10 +792,10 @@ int ldlm_prep_elc_req(struct obd_export *exp, struct ptlrpc_request *req,
                 req_capsule_filled_sizes(pill, RCL_CLIENT);
                 avail = ldlm_capsule_handles_avail(pill, RCL_CLIENT, canceloff);
 
-                flags = ns_connect_lru_resize(ns) ?
-                        LDLM_CANCEL_LRUR : LDLM_CANCEL_AGED;
-                to_free = !ns_connect_lru_resize(ns) &&
-                          opc == LDLM_ENQUEUE ? 1 : 0;
+		flags = ns_connect_lru_resize(ns) ?
+			LDLM_CANCEL_LRUR_NO_WAIT : LDLM_CANCEL_AGED;
+		to_free = !ns_connect_lru_resize(ns) &&
+			  opc == LDLM_ENQUEUE ? 1 : 0;
 
 		/* Cancel LRU locks here _only_ if the server supports
 		 * EARLY_CANCEL. Otherwise we have to send extra CANCEL
@@ -1511,6 +1511,21 @@ static ldlm_policy_res_t ldlm_cancel_lrur_policy(struct ldlm_namespace *ns,
 	return LDLM_POLICY_CANCEL_LOCK;
 }
 
+static ldlm_policy_res_t
+ldlm_cancel_lrur_no_wait_policy(struct ldlm_namespace *ns,
+				struct ldlm_lock *lock,
+				int unused, int added,
+				int count)
+{
+	ldlm_policy_res_t result;
+
+	result = ldlm_cancel_lrur_policy(ns, lock, unused, added, count);
+	if (result == LDLM_POLICY_KEEP_LOCK)
+		return result;
+
+	return ldlm_cancel_no_wait_policy(ns, lock, unused, added, count);
+}
+
 /**
  * Callback function for proc used policy. Makes decision whether to keep
  * \a lock in LRU for current \a LRU size \a unused, added in current scan \a
@@ -1591,6 +1606,8 @@ ldlm_cancel_lru_policy(struct ldlm_namespace *ns, int flags)
                         return ldlm_cancel_lrur_policy;
                 else if (flags & LDLM_CANCEL_PASSED)
                         return ldlm_cancel_passed_policy;
+		else if (flags & LDLM_CANCEL_LRUR_NO_WAIT)
+			return ldlm_cancel_lrur_no_wait_policy;
         } else {
                 if (flags & LDLM_CANCEL_AGED)
                         return ldlm_cancel_aged_policy;
@@ -1639,6 +1656,7 @@ static int ldlm_prepare_lru_list(struct ldlm_namespace *ns,
 	ldlm_cancel_lru_policy_t pf;
 	struct ldlm_lock *lock, *next;
 	int added = 0, unused, remained;
+	int no_wait = flags & (LDLM_CANCEL_NO_WAIT | LDLM_CANCEL_LRUR_NO_WAIT);
 	ENTRY;
 
 	spin_lock(&ns->ns_lock);
@@ -1667,8 +1685,7 @@ static int ldlm_prepare_lru_list(struct ldlm_namespace *ns,
                         /* No locks which got blocking requests. */
 			LASSERT(!ldlm_is_bl_ast(lock));
 
-			if (flags & LDLM_CANCEL_NO_WAIT &&
-			    ldlm_is_skipped(lock))
+			if (no_wait && ldlm_is_skipped(lock))
 				/* already processed */
 				continue;
 
