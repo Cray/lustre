@@ -1408,6 +1408,22 @@ void ldlm_namespace_dump(int level, struct ldlm_namespace *);
 void ldlm_resource_dump(int level, struct ldlm_resource *);
 int ldlm_lock_change_resource(struct ldlm_namespace *, struct ldlm_lock *,
                               const struct ldlm_res_id *);
+int ldlm_ns_drop_cache(struct ldlm_namespace *ns);
+int ldlm_drop_caches(ldlm_side_t cli_or_srv);
+
+/**
+ * Control structure for dropping lustre caches in parallel.
+ */
+struct ldlm_drop_cache_ctl {
+	/** Signaled when thread finished clearing lustre cache */
+	struct completion dcc_finished;
+
+	/** Pointer to namespace to clear caches */
+	struct ldlm_namespace *dcc_ns;
+
+	/** Return code of the ldlm_drop_cachesd thread */
+	int dcc_rc;
+};
 
 #define LDLM_RESOURCE_ADDREF(res) do {                                  \
 	lu_ref_add_atomic(&(res)->lr_reference, __FUNCTION__, current);  \
