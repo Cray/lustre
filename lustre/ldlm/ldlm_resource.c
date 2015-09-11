@@ -1484,6 +1484,10 @@ static int ldlm_drop_cachesd(void *arg)
 
 	while (work_item != NULL) {
 		work_item->dcwi_rc = ldlm_ns_drop_cache(work_item->dcwi_ns);
+
+		/* clear ldlm_drop_cache rpcs from import replay list */
+		lprocfs_wr_ping(NULL, NULL, 0, work_item->dcwi_ns->ns_obd);
+
 		ldlm_namespace_put(work_item->dcwi_ns);
 		work_item->dcwi_ns_needs_put = 0;
 		work_item = ldlm_dc_get_work_item(workq);
