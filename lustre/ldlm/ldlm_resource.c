@@ -1566,7 +1566,7 @@ int ldlm_drop_caches(ldlm_side_t client)
 {
 	int i;
 	int rc = 0;
-	int thread_rc = 0;
+	struct task_struct *task;
 	int dc_ctls_size;
 	struct ldlm_dc_ctl *dc_ctls;
 	int num_threads = LDLM_DC_MAX_THREADS;
@@ -1599,13 +1599,13 @@ int ldlm_drop_caches(ldlm_side_t client)
 		if (ldlm_dc_workq_empty(workq))
 			break;
 
-		thread_rc = PTR_ERR(kthread_run(ldlm_drop_cachesd, &dc_ctls[i],
-						"ldlm_drop_cachesd"));
+		task = kthread_run(ldlm_drop_cachesd, &dc_ctls[i],
+				   "ldlm_drop_cachesd");
 
-		if (IS_ERR_VALUE(thread_rc)) {
-			rc = thread_rc;
+		if (IS_ERR(task)) {
+			rc = PTR_ERR(task);
 			CERROR("namespace cleanup thread %d/%d creation error: "
-			       "rc = %d\n", i + 1, num_threads, thread_rc);
+			       "rc = %d\n", i + 1, num_threads, rc);
 			break;
 		}
 		num_threads_created++;
