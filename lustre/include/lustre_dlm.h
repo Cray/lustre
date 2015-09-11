@@ -1409,20 +1409,52 @@ void ldlm_resource_dump(int level, struct ldlm_resource *);
 int ldlm_lock_change_resource(struct ldlm_namespace *, struct ldlm_lock *,
                               const struct ldlm_res_id *);
 int ldlm_ns_drop_cache(struct ldlm_namespace *ns);
-int ldlm_drop_caches(ldlm_side_t cli_or_srv);
+int ldlm_drop_caches(ldlm_side_t client);
+
+#define LDLM_DC_MAX_THREADS (8 * num_online_cpus())
 
 /**
- * Control structure for dropping lustre caches in parallel.
+ * A work item for ldlm_drop_cachesd threads.
  */
-struct ldlm_drop_cache_ctl {
-	/** Signaled when thread finished clearing lustre cache */
+struct ldlm_dc_work_item {
+	/* Pointer to the namespace to clear. */
+	struct ldlm_namespace *dcwi_ns;
+
+	/* The return code for this work item. */
+	int dcwi_rc;
+
+	/* A flag indicating whether ldlm_namespace_put has
+	 * been executed on the namespace. */
+	int dcwi_ns_needs_put;
+};
+
+/**
+ * A work queue of work items containing namespaces to be cleared
+ * by ldlm_drop_cachesd.
+ */
+struct ldlm_dc_workq {
+	/* Atomic index into the work items. */
+	atomic_t dcwq_cur_index;
+
+	/* The size of this data structure, used for freeing memory. */
+	int dcwq_size;
+
+	/* The total number of work items in the list. */
+	int dcwq_num_wi;
+
+	/* Flexible array of work items. */
+	struct ldlm_dc_work_item dcwq_work_items[0];
+};
+
+/**
+ * Thread control structure for clearing lustre caches in parallel.
+ */
+struct ldlm_dc_ctl {
+	/** Signaled when the thread finishes. */
 	struct completion dcc_finished;
 
-	/** Pointer to namespace to clear caches */
-	struct ldlm_namespace *dcc_ns;
-
-	/** Return code of the ldlm_drop_cachesd thread */
-	int dcc_rc;
+	/** The work queue shared by the ldlm_drop_cachesd threads. */
+	struct ldlm_dc_workq *dcc_workq;
 };
 
 #define LDLM_RESOURCE_ADDREF(res) do {                                  \
