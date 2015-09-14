@@ -324,6 +324,10 @@ directory which is likely in ${O2IBPATH%-*}
 			AC_MSG_RESULT([yes])
 			compatrdma_found=true
 			AC_DEFINE(HAVE_COMPAT_RDMA, 1, [compat rdma found])
+			EXTRA_OFED_CONFIG="$EXTRA_OFED_CONFIG -include ${O2IBPATH}/include/linux/compat-2.6.h"
+			if test -f "$O2IBPATH/include/linux/compat_autoconf.h"; then
+				COMPAT_AUTOCONF="$O2IBPATH/include/linux/compat_autoconf.h"
+			fi
 		else
 			AC_MSG_RESULT([no])
 		fi
@@ -347,17 +351,6 @@ directory which is likely in ${O2IBPATH%-*}
 			fi
 		fi
 
-		LB_CHECK_COMPILE([if Linux kernel has kthread_worker],
-		linux_kthread_worker, [
-			#include <linux/kthread.h>
-		],[
-			struct kthread_work	*kth_wrk __attribute__ ((unused));
-			flush_kthread_work(kth_wrk);
-		],[
-			EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_IS_KTHREAD"
-			AC_DEFINE(HAVE_KTHREAD_WORK, 1, [kthread_worker found])
-		])
-
 		AC_MSG_CHECKING([whether to use any OFED backport headers])
 		if test -n "$BACKPORT_INCLUDES"; then
 			AC_MSG_RESULT([yes])
@@ -372,12 +365,18 @@ directory which is likely in ${O2IBPATH%-*}
 		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -I$O2IBPATH/include"
 		LB_CHECK_COMPILE([whether to enable OpenIB gen2 support],
 		openib_gen2_support, [
+			#ifdef HAVE_COMPAT_RDMA
+			#undef PACKAGE_NAME
+			#undef PACKAGE_TARNAME
+			#undef PACKAGE_VERSION
+			#undef PACKAGE_STRING
+			#undef PACKAGE_BUGREPORT
+			#undef PACKAGE_URL
+			#include <linux/compat-2.6.h>
+			#endif
 			#include <linux/version.h>
 			#include <linux/pci.h>
 			#include <linux/gfp.h>
-			#ifdef HAVE_COMPAT_RDMA
-			#include <linux/compat-2.6.h>
-			#endif
 			#include <rdma/rdma_cm.h>
 			#include <rdma/ib_cm.h>
 			#include <rdma/ib_verbs.h>
@@ -425,9 +424,32 @@ directory which is likely in ${O2IBPATH%-*}
 			fi
 		fi
 
+		LB_CHECK_COMPILE([if Linux kernel has kthread_worker],
+		linux_kthread_worker, [
+			#ifdef HAVE_COMPAT_RDMA
+			#undef PACKAGE_NAME
+			#undef PACKAGE_TARNAME
+			#undef PACKAGE_VERSION
+			#undef PACKAGE_STRING
+			#undef PACKAGE_BUGREPORT
+			#undef PACKAGE_URL
+			#include <linux/compat-2.6.h>
+			#endif
+			#include <linux/kthread.h>
+		],[
+			struct kthread_work	*kth_wrk __attribute__ ((unused));
+			flush_kthread_work(kth_wrk);
+		],[
+			AC_DEFINE(HAVE_KTHREAD_WORK, 1, [kthread_worker found])
+			if test -z "$COMPAT_AUTOCONF"; then
+				EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_IS_KTHREAD"
+			fi
+		])
+
 		LN_CONFIG_OFED_SPEC
 	fi
 ])
+AC_SUBST(EXTRA_OFED_CONFIG)
 AC_SUBST(EXTRA_OFED_INCLUDE)
 AC_SUBST(O2IBLND)
 
@@ -436,6 +458,12 @@ AS_IF([test $ENABLEO2IB -ne 0], [
 	LB_CHECK_COMPILE([if 'rdma_create_id' wants four args],
 	rdma_create_id_4args, [
 		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
 		#include <linux/compat-2.6.h>
 		#endif
 		#include <rdma/rdma_cm.h>
@@ -548,6 +576,12 @@ AC_DEFUN([LN_CONFIG_SK_SLEEP], [
 LB_CHECK_COMPILE([if Linux kernel has 'sk_sleep'],
 sk_sleep, [
 	#ifdef HAVE_COMPAT_RDMA
+	#undef PACKAGE_NAME
+	#undef PACKAGE_TARNAME
+	#undef PACKAGE_VERSION
+	#undef PACKAGE_STRING
+	#undef PACKAGE_BUGREPORT
+	#undef PACKAGE_URL
 	#include <linux/compat-2.6.h>
 	#endif
 	#include <net/sock.h>
@@ -569,6 +603,15 @@ tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'tcp_sendpage' first parameter is socket],
 tcp_sendpage_socket, [
+	#ifdef HAVE_COMPAT_RDMA
+	#undef PACKAGE_NAME
+	#undef PACKAGE_TARNAME
+	#undef PACKAGE_VERSION
+	#undef PACKAGE_STRING
+	#undef PACKAGE_BUGREPORT
+	#undef PACKAGE_URL
+	#include <linux/compat-2.6.h>
+	#endif
 	#include <linux/net.h>
 	#include <net/tcp.h>
 ],[
@@ -590,6 +633,15 @@ tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'sk_data_ready' takes only one argument],
 sk_data_ready, [
+	#ifdef HAVE_COMPAT_RDMA
+	#undef PACKAGE_NAME
+	#undef PACKAGE_TARNAME
+	#undef PACKAGE_VERSION
+	#undef PACKAGE_STRING
+	#undef PACKAGE_BUGREPORT
+	#undef PACKAGE_URL
+	#include <linux/compat-2.6.h>
+	#endif
 	#include <linux/net.h>
 	#include <net/sock.h>
 ],[
