@@ -359,7 +359,7 @@ directory which is likely in ${O2IBPATH%-*}
 			AC_MSG_RESULT([yes])
 			compatrdma_found=true
 			AC_DEFINE(HAVE_COMPAT_RDMA, 1, [compat rdma found])
-			EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -include ${O2IBPATH}/include/linux/compat-2.6.h"
+			EXTRA_OFED_CONFIG="$EXTRA_OFED_CONFIG -include ${O2IBPATH}/include/linux/compat-2.6.h"
 			if test -f "$O2IBPATH/include/linux/compat_autoconf.h"; then
 				COMPAT_AUTOCONF="$O2IBPATH/include/linux/compat_autoconf.h"
 			fi
@@ -402,6 +402,12 @@ directory which is likely in ${O2IBPATH%-*}
 		LB_CHECK_COMPILE([whether to enable OpenIB gen2 support],
 		openib_gen2_support, [
 			#ifdef HAVE_COMPAT_RDMA
+			#undef PACKAGE_NAME
+			#undef PACKAGE_TARNAME
+			#undef PACKAGE_VERSION
+			#undef PACKAGE_STRING
+			#undef PACKAGE_BUGREPORT
+			#undef PACKAGE_URL
 			#include <linux/compat-2.6.h>
 			#endif
 			#include <linux/version.h>
@@ -449,7 +455,16 @@ directory which is likely in ${O2IBPATH%-*}
 
 		LB_CHECK_COMPILE([if Linux kernel has kthread_worker],
 		linux_kthread_worker, [
-		    #include <linux/kthread.h>
+			#ifdef HAVE_COMPAT_RDMA
+			#undef PACKAGE_NAME
+			#undef PACKAGE_TARNAME
+			#undef PACKAGE_VERSION
+			#undef PACKAGE_STRING
+			#undef PACKAGE_BUGREPORT
+			#undef PACKAGE_URL
+			#include <linux/compat-2.6.h>
+			#endif
+			#include <linux/kthread.h>
 		],[
 			struct kthread_work	*kth_wrk __attribute__ ((unused));
 			flush_kthread_work(kth_wrk);
@@ -463,6 +478,7 @@ directory which is likely in ${O2IBPATH%-*}
 		LN_CONFIG_OFED_SPEC
 	fi
 ])
+AC_SUBST(EXTRA_OFED_CONFIG)
 AC_SUBST(EXTRA_OFED_INCLUDE)
 AC_SUBST(O2IBLND)
 
@@ -471,6 +487,12 @@ AS_IF([test $ENABLEO2IB != "no"], [
 	LB_CHECK_COMPILE([if 'rdma_create_id' wants four args],
 	rdma_create_id_4args, [
 		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
 		#include <linux/compat-2.6.h>
 		#endif
 		#include <rdma/rdma_cm.h>
@@ -584,6 +606,15 @@ tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'tcp_sendpage' first parameter is socket],
 tcp_sendpage_socket, [
+	#ifdef HAVE_COMPAT_RDMA
+	#undef PACKAGE_NAME
+	#undef PACKAGE_TARNAME
+	#undef PACKAGE_VERSION
+	#undef PACKAGE_STRING
+	#undef PACKAGE_BUGREPORT
+	#undef PACKAGE_URL
+	#include <linux/compat-2.6.h>
+	#endif
 	#include <linux/net.h>
 	#include <net/tcp.h>
 ],[
@@ -605,6 +636,15 @@ tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'sk_data_ready' takes only one argument],
 sk_data_ready, [
+	#ifdef HAVE_COMPAT_RDMA
+	#undef PACKAGE_NAME
+	#undef PACKAGE_TARNAME
+	#undef PACKAGE_VERSION
+	#undef PACKAGE_STRING
+	#undef PACKAGE_BUGREPORT
+	#undef PACKAGE_URL
+	#include <linux/compat-2.6.h>
+	#endif
 	#include <linux/net.h>
 	#include <net/sock.h>
 ],[
