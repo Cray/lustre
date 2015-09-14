@@ -687,6 +687,7 @@ extern ssize_t
 lprocfs_evict_client_seq_write(struct file *file, const char *buffer,
 				size_t count, loff_t *off);
 #endif
+extern int ptlrpc_lprocfs_send_ping(struct obd_device *obd);
 extern ssize_t
 lprocfs_ping_seq_write(struct file *file, const char *buffer,
 		       size_t count, loff_t *off);
