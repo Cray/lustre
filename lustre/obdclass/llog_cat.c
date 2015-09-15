@@ -149,7 +149,7 @@ static int llog_cat_new_log(const struct lu_env *env,
 	rc = llog_write_rec(env, cathandle, &rec->lid_hdr,
 			    &loghandle->u.phd.phd_cookie, LLOG_NEXT_IDX, th);
 	if (rc < 0)
-		GOTO(out, rc);
+		GOTO(out_destroy, rc);
 
 	CDEBUG(D_OTHER, "new plain log "DOSTID":%x for index %u of catalog"
 	       DOSTID"\n", POSTID(&loghandle->lgh_id.lgl_oi),
@@ -162,6 +162,17 @@ out:
 		dt_trans_stop(env, dt, handle);
 
 	RETURN(0);
+
+out_destroy:
+	/* to signal llog_cat_close() it shouldn't try to destroy the llog,
+	 * we want to destroy it in this transaction, otherwise the object
+	 * becomes an orphan */
+	loghandle->lgh_hdr->llh_flags &= ~LLOG_F_ZAP_WHEN_EMPTY;
+	/* this is to mimic full log, so another llog_cat_current_log()
+	 * can skip it and ask for another onet */
+	loghandle->lgh_last_idx = LLOG_HDR_BITMAP_SIZE(llh) + 1;
+	llog_trans_destroy(env, loghandle, th);
+	RETURN(rc);
 }
 
 /* Open an existent log handle and add it to the open list.
@@ -300,6 +311,11 @@ static struct llog_handle *llog_cat_current_log(struct llog_handle *cathandle,
         struct llog_handle *loghandle = NULL;
         ENTRY;
 
+	if (OBD_FAIL_CHECK(OBD_FAIL_MDS_LLOG_CREATE_FAILED2)) {
+		down_write_nested(&cathandle->lgh_lock, LLOGH_CAT);
+		GOTO(next, loghandle);
+	}
+
 	down_read_nested(&cathandle->lgh_lock, LLOGH_CAT);
         loghandle = cathandle->u.chd.chd_current_log;
         if (loghandle) {
@@ -307,8 +323,7 @@ static struct llog_handle *llog_cat_current_log(struct llog_handle *cathandle,
 
 		down_write_nested(&loghandle->lgh_lock, LLOGH_LOG);
 		llh = loghandle->lgh_hdr;
-		if (llh == NULL ||
-		    loghandle->lgh_last_idx < LLOG_BITMAP_SIZE(llh) - 1) {
+		if (llh == NULL || !llog_is_full(loghandle)) {
 			up_read(&cathandle->lgh_lock);
                         RETURN(loghandle);
                 } else {
@@ -328,12 +343,13 @@ static struct llog_handle *llog_cat_current_log(struct llog_handle *cathandle,
 		down_write_nested(&loghandle->lgh_lock, LLOGH_LOG);
 		llh = loghandle->lgh_hdr;
 		LASSERT(llh);
-		if (loghandle->lgh_last_idx < LLOG_BITMAP_SIZE(llh) - 1)
+		if (!llog_is_full(loghandle))
 			GOTO(out_unlock, loghandle);
 		else
 			up_write(&loghandle->lgh_lock);
 	}
 
+next:
 	/* Sigh, the chd_next_log and chd_current_log is initialized
 	 * in declare phase, and we do not serialize the catlog
 	 * accessing, so it might be possible the llog creation
@@ -376,10 +392,12 @@ int llog_cat_add_rec(const struct lu_env *env, struct llog_handle *cathandle,
 		     struct thandle *th)
 {
         struct llog_handle *loghandle;
-        int rc;
-        ENTRY;
+	int rc, retried = 0;
+	ENTRY;
 
         LASSERT(rec->lrh_len <= LLOG_CHUNK_SIZE);
+
+retry:
 	loghandle = llog_cat_current_log(cathandle, th);
 	if (IS_ERR(loghandle))
 		RETURN(PTR_ERR(loghandle));
@@ -389,33 +407,35 @@ int llog_cat_add_rec(const struct lu_env *env, struct llog_handle *cathandle,
 		rc = llog_cat_new_log(env, cathandle, loghandle, th);
 		if (rc < 0) {
 			up_write(&loghandle->lgh_lock);
+			/* nobody should be trying to use this llog */
+			down_write(&cathandle->lgh_lock);
+			if (cathandle->u.chd.chd_current_log == loghandle)
+				cathandle->u.chd.chd_current_log = NULL;
+			up_write(&cathandle->lgh_lock);
 			RETURN(rc);
 		}
 	}
 	/* now let's try to add the record */
 	rc = llog_write_rec(env, loghandle, rec, reccookie, LLOG_NEXT_IDX, th);
-	if (rc < 0)
+	if (rc < 0) {
 		CDEBUG_LIMIT(rc == -ENOSPC ? D_HA : D_ERROR,
 			     "llog_write_rec %d: lh=%p\n", rc, loghandle);
+		/* -ENOSPC is returned if no empty records left
+		 * and when it's lack of space on the stogage.
+		 * there is no point to try again if it's the second
+		 * case. many callers (like llog test) expect ENOSPC,
+		 * so we preserve this error code, but look for the
+		 * actual cause here */
+		if (rc == -ENOSPC && llog_is_full(loghandle))
+			rc = -ENOBUFS;
+	}
 	up_write(&loghandle->lgh_lock);
-        if (rc == -ENOSPC) {
-		/* try to use next log */
-		loghandle = llog_cat_current_log(cathandle, th);
-		LASSERT(!IS_ERR(loghandle));
-		/* new llog can be created concurrently */
-		if (!llog_exist(loghandle)) {
-			rc = llog_cat_new_log(env, cathandle, loghandle, th);
-			if (rc < 0) {
-				up_write(&loghandle->lgh_lock);
-				RETURN(rc);
-			}
-		}
-		/* now let's try to add the record */
-		rc = llog_write_rec(env, loghandle, rec, reccookie,
-				    LLOG_NEXT_IDX, th);
-		if (rc < 0)
-			CERROR("llog_write_rec %d: lh=%p\n", rc, loghandle);
-		up_write(&loghandle->lgh_lock);
+
+	if (rc == -ENOBUFS) {
+		if (retried++ == 0)
+			GOTO(retry, rc);
+		CERROR("%s: error on 2nd llog: rc = %d\n",
+		       cathandle->lgh_ctxt->loc_obd->obd_name, rc);
 	}
 
 	RETURN(rc);
@@ -475,12 +495,16 @@ int llog_cat_declare_add_rec(const struct lu_env *env,
 			rc = llog_cat_new_log(env, cathandle,
 					      cathandle->u.chd.chd_current_log, NULL);
 		} else {
-                       rc = llog_declare_create(env,
-                                       cathandle->u.chd.chd_current_log, th);
-                       if (rc)
-                               GOTO(out, rc);
-                       llog_declare_write_rec(env, cathandle,
-                                              &lirec->lid_hdr, -1, th);
+			rc = llog_declare_create(env,
+						 cathandle->u.chd.chd_current_log, th);
+			if (rc)
+				GOTO(out, rc);
+			rc = llog_declare_destroy(env, cathandle->u.chd.chd_current_log,
+						  th);
+			if (rc)
+				GOTO(out, rc);
+			llog_declare_write_rec(env, cathandle,
+					       &lirec->lid_hdr, -1, th);
 		}
 	}
 	/* declare records in the llogs */
@@ -500,6 +524,11 @@ int llog_cat_declare_add_rec(const struct lu_env *env,
 						      NULL);
 			} else {
 				rc = llog_declare_create(env, next, th);
+				if (rc)
+					GOTO(out, rc);
+				rc = llog_declare_destroy(env, next, th);
+				if (rc)
+					GOTO(out, rc);
 				llog_declare_write_rec(env, cathandle,
 						       &lirec->lid_hdr, -1, th);
 			}
