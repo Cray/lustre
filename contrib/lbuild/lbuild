@@ -430,6 +430,7 @@ compare_version () {
             return 1
         fi
     done
+    return 1
 }
 
 uniqify() {
@@ -588,10 +589,6 @@ download_ofed() {
 	local location
 	local file
 
-	if [ -z "$OFED_VERSION" -o "$OFED_VERSION" = "inkernel" ]; then
-	return 0
-	fi
-
 	#if a src tarball has been given in the command line, we use it
 	#The format of the tarball must be OFED-${OFED_VERSION}.tgz
 	[ -n "${OFED_SRC}" ] && return 0
@@ -601,21 +598,17 @@ download_ofed() {
 			location="https://www.openfabrics.org/downloads/OFED/ofed-${ofed_version}/"
 			# version include RC
 			if [[ $ofed_version = *-[rR][cC][0-9] ]]; then
-				local Mmv
-				Mmv=${OFED_VERSION%%-[rR][cC][0-9]}
-				location="https://www.openfabrics.org/downloads/OFED/ofed-${Mmv}/"
+				ofed_version=${ofed_version%%-[rR][cC][0-9]}
+				location="https://www.openfabrics.org/downloads/OFED/ofed-${ofed_version}/"
 			fi
 			# daily build
-			if [[ $OFED_VERSION = daily-* ]]; then
-				local Mmv daily
-				ofed_version=${ofed_version/daily-/}
-				Mmv=${ofed_version%%-*}
-				daily=${ofed_version##$Mmv-}
-				location="https://www.openfabrics.org/downloads/OFED/ofed-${Mmv}-daily/"
-				# find the filename for the version for the date specified
-				ofed_version=$(curl -s "$location" | sed -nre "/${daily}-/s/.*href=\"OFED-(${Mmv//./\\.}-[0-9]{8}-[0-9]{4}).tgz.*$/\1/p" | tail -1)
+			if [[ $ofed_version = *-daily ]]; then
+				ofed_version=${ofed_version/-daily/}
+				location="https://www.openfabrics.org/downloads/OFED/ofed-${ofed_version}-daily/"
+				# find the filename for latest version
+				ofed_version=$(curl -1 -s "$location" | sed -nre "s/.*href=\"OFED-(${ofed_version//./\\.}-[0-9]{8}-[0-9]{4}).tgz.*$/\1/p" | tail -1)
 				if [ -z "$ofed_version" ]; then
-					fatal 1 "Could not determine the filename of the OFED snapshot for ${daily}"
+					fatal 1 "Could not determine the filename of the OFED snapshot from daily "
 				fi
 			fi
 
@@ -1512,7 +1505,7 @@ EOF
     local linuxrelease=$(find_linux_release)
 	# a place to change/add any unique config
 	case $ofed_type in
-		ofa) local K_SRC_OBJ="K_SRC_OBJ"
+		ofa|ifs) local K_SRC_OBJ="K_SRC_OBJ"
 		if ! $RPMBUILD $BUILD_TYPE --define 'build_kernel_ib 1' \
 			--define 'build_kernel_ib_devel 1' \
 			${FIND_REQUIRES:+--define "__find_requires $FIND_REQUIRES"} \
@@ -1776,6 +1769,7 @@ build_ofed() {
 	local kib_rpm
 	local pre_prefix
 	local o2ib_location
+	local rpm
 
     if [ "$ofed_type" = "inkernel" ]; then
         # see if there is a distro specific override for this and use
@@ -1791,14 +1785,24 @@ build_ofed() {
         else
             return 0
         fi
-    elif compare_version $ofed_version 3.0; then
-        kib_prefix="ofa_kernel"
-	[ "$ofed_type" = "mlnx" ] && pre_prefix="mlnx-"
-        kib_rpm="${pre_prefix}${kib_prefix}"
-    else
-	kib_prefix="compat-rdma"
-	kib_rpm="compat-rdma"
-    fi
+	else
+		case $ofed_type in
+			mlnx) # no compat-rdma for mlnx as of 3.1
+				kib_prefix="ofa_kernel"
+				pre_prefix="mlnx-"
+				kib_rpm="${pre_prefix}${kib_prefix}"
+				;;
+			ofa|ifs)
+				if compare_version $ofed_version 3.0; then
+					kib_prefix="ofa_kernel"
+					kib_rpm="${pre_prefix}${kib_prefix}"
+				else
+					kib_prefix="compat-rdma"
+					kib_rpm="compat-rdma"
+				fi
+			;;
+		esac
+	fi
 
     # build kernel-ib/compat-rdma
     if $USE_BUILD_CACHE && [ -n "$REUSEBUILD" ]; then
@@ -1858,28 +1862,36 @@ build_ofed() {
     rm -rf ${kib_rpm}-devel
     mkdir ${kib_rpm}-devel
     cd ${kib_rpm}-devel
-    # the actual ofed RPMs don't have the -rc$n or -$date string appened that
-    # might be present on the file
-    #local linuxrelease=$(find_linux_release)
-    #ofed_version=$(echo $ofed_version |
-    #               sed -re 's/-(20[0-9]{6,6}-[0-9]{4,4}|rc[0-9]*)$//')
-    # FIXME
-    # OFED version will have 'hyphen' for minor release. (e.g. 3.5-1, instead
-    # of 3.5.1) compat-rdma and compat-rdma-devel could have same version
-    # number, but currectly not. Once OFED fix this in the future release, we
-    # can remove following filter.
-    #ofed_version=$(echo $ofed_version |
-    #               sed -re 's/-([0-9]*-[rR][cC][0-9]*)$//')
-    #local rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-${ofed_version}-${linuxrelease//-/_}.*.rpm)
-    # since we set build_kernel_ib=1 during configure, we expect to have kernel-ib-devel rpm
-    local rpm=$(ls $TOPDIR/RPMS/*/kernel-ib-devel-*.rpm)
-    if ! rpm2cpio < $rpm | cpio -id; then
-        fatal 1 "could not unpack the kernel-ib-devel rpm."
-    fi
+
 	o2ib_location="$(pwd)/usr/src/${kib_prefix}"
-	[ "${ofed_type}" = "mlnx" ] && o2ib_location="${o2ib_location}/default"
+	case $ofed_type in
+		mlnx) # Prior to MOFED 3.1, we had to use build_kernel_ib=1 to
+		      # build devel rpm. not so after 3.1
+			if compare_version $ofed_version 3.0; then
+				rpm=$(ls $TOPDIR/RPMS/*/kernel-ib-devel-${ofed_version%%-*}-*.rpm)
+			else
+				rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-${ofed_version%%-*}-*.rpm)
+			fi
+			o2ib_location="${o2ib_location}/default"
+			;;
+		ofa) # Prior to OFA 3.18, we had to use build_kernel_ib=1 during configure,
+		     # not so after 3.18
+			if compare_version $ofed_version 3.18; then
+				rpm=$(ls $TOPDIR/RPMS/*/kernel-ib-devel-${ofed_version%%-*}-*.rpm)
+			else
+				rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-${ofed_version%%-*}-*.rpm)
+			fi
+			;;
+                ifs) # ifs doesn't follow any convention (if any)
+			rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-*.rpm)
+			;;
+	esac
+
+	if ! rpm2cpio < $rpm | cpio -id; then
+		fatal 1 "could not unpack the $rpm."
+	fi
 	CONFIGURE_FLAGS="--with-o2ib=${o2ib_location} ${CONFIGURE_FLAGS}"
-    popd >/dev/null
+	popd >/dev/null
 
 }
 
