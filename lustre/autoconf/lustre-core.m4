@@ -1899,6 +1899,23 @@ symlink_use_nameidata, [
 ]) # LC_SYMLINK_OPS_USE_NAMEIDATA
 
 #
+# LC_BIO_ENDIO_USES_ONE_ARG
+#
+# 4.2 kernel bio_endio now only takes one argument
+#
+AC_DEFUN([LC_BIO_ENDIO_USES_ONE_ARG], [
+LB_CHECK_COMPILE([if 'bio_endio' with one argument exist],
+bio_endio, [
+	#include <linux/bio.h>
+],[
+	bio_endio(NULL);
+],[
+	AC_DEFINE(HAVE_BIO_ENDIO_USES_ONE_ARG, 1,
+		[bio_endio takes only one argument])
+])
+]) # LC_BIO_ENDIO_USES_ONE_ARG
+
+#
 # LC_HAVE_LOCKS_LOCK_FILE_WAIT
 #
 # 4.4 kernel have moved locks API users to
@@ -2072,6 +2089,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 4.2
 	LC_NEW_CANCEL_DIRTY_PAGE
+	LC_BIO_ENDIO_USES_ONE_ARG
 	LC_SYMLINK_OPS_USE_NAMEIDATA
 
 	# 4.4
