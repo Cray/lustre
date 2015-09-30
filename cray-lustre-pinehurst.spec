@@ -84,7 +84,7 @@ export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
 
 make DESTDIR=${RPM_BUILD_ROOT} install 
 
-for dir in var man/man5 etc/init.d etc/sysconfig etc/ha.d; do
+for dir in var man/man5 etc/sysconfig etc/ha.d; do
     %{__rm} -fr %{buildroot}/$dir
 done
 %{__rm} -f %{buildroot}/etc/lustre %{buildroot}/etc/ldev.conf
@@ -103,6 +103,7 @@ done
 %exclude %dir /lib/modules
 /sbin/mount.lustre
 /etc/udev/rules.d
+/etc/init.d/*
 %{_bindir}
 %exclude %dir %{_bindir}
 %{_includedir}
