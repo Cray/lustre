@@ -1719,6 +1719,25 @@ EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_NFS_FILLDIR_USE_CTX
 
 #
+# LC_PERCPU_COUNTER_INIT
+#
+# 3.18	For kernels 3.18 and after percpu_counter_init starts
+#	to pass a GFP_* memory allocation flag for internal
+#	memory allocation purposes.
+#
+AC_DEFUN([LC_PERCPU_COUNTER_INIT], [
+LB_CHECK_COMPILE([if percpu_counter_init uses GFP_* flag as argument],
+percpu_counter_init, [
+	#include <linux/percpu_counter.h>
+],[
+	percpu_counter_init(NULL, 0, GFP_KERNEL);
+],[
+	AC_DEFINE(HAVE_PERCPU_COUNTER_INIT_GFP_FLAG, 1,
+		[percpu_counter_init uses GFP_* flag])
+])
+]) # LC_PERCPU_COUNTER_INIT
+
+#
 # LC_HAVE_IOV_ITER_INIT_DIRECTION
 #
 #
