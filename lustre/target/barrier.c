@@ -780,7 +780,11 @@ int barrier_register(struct dt_device *key, struct dt_device *next)
 	init_waitqueue_head(&thread->t_ctl_waitq);
 	atomic_set(&barrier->bi_ref, 1);
 	rwlock_init(&barrier->bi_rwlock);
+#ifdef HAVE_PERCPU_COUNTER_INIT_GFP_FLAG
+	rc = percpu_counter_init(&barrier->bi_writers, 0, GFP_KERNEL);
+#else
 	rc = percpu_counter_init(&barrier->bi_writers, 0);
+#endif
 	if (rc != 0)
 		GOTO(out, rc);
 
