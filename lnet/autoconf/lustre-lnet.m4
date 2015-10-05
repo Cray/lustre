@@ -319,11 +319,16 @@ directory which is likely in ${O2IBPATH%-*}
 			*) AC_MSG_ERROR([internal error]) ;;
 		esac
 	else
+		COMPAT_AUTOCONF=""
 		compatrdma_found=false
 		if test -f ${O2IBPATH}/include/linux/compat-2.6.h; then
 			AC_MSG_RESULT([yes])
 			compatrdma_found=true
 			AC_DEFINE(HAVE_COMPAT_RDMA, 1, [compat rdma found])
+			EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -include ${O2IBPATH}/include/linux/compat-2.6.h"
+			if test -f "$O2IBPATH/include/linux/compat_autoconf.h"; then
+				COMPAT_AUTOCONF="$O2IBPATH/include/linux/compat_autoconf.h"
+			fi
 		else
 			AC_MSG_RESULT([no])
 		fi
@@ -333,19 +338,21 @@ directory which is likely in ${O2IBPATH%-*}
 			elif test -f "$O2IBPATH/ofed_patch.mk"; then
 				. "$O2IBPATH/ofed_patch.mk"
 			fi
-		else
+		elif test -z "$COMPAT_AUTOCONF"; then
+			# Depreciated checks
 			if test "x$RHEL_KERNEL" = xyes; then
-				case "$RHEL_RELEASE_NO" in
-					64)
-						EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_RHEL_6_4" ;;
-					65)
-						EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_RHEL_6_4 -DCONFIG_COMPAT_RHEL_6_5" ;;
-				esac
+				RHEL_MAJOR=$(awk '/ RHEL_MAJOR / { print [$]3 }' $LINUX_OBJ/include/$VERSION_HDIR/version.h)
+				I=$(awk '/ RHEL_MINOR / { print [$]3 }' $LINUX_OBJ/include/$VERSION_HDIR/version.h)
+				while test "$I" -ge 0; do
+					EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_RHEL_${RHEL_MAJOR}_$I"
+					I=$(($I-1))
+				done
 			elif test "x$SUSE_KERNEL" = xyes; then
 				SP=$(grep PATCHLEVEL /etc/SuSE-release | sed -e 's/.*= *//')
 				EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_SLES_11_$SP"
 			fi
 		fi
+
 		AC_MSG_CHECKING([whether to use any OFED backport headers])
 		if test -n "$BACKPORT_INCLUDES"; then
 			AC_MSG_RESULT([yes])
