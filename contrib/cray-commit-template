@@ -1,0 +1,7 @@
+<one line subject; 62 chars or less>
+
+<multi-line detailed description; 72 chars or less; include test desc.>
+
+Bugs Affected: <OPT; Bug(s) affected by this commit>
+Bug Action: <OPT; one of : RESOLVE, UPDATE, REPOEN; Default: UPDATE>
+Bug Comment: <OPT; Single-line comment; Default: Subject of commit>
