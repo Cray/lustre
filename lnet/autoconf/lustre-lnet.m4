@@ -367,12 +367,12 @@ directory which is likely in ${O2IBPATH%-*}
 		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -I$O2IBPATH/include"
 		LB_CHECK_COMPILE([whether to enable OpenIB gen2 support],
 		openib_gen2_support, [
-			#include <linux/version.h>
-			#include <linux/pci.h>
-			#include <linux/gfp.h>
 			#ifdef HAVE_COMPAT_RDMA
 			#include <linux/compat-2.6.h>
 			#endif
+			#include <linux/version.h>
+			#include <linux/pci.h>
+			#include <linux/gfp.h>
 			#include <rdma/rdma_cm.h>
 			#include <rdma/ib_cm.h>
 			#include <rdma/ib_verbs.h>
@@ -419,6 +419,19 @@ directory which is likely in ${O2IBPATH%-*}
 				AC_MSG_ERROR([an external source tree was specified for o2iblnd however I could not find a $O2IBPATH/Module.symvers there])
 			fi
 		fi
+
+		LB_CHECK_COMPILE([if Linux kernel has kthread_worker],
+		linux_kthread_worker, [
+		    #include <linux/kthread.h>
+		],[
+			struct kthread_work	*kth_wrk __attribute__ ((unused));
+			flush_kthread_work(kth_wrk);
+		],[
+			AC_DEFINE(HAVE_KTHREAD_WORK, 1, [kthread_worker found])
+			if test -z "$COMPAT_AUTOCONF"; then
+				EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_IS_KTHREAD"
+			fi
+		])
 
 		LN_CONFIG_OFED_SPEC
 	fi
