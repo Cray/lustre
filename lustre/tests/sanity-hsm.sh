@@ -2916,6 +2916,19 @@ test_60() {
 }
 run_test 60 "Changing progress update interval from default"
 
+test_61() {
+	local fid
+	copytool_setup
+	$MCREATE $DIR/$tfile || error "mcreate failed"
+	$TRUNCATE $DIR/$tfile 42 || error "truncate failed"
+	$LFS hsm_archive $DIR/$tfile || error "archive request failed"
+	fid=$(path2fid $DIR/$tfile)
+	wait_request_state $fid ARCHIVE SUCCEED
+	$LFS hsm_release $DIR/$tfile || error "release failed"
+	copytool_cleanup
+}
+run_test 61 "Release stripeless file with non-zero size"
+
 test_70() {
 	# test needs a new running copytool
 	copytool_cleanup
