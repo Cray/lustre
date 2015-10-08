@@ -50,6 +50,7 @@
 #include <lu_object.h>
 #include <lustre_param.h>
 #include <lustre_fid.h>
+#include <lustre_barrier.h>
 
 #include "mdd_internal.h"
 
@@ -866,6 +867,7 @@ static int mdd_hsm_actions_llog_fini(const struct lu_env *env,
 static void mdd_device_shutdown(const struct lu_env *env, struct mdd_device *m,
 				struct lustre_cfg *cfg)
 {
+	barrier_deregister(m->mdd_bottom);
 	lfsck_degister(env, m->mdd_bottom);
 	mdd_hsm_actions_llog_fini(env, m);
 	mdd_changelog_fini(env, m);
@@ -1060,7 +1062,18 @@ static int mdd_prepare(const struct lu_env *env,
 		       mdd2obd_dev(mdd)->obd_name, rc);
 		GOTO(out_hsm, rc);
 	}
+
+	rc = barrier_register(mdd->mdd_bottom, mdd->mdd_child);
+	if (rc != 0) {
+		CERROR("%s: failed to register to barrier: rc = %d\n",
+		       mdd2obd_dev(mdd)->obd_name, rc);
+		GOTO(out_lfsck, rc);
+	}
+
 	RETURN(0);
+
+out_lfsck:
+	lfsck_degister(env, mdd->mdd_bottom);
 out_hsm:
 	mdd_hsm_actions_llog_fini(env, mdd);
 out_changelog:

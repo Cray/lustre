@@ -217,12 +217,14 @@ int tgt_mod_init(void)
 
 	tgt_ses_key_init_generic(&tgt_session_key, NULL);
 	lu_context_key_register_many(&tgt_session_key, NULL);
+	barrier_init();
 
 	RETURN(0);
 }
 
 void tgt_mod_exit(void)
 {
+	barrier_fini();
 	if (tgt_page_to_corrupt != NULL)
 		page_cache_release(tgt_page_to_corrupt);
 

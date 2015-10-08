@@ -220,5 +220,7 @@ int tgt_txn_start_cb(const struct lu_env *env, struct thandle *th,
 		     void *cookie);
 int tgt_txn_stop_cb(const struct lu_env *env, struct thandle *th,
 		    void *cookie);
+void barrier_init(void);
+void barrier_fini(void);
 
 #endif /* _TG_INTERNAL_H */

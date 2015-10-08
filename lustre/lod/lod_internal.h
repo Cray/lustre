@@ -386,6 +386,10 @@ lod_name_get(const struct lu_env *env, const void *area, int len)
 	if ((__dev)->lod_osts_size > 0)	\
 		cfs_foreach_bit((__dev)->lod_ost_bitmap, (index))
 
+#define lod_foreach_mdt(__dev, index)	\
+	if ((__dev)->lod_mdts_size > 0)	\
+		cfs_foreach_bit((__dev)->lod_mdt_bitmap, (index))
+
 /* lod_dev.c */
 extern struct kmem_cache *lod_object_kmem;
 int lod_fld_lookup(const struct lu_env *env, struct lod_device *lod,
