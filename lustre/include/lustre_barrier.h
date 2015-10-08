@@ -35,6 +35,8 @@
 #include <dt_object.h>
 #include <lustre_export.h>
 
+bool barrier_entry(struct dt_device *key);
+void barrier_exit(struct dt_device *key);
 int barrier_handler(struct obd_export *exp, struct dt_device *key,
 		    __u32 status, __u32 gen, __u32 timeout, const char *name);
 void barrier_orphan_cleanup(struct dt_device *key);

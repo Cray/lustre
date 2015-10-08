@@ -70,6 +70,7 @@
 #include <lustre_quota.h>
 #include <lustre_lfsck.h>
 #include <lustre_nodemap.h>
+#include <lustre_barrier.h>
 
 mdl_mode_t mdt_mdl_lock_modes[] = {
         [LCK_MINMODE] = MDL_MINMODE,
@@ -2138,6 +2139,11 @@ static int mdt_quotactl(struct tgt_session_info *tsi)
 	if (oqctl->qc_id != id)
 		swap(oqctl->qc_id, id);
 
+	if (oqctl->qc_cmd == Q_SETINFO || oqctl->qc_cmd == Q_SETQUOTA) {
+		if (unlikely(!barrier_entry(tsi->tsi_tgt->lut_bottom)))
+			RETURN(-EINPROGRESS);
+	}
+
 	switch (oqctl->qc_cmd) {
 
 	case Q_GETINFO:
@@ -2159,6 +2165,9 @@ static int mdt_quotactl(struct tgt_session_info *tsi)
 		CERROR("Unsupported quotactl command: %d\n", oqctl->qc_cmd);
 		RETURN(-EFAULT);
 	}
+
+	if (oqctl->qc_cmd == Q_SETINFO || oqctl->qc_cmd == Q_SETQUOTA)
+		barrier_exit(tsi->tsi_tgt->lut_bottom);
 
 	if (oqctl->qc_id != id)
 		swap(oqctl->qc_id, id);
@@ -4832,6 +4841,8 @@ static struct lu_object *mdt_object_alloc(const struct lu_env *env,
 		mutex_init(&mo->mot_ioepoch_mutex);
 		mutex_init(&mo->mot_lov_mutex);
 		init_rwsem(&mo->mot_open_sem);
+		atomic_set(&mo->mot_open_count, 0);
+
 		RETURN(o);
 	}
 	RETURN(NULL);

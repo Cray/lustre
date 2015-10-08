@@ -1472,64 +1472,71 @@ static int mdd_changelog_user_purge(const struct lu_env *env,
  * \param karg - ioctl data, in kernel space
  */
 static int mdd_iocontrol(const struct lu_env *env, struct md_device *m,
-                         unsigned int cmd, int len, void *karg)
+			 unsigned int cmd, int len, void *karg)
 {
-        struct mdd_device *mdd;
-        struct obd_ioctl_data *data = karg;
-        int rc;
-        ENTRY;
+	struct mdd_device *mdd = lu2mdd_dev(&m->md_lu_dev);
+	struct obd_ioctl_data *data = karg;
+	int rc = 0;
+	ENTRY;
 
-        mdd = lu2mdd_dev(&m->md_lu_dev);
-
-        /* Doesn't use obd_ioctl_data */
-        switch (cmd) {
-        case OBD_IOC_CHANGELOG_CLEAR: {
-                struct changelog_setinfo *cs = karg;
-                rc = mdd_changelog_user_purge(env, mdd, cs->cs_id,
-                                              cs->cs_recno);
-                RETURN(rc);
-        }
-        case OBD_IOC_GET_MNTOPT: {
-                mntopt_t *mntopts = (mntopt_t *)karg;
-                *mntopts = mdd->mdd_dt_conf.ddp_mntopts;
-                RETURN(0);
-        }
-	case OBD_IOC_START_LFSCK: {
+	switch (cmd) {
+	case OBD_IOC_GET_MNTOPT: {
+		mntopt_t *mntopts = (mntopt_t *)karg;
+		*mntopts = mdd->mdd_dt_conf.ddp_mntopts;
+		RETURN(0);
+	}
+	case OBD_IOC_START_LFSCK:
 		rc = lfsck_start(env, mdd->mdd_bottom,
 				 (struct lfsck_start_param *)karg);
 		RETURN(rc);
-	}
-	case OBD_IOC_STOP_LFSCK: {
+	case OBD_IOC_STOP_LFSCK:
 		rc = lfsck_stop(env, mdd->mdd_bottom,
 				(struct lfsck_stop *)karg);
 		RETURN(rc);
+	case OBD_IOC_CHANGELOG_REG:
+	case OBD_IOC_CHANGELOG_DEREG:
+		if (len != sizeof(*data)) {
+			CERROR("Bad ioctl size %d\n", len);
+
+			RETURN(-EINVAL);
+		}
+
+		if (data->ioc_version != OBD_IOCTL_VERSION) {
+			CERROR("Bad magic %x != %x\n", data->ioc_version,
+			       OBD_IOCTL_VERSION);
+
+			RETURN(-EINVAL);
+		}
+		/* fall through */
+	case OBD_IOC_CHANGELOG_CLEAR:
+		if (unlikely(!barrier_entry(mdd->mdd_bottom)))
+			RETURN(-EINPROGRESS);
+
+		break;
+	default:
+		RETURN(-ENOTTY);
 	}
-        }
 
-        /* Below ioctls use obd_ioctl_data */
-        if (len != sizeof(*data)) {
-                CERROR("Bad ioctl size %d\n", len);
-                RETURN(-EINVAL);
-        }
-        if (data->ioc_version != OBD_IOCTL_VERSION) {
-                CERROR("Bad magic %x != %x\n", data->ioc_version,
-                       OBD_IOCTL_VERSION);
-                RETURN(-EINVAL);
-        }
+	switch (cmd) {
+	case OBD_IOC_CHANGELOG_REG:
+		rc = mdd_changelog_user_register(env, mdd, &data->ioc_u32_1);
+		break;
+	case OBD_IOC_CHANGELOG_DEREG:
+		rc = mdd_changelog_user_purge(env, mdd, data->ioc_u32_1,
+					      MCUD_UNREGISTER);
+		break;
+	case OBD_IOC_CHANGELOG_CLEAR: {
+		struct changelog_setinfo *cs = karg;
 
-        switch (cmd) {
-        case OBD_IOC_CHANGELOG_REG:
-                rc = mdd_changelog_user_register(env, mdd, &data->ioc_u32_1);
-                break;
-        case OBD_IOC_CHANGELOG_DEREG:
-                rc = mdd_changelog_user_purge(env, mdd, data->ioc_u32_1,
-                                              MCUD_UNREGISTER);
-                break;
-        default:
-                rc = -ENOTTY;
-        }
+		rc = mdd_changelog_user_purge(env, mdd, cs->cs_id,
+					      cs->cs_recno);
+		break;
+	}
+	}
 
-        RETURN (rc);
+	barrier_exit(mdd->mdd_bottom);
+
+	RETURN(rc);
 }
 
 /* type constructor/destructor: mdd_type_init, mdd_type_fini */

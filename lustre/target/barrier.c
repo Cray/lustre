@@ -618,6 +618,50 @@ void barrier_fini(void)
 	spin_unlock(&barrier_instance_lock);
 }
 
+bool barrier_entry(struct dt_device *key)
+{
+	struct barrier_instance *barrier;
+	bool entered = false;
+	ENTRY;
+
+	barrier = barrier_instance_find(key, false);
+	if (unlikely(barrier == NULL))
+		/* Fail open */
+		RETURN(true);
+
+	read_lock(&barrier->bi_rwlock);
+	if (likely(barrier->bi_barrier_status != BS_FREEZING_P1 &&
+		   barrier->bi_barrier_status != BS_FREEZING_P2 &&
+		   barrier->bi_barrier_status != BS_FROZEN)) {
+		percpu_counter_inc(&barrier->bi_writers);
+		entered = true;
+	}
+	read_unlock(&barrier->bi_rwlock);
+
+	barrier_instance_put(barrier);
+	return entered;
+}
+EXPORT_SYMBOL(barrier_entry);
+
+void barrier_exit(struct dt_device *key)
+{
+	struct barrier_instance *barrier;
+
+	barrier = barrier_instance_find(key, false);
+	if (likely(barrier != NULL)) {
+		percpu_counter_dec(&barrier->bi_writers);
+
+		/* Avoid out-of-order execution the decreasing inflight
+		 * modifications count and the check of barrier status. */
+		smp_mb();
+
+		if (unlikely(barrier->bi_barrier_status == BS_FREEZING_P1))
+			wake_up_all(&barrier->bi_thread.t_ctl_waitq);
+		barrier_instance_put(barrier);
+	}
+}
+EXPORT_SYMBOL(barrier_exit);
+
 /**
  * This function is exported for handling the incoming barrier requests.
  *
