@@ -62,7 +62,7 @@ struct echo_device {
 	struct echo_client_obd	 *ed_ec;
 
 	struct cl_site		  ed_site_myself;
-	struct cl_site		 *ed_site;
+	struct lu_site		 *ed_site;
 	struct lu_device	 *ed_next;
 	int			  ed_next_ismd;
 	struct lu_client_seq	 *ed_cl_seq;
@@ -600,21 +600,23 @@ static int echo_site_init(const struct lu_env *env, struct echo_device *ed)
                 return rc;
         }
 
-        rc = lu_site_init_finish(&site->cs_lu);
-        if (rc)
-                return rc;
+	rc = lu_site_init_finish(&site->cs_lu);
+	if (rc) {
+		cl_site_fini(site);
+		return rc;
+	}
 
-        ed->ed_site = site;
-        return 0;
+	ed->ed_site = &site->cs_lu;
+	return 0;
 }
 
 static void echo_site_fini(const struct lu_env *env, struct echo_device *ed)
 {
-        if (ed->ed_site) {
-                if (!ed->ed_next_ismd)
-                        cl_site_fini(ed->ed_site);
-                ed->ed_site = NULL;
-        }
+	if (ed->ed_site) {
+		if (!ed->ed_next_ismd)
+			lu_site_fini(ed->ed_site);
+		ed->ed_site = NULL;
+	}
 }
 
 static void *echo_thread_key_init(const struct lu_context *ctx,
@@ -913,11 +915,10 @@ static struct lu_device *echo_device_alloc(const struct lu_env *env,
                         GOTO(out, rc = -EINVAL);
                 }
 
-                next = ld;
-                /* For MD echo client, it will use the site in MDS stack */
-                ed->ed_site_myself.cs_lu = *ls;
-                ed->ed_site = &ed->ed_site_myself;
-                ed->ed_cl.cd_lu_dev.ld_site = &ed->ed_site_myself.cs_lu;
+		next = ld;
+		/* For MD echo client, it will use the site in MDS stack */
+		ed->ed_site = ls;
+		ed->ed_cl.cd_lu_dev.ld_site = ls;
 		rc = echo_fid_init(ed, obd->obd_name, lu_site2seq(ls));
 		if (rc) {
 			CERROR("echo fid init error %d\n", rc);
@@ -950,7 +951,7 @@ static struct lu_device *echo_device_alloc(const struct lu_env *env,
                         if (next->ld_site != NULL)
                                 GOTO(out, rc = -EBUSY);
 
-                        next->ld_site = &ed->ed_site->cs_lu;
+                        next->ld_site = ed->ed_site;
                         rc = next->ld_type->ldt_ops->ldto_device_init(env, next,
                                                      next->ld_type->ldt_name,
                                                      NULL);
@@ -1023,7 +1024,7 @@ static struct lu_device *echo_device_free(const struct lu_env *env,
         CDEBUG(D_INFO, "echo device:%p is going to be freed, next = %p\n",
                ed, next);
 
-        lu_site_purge(env, &ed->ed_site->cs_lu, -1);
+	lu_site_purge(env, ed->ed_site, -1);
 
         /* check if there are objects still alive.
          * It shouldn't have any object because lu_site_purge would cleanup
@@ -1036,7 +1037,7 @@ static struct lu_device *echo_device_free(const struct lu_env *env,
 	spin_unlock(&ec->ec_lock);
 
 	/* purge again */
-	lu_site_purge(env, &ed->ed_site->cs_lu, -1);
+	lu_site_purge(env, ed->ed_site, -1);
 
 	CDEBUG(D_INFO,
 	       "Waiting for the reference of echo object to be dropped\n");
@@ -1049,7 +1050,7 @@ static struct lu_device *echo_device_free(const struct lu_env *env,
 		       "wait for 1 second\n");
 		schedule_timeout_and_set_state(TASK_UNINTERRUPTIBLE,
 						   cfs_time_seconds(1));
-		lu_site_purge(env, &ed->ed_site->cs_lu, -1);
+		lu_site_purge(env, ed->ed_site, -1);
 		spin_lock(&ec->ec_lock);
 	}
 	spin_unlock(&ec->ec_lock);
@@ -1066,7 +1067,7 @@ static struct lu_device *echo_device_free(const struct lu_env *env,
 	while (next && !ed->ed_next_ismd)
 		next = next->ld_type->ldt_ops->ldto_device_free(env, next);
 
-        LASSERT(ed->ed_site == lu2cl_site(d->ld_site));
+        LASSERT(ed->ed_site == d->ld_site);
         echo_site_fini(env, ed);
         cl_device_fini(&ed->ed_cl);
         OBD_FREE_PTR(ed);
@@ -2412,7 +2413,7 @@ static int echo_client_prep_commit(const struct lu_env *env,
 {
 	struct obd_ioobj	 ioo;
 	struct niobuf_local	*lnb;
-	struct niobuf_remote	*rnb;
+	struct niobuf_remote	 rnb;
 	u64			 off;
 	u64			 npages, tot_pages;
 	int i, ret = 0, brw_flags = 0;
@@ -2425,41 +2426,36 @@ static int echo_client_prep_commit(const struct lu_env *env,
 	npages = batch >> PAGE_CACHE_SHIFT;
 	tot_pages = count >> PAGE_CACHE_SHIFT;
 
-        OBD_ALLOC(lnb, npages * sizeof(struct niobuf_local));
-        OBD_ALLOC(rnb, npages * sizeof(struct niobuf_remote));
-
-        if (lnb == NULL || rnb == NULL)
-                GOTO(out, ret = -ENOMEM);
+	OBD_ALLOC(lnb, npages * sizeof(struct niobuf_local));
+	if (lnb == NULL)
+		GOTO(out, ret = -ENOMEM);
 
 	if (rw == OBD_BRW_WRITE && async)
 		brw_flags |= OBD_BRW_ASYNC;
 
-        obdo_to_ioobj(oa, &ioo);
+	obdo_to_ioobj(oa, &ioo);
 
-        off = offset;
+	off = offset;
 
-        for(; tot_pages; tot_pages -= npages) {
-                int lpages;
+	for (; tot_pages > 0; tot_pages -= npages) {
+		int lpages;
 
-                if (tot_pages < npages)
-                        npages = tot_pages;
+		if (tot_pages < npages)
+			npages = tot_pages;
 
-		for (i = 0; i < npages; i++, off += PAGE_CACHE_SIZE) {
-			rnb[i].rnb_offset = off;
-			rnb[i].rnb_len = PAGE_CACHE_SIZE;
-			rnb[i].rnb_flags = brw_flags;
-                }
+		rnb.rnb_offset = off;
+		rnb.rnb_len = npages * PAGE_CACHE_SIZE;
+		rnb.rnb_flags = brw_flags;
+		ioo.ioo_bufcnt = 1;
+		off += npages * PAGE_CACHE_SIZE;
 
-                ioo.ioo_bufcnt = npages;
+		lpages = npages;
+		ret = obd_preprw(env, rw, exp, oa, 1, &ioo, &rnb, &lpages,
+				 lnb, oti, NULL);
+		if (ret != 0)
+			GOTO(out, ret);
 
-                lpages = npages;
-		ret = obd_preprw(env, rw, exp, oa, 1, &ioo, rnb, &lpages,
-                                 lnb, oti, NULL);
-                if (ret != 0)
-                        GOTO(out, ret);
-                LASSERT(lpages == npages);
-
-                for (i = 0; i < lpages; i++) {
+		for (i = 0; i < lpages; i++) {
 			struct page *page = lnb[i].lnb_page;
 
 			/* read past eof? */
@@ -2476,35 +2472,33 @@ static int echo_client_prep_commit(const struct lu_env *env,
 
 			if (rw == OBD_BRW_WRITE)
 				echo_client_page_debug_setup(page, rw,
-							    ostid_id(&oa->o_oi),
-							     rnb[i].rnb_offset,
-							     rnb[i].rnb_len);
+							ostid_id(&oa->o_oi),
+							lnb[i].lnb_file_offset,
+							lnb[i].lnb_len);
 			else
 				echo_client_page_debug_check(page,
-							    ostid_id(&oa->o_oi),
-							     rnb[i].rnb_offset,
-							     rnb[i].rnb_len);
+							ostid_id(&oa->o_oi),
+							lnb[i].lnb_file_offset,
+							lnb[i].lnb_len);
 		}
 
 		ret = obd_commitrw(env, rw, exp, oa, 1, &ioo,
-				   rnb, npages, lnb, oti, ret);
-                if (ret != 0)
-                        GOTO(out, ret);
+				   &rnb, npages, lnb, oti, ret);
+		if (ret != 0)
+			GOTO(out, ret);
 
-                /* Reset oti otherwise it would confuse ldiskfs. */
-                memset(oti, 0, sizeof(*oti));
+		/* Reset oti otherwise it would confuse ldiskfs. */
+		memset(oti, 0, sizeof(*oti));
 
 		/* Reuse env context. */
 		lu_context_exit((struct lu_context *)&env->le_ctx);
 		lu_context_enter((struct lu_context *)&env->le_ctx);
-        }
+	}
 
 out:
-        if (lnb)
-                OBD_FREE(lnb, npages * sizeof(struct niobuf_local));
-        if (rnb)
-                OBD_FREE(rnb, npages * sizeof(struct niobuf_remote));
-        RETURN(ret);
+	if (lnb)
+		OBD_FREE(lnb, npages * sizeof(struct niobuf_local));
+	RETURN(ret);
 }
 
 static int echo_client_brw_ioctl(const struct lu_env *env, int rw,

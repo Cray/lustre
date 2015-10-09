@@ -14,7 +14,7 @@ ALWAYS_EXCEPT="                42a  42b  42c  42d  45   51d   68b   $SANITY_EXCE
 
 # with LOD/OSP landing
 # bug number for skipped tests: LU-2036
-ALWAYS_EXCEPT="                 76     $ALWAYS_EXCEPT"
+ALWAYS_EXCEPT="                 76      $ALWAYS_EXCEPT"
 
 SRCDIR=$(cd $(dirname $0); echo $PWD)
 export PATH=$PATH:/sbin
@@ -1370,6 +1370,9 @@ test_27d() {
 run_test 27d "create file with default settings ================"
 
 test_27e() {
+	# LU-5839 adds check for existed layout before setting it
+	[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.56) ]] &&
+		skip "Need MDS version at least 2.7.56" && return
 	test_mkdir -p $DIR/d27
 	$SETSTRIPE -c 2 $DIR/d27/f12 || error "setstripe failed"
 	$SETSTRIPE -c 2 $DIR/d27/f12 && error "setstripe succeeded twice"
@@ -9038,6 +9041,8 @@ som_mode_switch() {
 test_132() { #1028, SOM
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	[ $(lustre_version_code $SINGLEMDS) -gt $(version_code 2.7.50) ] &&
+		skip "SOM is removed from 2.7.51" && return
 	local mdtidx=$($LFS getstripe -M $DIR)
 	local facet=mds$((mdtidx + 1))
 
@@ -10777,6 +10782,8 @@ run_test 162b "striped directory path lookup sanity"
 
 # LU-4239: Verify fid2path works with paths 100 or more directories deep
 test_162c() {
+	[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.51) ]] &&
+		skip "Need MDS version at least 2.7.51" && return
 	test_mkdir $DIR/$tdir.local
 	test_mkdir $DIR/$tdir.remote
 	local lpath=$tdir.local

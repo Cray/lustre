@@ -1377,7 +1377,7 @@ int osd_ldiskfs_read(struct inode *inode, void *buf, int size, loff_t *offs)
         int blocksize;
         int csize;
         int boffs;
-        int err;
+	int err = 0;
 
         /* prevent reading after eof */
 	spin_lock(&inode->i_lock);
@@ -1501,9 +1501,12 @@ static inline int osd_calc_bkmap_credits(struct super_block *sb,
 	} else if (pos + size <= (LDISKFS_NDIR_BLOCKS + 1024) * bs) {
 		/* single indirect */
 		credits = blocks * 3;
-		/* probably indirect block has been allocated already */
-		if (!inode || LDISKFS_I(inode)->i_data[LDISKFS_IND_BLOCK])
+		if (inode == NULL ||
+		    LDISKFS_I(inode)->i_data[LDISKFS_IND_BLOCK] == 0)
 			credits += 3;
+		else
+			/* The indirect block may be modified. */
+			credits += 1;
 	}
 
 	return credits;
@@ -1641,6 +1644,7 @@ int osd_ldiskfs_write_record(struct inode *inode, void *buf, int bufsize,
                 size = min(blocksize - boffs, bufsize);
                 bh = ldiskfs_bread(handle, inode, block, 1, &err);
                 if (!bh) {
+			err = err ? err : -EIO;
                         CERROR("%s: error reading offset %llu (block %lu): "
                                "rc = %d\n",
                                inode->i_sb->s_id, offset, block, err);

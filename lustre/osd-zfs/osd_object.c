@@ -759,7 +759,8 @@ static int osd_attr_get(const struct lu_env *env,
 		attr->la_size = 512 * blocks;
 	/* Block size may be not set; suggest maximal I/O transfers. */
 	if (blksize == 0)
-		blksize = 1ULL << SPA_MAXBLOCKSHIFT;
+		blksize = osd_spa_maxblocksize(
+			dmu_objset_spa(osd_obj2dev(obj)->od_os));
 
 	attr->la_blksize = blksize;
 	attr->la_blocks = blocks;
@@ -1319,14 +1320,11 @@ static dmu_buf_t* osd_mkreg(const struct lu_env *env, struct osd_device *osd,
 	if (rc)
 		return ERR_PTR(rc);
 
-	/*
-	 * XXX: a hack, OST to use bigger blocksize. we need
-	 * a method in OSD API to control this from OFD/MDD
-	 */
 	if (!lu_device_is_md(osd2lu_dev(osd))) {
-		rc = -dmu_object_set_blocksize(osd->od_os,
-					       db->db_object,
-				128 << 10, 0, oh->ot_tx);
+		/* uses 4K as default block size because clients write data
+		 * with page size that is 4K at minimum */
+		rc = -dmu_object_set_blocksize(osd->od_os, db->db_object,
+					       4096, 0, oh->ot_tx);
 		if (unlikely(rc)) {
 			CERROR("%s: can't change blocksize: %d\n",
 			       osd->od_svname, rc);

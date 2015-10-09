@@ -1304,10 +1304,14 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
 	result = sb->s_op->statfs(sb->s_root, ksfs);
 	if (likely(result == 0)) { /* N.B. statfs can't really fail */
 		statfs_pack(sfs, ksfs);
-		if (sb->s_flags & MS_RDONLY)
+		if (unlikely(sb->s_flags & MS_RDONLY))
 			sfs->os_state = OS_STATE_READONLY;
+		if (LDISKFS_HAS_INCOMPAT_FEATURE(sb,
+					      LDISKFS_FEATURE_INCOMPAT_EXTENTS))
+			sfs->os_maxbytes = sb->s_maxbytes;
+		else
+			sfs->os_maxbytes = LDISKFS_SB(sb)->s_bitmap_maxbytes;
 	}
-
 	spin_unlock(&osd->od_osfs_lock);
 
 	if (unlikely(env == NULL))
@@ -1354,7 +1358,10 @@ static void osd_conf_get(const struct lu_env *env,
         param->ddp_max_nlink    = LDISKFS_LINK_MAX;
 	param->ddp_block_shift  = sb->s_blocksize_bits;
 	param->ddp_mount_type     = LDD_MT_LDISKFS;
-	param->ddp_maxbytes       = sb->s_maxbytes;
+	if (LDISKFS_HAS_INCOMPAT_FEATURE(sb, LDISKFS_FEATURE_INCOMPAT_EXTENTS))
+		param->ddp_maxbytes = sb->s_maxbytes;
+	else
+		param->ddp_maxbytes = LDISKFS_SB(sb)->s_bitmap_maxbytes;
 	/* Overhead estimate should be fairly accurate, so we really take a tiny
 	 * error margin which also avoids fragmenting the filesystem too much */
 	param->ddp_grant_reserved = 2; /* end up to be 1.9% after conversion */
@@ -5494,7 +5501,29 @@ again:
 
 	rc = osd_get_lma(info, inode, &info->oti_obj_dentry, lma);
 	if (rc == 0) {
-		LASSERT(!(lma->lma_compat & LMAC_NOT_IN_OI));
+		if (unlikely(lma->lma_compat & LMAC_NOT_IN_OI)) {
+			struct lu_fid *tfid = &lma->lma_self_fid;
+
+			*attr |= LUDA_IGNORE;
+
+			/* It must be REMOTE_PARENT_DIR and as the
+			 * dotdot entry of remote directory */
+			if (unlikely(dot_dotdot != 2 ||
+				     fid_seq(tfid) != FID_SEQ_LOCAL_FILE ||
+				     fid_oid(tfid) != REMOTE_PARENT_DIR_OID)) {
+				CDEBUG(D_LFSCK, "%.16s: expect remote agent "
+				       "parent directory, but got %.*s under "
+				       "dir = %lu/%u with the FID "DFID"\n",
+				       devname, ent->oied_namelen,
+				       ent->oied_name, dir->i_ino,
+				       dir->i_generation, PFID(tfid));
+
+				rc = -EIO;
+			}
+
+
+			GOTO(out_inode, rc);
+		}
 
 		if (fid_is_sane(fid)) {
 			/* FID-in-dirent is valid. */
@@ -6529,6 +6558,7 @@ static int __init osd_mod_init(void)
 {
 	int rc;
 
+	LASSERT(BH_DXLock < sizeof(((struct buffer_head *)0)->b_state) * 8);
 #if !defined(CONFIG_DEBUG_MUTEXES) && !defined(CONFIG_DEBUG_SPINLOCK)
 	/* please, try to keep osd_thread_info smaller than a page */
 	CLASSERT(sizeof(struct osd_thread_info) <= PAGE_SIZE);

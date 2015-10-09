@@ -211,4 +211,5 @@ struct ldlm_lock *osc_dlmlock_at_pgoff(const struct lu_env *env,
 void osc_inc_unstable_pages(struct ptlrpc_request *req);
 void osc_dec_unstable_pages(struct ptlrpc_request *req);
 bool osc_over_unstable_soft_limit(struct client_obd *cli);
+int osc_object_invalidate(const struct lu_env *env, struct osc_object *osc);
 #endif /* OSC_INTERNAL_H */

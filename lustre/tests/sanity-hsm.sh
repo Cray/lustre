@@ -2629,7 +2629,7 @@ test_54() {
 
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
-	local fid=$(make_small $f)
+	local fid=$(make_large_for_progress $f)
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f ||
 		error "could not archive file"
@@ -2657,7 +2657,7 @@ test_55() {
 
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
-	local fid=$(make_small $f)
+	local fid=$(make_large_for_progress $f)
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f ||
 		error "could not archive file"
