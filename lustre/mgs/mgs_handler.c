@@ -1028,6 +1028,10 @@ out_free:
 		rc = mgs_iocontrol_pool(&env, mgs, data);
 		break;
 
+	case OBD_IOC_BARRIER:
+		rc = mgs_iocontrol_barrier(&env, mgs, data);
+		break;
+
 	case OBD_IOC_NODEMAP:
 		rc = mgs_iocontrol_nodemap(&env, mgs, data);
 		break;

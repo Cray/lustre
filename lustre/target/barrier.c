@@ -498,6 +498,12 @@ static int barrier_engine(void *args)
 			int left;
 			bool phase1 = bri->bri_status == BS_FREEZING_P1;
 
+			if (OBD_FAIL_CHECK(OBD_FAIL_BARRIER_FAILURE)) {
+				barrier_notify(&env, barrier, bri, BNE_FREEZE_FAILED);
+				barrier_request_release(bri);
+				continue;
+			}
+
 			rc = barrier_freeze(&env, barrier,
 					    bri->bri_deadline, phase1);
 			if (unlikely(rc == BCR_EXIT)) {

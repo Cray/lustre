@@ -232,6 +232,9 @@ int mgs_nodemap_cmd(const struct lu_env *env, struct mgs_device *mgs,
 		    char *param);
 
 /* mgs_barrier.c*/
+int mgs_iocontrol_barrier(const struct lu_env *env,
+			  struct mgs_device *mgs,
+			  struct obd_ioctl_data *data);
 int mgs_barrier_read(struct tgt_session_info *tsi);
 int mgs_barrier_notify(struct tgt_session_info *tsi);
 

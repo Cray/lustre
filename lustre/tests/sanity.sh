@@ -57,7 +57,7 @@ init_test_env $@
 . ${CONFIG:=$LUSTRE/tests/cfg/${NAME}.sh}
 init_logging
 
-[ "$SLOW" = "no" ] && EXCEPT_SLOW="24o 24D 27m 64b 68 71 77f 78 115 124b 230d"
+[ "$SLOW" = "no" ] && EXCEPT_SLOW="24o 24D 27m 64b 68 71 77f 78 115 124b 230d 401"
 
 if [ $(facet_fstype $SINGLEMDS) = "zfs" ]; then
 	# bug number for skipped test: LU-1593	LU-4536 LU-5242	 LU-1957 LU-2805
@@ -13568,6 +13568,178 @@ test_400b() { # LU-1606, LU-5011
 	done
 }
 run_test 400b "packaged headers can be compiled"
+
+test_401a() {
+	#define OBD_FAIL_BARRIER_DELAY		0x2102
+	do_facet mgs $LCTL set_param fail_val=3 fail_loc=0x2102
+	do_facet mgs $LCTL barrier_freeze $FSNAME 30 &
+
+	sleep 1
+	local barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			       awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'freezing_p1'" ] ||
+		error "(1) unexpected barrier status $barrier_status"
+
+	do_facet mgs $LCTL set_param fail_val=0 fail_loc=0
+	wait
+	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			 awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'frozen'" ] ||
+		error "(2) unexpected barrier status $barrier_status"
+
+		local expired=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+		        awk '/will be expired/ { print $7 }')
+	echo "sleep $((expired + 2)) sleep, then the barrier will be expired"
+	sleep $((expired + 2))
+
+	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			 awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'expired'" ] ||
+		error "(3) unexpected barrier status $barrier_status"
+
+	do_facet mgs $LCTL barrier_freeze $FSNAME 30 ||
+		error "(4) fail to freeze barrier"
+
+	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			 awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'frozen'" ] ||
+		error "(5) unexpected barrier status $barrier_status"
+
+	#define OBD_FAIL_BARRIER_DELAY		0x2102
+	do_facet mgs $LCTL set_param fail_val=3 fail_loc=0x2102
+	do_facet mgs $LCTL barrier_thaw $FSNAME &
+
+	sleep 1
+	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			 awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'thawing'" ] ||
+		error "(6) unexpected barrier status $barrier_status"
+
+	do_facet mgs $LCTL set_param fail_val=0 fail_loc=0
+	wait
+	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			 awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'thawed'" ] ||
+		error "(7) unexpected barrier status $barrier_status"
+
+	#define OBD_FAIL_BARRIER_FAILURE	0x2103
+	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x2103
+	do_facet mgs $LCTL barrier_freeze $FSNAME
+
+	local barrier_status=$($LCTL barrier_stat $FSNAME |
+			       awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'failed'" ] ||
+		error "(8) unexpected barrier status $barrier_status"
+
+	do_facet $SINGLEMDS $LCTL set_param fail_loc=0
+	do_facet mgs $LCTL barrier_thaw $FSNAME
+}
+run_test 401a "write barrier user interfaces and stat machine"
+
+test_401b() {
+	mkdir $DIR/$tdir || error "(1) fail to mkdir"
+	createmany -d $DIR/$tdir/d 6 || "(2) fail to mkdir"
+	touch $DIR/$tdir/d2/f10 || error "(3) fail to touch"
+	touch $DIR/$tdir/d3/f11 || error "(4) fail to touch"
+	touch $DIR/$tdir/d4/f12 || error "(5) fail to touch"
+
+	cancel_lru_locks mdc
+
+	# 180 seconds should be long enough
+	do_facet mgs $LCTL barrier_freeze $FSNAME 180
+
+	local barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			       awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'frozen'" ] ||
+		error "(6) unexpected barrier status $barrier_status"
+
+	mkdir $DIR/$tdir/d0/d10 &
+	mkdir_pid=$!
+
+	touch $DIR/$tdir/d1/f13 &
+	touch_pid=$!
+
+	ln $DIR/$tdir/d2/f10 $DIR/$tdir/d2/f14 &
+	ln_pid=$!
+
+	mv $DIR/$tdir/d3/f11 $DIR/$tdir/d3/f15 &
+	mv_pid=$!
+
+	rm -f $DIR/$tdir/d4/f12 &
+	rm_pid=$!
+
+	stat $DIR/$tdir/d5 || error "(7) stat should succeed"
+
+	# To guarantee taht the 'stat' is not blocked
+	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			 awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'frozen'" ] ||
+		error "(8) unexpected barrier status $barrier_status"
+
+	# let above commands to run at background
+	sleep 5
+
+	ps -p $mkdir_pid || error "(9) mkdir should be blocked"
+	ps -p $touch_pid || error "(10) touch should be blocked"
+	ps -p $ln_pid || error "(11) link should be blocked"
+	ps -p $mv_pid || error "(12) rename should be blocked"
+	ps -p $rm_pid || error "(13) unlink should be blocked"
+
+	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			 awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'frozen'" ] ||
+		error "(14) unexpected barrier status $barrier_status"
+
+	do_facet mgs $LCTL barrier_thaw $FSNAME
+	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			 awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'thawed'" ] ||
+		error "(15) unexpected barrier status $barrier_status"
+
+	wait $mkdir_pid || error "(16) mkdir should succeed"
+	wait $touch_pid || error "(17) touch should succeed"
+	wait $ln_pid || error "(18) link should succeed"
+	wait $mv_pid || error "(19) rename should succeed"
+	wait $rm_pid || error "(20) unlink should succeed"
+}
+run_test 401b "modification will be blocked by write barrier"
+
+test_401c() {
+	[[ $MDSCOUNT -lt 2 ]] && skip "needs >= 2 MDTs" && return
+
+	stop mds2 || error "(1) Fail to stop mds2"
+
+	do_facet mgs $LCTL barrier_freeze $FSNAME 30
+
+	local barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			       awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'expired'" ] ||
+		error "(2) unexpected barrier status $barrier_status"
+
+	do_facet mgs $LCTL barrier_rescan $FSNAME ||
+		error "(3) Fail to rescan barrier bitmap"
+
+	do_facet mgs $LCTL barrier_freeze $FSNAME 30
+
+	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			 awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'frozen'" ] ||
+		error "(4) unexpected barrier status $barrier_status"
+
+	do_facet mgs $LCTL barrier_thaw $FSNAME
+	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			 awk '/The barrier for/ { print $7 }')
+	[ "$barrier_status" = "'thawed'" ] ||
+		error "(5) unexpected barrier status $barrier_status"
+
+	local devname=$(mdsdevname 2)
+
+	start mds2 $devname $MDS_MOUNT_OPTS || error "(6) Fail to start mds2"
+
+	do_facet mgs $LCTL barrier_rescan $FSNAME ||
+		error "(7) Fail to rescan barrier bitmap"
+}
+run_test 401c "rescan barrier bitmap"
 
 #
 # tests that do cleanup/setup should be run at the end
