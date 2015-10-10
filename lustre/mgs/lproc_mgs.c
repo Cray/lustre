@@ -64,7 +64,7 @@ static int mgs_fs_seq_show(struct seq_file *seq, void *v)
 	if (rc)
 		RETURN(rc);
 
-	rc = class_dentry_readdir(&env, mgs, &list);
+	rc = class_dentry_readdir(&env, mgs, &list, NULL);
 	if (rc)
 		GOTO(out, rc);
 

@@ -327,6 +327,12 @@ command_t cmdlist[] = {
         {"dump_cfg", jt_cfg_dump_log, 0,
          "print log of recorded commands for this config to kernel debug log\n"
          "usage: dump_cfg config-uuid-name"},
+	{"fork_lcfg", jt_lcfg_fork, 0,
+	 "fork the configuration for the specified Lustre system\n"
+	 "usage: fork_lcfg <fsname> <newname>"},
+	{"erase_lcfg", jt_lcfg_erase, 0,
+	 "erase the configuration for the specified Lustre system\n"
+	 "usage: erase_lcfg <fsname>"},
 
         /* Test only commands */
         {"==== testing (DANGEROUS) ====", jt_noop, 0, "testing (DANGEROUS)"},
