@@ -2797,6 +2797,13 @@ test_58() {
 run_test 58 "Truncate a released file will trigger restore"
 
 test_59() {
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -ge $(version_code 2.7.11) ]] ||
+	[[ $server_version -ge $(version_code 2.5.38) &&
+	   $server_version -lt $(version_code 2.5.50) ]] ||
+		{ skip "Need MDS version 2.5.38+ or 2.7.11+"; return; }
+
 	# test needs a running copytool
 	copytool_setup
 
@@ -4036,6 +4043,13 @@ test_251() {
 run_test 251 "Coordinator request timeout"
 
 test_252() {
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -ge $(version_code 2.7.11) ]] ||
+	[[ $server_version -ge $(version_code 2.5.38) &&
+	   $server_version -lt $(version_code 2.5.50) ]] ||
+		{ skip "Need MDS version 2.5.38+ or 2.7.11+"; return; }
+
 	# test needs a running copytool
 	copytool_setup
 
