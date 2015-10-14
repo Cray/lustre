@@ -1109,6 +1109,29 @@ static inline unsigned long osd_remote_parent_ino(struct osd_device *dev)
 	return dev->od_mdt_map->omm_remote_parent->d_inode->i_ino;
 }
 
+/**
+ * ext4_bread/ldiskfs_bread has either 5 or 4 parameters,
+ * with the last one having been removed in the kernel 3.18.
+ */
+static inline struct buffer_head *__ldiskfs_bread(handle_t *handle,
+						  struct inode *inode,
+						  ldiskfs_lblk_t block,
+						  int create)
+{
+#ifdef HAVE_EXT4_BREAD_4ARGS
+	return ldiskfs_bread(handle, inode, block, create);
+#else
+	struct buffer_head *bh;
+	int error = 0;
+
+	bh = ldiskfs_bread(handle, inode, block, create, &error);
+	if (bh == NULL && error != 0)
+		bh = ERR_PTR(error);
+
+	return bh;
+#endif
+}
+
 #ifdef JOURNAL_START_HAS_3ARGS
 # define osd_journal_start_sb(sb, type, nblock) \
 		ldiskfs_journal_start_sb(sb, type, nblock)
