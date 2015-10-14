@@ -1017,7 +1017,7 @@ int iam_lvar_create(struct inode *obj,
 #ifdef DX_DEBUG
 #define dxtrace(command) command
 #else
-#define dxtrace(command) 
+#define dxtrace(command)
 #endif
 
 #define BH_DXLock        (BH_BITMAP_UPTODATE + 1)
@@ -1049,8 +1049,12 @@ static inline void iam_lock_bh(struct buffer_head volatile *bh)
 static inline void iam_unlock_bh(struct buffer_head *bh)
 {
 #ifdef CONFIG_SMP
-        smp_mb__before_clear_bit();
-        clear_bit(BH_DXLock, &bh->b_state);
+# ifdef HAVE_SMP_MB__BEFORE_ATOMIC
+	smp_mb__before_atomic();
+# else
+	smp_mb__before_clear_bit();
+# endif
+	clear_bit(BH_DXLock, &bh->b_state);
 #endif
 }
 
@@ -1112,7 +1116,7 @@ void ldiskfs_iam_release(struct file *filp, struct inode *inode);
 int iam_uapi_ioctl(struct inode * inode, struct file * filp, unsigned int cmd,
                    unsigned long arg);
 
-/* dir.c 
+/* dir.c
 #if LDISKFS_INVARIANT_ON
 extern int ldiskfs_check_dir_entry(const char *, struct inode *,
                                 struct ldiskfs_dir_entry_2 *,

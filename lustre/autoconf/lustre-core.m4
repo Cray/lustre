@@ -1667,6 +1667,24 @@ file_function_iter, [
 ]) # LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
 
 #
+# LC_HAVE_SMP_MB__BEFORE_ATOMIC
+#
+# smp_mb__before_clear_bit() was deprecated in kernel 3.16 and removed in
+# kernel 3.18. It is replaced by smp_mb__before_atomic().
+#
+AC_DEFUN([LC_HAVE_SMP_MB__BEFORE_ATOMIC], [
+LB_CHECK_COMPILE([if 'smp_mb__before_atomic' exists],
+smp_mb__before_atomic, [
+	#include <linux/atomic.h>
+],[
+	smp_mb__before_atomic();
+],[
+	AC_DEFINE(HAVE_SMP_MB__BEFORE_ATOMIC, 1,
+		[smp_mb__before_atomic exists])
+])
+]) # LC_HAVE_SMP_MB__BEFORE_ATOMIC
+
+#
 # LC_IOV_ITER_RW
 #
 # 4.1 kernel has iov_iter_rw
@@ -1819,6 +1837,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_DIRECTIO_USE_ITER
 	LC_HAVE_IOV_ITER_INIT_DIRECTION
 	LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
+	LC_HAVE_SMP_MB__BEFORE_ATOMIC
 
 	# 4.1.0
 	LC_IOV_ITER_RW
