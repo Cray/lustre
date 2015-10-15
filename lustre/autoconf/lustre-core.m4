@@ -1685,6 +1685,30 @@ smp_mb__before_atomic, [
 ]) # LC_HAVE_SMP_MB__BEFORE_ATOMIC
 
 #
+# LC_HAVE_DQUOT_QC_DQBLK
+#
+# 3.19 has quotactl_ops->[sg]et_dqblk that take struct kqid and qc_dqblk
+# Added in commit 14bf61ffe
+#
+AC_DEFUN([LC_HAVE_DQUOT_QC_DQBLK], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'quotactl_ops.set_dqblk' takes struct qc_dqblk],
+qc_dqblk, [
+	#include <linux/fs.h>
+	#include <linux/quota.h>
+],[
+	((struct quotactl_ops *)0)->set_dqblk(NULL, *((struct kqid*)0), (struct qc_dqblk*)0);
+],[
+	AC_DEFINE(HAVE_DQUOT_QC_DQBLK, 1,
+		[quotactl_ops.set_dqblk takes struct qc_dqblk])
+	AC_DEFINE(HAVE_DQUOT_KQID, 1,
+		[quotactl_ops.set_dqblk takes struct kqid])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_HAVE_DQUOT_QC_DQBLK
+
+#
 # LC_IOV_ITER_RW
 #
 # 4.1 kernel has iov_iter_rw
@@ -1838,6 +1862,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_IOV_ITER_INIT_DIRECTION
 	LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
 	LC_HAVE_SMP_MB__BEFORE_ATOMIC
+
+	# 3.19
+	LC_HAVE_DQUOT_QC_DQBLK
 
 	# 4.1.0
 	LC_IOV_ITER_RW
