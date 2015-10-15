@@ -937,7 +937,8 @@ static int mdd_recovery_complete(const struct lu_env *env,
 	next = &mdd->mdd_child->dd_lu_dev;
 
         /* XXX: orphans handling. */
-        mdd_orphan_cleanup(env, mdd);
+	if (!mdd->mdd_bottom->dd_rdonly)
+		mdd_orphan_cleanup(env, mdd);
         rc = next->ld_ops->ldo_recovery_complete(env, next);
 
         RETURN(rc);

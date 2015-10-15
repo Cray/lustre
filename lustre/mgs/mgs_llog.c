@@ -153,7 +153,9 @@ static inline int name_create(char **newname, char *prefix, char *suffix)
         if (!*newname)
                 return -ENOMEM;
         sprintf(*newname, "%s%s", prefix, suffix);
-        return 0;
+	CDEBUG(D_MGS, "create log name %s\n", *newname);
+
+	return 0;
 }
 
 static inline void name_destroy(char **name)
@@ -472,13 +474,13 @@ int mgs_find_or_make_fsdb(const struct lu_env *env, struct mgs_device *mgs,
 		RETURN(0);
         }
 
-        CDEBUG(D_MGS, "Creating new db\n");
+        CDEBUG(D_MGS, "Creating new db %s\n", name);
 	fsdb = mgs_new_fsdb(env, mgs, name);
 	/* lock fsdb_mutex until the db is loaded from llogs */
 	if (fsdb)
 		mutex_lock(&fsdb->fsdb_mutex);
 	mutex_unlock(&mgs->mgs_mutex);
-        if (!fsdb)
+	if (fsdb == NULL)
 		RETURN(-ENOMEM);
 
 	if (logname_is_barrier(name)) {
@@ -488,8 +490,9 @@ int mgs_find_or_make_fsdb(const struct lu_env *env, struct mgs_device *mgs,
 		RETURN(0);
 	}
 
-	if (!test_bit(FSDB_MGS_SELF, &fsdb->fsdb_flags)) {
-                /* populate the db from the client llog */
+	if (!test_bit(FSDB_MGS_SELF, &fsdb->fsdb_flags) &&
+	    strcmp(PARAMS_FILENAME, name) != 0) {
+		/* populate the db from the client llog */
 		rc = mgs_get_fsdb_from_llog(env, mgs, fsdb);
                 if (rc) {
                         CERROR("Can't get db from client log %d\n", rc);

@@ -151,6 +151,9 @@ osd_oi_create(const struct lu_env *env, struct osd_device *o,
 	if (rc == 0)
 		return -EEXIST;
 
+	if (o->od_dt_dev.dd_rdonly)
+		return -EROFS;
+
 	/* create fid-to-dnode index */
 	tx = dmu_tx_create(o->od_os);
 	if (tx == NULL)
@@ -623,12 +626,17 @@ static void osd_ost_seq_init(const struct lu_env *env, struct osd_device *osd)
 	INIT_LIST_HEAD(&osl->osl_seq_list);
 	rwlock_init(&osl->osl_seq_list_lock);
 	sema_init(&osl->osl_seq_init_sem, 1);
+	osd->od_seq_init = 1;
 }
 
 static void osd_ost_seq_fini(const struct lu_env *env, struct osd_device *osd)
 {
 	struct osd_seq_list	*osl = &osd->od_seq_list;
 	struct osd_seq		*osd_seq, *tmp;
+	ENTRY;
+
+	if (!osd->od_seq_init)
+		RETURN_EXIT;
 
 	write_lock(&osl->osl_seq_list_lock);
 	list_for_each_entry_safe(osd_seq, tmp, &osl->osl_seq_list,
@@ -640,7 +648,7 @@ static void osd_ost_seq_fini(const struct lu_env *env, struct osd_device *osd)
 	}
 	write_unlock(&osl->osl_seq_list_lock);
 
-	return;
+	EXIT;
 }
 
 /**
@@ -717,6 +725,9 @@ int osd_convert_root_to_new_seq(const struct lu_env *env,
 	/* already right one? */
 	if (fid_seq(&lze->lzd_fid) == FID_SEQ_ROOT)
 		return 0;
+
+	if (o->od_dt_dev.dd_rdonly)
+		return -EROFS;
 
 	tx = dmu_tx_create(o->od_os);
 	if (tx == NULL)

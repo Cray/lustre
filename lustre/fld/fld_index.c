@@ -416,7 +416,7 @@ int fld_index_init(const struct lu_env *env, struct lu_server_fld *fld,
 	else
 		rc = 0;
 
-	if (index == 0 && type == LU_SEQ_RANGE_MDT) {
+	if (index == 0 && type == LU_SEQ_RANGE_MDT && !dt->dd_rdonly) {
 		/* Note: fld_insert_entry will detect whether these
 		 * special entries already exist inside FLDB */
 		mutex_lock(&fld->lsf_lock);

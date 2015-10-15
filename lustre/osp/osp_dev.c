@@ -1037,9 +1037,11 @@ static int osp_init0(const struct lu_env *env, struct osp_device *osp,
 	if (!osp->opd_connect_mdt) {
 		/* Initialize last id from the storage - will be
 		 * used in orphan cleanup. */
-		rc = osp_last_used_init(env, osp);
-		if (rc)
-			GOTO(out_fid, rc);
+		if (!osp->opd_storage->dd_rdonly) {
+			rc = osp_last_used_init(env, osp);
+			if (rc != 0)
+				GOTO(out_fid, rc);
+		}
 
 
 		/* Initialize precreation thread, it handles new

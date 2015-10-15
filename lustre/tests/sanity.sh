@@ -13741,6 +13741,53 @@ test_401c() {
 }
 run_test 401c "rescan barrier bitmap"
 
+saved_MDS_MOUNT_OPTS=$MDS_MOUNT_OPTS
+saved_OST_MOUNT_OPTS=$OST_MOUNT_OPTS
+
+cleanup_402() {
+	trap 0
+
+	stopall
+	MDS_MOUNT_OPTS=$saved_MDS_MOUNT_OPTS
+	OST_MOUNT_OPTS=$saved_OST_MOUNT_OPTS
+	setupall
+}
+
+test_402() {
+	mkdir $DIR/$tdir || error "(1) fail to mkdir"
+
+	cp $LUSTRE/tests/test-framework.sh $DIR/$tdir/ ||
+		error "(2) Fail to copy"
+
+	trap cleanup_402 EXIT
+
+	stopall
+
+	MDS_MOUNT_OPTS=$(csa_add "$MDS_MOUNT_OPTS" -o rdonly_dev)
+	OSS_MOUNT_OPTS=$(csa_add "$OST_MOUNT_OPTS" -o rdonly_dev)
+
+	echo "Mount the server as read only"
+	setupall server_only || error "(3) Fail to start servers"
+
+	echo "Mount client without ro should fail"
+	mount_client $MOUNT &&
+		error "(4) Mount client without 'ro' should fail"
+
+	echo "Mount client with ro should succeed"
+	mount_client $MOUNT ro ||
+		error "(5) Mount client with 'ro' should succeed"
+
+	echo "Modify should be refused"
+	touch $DIR/$tdir/guard && error "(6) Touch should fail under ro mode"
+
+	echo "Read should be allowed"
+	diff $LUSTRE/tests/test-framework.sh $DIR/$tdir/test-framework.sh ||
+		error "(7) Read should succeed under ro mode"
+
+	cleanup_402
+}
+run_test 402 "simulate readonly device"
+
 #
 # tests that do cleanup/setup should be run at the end
 #

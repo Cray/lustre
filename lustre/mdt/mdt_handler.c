@@ -3003,6 +3003,11 @@ static int mdt_tgt_connect(struct tgt_session_info *tsi)
 	if (rc != 0)
 		RETURN(rc);
 
+	if (mdt_exp2dev(tsi->tsi_exp)->mdt_bottom->dd_rdonly &&
+	    !(exp_connect_flags(tsi->tsi_exp) & OBD_CONNECT_MDS_MDS) &&
+	    !(exp_connect_flags(tsi->tsi_exp) & OBD_CONNECT_RDONLY))
+		GOTO(err, rc = -EACCES);
+
 	rc = mdt_init_idmap(tsi);
 	if (rc != 0)
 		GOTO(err, rc);
@@ -3574,8 +3579,7 @@ static int mdt_intent_opc(long itopc, struct mdt_thread_info *info,
 	if (rc < 0)
 		RETURN(rc);
 
-	if (flv->it_flags & MUTABOR &&
-	    exp_connect_flags(req->rq_export) & OBD_CONNECT_RDONLY)
+	if (flv->it_flags & MUTABOR && mdt_rdonly(req->rq_export))
 		RETURN(-EROFS);
 
 	if (flv->it_act != NULL) {
@@ -5879,18 +5883,21 @@ static int mdt_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 static int mdt_postrecov(const struct lu_env *env, struct mdt_device *mdt)
 {
 	struct lu_device *ld = md2lu_dev(mdt->mdt_child);
-	struct lfsck_start_param lsp;
 	int rc;
 	ENTRY;
 
-	lsp.lsp_start = NULL;
-	lsp.lsp_index_valid = 0;
-	rc = mdt->mdt_child->md_ops->mdo_iocontrol(env, mdt->mdt_child,
-						   OBD_IOC_START_LFSCK,
-						   0, &lsp);
-	if (rc != 0 && rc != -EALREADY)
-		CWARN("%s: auto trigger paused LFSCK failed: rc = %d\n",
-		      mdt_obd_name(mdt), rc);
+	if (!mdt->mdt_bottom->dd_rdonly) {
+		struct lfsck_start_param lsp;
+
+		lsp.lsp_start = NULL;
+		lsp.lsp_index_valid = 0;
+		rc = mdt->mdt_child->md_ops->mdo_iocontrol(env, mdt->mdt_child,
+							   OBD_IOC_START_LFSCK,
+							   0, &lsp);
+		if (rc != 0 && rc != -EALREADY)
+			CWARN("%s: auto trigger paused LFSCK failed: rc = %d\n",
+			      mdt_obd_name(mdt), rc);
+	}
 
 	rc = ld->ld_ops->ldo_recovery_complete(env, ld);
 	RETURN(rc);

@@ -1108,6 +1108,9 @@ static int lmd_parse(char *options, struct lustre_mount_data *lmd)
 		} else if (strncmp(s1, "noscrub", 7) == 0) {
 			lmd->lmd_flags |= LMD_FLG_NOSCRUB;
 			clear++;
+		} else if (strncmp(s1, "rdonly_dev", 10) == 0) {
+			lmd->lmd_flags |= LMD_FLG_DEV_RDONLY;
+			clear++;
 		} else if (strncmp(s1, PARAM_MGSNODE,
 				   sizeof(PARAM_MGSNODE) - 1) == 0) {
 			s2 = s1 + sizeof(PARAM_MGSNODE) - 1;

@@ -418,6 +418,8 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 				  OBD_CONNECT_LAYOUTLOCK |
 				  OBD_CONNECT_PINGLESS | OBD_CONNECT_LFSCK;
 
+	if (sb->s_flags & MS_RDONLY)
+		data->ocd_connect_flags |= OBD_CONNECT_RDONLY;
         if (sbi->ll_flags & LL_SBI_SOM_PREVIEW)
                 data->ocd_connect_flags |= OBD_CONNECT_SOM;
 

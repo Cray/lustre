@@ -310,9 +310,6 @@ int tgt_hpreq_handler(struct ptlrpc_request *req);
 
 /* target/tgt_main.c */
 void tgt_boot_epoch_update(struct lu_target *lut);
-int tgt_last_commit_cb_add(struct thandle *th, struct lu_target *lut,
-			   struct obd_export *exp, __u64 transno);
-int tgt_new_client_cb_add(struct thandle *th, struct obd_export *exp);
 int tgt_init(const struct lu_env *env, struct lu_target *lut,
 	     struct obd_device *obd, struct dt_device *dt,
 	     struct tgt_opc_slice *slice,
@@ -323,17 +320,8 @@ void tgt_client_free(struct obd_export *exp);
 int tgt_client_del(const struct lu_env *env, struct obd_export *exp);
 int tgt_client_add(const struct lu_env *env, struct obd_export *exp, int);
 int tgt_client_new(const struct lu_env *env, struct obd_export *exp);
-int tgt_client_data_read(const struct lu_env *env, struct lu_target *tg,
-			 struct lsd_client_data *lcd, loff_t *off, int index);
-int tgt_client_data_write(const struct lu_env *env, struct lu_target *tg,
-			  struct lsd_client_data *lcd, loff_t *off, struct thandle *th);
-int tgt_server_data_read(const struct lu_env *env, struct lu_target *tg);
-int tgt_server_data_write(const struct lu_env *env, struct lu_target *tg,
-			  struct thandle *th);
 int tgt_server_data_update(const struct lu_env *env, struct lu_target *tg,
 			   int sync);
-int tgt_truncate_last_rcvd(const struct lu_env *env, struct lu_target *tg,
-			   loff_t off);
 
 enum {
 	ESERIOUS = 0x0001000

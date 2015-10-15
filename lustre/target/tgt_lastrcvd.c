@@ -101,8 +101,9 @@ void tgt_client_free(struct obd_export *exp)
 }
 EXPORT_SYMBOL(tgt_client_free);
 
-int tgt_client_data_read(const struct lu_env *env, struct lu_target *tgt,
-			 struct lsd_client_data *lcd, loff_t *off, int index)
+static int tgt_client_data_read(const struct lu_env *env, struct lu_target *tgt,
+				struct lsd_client_data *lcd,
+				loff_t *off, int index)
 {
 	struct tgt_thread_info	*tti = tgt_th_info(env);
 	int			 rc;
@@ -128,9 +129,9 @@ int tgt_client_data_read(const struct lu_env *env, struct lu_target *tgt,
 	return rc;
 }
 
-int tgt_client_data_write(const struct lu_env *env, struct lu_target *tgt,
-			  struct lsd_client_data *lcd, loff_t *off,
-			  struct thandle *th)
+static int tgt_client_data_write(const struct lu_env *env, struct lu_target *tgt,
+				 struct lsd_client_data *lcd, loff_t *off,
+				 struct thandle *th)
 {
 	struct tgt_thread_info *tti = tgt_th_info(env);
 
@@ -143,6 +144,7 @@ int tgt_client_data_write(const struct lu_env *env, struct lu_target *tgt,
 	return dt_record_write(env, tgt->lut_last_rcvd, &tti->tti_buf, off, th);
 }
 
+int tgt_new_client_cb_add(struct thandle *th, struct obd_export *exp);
 /**
  * Update client data in last_rcvd
  */
@@ -156,6 +158,9 @@ static int tgt_client_data_update(const struct lu_env *env,
 	int			 rc = 0;
 
 	ENTRY;
+
+	if (tgt->lut_bottom->dd_rdonly)
+		RETURN(0);
 
 	th = dt_trans_create(env, tgt->lut_bottom);
 	if (IS_ERR(th))
@@ -199,7 +204,7 @@ out:
 	return rc;
 }
 
-int tgt_server_data_read(const struct lu_env *env, struct lu_target *tgt)
+static int tgt_server_data_read(const struct lu_env *env, struct lu_target *tgt)
 {
 	struct tgt_thread_info	*tti = tgt_th_info(env);
 	int			 rc;
@@ -217,8 +222,8 @@ int tgt_server_data_read(const struct lu_env *env, struct lu_target *tgt)
         return rc;
 }
 
-int tgt_server_data_write(const struct lu_env *env, struct lu_target *tgt,
-			  struct thandle *th)
+static int tgt_server_data_write(const struct lu_env *env,
+				 struct lu_target *tgt, struct thandle *th)
 {
 	struct tgt_thread_info	*tti = tgt_th_info(env);
 	int			 rc;
@@ -261,6 +266,9 @@ int tgt_server_data_update(const struct lu_env *env, struct lu_target *tgt,
 	tgt->lut_lsd.lsd_last_transno = tgt->lut_last_transno;
 	spin_unlock(&tgt->lut_translock);
 
+	if (tgt->lut_bottom->dd_rdonly)
+		RETURN(0);
+
 	th = dt_trans_create(env, tgt->lut_bottom);
 	if (IS_ERR(th))
 		RETURN(PTR_ERR(th));
@@ -288,8 +296,8 @@ out:
 }
 EXPORT_SYMBOL(tgt_server_data_update);
 
-int tgt_truncate_last_rcvd(const struct lu_env *env, struct lu_target *tgt,
-			   loff_t size)
+static int tgt_truncate_last_rcvd(const struct lu_env *env,
+				  struct lu_target *tgt, loff_t size)
 {
 	struct dt_object *dt = tgt->lut_last_rcvd;
 	struct thandle	 *th;
@@ -297,6 +305,9 @@ int tgt_truncate_last_rcvd(const struct lu_env *env, struct lu_target *tgt,
 	int		  rc;
 
 	ENTRY;
+
+	if (tgt->lut_bottom->dd_rdonly)
+		RETURN(0);
 
 	attr.la_size = size;
 	attr.la_valid = LA_SIZE;
@@ -431,8 +442,8 @@ static void tgt_cb_last_committed(struct lu_env *env, struct thandle *th,
 	OBD_FREE_PTR(ccb);
 }
 
-int tgt_last_commit_cb_add(struct thandle *th, struct lu_target *tgt,
-			   struct obd_export *exp, __u64 transno)
+static int tgt_last_commit_cb_add(struct thandle *th, struct lu_target *tgt,
+				  struct obd_export *exp, __u64 transno)
 {
 	struct tgt_last_committed_callback	*ccb;
 	struct dt_txn_commit_cb			*dcb;
@@ -884,6 +895,9 @@ static int tgt_clients_data_init(const struct lu_env *env,
 
 	ENTRY;
 
+	if (tgt->lut_bottom->dd_rdonly)
+		RETURN(0);
+
 	CLASSERT(offsetof(struct lsd_client_data, lcd_padding) +
 		 sizeof(lcd->lcd_padding) == LR_CLIENT_SIZE);
 
@@ -1048,12 +1062,23 @@ int tgt_server_data_init(const struct lu_env *env, struct lu_target *tgt)
 			RETURN(rc);
 		}
 		if (strcmp(lsd->lsd_uuid, tgt->lut_obd->obd_uuid.uuid)) {
-			LCONSOLE_ERROR_MSG(0x157, "Trying to start OBD %s "
-					   "using the wrong disk %s. Were the"
-					   " /dev/ assignments rearranged?\n",
-					   tgt->lut_obd->obd_uuid.uuid,
-					   lsd->lsd_uuid);
-			RETURN(-EINVAL);
+			if (tgt->lut_bottom->dd_rdonly) {
+				/* Such difference may be caused by mounting
+				 * up snapshot with new fsname under rd_only
+				 * mode. But even if it was NOT, it will not
+				 * damage the system because of "rd_only". */
+				memcpy(lsd->lsd_uuid,
+				       tgt->lut_obd->obd_uuid.uuid,
+				       sizeof(lsd->lsd_uuid));
+			} else {
+				LCONSOLE_ERROR_MSG(0x157, "Trying to start "
+						   "OBD %s using the wrong "
+						   "disk %s. Were the /dev/ "
+						   "assignments rearranged?\n",
+						   tgt->lut_obd->obd_uuid.uuid,
+						   lsd->lsd_uuid);
+				RETURN(-EINVAL);
+			}
 		}
 
 		if (lsd->lsd_osd_index != index) {
@@ -1168,6 +1193,14 @@ int tgt_txn_start_cb(const struct lu_env *env, struct thandle *th,
 	struct tgt_session_info	*tsi;
 	struct tgt_thread_info	*tti = tgt_th_info(env);
 	int			 rc;
+
+	/* For readonly case, the caller should have got failure
+	 * when start the transaction. If the logic comes here,
+	 * there must be something wrong. */
+	if (unlikely(tgt->lut_bottom->dd_rdonly)) {
+		dump_stack();
+		LBUG();
+	}
 
 	/* if there is no session, then this transaction is not result of
 	 * request processing but some local operation */

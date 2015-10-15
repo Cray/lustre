@@ -1913,7 +1913,7 @@ static int mgc_process_cfg_log(struct obd_device *mgc,
 	    cli->cl_mgc_configs_dir != NULL &&
 	    lu2dt_dev(cli->cl_mgc_configs_dir->do_lu.lo_dev) ==
 	    lsi->lsi_dt_dev) {
-		if (!local_only)
+		if (!local_only && !lsi->lsi_dt_dev->dd_rdonly)
 			/* Only try to copy log if we have the lock. */
 			rc = mgc_llog_local_copy(env, mgc, ctxt, lctxt,
 						 cld->cld_logname);
@@ -1951,6 +1951,20 @@ static int mgc_process_cfg_log(struct obd_device *mgc,
 	 * be updated here. */
 	rc = class_config_parse_llog(env, ctxt, cld->cld_logname,
 				     &cld->cld_cfg);
+	if (rc == -ENOENT && lsi != NULL && IS_SERVER(lsi) && !IS_MGS(lsi) &&
+	    lsi->lsi_dt_dev->dd_rdonly) {
+		struct llog_ctxt *rctxt;
+
+		/* Under readonly mode, we may have no local copy, so
+		 * try to use remote llog directly. */
+		rctxt = llog_get_context(mgc, LLOG_CONFIG_REPL_CTXT);
+		LASSERT(rctxt != NULL);
+
+		rc = class_config_parse_llog(env, rctxt, cld->cld_logname,
+					     &cld->cld_cfg);
+		llog_ctxt_put(rctxt);
+	}
+
 	EXIT;
 
 out_pop:

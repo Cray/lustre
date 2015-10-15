@@ -2179,6 +2179,10 @@ static void target_recovery_expired(unsigned long castmeharder)
 void target_recovery_init(struct lu_target *lut, svc_handler_t handler)
 {
         struct obd_device *obd = lut->lut_obd;
+
+	if (lut->lut_bottom->dd_rdonly)
+		return;
+
         if (obd->obd_max_recoverable_clients == 0) {
                 /** Update server last boot epoch */
                 tgt_boot_epoch_update(lut);

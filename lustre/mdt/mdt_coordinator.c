@@ -1931,7 +1931,10 @@ mdt_hsm_cdt_control_seq_write(struct file *file, const char __user *buffer,
 			cdt->cdt_state = CDT_RUNNING;
 			mdt_hsm_cdt_wakeup(mdt);
 		} else {
-			rc = mdt_hsm_cdt_start(mdt);
+			if (mdt->mdt_bottom->dd_rdonly)
+				rc = -EROFS;
+			else
+				rc = mdt_hsm_cdt_start(mdt);
 		}
 	} else if (strcmp(kernbuf, CDT_STOP_CMD) == 0) {
 		if ((cdt->cdt_state == CDT_STOPPING) ||
