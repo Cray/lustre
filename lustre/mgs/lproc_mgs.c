@@ -186,13 +186,15 @@ int lproc_mgs_add_live(struct mgs_device *mgs, struct fs_db *fsdb)
 		return 0;
 	rc = lprocfs_seq_create(mgs->mgs_proc_live, fsdb->fsdb_name, 0644,
 				&mgs_live_fops, fsdb);
+	if (rc == 0)
+		fsdb->fsdb_has_lproc_entry = 1;
 
-	return 0;
+	return rc;
 }
 
 int lproc_mgs_del_live(struct mgs_device *mgs, struct fs_db *fsdb)
 {
-	if (!mgs->mgs_proc_live)
+	if (!mgs->mgs_proc_live || !fsdb->fsdb_has_lproc_entry)
 		return 0;
 
 	/* didn't create the proc file for MGSSELF_NAME */

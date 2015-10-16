@@ -484,7 +484,7 @@ check_obd_connect_data(void)
 	CHECK_DEFINE_64X(OBD_CONNECT_TRUNCLOCK);
 	CHECK_DEFINE_64X(OBD_CONNECT_TRANSNO);
 	CHECK_DEFINE_64X(OBD_CONNECT_IBITS);
-	CHECK_DEFINE_64X(OBD_CONNECT_JOIN);
+	CHECK_DEFINE_64X(OBD_CONNECT_BARRIER);
 	CHECK_DEFINE_64X(OBD_CONNECT_ATTRFID);
 	CHECK_DEFINE_64X(OBD_CONNECT_NODEVOH);
 	CHECK_DEFINE_64X(OBD_CONNECT_RMT_CLIENT);
@@ -2171,6 +2171,36 @@ static void check_lfsck_reply(void)
 	CHECK_MEMBER(lfsck_reply, lr_padding_2);
 }
 
+static void check_barrier_request(void)
+{
+	BLANK_LINE();
+	CHECK_STRUCT(barrier_request);
+	CHECK_MEMBER(barrier_request, br_name);
+	CHECK_MEMBER(barrier_request, br_event);
+	CHECK_MEMBER(barrier_request, br_gen);
+	CHECK_MEMBER(barrier_request, br_index);
+	CHECK_MEMBER(barrier_request, br_padding_1);
+	CHECK_MEMBER(barrier_request, br_padding_2);
+
+	CHECK_VALUE(BNE_READ);
+	CHECK_VALUE(BNE_FREEZE_DONE_P1);
+	CHECK_VALUE(BNE_FREEZE_DONE_P2);
+	CHECK_VALUE(BNE_FREEZE_FAILED);
+	CHECK_VALUE(BNE_THAW_DONE);
+	CHECK_VALUE(BNE_EXPIRED);
+}
+
+static void check_barrier_reply(void)
+{
+	BLANK_LINE();
+	CHECK_STRUCT(barrier_reply);
+	CHECK_MEMBER(barrier_reply, br_status);
+	CHECK_MEMBER(barrier_reply, br_gen);
+	CHECK_MEMBER(barrier_reply, br_timeout);
+	CHECK_MEMBER(barrier_reply, br_padding_1);
+	CHECK_MEMBER(barrier_reply, br_padding_2);
+}
+
 static void system_string(char *cmdline, char *str, int len)
 {
 	int   fds[2];
@@ -2442,6 +2472,9 @@ main(int argc, char **argv)
 	CHECK_VALUE(MGS_TARGET_REG);
 	CHECK_VALUE(MGS_TARGET_DEL);
 	CHECK_VALUE(MGS_SET_INFO);
+	CHECK_VALUE(MGS_CONFIG_READ);
+	CHECK_VALUE(MGS_BARRIER_READ);
+	CHECK_VALUE(MGS_BARRIER_NOTIFY);
 	CHECK_VALUE(MGS_LAST_OPC);
 
 	CHECK_VALUE(SEC_CTX_INIT);
@@ -2572,6 +2605,9 @@ main(int argc, char **argv)
 
 	check_lfsck_request();
 	check_lfsck_reply();
+
+	check_barrier_request();
+	check_barrier_reply();
 
 	printf("}\n\n");
 

@@ -121,16 +121,22 @@ struct mgs_tgt_srpc_conf {
 #define FSDB_REVOKING_PARAMS	(6)  /* DLM lock is being revoked */
 
 struct fs_db {
-	char		  fsdb_name[9];
+	char		  fsdb_name[20];
 	struct list_head  fsdb_list;		/* list of databases */
 	struct mutex	  fsdb_mutex;
-	void		 *fsdb_ost_index_map;	/* bitmap of used indicies */
+	union {
+		void	 *fsdb_ost_index_map;	/* bitmap of used indicies */
+		void	 *fsdb_barrier_map;	/* bitmap of barrier */
+	};
 	void		 *fsdb_mdt_index_map;	/* bitmap of used indicies */
 	int		  fsdb_mdt_count;
+	__u32		  fsdb_gen;
 	char		 *fsdb_clilov;	/* COMPAT_146 client lov name */
 	char		 *fsdb_clilmv;
 	unsigned long	  fsdb_flags;
-	__u32		  fsdb_gen;
+	__u32		  fsdb_barrier_status;
+	__u32		  fsdb_barrier_timeout;
+	__u64		  fsdb_barrier_latest_create_time;
 
         /* in-memory copy of the srpc rules, guarded by fsdb_lock */
         struct sptlrpc_rule_set   fsdb_srpc_gen;
@@ -151,11 +157,13 @@ struct fs_db {
 	cfs_time_t            fsdb_notify_start;
 	atomic_t	      fsdb_notify_phase;
 	volatile unsigned int fsdb_notify_async:1,
-                             fsdb_notify_stop:1;
-        /* statistic data */
-        unsigned int         fsdb_notify_total;
-        unsigned int         fsdb_notify_max;
-        unsigned int         fsdb_notify_count;
+			      fsdb_notify_stop:1,
+			      fsdb_has_lproc_entry:1,
+			      fsdb_barrier_disabled:1;
+	/* statistic data */
+	unsigned int	fsdb_notify_total;
+	unsigned int	fsdb_notify_max;
+	unsigned int	fsdb_notify_count;
 };
 
 struct mgs_device {
@@ -176,6 +184,7 @@ struct mgs_device {
 	struct local_oid_storage	*mgs_los;
 	struct mutex			 mgs_mutex;
 	struct mutex			 mgs_health_mutex;
+	struct rw_semaphore		 mgs_barrier_rwsem;
 	struct lu_target		 mgs_lut;
 };
 
@@ -222,11 +231,15 @@ int mgs_nodemap_cmd(const struct lu_env *env, struct mgs_device *mgs,
 		    enum lcfg_command_type cmd, const char *nodemap_name,
 		    char *param);
 
+/* mgs_barrier.c*/
+int mgs_barrier_read(struct tgt_session_info *tsi);
+int mgs_barrier_notify(struct tgt_session_info *tsi);
+
 /* mgs_handler.c */
 int  mgs_get_lock(struct obd_device *obd, struct ldlm_res_id *res,
                   struct lustre_handle *lockh);
 int  mgs_put_lock(struct lustre_handle *lockh);
-void mgs_revoke_lock(struct mgs_device *mgs, struct fs_db *fsdb, int type);
+int mgs_revoke_lock(struct mgs_device *mgs, struct fs_db *fsdb, int type);
 
 /* mgs_nids.c */
 int  mgs_ir_update(const struct lu_env *env, struct mgs_device *mgs,

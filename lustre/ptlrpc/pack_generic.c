@@ -2613,3 +2613,23 @@ void lustre_swab_orphan_ent(struct lu_orphan_ent *ent)
 	__swab32s(&ent->loe_rec.lor_gid);
 }
 EXPORT_SYMBOL(lustre_swab_orphan_ent);
+
+void lustre_swab_barrier_request(struct barrier_request *br)
+{
+	__swab32s(&br->br_event);
+	__swab32s(&br->br_gen);
+	__swab32s(&br->br_index);
+	CLASSERT(offsetof(typeof(*br), br_padding_1) != 0);
+	CLASSERT(offsetof(typeof(*br), br_padding_2) != 0);
+}
+EXPORT_SYMBOL(lustre_swab_barrier_request);
+
+void lustre_swab_barrier_reply(struct barrier_reply *br)
+{
+	__swab32s(&br->br_status);
+	__swab32s(&br->br_gen);
+	__swab32s(&br->br_timeout);
+	CLASSERT(offsetof(typeof(*br), br_padding_1) != 0);
+	CLASSERT(offsetof(typeof(*br), br_padding_2) != 0);
+}
+EXPORT_SYMBOL(lustre_swab_barrier_reply);

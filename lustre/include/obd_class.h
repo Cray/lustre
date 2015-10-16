@@ -170,28 +170,44 @@ enum {
 	CONFIG_T_SPTLRPC = 1,
 	CONFIG_T_RECOVER = 2,
 	CONFIG_T_PARAMS  = 3,
-	CONFIG_T_MAX     = 4
+	CONFIG_T_BARRIER = 4,
+	CONFIG_T_MAX     = 5
 };
 
-#define PARAMS_FILENAME	"params"
-#define LCTL_UPCALL	"lctl"
+#define PARAMS_FILENAME 	"params"
+#define BARRIER_FILENAME	"barrier"
+#define LCTL_UPCALL		"lctl"
+
+static inline bool logname_is_barrier(const char *logname)
+{
+	char *ptr;
+
+	/* logname for barrier is "fsname.barrier" */
+	ptr = strstr(logname, BARRIER_FILENAME);
+	if (ptr != NULL && (ptr - logname) >= 2 &&
+	    *(ptr - 1) == '.' && *(ptr + 7) == '\0')
+		return true;
+
+	return false;
+}
 
 /* list of active configuration logs  */
 struct config_llog_data {
-        struct ldlm_res_id          cld_resid;
-        struct config_llog_instance cld_cfg;
+	struct ldlm_res_id	    cld_resid;
+	struct config_llog_instance cld_cfg;
 	struct list_head	    cld_list_chain;
 	atomic_t		    cld_refcount;
 	struct config_llog_data    *cld_sptlrpc;/* depended sptlrpc log */
 	struct config_llog_data	   *cld_params;	/* common parameters log */
 	struct config_llog_data    *cld_recover;/* imperative recover log */
-        struct obd_export          *cld_mgcexp;
+	struct config_llog_data    *cld_barrier;/* barrier log (for MDT only) */
+	struct obd_export	   *cld_mgcexp;
 	struct mutex		    cld_lock;
-        int                         cld_type;
-        unsigned int                cld_stopping:1, /* we were told to stop
-                                                     * watching */
-                                    cld_lostlock:1; /* lock not requeued */
-        char                        cld_logname[0];
+	int			    cld_type;
+	unsigned int		    cld_stopping:1, /* we were told to stop
+						     * watching */
+				    cld_lostlock:1; /* lock not requeued */
+	char			    cld_logname[0];
 };
 
 struct lustre_profile {

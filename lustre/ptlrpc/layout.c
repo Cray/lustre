@@ -699,6 +699,16 @@ static const struct req_msg_field *obd_lfsck_reply[] = {
 	&RMF_LFSCK_REPLY,
 };
 
+static const struct req_msg_field *obd_barrier_request[] = {
+	&RMF_PTLRPC_BODY,
+	&RMF_BARRIER_REQUEST,
+};
+
+static const struct req_msg_field *obd_barrier_reply[] = {
+	&RMF_PTLRPC_BODY,
+	&RMF_BARRIER_REPLY,
+};
+
 static struct req_format *req_formats[] = {
         &RQF_OBD_PING,
         &RQF_OBD_SET_INFO,
@@ -794,6 +804,8 @@ static struct req_format *req_formats[] = {
 	&RQF_CONNECT,
 	&RQF_LFSCK_NOTIFY,
 	&RQF_LFSCK_QUERY,
+	&RQF_MGS_BARRIER_READ,
+	&RQF_MGS_BARRIER_NOTIFY,
 };
 
 struct req_msg_field {
@@ -1204,6 +1216,16 @@ struct req_msg_field RMF_LFSCK_REPLY =
 	DEFINE_MSGF("lfsck_reply", 0, sizeof(struct lfsck_reply),
 		    lustre_swab_lfsck_reply, NULL);
 EXPORT_SYMBOL(RMF_LFSCK_REPLY);
+
+struct req_msg_field RMF_BARRIER_REQUEST =
+	DEFINE_MSGF("barrier_request", 0, sizeof(struct barrier_request),
+		    lustre_swab_barrier_request, NULL);
+EXPORT_SYMBOL(RMF_BARRIER_REQUEST);
+
+struct req_msg_field RMF_BARRIER_REPLY =
+	DEFINE_MSGF("barrier_reply", 0, sizeof(struct barrier_reply),
+		    lustre_swab_barrier_reply, NULL);
+EXPORT_SYMBOL(RMF_BARRIER_REPLY);
 
 /*
  * Request formats.
@@ -1664,6 +1686,15 @@ EXPORT_SYMBOL(RQF_LFSCK_NOTIFY);
 struct req_format RQF_LFSCK_QUERY =
 	DEFINE_REQ_FMT0("LFSCK_QUERY", obd_lfsck_request, obd_lfsck_reply);
 EXPORT_SYMBOL(RQF_LFSCK_QUERY);
+
+struct req_format RQF_MGS_BARRIER_READ =
+	DEFINE_REQ_FMT0("MGS_BARRIER_READ", obd_barrier_request,
+			obd_barrier_reply);
+EXPORT_SYMBOL(RQF_MGS_BARRIER_READ);
+
+struct req_format RQF_MGS_BARRIER_NOTIFY =
+	DEFINE_REQ_FMT0("MGS_BARRIER_NOTIFY", obd_barrier_request, empty);
+EXPORT_SYMBOL(RQF_MGS_BARRIER_NOTIFY);
 
 #if !defined(__REQ_LAYOUT_USER__)
 

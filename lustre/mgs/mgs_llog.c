@@ -346,29 +346,42 @@ static struct fs_db *mgs_new_fsdb(const struct lu_env *env,
 	set_bit(FSDB_UDESC, &fsdb->fsdb_flags);
 	fsdb->fsdb_gen = 1;
 
-        if (strcmp(fsname, MGSSELF_NAME) == 0) {
+	if (strcmp(fsname, MGSSELF_NAME) == 0) {
 		set_bit(FSDB_MGS_SELF, &fsdb->fsdb_flags);
 		fsdb->fsdb_mgs = mgs;
-        } else {
-                OBD_ALLOC(fsdb->fsdb_ost_index_map, INDEX_MAP_SIZE);
-                OBD_ALLOC(fsdb->fsdb_mdt_index_map, INDEX_MAP_SIZE);
-                if (!fsdb->fsdb_ost_index_map || !fsdb->fsdb_mdt_index_map) {
-                        CERROR("No memory for index maps\n");
+	} else {
+		OBD_ALLOC(fsdb->fsdb_mdt_index_map, INDEX_MAP_SIZE);
+		if (fsdb->fsdb_mdt_index_map == NULL) {
+			CERROR("No memory for MDT index maps\n");
+
 			GOTO(err, rc = -ENOMEM);
-                }
+		}
 
-                rc = name_create(&fsdb->fsdb_clilov, fsname, "-clilov");
-                if (rc)
-                        GOTO(err, rc);
-                rc = name_create(&fsdb->fsdb_clilmv, fsname, "-clilmv");
-                if (rc)
-                        GOTO(err, rc);
+		OBD_ALLOC(fsdb->fsdb_ost_index_map, INDEX_MAP_SIZE);
+		if (fsdb->fsdb_ost_index_map == NULL) {
+			CERROR("No memory for OST index maps\n");
 
-                /* initialise data for NID table */
-		mgs_ir_init_fs(env, mgs, fsdb);
+			GOTO(err, rc = -ENOMEM);
+		}
 
-		lproc_mgs_add_live(mgs, fsdb);
-        }
+		INIT_LIST_HEAD(&fsdb->fsdb_clients);
+		atomic_set(&fsdb->fsdb_notify_phase, 0);
+		init_waitqueue_head(&fsdb->fsdb_notify_waitq);
+		init_completion(&fsdb->fsdb_notify_comp);
+
+		if (!logname_is_barrier(fsname)) {
+			rc = name_create(&fsdb->fsdb_clilov, fsname, "-clilov");
+			if (rc != 0)
+				GOTO(err, rc);
+			rc = name_create(&fsdb->fsdb_clilmv, fsname, "-clilmv");
+			if (rc != 0)
+				GOTO(err, rc);
+
+			/* initialise data for NID table */
+			mgs_ir_init_fs(env, mgs, fsdb);
+			lproc_mgs_add_live(mgs, fsdb);
+		}
+	}
 
 	list_add(&fsdb->fsdb_list, &mgs->mgs_fs_db_list);
 
@@ -391,8 +404,9 @@ static void mgs_free_fsdb(struct mgs_device *mgs, struct fs_db *fsdb)
 	lproc_mgs_del_live(mgs, fsdb);
 	list_del(&fsdb->fsdb_list);
 
-        /* deinitialize fsr */
-	mgs_ir_fini_fs(mgs, fsdb);
+	/* deinitialize fsr */
+	if (fsdb->fsdb_mgs != NULL)
+		mgs_ir_fini_fs(mgs, fsdb);
 
         if (fsdb->fsdb_ost_index_map)
                 OBD_FREE(fsdb->fsdb_ost_index_map, INDEX_MAP_SIZE);
@@ -425,9 +439,8 @@ int mgs_cleanup_fsdb_list(struct mgs_device *mgs)
 	return 0;
 }
 
-int mgs_find_or_make_fsdb(const struct lu_env *env,
-			  struct mgs_device *mgs, char *name,
-                          struct fs_db **dbh)
+int mgs_find_or_make_fsdb(const struct lu_env *env, struct mgs_device *mgs,
+			  char *name, struct fs_db **dbh)
 {
         struct fs_db *fsdb;
         int rc = 0;
@@ -449,6 +462,13 @@ int mgs_find_or_make_fsdb(const struct lu_env *env,
 	mutex_unlock(&mgs->mgs_mutex);
         if (!fsdb)
 		RETURN(-ENOMEM);
+
+	if (logname_is_barrier(name)) {
+		mutex_unlock(&fsdb->fsdb_mutex);
+		*dbh = fsdb;
+
+		RETURN(0);
+	}
 
 	if (!test_bit(FSDB_MGS_SELF, &fsdb->fsdb_flags)) {
                 /* populate the db from the client llog */
@@ -3725,8 +3745,9 @@ int mgs_erase_logs(const struct lu_env *env, struct mgs_device *mgs, char *fsnam
 	struct fs_db *fsdb;
 	struct list_head log_list;
 	struct mgs_direntry *dirent, *n;
-	int rc, len = strlen(fsname);
+	char barrier_name[20];
 	char *suffix;
+	int rc, len = strlen(fsname);
 	ENTRY;
 
 	/* Find all the logs in the CONFIGS directory */
@@ -3736,9 +3757,16 @@ int mgs_erase_logs(const struct lu_env *env, struct mgs_device *mgs, char *fsnam
 
 	mutex_lock(&mgs->mgs_mutex);
 
-        /* Delete the fs db */
+	memset(barrier_name, 0, sizeof(barrier_name));
+	snprintf(barrier_name, 19, "%s.%s", fsname, BARRIER_FILENAME);
+	/* Delete the barrier fsdb */
+	fsdb = mgs_find_fsdb(mgs, barrier_name);
+	if (fsdb != NULL)
+		mgs_free_fsdb(mgs, fsdb);
+
+        /* Delete the config fsdb */
 	fsdb = mgs_find_fsdb(mgs, fsname);
-        if (fsdb)
+        if (fsdb != NULL)
 		mgs_free_fsdb(mgs, fsdb);
 
 	mutex_unlock(&mgs->mgs_mutex);
