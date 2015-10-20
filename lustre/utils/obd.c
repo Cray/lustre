@@ -4353,34 +4353,23 @@ int jt_barrier_thaw(int argc, char **argv)
 	return rc;
 }
 
-int jt_barrier_stat(int argc, char **argv)
+int __jt_barrier_stat(int argc, char **argv, struct barrier_ctl *bc)
 {
 	struct obd_ioctl_data data;
 	char rawbuf[MAX_IOC_BUFLEN], *buf = rawbuf;
-	struct barrier_ctl bc;
 	int rc;
-
-	if (argc != 2)
-		return CMD_HELP;
 
 	memset(&data, 0, sizeof(data));
 	rc = data.ioc_dev = get_mgs_device();
 	if (rc < 0)
 		return rc;
 
-	memset(&bc, 0, sizeof(bc));
-	bc.bc_version = BARRIER_VERSION_V1;
-	bc.bc_cmd = BC_STAT;
-
-	if (strlen(argv[1]) > 8) {
-		fprintf(stderr, "fsname name %s is too long. "
-			"It should not exceed 8.\n", argv[1]);
-		return -EINVAL;
-	}
-
-	strcpy(bc.bc_name, argv[1]);
-	data.ioc_inlbuf1 = (char *)&bc;
-	data.ioc_inllen1 = sizeof(bc);
+	memset(bc, 0, sizeof(*bc));
+	bc->bc_version = BARRIER_VERSION_V1;
+	bc->bc_cmd = BC_STAT;
+	strcpy(bc->bc_name, argv[1]);
+	data.ioc_inlbuf1 = (char *)bc;
+	data.ioc_inllen1 = sizeof(*bc);
 	memset(buf, 0, sizeof(rawbuf));
 	rc = obd_ioctl_pack(&data, &buf, sizeof(rawbuf));
 	if (rc != 0) {
@@ -4389,11 +4378,31 @@ int jt_barrier_stat(int argc, char **argv)
 	}
 
 	rc = l_ioctl(OBD_DEV_ID, OBD_IOC_BARRIER, buf);
-	if (rc < 0) {
+	if (rc < 0)
 		fprintf(stderr, "Fail to query barrier for %s: %s\n",
 			argv[1], strerror(errno));
-	} else {
+	else
 		obd_ioctl_unpack(&data, buf, sizeof(rawbuf));
+
+	return rc;
+}
+
+int jt_barrier_stat(int argc, char **argv)
+{
+	struct barrier_ctl bc;
+	int rc;
+
+	if (argc != 2)
+		return CMD_HELP;
+
+	if (strlen(argv[1]) > 8) {
+		fprintf(stderr, "fsname name %s is too long. "
+			"It should not exceed 8.\n", argv[1]);
+		return -EINVAL;
+	}
+
+	rc = __jt_barrier_stat(argc, argv, &bc);
+	if (rc == 0) {
 		printf("The barrier for %s is in '%s'\n",
 		       argv[1], barrier_status2name(bc.bc_status));
 		if (bc.bc_status == BS_FREEZING_P1 ||
