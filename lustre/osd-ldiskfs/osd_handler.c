@@ -358,11 +358,11 @@ static struct inode *osd_iget_check(struct osd_thread_info *info,
 
 check_oi:
 	if (rc != 0) {
-		struct osd_inode_id saved_id = *id;
+		struct osd_inode_id tid;
 
 		LASSERTF(rc == -ESTALE || rc == -ENOENT, "rc = %d\n", rc);
 
-		rc = osd_oi_lookup(info, dev, fid, id, OI_CHECK_FLD);
+		rc = osd_oi_lookup(info, dev, fid, &tid, OI_CHECK_FLD);
 		/* XXX: There are some possible cases:
 		 *	1. rc = 0.
 		 *	   Backup/restore caused the OI invalid.
@@ -381,7 +381,7 @@ check_oi:
 		 *	to distinguish the 1st case from the 2nd case. */
 		if (rc == 0) {
 			if (!IS_ERR(inode) && inode->i_generation != 0 &&
-			    inode->i_generation == id->oii_gen) {
+			    inode->i_generation == tid.oii_gen) {
 				rc = -ENOENT;
 			} else {
 				__u32 level = D_LFSCK;
@@ -392,10 +392,11 @@ check_oi:
 
 				CDEBUG(level, "%s: the OI mapping for the FID "
 				       DFID" become inconsistent, the given ID "
-				       "%u/%u, the ID in OI mapping %u/%u\n",
+				       "%u/%u, the got inode is %lu/%u\n",
 				       osd_name(dev), PFID(fid),
-				       saved_id.oii_ino, saved_id.oii_gen,
-				       id->oii_ino, id->oii_ino);
+				       id->oii_ino, id->oii_gen,
+				       IS_ERR(inode) ? 0 : inode->i_ino,
+				       IS_ERR(inode) ? 0 : inode->i_generation);
 			}
 		}
 	} else {
@@ -673,6 +674,8 @@ trigger:
 					result = -EINPROGRESS;
 				else
 					result = -EREMCHG;
+			} else {
+				result = -EREMCHG;
 			}
 
 			/* We still have chance to get the valid inode: for the
