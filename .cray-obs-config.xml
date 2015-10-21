@@ -191,7 +191,7 @@
                     cray-lustre
                 </name>
                 <exclusion pattern=".*\.spec$"/>
-                <exclusion pattern="^Makefile$"/>
+                <exclusion pattern="^Makefile\.obs$"/>
                 <tarinfo recursive="true">
                     <name>
                         .
@@ -207,7 +207,7 @@
                     <extracted refer="branch"/>
                 </name>
                 <exclusion pattern=".*\.spec$"/>
-                <exclusion pattern="^Makefile$"/>
+                <exclusion pattern="^Makefile\.obs$"/>
                 <tarinfo recursive="true">
                     <name>
                         devel
@@ -238,5 +238,3 @@
         </package>
     </stream>
 </configuration>
-
-
