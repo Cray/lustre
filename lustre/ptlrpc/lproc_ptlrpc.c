@@ -1194,36 +1194,27 @@ void ptlrpc_lprocfs_unregister_obd(struct obd_device *obd)
 }
 EXPORT_SYMBOL(ptlrpc_lprocfs_unregister_obd);
 
-int ptlrpc_lprocfs_send_ping(struct obd_device *obd)
-{
-        struct ptlrpc_request *req;
-        int                    rc;  
-        ENTRY;
-
-        LPROCFS_CLIMP_CHECK(obd);
-        req = ptlrpc_prep_ping(obd->u.cli.cl_import);
-        LPROCFS_CLIMP_EXIT(obd);
-        if (req == NULL)
-                RETURN(-ENOMEM);
-
-        req->rq_send_state = LUSTRE_IMP_FULL;
-
-        rc = ptlrpc_queue_wait(req);
-
-        ptlrpc_req_finished(req);
-        RETURN(rc);
-}
-EXPORT_SYMBOL(ptlrpc_lprocfs_send_ping);
-
 ssize_t
 lprocfs_ping_seq_write(struct file *file, const char *buffer,
 		       size_t count, loff_t *off)
 {
 	struct seq_file		*m = file->private_data;
 	struct obd_device	*obd = m->private;
+	struct ptlrpc_request	*req;
 	int			rc;
 	ENTRY;
-	rc = ptlrpc_lprocfs_send_ping(obd);
+
+	LPROCFS_CLIMP_CHECK(obd);
+	req = ptlrpc_prep_ping(obd->u.cli.cl_import);
+	LPROCFS_CLIMP_EXIT(obd);
+	if (req == NULL)
+		RETURN(-ENOMEM);
+
+	req->rq_send_state = LUSTRE_IMP_FULL;
+
+	rc = ptlrpc_queue_wait(req);
+
+	ptlrpc_req_finished(req);
 	if (rc >= 0)
 		RETURN(count);
 	RETURN(rc);
