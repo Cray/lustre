@@ -163,6 +163,11 @@
             </file>
             <file>
                 <name>
+                    cray-lustre-pinehurst.spec
+                </name>
+            </file>
+            <file>
+                <name>
                     ccs-lustre-apollo.spec
                 </name>
             </file>
