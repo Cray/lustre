@@ -178,6 +178,11 @@
             </file>
             <file>
                 <name>
+                    cray-lustre-dmp_s.spec
+                </name>
+            </file>
+            <file>
+                <name>
                   devel/cray-lustre-api-devel.pc
                 </name>
             </file>
