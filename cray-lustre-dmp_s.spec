@@ -104,6 +104,7 @@ done
 %exclude %dir /lib/modules
 /sbin/mount.lustre
 /etc/udev/rules.d
+/etc/modprobe.d/ko2iblnd.conf
 %{_bindir}
 %exclude %dir %{_bindir}
 %{_includedir}
