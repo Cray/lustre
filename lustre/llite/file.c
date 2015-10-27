@@ -379,7 +379,8 @@ int ll_file_release(struct inode *inode, struct file *file)
         }
 
         if (!S_ISDIR(inode->i_mode)) {
-		lov_read_and_clear_async_rc(lli->lli_clob);
+		if (lli->lli_clob != NULL)
+			lov_read_and_clear_async_rc(lli->lli_clob);
                 lli->lli_async_rc = 0;
         }
 
@@ -2885,9 +2886,11 @@ int ll_flush(struct file *file, fl_owner_t id)
 	 * failed for pages in this mapping. */
 	rc = lli->lli_async_rc;
 	lli->lli_async_rc = 0;
-	err = lov_read_and_clear_async_rc(lli->lli_clob);
-	if (rc == 0)
-		rc = err;
+	if (lli->lli_clob != NULL) {
+		err = lov_read_and_clear_async_rc(lli->lli_clob);
+		if (rc == 0)
+			rc = err;
+	}
 
 	/* The application has been told write failure already.
 	 * Do not report failure again. */
@@ -2995,9 +2998,11 @@ int ll_fsync(struct file *file, struct dentry *dentry, int datasync)
                 lli->lli_async_rc = 0;
                 if (rc == 0)
                         rc = err;
-		err = lov_read_and_clear_async_rc(lli->lli_clob);
-		if (rc == 0)
-			rc = err;
+		if (lli->lli_clob != NULL) {
+			err = lov_read_and_clear_async_rc(lli->lli_clob);
+			if (rc == 0)
+				rc = err;
+		}
         }
 
         oc = ll_mdscapa_get(inode);
