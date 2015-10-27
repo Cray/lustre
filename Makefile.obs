@@ -3,8 +3,8 @@
 # Flavors to build
 ALL_FLAVORS		?= cray_gem_s cray_gem_c cray_gem_s-cos cray_ari_s cray_ari_c cray_ari_s-cos cray_ari_m cray_lnet_gem_s cray_lnet_ari_s cray_lnet_gem_c cray_lnet_ari_c cray_ari_s-rhine cray_lnet_ari_s-rhine cray_ari_c-rhine
 DEFAULT_FLAVORS         ?= $(filter cray_ari_c cray_ari_s-cos,$(ALL_FLAVORS))
-DEFAULT_SLE		?= SLE_11_SP3
-DEFAULT_CENT		?= CENTOS_6_4
+DEFAULT_SLE		?= SLE_12
+DEFAULT_CENT		?= CENTOS_6_5
 
 # Set non default flavors to build based on any command line arguments
 ifneq (,$(MAKECMDGOALS))
@@ -40,8 +40,7 @@ LNET_ARI_C_SPEC         ?= cray-lustre-lnet-ari_c.spec
 LNET_GEM_C_SPEC         ?= cray-lustre-lnet-gem_c.spec
 
 # variables for builds
-LUS_BRANCH              ?= Cray-master
-LUS_RHINE_BRANCH        ?= Cray-master-rhine
+LUS_BRANCH              ?= Cray-b2_7_fe
 RPMDIR                  ?= $(PWD)/rpms_$(DEFAULT_SLE)
 OBS_DIRS                := $(RPMDIR)
 export OSC_BUILD_ROOT
@@ -120,7 +119,7 @@ cray_ari_s-rpms: $(ARI_S_RPM_SPEC) obs_variables
 	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_BRANCH) cray-lustre $<
 
 cray_ari_s-rhine-rpms: $(ARI_S_RHINE_RPM_SPEC) obs_variables 
-	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_RHINE_BRANCH) cray-lustre $<
+	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_BRANCH) cray-lustre $<
 
 cray_ari_s-cos-rpms: $(ARI_S_COS_RPM_SPEC) obs_variables 
 	obs build $(CENT_OBS_BUILD_EXTRA) --repo $(DEFAULT_CENT) cray-lustre:$(LUS_BRANCH) cray-lustre $<
@@ -135,7 +134,7 @@ cray_ari_c-rpms: $(ARI_C_RPM_SPEC) obs_variables
 	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_BRANCH) cray-lustre $<
 
 cray_ari_c-rhine-rpms: $(ARI_C_RHINE_RPM_SPEC) obs_variables 
-	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_RHINE_BRANCH) cray-lustre $<
+	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_BRANCH) cray-lustre $<
 
 cray_ari_m-rpms: $(ARI_M_RPM_SPEC) obs_variables 
 	obs build cray-lustre:$(LUS_BRANCH) cray-lustre $<
@@ -144,7 +143,7 @@ cray_lnet_ari_s-rpms: $(LNET_ARI_S_SPEC) obs_variables
 	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_BRANCH) cray-lustre $<
 
 cray_lnet_ari_s-rhine-rpms: $(LNET_ARI_S_RHINE_SPEC) obs_variables 
-	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_RHINE_BRANCH) cray-lustre $<
+	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_BRANCH) cray-lustre $<
 
 cray_lnet_gem_s-rpms: $(LNET_GEM_S_SPEC) obs_variables 
 	obs build $(OBS_BUILD_EXTRA) --repo $(DEFAULT_SLE) cray-lustre:$(LUS_BRANCH) cray-lustre $<
