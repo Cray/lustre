@@ -2856,9 +2856,11 @@ int ll_fsync(struct file *file, struct dentry *dentry, int datasync)
 		lli->lli_async_rc = 0;
 		if (rc == 0)
 			rc = err;
-		err = lov_read_and_clear_async_rc(lli->lli_clob);
-		if (rc == 0)
-			rc = err;
+		if (lli->lli_clob != NULL) {
+			err = lov_read_and_clear_async_rc(lli->lli_clob);
+			if (rc == 0)
+				rc = err;
+		}
 	}
 
 	oc = ll_mdscapa_get(inode);
