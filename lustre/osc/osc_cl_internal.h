@@ -62,10 +62,12 @@ struct osc_extent;
  * State maintained by osc layer for each IO context.
  */
 struct osc_io {
-        /** super class */
-        struct cl_io_slice oi_cl;
-        /** true if this io is lockless. */
-        int                oi_lockless;
+	/** super class */
+	struct cl_io_slice oi_cl;
+	/** true if this io is lockless. */
+	int                oi_lockless:1,
+	/** true if this io is counted as active IO */
+			   oi_is_active:1;
 	/** how many LRU pages are reserved for this IO */
 	unsigned long	   oi_lru_reserved;
 
@@ -177,13 +179,13 @@ struct osc_object {
 	/**
 	 * Radix tree for caching pages
 	 */
-	struct radix_tree_root	oo_tree;
 	spinlock_t		oo_tree_lock;
+	struct radix_tree_root	oo_tree;
 	unsigned long		oo_npages;
 
 	/* Protect osc_lock this osc_object has */
-	spinlock_t		oo_ol_spin;
 	struct list_head	oo_ol_list;
+	spinlock_t		oo_ol_spin;
 
 	/** number of active IOs of this object */
 	atomic_t		oo_nr_ios;
