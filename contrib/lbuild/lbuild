@@ -435,6 +435,7 @@ compare_version () {
             return 1
         fi
     done
+    return 1
 }
 
 uniqify() {
@@ -593,12 +594,8 @@ download_ofed() {
 	local location
 	local file
 
-	if [ -z "$OFED_VERSION" -o "$OFED_VERSION" = "inkernel" ]; then
-	return 0
-	fi
-
 	#if a src tarball has been given in the command line, we use it
-	#The format of the tarball must be OFED-${OFED_VERSION}.tgz
+	#The format of the tarball must be OFED-${ofed_version}.tgz
 	[ -n "${OFED_SRC}" ] && return 0
 
 	case $ofed_type in
@@ -606,21 +603,17 @@ download_ofed() {
 			location="https://www.openfabrics.org/downloads/OFED/ofed-${ofed_version}/"
 			# version include RC
 			if [[ $ofed_version = *-[rR][cC][0-9] ]]; then
-				local Mmv
-				Mmv=${OFED_VERSION%%-[rR][cC][0-9]}
-				location="https://www.openfabrics.org/downloads/OFED/ofed-${Mmv}/"
+				ofed_version=${ofed_version%%-[rR][cC][0-9]}
+				location="https://www.openfabrics.org/downloads/OFED/ofed-${ofed_version}/"
 			fi
 			# daily build
-			if [[ $OFED_VERSION = daily-* ]]; then
-				local Mmv daily
-				ofed_version=${ofed_version/daily-/}
-				Mmv=${ofed_version%%-*}
-				daily=${ofed_version##$Mmv-}
-				location="https://www.openfabrics.org/downloads/OFED/ofed-${Mmv}-daily/"
-				# find the filename for the version for the date specified
-				ofed_version=$(curl -s "$location" | sed -nre "/${daily}-/s/.*href=\"OFED-(${Mmv//./\\.}-[0-9]{8}-[0-9]{4}).tgz.*$/\1/p" | tail -1)
+			if [[ $ofed_version = *-daily ]]; then
+				ofed_version=${ofed_version/-daily/}
+				location="https://www.openfabrics.org/downloads/OFED/ofed-${ofed_version}-daily/"
+				# find the filename for latest date
+				ofed_version=$(curl -1 -s "$location" | sed -nre "s/.*href=\"OFED-(${ofed_version//./\\.}-[0-9]{8}-[0-9]{4}).tgz.*$/\1/p" | tail -1)
 				if [ -z "$ofed_version" ]; then
-					fatal 1 "Could not determine the filename of the OFED snapshot for ${daily}"
+					fatal 1 "Could not determine the filename of the OFED snapshot for ${ofed_version}-daily"
 				fi
 			fi
 
@@ -1879,9 +1872,13 @@ build_ofed() {
 			fi
 			o2ib_location="${o2ib_location}/default"
 			;;
-		ofa) # since we set build_kernel_ib=1 during configure,
-			 # we expect to have kernel-ib-devel rpm
-			rpm=$(ls $TOPDIR/RPMS/*/kernel-ib-devel-${ofed_version%%-*}-*.rpm)
+		ofa) # Prior to OFA 3.18, we had to use build_kernel_ib=1 to get
+			# kernel-ib. Not so on 3.18
+			if compare_version $ofed_version 3.18; then
+				rpm=$(ls $TOPDIR/RPMS/*/kernel-ib-devel-${ofed_version%%-*}-*.rpm)
+			else
+				rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-${ofed_version%%-*}-*.rpm)
+			fi
 			;;
                 ifs) # ifs doesn't follow any convention (if any)
 			rpm=$(ls $TOPDIR/RPMS/*/${kib_rpm}-devel-*.rpm)
