@@ -207,8 +207,12 @@ deb-modules:
 			ln -s /usr/share/modass/include include && \
 			ln -s /usr/share/modass/packages packages && \
 			echo "lustre" > compliant.list)
-	if test -n "@O2IBPATH@"; then \
-		export IB_OPTIONS="--with-o2ib='@O2IBPATH@'"; \
+	if test "x@ENABLEO2IB@" = "xno"; then \
+		export IB_OPTIONS="--with-o2ib=no"; \
+	else \
+		if test -n "@O2IBPATH@"; then \
+			export IB_OPTIONS="--with-o2ib=@O2IBPATH@"; \
+		fi; \
 	fi; \
 	export MA_DIR="$(debbuilddir)/usr_share_modass"; \
 	export KPKG_DEST_DIR="$(debbuilddir)"; \

@@ -337,6 +337,7 @@ AC_SUBST(EXTRA_OFED_CONFIG)
 AC_SUBST(EXTRA_OFED_INCLUDE)
 AC_SUBST(O2IBLND)
 AC_SUBST(O2IBPATH)
+AC_SUBST(ENABLEO2IB)
 
 AS_IF([test $ENABLEO2IB != "no"], [
 	# In RHEL 6.2, rdma_create_id() takes the queue-pair type as a fourth argument
