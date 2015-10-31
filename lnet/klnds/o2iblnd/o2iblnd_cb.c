@@ -1342,10 +1342,12 @@ kiblnd_connect_peer (kib_peer_t *peer)
 	return;
 
  failed2:
-        kiblnd_peer_decref(peer);               /* cmid's ref */
-        rdma_destroy_id(cmid);
+	kiblnd_peer_connect_failed(peer, 1, rc);
+	kiblnd_peer_decref(peer);               /* cmid's ref */
+	rdma_destroy_id(cmid);
+	return;
  failed:
-        kiblnd_peer_connect_failed(peer, 1, rc);
+	kiblnd_peer_connect_failed(peer, 1, rc);
 }
 
 bool
