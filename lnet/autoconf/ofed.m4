@@ -3,6 +3,15 @@ AC_DEFUN([LN_CONFIG_OFED_SPEC],
 [
 	AC_MSG_CHECKING([if OFED has ib_dma_map_single])
 	LB_LINUX_TRY_COMPILE([
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
 		#include <linux/version.h>
 		#include <linux/pci.h>
 		#include <linux/gfp.h>
@@ -20,6 +29,15 @@ AC_DEFUN([LN_CONFIG_OFED_SPEC],
 
 	AC_MSG_CHECKING([if ib_create_cq wants comp_vector])
 	LB_LINUX_TRY_COMPILE([
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
 		#include <linux/version.h>
 		#include <linux/pci.h>
 		#include <linux/gfp.h>
@@ -37,12 +55,18 @@ AC_DEFUN([LN_CONFIG_OFED_SPEC],
 
 	AC_MSG_CHECKING([if OFED has RDMA_CM_EVENT_ADDR_CHANGE])
 	LB_LINUX_TRY_COMPILE([
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
 		#include <linux/version.h>
 		#include <linux/pci.h>
 		#include <linux/gfp.h>
-		#ifdef HAVE_COMPAT_RDMA
-		#include <linux/compat-2.6.h>
-		#endif
 		#include <rdma/rdma_cm.h>
 	],[
 		return (RDMA_CM_EVENT_ADDR_CHANGE == 0);
@@ -56,12 +80,18 @@ AC_DEFUN([LN_CONFIG_OFED_SPEC],
 
 	AC_MSG_CHECKING([if OFED has RDMA_CM_EVENT_TIMEWAIT_EXIT])
 	LB_LINUX_TRY_COMPILE([
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
 		#include <linux/version.h>
 		#include <linux/pci.h>
 		#include <linux/gfp.h>
-		#ifdef HAVE_COMPAT_RDMA
-		#include <linux/compat-2.6.h>
-		#endif
 		#include <rdma/rdma_cm.h>
 	],[
 		return (RDMA_CM_EVENT_TIMEWAIT_EXIT == 0);
@@ -75,12 +105,18 @@ AC_DEFUN([LN_CONFIG_OFED_SPEC],
 
 	AC_MSG_CHECKING([if OFED has rdma_set_reuseaddr])
 	LB_LINUX_TRY_COMPILE([
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
 		#include <linux/version.h>
 		#include <linux/pci.h>
 		#include <linux/gfp.h>
-		#ifdef HAVE_COMPAT_RDMA
-		#include <linux/compat-2.6.h>
-		#endif
 		#include <rdma/rdma_cm.h>
 	],[
 		rdma_set_reuseaddr(NULL, 1);

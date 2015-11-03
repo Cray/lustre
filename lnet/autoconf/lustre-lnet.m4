@@ -439,7 +439,7 @@ else
 			compatrdma_found=true
 			AC_MSG_RESULT([yes])
 			AC_DEFINE(HAVE_COMPAT_RDMA, 1, [compat rdma found])
-			EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -include ${O2IBPATH}/include/linux/compat-2.6.h"
+			EXTRA_OFED_CONFIG="$EXTRA_OFED_CONFIG -include ${O2IBPATH}/include/linux/compat-2.6.h"
 			if test -f "$O2IBPATH/include/linux/compat_autoconf.h"; then
 				COMPAT_AUTOCONF="$O2IBPATH/include/linux/compat_autoconf.h"
 			fi
@@ -467,17 +467,6 @@ else
 			fi
 		fi
 
-		LB_CHECK_COMPILE([if Linux kernel has kthread_worker],
-		linux_kthread_worker, [
-			#include <linux/kthread.h>
-		],[
-			struct kthread_work	*kth_wrk __attribute__ ((unused));
-			flush_kthread_work(kth_wrk);
-		],[
-			EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_IS_KTHREAD"
-			AC_DEFINE(HAVE_KTHREAD_WORK, 1, [kthread_worker found])
-		])
-
 		AC_MSG_CHECKING([whether to use any OFED backport headers])
 		if test -n "$BACKPORT_INCLUDES"; then
 			OFED_BACKPORT_PATH="$O2IBPATH/${BACKPORT_INCLUDES/*\/kernel_addons/kernel_addons}/"
@@ -492,12 +481,18 @@ else
 		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -I$O2IBPATH/include"
 
 		LB_LINUX_TRY_COMPILE([
-		        #include <linux/version.h>
-		        #include <linux/pci.h>
-			#include <linux/gfp.h>
 			#ifdef HAVE_COMPAT_RDMA
+			#undef PACKAGE_NAME
+			#undef PACKAGE_TARNAME
+			#undef PACKAGE_VERSION
+			#undef PACKAGE_STRING
+			#undef PACKAGE_BUGREPORT
+			#undef PACKAGE_URL
 			#include <linux/compat-2.6.h>
 			#endif
+			#include <linux/version.h>
+			#include <linux/pci.h>
+			#include <linux/gfp.h>
 		        #include <rdma/rdma_cm.h>
 		        #include <rdma/ib_cm.h>
 		        #include <rdma/ib_verbs.h>
@@ -542,13 +537,36 @@ else
 			fi
 		fi
 
+		LB_CHECK_COMPILE([if Linux kernel has kthread_worker],
+		linux_kthread_worker, [
+			#ifdef HAVE_COMPAT_RDMA
+			#undef PACKAGE_NAME
+			#undef PACKAGE_TARNAME
+			#undef PACKAGE_VERSION
+			#undef PACKAGE_STRING
+			#undef PACKAGE_BUGREPORT
+			#undef PACKAGE_URL
+			#include <linux/compat-2.6.h>
+			#endif
+			#include <linux/kthread.h>
+		],[
+			struct kthread_work	*kth_wrk __attribute__ ((unused));
+			flush_kthread_work(kth_wrk);
+		],[
+			AC_DEFINE(HAVE_KTHREAD_WORK, 1, [kthread_worker found])
+			if test -z "$COMPAT_AUTOCONF"; then
+				EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_IS_KTHREAD"
+			fi
+		])
+
 		LN_CONFIG_OFED_SPEC
 	fi
 fi
 
+AC_SUBST(EXTRA_OFED_CONFIG)
 AC_SUBST(EXTRA_OFED_INCLUDE)
 AC_SUBST(O2IBLND)
-AC_SUBST(O2IBPATHS)
+AC_SUBST(O2IBPATH)
 AC_SUBST(ENABLEO2IB)
 
 # In RHEL 6.2, rdma_create_id() takes the queue-pair type as a fourth argument
@@ -556,6 +574,12 @@ if test $ENABLEO2IB != "no"; then
 	AC_MSG_CHECKING([if rdma_create_id wants four args])
 	LB_LINUX_TRY_COMPILE([
 		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
 		#include <linux/compat-2.6.h>
 		#endif
 		#include <rdma/rdma_cm.h>
@@ -721,6 +745,15 @@ AC_DEFUN([LN_CONFIG_USERSPACE],
 AC_DEFUN([LN_5ARGS_SYSCTL_PROC_HANDLER],
 [AC_MSG_CHECKING([if sysctl proc_handler wants 5 args])
 LB_LINUX_TRY_COMPILE([
+	#ifdef HAVE_COMPAT_RDMA
+	#undef PACKAGE_NAME
+	#undef PACKAGE_TARNAME
+	#undef PACKAGE_VERSION
+	#undef PACKAGE_STRING
+	#undef PACKAGE_BUGREPORT
+	#undef PACKAGE_URL
+	#include <linux/compat-2.6.h>
+	#endif
         #include <linux/sysctl.h>
 ],[
         struct ctl_table *table = NULL;
@@ -749,6 +782,15 @@ AC_DEFUN([LN_CONFIG_TCP_SENDPAGE],
 tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_LINUX_TRY_COMPILE([
+	#ifdef HAVE_COMPAT_RDMA
+	#undef PACKAGE_NAME
+	#undef PACKAGE_TARNAME
+	#undef PACKAGE_VERSION
+	#undef PACKAGE_STRING
+	#undef PACKAGE_BUGREPORT
+	#undef PACKAGE_URL
+	#include <linux/compat-2.6.h>
+	#endif
         #include <linux/net.h>
         #include <net/tcp.h>
 ],[

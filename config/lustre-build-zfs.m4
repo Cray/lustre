@@ -385,6 +385,8 @@ your distribution.
 	])
 
 	AS_IF([test x$enable_zfs = xyes], [
+		EXTRA_OFED_INCLUDE_save="$EXTRA_OFED_INCLUDE"
+		EXTRA_OFED_INCLUDE=
 		AC_MSG_CHECKING([if zfs defines dsl_pool_config_enter/exit])
 		LB_LINUX_TRY_COMPILE([
 			#include <sys/dsl_pool.h>
@@ -413,6 +415,7 @@ your distribution.
 		],[
 			AC_MSG_RESULT([no])
 		])
+		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE_save"
 	])
 
 	AM_CONDITIONAL(ZFS_ENABLED, test x$enable_zfs = xyes)
