@@ -141,8 +141,7 @@ out:
 }
 
 static int llog_client_destroy(const struct lu_env *env,
-			       struct llog_handle *loghandle,
-			       struct thandle *th)
+			       struct llog_handle *loghandle)
 {
         struct obd_import     *imp;
         struct ptlrpc_request *req = NULL;

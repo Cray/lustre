@@ -110,23 +110,6 @@ static int llog_osd_create_new_object(const struct lu_env *env,
 				   &lgi->lgi_dof, th);
 }
 
- /**
- * Implementation of the llog_operations::lop_exist
- *
- * This function checks that llog exists on storage.
- *
- * \param[in] handle	llog handle of the current llog
- *
- * \retval		true if llog object exists and is not just destroyed
- * \retval		false if llog doesn't exist or just destroyed
- */
-static int llog_osd_exist(struct llog_handle *handle)
-{
-	LASSERT(handle->lgh_obj);
-	return dt_object_exists(handle->lgh_obj) &&
-		!lu_object_is_dying(handle->lgh_obj->do_lu.lo_header);
-}
-
 /**
  * Write a padding record to the llog
  *
@@ -378,9 +361,6 @@ static int llog_osd_write_rec(const struct lu_env *env,
 	CDEBUG(D_OTHER, "new record %x to "DFID"\n",
 	       rec->lrh_type, PFID(lu_object_fid(&o->do_lu)));
 
-	if (!llog_osd_exist(loghandle))
-		RETURN(-ENOENT);
-
 	/* record length should not bigger than LLOG_CHUNK_SIZE */
 	if (reclen > LLOG_CHUNK_SIZE)
 		RETURN(-E2BIG);
@@ -494,13 +474,6 @@ static int llog_osd_write_rec(const struct lu_env *env,
 	 * process them page-at-a-time if needed.  If it will cross a chunk
 	 * boundary, write in a fake (but referenced) entry to pad the chunk.
 	 */
-
-	/* simulate ENOSPC when new plain llog is being added to the
-	 * catalog */
-	if (OBD_FAIL_CHECK(OBD_FAIL_MDS_LLOG_CREATE_FAILED2) &&
-	    llh->llh_flags & LLOG_F_IS_CAT)
-		RETURN(-ENOSPC);
-
 	LASSERT(lgi->lgi_attr.la_valid & LA_SIZE);
 	lgi->lgi_off = lgi->lgi_attr.la_size;
 	left = LLOG_CHUNK_SIZE - (lgi->lgi_off & (LLOG_CHUNK_SIZE - 1));
@@ -1056,6 +1029,23 @@ out:
 }
 
 /**
+ * Implementation of the llog_operations::lop_exist
+ *
+ * This function checks that llog exists on storage.
+ *
+ * \param[in] handle	llog handle of the current llog
+ *
+ * \retval		true if llog object exists and is not just destroyed
+ * \retval		false if llog doesn't exist or just destroyed
+ */
+static int llog_osd_exist(struct llog_handle *handle)
+{
+	LASSERT(handle->lgh_obj);
+	return (dt_object_exists(handle->lgh_obj) &&
+		!lu_object_is_dying(handle->lgh_obj->do_lu.lo_header));
+}
+
+/**
  * Implementation of the llog_operations::lop_declare_create
  *
  * This function declares the llog create. It declares also name insert
@@ -1221,62 +1211,6 @@ static int llog_osd_close(const struct lu_env *env, struct llog_handle *handle)
 }
 
 /**
- * Implementation of the llog_operations::lop_declare_destroy
- *
- * This function declare destroys the llog and deletes also entry in the
- * llog directory in case of named llog. Llog should be opened prior that.
- *
- * \param[in] env		execution environment
- * \param[in] loghandle	llog handle of the current llog
- *
- * \retval		0 on successful destroy
- * \retval		negative value on error
- */
-static int llog_osd_declare_destroy(const struct lu_env *env,
-				    struct llog_handle *loghandle,
-				    struct thandle *th)
-{
-	struct llog_ctxt	*ctxt;
-	struct dt_object	*o, *llog_dir = NULL;
-	int			 rc;
-
-	ENTRY;
-
-	ctxt = loghandle->lgh_ctxt;
-	LASSERT(ctxt);
-
-	o = loghandle->lgh_obj;
-	LASSERT(o);
-
-	if (loghandle->lgh_name) {
-		llog_dir = llog_osd_dir_get(env, ctxt);
-		if (IS_ERR(llog_dir))
-			RETURN(PTR_ERR(llog_dir));
-
-		rc = dt_declare_delete(env, llog_dir,
-				       (struct dt_key *)loghandle->lgh_name,
-				       th);
-		if (rc < 0)
-			GOTO(out_put, rc);
-	}
-
-	rc = dt_declare_ref_del(env, o, th);
-	if (rc < 0)
-		GOTO(out_put, rc);
-
-	rc = dt_declare_destroy(env, o, th);
-	if (rc < 0)
-		GOTO(out_put, rc);
-
-out_put:
-	if (!(IS_ERR_OR_NULL(llog_dir)))
-		lu_object_put(env, &llog_dir->do_lu);
-
-	RETURN(rc);
-}
-
-
-/**
  * Implementation of the llog_operations::lop_destroy
  *
  * This function destroys the llog and deletes also entry in the
@@ -1291,50 +1225,80 @@ out_put:
  * \retval		negative value on error
  */
 static int llog_osd_destroy(const struct lu_env *env,
-			    struct llog_handle *loghandle, struct thandle *th)
+			    struct llog_handle *loghandle)
 {
 	struct llog_ctxt	*ctxt;
 	struct dt_object	*o, *llog_dir = NULL;
+	struct dt_device	*d;
+	struct thandle		*th;
+	char			*name = NULL;
 	int			 rc;
 
 	ENTRY;
 
 	ctxt = loghandle->lgh_ctxt;
-	LASSERT(ctxt != NULL);
+	LASSERT(ctxt);
 
 	o = loghandle->lgh_obj;
-	LASSERT(o != NULL);
+	LASSERT(o);
 
-	dt_write_lock(env, o, 0);
-	if (!dt_object_exists(o))
-		GOTO(out_unlock, rc = 0);
+	d = lu2dt_dev(o->do_lu.lo_dev);
+	LASSERT(d);
+	LASSERT(d == ctxt->loc_exp->exp_obd->obd_lvfs_ctxt.dt);
+
+	th = dt_trans_create(env, d);
+	if (IS_ERR(th))
+		RETURN(PTR_ERR(th));
 
 	if (loghandle->lgh_name) {
 		llog_dir = llog_osd_dir_get(env, ctxt);
 		if (IS_ERR(llog_dir))
-			GOTO(out_unlock, rc = PTR_ERR(llog_dir));
+			GOTO(out_trans, rc = PTR_ERR(llog_dir));
 
-		dt_read_lock(env, llog_dir, 0);
-		rc = dt_delete(env, llog_dir,
-			       (struct dt_key *)loghandle->lgh_name,
-			       th, NULL);
-		dt_read_unlock(env, llog_dir);
-		if (rc) {
-			CERROR("%s: can't remove llog %s: rc = %d\n",
-			       o->do_lu.lo_dev->ld_obd->obd_name,
-			       loghandle->lgh_name, rc);
-			GOTO(out_unlock, rc);
-		}
+		name = loghandle->lgh_name;
+		rc = dt_declare_delete(env, llog_dir,
+				       (struct dt_key *)name, th);
+		if (rc)
+			GOTO(out_trans, rc);
 	}
 
-	dt_ref_del(env, o, th);
-	rc = dt_destroy(env, o, th);
+	rc = dt_declare_ref_del(env, o, th);
 	if (rc < 0)
-		GOTO(out_unlock, rc);
+		GOTO(out_trans, rc);
 
+	rc = dt_declare_destroy(env, o, th);
+	if (rc)
+		GOTO(out_trans, rc);
+
+	rc = dt_trans_start_local(env, d, th);
+	if (rc)
+		GOTO(out_trans, rc);
+
+	dt_write_lock(env, o, 0);
+	if (dt_object_exists(o)) {
+		if (name) {
+			dt_read_lock(env, llog_dir, 0);
+			rc = dt_delete(env, llog_dir,
+				       (struct dt_key *) name,
+				       th, BYPASS_CAPA);
+			dt_read_unlock(env, llog_dir);
+			if (rc) {
+				CERROR("%s: can't remove llog %s: rc = %d\n",
+				       o->do_lu.lo_dev->ld_obd->obd_name,
+				       name, rc);
+				GOTO(out_unlock, rc);
+			}
+		}
+		dt_ref_del(env, o, th);
+		rc = dt_destroy(env, o, th);
+		if (rc)
+			GOTO(out_unlock, rc);
+	}
 out_unlock:
 	dt_write_unlock(env, o);
-	if (!(IS_ERR_OR_NULL(llog_dir)))
+out_trans:
+	dt_trans_stop(env, d, th);
+	if (llog_dir != NULL)
 		lu_object_put(env, &llog_dir->do_lu);
 	RETURN(rc);
 }
@@ -1427,7 +1391,6 @@ struct llog_operations llog_osd_ops = {
 	.lop_next_block		= llog_osd_next_block,
 	.lop_prev_block		= llog_osd_prev_block,
 	.lop_read_header	= llog_osd_read_header,
-	.lop_declare_destroy	= llog_osd_declare_destroy,
 	.lop_destroy		= llog_osd_destroy,
 	.lop_setup		= llog_osd_setup,
 	.lop_cleanup		= llog_osd_cleanup,
