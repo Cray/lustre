@@ -13659,6 +13659,9 @@ test_400b() { # LU-1606, LU-5011
 run_test 400b "packaged headers can be compiled"
 
 test_401a() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
+		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
+
 	#define OBD_FAIL_BARRIER_DELAY		0x2102
 	do_facet mgs $LCTL set_param fail_val=3 fail_loc=0x2102
 	do_facet mgs $LCTL barrier_freeze $FSNAME 30 &
@@ -13715,8 +13718,8 @@ test_401a() {
 	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x2103
 	do_facet mgs $LCTL barrier_freeze $FSNAME
 
-	local barrier_status=$($LCTL barrier_stat $FSNAME |
-			       awk '/The barrier for/ { print $7 }')
+	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+			 awk '/The barrier for/ { print $7 }')
 	[ "$barrier_status" = "'failed'" ] ||
 		error "(8) unexpected barrier status $barrier_status"
 
@@ -13726,6 +13729,9 @@ test_401a() {
 run_test 401a "write barrier user interfaces and stat machine"
 
 test_401b() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
+		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
+
 	mkdir $DIR/$tdir || error "(1) fail to mkdir"
 	createmany -d $DIR/$tdir/d 6 || "(2) fail to mkdir"
 	touch $DIR/$tdir/d2/f10 || error "(3) fail to touch"
@@ -13794,6 +13800,9 @@ test_401b() {
 run_test 401b "modification will be blocked by write barrier"
 
 test_401c() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
+		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
+
 	[[ $MDSCOUNT -lt 2 ]] && skip "needs >= 2 MDTs" && return
 
 	stop mds2 || error "(1) Fail to stop mds2"
