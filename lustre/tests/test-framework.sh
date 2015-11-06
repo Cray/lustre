@@ -1246,17 +1246,41 @@ mount_facet() {
 		                   ${!dev} $mntpt"
 		RC=${PIPESTATUS[0]}
 	fi
+
 	if [ $RC -ne 0 ]; then
 		echo "Start of ${!dev} on ${facet} failed ${RC}"
-    else
-        set_default_debug_facet $facet
+		return $RC
+	fi
 
-		label=$(devicelabel ${facet} ${!dev})
-        [ -z "$label" ] && echo no label for ${!dev} && exit 1
-        eval export ${facet}_svc=${label}
-        echo Started ${label}
-    fi
-    return $RC
+	set_default_debug_facet $facet
+
+	if [[ $opts =~ .*nosvc.* ]]; then
+		echo "Start ${!dev} without service"
+	else
+		local fstype=$(facet_fstype $facet)
+
+		case $fstype in
+		ldiskfs)
+			wait_update_facet ${facet} "$E2LABEL ${!dev} \
+				2>/dev/null | grep -E ':[a-zA-Z]{3}[0-9]{4}'" \
+				"" || error "${!dev} failed to initialize!";;
+		zfs)
+			wait_update_facet ${facet} "$ZFS get -H -o value \
+				lustre:svname ${!dev} 2>/dev/null | \
+				grep -E ':[a-zA-Z]{3}[0-9]{4}'" "" ||
+				error "${!dev} failed to initialize!";;
+
+		*)
+			error "unknown fstype!";;
+		esac
+	fi
+
+	label=$(devicelabel ${facet} ${!dev})
+	[ -z "$label" ] && echo no label for ${!dev} && exit 1
+	eval export ${facet}_svc=${label}
+	echo Started ${label}
+
+	return $RC
 }
 
 # start facet device options
