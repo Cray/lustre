@@ -1,170 +1,215 @@
----
- fs/ext4/Makefile           |    2
- fs/ext4/ext4.h             |   93 ++++
- fs/ext4/htree_lock.c       |  880 +++++++++++++++++++++++++++++++++++++++++++++
- fs/ext4/inode.c            |    4
- fs/ext4/namei.c            |  585 +++++++++++++++++++++++++----
- include/linux/htree_lock.h |  187 +++++++++
- 6 files changed, 1650 insertions(+), 101 deletions(-)
+Single directory performance is a critical for HPC workloads. In a
+typical use case an application creates a separate output file for
+each node and task in a job. As nodes and tasks increase, hundreds
+of thousands of files may be created in a single directory within
+a short window of time.
+Today, both filename lookup and file system modifying operations
+(such as create and unlink) are protected with a single lock for
+an entire ldiskfs directory. PDO project will remove this
+bottleneck by introducing a parallel locking mechanism for entire
+ldiskfs directories. This work will enable multiple application
+threads to simultaneously lookup, create and unlink in parallel.
+    
+This patch contains:
+ - pdirops support for ldiskfs
+ - integrate with osd-ldiskfs
 
---- a/fs/ext4/Makefile
-+++ b/fs/ext4/Makefile
-@@ -7,7 +7,7 @@ obj-$(CONFIG_EXT4_FS) += ext4.o
- ext4-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o page-io.o \
- 		ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
- 		ext4_jbd2.o migrate.o mballoc.o block_validity.o move_extent.o \
--		mmp.o
-+		htree_lock.o mmp.o
-
- ext4-$(CONFIG_EXT4_FS_XATTR)		+= xattr.o xattr_user.o xattr_trusted.o
- ext4-$(CONFIG_EXT4_FS_POSIX_ACL)	+= acl.o
---- a/fs/ext4/ext4.h
-+++ b/fs/ext4/ext4.h
-@@ -28,6 +28,7 @@
- #include <linux/mutex.h>
- #include <linux/timer.h>
- #include <linux/wait.h>
-+#include <linux/htree_lock.h>
- #include <linux/blockgroup_lock.h>
- #include <linux/percpu_counter.h>
- #ifdef __KERNEL__
-@@ -1402,6 +1403,7 @@ static inline void ext4_clear_state_flag
- #define EXT4_FEATURE_INCOMPAT_FLEX_BG		0x0200
- #define EXT4_FEATURE_INCOMPAT_EA_INODE		0x0400 /* EA in inode */
- #define EXT4_FEATURE_INCOMPAT_DIRDATA		0x1000 /* data in dirent */
-+#define EXT4_FEATURE_INCOMPAT_LARGEDIR		0x4000
-
- #define EXT2_FEATURE_COMPAT_SUPP	EXT4_FEATURE_COMPAT_EXT_ATTR
- #define EXT2_FEATURE_INCOMPAT_SUPP	(EXT4_FEATURE_INCOMPAT_FILETYPE| \
-@@ -1427,7 +1429,8 @@ static inline void ext4_clear_state_flag
- 					 EXT4_FEATURE_INCOMPAT_FLEX_BG| \
- 					 EXT4_FEATURE_INCOMPAT_EA_INODE| \
- 					 EXT4_FEATURE_INCOMPAT_MMP| \
--					 EXT4_FEATURE_INCOMPAT_DIRDATA)
-+					 EXT4_FEATURE_INCOMPAT_DIRDATA| \
-+					 EXT4_FEATURE_INCOMPAT_LARGEDIR)
-
- #define EXT4_FEATURE_RO_COMPAT_SUPP	(EXT4_FEATURE_RO_COMPAT_SPARSE_SUPER| \
- 					 EXT4_FEATURE_RO_COMPAT_LARGE_FILE| \
-@@ -1690,6 +1693,76 @@ ext4_group_first_block_no(struct super_b
-  */
- #define ERR_BAD_DX_DIR	-75000
-
-+/* htree levels for ext4 */
-+#define EXT4_HTREE_LEVEL_COMPAT 2
-+#define EXT4_HTREE_LEVEL	3
-+
-+static inline int
-+ext4_dir_htree_level(struct super_block *sb)
-+{
-+	return EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_LARGEDIR) ?
-+		EXT4_HTREE_LEVEL : EXT4_HTREE_LEVEL_COMPAT;
-+}
-+
-+/* assume name-hash is protected by upper layer */
-+#define EXT4_HTREE_LOCK_HASH	0
-+
-+enum ext4_pdo_lk_types {
-+#if EXT4_HTREE_LOCK_HASH
-+	EXT4_LK_HASH,
-+#endif
-+	EXT4_LK_DX,		/* index block */
-+	EXT4_LK_DE,		/* directory entry block */
-+	EXT4_LK_SPIN,		/* spinlock */
-+	EXT4_LK_MAX,
-+};
-+
-+/* read-only bit */
-+#define EXT4_LB_RO(b)		(1 << (b))
-+/* read + write, high bits for writer */
-+#define EXT4_LB_RW(b)		((1 << (b)) | (1 << (EXT4_LK_MAX + (b))))
-+
-+enum ext4_pdo_lock_bits {
-+	/* DX lock bits */
-+	EXT4_LB_DX_RO		= EXT4_LB_RO(EXT4_LK_DX),
-+	EXT4_LB_DX		= EXT4_LB_RW(EXT4_LK_DX),
-+	/* DE lock bits */
-+	EXT4_LB_DE_RO		= EXT4_LB_RO(EXT4_LK_DE),
-+	EXT4_LB_DE		= EXT4_LB_RW(EXT4_LK_DE),
-+	/* DX spinlock bits */
-+	EXT4_LB_SPIN_RO		= EXT4_LB_RO(EXT4_LK_SPIN),
-+	EXT4_LB_SPIN		= EXT4_LB_RW(EXT4_LK_SPIN),
-+	/* accurate searching */
-+	EXT4_LB_EXACT		= EXT4_LB_RO(EXT4_LK_MAX << 1),
-+};
-+
-+enum ext4_pdo_lock_opc {
-+	/* external */
-+	EXT4_HLOCK_READDIR	= (EXT4_LB_DE_RO | EXT4_LB_DX_RO),
-+	EXT4_HLOCK_LOOKUP	= (EXT4_LB_DE_RO | EXT4_LB_SPIN_RO |
-+				   EXT4_LB_EXACT),
-+	EXT4_HLOCK_DEL		= (EXT4_LB_DE | EXT4_LB_SPIN_RO |
-+				   EXT4_LB_EXACT),
-+	EXT4_HLOCK_ADD		= (EXT4_LB_DE | EXT4_LB_SPIN_RO),
-+
-+	/* internal */
-+	EXT4_HLOCK_LOOKUP_SAFE	= (EXT4_LB_DE_RO | EXT4_LB_DX_RO |
-+				   EXT4_LB_EXACT),
-+	EXT4_HLOCK_DEL_SAFE	= (EXT4_LB_DE | EXT4_LB_DX_RO | EXT4_LB_EXACT),
-+	EXT4_HLOCK_SPLIT	= (EXT4_LB_DE | EXT4_LB_DX | EXT4_LB_SPIN),
-+};
-+
-+extern struct htree_lock_head *ext4_htree_lock_head_alloc(unsigned hbits);
-+#define ext4_htree_lock_head_free(lhead)	htree_lock_head_free(lhead)
-+
-+extern struct htree_lock *ext4_htree_lock_alloc(void);
-+#define ext4_htree_lock_free(lck)		htree_lock_free(lck)
-+
-+extern void ext4_htree_lock(struct htree_lock *lck,
-+			    struct htree_lock_head *lhead,
-+			    struct inode *dir, unsigned flags);
-+#define ext4_htree_unlock(lck)                  htree_unlock(lck)
-+
- void ext4_get_group_no_and_offset(struct super_block *sb, ext4_fsblk_t blocknr,
- 			ext4_group_t *blockgrpp, ext4_grpblk_t *offsetp);
-
-@@ -1964,14 +2037,16 @@ extern int ext4_htree_fill_tree(struct f
- extern struct inode *ext4_create_inode(handle_t *handle,
- 				       struct inode * dir, int mode);
- extern int ext4_add_entry(handle_t *handle, struct dentry *dentry,
--			  struct inode *inode);
-+			  struct inode *inode, struct htree_lock *lck);
- extern int ext4_delete_entry(handle_t *handle, struct inode * dir,
- 			     struct ext4_dir_entry_2 * de_del,
- 			     struct buffer_head * bh);
- extern struct buffer_head * ext4_find_entry(struct inode *dir,
- 					    const struct qstr *d_name,
--					    struct ext4_dir_entry_2 ** res_dir);
--#define ll_ext4_find_entry(inode, dentry, res_dir) ext4_find_entry(inode, &(dentry)->d_name, res_dir)
-+					    struct ext4_dir_entry_2 **res_dir,
-+					    struct htree_lock *lck);
-+#define ll_ext4_find_entry(inode, dentry, res_dir, lck) \
-+	ext4_find_entry(inode, &(dentry)->d_name, res_dir, lck)
- extern int ext4_add_dot_dotdot(handle_t *handle, struct inode *dir,
- 			       struct inode *inode, const void *, const void *);
- extern struct buffer_head *ext4_append(handle_t *handle,
-@@ -2104,13 +2179,15 @@ static inline void ext4_r_blocks_count_s
- 	es->s_r_blocks_count_hi = cpu_to_le32(blk >> 32);
- }
-
--static inline loff_t ext4_isize(struct ext4_inode *raw_inode)
-+static inline loff_t ext4_isize(struct super_block *sb,
-+				struct ext4_inode *raw_inode)
- {
--	if (S_ISREG(le16_to_cpu(raw_inode->i_mode)))
-+	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_LARGEDIR) ||
-+	    S_ISREG(le16_to_cpu(raw_inode->i_mode)))
- 		return ((loff_t)le32_to_cpu(raw_inode->i_size_high) << 32) |
- 			le32_to_cpu(raw_inode->i_size_lo);
--	else
--		return (loff_t) le32_to_cpu(raw_inode->i_size_lo);
-+
-+	return (loff_t) le32_to_cpu(raw_inode->i_size_lo);
- }
-
- static inline void ext4_isize_set(struct ext4_inode *raw_inode, loff_t i_size)
+Index: linux-3.10.0-229.1.2.fc21.x86_64/include/linux/htree_lock.h
+===================================================================
 --- /dev/null
-+++ b/fs/ext4/htree_lock.c
++++ linux-3.10.0-229.1.2.fc21.x86_64/include/linux/htree_lock.h
+@@ -0,0 +1,187 @@
++/*
++ * include/linux/htree_lock.h
++ *
++ * Copyright (c) 2011, 2012, Intel Corporation.
++ *
++ * Author: Liang Zhen <liang@whamcloud.com>
++ */
++
++/*
++ * htree lock
++ *
++ * htree_lock is an advanced lock, it can support five lock modes (concept is
++ * taken from DLM) and it's a sleeping lock.
++ *
++ * most common use case is:
++ * - create a htree_lock_head for data
++ * - each thread (contender) creates it's own htree_lock
++ * - contender needs to call htree_lock(lock_node, mode) to protect data and
++ *   call htree_unlock to release lock
++ *
++ * Also, there is advanced use-case which is more complex, user can have
++ * PW/PR lock on particular key, it's mostly used while user holding shared
++ * lock on the htree (CW, CR)
++ *
++ * htree_lock(lock_node, HTREE_LOCK_CR); lock the htree with CR
++ * htree_node_lock(lock_node, HTREE_LOCK_PR, key...); lock @key with PR
++ * ...
++ * htree_node_unlock(lock_node);; unlock the key
++ *
++ * Another tip is, we can have N-levels of this kind of keys, all we need to
++ * do is specifying N-levels while creating htree_lock_head, then we can
++ * lock/unlock a specific level by:
++ * htree_node_lock(lock_node, mode1, key1, level1...);
++ * do something;
++ * htree_node_lock(lock_node, mode1, key2, level2...);
++ * do something;
++ * htree_node_unlock(lock_node, level2);
++ * htree_node_unlock(lock_node, level1);
++ *
++ * NB: for multi-level, should be careful about locking order to avoid deadlock
++ */
++
++#ifndef _LINUX_HTREE_LOCK_H
++#define _LINUX_HTREE_LOCK_H
++
++#include <linux/list.h>
++#include <linux/spinlock.h>
++#include <linux/sched.h>
++
++/*
++ * Lock Modes
++ * more details can be found here:
++ * http://en.wikipedia.org/wiki/Distributed_lock_manager
++ */
++typedef enum {
++	HTREE_LOCK_EX	= 0, /* exclusive lock: incompatible with all others */
++	HTREE_LOCK_PW,	     /* protected write: allows only CR users */
++	HTREE_LOCK_PR,	     /* protected read: allow PR, CR users */
++	HTREE_LOCK_CW,	     /* concurrent write: allow CR, CW users */
++	HTREE_LOCK_CR,	     /* concurrent read: allow all but EX users */
++	HTREE_LOCK_MAX,	     /* number of lock modes */
++} htree_lock_mode_t;
++
++#define HTREE_LOCK_NL		HTREE_LOCK_MAX
++#define HTREE_LOCK_INVAL	0xdead10c
++
++enum {
++	HTREE_HBITS_MIN		= 2,
++	HTREE_HBITS_DEF		= 14,
++	HTREE_HBITS_MAX		= 32,
++};
++
++enum {
++	HTREE_EVENT_DISABLE	= (0),
++	HTREE_EVENT_RD		= (1 << HTREE_LOCK_PR),
++	HTREE_EVENT_WR		= (1 << HTREE_LOCK_PW),
++	HTREE_EVENT_RDWR	= (HTREE_EVENT_RD | HTREE_EVENT_WR),
++};
++
++struct htree_lock;
++
++typedef void (*htree_event_cb_t)(void *target, void *event);
++
++struct htree_lock_child {
++	struct list_head	lc_list;	/* granted list */
++	htree_event_cb_t	lc_callback;	/* event callback */
++	unsigned		lc_events;	/* event types */
++};
++
++struct htree_lock_head {
++	unsigned long		lh_lock;	/* bits lock */
++	/* blocked lock list (htree_lock) */
++	struct list_head	lh_blocked_list;
++	/* # key levels */
++	u16			lh_depth;
++	/* hash bits for key and limit number of locks */
++	u16			lh_hbits;
++	/* counters for blocked locks */
++	u16			lh_nblocked[HTREE_LOCK_MAX];
++	/* counters for granted locks */
++	u16			lh_ngranted[HTREE_LOCK_MAX];
++	/* private data */
++	void			*lh_private;
++	/* array of children locks */
++	struct htree_lock_child	lh_children[0];
++};
++
++/* htree_lock_node_t is child-lock for a specific key (ln_value) */
++struct htree_lock_node {
++	htree_lock_mode_t	ln_mode;
++	/* major hash key */
++	u16			ln_major_key;
++	/* minor hash key */
++	u16			ln_minor_key;
++	struct list_head	ln_major_list;
++	struct list_head	ln_minor_list;
++	/* alive list, all locks (granted, blocked, listening) are on it */
++	struct list_head	ln_alive_list;
++	/* blocked list */
++	struct list_head	ln_blocked_list;
++	/* granted list */
++	struct list_head	ln_granted_list;
++	void			*ln_ev_target;
++};
++
++struct htree_lock {
++	struct task_struct	*lk_task;
++	struct htree_lock_head	*lk_head;
++	void			*lk_private;
++	unsigned		lk_depth;
++	htree_lock_mode_t	lk_mode;
++	struct list_head	lk_blocked_list;
++	struct htree_lock_node	lk_nodes[0];
++};
++
++/* create a lock head, which stands for a resource */
++struct htree_lock_head *htree_lock_head_alloc(unsigned depth,
++					      unsigned hbits, unsigned priv);
++/* free a lock head */
++void htree_lock_head_free(struct htree_lock_head *lhead);
++/* register event callback for child lock at level @depth */
++void htree_lock_event_attach(struct htree_lock_head *lhead, unsigned depth,
++			     unsigned events, htree_event_cb_t callback);
++/* create a lock handle, which stands for a thread */
++struct htree_lock *htree_lock_alloc(unsigned depth, unsigned pbytes);
++/* free a lock handle */
++void htree_lock_free(struct htree_lock *lck);
++/* lock htree, when @wait is true, 0 is returned if the lock can't
++ * be granted immediately */
++int htree_lock_try(struct htree_lock *lck, struct htree_lock_head *lhead,
++		   htree_lock_mode_t mode, int wait);
++/* unlock htree */
++void htree_unlock(struct htree_lock *lck);
++/* unlock and relock htree with @new_mode */
++int htree_change_lock_try(struct htree_lock *lck,
++			  htree_lock_mode_t new_mode, int wait);
++void htree_change_mode(struct htree_lock *lck, htree_lock_mode_t mode);
++/* require child lock (key) of htree at level @dep, @event will be sent to all
++ * listeners on this @key while lock being granted */
++int htree_node_lock_try(struct htree_lock *lck, htree_lock_mode_t mode,
++			u32 key, unsigned dep, int wait, void *event);
++/* release child lock at level @dep, this lock will listen on it's key
++ * if @event isn't NULL, event_cb will be called against @lck while granting
++ * any other lock at level @dep with the same key */
++void htree_node_unlock(struct htree_lock *lck, unsigned dep, void *event);
++/* stop listening on child lock at level @dep */
++void htree_node_stop_listen(struct htree_lock *lck, unsigned dep);
++/* for debug */
++void htree_lock_stat_print(int depth);
++void htree_lock_stat_reset(void);
++
++#define htree_lock(lck, lh, mode)	htree_lock_try(lck, lh, mode, 1)
++#define htree_change_lock(lck, mode)	htree_change_lock_try(lck, mode, 1)
++
++#define htree_lock_mode(lck)		((lck)->lk_mode)
++
++#define htree_node_lock(lck, mode, key, dep)	\
++	htree_node_lock_try(lck, mode, key, dep, 1, NULL)
++/* this is only safe in thread context of lock owner */
++#define htree_node_is_granted(lck, dep)		\
++	((lck)->lk_nodes[dep].ln_mode != HTREE_LOCK_INVAL && \
++	 (lck)->lk_nodes[dep].ln_mode != HTREE_LOCK_NL)
++/* this is only safe in thread context of lock owner */
++#define htree_node_is_listening(lck, dep)	\
++	((lck)->lk_nodes[dep].ln_mode == HTREE_LOCK_NL)
++
++#endif
+Index: linux-3.10.0-229.1.2.fc21.x86_64/fs/ext4/htree_lock.c
+===================================================================
+--- /dev/null
++++ linux-3.10.0-229.1.2.fc21.x86_64/fs/ext4/htree_lock.c
 @@ -0,0 +1,880 @@
 +/*
 + * fs/ext4/htree_lock.c
@@ -422,7 +467,7 @@
 +			 htree_lock_mode_t mode, u32 key, unsigned dep,
 +			 int wait, void *event)
 +{
-+	LIST_HEAD		(list);
++	LIST_HEAD(list);
 +	struct htree_lock	*tmp;
 +	struct htree_lock	*tmp2;
 +	u16			major;
@@ -1046,29 +1091,167 @@
 +	kfree(lck);
 +}
 +EXPORT_SYMBOL(htree_lock_free);
---- a/fs/ext4/inode.c
-+++ b/fs/ext4/inode.c
-@@ -4965,7 +4965,7 @@ struct inode *ext4_iget(struct super_blo
- 	if (EXT4_HAS_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_64BIT))
- 		ei->i_file_acl |=
- 			((__u64)le16_to_cpu(raw_inode->i_file_acl_high)) << 32;
--	inode->i_size = ext4_isize(raw_inode);
-+	inode->i_size = ext4_isize(sb, raw_inode);
- 	ei->i_disksize = inode->i_size;
- #ifdef CONFIG_QUOTA
- 	ei->i_reserved_quota = 0;
-@@ -5205,7 +5205,7 @@ static int ext4_do_update_inode(handle_t
- 		raw_inode->i_file_acl_high =
- 			cpu_to_le16(ei->i_file_acl >> 32);
- 	raw_inode->i_file_acl_lo = cpu_to_le32(ei->i_file_acl);
--	if (ei->i_disksize != ext4_isize(raw_inode)) {
-+	if (ei->i_disksize != ext4_isize(inode->i_sb, raw_inode)) {
- 		ext4_isize_set(raw_inode, ei->i_disksize);
- 		need_datasync = 1;
- 	}
---- a/fs/ext4/namei.c
-+++ b/fs/ext4/namei.c
-@@ -176,7 +176,7 @@ static struct dx_frame *dx_probe(const s
+Index: linux-3.10.0-229.1.2.fc21.x86_64/fs/ext4/Makefile
+===================================================================
+--- linux-3.10.0-229.1.2.fc21.x86_64.orig/fs/ext4/Makefile
++++ linux-3.10.0-229.1.2.fc21.x86_64/fs/ext4/Makefile
+@@ -6,6 +6,7 @@ obj-$(CONFIG_EXT4_FS) += ext4.o
+ 
+ ext4-y	:= balloc.o bitmap.o dir.o file.o fsync.o ialloc.o inode.o page-io.o \
+ 		ioctl.o namei.o super.o symlink.o hash.o resize.o extents.o \
++		htree_lock.o \
+ 		ext4_jbd2.o migrate.o mballoc.o block_validity.o move_extent.o \
+ 		mmp.o indirect.o extents_status.o xattr.o xattr_user.o \
+ 		xattr_trusted.o inline.o
+Index: linux-3.10.0-229.1.2.fc21.x86_64/fs/ext4/ext4.h
+===================================================================
+--- linux-3.10.0-229.1.2.fc21.x86_64.orig/fs/ext4/ext4.h
++++ linux-3.10.0-229.1.2.fc21.x86_64/fs/ext4/ext4.h
+@@ -27,6 +27,7 @@
+ #include <linux/mutex.h>
+ #include <linux/timer.h>
+ #include <linux/wait.h>
++#include <linux/htree_lock.h>
+ #include <linux/blockgroup_lock.h>
+ #include <linux/percpu_counter.h>
+ #include <linux/ratelimit.h>
+@@ -821,6 +822,9 @@ struct ext4_inode_info {
+ 	__u32	i_dtime;
+ 	ext4_fsblk_t	i_file_acl;
+ 
++	/* following fields for parallel directory operations -bzzz */
++	struct semaphore i_append_sem;
++
+ 	/*
+ 	 * i_block_group is the number of the block group which contains
+ 	 * this file's inode.  Constant across the lifetime of the inode,
+@@ -1846,6 +1850,71 @@ struct dx_hash_info
+  */
+ #define HASH_NB_ALWAYS		1
+ 
++/* assume name-hash is protected by upper layer */
++#define EXT4_HTREE_LOCK_HASH	0
++
++enum ext4_pdo_lk_types {
++#if EXT4_HTREE_LOCK_HASH
++	EXT4_LK_HASH,
++#endif
++	EXT4_LK_DX,		/* index block */
++	EXT4_LK_DE,		/* directory entry block */
++	EXT4_LK_SPIN,		/* spinlock */
++	EXT4_LK_MAX,
++};
++
++/* read-only bit */
++#define EXT4_LB_RO(b)		(1 << (b))
++/* read + write, high bits for writer */
++#define EXT4_LB_RW(b)		((1 << (b)) | (1 << (EXT4_LK_MAX + (b))))
++
++enum ext4_pdo_lock_bits {
++	/* DX lock bits */
++	EXT4_LB_DX_RO		= EXT4_LB_RO(EXT4_LK_DX),
++	EXT4_LB_DX		= EXT4_LB_RW(EXT4_LK_DX),
++	/* DE lock bits */
++	EXT4_LB_DE_RO		= EXT4_LB_RO(EXT4_LK_DE),
++	EXT4_LB_DE		= EXT4_LB_RW(EXT4_LK_DE),
++	/* DX spinlock bits */
++	EXT4_LB_SPIN_RO		= EXT4_LB_RO(EXT4_LK_SPIN),
++	EXT4_LB_SPIN		= EXT4_LB_RW(EXT4_LK_SPIN),
++	/* accurate searching */
++	EXT4_LB_EXACT		= EXT4_LB_RO(EXT4_LK_MAX << 1),
++};
++
++enum ext4_pdo_lock_opc {
++	/* external */
++	EXT4_HLOCK_READDIR	= (EXT4_LB_DE_RO | EXT4_LB_DX_RO),
++	EXT4_HLOCK_LOOKUP	= (EXT4_LB_DE_RO | EXT4_LB_SPIN_RO |
++				   EXT4_LB_EXACT),
++	EXT4_HLOCK_DEL		= (EXT4_LB_DE | EXT4_LB_SPIN_RO |
++				   EXT4_LB_EXACT),
++	EXT4_HLOCK_ADD		= (EXT4_LB_DE | EXT4_LB_SPIN_RO),
++
++	/* internal */
++	EXT4_HLOCK_LOOKUP_SAFE	= (EXT4_LB_DE_RO | EXT4_LB_DX_RO |
++				   EXT4_LB_EXACT),
++	EXT4_HLOCK_DEL_SAFE	= (EXT4_LB_DE | EXT4_LB_DX_RO | EXT4_LB_EXACT),
++	EXT4_HLOCK_SPLIT	= (EXT4_LB_DE | EXT4_LB_DX | EXT4_LB_SPIN),
++};
++
++extern struct htree_lock_head *ext4_htree_lock_head_alloc(unsigned hbits);
++#define ext4_htree_lock_head_free(lhead)	htree_lock_head_free(lhead)
++
++extern struct htree_lock *ext4_htree_lock_alloc(void);
++#define ext4_htree_lock_free(lck)		htree_lock_free(lck)
++
++extern void ext4_htree_lock(struct htree_lock *lck,
++			    struct htree_lock_head *lhead,
++			    struct inode *dir, unsigned flags);
++#define ext4_htree_unlock(lck)                  htree_unlock(lck)
++
++extern struct buffer_head *__ext4_find_entry(struct inode *dir,
++					const struct qstr *d_name,
++					struct ext4_dir_entry_2 **res_dir,
++					int *inlined, struct htree_lock *lck);
++extern int __ext4_add_entry(handle_t *handle, struct dentry *dentry,
++		      struct inode *inode, struct htree_lock *lck);
+ 
+ /*
+  * Describe an inode's exact location on disk and in memory
+@@ -2088,9 +2157,17 @@ void ext4_insert_dentry(struct inode *in
+ 			const char *name, int namelen, void *data);
+ static inline void ext4_update_dx_flag(struct inode *inode)
+ {
++	/* Disable it for ldiskfs, because going from a DX directory to
++	 * a non-DX directory while it is in use will completely break
++	 * the htree-locking.
++	 * If we really want to support this operation in the future,
++	 * we need to exclusively lock the directory at here which will
++	 * increase complexity of code */
++#if 0
+ 	if (!EXT4_HAS_COMPAT_FEATURE(inode->i_sb,
+ 				     EXT4_FEATURE_COMPAT_DIR_INDEX))
+ 		ext4_clear_inode_flag(inode, EXT4_INODE_INDEX);
++#endif
+ }
+ static unsigned char ext4_filetype_table[] = {
+ 	DT_UNKNOWN, DT_REG, DT_DIR, DT_CHR, DT_BLK, DT_FIFO, DT_SOCK, DT_LNK
+Index: linux-3.10.0-229.1.2.fc21.x86_64/fs/ext4/namei.c
+===================================================================
+--- linux-3.10.0-229.1.2.fc21.x86_64.orig/fs/ext4/namei.c
++++ linux-3.10.0-229.1.2.fc21.x86_64/fs/ext4/namei.c
+@@ -53,6 +53,7 @@ struct buffer_head *ext4_append(handle_t
+ 					ext4_lblk_t *block)
+ {
+ 	struct buffer_head *bh;
++	struct ext4_inode_info *ei = EXT4_I(inode);
+ 	int err = 0;
+ 
+ 	if (unlikely(EXT4_SB(inode->i_sb)->s_max_dir_size_kb &&
+@@ -60,15 +61,22 @@ struct buffer_head *ext4_append(handle_t
+ 		      EXT4_SB(inode->i_sb)->s_max_dir_size_kb)))
+ 		return ERR_PTR(-ENOSPC);
+ 
++	/* with parallel dir operations all appends
++	* have to be serialized -bzzz */
++	down(&ei->i_append_sem);
++
+ 	*block = inode->i_size >> inode->i_sb->s_blocksize_bits;
+ 
+ 	bh = ext4_bread(handle, inode, *block, 1, &err);
+-	if (!bh)
++	if (!bh) {
++		up(&ei->i_append_sem);
+ 		return ERR_PTR(err);
++	}
+ 	inode->i_size += inode->i_sb->s_blocksize;
+ 	EXT4_I(inode)->i_disksize = inode->i_size;
+ 	BUFFER_TRACE(bh, "get_write_access");
+ 	err = ext4_journal_get_write_access(handle, bh);
++	up(&ei->i_append_sem);
+ 	if (err) {
+ 		brelse(bh);
+ 		ext4_std_error(inode->i_sb, err);
+@@ -246,7 +254,7 @@ static struct dx_frame *dx_probe(const s
  				 struct inode *dir,
  				 struct dx_hash_info *hinfo,
  				 struct dx_frame *frame,
@@ -1077,7 +1260,7 @@
  static void dx_release(struct dx_frame *frames);
  static int dx_make_map(struct ext4_dir_entry_2 *de, unsigned blocksize,
  		       struct dx_hash_info *hinfo, struct dx_map_entry map[]);
-@@ -189,13 +189,13 @@ static void dx_insert_block(struct dx_fr
+@@ -259,13 +267,13 @@ static void dx_insert_block(struct dx_fr
  static int ext4_htree_next_block(struct inode *dir, __u32 hash,
  				 struct dx_frame *frame,
  				 struct dx_frame *frames,
@@ -1091,22 +1274,13 @@
  static int ext4_dx_add_entry(handle_t *handle, struct dentry *dentry,
 -			     struct inode *inode);
 +			     struct inode *inode, struct htree_lock *lck);
-
- /*
-  * p is at least 6 bytes before the end of page
-@@ -225,7 +225,7 @@ struct dx_root_info * dx_get_dx_info(str
-
- static inline ext4_lblk_t dx_get_block(struct dx_entry *entry)
- {
--	return le32_to_cpu(entry->block) & 0x00ffffff;
-+	return le32_to_cpu(entry->block) & 0x0fffffff;
- }
-
- static inline void dx_set_block(struct dx_entry *entry, ext4_lblk_t value)
-@@ -368,6 +368,223 @@ struct stats dx_show_entries(struct dx_h
+ 
+ /* checksumming functions */
+ void initialize_dirent_tail(struct ext4_dir_entry_tail *t,
+@@ -668,6 +676,227 @@ struct stats dx_show_entries(struct dx_h
  }
  #endif /* DX_DEBUG */
-
+ 
 +/* private data for htree_lock */
 +struct ext4_dir_lock_data {
 +	unsigned		ld_flags;  /* bits-map for lock types */
@@ -1116,6 +1290,10 @@
 +};
 +
 +#define ext4_htree_lock_data(l)	((struct ext4_dir_lock_data *)(l)->lk_private)
++#define ext4_find_entry(dir, name, dirent, inline) \
++			__ext4_find_entry(dir, name, dirent, inline, NULL)
++#define ext4_add_entry(handle, dentry, inode) \
++			__ext4_add_entry(handle, dentry, inode, NULL)
 +
 +/* NB: ext4_lblk_t is 32 bits so we use high bits to identify invalid blk */
 +#define EXT4_HTREE_NODE_CHANGED	(0xcafeULL << 32)
@@ -1327,7 +1505,7 @@
  /*
   * Probe for a directory leaf block to search.
   *
-@@ -379,16 +596,17 @@ struct stats dx_show_entries(struct dx_h
+@@ -679,10 +908,11 @@ struct stats dx_show_entries(struct dx_h
   */
  static struct dx_frame *
  dx_probe(const struct qstr *d_name, struct inode *dir,
@@ -1338,37 +1516,10 @@
  	unsigned count, indirect;
 -	struct dx_entry *at, *entries, *p, *q, *m;
 +	struct dx_entry *at, *entries, *p, *q, *m, *dx = NULL;
- 	struct dx_root_info * info;
+ 	struct dx_root_info *info;
  	struct buffer_head *bh;
  	struct dx_frame *frame = frame_in;
- 	u32 hash;
-
--	frame->bh = NULL;
-+	memset(frame_in, 0, EXT4_HTREE_LEVEL * sizeof(frame_in[0]));
- 	if (!(bh = ext4_bread (NULL,dir, 0, 0, err)))
- 		goto fail;
-
-@@ -418,9 +636,16 @@ dx_probe(const struct qstr *d_name, stru
- 		goto fail;
- 	}
-
--	if ((indirect = info->indirect_levels) > 1) {
--		ext4_warning(dir->i_sb, "Unimplemented inode hash depth: %#06x",
--			     info->indirect_levels);
-+	indirect = info->indirect_levels;
-+	if (indirect >= ext4_dir_htree_level(dir->i_sb)) {
-+		ext4_warning(dir->i_sb,
-+			     "Directory (ino: %lu) htree depth %#06x exceed "
-+			     "supported value", dir->i_ino,
-+			     ext4_dir_htree_level(dir->i_sb));
-+		if (ext4_dir_htree_level(dir->i_sb) < EXT4_HTREE_LEVEL) {
-+			ext4_warning(dir->i_sb, "Enable large directory "
-+						"feature to access it");
-+		}
- 		brelse(bh);
- 		*err = ERR_BAD_DX_DIR;
- 		goto fail;
-@@ -440,8 +665,15 @@ dx_probe(const struct qstr *d_name, stru
+@@ -750,8 +980,15 @@ dx_probe(const struct qstr *d_name, stru
  	dxtrace(printk("Look up %x", hash));
  	while (1)
  	{
@@ -1385,7 +1536,7 @@
  			ext4_warning(dir->i_sb,
  				     "dx entry: no count or count > limit");
  			brelse(bh);
-@@ -482,9 +714,73 @@ dx_probe(const struct qstr *d_name, stru
+@@ -792,7 +1029,70 @@ dx_probe(const struct qstr *d_name, stru
  		frame->bh = bh;
  		frame->entries = entries;
  		frame->at = at;
@@ -1454,35 +1605,10 @@
 +		}
 +		dx = at;
 +		indirect--;
- 		if (!(bh = ext4_bread (NULL,dir, dx_get_block(at), 0, err)))
- 			goto fail2;
-+
- 		at = entries = ((struct dx_node *) bh->b_data)->entries;
- 		if (dx_get_limit(entries) != dx_node_limit (dir)) {
- 			ext4_warning(dir->i_sb,
-@@ -512,13 +808,18 @@ fail:
- static void dx_release (struct dx_frame *frames)
- {
- 	struct dx_root_info *info;
-+	int i;
-+
- 	if (frames[0].bh == NULL)
- 		return;
-
- 	info = dx_get_dx_info((struct ext4_dir_entry_2*)frames[0].bh->b_data);
--	if (info->indirect_levels)
--		brelse(frames[1].bh);
--	brelse(frames[0].bh);
-+	for (i = 0; i <= info->indirect_levels; i++) {
-+		if (frames[i].bh == NULL)
-+			break;
-+		brelse(frames[i].bh);
-+		frames[i].bh = NULL;
-+	}
- }
-
- /*
-@@ -541,7 +842,7 @@ static void dx_release (struct dx_frame
+ 		bh = ext4_read_dirblock(dir, dx_get_block(at), INDEX);
+ 		if (IS_ERR(bh)) {
+ 			*err = PTR_ERR(bh);
+@@ -860,7 +1160,7 @@ static void dx_release (struct dx_frame
  static int ext4_htree_next_block(struct inode *dir, __u32 hash,
  				 struct dx_frame *frame,
  				 struct dx_frame *frames,
@@ -1491,7 +1617,7 @@
  {
  	struct dx_frame *p;
  	struct buffer_head *bh;
-@@ -556,12 +857,22 @@ static int ext4_htree_next_block(struct
+@@ -875,12 +1175,22 @@ static int ext4_htree_next_block(struct
  	 * this loop, num_frames indicates the number of interior
  	 * nodes need to be read.
  	 */
@@ -1515,8 +1641,8 @@
 +			ext4_htree_dx_unlock(lck);
  		p--;
  	}
-
-@@ -584,6 +895,13 @@ static int ext4_htree_next_block(struct
+ 
+@@ -903,6 +1213,13 @@ static int ext4_htree_next_block(struct
  	 * block so no check is necessary
  	 */
  	while (num_frames--) {
@@ -1527,27 +1653,18 @@
 +			ext4_htree_dx_lock(lck, p->at);
 +		}
 +
- 		if (!(bh = ext4_bread(NULL, dir, dx_get_block(p->at),
- 				      0, &err)))
- 			return err; /* Failure */
-@@ -592,6 +910,7 @@ static int ext4_htree_next_block(struct
+ 		bh = ext4_read_dirblock(dir, dx_get_block(p->at), INDEX);
+ 		if (IS_ERR(bh))
+ 			return PTR_ERR(bh);
+@@ -911,6 +1228,7 @@ static int ext4_htree_next_block(struct
  		p->bh = bh;
  		p->at = p->entries = ((struct dx_node *) bh->b_data)->entries;
  	}
 +	ext4_htree_de_lock(lck, p->at);
  	return 1;
  }
-
-@@ -661,7 +980,7 @@ int ext4_htree_fill_tree(struct file *di
- {
- 	struct dx_hash_info hinfo;
- 	struct ext4_dir_entry_2 *de;
--	struct dx_frame frames[2], *frame;
-+	struct dx_frame frames[EXT4_HTREE_LEVEL], *frame;
- 	struct inode *dir;
- 	ext4_lblk_t block;
- 	int count = 0;
-@@ -684,10 +1003,10 @@ int ext4_htree_fill_tree(struct file *di
+ 
+@@ -1013,10 +1331,10 @@ int ext4_htree_fill_tree(struct file *di
  	}
  	hinfo.hash = start_hash;
  	hinfo.minor_hash = 0;
@@ -1560,7 +1677,7 @@
  	/* Add '.' and '..' from the htree header */
  	if (!start_hash && !start_minor_hash) {
  		de = (struct ext4_dir_entry_2 *) frames[0].bh->b_data;
-@@ -714,7 +1033,7 @@ int ext4_htree_fill_tree(struct file *di
+@@ -1043,7 +1361,7 @@ int ext4_htree_fill_tree(struct file *di
  		count += ret;
  		hashval = ~0;
  		ret = ext4_htree_next_block(dir, HASH_NB_ALWAYS,
@@ -1569,46 +1686,29 @@
  		*next_hash = hashval;
  		if (ret < 0) {
  			err = ret;
-@@ -814,9 +1133,17 @@ static void dx_insert_block(struct dx_fr
-
- static void ext4_update_dx_flag(struct inode *inode)
- {
-+	/* Disable it for ldiskfs, because going from a DX directory to
-+	 * a non-DX directory while it is in use will completely break
-+	 * the htree-locking.
-+	 * If we really want to support this operation in the future,
-+	 * we need to exclusively lock the directory at here which will
-+	 * increase complexity of code */
-+#if 0
- 	if (!EXT4_HAS_COMPAT_FEATURE(inode->i_sb,
- 				     EXT4_FEATURE_COMPAT_DIR_INDEX))
- 		ext4_clear_inode_flag(inode, EXT4_INODE_INDEX);
-+#endif
- }
-
- /*
-@@ -888,8 +1215,9 @@ static inline int search_dirblock(struct
+@@ -1236,10 +1554,10 @@ static int is_dx_internal_node(struct in
+  * The returned buffer_head has ->b_count elevated.  The caller is expected
   * to brelse() it when appropriate.
   */
- struct buffer_head * ext4_find_entry(struct inode *dir,
--				      const struct qstr *d_name,
--				      struct ext4_dir_entry_2 ** res_dir)
-+				     const struct qstr *d_name,
-+				     struct ext4_dir_entry_2 **res_dir,
-+				     struct htree_lock *lck)
+-static struct buffer_head * ext4_find_entry (struct inode *dir,
++struct buffer_head *__ext4_find_entry(struct inode *dir,
+ 					const struct qstr *d_name,
+ 					struct ext4_dir_entry_2 **res_dir,
+-					int *inlined)
++					int *inlined, struct htree_lock *lck)
  {
  	struct super_block *sb;
  	struct buffer_head *bh_use[NAMEI_RA_SIZE];
-@@ -910,7 +1238,7 @@ struct buffer_head * ext4_find_entry(str
- 	if (namelen > EXT4_NAME_LEN)
- 		return NULL;
+@@ -1283,7 +1601,7 @@ static struct buffer_head * ext4_find_en
+ 		goto restart;
+ 	}
  	if (is_dx(dir)) {
 -		bh = ext4_dx_find_entry(dir, d_name, res_dir, &err);
 +		bh = ext4_dx_find_entry(dir, d_name, res_dir, lck, &err);
  		/*
  		 * On success, or if the error was file not found,
  		 * return.  Otherwise, fall back to doing a search the
-@@ -920,6 +1248,7 @@ struct buffer_head * ext4_find_entry(str
+@@ -1297,6 +1615,7 @@ static struct buffer_head * ext4_find_en
  			return bh;
  		dxtrace(printk(KERN_DEBUG "ext4_find_entry: dx failed, "
  			       "falling back\n"));
@@ -1616,71 +1716,40 @@
  	}
  	nblocks = dir->i_size >> EXT4_BLOCK_SIZE_BITS(sb);
  	start = EXT4_I(dir)->i_dir_start_lookup;
-@@ -996,13 +1325,15 @@ cleanup_and_exit:
+@@ -1389,9 +1708,12 @@ cleanup_and_exit:
+ 		brelse(bh_use[ra_ptr]);
  	return ret;
  }
-
++EXPORT_SYMBOL(__ext4_find_entry);
+ 
 -static struct buffer_head * ext4_dx_find_entry(struct inode *dir, const struct qstr *d_name,
 -		       struct ext4_dir_entry_2 **res_dir, int *err)
-+static struct buffer_head * ext4_dx_find_entry(struct inode *dir,
-+					       const struct qstr *d_name,
-+					       struct ext4_dir_entry_2 **res_dir,
-+					       struct htree_lock *lck, int *err)
++static struct buffer_head *ext4_dx_find_entry(struct inode *dir,
++				const struct qstr *d_name,
++				struct ext4_dir_entry_2 **res_dir,
++				struct htree_lock *lck, int *err)
  {
- 	struct super_block * sb;
+ 	struct super_block * sb = dir->i_sb;
  	struct dx_hash_info	hinfo;
- 	u32 hash;
--	struct dx_frame frames[2], *frame;
-+	struct dx_frame frames[EXT4_HTREE_LEVEL], *frame;
- 	struct buffer_head *bh;
+@@ -1400,7 +1722,7 @@ static struct buffer_head * ext4_dx_find
  	ext4_lblk_t block;
  	int retval;
-@@ -1012,13 +1343,16 @@ static struct buffer_head * ext4_dx_find
- 	sb = dir->i_sb;
- 	/* NFS may look up ".." - look at dx_root directory block */
- 	if (namelen > 2 || name[0] != '.'||(name[1] != '.' && name[1] != '\0')){
--		if (!(frame = dx_probe(d_name, dir, &hinfo, frames, err)))
-+		if (!(frame = dx_probe(d_name, dir, &hinfo, frames, lck, err)))
- 			return NULL;
- 	} else {
- 		frame = frames;
- 		frame->bh = NULL;			/* for dx_release() */
- 		frame->at = (struct dx_entry *)frames;	/* hack for zero entry*/
- 		dx_set_block(frame->at, 0);		/* dx_root block is 0 */
-+		/* "." and ".." are stored in root DX lock */
-+		ext4_htree_dx_need_lock(lck);
-+		ext4_htree_dx_lock(lck, NULL);
- 	}
- 	hash = hinfo.hash;
+ 
+-	if (!(frame = dx_probe(d_name, dir, &hinfo, frames, err)))
++	if (!(frame = dx_probe(d_name, dir, &hinfo, frames, lck, err)))
+ 		return NULL;
  	do {
-@@ -1041,7 +1375,7 @@ static struct buffer_head * ext4_dx_find
-
+ 		block = dx_get_block(frame->at);
+@@ -1424,7 +1746,7 @@ static struct buffer_head * ext4_dx_find
+ 
  		/* Check to see if we should continue to search */
- 		retval = ext4_htree_next_block(dir, hash, frame,
+ 		retval = ext4_htree_next_block(dir, hinfo.hash, frame,
 -					       frames, NULL);
 +					       frames, NULL, lck);
  		if (retval < 0) {
  			ext4_warning(sb,
  			     "error reading index page in directory #%lu",
-@@ -1067,7 +1401,7 @@ static struct dentry *ext4_lookup(struct
- 	if (dentry->d_name.len > EXT4_NAME_LEN)
- 		return ERR_PTR(-ENAMETOOLONG);
-
--	bh = ext4_find_entry(dir, &dentry->d_name, &de);
-+	bh = ext4_find_entry(dir, &dentry->d_name, &de, NULL);
- 	inode = NULL;
- 	if (bh) {
- 		__u32 ino = le32_to_cpu(de->inode);
-@@ -1134,7 +1468,7 @@ struct dentry *ext4_get_parent(struct de
- 	struct ext4_dir_entry_2 * de;
- 	struct buffer_head *bh;
-
--	bh = ext4_find_entry(child->d_inode, &dotdot, &de);
-+	bh = ext4_find_entry(child->d_inode, &dotdot, &de, NULL);
- 	if (!bh)
- 		return ERR_PTR(-ENOENT);
- 	ino = le32_to_cpu(de->inode);
-@@ -1222,8 +1556,9 @@ static struct ext4_dir_entry_2* dx_pack_
+@@ -1583,8 +1905,9 @@ static struct ext4_dir_entry_2* dx_pack_
   * Returns pointer to de in block into which the new entry will be inserted.
   */
  static struct ext4_dir_entry_2 *do_split(handle_t *handle, struct inode *dir,
@@ -1692,9 +1761,9 @@
  {
  	unsigned blocksize = dir->i_sb->s_blocksize;
  	unsigned count, continued;
-@@ -1280,7 +1615,14 @@ static struct ext4_dir_entry_2 *do_split
+@@ -1647,7 +1970,14 @@ static struct ext4_dir_entry_2 *do_split
  					hash2, split, count-split));
-
+ 
  	/* Fancy dance to stay within two buffers */
 -	de2 = dx_move_dirents(data1, data2, map + split, count - split, blocksize);
 +	if (hinfo->hash < hash2) {
@@ -1706,12 +1775,12 @@
 +		de2 = dx_move_dirents(data1, data2, map, split, blocksize);
 +	}
  	de = dx_pack_dirents(data1, blocksize);
- 	de->rec_len = ext4_rec_len_to_disk(data1 + blocksize - (char *) de,
- 					   blocksize);
-@@ -1289,13 +1631,21 @@ static struct ext4_dir_entry_2 *do_split
+ 	de->rec_len = ext4_rec_len_to_disk(data1 + (blocksize - csum_size) -
+ 					   (char *) de,
+@@ -1666,13 +1996,21 @@ static struct ext4_dir_entry_2 *do_split
  	dxtrace(dx_show_leaf (hinfo, (struct ext4_dir_entry_2 *) data1, blocksize, 1));
  	dxtrace(dx_show_leaf (hinfo, (struct ext4_dir_entry_2 *) data2, blocksize, 1));
-
+ 
 -	/* Which block gets the new entry? */
 -	if (hinfo->hash >= hash2)
 -	{
@@ -1733,216 +1802,81 @@
 +	ext4_htree_spin_unlock(lck);
 +	ext4_htree_dx_unlock(lck);
 +
- 	err = ext4_handle_dirty_metadata(handle, dir, bh2);
+ 	err = ext4_handle_dirty_dirent_node(handle, dir, bh2);
  	if (err)
  		goto journal_error;
-@@ -1406,7 +1756,7 @@ static int add_dirent_to_buf(handle_t *h
- 	if (!IS_NOCMTIME(dir))
- 		dir->i_mtime = dir->i_ctime = ext4_current_time(dir);
- 	ext4_update_dx_flag(dir);
--	dir->i_version++;
-+	inode_inc_iversion(dir);
- 	ext4_mark_inode_dirty(handle, dir);
- 	BUFFER_TRACE(bh, "call ext4_handle_dirty_metadata");
- 	err = ext4_handle_dirty_metadata(handle, dir, bh);
-@@ -1426,7 +1776,7 @@ static int make_indexed_dir(handle_t *ha
- 	const char	*name = dentry->d_name.name;
- 	int		namelen = dentry->d_name.len;
- 	struct buffer_head *bh2;
--	struct dx_frame	frames[2], *frame;
-+	struct dx_frame	frames[EXT4_HTREE_LEVEL], *frame;
- 	struct dx_entry *entries;
- 	struct ext4_dir_entry_2 *de, *de2, *dot_de, *dotdot_de;
- 	char		*data1, *top;
-@@ -1507,7 +1857,7 @@ static int make_indexed_dir(handle_t *ha
- 	ext4_handle_dirty_metadata(handle, dir, frame->bh);
- 	ext4_handle_dirty_metadata(handle, dir, bh);
-
+@@ -1945,7 +2283,7 @@ static int make_indexed_dir(handle_t *ha
+ 	ext4_handle_dirty_dx_node(handle, dir, frame->bh);
+ 	ext4_handle_dirty_dirent_node(handle, dir, bh);
+ 
 -	de = do_split(handle,dir, &bh, frame, &hinfo, &retval);
-+	de = do_split(handle,dir, &bh, frames, frame, &hinfo, NULL, &retval);
++	de = do_split(handle, dir, &bh, frames, frame, &hinfo, NULL, &retval);
  	if (!de) {
  		/*
  		 * Even if the block split failed, we have to properly write
-@@ -1614,7 +1964,7 @@ out:
+@@ -2051,8 +2389,8 @@ out:
+  * may not sleep between calling this and putting something into
   * the entry, as someone else might have used it while you slept.
   */
- int ext4_add_entry(handle_t *handle, struct dentry *dentry,
--		   struct inode *inode)
-+		   struct inode *inode, struct htree_lock *lck)
+-static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
+-			  struct inode *inode)
++int __ext4_add_entry(handle_t *handle, struct dentry *dentry,
++		      struct inode *inode, struct htree_lock *lck)
  {
  	struct inode *dir = dentry->d_parent->d_inode;
  	struct buffer_head *bh;
-@@ -1633,9 +1983,10 @@ int ext4_add_entry(handle_t *handle, str
+@@ -2087,9 +2425,10 @@ static int ext4_add_entry(handle_t *hand
  		if (dentry->d_name.len == 2 &&
  		    memcmp(dentry->d_name.name, "..", 2) == 0)
  			return ext4_update_dotdot(handle, dentry, inode);
 -		retval = ext4_dx_add_entry(handle, dentry, inode);
 +		retval = ext4_dx_add_entry(handle, dentry, inode, lck);
  		if (!retval || (retval != ERR_BAD_DX_DIR))
- 			return retval;
+ 			goto out;
 +		ext4_htree_safe_relock(lck);
  		ext4_clear_inode_flag(dir, EXT4_INODE_INDEX);
  		dx_fallback++;
  		ext4_mark_inode_dirty(handle, dir);
-@@ -1673,18 +2024,21 @@ int ext4_add_entry(handle_t *handle, str
+@@ -2129,12 +2468,13 @@ static int ext4_add_entry(handle_t *hand
+ 		ext4_set_inode_state(inode, EXT4_STATE_NEWENTRY);
+ 	return retval;
+ }
++EXPORT_SYMBOL(__ext4_add_entry);
+ 
+ /*
   * Returns 0 for success, or a negative error value
   */
  static int ext4_dx_add_entry(handle_t *handle, struct dentry *dentry,
 -			     struct inode *inode)
 +			     struct inode *inode, struct htree_lock *lck)
  {
--	struct dx_frame frames[2], *frame;
-+	struct dx_frame frames[EXT4_HTREE_LEVEL], *frame;
+ 	struct dx_frame frames[EXT4_HTREE_LEVEL], *frame;
  	struct dx_entry *entries, *at;
- 	struct dx_hash_info hinfo;
- 	struct buffer_head *bh;
- 	struct inode *dir = dentry->d_parent->d_inode;
- 	struct super_block *sb = dir->i_sb;
- 	struct ext4_dir_entry_2 *de;
-+	int restart;
- 	int err;
-
+@@ -2148,7 +2488,7 @@ static int ext4_dx_add_entry(handle_t *h
+ 
+ again:
+ 	restart = 0;
 -	frame = dx_probe(&dentry->d_name, dir, &hinfo, frames, &err);
-+again:
-+	restart = 0;
 +	frame = dx_probe(&dentry->d_name, dir, &hinfo, frames, lck, &err);
  	if (!frame)
  		return err;
  	entries = frame->entries;
-@@ -1693,33 +2047,53 @@ static int ext4_dx_add_entry(handle_t *h
- 	if (!(bh = ext4_bread(handle,dir, dx_get_block(frame->at), 0, &err)))
- 		goto cleanup;
-
--	BUFFER_TRACE(bh, "get_write_access");
--	err = ext4_journal_get_write_access(handle, bh);
--	if (err)
--		goto journal_error;
--
- 	err = add_dirent_to_buf(handle, dentry, inode, NULL, bh);
- 	if (err != -ENOSPC)
- 		goto cleanup;
-
-+	err = 0;
- 	/* Block full, should compress but for now just split */
- 	dxtrace(printk(KERN_DEBUG "using %u of %u node entries\n",
- 		       dx_get_count(entries), dx_get_limit(entries)));
- 	/* Need to split index? */
- 	if (dx_get_count(entries) == dx_get_limit(entries)) {
- 		ext4_lblk_t newblock;
--		unsigned icount = dx_get_count(entries);
--		int levels = frame - frames;
-+		int levels = frame - frames + 1;
-+		unsigned icount;
-+		int add_level = 1;
- 		struct dx_entry *entries2;
+@@ -2178,6 +2518,11 @@ again:
  		struct dx_node *node2;
  		struct buffer_head *bh2;
-
--		if (levels && (dx_get_count(frames->entries) ==
--			       dx_get_limit(frames->entries))) {
--			ext4_warning(sb, "Directory index full!");
+ 
 +		if (!ext4_htree_safe_locked(lck)) { /* retry with EX lock */
 +			ext4_htree_safe_relock(lck);
 +			restart = 1;
 +			goto cleanup;
 +		}
-+		while (frame > frames) {
-+			if (dx_get_count((frame - 1)->entries) <
-+			    dx_get_limit((frame - 1)->entries)) {
-+				add_level = 0;
-+				break;
-+			}
-+			frame--; /* split higher index block */
-+			at = frame->at;
-+			entries = frame->entries;
-+			restart = 1;
-+		}
-+		if (add_level && levels == ext4_dir_htree_level(sb)) {
-+			ext4_warning(sb, "Directory (ino: %lu) index full, "
-+					 "reach max htree level :%d",
-+					 dir->i_ino, levels);
-+			if (ext4_dir_htree_level(sb) < EXT4_HTREE_LEVEL) {
-+				ext4_warning(sb, "Large directory feature is"
-+						 "not enabled on this "
-+						 "filesystem");
-+			}
- 			err = -ENOSPC;
+ 		while (frame > frames) {
+ 			if (dx_get_count((frame - 1)->entries) <
+ 			    dx_get_limit((frame - 1)->entries)) {
+@@ -2277,16 +2622,43 @@ again:
+ 			restart = 1;
  			goto cleanup;
  		}
-+		icount = dx_get_count(entries);
- 		bh2 = ext4_append (handle, dir, &newblock, &err);
- 		if (!(bh2))
- 			goto cleanup;
-@@ -1732,7 +2106,7 @@ static int ext4_dx_add_entry(handle_t *h
- 		err = ext4_journal_get_write_access(handle, frame->bh);
- 		if (err)
- 			goto journal_error;
--		if (levels) {
-+		if (!add_level) {
- 			unsigned icount1 = icount/2, icount2 = icount - icount1;
- 			unsigned hash2 = dx_get_hash(entries + icount1);
- 			dxtrace(printk(KERN_DEBUG "Split index %i/%i\n",
-@@ -1740,7 +2114,7 @@ static int ext4_dx_add_entry(handle_t *h
-
- 			BUFFER_TRACE(frame->bh, "get_write_access"); /* index root */
- 			err = ext4_journal_get_write_access(handle,
--							     frames[0].bh);
-+							    (frame - 1)->bh);
- 			if (err)
- 				goto journal_error;
-
-@@ -1756,14 +2130,21 @@ static int ext4_dx_add_entry(handle_t *h
- 				frame->entries = entries = entries2;
- 				swap(frame->bh, bh2);
- 			}
--			dx_insert_block(frames + 0, hash2, newblock);
--			dxtrace(dx_show_index("node", frames[1].entries));
-+			dx_insert_block((frame - 1), hash2, newblock);
-+			dxtrace(dx_show_index("node", frame->entries));
- 			dxtrace(dx_show_index("node",
- 			       ((struct dx_node *) bh2->b_data)->entries));
- 			err = ext4_handle_dirty_metadata(handle, dir, bh2);
- 			if (err)
- 				goto journal_error;
- 			brelse (bh2);
-+			ext4_handle_dirty_metadata(handle, inode,
-+						   (frame - 1)->bh);
-+			if (restart) {
-+				ext4_handle_dirty_metadata(handle, inode,
-+							   frame->bh);
-+				goto cleanup;
-+			}
- 		} else {
- 			struct dx_root_info * info;
- 			dxtrace(printk(KERN_DEBUG
-@@ -1777,25 +2158,42 @@ static int ext4_dx_add_entry(handle_t *h
- 			dx_set_block(entries + 0, newblock);
- 			info = dx_get_dx_info((struct ext4_dir_entry_2*)
- 					frames[0].bh->b_data);
--			info->indirect_levels = 1;
--
--			/* Add new access path frame */
--			frame = frames + 1;
--			frame->at = at = at - entries + entries2;
--			frame->entries = entries = entries2;
--			frame->bh = bh2;
--			err = ext4_journal_get_write_access(handle,
--							     frame->bh);
--			if (err)
--				goto journal_error;
-+			info->indirect_levels += 1;
-+			dxtrace(printk(KERN_DEBUG
-+				"Creating %d level index...\n",
-+				info->indirect_levels));
-+			ext4_handle_dirty_metadata(handle, inode, frame->bh);
-+			ext4_handle_dirty_metadata(handle, inode, bh2);
-+			brelse(bh2);
-+			restart = 1;
-+			goto cleanup;
- 		}
--		err = ext4_handle_dirty_metadata(handle, dir, frames[0].bh);
--		if (err) {
--			ext4_std_error(inode->i_sb, err);
 +	} else if (!ext4_htree_dx_locked(lck)) {
 +		struct ext4_dir_lock_data *ld = ext4_htree_lock_data(lck);
 +
@@ -1963,311 +1897,35 @@
 +		    !ext4_htree_dx_lock_try(lck, at) ||
 +		    (ld->ld_count != dx_get_count(entries))) {
 +			restart = 1;
- 			goto cleanup;
- 		}
--	}
--	de = do_split(handle, dir, &bh, frame, &hinfo, &err);
++			goto cleanup;
++		}
 +		/* OK, I've got DX lock and nothing changed */
 +		frame->at = ld->ld_at;
-+        }
+ 	}
+-	de = do_split(handle, dir, &bh, frame, &hinfo, &err);
 +	de = do_split(handle, dir, &bh, frames, frame, &hinfo, lck, &err);
  	if (!de)
  		goto cleanup;
++
  	err = add_dirent_to_buf(handle, dentry, inode, de, bh);
-@@ -1804,9 +2202,15 @@ static int ext4_dx_add_entry(handle_t *h
+ 	goto cleanup;
+ 
  journal_error:
  	ext4_std_error(dir->i_sb, err);
  cleanup:
 +	ext4_htree_dx_unlock(lck);
 +	ext4_htree_de_unlock(lck);
- 	if (bh)
- 		brelse(bh);
+ 	brelse(bh);
  	dx_release(frames);
-+	/* @restart is true means htree-path has been changed, we need to
-+	 * repeat dx_probe() to find out valid htree-path */
-+	if (restart && err == 0)
-+		goto again;
- 	return err;
- }
-
-@@ -1845,7 +2249,7 @@ int ext4_delete_entry(handle_t *handle,
- 					blocksize);
- 			else
- 				de->inode = 0;
--			dir->i_version++;
-+			inode_inc_iversion(dir);
- 			BUFFER_TRACE(bh, "call ext4_handle_dirty_metadata");
- 			err = ext4_handle_dirty_metadata(handle, dir, bh);
- 			if (unlikely(err)) {
-@@ -1892,7 +2296,7 @@ static void ext4_dec_count(handle_t *han
- static int ext4_add_nondir(handle_t *handle,
- 		struct dentry *dentry, struct inode *inode)
- {
--	int err = ext4_add_entry(handle, dentry, inode);
-+	int err = ext4_add_entry(handle, dentry, inode, NULL);
- 	if (!err) {
- 		ext4_mark_inode_dirty(handle, inode);
- 		d_instantiate(dentry, inode);
-@@ -2122,7 +2526,7 @@ retry:
- 	err = ext4_add_dot_dotdot(handle, dir, inode, NULL, NULL);
- 	if (err)
- 		goto out_clear_inode;
--	err = ext4_add_entry(handle, dentry, inode);
-+	err = ext4_add_entry(handle, dentry, inode, NULL);
- 	if (err)
- 		goto out_clear_inode;
- 	ext4_inc_count(handle, dir);
-@@ -2395,7 +2799,7 @@ static int ext4_rmdir(struct inode *dir,
- 		return PTR_ERR(handle);
-
- 	retval = -ENOENT;
--	bh = ext4_find_entry(dir, &dentry->d_name, &de);
-+	bh = ext4_find_entry(dir, &dentry->d_name, &de, NULL);
- 	if (!bh)
- 		goto end_rmdir;
-
-@@ -2460,7 +2864,7 @@ static int ext4_unlink(struct inode *dir
- 		ext4_handle_sync(handle);
-
- 	retval = -ENOENT;
--	bh = ext4_find_entry(dir, &dentry->d_name, &de);
-+	bh = ext4_find_entry(dir, &dentry->d_name, &de, NULL);
- 	if (!bh)
- 		goto end_unlink;
-
-@@ -2628,7 +3032,7 @@ retry:
- 	ext4_inc_count(handle, inode);
- 	ihold(inode);
-
--	err = ext4_add_entry(handle, dentry, inode);
-+	err = ext4_add_entry(handle, dentry, inode, NULL);
- 	if (!err) {
- 		ext4_mark_inode_dirty(handle, inode);
- 		d_instantiate(dentry, inode);
-@@ -2676,7 +3080,7 @@ static int ext4_rename(struct inode *old
- 	if (IS_DIRSYNC(old_dir) || IS_DIRSYNC(new_dir))
- 		ext4_handle_sync(handle);
-
--	old_bh = ext4_find_entry(old_dir, &old_dentry->d_name, &old_de);
-+	old_bh = ext4_find_entry(old_dir, &old_dentry->d_name, &old_de, NULL);
- 	/*
- 	 *  Check for inode number is _not_ due to possible IO errors.
- 	 *  We might rmdir the source, keep it as pwd of some process
-@@ -2689,7 +3093,7 @@ static int ext4_rename(struct inode *old
- 		goto end_rename;
-
- 	new_inode = new_dentry->d_inode;
--	new_bh = ext4_find_entry(new_dir, &new_dentry->d_name, &new_de);
-+	new_bh = ext4_find_entry(new_dir, &new_dentry->d_name, &new_de, NULL);
- 	if (new_bh) {
- 		if (!new_inode) {
- 			brelse(new_bh);
-@@ -2719,7 +3123,7 @@ static int ext4_rename(struct inode *old
- 			goto end_rename;
- 	}
- 	if (!new_bh) {
--		retval = ext4_add_entry(handle, new_dentry, old_inode);
-+		retval = ext4_add_entry(handle, new_dentry, old_inode, NULL);
- 		if (retval)
- 			goto end_rename;
- 	} else {
-@@ -2767,7 +3171,8 @@ static int ext4_rename(struct inode *old
- 		struct buffer_head *old_bh2;
- 		struct ext4_dir_entry_2 *old_de2;
-
--		old_bh2 = ext4_find_entry(old_dir, &old_dentry->d_name, &old_de2);
-+		old_bh2 = ext4_find_entry(old_dir, &old_dentry->d_name,
-+					  &old_de2, NULL);
- 		if (old_bh2) {
- 			retval = ext4_delete_entry(handle, old_dir,
- 						   old_de2, old_bh2);
---- /dev/null
-+++ b/include/linux/htree_lock.h
-@@ -0,0 +1,187 @@
-+/*
-+ * include/linux/htree_lock.h
-+ *
-+ * Copyright (c) 2011, 2012, Intel Corporation.
-+ *
-+ * Author: Liang Zhen <liang@whamcloud.com>
-+ */
-+
-+/*
-+ * htree lock
-+ *
-+ * htree_lock is an advanced lock, it can support five lock modes (concept is
-+ * taken from DLM) and it's a sleeping lock.
-+ *
-+ * most common use case is:
-+ * - create a htree_lock_head for data
-+ * - each thread (contender) creates it's own htree_lock
-+ * - contender needs to call htree_lock(lock_node, mode) to protect data and
-+ *   call htree_unlock to release lock
-+ *
-+ * Also, there is advanced use-case which is more complex, user can have
-+ * PW/PR lock on particular key, it's mostly used while user holding shared
-+ * lock on the htree (CW, CR)
-+ *
-+ * htree_lock(lock_node, HTREE_LOCK_CR); lock the htree with CR
-+ * htree_node_lock(lock_node, HTREE_LOCK_PR, key...); lock @key with PR
-+ * ...
-+ * htree_node_unlock(lock_node);; unlock the key
-+ *
-+ * Another tip is, we can have N-levels of this kind of keys, all we need to
-+ * do is specifying N-levels while creating htree_lock_head, then we can
-+ * lock/unlock a specific level by:
-+ * htree_node_lock(lock_node, mode1, key1, level1...);
-+ * do something;
-+ * htree_node_lock(lock_node, mode1, key2, level2...);
-+ * do something;
-+ * htree_node_unlock(lock_node, level2);
-+ * htree_node_unlock(lock_node, level1);
-+ *
-+ * NB: for multi-level, should be careful about locking order to avoid deadlock
-+ */
-+
-+#ifndef _LINUX_HTREE_LOCK_H
-+#define _LINUX_HTREE_LOCK_H
-+
-+#include <linux/list.h>
-+#include <linux/spinlock.h>
-+#include <linux/sched.h>
-+
-+/*
-+ * Lock Modes
-+ * more details can be found here:
-+ * http://en.wikipedia.org/wiki/Distributed_lock_manager
-+ */
-+typedef enum {
-+	HTREE_LOCK_EX	= 0, /* exclusive lock: incompatible with all others */
-+	HTREE_LOCK_PW,	     /* protected write: allows only CR users */
-+	HTREE_LOCK_PR,	     /* protected read: allow PR, CR users */
-+	HTREE_LOCK_CW,	     /* concurrent write: allow CR, CW users */
-+	HTREE_LOCK_CR,	     /* concurrent read: allow all but EX users */
-+	HTREE_LOCK_MAX,	     /* number of lock modes */
-+} htree_lock_mode_t;
-+
-+#define HTREE_LOCK_NL		HTREE_LOCK_MAX
-+#define HTREE_LOCK_INVAL	0xdead10c
-+
-+enum {
-+	HTREE_HBITS_MIN		= 2,
-+	HTREE_HBITS_DEF		= 14,
-+	HTREE_HBITS_MAX		= 32,
-+};
-+
-+enum {
-+	HTREE_EVENT_DISABLE	= (0),
-+	HTREE_EVENT_RD		= (1 << HTREE_LOCK_PR),
-+	HTREE_EVENT_WR		= (1 << HTREE_LOCK_PW),
-+	HTREE_EVENT_RDWR	= (HTREE_EVENT_RD | HTREE_EVENT_WR),
-+};
-+
-+struct htree_lock;
-+
-+typedef void (*htree_event_cb_t)(void *target, void *event);
-+
-+struct htree_lock_child {
-+	struct list_head	lc_list;	/* granted list */
-+	htree_event_cb_t	lc_callback;	/* event callback */
-+	unsigned		lc_events;	/* event types */
-+};
-+
-+struct htree_lock_head {
-+	unsigned long		lh_lock;	/* bits lock */
-+	/* blocked lock list (htree_lock) */
-+	struct list_head	lh_blocked_list;
-+	/* # key levels */
-+	u16			lh_depth;
-+	/* hash bits for key and limit number of locks */
-+	u16			lh_hbits;
-+	/* counters for blocked locks */
-+	u16			lh_nblocked[HTREE_LOCK_MAX];
-+	/* counters for granted locks */
-+	u16			lh_ngranted[HTREE_LOCK_MAX];
-+	/* private data */
-+	void			*lh_private;
-+	/* array of children locks */
-+	struct htree_lock_child	lh_children[0];
-+};
-+
-+/* htree_lock_node_t is child-lock for a specific key (ln_value) */
-+struct htree_lock_node {
-+	htree_lock_mode_t	ln_mode;
-+	/* major hash key */
-+	u16			ln_major_key;
-+	/* minor hash key */
-+	u16			ln_minor_key;
-+	struct list_head	ln_major_list;
-+	struct list_head	ln_minor_list;
-+	/* alive list, all locks (granted, blocked, listening) are on it */
-+	struct list_head	ln_alive_list;
-+	/* blocked list */
-+	struct list_head	ln_blocked_list;
-+	/* granted list */
-+	struct list_head	ln_granted_list;
-+	void			*ln_ev_target;
-+};
-+
-+struct htree_lock {
-+	struct task_struct	*lk_task;
-+	struct htree_lock_head	*lk_head;
-+	void			*lk_private;
-+	unsigned		lk_depth;
-+	htree_lock_mode_t	lk_mode;
-+	struct list_head	lk_blocked_list;
-+	struct htree_lock_node	lk_nodes[0];
-+};
-+
-+/* create a lock head, which stands for a resource */
-+struct htree_lock_head *htree_lock_head_alloc(unsigned depth,
-+					      unsigned hbits, unsigned priv);
-+/* free a lock head */
-+void htree_lock_head_free(struct htree_lock_head *lhead);
-+/* register event callback for child lock at level @depth */
-+void htree_lock_event_attach(struct htree_lock_head *lhead, unsigned depth,
-+			     unsigned events, htree_event_cb_t callback);
-+/* create a lock handle, which stands for a thread */
-+struct htree_lock *htree_lock_alloc(unsigned depth, unsigned pbytes);
-+/* free a lock handle */
-+void htree_lock_free(struct htree_lock *lck);
-+/* lock htree, when @wait is true, 0 is returned if the lock can't
-+ * be granted immediately */
-+int htree_lock_try(struct htree_lock *lck, struct htree_lock_head *lhead,
-+		   htree_lock_mode_t mode, int wait);
-+/* unlock htree */
-+void htree_unlock(struct htree_lock *lck);
-+/* unlock and relock htree with @new_mode */
-+int htree_change_lock_try(struct htree_lock *lck,
-+			  htree_lock_mode_t new_mode, int wait);
-+void htree_change_mode(struct htree_lock *lck, htree_lock_mode_t mode);
-+/* require child lock (key) of htree at level @dep, @event will be sent to all
-+ * listeners on this @key while lock being granted */
-+int htree_node_lock_try(struct htree_lock *lck, htree_lock_mode_t mode,
-+			u32 key, unsigned dep, int wait, void *event);
-+/* release child lock at level @dep, this lock will listen on it's key
-+ * if @event isn't NULL, event_cb will be called against @lck while granting
-+ * any other lock at level @dep with the same key */
-+void htree_node_unlock(struct htree_lock *lck, unsigned dep, void *event);
-+/* stop listening on child lock at level @dep */
-+void htree_node_stop_listen(struct htree_lock *lck, unsigned dep);
-+/* for debug */
-+void htree_lock_stat_print(int depth);
-+void htree_lock_stat_reset(void);
-+
-+#define htree_lock(lck, lh, mode)	htree_lock_try(lck, lh, mode, 1)
-+#define htree_change_lock(lck, mode)	htree_change_lock_try(lck, mode, 1)
-+
-+#define htree_lock_mode(lck)		((lck)->lk_mode)
-+
-+#define htree_node_lock(lck, mode, key, dep)	\
-+	htree_node_lock_try(lck, mode, key, dep, 1, NULL)
-+/* this is only safe in thread context of lock owner */
-+#define htree_node_is_granted(lck, dep)		\
-+	((lck)->lk_nodes[dep].ln_mode != HTREE_LOCK_INVAL && \
-+	 (lck)->lk_nodes[dep].ln_mode != HTREE_LOCK_NL)
-+/* this is only safe in thread context of lock owner */
-+#define htree_node_is_listening(lck, dep)	\
-+	((lck)->lk_nodes[dep].ln_mode == HTREE_LOCK_NL)
-+
-+#endif
+ 	/* @restart is true means htree-path has been changed, we need to
+Index: linux-3.10.0-229.1.2.fc21.x86_64/fs/ext4/super.c
+===================================================================
+--- linux-3.10.0-229.1.2.fc21.x86_64.orig/fs/ext4/super.c
++++ linux-3.10.0-229.1.2.fc21.x86_64/fs/ext4/super.c
+@@ -875,5 +875,6 @@ static struct inode *ext4_alloc_inode(st
+ 
+ 	ei->vfs_inode.i_version = 1;
++	sema_init(&ei->i_append_sem, 1);
+ 	INIT_LIST_HEAD(&ei->i_prealloc_list);
+ 	spin_lock_init(&ei->i_prealloc_lock);
+ 	ext4_es_init_tree(&ei->i_es_tree);

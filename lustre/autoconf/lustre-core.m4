@@ -1135,30 +1135,35 @@ generic_file_llseek_size_5args, [
 ]) # LC_FILE_LLSEEK_SIZE_5ARG
 
 #
-# LC_HAVE_DENTRY_D_ALIAS_HLIST
+# LC_LLITE_DATA_IS_LIST
 #
 # 3.6 switch i_dentry/d_alias from list to hlist
 #
-AC_DEFUN([LC_HAVE_DENTRY_D_ALIAS_HLIST], [
+# In the upstream kernels d_alias first changes
+# to a hlist and then in later version, 3.11, gets
+# moved to the union d_u. Due to some distros having
+# d_alias in the d_u union as a struct list, which
+# has never existed upstream stream, we can't test
+# if d_alias is a list or hlist directly. If ever
+# i_dentry and d_alias even up different combos then
+# the build will fail. In that case then we will need
+# to separate out the i_dentry and d_alias test below.
+#
+AC_DEFUN([LC_DATA_FOR_LLITE_IS_LIST], [
 tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
-LB_CHECK_COMPILE([if 'i_dentry/d_alias' uses 'hlist'],
-i_dentry_d_alias_hlist, [
+LB_CHECK_COMPILE([if 'i_dentry/d_alias' uses 'list'],
+i_dentry_d_alias_list, [
 	#include <linux/fs.h>
-	#include <linux/list.h>
 ],[
 	struct inode inode;
-	struct dentry dentry;
-	struct hlist_head head;
-	struct hlist_node node;
-	inode.i_dentry = head;
-	dentry.d_alias = node;
+	INIT_LIST_HEAD(&inode.i_dentry);
 ],[
-	AC_DEFINE(HAVE_DENTRY_D_ALIAS_HLIST, 1,
-		[have i_dentry/d_alias uses hlist])
+	AC_DEFINE(DATA_FOR_LLITE_IS_LIST, 1,
+		[both i_dentry/d_alias uses list])
 ])
 EXTRA_KCFLAGS="$tmp_flags"
-]) # LC_HAVE_DENTRY_D_ALIAS_HLIST
+]) # LC_DATA_FOR_LLITE_IS_LIST
 
 #
 # LC_DENTRY_OPEN_USE_PATH
@@ -1263,9 +1268,10 @@ hlist_for_each_entry_3args, [
 	#include <linux/list.h>
 	#include <linux/fs.h>
 ],[
+	struct hlist_head *head = NULL;
 	struct inode *inode;
-	struct dentry *dentry;
-	hlist_for_each_entry(dentry, &inode->i_dentry, d_alias) {
+
+	hlist_for_each_entry(inode, head, i_hash) {
 		continue;
 	}
 ],[
@@ -1437,6 +1443,61 @@ truncate_pagecache_old_size, [
 ]) # LC_OLDSIZE_TRUNCATE_PAGECACHE
 
 #
+# LC_HAVE_DENTRY_D_U_D_ALIAS
+#
+# 3.11 kernel moved d_alias to the union d_u in struct dentry
+#
+# Some distros move d_alias to d_u but it is still a struct list
+#
+AC_DEFUN([LC_HAVE_DENTRY_D_U_D_ALIAS], [
+AS_IF([test "x$lb_cv_compile_i_dentry_d_alias_list" = xyes], [
+	LB_CHECK_COMPILE([if list 'dentry.d_u.d_alias' exist],
+	d_alias, [
+		#include <linux/list.h>
+		#include <linux/dcache.h>
+	],[
+		struct dentry de;
+		INIT_LIST_HEAD(&de.d_u.d_alias);
+	],[
+		AC_DEFINE(HAVE_DENTRY_D_U_D_ALIAS, 1,
+			[list dentry.d_u.d_alias exist])
+	])
+],[
+	LB_CHECK_COMPILE([if hlist 'dentry.d_u.d_alias' exist],
+	d_alias, [
+		#include <linux/list.h>
+		#include <linux/dcache.h>
+	],[
+		struct dentry de;
+		INIT_HLIST_NODE(&de.d_u.d_alias);
+	],[
+		AC_DEFINE(HAVE_DENTRY_D_U_D_ALIAS, 1,
+			[hlist dentry.d_u.d_alias exist])
+	])
+])
+]) # LC_HAVE_DENTRY_D_U_D_ALIAS
+
+#
+# LC_HAVE_DENTRY_D_CHILD
+#
+# 3.11 kernel d_child has been moved out of the union d_u
+# in struct dentry
+#
+AC_DEFUN([LC_HAVE_DENTRY_D_CHILD], [
+LB_CHECK_COMPILE([if 'dentry.d_child' exist],
+d_child, [
+	#include <linux/list.h>
+	#include <linux/dcache.h>
+],[
+	struct dentry de;
+	INIT_LIST_HEAD(&de.d_child);
+],[
+	AC_DEFINE(HAVE_DENTRY_D_CHILD, 1,
+		[dentry.d_child exist])
+])
+]) # LC_HAVE_DENTRY_D_CHILD
+
+#
 # LC_KIOCB_KI_LEFT
 #
 # 3.12 ki_left removed from struct kiocb
@@ -1522,6 +1583,7 @@ truncate_ipages_final, [
 		[kernel has truncate_inode_pages_final])
 ])
 ]) # LC_HAVE_TRUNCATE_IPAGES_FINAL
+
 #
 # LC_VFS_RENAME_6ARGS
 #
@@ -1538,6 +1600,133 @@ vfs_rename_6args, [
 		[kernel has vfs_rename with 6 args])
 ])
 ]) # LC_VFS_RENAME_6ARGS
+
+#
+# LC_DIRECTIO_USE_ITER
+#
+# 3.16 kernel changes direct IO to use iov_iter
+#
+AC_DEFUN([LC_DIRECTIO_USE_ITER], [
+LB_CHECK_COMPILE([if direct IO uses iov_iter],
+direct_io_iter, [
+	#include <linux/fs.h>
+],[
+	struct address_space_operations ops;
+	struct iov_iter *iter = NULL;
+	loff_t offset = 0;
+
+	ops.direct_IO(0, NULL, iter, offset);
+],[
+	AC_DEFINE(HAVE_DIRECTIO_ITER, 1,
+		[direct IO uses iov_iter])
+])
+]) # LC_DIRECTIO_USE_ITER
+
+#
+# LC_HAVE_IOV_ITER_INIT_DIRECTION
+#
+#
+# 3.16 linux commit 71d8e532b1549a478e6a6a8a44f309d050294d00
+#      changed iov_iter_init api to start accepting a tag
+#      that defines if its a read or write operation
+#
+AC_DEFUN([LC_HAVE_IOV_ITER_INIT_DIRECTION], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'iov_iter_init' takes a tag],
+iter_init, [
+	#include <linux/uio.h>
+	#include <linux/fs.h>
+],[
+	const struct iovec *iov = NULL;
+
+	iov_iter_init(NULL, READ, iov, 1, 0);
+],[
+	AC_DEFINE(HAVE_IOV_ITER_INIT_DIRECTION, 1,
+		[iov_iter_init handles directional tag])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_HAVE_IOV_ITER_INIT_DIRECTION
+
+#
+# LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
+#
+# 3.16 introduces [read|write]_iter to struct file_operations
+#
+AC_DEFUN([LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER], [
+LB_CHECK_COMPILE([if 'file_operations.[read|write]_iter' exist],
+file_function_iter, [
+	#include <linux/fs.h>
+],[
+	((struct file_operations *)NULL)->read_iter(NULL, NULL);
+	((struct file_operations *)NULL)->write_iter(NULL, NULL);
+],[
+	AC_DEFINE(HAVE_FILE_OPERATIONS_READ_WRITE_ITER, 1,
+		[file_operations.[read|write]_iter functions exist])
+])
+]) # LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
+
+#
+# LC_HAVE_SMP_MB__BEFORE_ATOMIC
+#
+# smp_mb__before_clear_bit() was deprecated in kernel 3.16 and removed in
+# kernel 3.18. It is replaced by smp_mb__before_atomic().
+#
+AC_DEFUN([LC_HAVE_SMP_MB__BEFORE_ATOMIC], [
+LB_CHECK_COMPILE([if 'smp_mb__before_atomic' exists],
+smp_mb__before_atomic, [
+	#include <linux/atomic.h>
+],[
+	smp_mb__before_atomic();
+],[
+	AC_DEFINE(HAVE_SMP_MB__BEFORE_ATOMIC, 1,
+		[smp_mb__before_atomic exists])
+])
+]) # LC_HAVE_SMP_MB__BEFORE_ATOMIC
+
+#
+# LC_HAVE_DQUOT_QC_DQBLK
+#
+# 3.19 has quotactl_ops->[sg]et_dqblk that take struct kqid and qc_dqblk
+# Added in commit 14bf61ffe
+#
+AC_DEFUN([LC_HAVE_DQUOT_QC_DQBLK], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'quotactl_ops.set_dqblk' takes struct qc_dqblk],
+qc_dqblk, [
+	#include <linux/fs.h>
+	#include <linux/quota.h>
+],[
+	((struct quotactl_ops *)0)->set_dqblk(NULL, *((struct kqid*)0), (struct qc_dqblk*)0);
+],[
+	AC_DEFINE(HAVE_DQUOT_QC_DQBLK, 1,
+		[quotactl_ops.set_dqblk takes struct qc_dqblk])
+	AC_DEFINE(HAVE_DQUOT_KQID, 1,
+		[quotactl_ops.set_dqblk takes struct kqid])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_HAVE_DQUOT_QC_DQBLK
+
+#
+# LC_IOV_ITER_RW
+#
+# 4.1 kernel has iov_iter_rw
+#
+AC_DEFUN([LC_IOV_ITER_RW], [
+LB_CHECK_COMPILE([if iov_iter_rw exist],
+iov_iter_rw, [
+	#include <linux/fs.h>
+	#include <linux/uio.h>
+],[
+	struct iov_iter *iter = NULL;
+
+	iov_iter_rw(iter);
+],[
+	AC_DEFINE(HAVE_IOV_ITER_RW, 1,
+		[iov_iter_rw exist])
+])
+]) # LC_IOV_ITER_RW
 
 #
 # LC_PROG_LINUX
@@ -1625,7 +1814,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_FILE_LLSEEK_SIZE_5ARG
 
 	# 3.6
-	LC_HAVE_DENTRY_D_ALIAS_HLIST
+	LC_DATA_FOR_LLITE_IS_LIST
 	LC_DENTRY_OPEN_USE_PATH
 	LC_HAVE_IOP_ATOMIC_OPEN
 
@@ -1650,6 +1839,8 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_DIR_CONTEXT
 	LC_D_COMPARE_5ARGS
 	LC_HAVE_DCOUNT
+	LC_HAVE_DENTRY_D_U_D_ALIAS
+	LC_HAVE_DENTRY_D_CHILD
 
 	# 3.12
 	LC_OLDSIZE_TRUNCATE_PAGECACHE
@@ -1665,6 +1856,18 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 3.15
 	LC_VFS_RENAME_6ARGS
+
+	# 3.16
+	LC_DIRECTIO_USE_ITER
+	LC_HAVE_IOV_ITER_INIT_DIRECTION
+	LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
+	LC_HAVE_SMP_MB__BEFORE_ATOMIC
+
+	# 3.19
+	LC_HAVE_DQUOT_QC_DQBLK
+
+	# 4.1.0
+	LC_IOV_ITER_RW
 
 	#
 	AS_IF([test "x$enable_server" != xno], [

@@ -1377,7 +1377,6 @@ int osd_ldiskfs_read(struct inode *inode, void *buf, int size, loff_t *offs)
         int blocksize;
         int csize;
         int boffs;
-	int err = 0;
 
         /* prevent reading after eof */
 	spin_lock(&inode->i_lock);
@@ -1403,14 +1402,13 @@ int osd_ldiskfs_read(struct inode *inode, void *buf, int size, loff_t *offs)
                 block = *offs >> inode->i_blkbits;
                 boffs = *offs & (blocksize - 1);
                 csize = min(blocksize - boffs, size);
-                bh = ldiskfs_bread(NULL, inode, block, 0, &err);
-		if (err != 0) {
-			CERROR("%s: can't read %u@%llu on ino %lu: rc = %d\n",
+		bh = __ldiskfs_bread(NULL, inode, block, 0);
+		if (IS_ERR(bh)) {
+			CERROR("%s: can't read %u@%llu on ino %lu: rc = %ld\n",
 			       LDISKFS_SB(inode->i_sb)->s_es->s_volume_name,
-			       csize, *offs, inode->i_ino, err);
-			if (bh != NULL)
-				brelse(bh);
-			return err;
+			       csize, *offs, inode->i_ino,
+			       PTR_ERR(bh));
+			return PTR_ERR(bh);
 		}
 
 		if (bh != NULL) {
@@ -1642,9 +1640,14 @@ int osd_ldiskfs_write_record(struct inode *inode, void *buf, int bufsize,
                 block = offset >> inode->i_blkbits;
                 boffs = offset & (blocksize - 1);
                 size = min(blocksize - boffs, bufsize);
-                bh = ldiskfs_bread(handle, inode, block, 1, &err);
-                if (!bh) {
-			err = err ? err : -EIO;
+                bh = __ldiskfs_bread(handle, inode, block, 1);
+                if (IS_ERR_OR_NULL(bh)) {
+			if (bh == NULL) {
+				err = -EIO;
+			} else {
+				err = PTR_ERR(bh);
+				bh = NULL;
+			}
                         CERROR("%s: error reading offset %llu (block %lu): "
                                "rc = %d\n",
                                inode->i_sb->s_id, offset, block, err);
@@ -1913,4 +1916,3 @@ const struct dt_body_operations osd_body_ops = {
         .dbo_punch                 = osd_punch,
         .dbo_fiemap_get           = osd_fiemap_get,
 };
-

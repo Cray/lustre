@@ -168,7 +168,7 @@ struct osd_mdobj_map {
 };
 
 #define osd_ldiskfs_add_entry(handle, child, cinode, hlock) \
-        ldiskfs_add_entry(handle, child, cinode, hlock)
+	__ldiskfs_add_entry(handle, child, cinode, hlock)
 
 #define OSD_OTABLE_IT_CACHE_SIZE	64
 #define OSD_OTABLE_IT_CACHE_MASK	(~(OSD_OTABLE_IT_CACHE_SIZE - 1))
@@ -588,7 +588,9 @@ struct osd_thread_info {
 
 	/* used by quota code */
 	union {
-#ifdef HAVE_DQUOT_FS_DISK_QUOTA
+#if defined(HAVE_DQUOT_QC_DQBLK)
+		struct qc_dqblk		oti_qdq;
+#elif defined(HAVE_DQUOT_FS_DISK_QUOTA)
 		struct fs_disk_quota    oti_fdq;
 #else
 		struct if_dqblk		oti_dqblk;
@@ -1109,13 +1111,36 @@ static inline unsigned long osd_remote_parent_ino(struct osd_device *dev)
 	return dev->od_mdt_map->omm_remote_parent->d_inode->i_ino;
 }
 
+/**
+ * ext4_bread/ldiskfs_bread has either 5 or 4 parameters,
+ * with the last one having been removed in the kernel 3.18.
+ */
+static inline struct buffer_head *__ldiskfs_bread(handle_t *handle,
+						  struct inode *inode,
+						  ldiskfs_lblk_t block,
+						  int create)
+{
+#ifdef HAVE_EXT4_BREAD_4ARGS
+	return ldiskfs_bread(handle, inode, block, create);
+#else
+	struct buffer_head *bh;
+	int error = 0;
+
+	bh = ldiskfs_bread(handle, inode, block, create, &error);
+	if (bh == NULL && error != 0)
+		bh = ERR_PTR(error);
+
+	return bh;
+#endif
+}
+
 #ifdef JOURNAL_START_HAS_3ARGS
 # define osd_journal_start_sb(sb, type, nblock) \
 		ldiskfs_journal_start_sb(sb, type, nblock)
 # define osd_ldiskfs_append(handle, inode, nblock, err) \
 		ldiskfs_append(handle, inode, nblock)
 # define osd_ldiskfs_find_entry(dir, name, de, inlined, lock) \
-		ldiskfs_find_entry(dir, name, de, inlined, lock)
+		__ldiskfs_find_entry(dir, name, de, inlined, lock)
 # define osd_journal_start(inode, type, nblocks) \
 		ldiskfs_journal_start(inode, type, nblocks)
 # define osd_transaction_size(dev) \
@@ -1127,7 +1152,7 @@ static inline unsigned long osd_remote_parent_ino(struct osd_device *dev)
 # define osd_ldiskfs_append(handle, inode, nblock, err) \
 		ldiskfs_append(handle, inode, nblock, err)
 # define osd_ldiskfs_find_entry(dir, name, de, inlined, lock) \
-		ldiskfs_find_entry(dir, name, de, lock)
+		__ldiskfs_find_entry(dir, name, de, lock)
 # define osd_journal_start(inode, type, nblocks) \
 		ldiskfs_journal_start(inode, nblocks)
 # define osd_transaction_size(dev) \

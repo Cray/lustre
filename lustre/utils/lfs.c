@@ -426,7 +426,7 @@ static int lfs_migrate(char *name, __u64 migration_flags,
 	/* open file, direct io */
 	/* even if the file is only read, WR mode is nedeed to allow
 	 * layout swap on fd */
-	fd = open(name, O_RDWR | O_DIRECT);
+	fd = open(name, O_RDWR);
 	if (fd == -1) {
 		rc = -errno;
 		fprintf(stderr, "cannot open %s (%s)\n", name, strerror(-rc));

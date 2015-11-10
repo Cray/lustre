@@ -104,7 +104,9 @@ static int osd_acct_index_lookup(const struct lu_env *env,
 				 struct lustre_capa *capa)
 {
 	struct osd_thread_info	*info = osd_oti_get(env);
-#ifdef HAVE_DQUOT_FS_DISK_QUOTA
+#if defined(HAVE_DQUOT_QC_DQBLK)
+	struct qc_dqblk		*dqblk = &info->oti_qdq;
+#elif defined(HAVE_DQUOT_FS_DISK_QUOTA)
 	struct fs_disk_quota	*dqblk = &info->oti_fdq;
 #else
 	struct if_dqblk		*dqblk = &info->oti_dqblk;
@@ -119,7 +121,7 @@ static int osd_acct_index_lookup(const struct lu_env *env,
 
 	ENTRY;
 
-	memset((void *)dqblk, 0, sizeof(struct obd_dqblk));
+	memset(dqblk, 0, sizeof(*dqblk));
 #ifdef HAVE_DQUOT_KQID
 	qid = make_kqid(&init_user_ns, obj2type(dtobj), id);
 	rc = sb->s_qcop->get_dqblk(sb, qid, dqblk);
@@ -128,7 +130,10 @@ static int osd_acct_index_lookup(const struct lu_env *env,
 #endif
 	if (rc)
 		RETURN(rc);
-#ifdef HAVE_DQUOT_FS_DISK_QUOTA
+#if defined(HAVE_DQUOT_QC_DQBLK)
+	rec->bspace = dqblk->d_space;
+	rec->ispace = dqblk->d_ino_count;
+#elif defined(HAVE_DQUOT_FS_DISK_QUOTA)
 	rec->bspace = dqblk->d_bcount;
 	rec->ispace = dqblk->d_icount;
 #else

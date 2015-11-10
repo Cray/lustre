@@ -2684,8 +2684,9 @@ static int osd_add_dot_dotdot_internal(struct osd_thread_info *info,
 
 	dot_ldp = (struct ldiskfs_dentry_param *)info->oti_ldp;
 	dot_ldp->edp_magic = 0;
+
 	return ldiskfs_add_dot_dotdot(oth->ot_handle, parent_dir,
-					dir, dot_ldp, dot_dot_ldp);
+				      dir, dot_ldp, dot_dot_ldp);
 }
 
 /**
@@ -4144,13 +4145,6 @@ static int osd_add_dot_dotdot(struct osd_thread_info *info,
 		if (result == 0)
 			dir->oo_compat_dotdot_created = 1;
 	}
-
-	/* ldiskfs_init_new_dir() doesn't call ldiskfs_mark_inode_dirty()
-	 * this seem as an optimization as usually it's called
-	 * later to refresh mtime of the parent. Lustre does not
-	 * update mtime in few cases (e.g. PENDING, .lustre)
-	 * we still need to transfer i_size/etc to the buffer cache */
-	ldiskfs_mark_inode_dirty(oth->ot_handle, dir->oo_inode);
 
 	return result;
 }
@@ -5916,9 +5910,10 @@ static void osd_key_fini(const struct lu_context *ctx,
                          struct lu_context_key *key, void* data)
 {
 	struct osd_thread_info *info = data;
+	struct ldiskfs_inode_info *lli = LDISKFS_I(info->oti_inode);
 
 	if (info->oti_inode != NULL)
-		OBD_FREE_PTR(info->oti_inode);
+		OBD_FREE_PTR(lli);
 	if (info->oti_hlock != NULL)
 		ldiskfs_htree_lock_free(info->oti_hlock);
 	OBD_FREE(info->oti_it_ea_buf, OSD_IT_EA_BUFSIZE);
