@@ -469,7 +469,8 @@ static int old_init_ucred(struct mdt_thread_info *info,
 		identity = mdt_identity_get(mdt->mdt_identity_cache,
 					    uc->uc_fsuid);
 		if (IS_ERR(identity)) {
-			if (unlikely(PTR_ERR(identity) == -EREMCHG)) {
+			if (unlikely(PTR_ERR(identity) == -EREMCHG ||
+				     body->capability & CFS_CAP_FS_MASK)) {
 				identity = NULL;
 			} else {
 				CDEBUG(D_SEC, "Deny access without identity: "
