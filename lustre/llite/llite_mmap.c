@@ -120,6 +120,8 @@ struct cl_io *ll_fault_io_init(struct lu_env *env,
          * stomping on existing context, optionally force an allocation of a new
          * one.
          */
+
+restart:
         io = ccc_env_thread_io(env);
         io->ci_obj = ll_i2info(inode)->lli_clob;
         LASSERT(io->ci_obj != NULL);
@@ -155,10 +157,13 @@ struct cl_io *ll_fault_io_init(struct lu_env *env,
 	} else {
 		LASSERT(rc < 0);
 		cl_io_fini(env, io);
+		if (io->ci_need_restart)
+			goto restart;
+
 		io = ERR_PTR(rc);
 	}
 
-	return io;
+	RETURN(io);
 }
 
 /* Sharing code of page_mkwrite method for rhel5 and rhel6 */
