@@ -142,6 +142,7 @@ srpm: @PACKAGE_TARNAME@.spec dist Makefile
 		--define "_topdir $$rpmbuilddir" \
 		--define "build_src_rpm 1" \
 		--define "dist %{nil}" \
+		--define "configure_args $$(echo @ac_configure_args@ | tr -d \')" \
 		-ts $(distdir).tar.gz || exit 1; \
 	cp $$rpmbuilddir/SRPMS/$(distdir)-*.src.rpm $(top_srcdir) || exit 1; \
 	rm -rf $$rpmbuilddir
