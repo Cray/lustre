@@ -79,17 +79,102 @@ static atomic_t lnet_dlc_seq_no = ATOMIC_INIT(0);
 static int lnet_ping(struct lnet_process_id id, signed long timeout,
 		     struct lnet_process_id __user *ids, int n_ids);
 
+static ssize_t
+filp_user_read(struct file *filp, char *buf, size_t count, loff_t *offset)
+{
+        mm_segment_t    fs;
+        ssize_t         ret_size = 0, size = 0;
+
+        fs = get_fs();
+        set_fs(KERNEL_DS);
+        while ((ssize_t)count > 0) {
+                size = filp->f_op->read(filp, (char *)buf, count, offset);
+                if (size <= 0)
+                        break;
+                count -= size;
+                buf += size;
+                ret_size += size;
+                size = 0;
+        }
+        set_fs(fs);
+
+        return (size < 0 ? size : ret_size);
+}
+
+static int lnet_read_file(const char *name, char *config, size_t size)
+{
+	struct file    *filp;
+	int             rc;
+	loff_t          pos = 0;
+
+	filp = filp_open(name, O_RDONLY, 0600);
+	if (IS_ERR(filp)) {
+		rc = PTR_ERR(filp);
+		CERROR("Can't open file %s: rc %d\n", name, rc);
+		return rc;
+	}
+
+	rc = filp_user_read(filp, config, size, &pos);
+	filp_close(filp, NULL);
+	if (rc < 0)
+		CERROR("Can't read file %s: rc %d\n", name, rc);
+
+	return rc;
+}
+
+static char *lnet_read_file_mem(const char *name, size_t max_size)
+{
+        char            *file;
+        int             rc;
+
+        file = vmalloc(max_size);
+        if (file == NULL) {
+                CERROR("Failed to allocate memory for "
+                       "file, size = %lu\n", (long unsigned)max_size);
+                return ERR_PTR(-ENOMEM);
+        }
+
+        memset(file, 0, max_size);
+
+        rc = lnet_read_file(name, file, max_size);
+        if (rc < 0) {
+                vfree(file);
+                return ERR_PTR(rc);
+        }
+
+        return file;
+}
+
+#define CFS_CONF_FILE_SIZE      (1024 * 1024)
+/* Caller should free memory */
 static char *
 lnet_get_routes(void)
 {
-	return routes;
+	if (*routes == '/') {
+		/* Read routes config file to memory */
+		return lnet_read_file_mem(routes, CFS_CONF_FILE_SIZE);
+	} else {
+		return routes;
+	}
+}
+
+void
+lnet_put_routes(char *rbuf)
+{
+	if (rbuf != NULL && rbuf != routes)
+		vfree(rbuf);
 }
 
 static char *
 lnet_get_networks(void)
 {
 	char   *nets;
-	int	rc;
+	char   *config = NULL;
+	int     rc;
+
+	if (*networks == 0 && *ip2nets == 0)
+		/* default to "tcp" when nothing specified */
+		return "tcp";
 
 	if (*networks != 0 && *ip2nets != 0) {
 		LCONSOLE_ERROR_MSG(0x101, "Please specify EITHER 'networks' or "
@@ -97,15 +182,25 @@ lnet_get_networks(void)
 		return NULL;
 	}
 
-	if (*ip2nets != 0) {
-		rc = lnet_parse_ip2nets(&nets, ip2nets);
-		return (rc == 0) ? nets : NULL;
-	}
-
 	if (*networks != 0)
 		return networks;
 
-	return "tcp";
+	LASSERT(*ip2nets != 0);
+
+	if (*ip2nets == '/') {
+		/* read config from file in ip2nets */
+		config = lnet_read_file_mem(ip2nets, CFS_CONF_FILE_SIZE);
+		if (IS_ERR(config))
+			return NULL;
+	} else if (*ip2nets != 0) {
+		config = ip2nets;
+	}
+
+	rc = lnet_parse_ip2nets(&nets, config);
+	if (config != ip2nets)
+		vfree(config);
+
+	return (rc == 0) ? nets : NULL;
 }
 
 static void
@@ -1790,6 +1885,7 @@ LNetNIInit(lnet_pid_t requested_pid)
 	struct lnet_handle_md	md_handle;
 	struct list_head	net_head;
 	struct lnet_net		*net;
+	char			*routes_cfg;
 
 	INIT_LIST_HEAD(&net_head);
 
@@ -1842,9 +1938,16 @@ LNetNIInit(lnet_pid_t requested_pid)
 	}
 
 	if (!the_lnet.ln_nis_from_mod_params) {
-		rc = lnet_parse_routes(lnet_get_routes(), &im_a_router);
-		if (rc != 0)
+		routes_cfg = lnet_get_routes();
+		if (IS_ERR(routes_cfg)) {
+			rc = PTR_ERR(routes_cfg);
 			goto err_shutdown_lndnis;
+		}
+
+		rc = lnet_parse_routes(routes_cfg, &im_a_router);
+		lnet_put_routes(routes_cfg);
+		if (rc != 0)
+			goto err_destroy_routes;
 
 		rc = lnet_check_routes();
 		if (rc != 0)
