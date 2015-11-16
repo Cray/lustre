@@ -64,7 +64,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
         %configure --disable-checksum \
            --disable-server \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
-           --with-obd-buffer-size=16384 \
+           --with-obd-buffer-size=16384
 fi
 %{__make} %_smp_mflags
 
