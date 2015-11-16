@@ -71,12 +71,10 @@ CFLAGS="%{optflags} -Werror -fno-stack-protector"
 
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
         %configure --disable-checksum \
-           --disable-liblustre \
            --enable-cray-xt3 \
            --enable-gni \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-obd-buffer-size=16384 \
-           --without-sysio
 fi
 %{__make} %_smp_mflags
 

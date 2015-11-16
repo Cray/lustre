@@ -49,12 +49,10 @@ if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
 fi
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
         %configure --disable-checksum \
-           --disable-liblustre \
            --disable-server \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-o2ib=no \
            --with-obd-buffer-size=16384 \
-           --without-sysio
 fi
 pushd %{pkgsrcbase}
 %CRAYconfigure -- --with-module=%{_release_modulefile}
