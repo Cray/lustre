@@ -80,7 +80,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ]; then
            --with-o2ib=$O2IBPATH \
            --with-linux-obj=%{ksrc} \
            --with-linux=%{ksrc} \
-           --with-obd-buffer-size=16384 \
+           --with-obd-buffer-size=16384
 fi
 %{__make} %_smp_mflags
 
