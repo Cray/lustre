@@ -1379,8 +1379,6 @@ enum cl_io_type {
         CIT_WRITE,
         /** truncate, utime system calls */
         CIT_SETATTR,
-	/** get data version */
-	CIT_DATA_VERSION,
         /**
          * page fault handling
          */
@@ -1782,10 +1780,6 @@ struct cl_io {
 			struct lu_fid    *sa_parent_fid;
 			struct obd_capa  *sa_capa;
 		} ci_setattr;
-		struct cl_data_version_io {
-			u64 dv_data_version;
-			int dv_flags;
-		} ci_data_version;
                 struct cl_fault_io {
                         /** page index within file. */
                         pgoff_t         ft_index;

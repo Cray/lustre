@@ -104,12 +104,6 @@ static void lov_io_sub_inherit(struct cl_io *io, struct lov_io *lio,
                 }
                 break;
         }
-	case CIT_DATA_VERSION: {
-		io->u.ci_data_version.dv_data_version = 0;
-		io->u.ci_data_version.dv_flags =
-			parent->u.ci_data_version.dv_flags;
-		break;
-	}
         case CIT_FAULT: {
                 struct cl_object *obj = parent->ci_obj;
                 loff_t off = cl_offset(obj, parent->u.ci_fault.ft_index);
@@ -353,11 +347,6 @@ static int lov_io_slice_init(struct lov_io *lio,
                 lio->lis_endpos = OBD_OBJECT_EOF;
                 break;
 
-	case CIT_DATA_VERSION:
-		lio->lis_pos = 0;
-		lio->lis_endpos = OBD_OBJECT_EOF;
-		break;
-
         case CIT_FAULT: {
                 pgoff_t index = io->u.ci_fault.ft_index;
                 lio->lis_pos = cl_offset(io->ci_obj, index);
@@ -562,27 +551,6 @@ static void lov_io_end(const struct lu_env *env, const struct cl_io_slice *ios)
 
         rc = lov_io_call(env, cl2lov_io(env, ios), lov_io_end_wrapper);
         LASSERT(rc == 0);
-}
-
-static void
-lov_io_data_version_end(const struct lu_env *env, const struct cl_io_slice *ios)
-{
-	struct lov_io *lio = cl2lov_io(env, ios);
-	struct cl_io *parent = lio->lis_cl.cis_io;
-	struct lov_io_sub *sub;
-
-	ENTRY;
-	list_for_each_entry(sub, &lio->lis_active, sub_linkage) {
-		lov_io_end_wrapper(env, sub->sub_io);
-
-		parent->u.ci_data_version.dv_data_version +=
-			sub->sub_io->u.ci_data_version.dv_data_version;
-
-		if (parent->ci_result == 0)
-			parent->ci_result = sub->sub_io->ci_result;
-	}
-
-	EXIT;
 }
 
 static void lov_io_iter_fini(const struct lu_env *env,
@@ -895,15 +863,6 @@ static const struct cl_io_operations lov_io_ops = {
                         .cio_start     = lov_io_start,
                         .cio_end       = lov_io_end
                 },
-		[CIT_DATA_VERSION] = {
-			.cio_fini	= lov_io_fini,
-			.cio_iter_init	= lov_io_iter_init,
-			.cio_iter_fini	= lov_io_iter_fini,
-			.cio_lock	= lov_io_lock,
-			.cio_unlock	= lov_io_unlock,
-			.cio_start	= lov_io_start,
-			.cio_end	= lov_io_data_version_end,
-		},
                 [CIT_FAULT] = {
                         .cio_fini      = lov_io_fini,
                         .cio_iter_init = lov_io_iter_init,
@@ -1042,7 +1001,6 @@ int lov_io_init_empty(const struct lu_env *env, struct cl_object *obj,
 		break;
 	case CIT_FSYNC:
 	case CIT_SETATTR:
-	case CIT_DATA_VERSION:
 		result = +1;
 		break;
 	case CIT_WRITE:
@@ -1079,7 +1037,6 @@ int lov_io_init_released(const struct lu_env *env, struct cl_object *obj,
 		LASSERTF(0, "invalid type %d\n", io->ci_type);
 	case CIT_MISC:
 	case CIT_FSYNC:
-	case CIT_DATA_VERSION:
 		result = 1;
 		break;
 	case CIT_SETATTR:
