@@ -94,6 +94,7 @@ find_linux_rpm-sles11() {
 
     local PLEV=$(sed -n -e 's/^PATCHLEVEL = //p' /etc/SuSE-release)
     local site="https://nu.novell.com/repo/\$RCE/SLES11-SP${PLEV}-Updates/sle-11-$(resolve_arch $TARGET_ARCH)/rpm/$(resolve_arch $TARGET_ARCH)"
+
     if [ ! -f $pathtorpms/kernel-default-devel-$wanted_kernel.$(resolve_arch $TARGET_ARCH).rpm ]; then
         fetch_url "$site/kernel-default-devel-$wanted_kernel.$(resolve_arch $TARGET_ARCH).rpm" $pathtorpms
     fi
