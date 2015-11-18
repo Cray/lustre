@@ -4,8 +4,8 @@ set -e
 
 ONLY=${ONLY:-"$*"}
 
-# bug number for skipped test:     LU-2828
-ALWAYS_EXCEPT="$CONF_SANITY_EXCEPT 59 64"
+# bug number for skipped test:     LU-2828 LU-5420
+ALWAYS_EXCEPT="$CONF_SANITY_EXCEPT 59 64    80"
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
 is_sles11()						# LU-2181
@@ -2849,7 +2849,7 @@ test_43() {
 	#   root should be able to access root file after that
 	#
 	local NIDLIST=$($LCTL list_nids all | tr '\n' ' ')
-	NIDLIST="2@elan $NIDLIST 192.168.0.[2,10]@tcp"
+	NIDLIST="2@gni $NIDLIST 192.168.0.[2,10]@tcp"
 	NIDLIST=$(echo $NIDLIST | tr -s ' ' ' ')
 	set_conf_param_and_check mds					\
 		"$LCTL get_param -n mdt.$FSNAME-MDT0000.nosquash_nids"	\
@@ -3891,20 +3891,19 @@ test_60() { # LU-471
 run_test 60 "check mkfs.lustre --mkfsoptions -E -O options setting"
 
 test_61() { # LU-80
-	local reformat=false
+	local lxattr=false
 
 	[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.1.53) ] ||
 		{ skip "Need MDS version at least 2.1.53"; return 0; }
 
 	if [ $(facet_fstype $SINGLEMDS) == ldiskfs ] &&
-	   ! large_xattr_enabled; then
-		reformat=true
-		LDISKFS_MKFS_OPTS+=" -O large_xattr"
+	     ! large_xattr_enabled; then
+		lxattr=true
 
 		for num in $(seq $MDSCOUNT); do
-			add mds${num} $(mkfs_opts mds$num $(mdsdevname $num)) \
-			--reformat $(mdsdevname $num) $(mdsvdevname $num) ||
-			error "add mds $num failed"
+			do_facet mds${num} $TUNE2FS -O large_xattr \
+				$(mdsdevname $num) ||
+				error "tune2fs on mds $num failed"
 		done
 	fi
 
@@ -3988,10 +3987,10 @@ test_62() {
 		{ skip "Need MDS version at least 2.2.51"; return 0; }
 
 	echo "disable journal for mds"
-	do_facet mds tune2fs -O ^has_journal $mdsdev || error "tune2fs failed"
+	do_facet mds $TUNE2FS -O ^has_journal $mdsdev || error "tune2fs failed"
 	start_mds && error "MDT start should fail"
 	echo "disable journal for ost"
-	do_facet ost1 tune2fs -O ^has_journal $ostdev || error "tune2fs failed"
+	do_facet ost1 $TUNE2FS -O ^has_journal $ostdev || error "tune2fs failed"
 	start_ost && error "OST start should fail"
 	cleanup || error "cleanup failed with rc $?"
 	reformat_and_config

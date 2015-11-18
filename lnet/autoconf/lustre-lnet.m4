@@ -319,6 +319,7 @@ directory which is likely in ${O2IBPATH%-*}
 			*) AC_MSG_ERROR([internal error]) ;;
 		esac
 	else
+		COMPAT_AUTOCONF=""
 		compatrdma_found=false
 		if test -f ${O2IBPATH}/include/linux/compat-2.6.h; then
 			AC_MSG_RESULT([yes])
@@ -337,14 +338,15 @@ directory which is likely in ${O2IBPATH%-*}
 			elif test -f "$O2IBPATH/ofed_patch.mk"; then
 				. "$O2IBPATH/ofed_patch.mk"
 			fi
-		else
+		elif test -z "$COMPAT_AUTOCONF"; then
+			# Depreciated checks
 			if test "x$RHEL_KERNEL" = xyes; then
-				case "$RHEL_RELEASE_NO" in
-					64)
-						EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_RHEL_6_4" ;;
-					65)
-						EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_RHEL_6_4 -DCONFIG_COMPAT_RHEL_6_5" ;;
-				esac
+				RHEL_MAJOR=$(awk '/ RHEL_MAJOR / { print [$]3 }' $LINUX_OBJ/include/$VERSION_HDIR/version.h)
+				I=$(awk '/ RHEL_MINOR / { print [$]3 }' $LINUX_OBJ/include/$VERSION_HDIR/version.h)
+				while test "$I" -ge 0; do
+					EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_RHEL_${RHEL_MAJOR}_$I"
+					I=$(($I-1))
+				done
 			elif test "x$SUSE_KERNEL" = xyes; then
 				SP=$(grep PATCHLEVEL /etc/SuSE-release | sed -e 's/.*= *//')
 				EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_SLES_11_$SP"
@@ -410,15 +412,9 @@ directory which is likely in ${O2IBPATH%-*}
 				fi
 			done
 			if test -n "$O2IB_SYMVER"; then
-				AC_MSG_NOTICE([adding $O2IBPATH/$O2IB_SYMVER to $PWD/$SYMVERFILE])
-				# strip out the existing symbols versions first
-				if test -f $PWD/$SYMVERFILE; then
-				egrep -v $(echo $(awk '{ print $2 }' $O2IBPATH/$O2IB_SYMVER) | tr ' ' '|') $PWD/$SYMVERFILE > $PWD/$SYMVERFILE.old
-				else
-					touch $PWD/$SYMVERFILE.old
-				fi
-				cat $PWD/$SYMVERFILE.old $O2IBPATH/$O2IB_SYMVER > $PWD/$SYMVERFILE
-				rm $PWD/$SYMVERFILE.old
+				AC_MSG_NOTICE([adding $O2IBPATH/$O2IB_SYMVER to Symbol Path])
+				EXTRA_SYMBOLS="$EXTRA_SYMBOLS $O2IBPATH/$O2IB_SYMVER"
+				AC_SUBST(EXTRA_SYMBOLS)
 			else
 				AC_MSG_ERROR([an external source tree was specified for o2iblnd however I could not find a $O2IBPATH/Module.symvers there])
 			fi
