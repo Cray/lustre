@@ -13567,6 +13567,18 @@ test_400b() { # LU-1606, LU-5011
 }
 run_test 400b "packaged headers can be compiled"
 
+test_401() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.6.92) ] &&
+		skip "Layout swap lock is not supported" && return
+
+	check_swap_layouts_support && return 0
+
+	test_mkdir -p $DIR/$tdir
+	swap_lock_test -d $DIR/$tdir ||
+		error "One layout swap locked test failed"
+}
+run_test 401 "Various layout swap lock tests"
+
 #
 # tests that do cleanup/setup should be run at the end
 #
