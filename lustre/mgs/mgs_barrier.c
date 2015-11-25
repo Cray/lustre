@@ -35,6 +35,20 @@
 
 #include "mgs_internal.h"
 
+static void mgs_barrier_bitmap_setup(struct mgs_device *mgs,
+				     struct fs_db *b_fsdb,
+				     const char *name)
+{
+	struct fs_db *c_fsdb;
+
+	c_fsdb = mgs_find_fsdb(mgs, name);
+	if (likely(c_fsdb != NULL)) {
+		memcpy(b_fsdb->fsdb_mdt_index_map,
+		       c_fsdb->fsdb_mdt_index_map, INDEX_MAP_SIZE);
+		b_fsdb->fsdb_mdt_count = c_fsdb->fsdb_mdt_count;
+	}
+}
+
 static bool mgs_barrier_done(struct fs_db *fsdb, __u32 gen, __u32 expected)
 {
 	mutex_lock(&fsdb->fsdb_mutex);
@@ -129,6 +143,9 @@ static int mgs_barrier_freeze(const struct lu_env *env,
 		RETURN(-ENODEV);
 	}
 
+	if (unlikely(fsdb->fsdb_mdt_count == 0))
+		mgs_barrier_bitmap_setup(mgs, fsdb, bc->bc_name);
+
 	mutex_lock(&fsdb->fsdb_mutex);
 	mutex_unlock(&mgs->mgs_mutex);
 
@@ -189,6 +206,8 @@ again:
 	if (rc != 0)
 		GOTO(out, rc);
 
+	CFS_FAIL_TIMEOUT(OBD_FAIL_BARRIER_DELAY, cfs_fail_val);
+
 	left = fsdb->fsdb_barrier_latest_create_time +
 		fsdb->fsdb_barrier_timeout - cfs_time_current_sec();
 	if (unlikely(left <= 0)) {
@@ -202,9 +221,7 @@ again:
 		RETURN(-ETIME);
 	}
 
-	CFS_FAIL_TIMEOUT(OBD_FAIL_BARRIER_DELAY, cfs_fail_val);
-	lwi = LWI_TIMEOUT_INTR_ALL(
-			cfs_time_seconds(fsdb->fsdb_barrier_timeout),
+	lwi = LWI_TIMEOUT_INTR_ALL(cfs_time_seconds(left),
 			NULL, LWI_ON_SIGNAL_NOOP, NULL);
 	rc = l_wait_event(fsdb->fsdb_notify_waitq,
 			  mgs_barrier_done(fsdb, gen, phase1 ?
@@ -284,6 +301,9 @@ static int mgs_barrier_thaw(const struct lu_env *env,
 		RETURN(-ENODEV);
 	}
 
+	if (unlikely(fsdb->fsdb_mdt_count == 0))
+		mgs_barrier_bitmap_setup(mgs, fsdb, bc->bc_name);
+
 	mutex_lock(&fsdb->fsdb_mutex);
 	mutex_unlock(&mgs->mgs_mutex);
 
@@ -333,6 +353,7 @@ static int mgs_barrier_thaw(const struct lu_env *env,
 		GOTO(out, rc);
 
 	CFS_FAIL_TIMEOUT(OBD_FAIL_BARRIER_DELAY, cfs_fail_val);
+
 	lwi = LWI_TIMEOUT_INTR_ALL(cfs_time_seconds(obd_timeout),
 				   NULL, LWI_ON_SIGNAL_NOOP, NULL);
 	rc = l_wait_event(fsdb->fsdb_notify_waitq,
@@ -380,10 +401,18 @@ static int mgs_barrier_stat(const struct lu_env *env,
 		mutex_unlock(&mgs->mgs_mutex);
 
 		bc->bc_status = fsdb->fsdb_barrier_status;
-		bc->bc_timeout = fsdb->fsdb_barrier_latest_create_time +
-			fsdb->fsdb_barrier_timeout - cfs_time_current_sec();
-		if (bc->bc_timeout == BS_FROZEN)
-			bc->bc_status = fsdb->fsdb_barrier_status = BS_EXPIRED;
+		if (bc->bc_status == BS_FREEZING_P1 ||
+		    bc->bc_status == BS_FREEZING_P2 ||
+		    bc->bc_status == BS_FROZEN) {
+			if (cfs_time_before(cfs_time_current_sec(),
+					fsdb->fsdb_barrier_latest_create_time +
+					fsdb->fsdb_barrier_timeout))
+				bc->bc_timeout = fsdb->fsdb_barrier_latest_create_time +
+					fsdb->fsdb_barrier_timeout -
+					cfs_time_current_sec();
+			else
+				bc->bc_status = fsdb->fsdb_barrier_status = BS_EXPIRED;
+		}
 
 		mutex_unlock(&fsdb->fsdb_mutex);
 	} else {
@@ -615,7 +644,7 @@ int mgs_barrier_read(struct tgt_session_info *tsi)
 			barrier_rep->br_timeout =
 				fsdb->fsdb_barrier_timeout - gone;
 
-		if (likely(fsdb->fsdb_barrier_status == BS_RESCAN)) {
+		if (fsdb->fsdb_barrier_status == BS_RESCAN) {
 			if (unlikely(barrier_req->br_index == -1))
 				fsdb->fsdb_barrier_status = BS_FAILED;
 			else
@@ -646,8 +675,11 @@ int mgs_barrier_notify(struct tgt_session_info *tsi)
 
 	barrier_req = req_capsule_client_get(tsi->tsi_pill,
 					     &RMF_BARRIER_REQUEST);
-	if (barrier_req == NULL)
+	if (barrier_req == NULL) {
+		CWARN("Invalid barrier notify\n");
+
 		RETURN(-EINVAL);
+	}
 
 	mutex_lock(&mgs->mgs_mutex);
 
@@ -655,7 +687,7 @@ int mgs_barrier_notify(struct tgt_session_info *tsi)
 	if (fsdb == NULL) {
 		mutex_unlock(&mgs->mgs_mutex);
 
-		RETURN(-ENODEV);
+		GOTO(log, rc = -ENODEV);
 	}
 
 	mutex_lock(&fsdb->fsdb_mutex);
@@ -664,7 +696,7 @@ int mgs_barrier_notify(struct tgt_session_info *tsi)
 	if (barrier_req->br_gen != fsdb->fsdb_gen) {
 		mutex_unlock(&fsdb->fsdb_mutex);
 
-		RETURN(-ESTALE);
+		GOTO(log, rc = -ESTALE);
 	}
 
 	if (fsdb->fsdb_barrier_status == BS_INIT ||
@@ -672,7 +704,7 @@ int mgs_barrier_notify(struct tgt_session_info *tsi)
 	    fsdb->fsdb_barrier_status == BS_EXPIRED) {
 		mutex_unlock(&fsdb->fsdb_mutex);
 
-		RETURN(0);
+		GOTO(log, rc = 0);
 	}
 
 	switch (barrier_req->br_event) {
@@ -724,5 +756,14 @@ int mgs_barrier_notify(struct tgt_session_info *tsi)
 
 	mutex_unlock(&fsdb->fsdb_mutex);
 
-	RETURN(rc);
+	GOTO(log, rc);
+
+log:
+	CDEBUG(D_SNAPSHOT, "%s: get barrier notify from the MDT %d, "
+	       "event %u, gen %u, current gen %d: rc = %d\n",
+	       barrier_req->br_name, barrier_req->br_index,
+	       barrier_req->br_event, barrier_req->br_gen,
+	       fsdb != NULL ? fsdb->fsdb_gen : -1, rc);
+
+	return rc;
 }

@@ -357,11 +357,10 @@ static int mgs_target_reg(struct tgt_session_info *tsi)
 	struct mgs_device	*mgs = exp2mgs_dev(tsi->tsi_exp);
 	struct mgs_target_info	*mti, *rep_mti;
 	struct fs_db		*b_fsdb = NULL; /* barrier fsdb */
-	struct fs_db		*c_fsdb; /* config fsdb */
+	struct fs_db		*c_fsdb = NULL; /* config fsdb */
 	char			 barrier_name[20];
 	int			 opc;
 	int			 rc = 0;
-	bool			 set_bitmap = false;
 
 	ENTRY;
 
@@ -432,18 +431,6 @@ static int mgs_target_reg(struct tgt_session_info *tsi)
 
 			b_fsdb->fsdb_barrier_disabled = 1;
 		}
-
-		/* Because the MDT will not notify the MGS when offline,
-		 * the fsdb_mdt_index_map for bitmap may become invalid,
-		 * then either restart the system or refresh the bitmap
-		 * via re-scanning the system. */
-		if (!test_bit(mti->mti_stripe_index,
-			      b_fsdb->fsdb_mdt_index_map)) {
-			set_bit(mti->mti_stripe_index,
-				b_fsdb->fsdb_mdt_index_map);
-			b_fsdb->fsdb_mdt_count++;
-			set_bitmap = true;
-		}
 	}
 
         if (mti->mti_flags & LDD_F_NEED_INDEX)
@@ -470,7 +457,6 @@ static int mgs_target_reg(struct tgt_session_info *tsi)
 	if (mti->mti_flags & LDD_F_WRITECONF) {
 		if (mti->mti_flags & LDD_F_SV_TYPE_MDT &&
 		    mti->mti_stripe_index == 0) {
-			set_bitmap = false;
 			rc = mgs_erase_logs(tsi->tsi_env, mgs,
 					    mti->mti_fsname);
 			LCONSOLE_WARN("%s: Logs for fs %s were removed by user "
@@ -498,11 +484,6 @@ static int mgs_target_reg(struct tgt_session_info *tsi)
 
 				b_fsdb->fsdb_barrier_disabled = 1;
 			}
-
-			set_bit(mti->mti_stripe_index,
-				b_fsdb->fsdb_mdt_index_map);
-			b_fsdb->fsdb_mdt_count++;
-			set_bitmap = true;
 		} else if (mti->mti_flags &
 			   (LDD_F_SV_TYPE_OST | LDD_F_SV_TYPE_MDT)) {
 			rc = mgs_erase_log(tsi->tsi_env, mgs, mti->mti_svname);
@@ -561,9 +542,20 @@ out:
 	mgs_revoke_lock(mgs, c_fsdb, CONFIG_T_CONFIG);
 
 out_norevoke:
-	if (rc != 0 && set_bitmap) {
-		b_fsdb->fsdb_mdt_count--;
-		clear_bit(mti->mti_stripe_index, b_fsdb->fsdb_mdt_index_map);
+	if (rc == 0 && mti->mti_flags & LDD_F_SV_TYPE_MDT && b_fsdb != NULL) {
+		if (c_fsdb == NULL) {
+			rc = mgs_find_or_make_fsdb(tsi->tsi_env, mgs,
+						   mti->mti_fsname, &c_fsdb);
+			if (rc != 0)
+				CERROR("Fail to get db for %s: %d\n",
+				       mti->mti_fsname, rc);
+		}
+
+		if (c_fsdb != NULL) {
+			memcpy(b_fsdb->fsdb_mdt_index_map,
+			       c_fsdb->fsdb_mdt_index_map, INDEX_MAP_SIZE);
+			b_fsdb->fsdb_mdt_count = c_fsdb->fsdb_mdt_count;
+		}
 	}
 
 	up_read(&mgs->mgs_barrier_rwsem);

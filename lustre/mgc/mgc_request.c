@@ -325,19 +325,20 @@ static struct config_llog_data *config_barrier_log_add(struct obd_device *obd,
 				struct config_llog_instance *cfg,
 				struct super_block *sb, const char *fsname)
 {
-	struct config_llog_instance lcfg = *cfg;
+	struct config_llog_instance lcfg;
 	char logname[20];
 	struct config_llog_data *cld;
 
 	if (!IS_MDT(s2lsi(sb)))
 		return NULL;
 
+	lcfg = *cfg;
+	lcfg.cfg_instance = sb;
 	snprintf(logname, 20, "%s.%s", fsname, BARRIER_FILENAME);
-	cld = config_log_find(logname, NULL);
+	cld = config_log_find(logname, &lcfg);
 	if (unlikely(cld != NULL))
 		return cld;
 
-	lcfg.cfg_instance = sb;
 	cld = do_config_log_add(obd, logname, CONFIG_T_BARRIER, &lcfg, sb);
 
 	return cld;

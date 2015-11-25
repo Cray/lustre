@@ -231,9 +231,11 @@ static int mgs_fsdb_handler(const struct lu_env *env, struct llog_handle *llh,
                 }
                 rc = 0;
                 CDEBUG(D_MGS, "MDT index is %u\n", index);
-		set_bit(index, fsdb->fsdb_mdt_index_map);
-                fsdb->fsdb_mdt_count ++;
-        }
+		if (!test_bit(index, fsdb->fsdb_mdt_index_map)) {
+			set_bit(index, fsdb->fsdb_mdt_index_map);
+			fsdb->fsdb_mdt_count++;
+		}
+	}
 
 	/**
 	 * figure out the old config. fsdb_gen = 0 means old log
@@ -597,8 +599,6 @@ static int mgs_set_index(const struct lu_env *env,
                 if (rc == -1)
 			GOTO(out_up, rc = -ERANGE);
                 mti->mti_stripe_index = rc;
-                if (mti->mti_flags & LDD_F_SV_TYPE_MDT)
-                        fsdb->fsdb_mdt_count ++;
         }
 
 	/* the last index(0xffff) is reserved for default value. */
@@ -626,7 +626,12 @@ static int mgs_set_index(const struct lu_env *env,
                 }
         }
 
-	set_bit(mti->mti_stripe_index, imap);
+	if (!test_bit(mti->mti_stripe_index, imap)) {
+		set_bit(mti->mti_stripe_index, imap);
+		if (mti->mti_flags & LDD_F_SV_TYPE_MDT)
+			fsdb->fsdb_mdt_count++;
+	}
+
 	clear_bit(FSDB_LOG_EMPTY, &fsdb->fsdb_flags);
 	mutex_unlock(&fsdb->fsdb_mutex);
 	server_make_name(mti->mti_flags & ~(LDD_F_VIRGIN | LDD_F_WRITECONF),

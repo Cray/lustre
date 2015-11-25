@@ -99,6 +99,16 @@ static inline void barrier_request_release(struct barrier_request_internal *bri)
 	OBD_FREE_PTR(bri);
 }
 
+static inline struct barrier_request_internal *
+barrier_list_entry(struct list_head *list)
+{
+	if (list_empty(list))
+		return NULL;
+
+	return list_entry(list->next, struct barrier_request_internal,
+			  bri_link);
+}
+
 static void barrier_instance_cleanup(struct barrier_instance *barrier)
 {
 	struct ptlrpc_thread *thread = &barrier->bi_thread;
@@ -110,9 +120,8 @@ static void barrier_instance_cleanup(struct barrier_instance *barrier)
 
 	/* Drop unfinished barrier requests. */
 	spin_lock(&barrier->bi_lock);
-	while (!list_empty(&barrier->bi_barrier_requests)) {
-		bri = list_entry(barrier->bi_barrier_requests.next,
-				 struct barrier_request_internal, bri_link);
+	while ((bri = barrier_list_entry(&barrier->bi_barrier_requests)) !=
+									NULL) {
 		list_del(&bri->bri_link);
 		spin_unlock(&barrier->bi_lock);
 
@@ -131,9 +140,7 @@ static void barrier_instance_cleanup(struct barrier_instance *barrier)
 	}
 	spin_unlock(&barrier_instance_lock);
 
-	while (!list_empty(&tmp_list)) {
-		bri = list_entry(tmp_list.next,
-				 struct barrier_request_internal, bri_link);
+	while ((bri = barrier_list_entry(&tmp_list)) != NULL) {
 		list_del(&bri->bri_link);
 		barrier_request_release(bri);
 	}
@@ -385,13 +392,13 @@ static int barrier_notify(const struct lu_env *env,
 	req = ptlrpc_request_alloc(class_exp2cliimp(bri->bri_exp),
 				   &RQF_MGS_BARRIER_NOTIFY);
 	if (req == NULL)
-		RETURN(-ENOMEM);
+		GOTO(log, rc = -ENOMEM);
 
 	rc = ptlrpc_request_pack(req, LUSTRE_MGS_VERSION, MGS_BARRIER_NOTIFY);
 	if (rc != 0) {
 		ptlrpc_req_finished(req);
 
-		RETURN(rc);
+		GOTO(log, rc);
 	}
 
 	br = req_capsule_client_get(&req->rq_pill, &RMF_BARRIER_REQUEST);
@@ -405,7 +412,15 @@ static int barrier_notify(const struct lu_env *env,
 	ptlrpc_request_set_replen(req);
 	ptlrpcd_add_req(req);
 
-	RETURN(0);
+	GOTO(log, rc = 0);
+
+log:
+	CDEBUG(D_SNAPSHOT, "%s: notify the barrier request status %u, gen %u, "
+	       "deadline %u, event %u, index %d: rc = %d\n",
+	       barrier_barrier2name(barrier), bri->bri_status, bri->bri_gen,
+	       bri->bri_deadline, event, barrier_dev_idx(barrier), rc);
+
+	return rc;
 }
 
 /**
@@ -457,8 +472,7 @@ static int barrier_engine(void *args)
 			GOTO(fini, rc = 0);
 
 		spin_lock(&barrier->bi_lock);
-		bri = list_entry(barrier->bi_barrier_requests.next,
-				 struct barrier_request_internal, bri_link);
+		bri = barrier_list_entry(&barrier->bi_barrier_requests);
 		list_del(&bri->bri_link);
 		spin_unlock(&barrier->bi_lock);
 
@@ -607,14 +621,12 @@ void barrier_init(void)
 
 void barrier_fini(void)
 {
+	struct barrier_request_internal *bri;
+
 	LASSERT(list_empty(&barrier_instance_list));
 
 	spin_lock(&barrier_instance_lock);
-	while (!list_empty(&barrier_orphan_list)) {
-		struct barrier_request_internal *bri;
-
-		bri = list_entry(barrier_orphan_list.next,
-				 struct barrier_request_internal, bri_link);
+	while ((bri = barrier_list_entry(&barrier_orphan_list)) != NULL) {
 		list_del(&bri->bri_link);
 		spin_unlock(&barrier_instance_lock);
 
@@ -749,9 +761,7 @@ void barrier_orphan_cleanup(struct dt_device *key)
 	}
 	spin_unlock(&barrier_instance_lock);
 
-	while (!list_empty(&tmp_list)) {
-		bri = list_entry(tmp_list.next,
-				 struct barrier_request_internal, bri_link);
+	while ((bri = barrier_list_entry(&tmp_list)) != NULL) {
 		list_del(&bri->bri_link);
 		barrier_request_release(bri);
 	}

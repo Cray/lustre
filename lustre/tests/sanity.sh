@@ -13662,6 +13662,9 @@ test_400b() { # LU-1606, LU-5011
 }
 run_test 400b "packaged headers can be compiled"
 
+do_nodes $(comma_list $(facet_active_host mgs) $(mdts_nodes)) \
+	$LCTL set_param debug=+snapshot
+
 test_401a() {
 	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
 		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
@@ -13683,10 +13686,10 @@ test_401a() {
 	[ "$barrier_status" = "'frozen'" ] ||
 		error "(2) unexpected barrier status $barrier_status"
 
-		local expired=$(do_facet mgs $LCTL barrier_stat $FSNAME |
+	local expired=$(do_facet mgs $LCTL barrier_stat $FSNAME |
 		        awk '/will be expired/ { print $7 }')
-	echo "sleep $((expired + 2)) sleep, then the barrier will be expired"
-	sleep $((expired + 2))
+	echo "sleep $((expired + 3)) seconds, then the barrier will be expired"
+	sleep $((expired + 3))
 
 	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
 			 awk '/The barrier for/ { print $7 }')
@@ -13815,8 +13818,10 @@ test_401c() {
 
 	local barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
 			       awk '/The barrier for/ { print $7 }')
-	[ "$barrier_status" = "'expired'" ] ||
+	[ "$barrier_status" = "'expired'" ] || {
+		do_facet mgs $LCTL barrier_thaw $FSNAME
 		error "(2) unexpected barrier status $barrier_status"
+	}
 
 	do_facet mgs $LCTL barrier_rescan $FSNAME ||
 		error "(3) Fail to rescan barrier bitmap"
@@ -13842,6 +13847,9 @@ test_401c() {
 		error "(7) Fail to rescan barrier bitmap"
 }
 run_test 401c "rescan barrier bitmap"
+
+do_nodes $(comma_list $(facet_active_host mgs) $(mdts_nodes)) \
+	$LCTL set_param debug=-snapshot
 
 saved_MDS_MOUNT_OPTS=$MDS_MOUNT_OPTS
 saved_OST_MOUNT_OPTS=$OST_MOUNT_OPTS
