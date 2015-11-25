@@ -565,9 +565,13 @@ snapshot_init(int argc, char * const argv[], const struct option *longopts,
 			break;
 		default:
 			*err = -EINVAL;
-		case 'h':
 			usage();
 			goto out;
+		case 'h':
+			usage();
+			snapshot_fini(si);
+			*err = 0;
+			return NULL;
 		}
 	}
 
