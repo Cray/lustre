@@ -955,6 +955,17 @@ zpool_name() {
 }
 
 #
+#
+# Get ZFS local fsname.
+#
+zfs_local_fsname() {
+	local facet=$1
+	local lfsname=$(basename $(facet_device $facet))
+
+	echo -n $lfsname
+}
+
+#
 # Create ZFS storage pool.
 #
 create_zpool() {

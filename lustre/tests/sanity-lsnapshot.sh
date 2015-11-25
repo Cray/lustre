@@ -66,17 +66,16 @@ lss_err()
 lss_gen_conf_one()
 {
 	local facet=$1
-	local fsname=$2
-	local role=$3
-	local idx=$4
+	local role=$2
+	local idx=$3
 
 	local host=$(facet_active_host $facet)
-	local device=$(facet_vdevice $facet)
-	local dir=$(dirname $device)
+	local dir=$(dirname $(facet_vdevice $facet))
 	local pool=$(zpool_name $facet)
+	local lfsname=$(zfs_local_fsname $facet)
 
 	do_facet mgs \
-		"echo '$host $dir $pool $fsname $role $idx' >> $LSNAPSHOT_CONF"
+		"echo '$host $dir $pool $lfsname $role $idx' >> $LSNAPSHOT_CONF"
 }
 
 lss_gen_conf()
@@ -90,7 +89,7 @@ lss_gen_conf()
 			skip "Lustre snapshot 1 only works for ZFS backend" &&
 			exit 0
 
-		lss_gen_conf_one mgs mgs MGS 0 ||
+		lss_gen_conf_one mgs MGS 0 ||
 			lss_err "generate lss conf (mgs)"
 	fi
 
@@ -101,14 +100,14 @@ lss_gen_conf()
 
 		if [ $num -eq 1 ]; then
 			if ! combined_mgs_mds ; then
-				lss_gen_conf_one mds1 mdt1 MDT 0 ||
+				lss_gen_conf_one mds1 MDT 0 ||
 					lss_err "generate lss conf (mds1)"
 			else
-				lss_gen_conf_one mds1 mdt1 MGS,MDT 0 ||
+				lss_gen_conf_one mds1 MGS,MDT 0 ||
 					lss_err "generate lss conf (mgs/mds1)"
 			fi
 		else
-			lss_gen_conf_one mds$num mdt$num MDT $((num - 1)) ||
+			lss_gen_conf_one mds$num MDT $((num - 1)) ||
 				lss_err "generate lss conf (mds$num)"
 		fi
 	done
@@ -118,7 +117,7 @@ lss_gen_conf()
 			skip "Lustre snapshot 1 only works for ZFS backend" &&
 			exit 0
 
-		lss_gen_conf_one ost$num ost$num OST $((num - 1)) ||
+		lss_gen_conf_one ost$num OST $((num - 1)) ||
 			lss_err "generate lss conf (ost$num)"
 	done
 
