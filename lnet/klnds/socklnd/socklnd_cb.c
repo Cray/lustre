@@ -110,7 +110,7 @@ ksocknal_free_tx (ksock_tx_t *tx)
 static int
 ksocknal_send_iov (ksock_conn_t *conn, ksock_tx_t *tx)
 {
-        struct iovec  *iov = tx->tx_iov;
+	struct kvec *iov = tx->tx_iov;
         int    nob;
         int    rc;
 
@@ -250,7 +250,7 @@ ksocknal_transmit (ksock_conn_t *conn, ksock_tx_t *tx)
 static int
 ksocknal_recv_iov (ksock_conn_t *conn)
 {
-        struct iovec *iov = conn->ksnc_rx_iov;
+	struct kvec *iov = conn->ksnc_rx_iov;
         int     nob;
         int     rc;
 
@@ -925,7 +925,7 @@ ksocknal_send(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg)
         int               type = lntmsg->msg_type;
         lnet_process_id_t target = lntmsg->msg_target;
         unsigned int      payload_niov = lntmsg->msg_niov;
-        struct iovec     *payload_iov = lntmsg->msg_iov;
+	struct kvec *payload_iov = lntmsg->msg_iov;
         lnet_kiov_t      *payload_kiov = lntmsg->msg_kiov;
         unsigned int      payload_offset = lntmsg->msg_offset;
         unsigned int      payload_nob = lntmsg->msg_len;
@@ -1046,7 +1046,7 @@ ksocknal_new_packet (ksock_conn_t *conn, int nob_to_skip)
 		case  KSOCK_PROTO_V2:
 		case  KSOCK_PROTO_V3:
                         conn->ksnc_rx_state = SOCKNAL_RX_KSM_HEADER;
-                        conn->ksnc_rx_iov = (struct iovec *)&conn->ksnc_rx_iov_space;
+			conn->ksnc_rx_iov = (struct kvec *)&conn->ksnc_rx_iov_space;
                         conn->ksnc_rx_iov[0].iov_base = (char *)&conn->ksnc_msg;
 
                         conn->ksnc_rx_nob_wanted = offsetof(ksock_msg_t, ksm_u);
@@ -1060,7 +1060,7 @@ ksocknal_new_packet (ksock_conn_t *conn, int nob_to_skip)
                         conn->ksnc_rx_nob_wanted = sizeof(lnet_hdr_t);
                         conn->ksnc_rx_nob_left = sizeof(lnet_hdr_t);
 
-                        conn->ksnc_rx_iov = (struct iovec *)&conn->ksnc_rx_iov_space;
+			conn->ksnc_rx_iov = (struct kvec *)&conn->ksnc_rx_iov_space;
                         conn->ksnc_rx_iov[0].iov_base = (char *)&conn->ksnc_msg.ksm_u.lnetmsg;
                         conn->ksnc_rx_iov[0].iov_len  = sizeof (lnet_hdr_t);
                         break;
@@ -1081,7 +1081,7 @@ ksocknal_new_packet (ksock_conn_t *conn, int nob_to_skip)
 
         conn->ksnc_rx_state = SOCKNAL_RX_SLOP;
         conn->ksnc_rx_nob_left = nob_to_skip;
-        conn->ksnc_rx_iov = (struct iovec *)&conn->ksnc_rx_iov_space;
+	conn->ksnc_rx_iov = (struct kvec *)&conn->ksnc_rx_iov_space;
         skipped = 0;
         niov = 0;
 
@@ -1095,7 +1095,7 @@ ksocknal_new_packet (ksock_conn_t *conn, int nob_to_skip)
                 nob_to_skip -=nob;
 
         } while (nob_to_skip != 0 &&    /* mustn't overflow conn's rx iov */
-                 niov < sizeof(conn->ksnc_rx_iov_space) / sizeof (struct iovec));
+		 niov < sizeof(conn->ksnc_rx_iov_space) / sizeof(struct kvec));
 
         conn->ksnc_rx_niov = niov;
         conn->ksnc_rx_kiov = NULL;
@@ -1213,7 +1213,7 @@ ksocknal_process_receive (ksock_conn_t *conn)
                 conn->ksnc_rx_nob_wanted = sizeof(ksock_lnet_msg_t);
                 conn->ksnc_rx_nob_left = sizeof(ksock_lnet_msg_t);
 
-                conn->ksnc_rx_iov = (struct iovec *)&conn->ksnc_rx_iov_space;
+		conn->ksnc_rx_iov = (struct kvec *)&conn->ksnc_rx_iov_space;
                 conn->ksnc_rx_iov[0].iov_base = (char *)&conn->ksnc_msg.ksm_u.lnetmsg;
                 conn->ksnc_rx_iov[0].iov_len  = sizeof(ksock_lnet_msg_t);
 
@@ -1312,7 +1312,7 @@ ksocknal_process_receive (ksock_conn_t *conn)
 
 int
 ksocknal_recv (lnet_ni_t *ni, void *private, lnet_msg_t *msg, int delayed,
-               unsigned int niov, struct iovec *iov, lnet_kiov_t *kiov,
+	       unsigned int niov, struct kvec *iov, lnet_kiov_t *kiov,
                unsigned int offset, unsigned int mlen, unsigned int rlen)
 {
         ksock_conn_t  *conn = (ksock_conn_t *)private;
