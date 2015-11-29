@@ -629,6 +629,7 @@ static int __snapshot_wait(struct snapshot_instance *si,
 			if (*err == 0)
 				*err = rc;
 
+			st->st_pid = 0;
 			/* continue to wait for next */
 			continue;
 		}
@@ -664,6 +665,8 @@ static int __snapshot_wait(struct snapshot_instance *si,
 			if (*err == 0)
 				*err = -EFAULT;
 		}
+
+		st->st_pid = 0;
 	}
 
 	return count;
@@ -1236,9 +1239,17 @@ static int snapshot_destroy(struct snapshot_instance *si)
 
 	/* 1.1 Destroy snapshot on every OST */
 	rc = __snapshot_destroy(si, &si->si_osts_list);
-	if (rc == 0 || si->si_force)
-		/* 1.2 Destroy snapshot on every MDT */
-		rc1 = __snapshot_destroy(si, &si->si_mdts_list);
+	if (!si->si_force) {
+		if (rc != 0)
+			return rc;
+
+		__snapshot_wait(si, &si->si_osts_list, &rc);
+		if (rc != 0)
+			return rc;
+	}
+
+	/* 1.2 Destroy snapshot on every MDT */
+	rc1 = __snapshot_destroy(si, &si->si_mdts_list);
 
 	/* 2 Wait for all children, even though part of them maybe failed */
 	snapshot_wait(si, &rc2);
