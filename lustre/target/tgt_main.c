@@ -150,6 +150,8 @@ int tgt_init(const struct lu_env *env, struct lu_target *lut,
 
 	RETURN(0);
 out:
+	obd->u.obt.obt_magic = 0;
+	obd->u.obt.obt_lut = NULL;
 	if (lut->lut_last_rcvd != NULL)
 		lu_object_put(env, &lut->lut_last_rcvd->do_lu);
 	lut->lut_last_rcvd = NULL;
