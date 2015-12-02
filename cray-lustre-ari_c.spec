@@ -1,6 +1,10 @@
 %define vendor_name lustre
 %define vendor_version 2.7
+%if %{with athena}
+%define flavor cray_ari_athena_c_cos
+%else
 %define flavor cray_ari_c
+%endif
 %define intranamespace_name %{vendor_name}-%{flavor}
 %define flavorless_name %{namespace}-%{vendor_name}
 %define branch trunk
@@ -120,7 +124,11 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 
 %files lnet
 %defattr(-,root,root)
+%if %{with athena}
+/lib/modules/*/extra/kernel/net/lustre
+%else
 /lib/modules/*/updates/kernel/net/lustre
+%endif
 /sbin/lctl
 
 %clean
