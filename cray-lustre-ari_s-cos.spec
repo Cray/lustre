@@ -1,6 +1,10 @@
 %define vendor_name lustre
 %define vendor_version 2.7
+%if %{with athena}
+%define flavor cray_ari_athena_s_cos
+%else
 %define flavor cray_ari_s_cos
+%endif
 %define intranamespace_name %{vendor_name}-%{flavor}
 %define flavorless_name %{namespace}-%{vendor_name}
 # use non-customized version so source doesn't need to be repackaged for custom versions.
@@ -14,7 +18,9 @@ BuildRequires: cray-gni-devel
 BuildRequires: cray-gni-headers
 BuildRequires: cray-gni-headers-private
 BuildRequires: cray-krca-devel
+%if %{without athena}
 BuildRequires: ofed-devel
+%endif
 BuildRequires: kernel-source
 BuildRequires: kernel-syms
 BuildRequires: %{namespace}-krca-devel
