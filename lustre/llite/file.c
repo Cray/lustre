@@ -2270,12 +2270,22 @@ static int ll_hsm_state_set(struct inode *inode, struct hsm_state_set *hss)
 {
 	struct md_op_data	*op_data;
 	int			 rc;
+	ENTRY;
+
+	/* Detect out-of range masks */
+	if ((hss->hss_setmask | hss->hss_clearmask) & ~HSM_FLAGS_MASK)
+		RETURN(-EINVAL);
 
 	/* Non-root users are forbidden to set or clear flags which are
 	 * NOT defined in HSM_USER_MASK. */
 	if (((hss->hss_setmask | hss->hss_clearmask) & ~HSM_USER_MASK) &&
 	    !cfs_capable(CFS_CAP_SYS_ADMIN))
 		RETURN(-EPERM);
+
+	/* Detect out-of range archive id */
+	if ((hss->hss_valid & HSS_ARCHIVE_ID) &&
+	    (hss->hss_archive_id > LL_HSM_MAX_ARCHIVE))
+		RETURN(-EINVAL);
 
 	op_data = ll_prep_md_op_data(NULL, inode, NULL, NULL, 0, 0,
 				     LUSTRE_OPC_ANY, hss);
@@ -2354,6 +2364,42 @@ static inline long ll_lease_type_from_fmode(fmode_t fmode)
 {
 	return ((fmode & FMODE_READ) ? LL_LEASE_RDLCK : 0) |
 	       ((fmode & FMODE_WRITE) ? LL_LEASE_WRLCK : 0);
+}
+
+static int ll_file_futimes_3(struct file *file, const struct ll_futimes_3 *lfu)
+{
+	struct inode *inode = file->f_dentry->d_inode;
+	struct iattr ia = {
+		.ia_valid = ATTR_ATIME | ATTR_ATIME_SET |
+			    ATTR_MTIME | ATTR_MTIME_SET |
+			    ATTR_CTIME | ATTR_CTIME_SET,
+		.ia_atime = {
+			.tv_sec = lfu->lfu_atime_sec,
+			.tv_nsec = lfu->lfu_atime_nsec,
+		},
+		.ia_mtime = {
+			.tv_sec = lfu->lfu_mtime_sec,
+			.tv_nsec = lfu->lfu_mtime_nsec,
+		},
+		.ia_ctime = {
+			.tv_sec = lfu->lfu_ctime_sec,
+			.tv_nsec = lfu->lfu_ctime_nsec,
+		},
+	};
+	int rc;
+	ENTRY;
+
+	if (!capable(CAP_SYS_ADMIN))
+		RETURN(-EPERM);
+
+	if (!S_ISREG(inode->i_mode))
+		RETURN(-EINVAL);
+
+	mutex_lock(&inode->i_mutex);
+	rc = ll_setattr_raw(file->f_dentry, &ia, false);
+	mutex_unlock(&inode->i_mutex);
+
+	RETURN(rc);
 }
 
 static long
@@ -2687,7 +2733,16 @@ out:
 		OBD_FREE_PTR(hui);
 		RETURN(rc);
 	}
+	case LL_IOC_FUTIMES_3: {
+		struct ll_futimes_3 lfu;
 
+		if (copy_from_user(&lfu,
+				   (const struct ll_futimes_3 __user *)arg,
+				   sizeof(lfu)))
+			RETURN(-EFAULT);
+
+		RETURN(ll_file_futimes_3(file, &lfu));
+	}
 	default: {
 		int err;
 

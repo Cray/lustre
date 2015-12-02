@@ -216,6 +216,15 @@ struct ost_id {
 #define DOSTID LPX64":"LPU64
 #define POSTID(oi) ostid_seq(oi), ostid_id(oi)
 
+struct ll_futimes_3 {
+	__u64 lfu_atime_sec;
+	__u64 lfu_atime_nsec;
+	__u64 lfu_mtime_sec;
+	__u64 lfu_mtime_nsec;
+	__u64 lfu_ctime_sec;
+	__u64 lfu_ctime_nsec;
+};
+
 /*
  * The ioctl naming rules:
  * LL_*     - works on the currently opened filehandle instead of parent dir
@@ -252,6 +261,7 @@ struct ost_id {
 #define LL_IOC_PATH2FID                 _IOR ('f', 173, long)
 #define LL_IOC_GET_CONNECT_FLAGS        _IOWR('f', 174, __u64 *)
 #define LL_IOC_GET_MDTIDX               _IOR ('f', 175, int)
+#define LL_IOC_FUTIMES_3		_IOWR('f', 176, struct ll_futimes_3)
 /*	lustre_ioctl.h			177-210 */
 #define LL_IOC_HSM_STATE_GET		_IOR('f', 211, struct hsm_user_state)
 #define LL_IOC_HSM_STATE_SET		_IOW('f', 212, struct hsm_state_set)
@@ -725,6 +735,7 @@ enum changelog_rec_type {
 	CL_MTIME    = 17, /* Precedence: setattr > mtime > ctime > atime */
 	CL_CTIME    = 18,
 	CL_ATIME    = 19,
+	CL_MIGRATE  = 20,
 	CL_LAST
 };
 
@@ -732,7 +743,7 @@ static inline const char *changelog_type2str(int type) {
 	static const char *changelog_str[] = {
 		"MARK",  "CREAT", "MKDIR", "HLINK", "SLINK", "MKNOD", "UNLNK",
 		"RMDIR", "RENME", "RNMTO", "OPEN",  "CLOSE", "LYOUT", "TRUNC",
-		"SATTR", "XATTR", "HSM",   "MTIME", "CTIME", "ATIME",
+		"SATTR", "XATTR", "HSM",   "MTIME", "CTIME", "ATIME", "MIGRT"
 	};
 
 	if (type >= 0 && type < CL_LAST)
@@ -1038,6 +1049,7 @@ struct ioc_data_version {
  * See HSM_FLAGS below.
  */
 enum hsm_states {
+	HS_NONE		= 0x00000000,
 	HS_EXISTS	= 0x00000001,
 	HS_DIRTY	= 0x00000002,
 	HS_RELEASED	= 0x00000004,
