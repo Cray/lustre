@@ -787,7 +787,14 @@ static void mdc_free_open(struct md_open_data *mod)
 	    imp_connect_disp_stripe(mod->mod_open_req->rq_import))
 		committed = 1;
 
-	LASSERT(mod->mod_open_req->rq_replay == 0);
+	/**
+	 * No reason to asssert here if the open request has
+	 * rq_replay == 1. It means that mdc_close failed, and
+	 * close request wasn`t sent. It is not fatal to client.
+	 * The worst thing is eviction if the client gets open lock
+	 **/
+	if (mod->mod_open_req->rq_replay != 0)
+		CWARN("Close open request with rq_replay == 1\n");
 
 	DEBUG_REQ(D_RPCTRACE, mod->mod_open_req, "free open request\n");
 
@@ -864,17 +871,39 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 	}
 
 	*request = NULL;
-	req = ptlrpc_request_alloc(class_exp2cliimp(exp), req_fmt);
-        if (req == NULL)
-                RETURN(-ENOMEM);
+	if (OBD_FAIL_CHECK(OBD_FAIL_MDC_CLOSE))
+		req = NULL;
+	else
+		req = ptlrpc_request_alloc(class_exp2cliimp(exp), req_fmt);
+
+	/* Ensure that this close's handle is fixed up during replay. */
+	if (likely(mod != NULL)) {
+		LASSERTF(mod->mod_open_req != NULL &&
+			 mod->mod_open_req->rq_type != LI_POISON,
+			 "POISONED open %p!\n", mod->mod_open_req);
+
+		mod->mod_close_req = req;
+
+		DEBUG_REQ(D_HA, mod->mod_open_req, "matched open");
+		/* We no longer want to preserve this open for replay even
+		 * though the open was committed. b=3632, b=3633 */
+		spin_lock(&mod->mod_open_req->rq_lock);
+		mod->mod_open_req->rq_replay = 0;
+		spin_unlock(&mod->mod_open_req->rq_lock);
+	} else {
+		CDEBUG(D_HA, "couldn't find open req; expecting close error\n");
+	}
+	if (req == NULL) {
+		GOTO(out, rc = -ENOMEM);
+	}
 
         mdc_set_capa_size(req, &RMF_CAPA1, op_data->op_capa1);
 
-        rc = ptlrpc_request_pack(req, LUSTRE_MDS_VERSION, MDS_CLOSE);
-        if (rc) {
-                ptlrpc_request_free(req);
-                RETURN(rc);
-        }
+	rc = ptlrpc_request_pack(req, LUSTRE_MDS_VERSION, MDS_CLOSE);
+	if (rc) {
+		ptlrpc_request_free(req);
+		GOTO(out, rc);
+	}
 
         /* To avoid a livelock (bug 7034), we need to send CLOSE RPCs to a
          * portal whose threads are not taking any DLM locks and are therefore
@@ -882,23 +911,6 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
         req->rq_request_portal = MDS_READPAGE_PORTAL;
         ptlrpc_at_set_req_timeout(req);
 
-        /* Ensure that this close's handle is fixed up during replay. */
-        if (likely(mod != NULL)) {
-                LASSERTF(mod->mod_open_req != NULL &&
-                         mod->mod_open_req->rq_type != LI_POISON,
-                         "POISONED open %p!\n", mod->mod_open_req);
-
-                mod->mod_close_req = req;
-
-                DEBUG_REQ(D_HA, mod->mod_open_req, "matched open");
-                /* We no longer want to preserve this open for replay even
-                 * though the open was committed. b=3632, b=3633 */
-		spin_lock(&mod->mod_open_req->rq_lock);
-		mod->mod_open_req->rq_replay = 0;
-		spin_unlock(&mod->mod_open_req->rq_lock);
-        } else {
-                 CDEBUG(D_HA, "couldn't find open req; expecting close error\n");
-        }
 
         mdc_close_pack(req, op_data);
 
@@ -945,6 +957,7 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
                 }
         }
 
+out:
         if (mod) {
                 if (rc != 0)
                         mod->mod_close_req = NULL;
