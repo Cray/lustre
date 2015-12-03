@@ -13614,6 +13614,14 @@ test_257() {
 }
 run_test 257 "xattr locks are not lost"
 
+test_260() {
+#define OBD_FAIL_MDC_CLOSE               0x806
+	$LCTL set_param fail_loc=0x80000806
+	touch $DIR/$tfile
+
+}
+run_test 260 "Check mdc_close fail"
+
 cleanup_test_300() {
 	trap 0
 	umask $SAVE_UMASK
