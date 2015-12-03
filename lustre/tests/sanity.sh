@@ -13544,6 +13544,14 @@ test_252() {
 run_test 252 "check lr_reader tool"
 
 
+test_260() {
+#define OBD_FAIL_MDC_CLOSE               0x806
+	$LCTL set_param fail_loc=0x80000806
+	touch $DIR/$tfile
+
+}
+run_test 260 "Check mdc_close fail"
+
 cleanup_test_300() {
 	trap 0
 	umask $SAVE_UMASK
