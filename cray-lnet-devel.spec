@@ -2,7 +2,11 @@
 %ifarch k1om
 %define flavor cray_ari_m
 %else
+%if %{with athena}
+%define flavor cray_ari_athena_s_cos
+%else
 %define flavor cray_ari_s
+%endif
 %endif
 %define version 0.1
 %define lustre_version 2.7
