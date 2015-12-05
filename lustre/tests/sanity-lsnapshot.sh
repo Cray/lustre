@@ -211,9 +211,24 @@ test_1a() {
 		lss_err "(5) Fail to mount lss_1a_0"
 
 	echo "Check whether mounted (2)"
-	lsnapshot_list -n lss_1a_0 -d | grep "not mount" && {
-		lsnapshot_list -n lss_1a_0 -d
-		lss_err "(6) Expect 'mounted', got 'not mount' for lss_1a_0"
+	local mcount=$(lsnapshot_list -n lss_1a_0 -d | grep "not mount" | wc -l)
+	[[ $mcount -ne 0 ]] && {
+		if combined_mgs_mds ; then
+			lsnapshot_list -n lss_1a_0 -d
+			lss_err "(6.1) Got unexpected 'not mount' for lss_1a_0"
+		fi
+
+		[[ $mcount -gt 1 ]] && {
+			lsnapshot_list -n lss_1a_0 -d
+			lss_err "(6.2) Got unexpected 'not mount' for lss_1a_0"
+		}
+
+		# The first 10 lines contains and only contains MGS mount status
+		lsnapshot_list -n lss_1a_0 -d | head -n 10 |
+			grep "not mount" || {
+			lsnapshot_list -n lss_1a_0 -d
+			lss_err "(6.3) Got unexpected 'not mount' for lss_1a_0"
+		}
 	}
 
 	local ss_fsname=$(lsnapshot_list -n lss_1a_0 |
@@ -243,7 +258,7 @@ test_1a() {
 	umount $mntpt ||
 		lss_err "(11) Fail to umount client for lss_1a_0"
 
-	echo "umount lss_1a_0"
+	echo "Umount lss_1a_0"
 	lsnapshot_umount -n lss_1a_0 ||
 		lss_err "(12) Fail to umount lss_1a_0"
 
@@ -390,6 +405,10 @@ test_3a() {
 	echo "Modify lss_3a_2's comment with mounted"
 	lsnapshot_modify -n lss_3a_2 -c "'Change comment with mounted'" ||
 		lss_err "(12) Change comment with mount should succeed"
+
+	echo "Umount lss_3a_2"
+	lsnapshot_umount -n lss_3a_2 ||
+		lss_err "(13) Fail to umount lss_3a_2"
 }
 run_test 3a "modify lustre snapshot"
 

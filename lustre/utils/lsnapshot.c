@@ -625,13 +625,9 @@ static int __snapshot_wait(struct snapshot_instance *si,
 					 "on the target <%s:%x:%d>: %s\n",
 					 st->st_pid, st->st_host, st->st_role,
 					 st->st_index, strerror(errno));
-			if (unlikely(rc == -ESRCH)) {
-				st->st_ignored = true;
-			} else {
-				count++;
-				if (*err == 0)
-					*err = rc;
-			}
+			count++;
+			if (*err == 0)
+				*err = rc;
 
 			/* continue to wait for next */
 			continue;
@@ -639,10 +635,12 @@ static int __snapshot_wait(struct snapshot_instance *si,
 
 		if (WIFEXITED(st->st_status)) {
 			rc = WEXITSTATUS(st->st_status);
-			if (rc != 0) {
-				if (rc > 0)
-					rc = -rc;
+			if(rc > 0)
+				rc -= 256;
 
+			if (unlikely(rc == -ESRCH)) {
+				st->st_ignored = true;
+			} else if (rc != 0) {
 				count++;
 				if (*err == 0)
 					*err = rc;
