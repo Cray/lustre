@@ -1572,6 +1572,20 @@ static int mdt_reint_migrate_internal(struct mdt_thread_info *info,
 	if (rc != 0)
 		GOTO(out_unlock_child, rc);
 
+	/* Migration is incompatible with HSM. */
+	ma->ma_need = MA_HSM;
+	ma->ma_valid = 0;
+	rc = mdt_attr_get_complex(info, mold, ma);
+	if (rc != 0)
+		GOTO(out_unlock_child, rc);
+
+	if ((ma->ma_valid & MA_HSM) && ma->ma_hsm.mh_flags != 0) {
+		rc = -ENOSYS;
+		CERROR("%s: cannot migrate HSM archived file "DFID": rc = %d\n",
+		       mdt_obd_name(info->mti_mdt), PFID(old_fid), rc);
+		GOTO(out_unlock_child, rc);
+	}
+
 	ma->ma_need = MA_LMV;
 	ma->ma_valid = 0;
 	ma->ma_lmv = (union lmv_mds_md *)info->mti_xattr_buf;
