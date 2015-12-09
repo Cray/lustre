@@ -942,8 +942,6 @@ kiblnd_check_sends (kib_conn_t *conn)
                         kiblnd_queue_tx_locked(tx, conn);
         }
 
-        kiblnd_conn_addref(conn); /* 1 ref for me.... (see b21911) */
-
         for (;;) {
                 int credit;
 
@@ -968,8 +966,6 @@ kiblnd_check_sends (kib_conn_t *conn)
         }
 
 	spin_unlock(&conn->ibc_lock);
-
-	kiblnd_conn_decref(conn); /* ...until here */
 }
 
 static void
@@ -2175,6 +2171,15 @@ kiblnd_connreq_done(kib_conn_t *conn, int status)
 		return;
 	}
 
+	/* refcount taken by cmid is not reliable after I released the glock
+	 * because this connection is visible to other threads now, another
+	 * thread can find and close this connection right after I released
+	 * the glock, if kiblnd_cm_callback for RDMA_CM_EVENT_DISCONNECTED is
+	 * called, it can release the connection refcount taken by cmid.
+	 * It means the connection could be destroyed before I finish my
+	 * operations on it.
+	 */
+	kiblnd_conn_addref(conn);
 	write_unlock_irqrestore(&kiblnd_data.kib_global_lock, flags);
 
 	/* Schedule blocked txs */
@@ -2191,6 +2196,8 @@ kiblnd_connreq_done(kib_conn_t *conn, int status)
 
 	/* schedule blocked rxs */
 	kiblnd_handle_early_rxs(conn);
+
+	kiblnd_conn_decref(conn);
 }
 
 static void
