@@ -1350,9 +1350,8 @@ static int mdd_changelog_user_purge_cb(const struct lu_env *env,
 
 	mcud->usercount++;
 
-	if (rec->cur_id != mcud->id) {
+	if (rec->cur_id != mcud->id)
 		RETURN(0);
-	}
 
 	/* Unregister this user */
 	cookie.lgc_lgl = llh->lgh_id;
@@ -1367,7 +1366,7 @@ static int mdd_changelog_user_purge_cb(const struct lu_env *env,
 }
 
 static int mdd_changelog_user_purge(const struct lu_env *env,
-				    struct mdd_device *mdd, int id)
+				    struct mdd_device *mdd, __u32 id)
 {
 	struct mdd_changelog_user_data mcud;
 	struct llog_ctxt *ctxt;
@@ -1389,11 +1388,11 @@ static int mdd_changelog_user_purge(const struct lu_env *env,
 	LASSERT(ctxt->loc_handle->lgh_hdr->llh_flags & LLOG_F_IS_CAT);
 
 	rc = llog_cat_process(env, ctxt->loc_handle,
-			      mdd_changelog_user_purge_cb, (void *)&mcud,
+			      mdd_changelog_user_purge_cb, &mcud,
 			      0, 0);
 
 	if (rc < 0) {
-                CWARN("Could not determine changelog records to purge; "\
+		CWARN("Could not determine changelog records to purge; " \
 		      "rc=%d\n", rc);
 	} else {
 		CWARN("Purging changelog entries for user %d\n", id);
@@ -1422,7 +1421,7 @@ static int mdd_changelog_user_purge(const struct lu_env *env,
  */
 static int mdd_changelog_clear_cb(const struct lu_env *env,
 				  struct llog_handle *llh,
-				  struct llog_rec_hdr *hdr, 
+				  struct llog_rec_hdr *hdr,
 				  void *data)
 {
 	struct llog_changelog_user_rec	*rec;
@@ -1439,21 +1438,21 @@ static int mdd_changelog_clear_cb(const struct lu_env *env,
 
 	/* does the changelog id match the requested id? */
 	if (rec->cur_id != mcud->id) {
-		CWARN("No entry for user %d.  Last changelog reference is "
-		      LPD64"\n", mcud->id, mcud->minrec);
+		CDEBUG(D_IOCTL, "No entry for user %d.  Last changelog "
+		       "reference is "LPD64"\n", mcud->id, mcud->minrec);
 		RETURN(0);
 	}
 
-	/** 
+	/**
 	 * cur_endrec is the oldest purgeable record, make sure we're newer
 	 */
 	if (rec->cur_endrec > mcud->endrec) {
-		CWARN("Request %lld out of range: %lld\n", 
+		CWARN("Request %lld out of range: %lld\n",
 		      mcud->endrec, rec->cur_endrec);
 		RETURN(-EINVAL);
 	}
 
-	/** 
+	/**
 	 * Flag that we've met all the range and user checks
 	 * We now know the record to flush
 	 */
@@ -1474,12 +1473,12 @@ static int mdd_changelog_clear_cb(const struct lu_env *env,
  * Clear a changelog up to entry specified by endrec for user id
  */
 static int mdd_changelog_clear(const struct lu_env *env,
-			       struct mdd_device *mdd, int id,
+			       struct mdd_device *mdd, __u32 id,
 			       __u64 endrec)
 {
 	struct mdd_changelog_user_data mcud;
 	struct llog_ctxt *ctxt;
-	__s64 start_rec;
+	__u64 start_rec;
 	int rc;
 	ENTRY;
 
@@ -1515,17 +1514,15 @@ static int mdd_changelog_clear(const struct lu_env *env,
 	rc = llog_cat_process(env, ctxt->loc_handle,
 			      mdd_changelog_clear_cb, (void *)&mcud,
 			      0, 0);
-	
+
 	if (rc < 0) {
-		CWARN("Failure to clear the changelog for user %d: %d\n", 
+		CWARN("Failure to clear the changelog for user %d: %d\n",
 		      id, rc);
-	}
-	else if (mcud.usercount == 1) {
-		CDEBUG(D_IOCTL, "Purging changelog entries up to "LPD64
+	} else if (mcud.usercount == 1) {
+		CDEBUG(D_IOCTL, "Purging changelog entries up to "LPU64
 		       "\n", mcud.minrec);
 		rc = mdd_changelog_llog_cancel(env, mdd, mcud.minrec);
-	}
-	else if (mcud.usercount == 0) {
+	} else if (mcud.usercount == 0) {
 		CWARN("No entry for user %d\n", id);
 		rc = -ENOENT;
 	}
@@ -1553,14 +1550,14 @@ static int mdd_iocontrol(const struct lu_env *env, struct md_device *m,
 
         mdd = lu2mdd_dev(&m->md_lu_dev);
 
-        /* Doesn't use obd_ioctl_data */
-        switch (cmd) {
-        case OBD_IOC_CHANGELOG_CLEAR: {
-                struct changelog_setinfo *cs = karg;
-                rc = mdd_changelog_clear(env, mdd, cs->cs_id,
-                                              cs->cs_recno);
-                RETURN(rc);
-        }
+	/* Doesn't use obd_ioctl_data */
+	switch (cmd) {
+	case OBD_IOC_CHANGELOG_CLEAR: {
+		struct changelog_setinfo *cs = karg;
+		rc = mdd_changelog_clear(env, mdd, cs->cs_id,
+					 cs->cs_recno);
+		RETURN(rc);
+	}
         case OBD_IOC_GET_MNTOPT: {
                 mntopt_t *mntopts = (mntopt_t *)karg;
                 *mntopts = mdd->mdd_dt_conf.ddp_mntopts;

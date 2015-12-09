@@ -5774,8 +5774,8 @@ static int mdt_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
         case OBD_IOC_CHANGELOG_DEREG:
         case OBD_IOC_CHANGELOG_CLEAR:
 		LASSERT(mdt->mdt_child->md_ops->mdo_iocontrol);
-		rc = mdt->mdt_child->md_ops->mdo_iocontrol(&env, 
-							   mdt->mdt_child, 
+		rc = mdt->mdt_child->md_ops->mdo_iocontrol(&env,
+							   mdt->mdt_child,
 							   cmd, len, karg);
                 break;
 	case OBD_IOC_START_LFSCK: {
