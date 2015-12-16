@@ -2126,6 +2126,7 @@ static int mdd_create(const struct lu_env *env, struct md_object *pobj,
 	}
 
 	if (rc == 0 && spec->sp_cr_flags & MDS_OPEN_VOLATILE) {
+		son->mod_flags |= VOLATILE_OBJ;
 		rc = __mdd_orphan_add(env, son, handle);
 		GOTO(out_volatile, rc);
 	}

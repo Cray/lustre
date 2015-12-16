@@ -121,6 +121,7 @@ enum mod_flags {
         APPEND_OBJ = 1 << 1,
         IMMUTE_OBJ = 1 << 2,
         ORPHAN_OBJ = 1 << 3,
+	VOLATILE_OBJ = 1 << 4,
 };
 
 struct mdd_object {
@@ -543,6 +544,11 @@ static inline int mdd_is_dead_obj(struct mdd_object *obj)
 static inline int mdd_is_append(struct mdd_object *obj)
 {
         return obj->mod_flags & APPEND_OBJ;
+}
+
+static inline bool mdd_is_volatile_obj(struct mdd_object *obj)
+{
+	return obj->mod_flags & VOLATILE_OBJ;
 }
 
 static inline int mdd_object_exists(struct mdd_object *obj)
