@@ -671,6 +671,23 @@ int llapi_layout_file_open(const char *path, int open_flags, mode_t mode,
 int llapi_layout_file_create(const char *path, int open_flags, int mode,
 			     const struct llapi_layout *layout);
 
+
+/**
+ * Do pre job setup or post job cleanup.
+ *
+ * \param[in] action  LLAPI_JOBACT_SETUP:   pre job setup
+ *                    LLAPI_JOBACT_CLEANUP: post job cleanup
+ * \param[in] fsname  Lustre file system name
+ *                    NULL: all Lustre file systems
+ *
+ * \retval 0 if successful
+ * \retval -errno if unsuccessful
+ */
+#define LLAPI_JOBACT_SETUP 0
+#define LLAPI_JOBACT_CLEANUP 1
+
+extern int llapi_jobaction(int action, char *fsname);
+
 /** @} llapi */
 
 #endif
