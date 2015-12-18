@@ -18,7 +18,9 @@ BuildRequires: cray-gni-devel
 BuildRequires: cray-gni-headers
 BuildRequires: cray-gni-headers-private
 BuildRequires: cray-krca-devel
-%if %{without athena}
+%if %{with athena}
+BuildRequires: ofed-kmp-cray_ari_athena_s_cos
+%else
 BuildRequires: ofed-devel
 %endif
 BuildRequires: kernel-source
