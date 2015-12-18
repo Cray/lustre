@@ -1672,12 +1672,12 @@ static int lod_prep_md_striped_create(const struct lu_env *env,
 	if (stripe_count > lod->lod_remote_mdt_count + 1)
 		stripe_count = lod->lod_remote_mdt_count + 1;
 
-	OBD_ALLOC(stripe, sizeof(stripe[0]) * stripe_count);
-	if (stripe == NULL)
-		RETURN(-ENOMEM);
-
 	OBD_ALLOC(idx_array, sizeof(idx_array[0]) * stripe_count);
 	if (idx_array == NULL)
+		RETURN(-ENOMEM);
+
+	OBD_ALLOC(stripe, sizeof(stripe[0]) * stripe_count);
+	if (stripe == NULL)
 		GOTO(out_free, rc = -ENOMEM);
 
 	for (i = 0; i < stripe_count; i++) {
@@ -1937,8 +1937,7 @@ out_put:
 	}
 
 out_free:
-	if (idx_array != NULL)
-		OBD_FREE(idx_array, sizeof(idx_array[0]) * stripe_count);
+	OBD_FREE(idx_array, sizeof(idx_array[0]) * stripe_count);
 	if (slave_lmm != NULL)
 		OBD_FREE_PTR(slave_lmm);
 
