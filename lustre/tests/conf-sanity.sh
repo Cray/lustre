@@ -5359,7 +5359,7 @@ test_83() {
 	# Mount the OST as an ldiskfs filesystem.
 	log "mount the OST $dev as a $fstype filesystem"
 	add ost1 $(mkfs_opts ost1 $dev) $FSTYPE_OPT \
-		--reformat $dev $dev > /dev/null ||
+		--reformat $dev > /dev/null ||
 		error "format ost1 error"
 
 	if ! test -b $dev; then
