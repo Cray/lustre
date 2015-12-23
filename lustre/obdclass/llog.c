@@ -105,9 +105,9 @@ void llog_handle_put(struct llog_handle *loghandle)
 		llog_free_handle(loghandle);
 }
 
-static int llog_declare_destroy(const struct lu_env *env,
-				struct llog_handle *handle,
-				struct thandle *th)
+int llog_declare_destroy(const struct lu_env *env,
+			 struct llog_handle *handle,
+			 struct thandle *th)
 {
 	struct llog_operations *lop;
 	int rc;

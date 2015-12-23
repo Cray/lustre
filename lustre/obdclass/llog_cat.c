@@ -113,6 +113,9 @@ out_destroy:
 	 * we want to destroy it in this transaction, otherwise the object
 	 * becomes an orphan */
 	loghandle->lgh_hdr->llh_flags &= ~LLOG_F_ZAP_WHEN_EMPTY;
+	/* this is to mimic full log, so another llog_cat_current_log()
+	 * can skip it and ask for another onet */
+	loghandle->lgh_last_idx = LLOG_BITMAP_SIZE(loghandle->lgh_hdr) + 1;
 	llog_trans_destroy(env, loghandle, th);
 	RETURN(rc);
 }
@@ -265,8 +268,7 @@ static struct llog_handle *llog_cat_current_log(struct llog_handle *cathandle,
 
 		down_write_nested(&loghandle->lgh_lock, LLOGH_LOG);
 		llh = loghandle->lgh_hdr;
-		if (llh == NULL ||
-		    loghandle->lgh_last_idx < LLOG_BITMAP_SIZE(llh) - 1) {
+		if (llh == NULL || !llog_is_full(loghandle)) {
 			up_read(&cathandle->lgh_lock);
                         RETURN(loghandle);
                 } else {
@@ -286,12 +288,12 @@ static struct llog_handle *llog_cat_current_log(struct llog_handle *cathandle,
 		down_write_nested(&loghandle->lgh_lock, LLOGH_LOG);
 		llh = loghandle->lgh_hdr;
 		LASSERT(llh);
-                if (loghandle->lgh_last_idx < LLOG_BITMAP_SIZE(llh) - 1) {
+		if (!llog_is_full(loghandle)) {
 			up_write(&cathandle->lgh_lock);
-                        RETURN(loghandle);
-                } else {
+			RETURN(loghandle);
+		} else {
 			up_write(&loghandle->lgh_lock);
-                }
+		}
         }
 
 next:
@@ -340,17 +342,21 @@ retry:
 	}
 	/* now let's try to add the record */
 	rc = llog_write_rec(env, loghandle, rec, reccookie, LLOG_NEXT_IDX, th);
-	if (rc < 0)
+	if (rc < 0) {
 		CDEBUG_LIMIT(rc == -ENOSPC ? D_HA : D_ERROR,
 			     "llog_write_rec %d: lh=%p\n", rc, loghandle);
+		/* -ENOSPC is returned if no empty records left
+		 * and when it's lack of space on the stogage.
+		 * there is no point to try again if it's the second
+		 * case. many callers (like llog test) expect ENOSPC,
+		 * so we preserve this error code, but look for the
+		 * actual cause here */
+		if (rc == -ENOSPC && llog_is_full(loghandle))
+			rc = -ENOBUFS;
+	}
 	up_write(&loghandle->lgh_lock);
 
-
-	/*
-	 * ENOSPC can be returned if the plain llog is full
-	 * ENOENT can be returned if another thread failed to created the llog
-	 */
-	if (rc == -ENOSPC || rc == -ENOENT) {
+	if (rc == -ENOBUFS) {
 		if (retried++ == 0)
 			GOTO(retry, rc);
 		CERROR("%s: error on 2nd llog: rc = %d\n",
@@ -409,6 +415,10 @@ int llog_cat_declare_add_rec(const struct lu_env *env,
 					 th);
 		if (rc)
 			GOTO(out, rc);
+		rc = llog_declare_destroy(env, cathandle->u.chd.chd_current_log,
+					  th);
+		if (rc)
+			GOTO(out, rc);
 		llog_declare_write_rec(env, cathandle, &lirec->lid_hdr, -1, th);
 	}
 	/* declare records in the llogs */
@@ -421,6 +431,11 @@ int llog_cat_declare_add_rec(const struct lu_env *env,
 	if (next) {
 		if (!llog_exist(next)) {
 			rc = llog_declare_create(env, next, th);
+			if (rc)
+				GOTO(out, rc);
+			rc = llog_declare_destroy(env, next, th);
+			if (rc)
+				GOTO(out, rc);
 			llog_declare_write_rec(env, cathandle, &lirec->lid_hdr,
 					       -1, th);
 		}

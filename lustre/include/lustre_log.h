@@ -519,6 +519,11 @@ static inline int llog_connect(struct llog_ctxt *ctxt,
 	RETURN(rc);
 }
 
+static inline int llog_is_full(struct llog_handle *llh)
+{
+	return llh->lgh_last_idx >= LLOG_BITMAP_SIZE(llh->lgh_hdr) - 1;
+}
+
 struct llog_cfg_rec {
 	struct llog_rec_hdr	lcr_hdr;
 	struct lustre_cfg	lcr_cfg;
@@ -542,6 +547,9 @@ int llog_create(const struct lu_env *env, struct llog_handle *handle,
 int llog_trans_destroy(const struct lu_env *env, struct llog_handle *handle,
 		       struct thandle *th);
 int llog_destroy(const struct lu_env *env, struct llog_handle *handle);
+int llog_declare_destroy(const struct lu_env *env,
+				struct llog_handle *handle,
+				struct thandle *th);
 int llog_declare_write_rec(const struct lu_env *env,
 			   struct llog_handle *handle,
 			   struct llog_rec_hdr *rec, int idx,

@@ -514,7 +514,7 @@ static int llog_osd_write_rec(const struct lu_env *env,
 		loghandle->lgh_last_idx++; /* for pad rec */
 	}
 	/* if it's the last idx in log file, then return -ENOSPC */
-	if (loghandle->lgh_last_idx >= LLOG_BITMAP_SIZE(llh) - 1)
+	if (llog_is_full(loghandle))
 		RETURN(-ENOSPC);
 
 	/* increment the last_idx along with llh_tail index, they should

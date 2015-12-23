@@ -531,7 +531,7 @@ Index: linux-3.10.0-123.13.2.el7.x86_64/fs/ext4/xattr.c
  			size_t offs = le16_to_cpu(last->e_value_offs);
  			if (offs < min_offs)
  				min_offs = offs;
-@@ -628,16 +902,21 @@ ext4_xattr_set_entry(struct ext4_xattr_i
+@@ -628,15 +902,21 @@ ext4_xattr_set_entry(struct ext4_xattr_i
  	}
  	free = min_offs - ((void *)last - s->base) - sizeof(__u32);
  	if (!s->not_found) {
@@ -544,8 +544,7 @@ Index: linux-3.10.0-123.13.2.el7.x86_64/fs/ext4/xattr.c
  		free += EXT4_XATTR_LEN(name_len);
  	}
  	if (i->value) {
--		if (free < EXT4_XATTR_SIZE(i->value_len) ||
--		    free < EXT4_XATTR_LEN(name_len) +
+-		if (free < EXT4_XATTR_LEN(name_len) +
 -			   EXT4_XATTR_SIZE(i->value_len))
 +		size_t value_len = EXT4_XATTR_SIZE(i->value_len);
 +
