@@ -1265,6 +1265,8 @@ restart:
 			vio->vui_tot_nrsegs = vio->vui_iter->nr_segs;
 #endif /* !HAVE_FILE_OPERATIONS_READ_WRITE_ITER */
 			vio->vui_iocb = args->u.normal.via_iocb;
+
+			io->ci_req_only = vio->vui_fd->ll_req_only;
 			/* Direct IO reads must also take range lock,
 			 * or multiple reads will try to work on the same pages
 			 * See LU-6227 for details. */
@@ -2526,6 +2528,14 @@ out:
 	}
 	case LL_IOC_GETPARENT:
 		RETURN(ll_getparent(file, (struct getparent __user *)arg));
+
+	case LL_IOC_LOCK_AHEAD:
+		RETURN(ll_lock_ahead(file,
+				     (struct llapi_lock_ahead_arg __user *)arg));
+
+	case LL_IOC_REQUEST_ONLY:
+		fd->ll_req_only = true;
+		RETURN(0);
 
 	case OBD_IOC_FID2PATH:
 		RETURN(ll_fid2path(inode, (void __user *)arg));

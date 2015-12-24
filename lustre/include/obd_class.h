@@ -1824,6 +1824,8 @@ extern void obd_cleanup_caches(void);
 /* support routines */
 extern struct kmem_cache *obdo_cachep;
 
+extern struct kmem_cache *ofd_gl_work_slab;
+
 #define OBDO_ALLOC(ptr)                                                       \
 do {                                                                          \
 	OBD_SLAB_ALLOC_PTR_GFP((ptr), obdo_cachep, GFP_NOFS);             \

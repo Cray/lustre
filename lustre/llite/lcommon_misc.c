@@ -200,3 +200,89 @@ void cl_put_grouplock(struct ccc_grouplock *cg)
 	cl_env_put(env, NULL);
 }
 
+static enum cl_lock_mode cl_mode_user_to_kernel(lock_mode_user mode)
+{
+	switch (mode) {
+	case READ_USER:
+		return CLM_READ;
+	case WRITE_USER:
+		return CLM_WRITE;
+	default:
+		return -EINVAL;
+	}
+}
+
+/* Used to allow the upper layers of the client to request an LDLM lock
+ * without doing an actual read or write.
+ *
+ * Used for the lock ahead ioctl to request locks in advance of IO.
+ *
+ * \param[in] inode	inode for the file this lock request is on
+ * \param[in] start	start of the lock extent (bytes)
+ * \param[in] end	end of the lock extent (bytes)
+ * \param[in] mode	lock mode (read, write)
+ * \param[in] flags	flags
+ *
+ * \retval 0		on success (CIT_MISC type should never have a
+ *			positive io->ci_result)
+ * \retval negative	negative errno on error
+ */
+int cl_lock_ahead(struct inode *inode, off_t start, off_t end,
+		  lock_mode_user mode, __u32 flags)
+{
+	struct lu_env		*env = NULL;
+	struct cl_io		*io  = NULL;
+	struct cl_lock		*lock = NULL;
+	struct cl_lock_descr	*descr = NULL;
+	enum cl_lock_mode	cl_mode;
+	int                     result;
+	int                     refcheck;
+
+	ENTRY;
+
+	/* Get IO environment */
+	result = cl_io_get(inode, &env, &io, &refcheck);
+	if (result > 0) {
+again:
+		result = cl_io_init(env, io, CIT_MISC, io->ci_obj);
+
+		if (result > 0) {
+			/*
+			 * nothing to do for this io. This currently happens
+			 * when stripe sub-object's are not yet created.
+			 */
+			result = io->ci_result;
+		} else if (result == 0) {
+			lock = ccc_env_lock(env);
+			descr = &lock->cll_descr;
+
+			cl_mode = cl_mode_user_to_kernel(mode);
+			if (cl_mode < 0) {
+				cl_io_fini(env, io);
+				cl_env_put(env, &refcheck);
+				RETURN(cl_mode);
+			}
+
+			descr->cld_obj   = io->ci_obj;
+			/* Convert byte offsets to pages */
+			descr->cld_start = cl_index(io->ci_obj, start);
+			descr->cld_end   = cl_index(io->ci_obj, end);
+			descr->cld_mode  = cl_mode;
+			/* CEF_MUST is used because we do not want to convert a
+			 * lock ahead request to a lockless lock */
+			descr->cld_enq_flags = CEF_MUST | CEF_REQ_ONLY |
+					       CEF_SPECULATIVE | flags;
+
+			result = cl_lock_request(env, io, lock);
+
+			/* On success, we need to release the cl_lock */
+			if (result >= 0)
+				cl_lock_release(env, lock);
+		}
+		cl_io_fini(env, io);
+		if (unlikely(io->ci_need_restart))
+			goto again;
+		cl_env_put(env, &refcheck);
+	}
+	RETURN(result);
+}

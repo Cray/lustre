@@ -4904,3 +4904,105 @@ int llapi_group_unlock(int fd, int gid)
 	}
 	return rc;
 }
+
+/* Allocate and initialize an lla. */
+struct llapi_lock_ahead_arg *alloc_lla(size_t count, __u32 mode, __u32 flags)
+{
+	struct llapi_lock_ahead_arg *lla;
+	size_t len;
+
+	len = sizeof(struct llapi_lock_ahead_arg) +
+	      sizeof(struct llapi_lock_ahead_extent) * count;
+
+	lla = calloc(1, len);
+	if (!lla)
+		goto out;
+
+	lla->lla_version = 1;
+	lla->lla_lock_mode = mode;
+	lla->lla_flags = flags;
+	lla->lla_extent_count = count;
+
+out:
+	return lla;
+}
+
+/**
+ * Make a single lock ahead request - Intended for testing
+ * Locks are [start, end), IE, they include the 'start' byte, but not the 'end'
+ * byte.
+ *
+ * \param fd [IN]    fd to operate on
+ * \param start [IN] first byte of lock extent
+ * \param end [IN]   last+1 byte of lock extent
+ * \param mode [IN]  lock mode to request - From enum lock_mode_user
+ * \param flags [IN] lock request flags
+ *
+ * \retval 0 request sent to server
+ * \retval 1 matching lock with different (larger) extent already present
+ * \retval 2 matching lock with the same extent already present
+ * \retval -errno on failure
+ **/
+int llapi_lock_ahead_one(int fd, __u64 start, __u64 end, __u32 mode,
+			 __u32 flags)
+{
+	struct llapi_lock_ahead_arg *lla;
+	int rc;
+
+	lla = alloc_lla(1, mode, flags);
+	if (!lla)
+		goto failed;
+	lla->lla_extents[0].start = start;
+	lla->lla_extents[0].end = end;
+
+	rc = ioctl(fd, LL_IOC_LOCK_AHEAD, lla);
+
+	/* Return extent specific result only if ioctl succeeded */
+	if(rc == 0 && lla->lla_extents[0].result != 0)
+		rc = lla->lla_extents[0].result;
+
+	free(lla);
+	return rc;
+
+failed:
+	return -ENOMEM;
+}
+
+/**
+ * Pass a set of lock ahead requests to Lustre. (as provided from userspace in
+ * an llapi_lock_ahead struct)
+ *
+ * Note:
+ * In order for caller to read back per-extent status, caller must provide
+ * the llapi_lock_ahead object.  Otherwise caller loses the ability to check
+ * the results of each lock request, which is essential.  So this API is
+ * limited to a trivial wrapper function to make it safe against future ioctl
+ * changes.
+ *
+ * The status of each individual request is stored in the 'result' field of the
+ * corresponding lla_extent struct.  See the comment on llapi_lock_ahead_one
+ * for an explanation of what each value means.
+ *
+ * \param [IN] fd      fd to operate on
+ * \param [IN/OUT] lla lock ahead argument describing extents to request locks
+ * on and other options
+ *
+ * \retval 0 success of ioctl (does not indicate status of actual extent lock
+ * requests, just that they were issued successfully)
+ * \retval -errno on failure
+ **/
+int llapi_lock_ahead(int fd, struct llapi_lock_ahead_arg *lla)
+{
+	/* vfs checks the fd and the ioctl sanity checks the lla */
+	return ioctl(fd, LL_IOC_LOCK_AHEAD, lla);
+}
+
+/**
+ * Set the request only flag on a file descriptor.  This will cause the server
+ * to not attempt to expand any future lock requests on this file descriptor.
+ * Used to avoid pathological cases in the normal lock expansion behavior.
+**/
+int llapi_set_request_only(int fd)
+{
+	return ioctl(fd, LL_IOC_REQUEST_ONLY);
+}
