@@ -322,9 +322,9 @@ test_1() {
 run_test 1 "start up ost twice (should return errors)"
 
 test_2() {
-	start_mdt 1 || error "MDT0 start fail"
+	start_mds || error "MDT start fail"
 	echo "start mds second time.."
-	start_mdt 1 && error "2nd MDT start should fail"
+	start_mds && error "2nd MDT start should fail"
 	start_ost || error "OST start failed"
 	mount_client $MOUNT || error "mount_client failed to start client"
 	check_mount || error "check_mount failed"
@@ -2590,9 +2590,14 @@ test_41a() { #bug 14134
 
 	local MDSDEV=$(mdsdevname ${SINGLEMDS//mds/})
 
-	start $SINGLEMDS $MDSDEV $MDS_MOUNT_OPTS -o nosvc -n
+	start_mdt 1 -o nosvc -n
+	if [ $MDSCOUNT -ge 2 ]; then
+		for num in $(seq 2 $MDSCOUNT); do
+			start_mdt $num || return
+		done
+	fi
 	start ost1 $(ostdevname 1) $OST_MOUNT_OPTS
-	start $SINGLEMDS $MDSDEV $MDS_MOUNT_OPTS -o nomgs,force
+	start_mdt 1 -o nomgs,force
 	mount_client $MOUNT || error "mount_client $MOUNT failed"
 	sleep 5
 
@@ -2620,9 +2625,15 @@ test_41b() {
 	reformat
 	local MDSDEV=$(mdsdevname ${SINGLEMDS//mds/})
 
-	start $SINGLEMDS $MDSDEV $MDS_MOUNT_OPTS -o nosvc -n
+	start_mdt 1 -o nosvc -n
+	if [ $MDSCOUNT -ge 2 ]; then
+		for num in $(seq 2 $MDSCOUNT); do
+			start_mdt $num || return
+		done
+	fi
+
 	start_ost || error "Unable to start OST1"
-	start $SINGLEMDS $MDSDEV $MDS_MOUNT_OPTS -o nomgs,force
+	start_mdt 1 -o nomgs,force
 	mount_client $MOUNT || error "mount_client $MOUNT failed"
 	sleep 5
 
@@ -2674,7 +2685,14 @@ test_41c() {
 		error "unexpected concurent MDT mounts result, rc=$rc rc2=$rc2"
 	fi
 
+	if [ $MDSCOUNT -ge 2 ]; then
+		for num in $(seq 2 $MDSCOUNT); do
+			start_mdt $num || return
+		done
+	fi
+
 	# OST concurent start
+
 	#define OBD_FAIL_TGT_DELAY_CONNECT 0x703
 	do_facet ost1 "$LCTL set_param fail_loc=0x703"
 	start ost1 $(ostdevname 1) $OST_MOUNT_OPTS &
@@ -2694,26 +2712,26 @@ test_41c() {
 		echo "1st OST start failed with EALREADY"
 		echo "2nd OST start succeed"
 	else
-		stop mds1 -f
+		stop mds -f
 		stop ost1 -f
 		error "unexpected concurent OST mounts result, rc=$rc rc2=$rc2"
 	fi
 	# cleanup
-	stop mds1 -f
+	stop_mds
 	stop ost1 -f
 
 	# verify everything ok
 	start_mds
 	if [ $? != 0 ]
 	then
-		stop mds1 -f
+		stop_mds
 		error "MDT(s) start failed"
 	fi
 
 	start_ost
 	if [ $? != 0 ]
 	then
-		stop mds1 -f
+		stop_mds
 		stop ost1 -f
 		error "OST(s) start failed"
 	fi
@@ -2721,14 +2739,14 @@ test_41c() {
 	mount_client $MOUNT
 	if [ $? != 0 ]
 	then
-		stop mds1 -f
+		stop_mds
 		stop ost1 -f
 		error "client start failed"
 	fi
 	check_mount
 	if [ $? != 0 ]
 	then
-		stop mds1 -f
+		stop_mds
 		stop ost1 -f
 		error "client mount failed"
 	fi
@@ -4375,8 +4393,9 @@ test_70a() {
 	start_mdt 1 || error "MDT0 start fail"
 
 	start_ost || error "OST0 start fail"
-
-	start_mdt 2 || error "MDT1 start fail"
+	for num in $(seq 2 $MDSCOUNT); do
+		start_mdt $num || return
+	done
 
 	mount_client $MOUNT || error "mount client fails"
 
@@ -4396,8 +4415,7 @@ test_70b() {
 
 	start_ost || error "OST0 start fail"
 
-	start_mdt 1 || error "MDT0 start fail"
-	start_mdt 2 || error "MDT1 start fail"
+	start_mds || error "MDS start fail"
 
 	mount_client $MOUNT || error "mount client fails"
 
@@ -4416,8 +4434,7 @@ test_70c() {
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local MDTIDX=1
 
-	start_mdt 1 || error "MDT0 start fail"
-	start_mdt 2 || error "MDT1 start fail"
+	start_mds || error "MDS start fail"
 	start_ost || error "OST0 start fail"
 
 	mount_client $MOUNT || error "mount client fails"
@@ -4441,8 +4458,7 @@ test_70d() {
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local MDTIDX=1
 
-	start_mdt 1 || error "MDT0 start fail"
-	start_mdt 2 || error "MDT1 start fail"
+	start_mds || error "MDS start fail"
 	start_ost || error "OST0 start fail"
 
 	mount_client $MOUNT || error "mount client fails"
@@ -4474,7 +4490,10 @@ test_71a() {
 
 	start_mdt 1 || error "MDT0 start fail"
 	start_ost || error "OST0 start fail"
-	start_mdt 2 || error "MDT1 start fail"
+	for num in $(seq 2 $MDSCOUNT); do
+		start_mdt $num || return
+	done
+
 	start_ost2 || error "OST1 start fail"
 
 	mount_client $MOUNT || error "mount client fails"
@@ -4487,8 +4506,7 @@ test_71a() {
 	rm -rf $DIR/$tdir || error "delete dir fail"
 
 	umount_client $MOUNT || error "umount_client failed"
-	stop_mdt 1 || error "MDT0 stop fail"
-	stop_mdt 2 || error "MDT1 stop fail"
+	stop_mds || error "MDS stop fail"
 	stop_ost || error "OST0 stop fail"
 	stop_ost2 || error "OST1 stop fail"
 }
@@ -4501,7 +4519,9 @@ test_71b() {
 	fi
 	local MDTIDX=1
 
-	start_mdt 2 || error "MDT1 start fail"
+	for num in $(seq 2 $MDSCOUNT); do
+		start_mdt $num || return
+	done
 	start_ost || error "OST0 start fail"
 	start_mdt 1 || error "MDT0 start fail"
 	start_ost2 || error "OST1 start fail"
@@ -4516,8 +4536,7 @@ test_71b() {
 	rm -rf $DIR/$tdir || error "delete dir fail"
 
 	umount_client $MOUNT || error "umount_client failed"
-	stop_mdt 1 || error "MDT0 stop fail"
-	stop_mdt 2 || error "MDT1 stop fail"
+	stop_mds || error "MDS stop fail"
 	stop_ost || error "OST0 stop fail"
 	stop_ost2 || error "OST1 stop fail"
 }
@@ -4532,7 +4551,9 @@ test_71c() {
 
 	start_ost || error "OST0 start fail"
 	start_ost2 || error "OST1 start fail"
-	start_mdt 2 || error "MDT1 start fail"
+	for num in $(seq 2 $MDSCOUNT); do
+		start_mdt $num || return
+	done
 	start_mdt 1 || error "MDT0 start fail"
 
 	mount_client $MOUNT || error "mount client fails"
@@ -4545,8 +4566,7 @@ test_71c() {
 	rm -rf $DIR/$tdir || error "delete dir fail"
 
 	umount_client $MOUNT || error "umount_client failed"
-	stop_mdt 1 || error "MDT0 stop fail"
-	stop_mdt 2 || error "MDT1 stop fail"
+	stop_mds || error "MDS stop fail"
 	stop_ost || error "OST0 stop fail"
 	stop_ost2 || error "OST1 stop fail"
 
@@ -4561,7 +4581,9 @@ test_71d() {
 	local MDTIDX=1
 
 	start_ost || error "OST0 start fail"
-	start_mdt 2 || error "MDT0 start fail"
+	for num in $(seq 2 $MDSCOUNT); do
+		start_mdt $num || return
+	done
 	start_mdt 1 || error "MDT0 start fail"
 	start_ost2 || error "OST1 start fail"
 
@@ -4575,8 +4597,7 @@ test_71d() {
 	rm -rf $DIR/$tdir || error "delete dir fail"
 
 	umount_client $MOUNT || error "umount_client failed"
-	stop_mdt 1 || error "MDT0 stop fail"
-	stop_mdt 2 || error "MDT1 stop fail"
+	stop_mds || error "MDS stop fail"
 	stop_ost || error "OST0 stop fail"
 	stop_ost2 || error "OST1 stop fail"
 
@@ -4591,7 +4612,9 @@ test_71e() {
 	local MDTIDX=1
 
 	start_ost || error "OST0 start fail"
-	start_mdt 2 || error "MDT1 start fail"
+	for num in $(seq 2 $MDSCOUNT); do
+		start_mdt $num || return
+	done
 	start_ost2 || error "OST1 start fail"
 	start_mdt 1 || error "MDT0 start fail"
 
@@ -4605,8 +4628,7 @@ test_71e() {
 	rm -rf $DIR/$tdir || error "delete dir fail"
 
 	umount_client $MOUNT || error "umount_client failed"
-	stop_mdt 1 || error "MDT0 stop fail"
-	stop_mdt 2 || error "MDT1 stop fail"
+	stop_mds || error "MDS stop fail"
 	stop_ost || error "OST0 stop fail"
 	stop_ost2 || error "OST1 stop fail"
 
