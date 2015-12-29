@@ -632,63 +632,23 @@ check_enough_free_space() {
 	return 0
 }
 
-make_large_for_striping() {
+make_custom_file_for_progress() {
 	local file2=${1/$DIR/$DIR2}
+	local fsize=${2:-"39"}
 	local sz=$($LCTL get_param -n lov.*-clilov-*.stripesize | head -n1)
+	sz=${3:-$sz}
+
+	[[ $fsize -gt  0 ]] ||
+		error "Invalid file size"
+	[[ $sz -gt 0 ]] ||
+		error "Invalid stripe size"
 
 	cleanup_large_files
-
-	check_enough_free_space 5 $sz || return $?
-
-	dd if=/dev/urandom of=$file2 count=5 bs=$sz conv=fsync ||
+	check_enough_free_space $fsize $sz
+	[ $? != 0 ] && return $?
+	dd if=/dev/zero of=$file2 count=$fsize bs=$sz conv=fsync ||
 		file_creation_failure dd $file2 $?
 
-	path2fid $1 || error "cannot get fid on $1"
-}
-
-make_large_for_progress() {
-	local file2=${1/$DIR/$DIR2}
-
-	cleanup_large_files
-
-	check_enough_free_space 39 1000000 || return $?
-
-	# big file is large enough, so copy time is > 30s
-	# so copytool make 1 progress
-	# size is not a multiple of 1M to avoid stripe
-	# aligment
-	dd if=/dev/urandom of=$file2 count=39 bs=1000000 conv=fsync ||
-		file_creation_failure dd $file2 $?
-
-	path2fid $1 || error "cannot get fid on $1"
-}
-
-make_large_for_progress_aligned() {
-	local file2=${1/$DIR/$DIR2}
-
-	cleanup_large_files
-
-	check_enough_free_space 33 1048576 || return $?
-
-	# big file is large enough, so copy time is > 30s
-	# so copytool make 1 progress
-	# size is a multiple of 1M to have stripe
-	# aligment
-	dd if=/dev/urandom of=$file2 count=33 bs=1M conv=fsync ||
-		file_creation_failure dd $file2 $?
-	path2fid $1 || error "cannot get fid on $1"
-}
-
-make_large_for_cancel() {
-	local file2=${1/$DIR/$DIR2}
-
-	cleanup_large_files
-
-	check_enough_free_space 103 1048576 || return $?
-
-	# Copy timeout is 100s. 105MB => 105s
-	dd if=/dev/urandom of=$file2 count=103 bs=1M conv=fsync ||
-		file_creation_failure dd $file2 $?
 	path2fid $1 || error "cannot get fid on $1"
 }
 
@@ -1186,7 +1146,7 @@ test_12c() {
 	local f=$DIR/$tdir/$tfile
 	$LFS setstripe -c 2 $f
 	local fid
-	fid=$(make_large_for_striping $f)
+	fid=$(make_custom_file_for_progress $f 5)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	local FILE_CRC=$(md5sum $f)
@@ -2084,7 +2044,7 @@ test_26() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2124,7 +2084,7 @@ test_27b() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2146,7 +2106,7 @@ test_28() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2327,7 +2287,7 @@ test_31b() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2351,7 +2311,7 @@ test_31c() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress_aligned $f)
+	fid=$(make_custom_file_for_progress $f 33 1048576)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2375,7 +2335,7 @@ test_33() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2442,7 +2402,7 @@ test_34() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2478,7 +2438,7 @@ test_35() {
 	local f=$DIR/$tdir/$tfile
 	local f1=$DIR/$tdir/$tfile-1
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	local fid1=$(copy_file /etc/passwd $f1)
@@ -2517,7 +2477,7 @@ test_36() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2681,7 +2641,7 @@ test_54() {
 
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
-	local fid=$(make_large_for_progress $f)
+	local fid=$(make_custom_file_for_progress $f 39 1000000)
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f ||
 		error "could not archive file"
@@ -2709,7 +2669,7 @@ test_55() {
 
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
-	local fid=$(make_large_for_progress $f)
+	local fid=$(make_custom_file_for_progress $f 39 1000000)
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f ||
 		error "could not archive file"
@@ -2738,7 +2698,7 @@ test_56() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f ||
@@ -2886,7 +2846,7 @@ test_60() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 10)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	local mdtidx=0
@@ -2906,7 +2866,6 @@ test_60() {
 	local prefix=$TESTLOG_PREFIX
 	[[ -z "$TESTNAME" ]] || prefix=$prefix.$TESTNAME
 	local copytool_log=$prefix.copytool_log.$agent.log
-
 
 	wait_update $agent \
 	    "grep -o start.copy $copytool_log" "start copy" 100 ||
@@ -2946,6 +2905,11 @@ test_60() {
 	if [ $elapsed -lt $interval ]; then
 		error "Expected progress update after at least $interval seconds"
 	fi
+
+	echo "Wait for on going archive hsm action to complete"
+	wait_update $agent \
+		"grep -o copied $copytool_log" "copied" 10 ||
+		echo "File archiving not completed even after 10 secs"
 
 	cdt_clear_no_retry
 	copytool_cleanup
@@ -3011,7 +2975,7 @@ test_71() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f ||
@@ -3289,7 +3253,7 @@ test_104() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	# if cdt is on, it can serve too quickly the request
@@ -3603,7 +3567,7 @@ test_200() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_cancel $f)
+	fid=$(make_custom_file_for_progress $f 103 1048576)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	# test with cdt on is made in test_221
@@ -3647,7 +3611,7 @@ test_202() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -3695,7 +3659,7 @@ test_221() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_cancel $f)
+	fid=$(make_custom_file_for_progress $f 103 1048576)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	changelog_setup
@@ -3804,7 +3768,7 @@ test_223b() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	changelog_setup
@@ -3866,7 +3830,7 @@ test_225() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	changelog_setup
@@ -4071,7 +4035,7 @@ test_251() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_cancel $f)
+	fid=$(make_custom_file_for_progress $f 103 1048576)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	cdt_disable
@@ -4113,7 +4077,7 @@ test_252() {
 
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
-	local fid=$(make_large_for_cancel $f)
+	local fid=$(make_custom_file_for_progress $f 103 1048576)
 
 	cdt_disable
 	# to have a short test
