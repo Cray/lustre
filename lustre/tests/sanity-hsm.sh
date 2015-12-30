@@ -3023,7 +3023,7 @@ test_60() {
 	# and which will be rounded off to 5.
 	let elapsed=elapsed+1
 	# Ensure that the progress update occurred within the expected window.
-	if [ $elapsed -lt $interval ]; then
+	if [ $elapsed -lt $((interval - 1)) ]; then
 		error "Expected progress update after at least $interval seconds"
 	fi
 
