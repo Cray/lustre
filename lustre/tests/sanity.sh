@@ -13852,6 +13852,9 @@ cleanup_402() {
 }
 
 test_402() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
+		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
+
 	mkdir $DIR/$tdir || error "(1) fail to mkdir"
 
 	cp $LUSTRE/tests/test-framework.sh $DIR/$tdir/ ||
