@@ -1086,6 +1086,7 @@ static int llog_test_10(const struct lu_env *env, struct obd_device *obd)
 	struct llog_ctxt	*ctxt;
 	struct lu_attr		 la;
 	__u64			 cat_max_size;
+	struct dt_device	*dt;
 
 	ENTRY;
 
@@ -1109,6 +1110,7 @@ static int llog_test_10(const struct lu_env *env, struct obd_device *obd)
 	}
 
 	cat_logid = cath->lgh_id;
+	dt = lu2dt_dev(cath->lgh_obj->do_lu.lo_dev);
 
 	/* force catalog wrap for 5th plain LLOG */
 	cfs_fail_loc = CFS_FAIL_SKIP|OBD_FAIL_CAT_RECORDS;
@@ -1129,6 +1131,15 @@ static int llog_test_10(const struct lu_env *env, struct obd_device *obd)
 	if (rc)
 		GOTO(out, rc);
 
+	/* sync device to commit all recent LLOG changes to disk and avoid
+	 * to consume a huge space with delayed journal commit callbacks
+	 * particularly on low memory nodes or VMs */
+	rc = dt_sync(env, dt);
+	if (rc) {
+		CERROR("10b: sync failed: %d\n", rc);
+		GOTO(out, rc);
+	}
+
 	CWARN("10c: write %d more log records\n", 2 * LLOG_TEST_RECNUM);
 	for (i = 0; i < 2 * LLOG_TEST_RECNUM; i++) {
 		rc = llog_cat_add(env, cath, &lmr.lmr_hdr, NULL);
@@ -1143,6 +1154,15 @@ static int llog_test_10(const struct lu_env *env, struct obd_device *obd)
 	rc = verify_handle("10c", cath, 5);
 	if (rc)
 		GOTO(out, rc);
+
+	/* sync device to commit all recent LLOG changes to disk and avoid
+	 * to consume a huge space with delayed journal commit callbacks
+	 * particularly on low memory nodes or VMs */
+	rc = dt_sync(env, dt);
+	if (rc) {
+		CERROR("10c: sync failed: %d\n", rc);
+		GOTO(out, rc);
+	}
 
 	/* fill last allocated plain LLOG and reach -ENOSPC condition
 	 * because no slot available in Catalog */
@@ -1219,6 +1239,15 @@ static int llog_test_10(const struct lu_env *env, struct obd_device *obd)
 	if (rc)
 		GOTO(out, rc);
 
+	/* sync device to commit all recent LLOG changes to disk and avoid
+	 * to consume a huge space with delayed journal commit callbacks
+	 * particularly on low memory nodes or VMs */
+	rc = dt_sync(env, dt);
+	if (rc) {
+		CERROR("10d: sync failed: %d\n", rc);
+		GOTO(out, rc);
+	}
+
 	enospc = 0;
 	eok = 0;
 	CWARN("10e: write %d more log records\n", LLOG_TEST_RECNUM);
@@ -1286,6 +1315,15 @@ static int llog_test_10(const struct lu_env *env, struct obd_device *obd)
 	CWARN("10e: catalog successfully wrap around, last_idx %d, first %d\n",
 	      cath->lgh_last_idx, cath->lgh_hdr->llh_cat_idx);
 
+	/* sync device to commit all recent LLOG changes to disk and avoid
+	 * to consume a huge space with delayed journal commit callbacks
+	 * particularly on low memory nodes or VMs */
+	rc = dt_sync(env, dt);
+	if (rc) {
+		CERROR("10e: sync failed: %d\n", rc);
+		GOTO(out, rc);
+	}
+
 	/* cancel more records to free one more slot in Catalog
 	 * see if it is re-allocated when adding more records */
 	CWARN("10f: Cancel %d records, see one log zapped\n", LLOG_TEST_RECNUM);
@@ -1316,6 +1354,15 @@ static int llog_test_10(const struct lu_env *env, struct obd_device *obd)
 	rc = verify_handle("10f", cath, 4);
 	if (rc)
 		GOTO(out, rc);
+
+	/* sync device to commit all recent LLOG changes to disk and avoid
+	 * to consume a huge space with delayed journal commit callbacks
+	 * particularly on low memory nodes or VMs */
+	rc = dt_sync(env, dt);
+	if (rc) {
+		CERROR("10f: sync failed: %d\n", rc);
+		GOTO(out, rc);
+	}
 
 	enospc = 0;
 	eok = 0;
@@ -1372,6 +1419,15 @@ static int llog_test_10(const struct lu_env *env, struct obd_device *obd)
 		GOTO(out, rc = -EINVAL);
 	}
 
+	/* sync device to commit all recent LLOG changes to disk and avoid
+	 * to consume a huge space with delayed journal commit callbacks
+	 * particularly on low memory nodes or VMs */
+	rc = dt_sync(env, dt);
+	if (rc) {
+		CERROR("10f: sync failed: %d\n", rc);
+		GOTO(out, rc);
+	}
+
 	/* will llh_cat_idx also successfully wrap ? */
 
 	/* cancel all records in the plain LLOGs referenced by 2 last indexes in
@@ -1406,6 +1462,15 @@ static int llog_test_10(const struct lu_env *env, struct obd_device *obd)
 	rc = verify_handle("10g", cath, 4);
 	if (rc)
 		GOTO(out, rc);
+
+	/* sync device to commit all recent LLOG changes to disk and avoid
+	 * to consume a huge space with delayed journal commit callbacks
+	 * particularly on low memory nodes or VMs */
+	rc = dt_sync(env, dt);
+	if (rc) {
+		CERROR("10g: sync failed: %d\n", rc);
+		GOTO(out, rc);
+	}
 
 	/* cancel more records to free one more slot in Catalog */
 	CWARN("10g: Cancel %d records, see one log zapped\n", LLOG_TEST_RECNUM);
@@ -1443,6 +1508,15 @@ static int llog_test_10(const struct lu_env *env, struct obd_device *obd)
 		CERROR("10g: lgh_last_idx = %d vs 2, llh_cat_idx = %d vs 0\n",
 		       cath->lgh_last_idx, cath->lgh_hdr->llh_cat_idx);
 		GOTO(out, rc = -EINVAL);
+	}
+
+	/* sync device to commit all recent LLOG changes to disk and avoid
+	 * to consume a huge space with delayed journal commit callbacks
+	 * particularly on low memory nodes or VMs */
+	rc = dt_sync(env, dt);
+	if (rc) {
+		CERROR("10g: sync failed: %d\n", rc);
+		GOTO(out, rc);
 	}
 
 	/* cancel more records to free one more slot in Catalog */
