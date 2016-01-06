@@ -401,7 +401,7 @@ test_3() {
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
 	scrub_check_status 3 init
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 }
 #run_test 3 "Do not trigger OI scrub when MDT mounts if 'noscrub' specified"
 
@@ -410,7 +410,7 @@ test_4a() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 	full_scrub_ratio 0
@@ -444,7 +444,7 @@ test_4b() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 	full_scrub_ratio 10
@@ -510,7 +510,7 @@ test_4c() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 	full_scrub_ratio 2
@@ -580,7 +580,7 @@ test_5() {
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
 	scrub_check_status 3 init
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 
@@ -647,7 +647,7 @@ test_6() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 
@@ -725,7 +725,7 @@ test_7() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 
@@ -743,7 +743,7 @@ test_7() {
 	done
 
 	scrub_check_status 8 scanning
-	scrub_check_flags 9 inconsistent,auto
+	scrub_check_flags 9 recreated,inconsistent,auto
 
 	do_nodes $(comma_list $(mdts_nodes)) \
 		$LCTL set_param fail_loc=0 fail_val=0
@@ -758,7 +758,7 @@ test_8() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 
 	#define OBD_FAIL_OSD_SCRUB_DELAY	 0x190
 	do_nodes $(comma_list $(mdts_nodes)) \
@@ -790,7 +790,7 @@ test_9() {
 
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 
 	local BASE_SPEED1=100
 	local RUN_TIME1=10
@@ -864,7 +864,7 @@ test_10a() {
 	scrub_backup_restore 1
 	echo "starting mds$n with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 
@@ -899,7 +899,7 @@ test_10b() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 
 	#define OBD_FAIL_OSD_SCRUB_DELAY	 0x190
 	do_nodes $(comma_list $(mdts_nodes)) \
@@ -1089,7 +1089,7 @@ test_15() {
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
 	scrub_check_status 3 init
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 
 	# run under dryrun mode
 	if [ $server_version -lt $(version_code 2.5.58) ]; then
@@ -1098,7 +1098,7 @@ test_15() {
 		scrub_start 5 --dryrun
 	fi
 	scrub_check_status 6 completed
-	scrub_check_flags 7 inconsistent
+	scrub_check_flags 7 recreated,inconsistent
 	scrub_check_params 8 dryrun
 	scrub_check_repaired 9 20
 
@@ -1109,7 +1109,7 @@ test_15() {
 		scrub_start 10 --dryrun
 	fi
 	scrub_check_status 11 completed
-	scrub_check_flags 12 inconsistent
+	scrub_check_flags 12 recreated,inconsistent
 	scrub_check_params 13 dryrun
 	scrub_check_repaired 14 20
 

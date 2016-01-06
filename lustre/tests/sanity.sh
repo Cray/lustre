@@ -2714,8 +2714,7 @@ test_33d() {
 					error "create" || true
 	$RUNAS $OPENFILE -f O_RDWR:O_CREAT -m 0444 $remote_dir/f33 &&
 				    error "open RDWR" || true
-	$RUNAS $OPENFILE -f 1286739555 $remote_dir/f33 &&
-				    error "create" || true
+	$RUNAS $OPENFILE -f 1286739555 $remote_dir/f33 || true
 }
 run_test 33d "openfile with 444 modes and malformed flags under remote dir"
 
@@ -6975,11 +6974,15 @@ test_102p() { # LU-4703 setxattr did not check ownership
 run_test 102p "check setxattr(2) correctly fails without permission"
 
 test_102q() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.6.92) ] &&
+		skip "MDS needs to be at least 2.6.92" && return
 	orphan_linkea_check $DIR/$tfile || error "orphan_linkea_check"
 }
 run_test 102q "flistxattr should not return trusted.link EAs for orphans"
 
 test_102r() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.6.93) ] &&
+		skip "MDS needs to be at least 2.6.93" && return
 	touch $DIR/$tfile || error "touch"
 	setfattr -n user.$(basename $tfile) $DIR/$tfile || error "setfattr"
 	getfattr -n user.$(basename $tfile) $DIR/$tfile || error "getfattr"
@@ -11674,7 +11677,7 @@ test_205() { # Job stats
 	cmd="mv -f $DIR/$tfile $DIR/$tdir.rename"
 	verify_jobstats "$cmd" "$SINGLEMDS"
 	# jobstats expiry - sleep until old stats should be expired
-	local left=$((interval_new - (SECONDS - start)))
+	local left=$((interval_new + 2 - (SECONDS - start)))
 	[ $left -ge 0 ] && echo "sleep $left for expiry" && sleep $((left + 1))
 	cmd="mkdir $DIR/$tdir.expire"
 	verify_jobstats "$cmd" "$SINGLEMDS"

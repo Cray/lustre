@@ -272,6 +272,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_OSD_LMA_INCOMPAT			0x194
 #define OBD_FAIL_OSD_COMPAT_INVALID_ENTRY		0x195
 #define OBD_FAIL_OSD_COMPAT_NO_ENTRY			0x196
+#define OBD_FAIL_OSD_OST_EA_FID_SET			0x197
 
 #define OBD_FAIL_OST                     0x200
 #define OBD_FAIL_OST_CONNECT_NET         0x201
@@ -492,6 +493,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_LLOG_CATINFO_NET                   0x1309
 #define OBD_FAIL_MDS_SYNC_CAPA_SL                   0x1310
 #define OBD_FAIL_SEQ_ALLOC                          0x1311
+#define OBD_FAIL_CAT_RECORDS			    0x1312
 
 #define OBD_FAIL_LLITE                              0x1400
 #define OBD_FAIL_LLITE_FAULT_TRUNC_RACE             0x1401

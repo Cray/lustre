@@ -993,22 +993,24 @@ enum lu_dirent_attrs {
 	LUDA_TYPE		= 0x0002,
 	LUDA_64BITHASH		= 0x0004,
 
-	/* The following attrs are used for MDT interanl only,
+	/* The following attrs are used for MDT internal only,
 	 * not visible to client */
 
-	/* Verify the dirent consistency */
-	LUDA_VERIFY		= 0x8000,
-	/* Only check but not repair the dirent inconsistency */
-	LUDA_VERIFY_DRYRUN	= 0x4000,
-	/* The dirent has been repaired, or to be repaired (dryrun). */
-	LUDA_REPAIR		= 0x2000,
-	/* The system is upgraded, has beed or to be repaired (dryrun). */
-	LUDA_UPGRADE		= 0x1000,
+	/* Something in the record is unknown, to be verified in further. */
+	LUDA_UNKNOWN		= 0x0400,
 	/* Ignore this record, go to next directly. */
 	LUDA_IGNORE		= 0x0800,
+	/* The system is upgraded, has beed or to be repaired (dryrun). */
+	LUDA_UPGRADE		= 0x1000,
+	/* The dirent has been repaired, or to be repaired (dryrun). */
+	LUDA_REPAIR		= 0x2000,
+	/* Only check but not repair the dirent inconsistency */
+	LUDA_VERIFY_DRYRUN	= 0x4000,
+	/* Verify the dirent consistency */
+	LUDA_VERIFY		= 0x8000,
 };
 
-#define LU_DIRENT_ATTRS_MASK	0xf800
+#define LU_DIRENT_ATTRS_MASK	0xff00
 
 /**
  * Layout of readdir pages, as transmitted on wire.
@@ -3450,8 +3452,10 @@ struct llog_log_hdr {
         __u32                   llh_bitmap_offset;
         __u32                   llh_size;
         __u32                   llh_flags;
+	/* for a catalog the first/oldest and still in-use plain slot is just
+	 * next to it. It will serve as the upper limit after Catalog has
+	 * wrapped around */
         __u32                   llh_cat_idx;
-        /* for a catalog the first plain slot is next to it */
         struct obd_uuid         llh_tgtuuid;
         __u32                   llh_reserved[LLOG_HEADER_SIZE/sizeof(__u32) - 23];
         __u32                   llh_bitmap[LLOG_BITMAP_BYTES/sizeof(__u32)];
