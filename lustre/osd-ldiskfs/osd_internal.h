@@ -127,6 +127,9 @@ struct osd_object {
 	struct osd_directory	*oo_dir;
 	/** protects inode attributes. */
 	spinlock_t		oo_guard;
+
+	/* the i_flags in LMA */
+	__u32			oo_lma_flags;
         /**
          * Following two members are used to indicate the presence of dot and
          * dotdot in the given directory. This is required for interop mode

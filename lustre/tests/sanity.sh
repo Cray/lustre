@@ -14021,6 +14021,26 @@ test_300i() {
 }
 run_test 300i "client handle unknown hash type striped directory"
 
+test_300q() {
+	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
+	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
+
+	local fd=$(free_fd)
+	local cmd="exec $fd<$tdir"
+	cd $DIR
+	$LFS mkdir -c $MDSCOUNT $tdir || error "create $tdir fails"
+	eval $cmd
+	cmd="exec $fd<&-"
+	trap "eval $cmd" EXIT
+	cd $tdir || error "cd $tdir fails"
+	rmdir  ../$tdir || error "rmdir $tdir fails"
+	mkdir local_dir && error "create dir succeeds"
+	$LFS setdirstripe -i1 remote_dir && error "create remote dir succeeds"
+	eval $cmd
+	return 0
+}
+run_test 300q "create remote directory under orphan directory"
+
 test_400a() { # LU-1606, was conf-sanity test_74
 	local extra_flags=''
 	local out=$TMP/$tfile
