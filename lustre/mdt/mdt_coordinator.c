@@ -1242,15 +1242,11 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 	/* default is to retry */
 	*status = ARS_WAITING;
 
-	/* find object by FID */
+	/* find object by FID
+	 * if error/removed continue anyway to get correct reporting done */
 	obj = mdt_hsm_get_md_hsm(mti, &car->car_hai->hai_fid, &mh);
 	/* we will update MD HSM only if needed */
 	is_mh_changed = false;
-	if (IS_ERR(obj)) {
-		/* object removed */
-		*status = ARS_SUCCEED;
-		goto unlock;
-	}
 
 	/* no need to change mh->mh_arch_id
 	 * mdt_hsm_get_md_hsm() got it from disk and it is still valid
@@ -1278,9 +1274,11 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 			*status = ARS_SUCCEED;
 			break;
 		default:
+			/* retry only if current policy or requested, and
+			 * object is not on error/removed */
 			*status = (cdt->cdt_policy & CDT_NORETRY_ACTION ||
-				   !(pgs->hpk_flags & HP_FLAG_RETRY) ?
-				   ARS_FAILED : ARS_WAITING);
+				   !(pgs->hpk_flags & HP_FLAG_RETRY) ||
+				   IS_ERR(obj) ? ARS_FAILED : ARS_WAITING);
 			break;
 		}
 
@@ -1383,10 +1381,9 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 				 mh.mh_flags & HS_DIRTY ? CLF_HSM_DIRTY : 0);
 
 	/* unlock is done later, after layout lock management */
-	if (is_mh_changed)
+	if (is_mh_changed && !IS_ERR(obj))
 		rc = mdt_hsm_attr_set(mti, obj, &mh);
 
-unlock:
 	/* we give back layout lock only if restore was successful or
 	 * if restore was canceled or if policy is to not retry
 	 * in other cases we just unlock the object */
@@ -1439,11 +1436,12 @@ out:
 	car->car_progress.crp_status = 0;
 	wake_up(&car->car_waitq);
 
-	if (obj != NULL && !IS_ERR(obj)) {
-		mo_changelog(env, CL_HSM, cl_flags,
-			     mdt_object_child(obj));
+	/* always add a ChangeLog record */
+	mo_changelog(env, CL_HSM, cl_flags, mdt->mdt_child,
+		     &car->car_hai->hai_fid);
+
+	if (!IS_ERR(obj))
 		mdt_object_put(mti->mti_env, obj);
-	}
 
 	RETURN(rc);
 }

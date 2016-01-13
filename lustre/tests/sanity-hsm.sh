@@ -747,6 +747,11 @@ wait_for_grace_delay() {
 	sleep $val
 }
 
+wait_for_loop_period() {
+	local val=$(get_hsm_param loop_period)
+	sleep $val
+}
+
 parse_json_event() {
 	local raw_event=$1
 
@@ -2247,6 +2252,79 @@ test_28() {
 	copytool_cleanup
 }
 run_test 28 "Concurrent archive/file remove"
+
+test_29() {
+	# test needs more than one CT
+	needclients 3 || return 0
+
+	local n
+	local file
+	local fid
+
+	copytool_cleanup $(comma_list $(agts_nodes))
+
+	# start all of the copytools
+	for n in $(seq $AGTCOUNT); do
+		copytool_setup agt$n $MOUNT2 $n
+	done
+
+	trap "copytool_cleanup $(comma_list $(agts_nodes))" EXIT
+	# archive files
+	mkdir -p $DIR/$tdir
+	file=$DIR/$tdir/$tfile
+	fid=$(make_small $file)
+
+	$LFS hsm_archive $file
+	wait_request_state $fid ARCHIVE SUCCEED
+	check_hsm_flags $file "0x00000009"
+
+	rm -f $file
+
+	# "lfs hsm_remove" by FID is only supported in master with patch
+	# from LU-6494
+	#$LFS hsm_remove $fid
+	hsm_remove_by_fid -m $MOUNT -a 0 $fid
+
+	# give time for CDT to handle remove request and create broadcasted
+	sleep 2
+
+	# remove request has been broadcasted ?
+	local cnt=$(get_request_count $fid REMOVE)
+	# broadcasted requests + original
+	[[ $cnt -eq $((AGTCOUNT + 1)) ]] ||
+		error "remove not broadcasted to all CTs"
+
+	# give time for CDT and CTs to handle broadcasted
+	wait_for_loop_period
+
+	# each agent serves one different archive_id, so broadcasted
+	# hsm_remove request should only succeed once and fail at all others
+	local res
+	local scnt=0
+	local fcnt=0
+	for n in $(seq $AGTCOUNT); do
+		res=$(do_facet $SINGLEMDS "$LCTL get_param -n \
+			       $HSM_PARAM.actions | awk \
+			       '/'$fid'.*action=REMOVE archive#='$n'/ \
+			       {print \\\$13}' | cut -f2 -d=")
+		if [[ "$res" == "SUCCEED" ]]; then
+			scnt=$((scnt + 1))
+		elif [[ "$res" == "FAILED" ]]; then
+			fcnt=$((fcnt + 1))
+		fi
+	done
+
+	[[ $scnt -ne 1 ]] &&
+		error "one and only CT should have removed successfully"
+
+	[[ $AGTCOUNT -ne $((scnt + fcnt)) ]] &&
+		error "all but one CT should have failed to remove"
+
+	trap - EXIT
+	copytool_cleanup $(comma_list $(agts_nodes))
+}
+run_test 29 "hsm_remove by FID with archive_id 0 for unlinked file cause "\
+	     "request to be sent once for each registered archive_id"
 
 test_30a() {
 	# restore at exec cannot work on agent node (because of Linux kernel
