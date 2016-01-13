@@ -320,10 +320,7 @@ int mdt_hsm_send_action_to_each_archive(struct mdt_thread_info *mti,
 	down_read(&cdt->cdt_agent_lock);
 	list_for_each_entry(ha, &cdt->cdt_agents, ha_list) {
 		for (i = 0; i < ha->ha_archive_cnt; i++) {
-			/* only send once for each archive_id
-			 * XXX: enhancement could be to find less loaded
-			 * CT serving same archive_id
-			 */
+			/* only send once for each served archive_id */
 			if ((1 << ha->ha_archive_id[i]) & archive_mask)
 				continue;
 			archive_mask |= (1 << ha->ha_archive_id[i]);

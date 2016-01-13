@@ -639,6 +639,41 @@ static int mdd_fix_attr(const struct lu_env *env, struct mdd_object *obj,
 	RETURN(0);
 }
 
+static int mdd_changelog_data_store_by_fid(const struct lu_env *env,
+				    struct mdd_device *mdd,
+				    enum changelog_rec_type type, int flags,
+				    const struct lu_fid *fid,
+				    struct thandle *handle)
+{
+	const struct lu_ucred		*uc = lu_ucred(env);
+	struct llog_changelog_rec	*rec;
+	struct lu_buf			*buf;
+	int				 reclen;
+	int				 rc;
+
+	reclen = llog_data_len(sizeof(*rec));
+	buf = lu_buf_check_and_alloc(&mdd_env_info(env)->mti_big_buf, reclen);
+	if (buf->lb_buf == NULL)
+		RETURN(-ENOMEM);
+	rec = buf->lb_buf;
+
+	flags = (flags & CLF_FLAGMASK) | CLF_VERSION;
+	if (uc != NULL && uc->uc_jobid[0] != '\0')
+		flags |= CLF_JOBID;
+
+	rec->cr.cr_flags = flags;
+	rec->cr.cr_type = (__u32)type;
+	rec->cr.cr_tfid = *fid;
+	rec->cr.cr_namelen = 0;
+
+	if (flags & CLF_JOBID)
+		mdd_changelog_rec_ext_jobid(&rec->cr, uc->uc_jobid);
+
+	rc = mdd_changelog_store(env, mdd, rec, handle);
+
+	RETURN(rc);
+}
+
 /** Store a data change changelog record
  * If this fails, we must fail the whole transaction; we don't
  * want the change to commit without the log entry.
@@ -649,10 +684,7 @@ int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
 			     enum changelog_rec_type type, int flags,
 			     struct mdd_object *mdd_obj, struct thandle *handle)
 {
-	const struct lu_ucred		*uc = lu_ucred(env);
-	struct llog_changelog_rec	*rec;
-	struct lu_buf			*buf;
-	int				 reclen;
+	const struct lu_fid		*tfid;
 	int				 rc;
 
 	LASSERT(mdd_obj != NULL);
@@ -667,6 +699,8 @@ int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
 	if (mdd_is_volatile_obj(mdd_obj))
 		RETURN(0);
 
+	tfid = mdo2fid(mdd_obj);
+
         if ((type >= CL_MTIME) && (type <= CL_ATIME) &&
             cfs_time_before_64(mdd->mdd_cl.mc_starttime, mdd_obj->mod_cltime)) {
                 /* Don't need multiple updates in this log */
@@ -675,38 +709,29 @@ int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
                 RETURN(0);
         }
 
-	flags = (flags & CLF_FLAGMASK) | CLF_VERSION;
-	if (uc != NULL && uc->uc_jobid[0] != '\0')
-		flags |= CLF_JOBID;
+        mdd_obj->mod_cltime = cfs_time_current_64();
 
-	reclen = llog_data_len(changelog_rec_offset(flags & CLF_SUPPORTED));
-	buf = lu_buf_check_and_alloc(&mdd_env_info(env)->mti_big_buf, reclen);
-	if (buf->lb_buf == NULL)
-		RETURN(-ENOMEM);
-	rec = buf->lb_buf;
-
-	rec->cr.cr_flags = flags;
-	rec->cr.cr_type = (__u32)type;
-	rec->cr.cr_tfid = *mdo2fid(mdd_obj);
-	rec->cr.cr_namelen = 0;
-	mdd_obj->mod_cltime = cfs_time_current_64();
-
-	if (flags & CLF_JOBID)
-		mdd_changelog_rec_ext_jobid(&rec->cr, uc->uc_jobid);
-
-	rc = mdd_changelog_store(env, mdd, rec, handle);
+	rc = mdd_changelog_data_store_by_fid(env, mdd, type, flags, tfid,
+					     handle);
 
 	RETURN(rc);
 }
 
-static int mdd_changelog(const struct lu_env *env, enum changelog_rec_type type,
-			 int flags, struct md_object *obj)
+int mdd_changelog(const struct lu_env *env, enum changelog_rec_type type,
+		  int flags, struct md_device *m, const struct lu_fid *fid)
 {
         struct thandle *handle;
-        struct mdd_object *mdd_obj = md2mdd_obj(obj);
-        struct mdd_device *mdd = mdo2mdd(obj);
+	struct mdd_device *mdd = lu2mdd_dev(&m->md_lu_dev);
         int rc;
         ENTRY;
+
+	/* Not recording */
+	if (!(mdd->mdd_cl.mc_flags & CLM_ON))
+		RETURN(0);
+	if ((mdd->mdd_cl.mc_mask & (1 << type)) == 0)
+		RETURN(0);
+
+	LASSERT(fid != NULL);
 
         handle = mdd_trans_create(env, mdd);
         if (IS_ERR(handle))
@@ -720,8 +745,8 @@ static int mdd_changelog(const struct lu_env *env, enum changelog_rec_type type,
         if (rc)
                 GOTO(stop, rc);
 
-        rc = mdd_changelog_data_store(env, mdd, type, flags, mdd_obj,
-                                      handle);
+	rc = mdd_changelog_data_store_by_fid(env, mdd, type, flags,
+						     fid, handle);
 
 stop:
         mdd_trans_stop(env, mdd, rc, handle);
