@@ -356,10 +356,10 @@ Index: linux-3.10.0-123.13.2.el7.x86_64/fs/ext4/xattr.c
  			size_t offs = le16_to_cpu(last->e_value_offs);
  			if (offs < *min_offs)
  				*min_offs = offs;
-@@ -577,16 +693,172 @@ static size_t ext4_xattr_free_space(stru
+@@ -577,16 +693,174 @@ static size_t ext4_xattr_free_space(stru
  	return (*min_offs - ((void *)last - base) - sizeof(__u32));
  }
-
+ 
 +/*
 + * Write the value of the EA in an inode.
 + */
