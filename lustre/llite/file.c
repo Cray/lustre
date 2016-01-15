@@ -2253,10 +2253,12 @@ static int ll_swap_layouts(struct file *file1, struct file *file2,
 	    (SWAP_LAYOUTS_KEEP_MTIME | SWAP_LAYOUTS_KEEP_ATIME)) {
 		llss->ia1.ia_mtime = llss->inode1->i_mtime;
 		llss->ia1.ia_atime = llss->inode1->i_atime;
-		llss->ia1.ia_valid = ATTR_MTIME | ATTR_ATIME;
+		llss->ia1.ia_valid = ATTR_MTIME | ATTR_ATIME |
+				     ATTR_MTIME_SET | ATTR_ATIME_SET;
 		llss->ia2.ia_mtime = llss->inode2->i_mtime;
 		llss->ia2.ia_atime = llss->inode2->i_atime;
-		llss->ia2.ia_valid = ATTR_MTIME | ATTR_ATIME;
+		llss->ia2.ia_valid = ATTR_MTIME | ATTR_ATIME |
+				     ATTR_MTIME_SET | ATTR_ATIME_SET;
 	}
 
 	/* ultimate check, before swaping the layouts we check if
@@ -2303,31 +2305,20 @@ putgl:
 	if (rc != 0)
 		GOTO(free, rc);
 
-	/* clear useless flags */
-	if (!(lsl->sl_flags & SWAP_LAYOUTS_KEEP_MTIME)) {
-		llss->ia1.ia_valid &= ~ATTR_MTIME;
-		llss->ia2.ia_valid &= ~ATTR_MTIME;
-	}
-
-	if (!(lsl->sl_flags & SWAP_LAYOUTS_KEEP_ATIME)) {
-		llss->ia1.ia_valid &= ~ATTR_ATIME;
-		llss->ia2.ia_valid &= ~ATTR_ATIME;
-	}
-
 	/* update time if requested */
 	rc = 0;
 	if (llss->ia2.ia_valid != 0) {
-		mutex_lock(&llss->inode1->i_mutex);
-		rc = ll_setattr(file1->f_path.dentry, &llss->ia2);
-		mutex_unlock(&llss->inode1->i_mutex);
+		mutex_lock(&llss->inode2->i_mutex);
+		rc = ll_setattr(file2->f_path.dentry, &llss->ia2);
+		mutex_unlock(&llss->inode2->i_mutex);
 	}
 
 	if (llss->ia1.ia_valid != 0) {
 		int rc1;
 
-		mutex_lock(&llss->inode2->i_mutex);
-		rc1 = ll_setattr(file2->f_path.dentry, &llss->ia1);
-		mutex_unlock(&llss->inode2->i_mutex);
+		mutex_lock(&llss->inode1->i_mutex);
+		rc1 = ll_setattr(file1->f_path.dentry, &llss->ia1);
+		mutex_unlock(&llss->inode1->i_mutex);
 		if (rc == 0)
 			rc = rc1;
 	}
