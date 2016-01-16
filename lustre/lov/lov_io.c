@@ -435,24 +435,27 @@ static int lov_io_iter_init(const struct lu_env *env,
 			continue;
 		}
 
-                end = lov_offset_mod(end, +1);
-                sub = lov_sub_get(env, lio, stripe);
-                if (!IS_ERR(sub)) {
-                        lov_io_sub_inherit(sub->sub_io, lio, stripe,
-                                           start, end);
-                        rc = cl_io_iter_init(sub->sub_env, sub->sub_io);
-                        lov_sub_put(sub);
-                        CDEBUG(D_VFSTRACE, "shrink: %d ["LPU64", "LPU64")\n",
-                               stripe, start, end);
-                } else
-                        rc = PTR_ERR(sub);
+		end = lov_offset_mod(end, +1);
+		sub = lov_sub_get(env, lio, stripe);
+		if (IS_ERR(sub)) {
+			rc = PTR_ERR(sub);
+			break;
+		}
 
-                if (!rc)
-			list_add_tail(&sub->sub_linkage, &lio->lis_active);
-                else
-                        break;
-        }
-        RETURN(rc);
+		lov_io_sub_inherit(sub->sub_io, lio, stripe, start, end);
+		rc = cl_io_iter_init(sub->sub_env, sub->sub_io);
+		if (rc != 0)
+			cl_io_iter_fini(sub->sub_env, sub->sub_io);
+		lov_sub_put(sub);
+		if (rc != 0)
+			break;
+
+		CDEBUG(D_VFSTRACE, "shrink: %d ["LPU64", "LPU64")\n",
+		       stripe, start, end);
+
+		list_add_tail(&sub->sub_linkage, &lio->lis_active);
+	}
+	RETURN(rc);
 }
 
 static int lov_io_rw_iter_init(const struct lu_env *env,
@@ -1056,7 +1059,7 @@ int lov_io_init_empty(const struct lu_env *env, struct cl_object *obj,
 	}
 
 	io->ci_result = result < 0 ? result : 0;
-	RETURN(result != 0);
+	RETURN(result);
 }
 
 int lov_io_init_released(const struct lu_env *env, struct cl_object *obj,
@@ -1101,6 +1104,6 @@ int lov_io_init_released(const struct lu_env *env, struct cl_object *obj,
 	}
 
 	io->ci_result = result < 0 ? result : 0;
-	RETURN(result != 0);
+	RETURN(result);
 }
 /** @} lov */

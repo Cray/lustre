@@ -1019,6 +1019,7 @@ static int osd_scrub_next(struct osd_thread_info *info, struct osd_device *dev,
 
 			return 0;
 		}
+		spin_unlock(&scrub->os_lock);
 	}
 
 	if (noslot)
