@@ -2534,7 +2534,7 @@ static int target_recovery_thread(void *arg)
         lu_context_fini(&env->le_ctx);
 	OBD_FAIL_TIMEOUT(OBD_FAIL_TGT_STOP_REC_RACE, cfs_fail_val);
         trd->trd_processing_task = 0;
-	complete(&trd->trd_finishing);
+	complete_all(&trd->trd_finishing);
 
 	tgt_io_thread_done(thread);
 	OBD_FREE_PTR(thread);
