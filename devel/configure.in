@@ -6,6 +6,7 @@ AC_INIT([cray-lnet], [2.4])
 AM_INIT_AUTOMAKE([foreign -Wall -Werror])
 
 AC_SUBST([pkgconfigdir], [${libdir}/pkgconfig])
+AC_SUBST([symversdir], [${libdir}/symvers])
 
 AC_ARG_WITH([module],
   [AS_HELP_STRING([--with-module=PATH],

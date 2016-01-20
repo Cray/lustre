@@ -1,7 +1,8 @@
 
 includedir=@includedir@
+symversdir=@symversdir@
 
-Cflags: -fno-stack-protector -include ${includedir}/config.h -I${includedir}/lnet/include -I${includedir}/lustre/include -I${includedir}/libcfs/include -I${includedir}/libcfs/include/linux
+Cflags: -fno-stack-protector -include ${includedir}/lustre/config.h -I${includedir}
 Description: Lustre Lnet
 Name: cray-lnet
 Version: @PACKAGE_VERSION@
