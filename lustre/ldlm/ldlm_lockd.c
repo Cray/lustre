@@ -1477,7 +1477,7 @@ existing_lock:
 			}
 		}
 
-		if (rc != 0) {
+		if (rc != 0 && !(flags & LDLM_FL_RESENT)) {
                         lock_res_and_lock(lock);
                         ldlm_resource_unlink_lock(lock);
                         ldlm_lock_destroy_nolock(lock);
