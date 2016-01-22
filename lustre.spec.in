@@ -28,12 +28,16 @@
 
 %{!?downstream_release: %global downstream_release "@DOWNSTREAM_RELEASE@"}
 
-%define buildid %(if [ -n "@BUILDID@" ]; then echo "_@BUILDID@"; fi)
+%if 0%{?build_src_rpm}
+    %{!?myrelease: %global myrelease 1}
+%else
+    %{!?myrelease: %global myrelease %(echo %kversion | tr '-' '_')}
+    # for those uses that don't want the -smp/-bigsmp (or the .arch) on the end
+    # of %kversion
+    %define krequires %(echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/-default$//')
+%endif
 
-%{!?myrelease: %global myrelease %(if [ -n "%downstream_release" ]; then echo -n "%{downstream_release}_"; fi; echo %kversion | tr '-' '_')}
-
-# always append the buildid, even when the caller defines %release
-%define fullrelease %{myrelease}%{buildid}
+%define fullrelease %{myrelease}
 
 # in order to get kernel symset and/or kernel module dependencies into
 # the RPM, in order to support weak-modules, the internal dependency gen-

@@ -93,16 +93,15 @@ dist-hook: undef.h
 			-name .svn -o \
 			-name .git -o \
 			-name .#* -exec rm -rf {} \;
-	$(MAKE) $(AM_MAKEFLAGS) \
-		top_distdir="$(top_distdir)" distdir="$(distdir)" \
-		module-dist-hook
 
 EXTRA_DIST = @PACKAGE_TARNAME@.spec	\
 	build/Makefile 			\
 	build/Rules.in			\
 	build/gen_filelist.sh		\
 	config.h.in			\
-	undef.h
+	undef.h				\
+	LUSTRE-VERSION-GEN		\
+	LUSTRE-VERSION-FILE
 
 rpm-local:
 	@(if test -z "$(RPMBUILD)"; then \
@@ -245,13 +244,3 @@ checkstack-update:
 
 checkstack-clean:
 	rm -f ${CSTK} ${CSTKO}
-
-module-dist-hook:
-	if [ -d .git ]; then \
-		perl lustre/scripts/version_tag.pl --make_META > $(distdir)/META; \
-	elif [ -f META ]; then \
-		cp META $(distdir)/META; \
-	else \
-		echo -e "I have no idea how to create a META file in $(distdir).\nPlease file a bug at http://bugzilla.lustre.org/"; \
-		exit 1; \
-	fi
