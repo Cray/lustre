@@ -97,7 +97,9 @@ dist-hook:
 EXTRA_DIST = @PACKAGE_TARNAME@.spec	\
 	build/Makefile 			\
 	build/Rules.in			\
-	build/gen_filelist.sh
+	build/gen_filelist.sh		\
+	lustre-dkms_pre-build.sh	\
+	lustre-dkms_post-build.sh
 
 rpm-local:
 	@(if test -z "$(RPMBUILD)"; then \
