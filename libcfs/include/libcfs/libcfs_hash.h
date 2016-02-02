@@ -885,5 +885,9 @@ cfs_hash_u64_hash(const __u64 key, unsigned mask)
              (hlist = cfs_hash_bd_hhead(hs, bd)) != NULL;       \
              (bd)->bd_offset++)
 
+#ifdef HAVE_HLIST_ADD_AFTER
+#define hlist_add_behind(hnode, tail)	hlist_add_after(tail, hnode)
+#endif /* HAVE_HLIST_ADD_AFTER */
+
 /* !__LIBCFS__HASH_H__ */
 #endif
