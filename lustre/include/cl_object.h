@@ -2624,9 +2624,9 @@ void cl_sync_io_end(const struct lu_env *env, struct cl_sync_io *anchor);
  * \see lu_env, lu_context, lu_context_key
  * @{ */
 
-struct lu_env *cl_env_get        (int *refcheck);
-struct lu_env *cl_env_alloc      (int *refcheck, __u32 tags);
-void           cl_env_put        (struct lu_env *env, int *refcheck);
+struct lu_env *cl_env_get        (__u16 *refcheck);
+struct lu_env *cl_env_alloc      (__u16 *refcheck, __u32 tags);
+void           cl_env_put        (struct lu_env *env, __u16 *refcheck);
 unsigned       cl_env_cache_purge(unsigned nr);
 struct lu_env *cl_env_percpu_get (void);
 void           cl_env_percpu_put (struct lu_env *env);

@@ -88,7 +88,7 @@ static void ll_invalidatepage(struct page *vmpage,
         struct cl_page   *page;
         struct cl_object *obj;
 
-        int refcheck;
+	__u16 refcheck;
 
         LASSERT(PageLocked(vmpage));
         LASSERT(!PageWriteback(vmpage));

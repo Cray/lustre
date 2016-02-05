@@ -947,7 +947,7 @@ static int osc_extent_truncate(struct osc_extent *ext, pgoff_t trunc_index,
 	int                    grants   = 0;
 	int                    nr_pages = 0;
 	int                    rc       = 0;
-	int		       refcheck;
+	__u16		       refcheck;
 	ENTRY;
 
 	LASSERT(sanity_check(ext) == 0);

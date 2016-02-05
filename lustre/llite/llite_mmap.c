@@ -170,7 +170,7 @@ static int ll_page_mkwrite0(struct vm_area_struct *vma, struct page *vmpage,
 	struct cl_io            *io;
 	struct vvp_io           *vio;
 	int                      result;
-	int			 refcheck;
+	__u16			 refcheck;
 	sigset_t		 set;
 	struct inode             *inode;
 	struct ll_inode_info     *lli;
@@ -295,7 +295,7 @@ static int ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
         struct page             *vmpage;
         unsigned long            ra_flags;
         int                      result = 0;
-	int                      refcheck;
+	__u16                    refcheck;
         int                      fault_ret = 0;
         ENTRY;
 

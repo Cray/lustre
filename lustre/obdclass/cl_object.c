@@ -713,7 +713,7 @@ static inline struct cl_env *cl_env_container(struct lu_env *env)
  *
  * \see cl_env_put()
  */
-struct lu_env *cl_env_get(int *refcheck)
+struct lu_env *cl_env_get(__u16 *refcheck)
 {
         struct lu_env *env;
 
@@ -734,7 +734,7 @@ EXPORT_SYMBOL(cl_env_get);
  *
  * \see cl_env_get()
  */
-struct lu_env *cl_env_alloc(int *refcheck, __u32 tags)
+struct lu_env *cl_env_alloc(__u16 *refcheck, __u32 tags)
 {
         struct lu_env *env;
 
@@ -795,7 +795,7 @@ EXPORT_SYMBOL(cl_env_cache_purge);
  * this thread is using environment and it is returned to the allocation
  * cache, or freed straight away, if cache is large enough.
  */
-void cl_env_put(struct lu_env *env, int *refcheck)
+void cl_env_put(struct lu_env *env, __u16 *refcheck)
 {
         struct cl_env *cle;
 

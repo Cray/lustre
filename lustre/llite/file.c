@@ -1269,7 +1269,7 @@ static ssize_t ll_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	struct vvp_io_args *args;
 	struct lu_env *env;
 	ssize_t result;
-	int refcheck;
+	__u16 refcheck;
 
 	env = cl_env_get(&refcheck);
 	if (IS_ERR(env))
@@ -1293,7 +1293,7 @@ static ssize_t ll_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	struct vvp_io_args *args;
 	struct lu_env *env;
 	ssize_t result;
-	int refcheck;
+	__u16 refcheck;
 
 	env = cl_env_get(&refcheck);
 	if (IS_ERR(env))
@@ -1419,7 +1419,7 @@ static ssize_t ll_file_aio_read(struct kiocb *iocb, const struct iovec *iov,
 	size_t iov_count;
 	ssize_t result;
 	ssize_t	result2;
-	int refcheck;
+	__u16 refcheck;
 	ENTRY;
 
 	result = ll_file_get_iov_count(iov, &nr_segs, &iov_count);
@@ -1496,7 +1496,7 @@ static ssize_t ll_file_read(struct file *file, char __user *buf, size_t count,
 	struct iovec   iov = { .iov_base = buf, .iov_len = count };
 	struct kiocb  *kiocb;
         ssize_t        result;
-        int            refcheck;
+        __u16          refcheck;
         ENTRY;
 
         env = cl_env_get(&refcheck);
@@ -1531,7 +1531,7 @@ static ssize_t ll_file_aio_write(struct kiocb *iocb, const struct iovec *iov,
 	size_t iov_count;
 	ssize_t result;
 	struct lu_env *env = NULL;
-	int refcheck;
+	__u16 refcheck;
 	ENTRY;
 
 	result = ll_file_get_iov_count(iov, &nr_segs, &iov_count);
@@ -1585,7 +1585,7 @@ static ssize_t ll_file_write(struct file *file, const char __user *buf,
 			       .iov_len = count };
         struct kiocb  *kiocb;
         ssize_t        result;
-        int            refcheck;
+	__u16          refcheck;
         ENTRY;
 
         env = cl_env_get(&refcheck);
@@ -1619,7 +1619,7 @@ static ssize_t ll_file_splice_read(struct file *in_file, loff_t *ppos,
         struct lu_env      *env;
         struct vvp_io_args *args;
         ssize_t             result;
-        int                 refcheck;
+	__u16               refcheck;
         ENTRY;
 
         env = cl_env_get(&refcheck);
@@ -1793,7 +1793,7 @@ static int ll_file_getstripe(struct inode *inode,
 			     struct lov_user_md __user *lum)
 {
 	struct lu_env	*env;
-	int		refcheck;
+	__u16		refcheck;
 	int		rc;
 	ENTRY;
 
@@ -1970,7 +1970,7 @@ static int ll_do_fiemap(struct inode *inode, struct fiemap *fiemap,
 			size_t num_bytes)
 {
 	struct lu_env			*env;
-	int				refcheck;
+	__u16				refcheck;
 	int				rc = 0;
 	struct ll_fiemap_info_key	fmkey = { .lfik_name = KEY_FIEMAP, };
 	ENTRY;
@@ -2076,7 +2076,7 @@ int ll_data_version(struct inode *inode, __u64 *data_version, int flags)
 	struct cl_object *obj = ll_i2info(inode)->lli_clob;
 	struct lu_env *env;
 	struct cl_io *io;
-	int refcheck;
+	__u16  refcheck;
 	int result;
 
 	ENTRY;
@@ -2123,7 +2123,7 @@ int ll_hsm_release(struct inode *inode)
 	struct obd_client_handle *och = NULL;
 	__u64 data_version = 0;
 	int rc;
-	int refcheck;
+	__u16 refcheck;
 	ENTRY;
 
 	CDEBUG(D_INODE, "%s: Releasing file "DFID".\n",
@@ -2865,7 +2865,7 @@ int cl_sync_file_range(struct inode *inode, loff_t start, loff_t end,
 	struct obd_capa *capa = NULL;
 	struct cl_fsync_io *fio;
 	int result;
-	int refcheck;
+	__u16 refcheck;
 	ENTRY;
 
 	if (mode != CL_FSYNC_NONE && mode != CL_FSYNC_LOCAL &&
@@ -3877,7 +3877,7 @@ int ll_layout_conf(struct inode *inode, const struct cl_object_conf *conf)
 	struct ll_inode_info *lli = ll_i2info(inode);
 	struct lu_env *env;
 	int result;
-	int refcheck;
+	__u16 refcheck;
 	ENTRY;
 
 	if (lli->lli_clob == NULL)

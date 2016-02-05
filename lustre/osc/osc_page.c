@@ -785,7 +785,7 @@ long osc_lru_reclaim(struct client_obd *cli)
 	struct lu_env *env;
 	struct cl_client_cache *cache = cli->cl_cache;
 	long rc = 0;
-	int refcheck;
+	__u16 refcheck;
 	int max_scans;
 	ENTRY;
 
