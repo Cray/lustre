@@ -1303,11 +1303,13 @@ static int mdd_xattr_hsm_replace(const struct lu_env *env,
  *  the rules are:
  *  - only normal FIDs or non-system IGIFs
  *  - same type of objects
- *  - same owner/group (so quotas are still valid)
+ *  - same owner/group (so quotas are still valid) unless this is from HSM
+ *    release.
  */
 static int mdd_layout_swap_allowed(const struct lu_env *env,
 				   struct mdd_object *o1,
-				   struct mdd_object *o2)
+				   struct mdd_object *o2,
+				   __u64 flags)
 {
 	const struct lu_fid	*fid1, *fid2;
 	__u32			 uid, gid;
@@ -1333,6 +1335,9 @@ static int mdd_layout_swap_allowed(const struct lu_env *env,
 			RETURN(-EISDIR);
 		RETURN(-EBADF);
 	}
+
+	if (flags & SWAP_LAYOUTS_MDS_HSM)
+		RETURN(0);
 
 	tmp_la->la_valid = 0;
 	rc = mdd_la_get(env, o1, tmp_la, BYPASS_CAPA);
@@ -1388,7 +1393,7 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 		swap(fst_o, snd_o);
 
 	/* check if layout swapping is allowed */
-	rc = mdd_layout_swap_allowed(env, fst_o, snd_o);
+	rc = mdd_layout_swap_allowed(env, fst_o, snd_o, flags);
 	if (rc != 0)
 		RETURN(rc);
 
