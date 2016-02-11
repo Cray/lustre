@@ -676,6 +676,7 @@ int ptlrpc_connect_import(struct obd_import *imp)
         /* Reset connect flags to the originally requested flags, in case
          * the server is updated on-the-fly we will get the new features. */
         imp->imp_connect_data.ocd_connect_flags = imp->imp_connect_flags_orig;
+	imp->imp_connect_data.ocd_connect_flags2 = imp->imp_connect_flags2_orig;
 	/* Reset ocd_version each time so the server knows the exact versions */
 	imp->imp_connect_data.ocd_version = LUSTRE_VERSION_CODE;
         imp->imp_msghdr_flags &= ~MSGHDR_AT_SUPPORT;
@@ -1033,10 +1034,19 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 	/* check that server granted subset of flags we asked for. */
 	if ((ocd->ocd_connect_flags & imp->imp_connect_flags_orig) !=
 	    ocd->ocd_connect_flags) {
-		CERROR("%s: Server didn't granted asked subset of flags: "
-		       "asked="LPX64" grranted="LPX64"\n",
+		CERROR("%s: Server didn't grant requested subset of flags: "
+		       "asked="LPX64" granted="LPX64"\n",
 		       imp->imp_obd->obd_name,imp->imp_connect_flags_orig,
 		       ocd->ocd_connect_flags);
+		GOTO(out, rc = -EPROTO);
+	}
+
+	if ((ocd->ocd_connect_flags2 & imp->imp_connect_flags2_orig) !=
+	    ocd->ocd_connect_flags2) {
+		CERROR("%s: Server didn't grant requested subset of flags2: "
+		       "asked="LPX64" granted="LPX64"\n",
+		       imp->imp_obd->obd_name, imp->imp_connect_flags2_orig,
+		       ocd->ocd_connect_flags2);
 		GOTO(out, rc = -EPROTO);
 	}
 
