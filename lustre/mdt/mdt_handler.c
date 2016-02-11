@@ -5150,6 +5150,7 @@ static int mdt_connect_internal(struct obd_export *exp,
 	LASSERT(data != NULL);
 
 	data->ocd_connect_flags &= MDT_CONNECT_SUPPORTED;
+	data->ocd_connect_flags2 &= MDT_CONNECT_SUPPORTED2;
 	data->ocd_ibits_known &= MDS_INODELOCK_FULL;
 
 	if (!(data->ocd_connect_flags & OBD_CONNECT_MDS_MDS) &&
