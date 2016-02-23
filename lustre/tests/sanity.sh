@@ -13170,6 +13170,36 @@ test_251() {
 }
 run_test 251 "Handling short read and write correctly"
 
+test_257() {
+	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
+	mount_client $MOUNT2 || error "mount failed"
+
+	dd if=/dev/zero of=$DIR2/$tfile bs=4k count=2 conv=fsync
+
+	local start_time=$(date +%s)
+	$LCTL mark write
+#define OBD_FAIL_LDLM_PAUSE_CANCEL       0x312
+	$LCTL set_param fail_val=5 fail_loc=0x80000312
+	dd if=/dev/zero of=$DIR/$tfile conv=notrunc oflag=append bs=4k count=1 &
+	local pid=$!
+	sleep 2
+
+#define OBD_FAIL_LDLM_PAUSE_CANCEL_LOCAL 0x329
+	$LCTL set_param fail_val=6 fail_loc=0x80000329
+	$LCTL mark kill $pid
+	kill -ALRM $pid
+
+	dd if=/dev/zero of=$DIR2/$tfile conv=notrunc oflag=append bs=4k count=1
+
+	wait $pid
+	umount_client $MOUNT2 || error "umount failed"
+	local duration
+	((duration=$(date +%s) - start_time))
+	echo duration $duration
+	[ $duration -lt 20 ] || error "client was evicted"
+}
+run_test 257 "signal vs CP callback race"
+
 cleanup_test_300() {
 	trap 0
 	umask $SAVE_UMASK
