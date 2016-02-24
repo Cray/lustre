@@ -13662,7 +13662,8 @@ test_400b() { # LU-1606, LU-5011
 }
 run_test 400b "packaged headers can be compiled"
 
-do_nodes $(comma_list $(facet_active_host mgs) $(mdts_nodes)) \
+[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.11.1) ]] ||
+	do_nodes $(comma_list $(facet_active_host mgs) $(mdts_nodes)) \
 	$LCTL set_param debug=+snapshot
 
 test_401a() {
@@ -13848,7 +13849,8 @@ test_401c() {
 }
 run_test 401c "rescan barrier bitmap"
 
-do_nodes $(comma_list $(facet_active_host mgs) $(mdts_nodes)) \
+[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.11.1) ]] ||
+	do_nodes $(comma_list $(facet_active_host mgs) $(mdts_nodes)) \
 	$LCTL set_param debug=-snapshot
 
 saved_MDS_MOUNT_OPTS=$MDS_MOUNT_OPTS
