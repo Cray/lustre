@@ -157,7 +157,7 @@ static inline int sa_sent_full(struct ll_statahead_info *sai)
         return cfs_atomic_read(&sai->sai_cache_count) >= sai->sai_max;
 }
 
-static inline int sa_received_empty(struct ll_statahead_info *sai)
+static inline bool sa_received_empty(struct ll_statahead_info *sai)
 {
         return cfs_list_empty(&sai->sai_entries_received);
 }
@@ -408,26 +408,27 @@ do_sa_entry_to_stated(struct ll_statahead_info *sai,
 
 /*
  * Move entry to sai_entries_stated and sort with the index.
- * \retval 1    -- entry to be destroyed.
- * \retval 0    -- entry is inserted into stated list.
+ * \retval true		-- someone is waiting on the entry
+ * \retval false	-- other cases
  */
-static int
+static bool
 ll_sa_entry_to_stated(struct ll_statahead_info *sai,
 		      struct ll_sa_entry *entry, se_stat_t stat)
 {
 	struct ll_inode_info *lli = ll_i2info(sai->sai_inode);
-	int                   ret = 1;
+	bool wakeup = false;
 
 	ll_sa_entry_cleanup(sai, entry);
 
 	spin_lock(&lli->lli_sa_lock);
 	if (likely(entry->se_stat != SA_ENTRY_DEST)) {
+		if (entry->se_index == sai->sai_index_wait)
+			wakeup = true;
 		do_sa_entry_to_stated(sai, entry, stat);
-		ret = 0;
 	}
 	spin_unlock(&lli->lli_sa_lock);
 
-	return ret;
+	return wakeup;
 }
 
 /*
@@ -697,9 +698,8 @@ out:
 	 * reference count by calling "ll_intent_drop_lock()" in spite of the
 	 * above operations failed or not. Do not worry about calling
 	 * "ll_intent_drop_lock()" more than once. */
-	rc = ll_sa_entry_to_stated(sai, entry,
-				   rc < 0 ? SA_ENTRY_INVA : SA_ENTRY_SUCC);
-	if (rc == 0 && entry->se_index == sai->sai_index_wait)
+	if (ll_sa_entry_to_stated(sai, entry,
+				  rc < 0 ? SA_ENTRY_INVA : SA_ENTRY_SUCC))
 		wake_up(&sai->sai_waitq);
 	ll_sa_entry_put(sai, entry);
 }
@@ -713,7 +713,7 @@ static int ll_statahead_interpret(struct ptlrpc_request *req,
         struct ll_statahead_info *sai = NULL;
         struct ll_sa_entry       *entry;
 	__u64 handle		  = 0;
-        int                       wakeup;
+	wait_queue_head_t *waitq  = NULL;
         ENTRY;
 
         if (it_disposition(it, DISP_LOOKUP_NEG))
@@ -751,7 +751,8 @@ static int ll_statahead_interpret(struct ptlrpc_request *req,
 
 		if (rc != 0) {
 			do_sa_entry_to_stated(sai, entry, SA_ENTRY_INVA);
-			wakeup = (entry->se_index == sai->sai_index_wait);
+			if (entry->se_index == sai->sai_index_wait)
+				waitq = &sai->sai_waitq;
                 } else {
 			entry->se_minfo = minfo;
 			entry->se_req = ptlrpc_request_addref(req);
@@ -760,7 +761,8 @@ static int ll_statahead_interpret(struct ptlrpc_request *req,
 			 * for readpage and other tries to enqueue lock on child
 			 * with parent's lock held, for example: unlink. */
 			entry->se_handle = handle;
-			wakeup = sa_received_empty(sai);
+			if (sa_received_empty(sai))
+				waitq = &sai->sai_thread.t_ctl_waitq;
 			cfs_list_add_tail(&entry->se_list,
 					  &sai->sai_entries_received);
                 }
@@ -768,8 +770,8 @@ static int ll_statahead_interpret(struct ptlrpc_request *req,
 		spin_unlock(&lli->lli_sa_lock);
 
 		ll_sa_entry_put(sai, entry);
-		if (wakeup)
-			wake_up(&sai->sai_thread.t_ctl_waitq);
+		if (waitq != NULL)
+			wake_up(waitq);
         }
 
         EXIT;
@@ -939,7 +941,6 @@ static void ll_statahead_one(struct dentry *parent, const char* entry_name,
         struct dentry            *dentry = NULL;
         struct ll_sa_entry       *entry;
         int                       rc;
-        int                       rc1;
         ENTRY;
 
         entry = ll_sa_entry_alloc(sai, sai->sai_index, entry_name,
@@ -960,9 +961,8 @@ static void ll_statahead_one(struct dentry *parent, const char* entry_name,
                 dput(dentry);
 
 	if (rc) {
-		rc1 = ll_sa_entry_to_stated(sai, entry,
-					rc < 0 ? SA_ENTRY_INVA : SA_ENTRY_SUCC);
-		if (rc1 == 0 && entry->se_index == sai->sai_index_wait)
+		if (ll_sa_entry_to_stated(sai, entry,
+					rc < 0 ? SA_ENTRY_INVA : SA_ENTRY_SUCC))
 			wake_up(&sai->sai_waitq);
 	} else {
 		sai->sai_sent++;
@@ -1600,7 +1600,9 @@ int do_statahead_enter(struct inode *dir, struct dentry **dentryp,
 			ll_post_statahead(sai);
 
                 if (!ll_sa_entry_stated(entry)) {
-                        sai->sai_index_wait = entry->se_index;
+			spin_lock(&lli->lli_sa_lock);
+			sai->sai_index_wait = entry->se_index;
+			spin_unlock(&lli->lli_sa_lock);
                         lwi = LWI_TIMEOUT_INTR(cfs_time_seconds(30), NULL,
                                                LWI_ON_SIGNAL_NOOP, NULL);
                         rc = l_wait_event(sai->sai_waitq,
