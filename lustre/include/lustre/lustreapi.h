@@ -405,7 +405,7 @@ int llapi_group_lock(int fd, int gid);
 int llapi_group_unlock(int fd, int gid);
 
 /* Lock ahead */
-struct llapi_lock_ahead_arg *alloc_lla(size_t count, __u32 mode, __u32 flags);
+struct llapi_lock_ahead_arg *llapi_alloc_lla(size_t count, __u32 mode, __u32 flags);
 int llapi_lock_ahead_one(int fd, __u64 start, __u64 end, __u32 mode,
 			 __u32 flags);
 int llapi_lock_ahead(int fd, struct llapi_lock_ahead_arg *lla);

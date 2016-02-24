@@ -53,10 +53,10 @@ struct ofd_intent_args {
 
 int ofd_dlm_init(void)
 {
-	ofd_gl_work_slab = kmem_cache_create("ofd_gl_work_slab",
+	ldlm_glimpse_work_kmem = kmem_cache_create("ldlm_glimpse_work_kmem",
 					     sizeof(struct ldlm_glimpse_work),
 					     0, 0, NULL);
-	if (ofd_gl_work_slab == NULL)
+	if (ldlm_glimpse_work_kmem == NULL)
 		return -ENOMEM;
 	else
 		return 0;
@@ -64,9 +64,9 @@ int ofd_dlm_init(void)
 
 void ofd_dlm_exit(void)
 {
-	if (ofd_gl_work_slab) {
-		kmem_cache_destroy(ofd_gl_work_slab);
-		ofd_gl_work_slab = NULL;
+	if (ldlm_glimpse_work_kmem) {
+		kmem_cache_destroy(ldlm_glimpse_work_kmem);
+		ldlm_glimpse_work_kmem = NULL;
 	}
 }
 
@@ -79,10 +79,29 @@ void ofd_dlm_exit(void)
  * data is outdated.
  *
  * It finds the highest lock (by starting point) in this interval, and adds it
- * to the list of locks to glimpse.  This is because lock ahead creates extent
+ * to the list of locks to glimpse.  We must glimpse a list of locks - rather
+ * than only the highest lock on the file - because lock ahead creates extent
  * locks in advance of IO, and so breaks the assumption that the holder of the
- * highest lock knows the current file size.  So we must glimpse every lock
- * and merge their LVBs.
+ * highest lock knows the current file size.
+ *
+ * This assumption is normally true because locks which are created as part of
+ * IO - rather than in advance of it - are guaranteed to be 'active', IE,
+ * involved in IO, and the highest 'active' lock always knows the current file
+ * size, because it is either not changing or the holder of that lock is
+ * responsible for updating it.
+ *
+ * So we need only glimpse until we find the first 'active' lock.
+ * Unfortunately, there is no way to know if a lock ahead/speculative lock is
+ * 'active' from the server side.  So we must glimpse all speculative locks we
+ * find and merge their LVBs.
+ *
+ * However, *all* non-speculative locks are active.  So we can stop glimpsing
+ * as soon as we find a non-speculative lock.  Currently, all speculative locks
+ * have LDLM_FL_NO_EXPANSION set, and we use this to identify them.  This is
+ * enforced by an assertion in osc_lock_init, which references this comment.
+ *
+ * If that ever changes, we will either need to find a new way to identify
+ * active locks or we will need to glimpse all PW locks.
  *
  * Note that it is safe to glimpse only the 'top' lock from each interval
  * because ofd_intent_cb is only called for PW extent locks, and for PW locks,
@@ -141,14 +160,10 @@ static enum interval_iter ofd_intent_cb(struct interval_node *n, void *args)
 		return INTERVAL_ITER_STOP;
 	}
 
-	OBD_SLAB_ALLOC_PTR_GFP(gl_work, ofd_gl_work_slab, GFP_ATOMIC);
+	OBD_SLAB_ALLOC_PTR_GFP(gl_work, ldlm_glimpse_work_kmem, GFP_ATOMIC);
 
-	/* Populate the gl_work structure.
-	 * We do not need an extra reference to the lock here.  See
-	 * gl_work.gl_flags = LDLM_GL_WORK_NOFREE below for explanation. */
+	/* Populate the gl_work structure. */
 	gl_work->gl_lock = v;
-	/* The glimpse callback is sent to one single extent lock. As a result,
-	 * the gl_work list is just composed of one element */
 	list_add_tail(&gl_work->gl_list, &arg->gl_list);
 	/* There is actually no need for a glimpse descriptor when glimpsing
 	 * extent locks */
@@ -157,7 +172,12 @@ static enum interval_iter ofd_intent_cb(struct interval_node *n, void *args)
 	 * must be freed in a slab-aware manner. */
 	gl_work->gl_flags = LDLM_GL_WORK_SLAB_ALLOCATED;
 
-	return INTERVAL_ITER_CONT;
+	/* If NO_EXPANSION is not set, this is an active lock, and we don't need
+	 * to glimpse any further.  See comment above this function. */
+	if (!(v->l_flags & LDLM_FL_NO_EXPANSION))
+		return INTERVAL_ITER_STOP;
+	else
+		return INTERVAL_ITER_CONT;
 }
 
 /**
@@ -339,7 +359,7 @@ out:
 	list_for_each_entry_safe(pos, tmp, &arg.gl_list, gl_list) {
 		list_del(&pos->gl_list);
 		LDLM_LOCK_RELEASE(pos->gl_lock);
-		OBD_SLAB_FREE_PTR(pos, ofd_gl_work_slab);
+		OBD_SLAB_FREE_PTR(pos, ldlm_glimpse_work_kmem);
 	}
 
 	RETURN(ELDLM_LOCK_ABORTED);

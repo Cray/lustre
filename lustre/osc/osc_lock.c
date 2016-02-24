@@ -1187,6 +1187,12 @@ int osc_lock_init(const struct lu_env *env,
 	INIT_LIST_HEAD(&oscl->ols_wait_entry);
 	INIT_LIST_HEAD(&oscl->ols_nextlock_oscobj);
 
+	/* Speculative lock requests must be either request only or glimpse
+	 * request (CEF_ASYNC).  If real (not glimpse) non-request only extent
+	 * locks are allowed, it will break ofd_intent_cb (see comment there)*/
+	LASSERT(ergo((enqflags & CEF_SPECULATIVE) != 0,
+		     (enqflags & (CEF_REQ_ONLY | CEF_ASYNC)) != 0));
+
 	oscl->ols_flags = osc_enq2ldlm_flags(enqflags);
 	oscl->ols_speculative = !!(enqflags & CEF_SPECULATIVE);
 

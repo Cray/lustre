@@ -32,7 +32,7 @@ reduce performance (Anywhere from 40-90%, depending on system specs) for some
 workloads.
 
 Lock ahead avoids this problem by acquiring the necessary locks in advance, by
-explicit requests with server side extent changes disabled.  We add a new ioctl
+explicit requests with server side extent changes disabled.  We add a new API
 which allows lock requests from userspace on the client, specifying the extent
 and the I/O mode (read/write) for the lock.  These lock requests explicitly
 disable server side changes to the lock extent, so the lock returned to the
@@ -49,7 +49,7 @@ behavior to significantly improve their performance.
 
 2. I/O Pattern & Locking problems
 2. A. Strided writing and MPI-I/O
-There is an excellent explanation and overview of strided writing and the
+There is a thorough explanation and overview of strided writing and the
 benefits of lock ahead in the slides from the lock ahead presentation at
 LUG 2015.  it is highly recommended to read that first, as the graphics are
 much clearer than the prose here.
@@ -182,8 +182,10 @@ requests.  LDLM_FL_NO_EXPANSION is a new LDLM lock flag which tells the server
 not to expand the requested lock.
 
 This leaves the user facing interface.  Lock ahead is implemented as an ioctl,
-which takes a mode, a flags argument, a version code (to allow future API
-changes without breakage), a count of extents, and an array of extents.
+which is accessed via a simple API wrapper.  The argument to it contains a mode
+a flags argument, a version code (to allow future API changes without breakage),
+a count of extents, and an array of extents.
+
 Lock ahead will then make lock requests on these extents, one after another.
 Because the lock requests are asynchronous (replies are handled by ptlrpcd),
 many requests can be made quickly.

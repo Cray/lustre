@@ -374,12 +374,12 @@
 #define LDLM_FL_GONE_MASK		(LDLM_FL_DESTROYED		|\
 					 LDLM_FL_FAILED)
 
-/** l_flags bits marked as "inherit" bits */
-/* Flags inherited from wire on enqueue/reply between client/server. */
-/* CANCEL_ON_BLOCK so server will not grant if a blocking lock is found */
-/* NO_TIMEOUT flag to force ldlm_lock_match() to wait with no timeout. */
-/* TEST_LOCK flag to not let TEST lock to be granted. */
-/* NO_EXPANSION to tell server not to expand extent of lock request */
+/** l_flags bits marked as "inherit" bits
+ * Flags inherited from wire on enqueue/reply between client/server.
+ * CANCEL_ON_BLOCK so server will not grant if a blocking lock is found
+ * NO_TIMEOUT flag to force ldlm_lock_match() to wait with no timeout.
+ * TEST_LOCK flag to not let TEST lock to be granted.
+ * NO_EXPANSION to tell server not to expand extent of lock request */
 #define LDLM_FL_INHERIT_MASK            (LDLM_FL_CANCEL_ON_BLOCK	|\
 					 LDLM_FL_NO_TIMEOUT		|\
 					 LDLM_FL_TEST_LOCK              |\

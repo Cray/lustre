@@ -4906,7 +4906,7 @@ int llapi_group_unlock(int fd, int gid)
 }
 
 /* Allocate and initialize an lla. */
-struct llapi_lock_ahead_arg *alloc_lla(size_t count, __u32 mode, __u32 flags)
+struct llapi_lock_ahead_arg *llapi_alloc_lla(size_t count, __u32 mode, __u32 flags)
 {
 	struct llapi_lock_ahead_arg *lla;
 	size_t len;
@@ -4949,7 +4949,7 @@ int llapi_lock_ahead_one(int fd, __u64 start, __u64 end, __u32 mode,
 	struct llapi_lock_ahead_arg *lla;
 	int rc;
 
-	lla = alloc_lla(1, mode, flags);
+	lla = llapi_alloc_lla(1, mode, flags);
 	if (!lla)
 		goto failed;
 	lla->lla_extents[0].start = start;

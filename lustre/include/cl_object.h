@@ -1641,8 +1641,13 @@ enum cl_enq_flags {
          */
         CEF_NEVER        = 0x00000010,
 	/**
-	 * tell the sub layers this is a speculative lock request
-	 * used for asynchronous glimpse locks and lock ahead
+	 * tell the dlm layer this is a speculative lock request
+	 * speculative lock requests are locks which are not requested as part
+	 * of an I/O operation.  Instead, they are requested because we expect
+	 * to use them in the future.  They are requested asynchronously at the
+	 * ptlrpc layer.
+	 *
+	 * Currently used for asynchronous glimpse locks and lock ahead.
 	 */
 	CEF_SPECULATIVE          = 0x00000020,
 	/**
@@ -1652,11 +1657,11 @@ enum cl_enq_flags {
 	/**
 	 * tell the DLM layer to lock only the requested range
 	 */
-	CEF_REQ_ONLY    = 0x00000100,
+	CEF_REQ_ONLY    = 0x00000080,
 	/**
 	 * mask of enq_flags.
 	 */
-	CEF_MASK         = 0x000001ff,
+	CEF_MASK         = 0x000000ff,
 };
 
 /**

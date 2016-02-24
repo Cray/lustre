@@ -1824,7 +1824,7 @@ extern void obd_cleanup_caches(void);
 /* support routines */
 extern struct kmem_cache *obdo_cachep;
 
-extern struct kmem_cache *ofd_gl_work_slab;
+extern struct kmem_cache *ldlm_glimpse_work_kmem;
 
 #define OBDO_ALLOC(ptr)                                                       \
 do {                                                                          \

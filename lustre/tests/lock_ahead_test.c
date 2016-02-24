@@ -99,7 +99,7 @@ static void test10(void)
 	ASSERTF(fd >= 0, "open failed for '%s': %s",
 		mainpath, strerror(errno));
 
-	lla = alloc_lla(count, WRITE_USER, 0);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0);
 
 	lla->lla_extents[0].end = write_size - 1;
 	lla->lla_extents[0].result = 345678;
@@ -135,7 +135,7 @@ static void test11(void)
 	ASSERTF(fd >= 0, "open failed for '%s': %s",
 		mainpath, strerror(errno));
 
-	lla = alloc_lla(count, WRITE_USER, 0);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0);
 
 	lla->lla_extents[0].end = write_size - 1;
 	lla->lla_extents[0].result = 345678;
@@ -201,7 +201,7 @@ static void test12(void)
 	ASSERTF(fd >= 0, "open failed for '%s': %s",
 		mainpath, strerror(errno));
 
-	lla = alloc_lla(count, WRITE_USER, 0);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0);
 
 	for (i = 0; i < count; i++) {
 		lla->lla_extents[i].end = write_size - 1;
@@ -244,7 +244,7 @@ static void test13(void)
 
 	for (i = 0; i < 100; i++) {
 
-		lla = alloc_lla(count, WRITE_USER, 0);
+		lla = llapi_alloc_lla(count, WRITE_USER, 0);
 
 		lla->lla_extents[0].end = i * write_size - 1;
 		lla->lla_extents[0].result = 98674;
@@ -288,7 +288,7 @@ static void test14(void)
 
 	for (i = 0; i < num_blocks; i++) {
 
-		lla = alloc_lla(count, WRITE_USER, 0);
+		lla = llapi_alloc_lla(count, WRITE_USER, 0);
 
 		lla->lla_extents[0].start = (num_blocks - i - 1) * write_size;
 		lla->lla_extents[0].end = (num_blocks) * write_size - 1;
@@ -330,7 +330,7 @@ static void test15(void)
 	ASSERTF(fd >= 0, "open failed for '%s': %s",
 		mainpath, strerror(errno));
 
-	lla = alloc_lla(count, WRITE_USER, 0);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0);
 
 	for (i = 0; i < 20000; i++) {
 		lla->lla_extents[0].start = i * 1024 * 1024 * 10;
@@ -392,7 +392,7 @@ static void test20(void)
 		mainpath, strerror(errno));
 
 	/* A valid request first */
-	lla = alloc_lla(count, WRITE_USER, 0);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0);
 	lla->lla_extents[0].end = 1024 * 1024;
 	rc = llapi_lock_ahead(fd, lla);
 	ASSERTF(rc == 0, "cannot lock ahead '%s': %s",
@@ -400,7 +400,7 @@ static void test20(void)
 	free(lla);
 
 	/* No actual block */
-	lla = alloc_lla(count, WRITE_USER, 0);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0);
 	lla->lla_extents[0].end = 0;
 	rc = llapi_lock_ahead(fd, lla);
 	ASSERTF(rc == -1 && errno == EINVAL,
@@ -409,7 +409,7 @@ static void test20(void)
 	free(lla);
 
 	/* end before start */
-	lla = alloc_lla(count, WRITE_USER, 0);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0);
 	lla->lla_extents[0].start = 1024 * 1024;
 	lla->lla_extents[0].end = 0;
 	rc = llapi_lock_ahead(fd, lla);
@@ -419,7 +419,7 @@ static void test20(void)
 	free(lla);
 
 	/* bogus lock mode - 0x65464 */
-	lla = alloc_lla(count, 0x65464, 0);
+	lla = llapi_alloc_lla(count, 0x65464, 0);
 	lla->lla_extents[0].end = 1024 * 1024;
 	rc = llapi_lock_ahead(fd, lla);
 	ASSERTF(rc == -1 && errno == EINVAL,
@@ -428,7 +428,7 @@ static void test20(void)
 	free(lla);
 
 	/* bogus version */
-	lla = alloc_lla(count, WRITE_USER, 0);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0);
 	lla->lla_extents[0].end = 1024 * 1024;
 	lla->lla_version = 0;
 	rc = llapi_lock_ahead(fd, lla);
@@ -438,7 +438,7 @@ static void test20(void)
 	free(lla);
 
 	/* bogus version (2) */
-	lla = alloc_lla(count, WRITE_USER, 0);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0);
 	lla->lla_extents[0].end = 1024 * 1024;
 	lla->lla_version = 2;
 	rc = llapi_lock_ahead(fd, lla);
@@ -448,7 +448,7 @@ static void test20(void)
 	free(lla);
 
 	/* bogus flags, 0x80 */
-	lla = alloc_lla(count, WRITE_USER, 0x80);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0x80);
 	lla->lla_extents[0].end = 1024 * 1024;
 	rc = llapi_lock_ahead(fd, lla);
 	ASSERTF(rc == -1 && errno == EINVAL,
@@ -458,7 +458,7 @@ static void test20(void)
 	free(lla);
 
 	/* bogus flags, 0xff - CEF_MASK */
-	lla = alloc_lla(count, WRITE_USER, 0xff);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0xff);
 	lla->lla_extents[0].end = 1024 * 1024;
 	rc = llapi_lock_ahead(fd, lla);
 	ASSERTF(rc == -1 && errno == EINVAL,
@@ -468,7 +468,7 @@ static void test20(void)
 	free(lla);
 
 	/* bogus flags, 0xffffffff */
-	lla = alloc_lla(count, WRITE_USER, 0xffffffff);
+	lla = llapi_alloc_lla(count, WRITE_USER, 0xffffffff);
 	lla->lla_extents[0].end = 1024 * 1024;
 	rc = llapi_lock_ahead(fd, lla);
 	ASSERTF(rc == -1 && errno == EINVAL,
