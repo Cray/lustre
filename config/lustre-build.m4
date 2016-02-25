@@ -1,3 +1,17 @@
+# LB_SET_PKGCONFIG_DIR
+#
+# Allow the pkg-config directory to be set
+#
+AC_DEFUN([LB_SET_PKGCONFIG_DIR], [
+AC_ARG_WITH(pkgconfigdir,
+AC_HELP_STRING([--with-pkgconfigdir],
+       [Use the specified pkgconfig dir (default is libdir/pkgconfig)]),
+       [pkgconfigdir=${withval}],
+       [pkgconfigdir=${libdir}/pkgconfig])
+AC_SUBST([pkgconfigdir])
+AC_CONFIG_FILES([module])
+]) # LB_SET_PKGCONFIG_DIR
+
 #
 # LB_CHECK_VERSION
 #
@@ -618,6 +632,7 @@ AC_SUBST(RPMBUILD_BINARY_ARGS)
 AC_DEFUN([LB_CONFIGURE], [
 AC_MSG_NOTICE([Lustre base checks
 ==============================================================================])
+LB_SET_PKGCONFIG_DIR
 LB_CANONICAL_SYSTEM
 
 LB_CONFIG_DIST

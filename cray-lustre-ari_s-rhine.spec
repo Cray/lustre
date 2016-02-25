@@ -78,6 +78,8 @@ Includes headers, dynamic, and static libraries.
 %define date %(date +%%F-%%R)
 %define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 
+%{__sed} -e 's/@VERSION@/%{version}-%{release}/g' version.in > .version
+
 export LUSTRE_VERS=%{lustre_version}
 export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
 
@@ -153,13 +155,17 @@ popd
 
 for f in %{pc_files}
 do
-    eval "sed -i 's/flavor/%{flavor}/g' %{_sourcedir}/${f}"
+    eval "sed -i 's,^prefix=.*$,prefix=/,' %{_sourcedir}/${f}"
     install -D -m 0644  %{_sourcedir}/${f} %{buildroot}/%{_pkgconfigdir}/${f}
     %{__rm} -f %{_sourcedir}/${f}
 done
 eval "sed -i 's/flavor/%{flavor}/g' %{_sourcedir}/cray-lustre.conf"
 install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/cray-lustre.conf
 %{__rm} -f %{_sourcedir}/cray-lustre.conf
+
+# Install module directories and files
+%{__install} -D -m 0644 .version %{buildroot}/%{_name_modulefiles_prefix}/.version
+%{__install} -D -m 0644 module %{buildroot}/%{_release_modulefile}
 
 %files
 %defattr(-,root,root)
