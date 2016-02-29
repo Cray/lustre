@@ -100,11 +100,25 @@ done
 
 # set l_getidentity to the default location
 %{__mkdir_p} %{buildroot}/usr/sbin
+%if %{without athena}
 %{__ln_s} -f /sbin/l_getidentity %{buildroot}/usr/sbin/l_getidentity
+%endif
 
 %files 
 %defattr(-,root,root)
+%if %{with athena}
+%{_prefix}/bin/*
+%{_prefix}/sbin/*
+%{_prefix}/lib64/*
+%{_prefix}/lib/*
+%{_prefix}/usr/lib/*
+%{_prefix}/share/*
+%{_prefix}/libexec/*
+%{_prefix}/include/*
+%{_prefix}/etc/*
+%else
 %{_prefix}
+%endif
 
 %clean
 %clean_build_root
