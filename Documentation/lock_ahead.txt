@@ -1,0 +1,294 @@
+Lock ahead design
+Lock ahead is a new Lustre feature aimed at solving a long standing problem
+with shared file write performance in Lustre.  It requires client and server
+support.  It will be used primarily via the MPI-I/O library, not directly from
+user applications.
+
+The first part of this document (sections 1 and 2) is an overview of the
+problem and high level description of the solution.  Section 3 explains how the
+library will make use of this feature, and sections 4 and 5 describe the design
+of the Lustre changes.  Sections 4 and 5 are, in some sense, a guide to
+reviewing the code for this feature.
+
+1. Overview: Purpose & Interface
+Lock ahead is intended to allow optimization of certain I/O patterns which
+would otherwise suffer LDLM* lock contention. Lock ahead allows applications
+which know their I/O pattern to use that information to avoid locking problems
+in LDLM*.
+*Lustre distributed lock manager.  This is the locking layer shared between
+clients and servers, to manage access between clients.
+
+Normally, clients request locks as the first step of an I/O.  The client asks
+for a lock which covers exactly the area of interest (IE, a read or write lock
+of n bytes at offset x), but the server attempts to optimize this by expanding
+the lock to cover as much of the file as possible.  This is useful for a single
+client, but can be trouble for multiple clients.
+
+In cases where multiple clients wish to write to the same file, this
+optimization can result in locks that conflict when the actual I/O operations
+do not.  This requires clients to wait for one another to complete I/O, even
+when there is no conflict between actual I/O requests.  This can significantly
+reduce performance (Anywhere from 40-90%, depending on system specs) for some
+workloads.
+
+Lock ahead avoids this problem by acquiring the necessary locks in advance, by
+explicit requests with server side extent changes disabled.  We add a new API
+which allows lock requests from userspace on the client, specifying the extent
+and the I/O mode (read/write) for the lock.  These lock requests explicitly
+disable server side changes to the lock extent, so the lock returned to the
+client covers only the requested extent.
+
+When using lock ahead, clients which intend to write to a file request locks to
+cover their I/O pattern, wait a moment for the locks to be granted, then begin
+writing to the file.
+
+In this way, a set of clients which knows their I/O pattern in advance can
+force the LDLM layer to grant locks appropriate for that I/O pattern.  This
+allows applications which are poorly handled by the default lock optimization
+behavior to significantly improve their performance.
+
+2. I/O Pattern & Locking problems
+2. A. Strided writing and MPI-I/O
+There is a thorough explanation and overview of strided writing and the
+benefits of lock ahead in the slides from the lock ahead presentation at
+LUG 2015.  it is highly recommended to read that first, as the graphics are
+much clearer than the prose here.
+
+See slides 1-13:
+http://wiki.lustre.org/images/f/f9/Shared-File-Performance-in-Lustre_Farrell.pdf
+
+MPI-I/O uses strided writing when doing I/O from a large job to a single file.
+I/O is aggregated from all the nodes running a particular application to a
+small number of I/O aggregator nodes which then write out the data, in a
+strided manner.
+
+In strided writing, different clients take turns writing different blocks of a
+file (A block is some arbitrary number of bytes).  Client 1 is responsible for
+writes to block 0, block 2, block 4, etc., client 2 is responsible for block 1,
+block 3, etc.  
+
+Without lock ahead, strided writing is set up in concert with Lustre file
+striping so each client writes to one OST.  (IE, for a file striped to three
+OSTs, we would use three clients.)
+
+The particular case of interest is when we want to use more than one client
+per OST.  This is important, because an OST typically has much more bandwidth
+than one client.  Strided writes are non-overlapping, so they should be able to
+proceed in parallel with more than one client per OST.  In practice, on Lustre,
+they do not, due to lock expansion.
+
+2. B. Locking problems
+We will now describe locking when there is more than one client per OST.  This
+behavior is the same on a per OST basis in a file striped across multiple OSTs.
+When the first client asks to write block 0, it requests the required lock from
+the server.  When it receives this request, the server sees that there are no
+other locks on the file.  Since it assumes the client will want to write to the
+file again, the server expands the lock as far as possible.  In this case, it
+expands the lock to the maximum file size (effectively, to infinity), then
+grants it to client 1.
+
+When client 2 wants to write block 1, it conflicts with the expanded lock
+granted to client 1.  The server then must revoke (In Lustre terms,
+'call back') the lock granted to client 1 so it can grant a lock to client 2.
+After the lock granted to client is revoked, there are no locks on the file.
+The server sees this when processing the lock request from client 2, and
+expands that lock to cover the whole file.
+
+Client 1 then wishes to write block 3 of the file...  And the cycle continues.
+The two clients exchange the extended lock throughout the write, allowing only
+one client to write at a time, plus latency to exchange the lock.  The effect is
+dramatic: Two clients are actually slower than one.  (Similar behavior is seen
+with more than two clients.)
+
+The solution is to use lock ahead to request locks before they are needed.  In
+effect, before it starts writing to the file, client 1 requests locks on
+block 0, block 2, etc – It locks 'ahead' a certain (tunable) number of locks.
+Client 2 does the same.  Then they both begin to write, and are able to do so
+in parallel.  A description of the actual library implementation follows.
+
+3. Library implementation
+Actually implementing this in the library carries a number of wrinkles.
+The basic pattern is this:
+Before writing, an I/O aggregator requests a certain number of locks on blocks
+that it is responsible for.  It may or may not ever write to these blocks, but
+it takes locks knowing it might.  It then begins to write, tracking how many of
+the locks it has used.  When the number of locks 'ahead' of the I/O is low
+enough, it requests more locks in advance of the I/O.
+
+For technical reasons which are explained in the implementation section, lock
+ahead lock requests are non-blocking.  In Lustre terms, this means if there is
+already a lock on the relevant extent of the file, the lock ahead request is
+not granted.  This means that if there is already a lock on the file
+(not uncommon – Imagine writing to a file which was previously read by another
+process), lock ahead requests will be blocked.  However, once the first 'real'
+write request arrives that was hoping to use a lock ahead lock, that write
+request will cause the blocking lock to be cancelled, so this is not fatal.
+
+It is of course possible for another process to get in the way by immediately
+requesting a lock on the file.  This is something users should try to avoid.
+When writing out a file, repeatedly trying to read it will impact performance
+even without lock ahead.  However, we do have a way of mitigating the impact
+of interfering locks which would otherwise prevent lock ahead.
+
+These interfering locks can also happen if a lock ahead lock is, for some
+reason, not available in time for the write request which intended to use it.
+The lock which results from this write request is expanded using the normal
+rules.  So it's possible for that lock (depending on the position of other
+locks at the time) to be extended to cover the rest of the file.  That will
+block future lock ahead requests.
+
+The expanded lock will be revoked when a write request happens in the range
+covered by that lock, but the lock for that request will be expanded as well -
+And then we return to handing the lock back and forth between clients.  These
+expanded locks will still block future lock ahead requests.  So lock ahead
+becomes useless.
+
+The way to avoid this is to turn off lock expansion for I/O requests which are
+supposed to be using lock ahead locks.  That way, if a lock ahead lock is not
+available, the lock request for the I/O will not be expanded.  Instead, that
+request will cancel any interfering locks, but the lock for that request will
+not be expanded.  This leaves the later parts of the file open, allowing future
+lock ahead requests to succeed.  This means that if an interfering lock blocks
+some lock ahead requests, those are lost, but the next set of lock ahead
+requests can proceed as normal.
+
+In effect, lock ahead is interrupted, but then is able to re-assert itself.
+The feature used here is referred to as 'request only' locking (as only the
+extent used by the actual I/O request is locked) and is turned on with an ioctl.
+This ioctl and the code to support it are added as part of lock ahead.
+The library will do this on the file descriptor it uses for lock ahead and
+writing.
+
+4. Client side design
+4. A. Lock ahead
+Lock ahead uses the existing asynchronous lock request functionality implemented
+for asynchronous glimpse locks (AGLs), a long standing Lustre feature.  AGLs are
+locks which are requested by statahead, which are used to get file size
+information before it's requested.  The key thing about an asynchronous lock
+request is that it does not have a specific I/O request waiting to use the lock.
+This means two key things:
+
+1. There is no OSC lock (lock layer above LDLM for data locking) associated with
+the LDLM lock
+2. There is no thread waiting for the LDLM lock reply, so the reply must be
+handled by the networking daemon thread (PTLRPCD)
+
+Since both of these issues are addressed by the asynchronous lock request code
+which lock ahead shares with AGL, we will not explore them in depth here.
+
+Finally, lock ahead requests set the CEF_REQ_ONLY flag, which tells the OSC
+(the per OST layer of the client) to set LDLM_FL_NO_EXPANSION on any lock
+requests.  LDLM_FL_NO_EXPANSION is a new LDLM lock flag which tells the server
+not to expand the requested lock.
+
+This leaves the user facing interface.  Lock ahead is implemented as an ioctl,
+which is accessed via a simple API wrapper.  The argument to it contains a mode
+a flags argument, a version code (to allow future API changes without breakage),
+a count of extents, and an array of extents.
+
+Lock ahead will then make lock requests on these extents, one after another.
+Because the lock requests are asynchronous (replies are handled by ptlrpcd),
+many requests can be made quickly.
+
+4. B. Request only Ioctl
+The request only ioctl uses the ioctl interface to set a boolean in a Lustre
+data structure associated with a file descriptor (ll_file_data).  This is then
+used to set a corresponding boolean in all cl_io structs associated with this
+file descriptor (it is also passed on to associated sub_io structs).  In the
+vvp layer of Lustre (One of the upper layers, which helps translate POSIX I/O
+requests to things Lustre understands.), this bool is used to set the same
+CEF_REQ_ONLY flag used by lock ahead.  Just like for lock ahead, this sets
+LDLM_FL_NO_EXPANSION in all requests sent to the server.
+
+5. Server side changes
+Implementing lock ahead requires server support for LDLM_FL_NO_EXPANSION, but
+it also required an additional pair of server side changes to fix issues which
+came up because of lock ahead.  These changes are not part of the core lock
+ahead design, instead, they are separate fixes which are required for it to
+work.
+
+5. A. Support LDLM_FL_NO_EXPANSION
+
+Disabling server side lock expansion is done with a new LDLM flag.  This is
+done with a simple check for that flag on the server before attempting to
+expand the lock.  If the flag is found, lock expansion is skipped.
+
+5. B. Fully implement BLOCK_NOWAIT
+
+As described above, lock ahead locks are non-blocking.  This means they use the
+BLOCK_NOWAIT LDLM flag.  At first, setting BLOCK_NOWAIT had no effect.
+Examining the code showed that the BLOCK_NOWAIT flag was only implemented for
+group locks, not general extent locks (it did nothing).
+
+Fixing this required a few new lines of code in ldlm_extent_compat_queue to
+extend the BLOCK_NOWAIT behavior, mirroring the behavior for group locks.
+
+5. C. File size & ofd_intent_policy changes
+
+Knowing the current file size during writes is tricky on a distributed file
+system, because multiple clients can be writing to a file at any time.  When
+writes are in progress, the server must identify which client is currently
+responsible for growing the file size, and ask that client what the file size
+is.
+
+To do this, the server uses glimpse locking (in ofd_intent_policy) to get the
+current file size from the clients.  This code uses the assumption that the
+holder of the highest write lock (PW lock) knows the current file size.  A
+client learns the (then current) file size when a lock is granted.  Because
+only the holder of the highest lock can grow a file, either the size hasn't
+changed, or that client knows the new size; so the server only has to contact
+the client which holds this lock, and it knows the current file size.
+
+Note that the above is actually racy – When the server asks, the client can
+still be writing, or another client could acquire a higher lock during this
+time.  The goal is a good approximation while the file is being written, and a
+correct answer once all the clients are done writing.  This is achieved because
+once writes to a file are complete, the holder of that highest lock is
+guaranteed to know the current file size.  This is where lock ahead causes
+trouble.
+
+By creating write locks in advance of an actual I/O, lock ahead breaks the
+assumption that the holder of the highest lock knows the file size.  Normally,
+locks are taken as part of an I/O request.  Lock ahead locks are not, and so,
+the holder of a write lock does not necessarily write to the file in the area
+covered by that lock.
+
+Consider:  Two clients, A and B, strided writing.  Each client requests, for
+example, 2 lock ahead locks.  (Real numbers are much higher.)  Client A holds
+locks on segments 0 and 2, client B holds locks on segments 1 and 3.
+
+The request comes to write 3 segments of data.  Client A writes to segment 0,
+client B writes to segment 1, and client A also writes to segment 2.  No data
+is written to segment 3.  At this point, the server checks the file size, by
+glimpsing the highest lock – The lock on segment 3.  Client B does not know
+about the writing done by client A to segment 2, so it gives an incorrect file
+size.
+
+This would be OK if client B had pending writes to segment 3, but it does not.
+In this situation, the server will never get the correct file size while this
+lock exists.
+
+The solution is relatively straightforward: The server needs to ask glimpse
+every write lock to check the current file size is, then take the largest size
+returned.  This avoids asking only a client which may not know the correct file
+size, by making sure to ask all the clients.  (We iterate over locks because it
+is actually locks which know the file size, not clients.)
+
+The code is modified accordingly, iterating through the write locks on a file
+and glimpsing each one.
+
+While it is not ideal to glimpse all the write locks on a file instead of one,
+the cost is mitigated by a few factors:
+
+Since write locks are exclusive (and by default, are expanded to the largest
+possible size), it's very rare for there to be more than a few write locks on a
+file.
+
+The only situation which creates a large number of write locks is actually lock
+ahead, and we tune carefully to not request too many locks in advance of need.
+
+Also, lock cancellation methods such as early lock cancel aggressively clean up
+older locks.
+
+In the end, the final verdict here is performance – Lock ahead testing has shown
+good performance results despite this weak point.

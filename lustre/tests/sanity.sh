@@ -10267,6 +10267,12 @@ test_156() {
         log "cache hits:: before: $BEFORE, after: $AFTER"
     fi
 
+test_253()
+{
+	test_mkdir -p $DIR/$tdir
+	lock_ahead_test -d $DIR/$tdir || error "A lock ahead test failed"
+}
+run_test 253 "various lock ahead tests"
 
     log "Turn off read and write cache"
     set_cache read off

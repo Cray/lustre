@@ -136,6 +136,16 @@
 #define ldlm_clear_cancel_on_block(_l)  LDLM_CLEAR_FLAG((_l), 1ULL << 23)
 
 /**
+ * Do not expand this lock.  Grant it only on the extent requested.
+ * Used for client controlled lock ahead.
+ * */
+#define LDLM_FL_NO_EXPANSION		0x0000000020000000ULL // bit  29
+#define ldlm_is_do_not_expand(_l)	LDLM_TEST_FLAG(( _l), 1ULL << 29)
+#define ldlm_set_do_not_expand(_l)	LDLM_SET_FLAG((  _l), 1ULL << 29)
+#define ldlm_clear_do_not_expand(_l)	LDLM_CLEAR_FLAG((_l), 1ULL << 29)
+
+
+/**
  * measure lock contention and return -EUSERS if locking contention is high */
 #define LDLM_FL_DENY_ON_CONTENTION        0x0000000040000000ULL // bit  30
 #define ldlm_is_deny_on_contention(_l)    LDLM_TEST_FLAG(( _l), 1ULL << 30)
@@ -364,13 +374,16 @@
 #define LDLM_FL_GONE_MASK		(LDLM_FL_DESTROYED		|\
 					 LDLM_FL_FAILED)
 
-/** l_flags bits marked as "inherit" bits */
-/* Flags inherited from wire on enqueue/reply between client/server. */
-/* NO_TIMEOUT flag to force ldlm_lock_match() to wait with no timeout. */
-/* TEST_LOCK flag to not let TEST lock to be granted. */
+/** l_flags bits marked as "inherit" bits
+ * Flags inherited from wire on enqueue/reply between client/server.
+ * CANCEL_ON_BLOCK so server will not grant if a blocking lock is found
+ * NO_TIMEOUT flag to force ldlm_lock_match() to wait with no timeout.
+ * TEST_LOCK flag to not let TEST lock to be granted.
+ * NO_EXPANSION to tell server not to expand extent of lock request */
 #define LDLM_FL_INHERIT_MASK            (LDLM_FL_CANCEL_ON_BLOCK	|\
 					 LDLM_FL_NO_TIMEOUT		|\
-					 LDLM_FL_TEST_LOCK)
+					 LDLM_FL_TEST_LOCK              |\
+					 LDLM_FL_NO_EXPANSION)
 
 /** flags returned in @flags parameter on ldlm_lock_enqueue,
  * to be re-constructed on re-send */

@@ -48,6 +48,8 @@ spinlock_t obd_types_lock;
 static struct kmem_cache *obd_device_cachep;
 struct kmem_cache *obdo_cachep;
 EXPORT_SYMBOL(obdo_cachep);
+struct kmem_cache *ldlm_glimpse_work_kmem;
+EXPORT_SYMBOL(ldlm_glimpse_work_kmem);
 static struct kmem_cache *import_cachep;
 
 static struct list_head obd_zombie_imports;

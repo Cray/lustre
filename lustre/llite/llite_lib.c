@@ -199,7 +199,7 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
                 RETURN(-ENOMEM);
         }
 
-        /* indicate the features supported by this client */
+	/* indicate the MDT-dependent features supported by this client */
         data->ocd_connect_flags = OBD_CONNECT_IBITS    | OBD_CONNECT_NODEVOH  |
                                   OBD_CONNECT_ATTRFID  |
 #if defined(CONFIG_CRAY_COMPUTE)
@@ -422,6 +422,7 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 		GOTO(out_md_fid, err = -ENODEV);
 	}
 
+	/* Indicate the OST-dependent features supported by this client */
         data->ocd_connect_flags = OBD_CONNECT_GRANT     | OBD_CONNECT_VERSION  |
 				  OBD_CONNECT_REQPORTAL | OBD_CONNECT_BRW_SIZE |
                                   OBD_CONNECT_CANCELSET | OBD_CONNECT_FID      |
@@ -433,7 +434,8 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 				  OBD_CONNECT_EINPROGRESS |
 				  OBD_CONNECT_JOBSTATS | OBD_CONNECT_LVB_TYPE |
 				  OBD_CONNECT_LAYOUTLOCK |
-				  OBD_CONNECT_PINGLESS | OBD_CONNECT_LFSCK;
+				  OBD_CONNECT_PINGLESS | OBD_CONNECT_LFSCK |
+				  OBD_CONNECT_LOCK_AHEAD;
 
         if (sbi->ll_flags & LL_SBI_SOM_PREVIEW)
                 data->ocd_connect_flags |= OBD_CONNECT_SOM;
@@ -2947,5 +2949,127 @@ lb_free:
 ldata_free:
 	OBD_FREE(ldata, sizeof(*ldata));
 
+	RETURN(rc);
+}
+
+static const char *user_lockname[] = {
+	[READ_USER]  = "READ",
+	[WRITE_USER] = "WRITE"
+};
+
+
+/*
+ * Get arguments from user space and do sanity checking for lock ahead
+ * requests.
+ *
+ * Since only non-blocking requests are allowed, we always set CEF_NONBLOCK.
+ *
+ * \param[in]		file	struct representing the file the ioctl was
+ *			called on
+ * \param[in,out]	user_arg	llapi_lock_ahead
+ */
+int ll_lock_ahead(struct file *file,
+		  struct llapi_lock_ahead_arg __user *user_arg)
+{
+	struct llapi_lock_ahead_arg	*k_arg;
+	struct dentry			*dentry = file->f_path.dentry;
+	struct inode			*inode = dentry->d_inode;
+	struct llapi_lock_ahead_extent	*extents = NULL;
+	size_t				len;
+	int				i;
+	int				rc;
+
+
+	ENTRY;
+
+	OBD_ALLOC(k_arg, sizeof(struct llapi_lock_ahead_arg));
+	if (k_arg == NULL)
+		GOTO(out, rc = -ENOMEM);
+
+	rc = copy_from_user(k_arg, user_arg,
+			    sizeof(struct llapi_lock_ahead_arg));
+	if (rc < 0)
+		GOTO(out_free, rc = -EFAULT);
+
+	/* Sanity checks */
+	if (k_arg->lla_version != 1) {
+		CERROR("Invalid lock_ahead version (%d)\n",
+		       k_arg->lla_version);
+		GOTO(out_free, rc = -EINVAL);
+	}
+
+	/* Currently only READ and WRITE modes can be requested */
+	if (!(k_arg->lla_lock_mode < MAX_USER) || k_arg->lla_lock_mode == 0)
+		GOTO(out_free, rc = -EINVAL);
+
+	if (k_arg->lla_extent_count == 0)
+		GOTO(out_free, rc = -EINVAL);
+
+	if ((k_arg->lla_flags & ~CEF_MASK) != 0)
+		GOTO(out_free, rc = -EINVAL);
+
+	/* Explicitly check for supported flags */
+	if ((k_arg->lla_flags & ~CEF_NONBLOCK) != 0) {
+		CERROR("Bad flags: Lock ahead supports only CEF_NONBLOCK.\n");
+		GOTO(out_free, rc = -EINVAL);
+	}
+
+	/* Copy array of extents */
+	len = k_arg->lla_extent_count * sizeof(struct llapi_lock_ahead_extent);
+
+	OBD_ALLOC(extents, len);
+	if (extents == NULL)
+		GOTO(out_free, rc = -ENOMEM);
+
+	rc = copy_from_user(extents, &user_arg->lla_extents, len);
+	if (rc < 0)
+		GOTO(out_free, rc);
+
+	/* Lock ahead reqeusts must be non-blocking */
+	k_arg->lla_flags |= CEF_NONBLOCK;
+
+	CDEBUG(D_VFSTRACE, "Lock ahead request: file=%.*s, inode=%p, mode=%s "
+	       "extents=%d\n", dentry->d_name.len, dentry->d_name.name,
+	       dentry->d_inode, user_lockname[k_arg->lla_lock_mode],
+	       k_arg->lla_extent_count);
+
+	for (i = 0; i < k_arg->lla_extent_count; i++) {
+		__u64 start = extents[i].start;
+		__u64 end = extents[i].end;
+
+		CDEBUG(D_VFSTRACE, "Lock ahead extent %d, start="LPU64", "
+		       "end="LPU64"\n", i, start, end);
+
+		if (start >= end)
+			GOTO(out_free, rc = -EINVAL);
+
+		rc = cl_lock_ahead(inode, start, end, k_arg->lla_lock_mode,
+				   k_arg->lla_flags);
+
+		/* -ECANCELED indicates a matching lock with a different extent
+		 * was already present, and -EEXIST indicates a matching lock
+		 * on exactly the same extent was already present.
+		 * We convert them to positive values for userspace to make
+		 * recognizing true errors easier. */
+		if (rc == -ECANCELED)
+			rc = 1;
+		else if (rc == -EEXIST)
+			rc = 2;
+
+		if (put_user(rc, &(user_arg->lla_extents[i].result)))
+			GOTO(out_free, rc = -EFAULT);
+
+		if (rc < 0)
+			GOTO(out_free, rc);
+	}
+
+	GOTO(out_free, rc = 0);
+
+out_free:
+	if (extents)
+		OBD_FREE(extents, len);
+	OBD_FREE_PTR(k_arg);
+
+out:
 	RETURN(rc);
 }

@@ -286,6 +286,9 @@ struct ll_futimes_3 {
 #define LL_IOC_MIGRATE			_IOR('f', 247, int)
 #define LL_IOC_FID2MDTIDX		_IOWR('f', 248, struct lu_fid)
 #define LL_IOC_GETPARENT		_IOWR('f', 249, struct getparent)
+#define LL_IOC_LOCK_AHEAD		_IOWR('f', 251, \
+						struct llapi_lock_ahead_arg)
+#define LL_IOC_REQUEST_ONLY            _IO('f', 252)
 
 /* Lease types for use as arg and return of LL_IOC_{GET,SET}_LEASE ioctl. */
 enum ll_lease_type {
@@ -1396,6 +1399,31 @@ struct llapi_json_item {
 struct llapi_json_item_list {
 	int			ljil_item_count;
 	struct llapi_json_item	*ljil_items;
+};
+
+typedef enum {
+	READ_USER = 1,
+	WRITE_USER,
+	MAX_USER,
+} lock_mode_user;
+
+/* Extent for lock ahead requests */
+struct llapi_lock_ahead_extent {
+	__u64	start;
+	__u64	end;
+	/* 0 on success, -ERRNO on error, 1 when a
+	 * matching but non-identical lock is found, 2
+	 * when a matching and identical lock is found */
+	__s32   result;
+};
+
+/* lock ahead ioctl arguments */
+struct llapi_lock_ahead_arg {
+	__u32	lla_version;
+	__u32	lla_lock_mode;
+	__u32	lla_flags;
+	__u32	lla_extent_count;
+	struct	llapi_lock_ahead_extent lla_extents[0];
 };
 
 /** @} lustreuser */

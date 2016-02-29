@@ -173,6 +173,8 @@ static __u64 osc_enq2ldlm_flags(__u32 enqflags)
 		result |= LDLM_FL_AST_DISCARD_DATA;
 	if (enqflags & CEF_PEEK)
 		result |= LDLM_FL_TEST_LOCK;
+	if (enqflags & CEF_REQ_ONLY)
+		result |= LDLM_FL_NO_EXPANSION;
 	return result;
 }
 
@@ -352,8 +354,9 @@ static int osc_lock_upcall(void *cookie, struct lustre_handle *lockh,
 	RETURN(rc);
 }
 
-static int osc_lock_upcall_agl(void *cookie, struct lustre_handle *lockh,
-			       int errcode)
+static int osc_lock_upcall_speculative(void *cookie,
+				       struct lustre_handle *lockh,
+				       int errcode)
 {
 	struct osc_object	*osc = cookie;
 	struct ldlm_lock	*dlmlock;
@@ -376,7 +379,7 @@ static int osc_lock_upcall_agl(void *cookie, struct lustre_handle *lockh,
 	lock_res_and_lock(dlmlock);
 	LASSERT(dlmlock->l_granted_mode == dlmlock->l_req_mode);
 
-	/* there is no osc_lock associated with AGL lock */
+	/* there is no osc_lock associated with speculative locks */
 	osc_lock_lvb_update(env, osc, dlmlock, NULL);
 
 	unlock_res_and_lock(dlmlock);
@@ -922,6 +925,7 @@ static int osc_lock_enqueue(const struct lu_env *env,
 	struct osc_io			*oio   = osc_env_io(env);
 	struct osc_object		*osc   = cl2osc(slice->cls_obj);
 	struct osc_lock			*oscl  = cl2osc_lock(slice);
+	struct obd_export		*exp   = osc_export(osc);
 	struct cl_lock			*lock  = slice->cls_lock;
 	struct ldlm_res_id		*resname = &info->oti_resname;
 	ldlm_policy_data_t		*policy  = &info->oti_policy;
@@ -938,11 +942,20 @@ static int osc_lock_enqueue(const struct lu_env *env,
 	if (oscl->ols_state == OLS_GRANTED)
 		RETURN(0);
 
+	if ((oscl->ols_flags & LDLM_FL_NO_EXPANSION) &&
+	    !(exp_connect_flags(exp) & OBD_CONNECT_LOCK_AHEAD)) {
+		CERROR("Server does not support lock ahead.\n");
+		RETURN(-EOPNOTSUPP);
+	}
+
 	if (oscl->ols_flags & LDLM_FL_TEST_LOCK)
 		GOTO(enqueue_base, 0);
 
-	if (oscl->ols_glimpse) {
-		LASSERT(equi(oscl->ols_agl, anchor == NULL));
+	/* For glimpse and speculative locks, do not wait for reply from
+	 * server on LDLM request */
+	if (oscl->ols_glimpse || oscl->ols_speculative) {
+		/* Speculative locks do not have an anchor */
+		LASSERT(equi(oscl->ols_speculative, anchor == NULL));
 		async = true;
 		GOTO(enqueue_base, 0);
 	}
@@ -966,34 +979,41 @@ enqueue_base:
 
 	/**
 	 * DLM lock's ast data must be osc_object;
-	 * if glimpse or AGL lock, async of osc_enqueue_base() must be true,
+	 * if glimpse or speculative lock, async of osc_enqueue_base()
+	 * must be true
+	 * For non-speculative locks:
 	 * DLM's enqueue callback set to osc_lock_upcall() with cookie as
 	 * osc_lock.
+	 * For speculative locks:
+	 * osc_lock_upcall_speculative & cookie is the osc object, since
+	 * there is no osc_lock
 	 */
 	ostid_build_res_name(&osc->oo_oinfo->loi_oi, resname);
 	osc_lock_build_einfo(env, lock, osc, &oscl->ols_einfo);
 	osc_lock_build_policy(env, lock, policy);
-	if (oscl->ols_agl) {
+	if (oscl->ols_speculative) {
 		oscl->ols_einfo.ei_cbdata = NULL;
 		/* hold a reference for callback */
 		cl_object_get(osc2cl(osc));
-		upcall = osc_lock_upcall_agl;
+		upcall = osc_lock_upcall_speculative;
 		cookie = osc;
 	}
-	result = osc_enqueue_base(osc_export(osc), resname, &oscl->ols_flags,
+	result = osc_enqueue_base(exp, resname, &oscl->ols_flags,
 				  policy, &oscl->ols_lvb,
 				  osc->oo_oinfo->loi_kms_valid,
 				  upcall, cookie,
 				  &oscl->ols_einfo, PTLRPCD_SET, async,
-				  oscl->ols_agl);
+				  oscl->ols_speculative);
 	if (result != 0) {
 		oscl->ols_state = OLS_CANCELLED;
 		osc_lock_wake_waiters(env, osc, oscl);
 
-		/* hide error for AGL lock. */
-		if (oscl->ols_agl) {
+		if (oscl->ols_speculative) {
 			cl_object_put(env, osc2cl(osc));
-			result = 0;
+			if (oscl->ols_glimpse) {
+				/* hide error for AGL request */
+				result = 0;
+			}
 		}
 
 		if (anchor != NULL)
@@ -1167,10 +1187,15 @@ int osc_lock_init(const struct lu_env *env,
 	INIT_LIST_HEAD(&oscl->ols_wait_entry);
 	INIT_LIST_HEAD(&oscl->ols_nextlock_oscobj);
 
+	/* Speculative lock requests must be either request only or glimpse
+	 * request (CEF_ASYNC).  If real (not glimpse) non-request only extent
+	 * locks are allowed, it will break ofd_intent_cb (see comment there)*/
+	LASSERT(ergo((enqflags & CEF_SPECULATIVE) != 0,
+		     (enqflags & (CEF_REQ_ONLY | CEF_ASYNC)) != 0));
+
 	oscl->ols_flags = osc_enq2ldlm_flags(enqflags);
-	oscl->ols_agl = !!(enqflags & CEF_AGL);
-	if (oscl->ols_agl)
-		oscl->ols_flags |= LDLM_FL_BLOCK_NOWAIT;
+	oscl->ols_speculative = !!(enqflags & CEF_SPECULATIVE);
+
 	if (oscl->ols_flags & LDLM_FL_HAS_INTENT) {
 		oscl->ols_flags |= LDLM_FL_BLOCK_GRANTED;
 		oscl->ols_glimpse = 1;
