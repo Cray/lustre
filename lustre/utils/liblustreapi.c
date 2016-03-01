@@ -5006,3 +5006,314 @@ int llapi_set_request_only(int fd)
 {
 	return ioctl(fd, LL_IOC_REQUEST_ONLY);
 }
+
+/* A work queue for pinging Lustre server targets */
+struct pingq {
+	/* The current index into procfs ping files */
+	int pq_pf_idx;
+	/* Array of procfs ping files matched by glob */
+	glob_t pq_targets;
+	/* A mutex to control access to the ping queue */
+	pthread_mutex_t pq_mutex;
+};
+
+/**
+ * Sets a param by writing value to filename.
+ *
+ * \param[in] filename  procfs filename
+ * \param[in] value     char pointer to the characters to write
+ * \param[in] len       length of the vaule
+ *
+ * \retval 0 if successful
+ * \retval -errno if unsuccessful
+ */
+static int set_param(const char *filename, char *value,
+		     unsigned int len)
+{
+	int rc = 0;
+	int fd;
+	ssize_t n;
+
+	if (filename == NULL) {
+		rc = -EINVAL;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "missing filename to set param");
+		return rc;
+	}
+
+	fd = open(filename, O_WRONLY);
+	if (fd >= 0) {
+		n = write(fd, value, len);
+		if (n != len) {
+			rc = -errno;
+			llapi_error(LLAPI_MSG_ERROR, rc,
+				    "error write to %s",
+				    filename);
+		}
+		close(fd);
+	} else {
+		rc = -errno;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "error open %s", filename);
+	}
+	return rc;
+}
+
+/**
+ * Each ping thread will work on the indexed ping queue item
+ * and update the index which is protected by mutex. Threads
+ * will exit until no more items in the queue.
+ *
+ * \param[in] arg struct pingq which has all target's procfs
+ *                ping files.
+ */
+static void *thread_do_ping(void *arg)
+{
+	struct pingq *pingq;
+	char *target;
+
+	if (arg == NULL) {
+		llapi_error(LLAPI_MSG_ERROR | LLAPI_MSG_NO_ERRNO, 0,
+			    "invalid ping thread");
+		pthread_exit(NULL);
+	}
+
+	pingq = (struct pingq *)arg;
+
+	do {
+		pthread_mutex_lock(&pingq->pq_mutex);
+		if (pingq->pq_pf_idx < 0) {
+			pthread_mutex_unlock(&pingq->pq_mutex);
+			break;
+		}
+		target = pingq->pq_targets.gl_pathv[pingq->pq_pf_idx--];
+		pthread_mutex_unlock(&pingq->pq_mutex);
+		set_param(target, "1", 1);
+
+	} while (1);
+
+	pthread_exit(NULL);
+}
+
+/**
+ * Use mdc connect_flag to check if suppress_pings is enabled for a
+ * file system. We assume all the servers of a filesystem are either
+ * suppress_pings enabled or disabled and therefore only check mdc
+ * connections.
+ *
+ * If suppress_pings is enabled, all the target's procfs ping files
+ * will be saved in the pingq structure for ping threads to ping.
+ *
+ * \param[in]     fsname Lustre file system name
+ * \param[in,out] pq     struct pingq to be filled with the procfs ping
+ *                       file path for every target of the file system.
+ *
+ * \retval 0 if successful
+ * \retval errno if unsuccessful
+ */
+static int find_ping_files(struct pingq *pq, char *fsname)
+{
+	char pattern[PATH_MAX + 1];
+	char buf[128];
+	FILE *fp = NULL;
+	glob_t glob_info;
+	int glob_flags = 0;
+	int rc = 0;
+
+	snprintf(pattern, PATH_MAX,
+		 "/proc/fs/lustre/mdc/%s-*/connect_flags",
+		 fsname);
+
+	glob_flags = GLOB_BRACE | GLOB_NOSORT;
+	rc = glob(pattern, glob_flags, NULL, &glob_info);
+	if ((rc != 0) || (glob_info.gl_pathc < 1)) {
+		llapi_error(LLAPI_MSG_ERROR | LLAPI_MSG_NO_ERRNO, 0,
+			    "no mdc connect_flags found: rc = %d", rc);
+		rc = ENOENT;
+		goto out;
+	}
+
+	fp = fopen(glob_info.gl_pathv[0], "r");
+	if (fp == NULL) {
+		llapi_error(LLAPI_MSG_ERROR, errno,
+			    "failed to open %s",
+			    glob_info.gl_pathv[0]);
+		rc = errno;
+		goto gout;
+	}
+	while (fgets(buf, sizeof(buf), fp) != NULL) {
+		if (strncmp(buf, "pingless", 8) != 0)
+			continue;
+
+		/* server enabled suppressing_pings, get all the
+		   procfs ping files for the file system */
+		llapi_printf(LLAPI_MSG_DEBUG, "need ping, checked %s\n",
+			     glob_info.gl_pathv[0]);
+		snprintf(pattern, PATH_MAX,
+			 "/proc/fs/lustre/{mdc,osc}/%s-*/ping",
+			 fsname);
+
+		if (pq->pq_pf_idx > 0)
+			glob_flags |= GLOB_APPEND;
+
+		rc = glob(pattern, glob_flags, NULL, &pq->pq_targets);
+		if (rc != 0) {
+			llapi_error(LLAPI_MSG_ERROR | LLAPI_MSG_NO_ERRNO, 0,
+				    "cannot find procfs ping: rc = %d", rc);
+			rc = ENOENT;
+			goto fout;
+		}
+		pq->pq_pf_idx = pq->pq_targets.gl_pathc - 1;
+
+		break;
+	}
+ fout:
+	fclose(fp);
+ gout:
+	globfree(&glob_info);
+ out:
+	return rc;
+}
+
+/**
+ * Set up threads to do pings in parallel. This is a workaround for
+ * issue LU-2898. The pings only go to the Lustre file system targets
+ * that were suppress_pings enabled.
+ *
+ * Will not ping if the last ping is within IMP_PING_INTERVAL seconds.
+ *
+ * \param[in] fs       Lustre file system name
+ *                     NULL: all Lustre file systems
+ *
+ * \retval 0 if successful
+ * \retval -errno if unsuccessful
+ */
+#define IMP_PING_INTERVAL 25
+#define NUMBER_THREADS (2 * cfs_online_cpus())
+static int ping_targets(char *fs)
+{
+	struct pingq pq;
+	static struct timeval last_ping = { .tv_sec = 0 };
+	struct timeval now;
+	int nr_threads = NUMBER_THREADS;
+	pthread_t tids[NUMBER_THREADS];
+	char fsname[PATH_MAX];
+	int index = 0;
+	int rc = 0;
+	int i;
+
+	gettimeofday(&now, NULL);
+	if (now.tv_sec - last_ping.tv_sec <= IMP_PING_INTERVAL) {
+		llapi_printf(LLAPI_MSG_DEBUG,
+			     "skip, pinged less than %ds ago\n",
+			     IMP_PING_INTERVAL);
+		return 0;
+	}
+
+	pq.pq_pf_idx = -1;
+	pq.pq_targets.gl_pathc = 0;
+
+	if (fs == NULL) {
+		/* find all lustre filesystems and do pings */
+		while (llapi_search_mounts(NULL, index++, NULL, fsname) == 0) {
+			rc = find_ping_files(&pq, fsname);
+			if (rc != 0)
+				break;
+		}
+	} else {
+		strcpy(fsname, fs);
+		rc = get_root_path(WANT_FSNAME, fsname, NULL, NULL, -1);
+		if (rc == 0)
+			rc = find_ping_files(&pq, fs);
+	}
+	if (rc || (pq.pq_pf_idx < 0))
+		goto out;
+
+	llapi_printf(LLAPI_MSG_DEBUG,
+		     "total pings = %d, total ping threads = %d\n",
+		     pq.pq_pf_idx+1, nr_threads);
+	/* set up threads to ping targets */
+	pthread_mutex_init(&pq.pq_mutex, NULL);
+
+	for (i = 0; i < nr_threads; i++) {
+		rc = pthread_create(&tids[i], NULL, &thread_do_ping, &pq);
+		if (rc != 0) {
+			llapi_error(LLAPI_MSG_ERROR, rc,
+				    "cannot create thread");
+			nr_threads = i;
+			break;
+		}
+	}
+	for (i = 0; i < nr_threads; i++) {
+		rc = pthread_join(tids[i], NULL);
+		if (rc != 0) {
+			llapi_error(LLAPI_MSG_ERROR, rc,
+				    "cannot join thread");
+			break;
+		}
+	}
+	llapi_printf(LLAPI_MSG_DEBUG, "All %d ping threads finished\n", i);
+ out:
+	if (pq.pq_targets.gl_pathc > 0) {
+		llapi_printf(LLAPI_MSG_DEBUG, "freeing pq\n");
+		globfree(&pq.pq_targets);
+	}
+
+	gettimeofday(&last_ping, NULL);
+
+	return -rc;
+}
+
+/**
+ * Flush the kernel's VM caches.  Use ldlm drop_caches if it exists.
+ * Otherwise, use vm drop_caches.
+ *
+ * \retval 0 if successful
+ * \retval -errno if unsuccessful
+ */
+static int drop_caches(void)
+{
+	const char *ldlm_drop_caches = "/proc/fs/lustre/ldlm/drop_caches";
+	const char *vm_drop_caches = "/proc/sys/vm/drop_caches";
+	struct stat sb;
+	int rc = 0;
+
+	rc = stat("/proc/fs/lustre/ldlm/drop_caches", &sb);
+	if (rc == -1 || !S_ISREG(sb.st_mode)) {
+		/* write 3 means to free pagecache, dentries and inodes */
+		llapi_printf(LLAPI_MSG_DEBUG, "drop caches use proc vm\n");
+		rc = set_param(vm_drop_caches, "3", 1);
+	} else {
+		/* write any value to the file to drop lustre caches */
+		llapi_printf(LLAPI_MSG_DEBUG, "drop caches use proc ldlm\n");
+		rc = set_param(ldlm_drop_caches, "1", 1);
+	}
+	return rc;
+}
+
+/**
+ * Do pre job setup or post job cleanup.
+ *
+ * \param[in] action  LLAPI_JOBACT_SETUP:   pre job setup
+ *                    LLAPI_JOBACT_CLEANUP: post job cleanup
+ * \param[in] fsname  Lustre file system name
+ *                    NULL: all Lustre file systems
+ *
+ * \retval 0 if successful
+ * \retval -errno if unsuccessful
+ */
+int llapi_jobaction(int action, char *fsname)
+{
+	int rc = 0;
+
+	if (action == LLAPI_JOBACT_SETUP) {
+		/* pre job setup */
+		/* imperative pings */
+		rc = ping_targets(fsname);
+	} else {
+		/* post job cleanup */
+		/* drop_caches */
+		rc = drop_caches();
+	}
+	return rc;
+}
