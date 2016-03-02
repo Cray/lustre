@@ -746,11 +746,10 @@ Index: linux-3.10.0-123.13.2.el7.x86_64/fs/ext4/xattr.c
  			new_offs = le16_to_cpu(last->e_value_offs) +
  							value_offs_shift;
  			BUG_ON(new_offs + le32_to_cpu(last->e_value_size)
-@@ -1477,19 +1788,91 @@ cleanup:
+@@ -1477,21 +1790,135 @@ cleanup:
  }
-
-
--
+ 
+ 
 +#define EIA_INCR 16 /* must be 2^n */
 +#define EIA_MASK (EIA_INCR - 1)
 +/* Add the large xattr @ino into @lea_ino_array for later deletion.
@@ -793,6 +792,44 @@ Index: linux-3.10.0-123.13.2.el7.x86_64/fs/ext4/xattr.c
 +	(*lea_ino_array)->xia_inodes[(*lea_ino_array)->xia_count++] = ino;
 +	return 0;
 +}
++
++/**
++ * Add xattr inode to orphan list
++ */
++static int
++ext4_xattr_inode_orphan_add(handle_t *handle, struct inode *inode,
++			int credits, struct ext4_xattr_ino_array *lea_ino_array)
++{
++	struct inode *ea_inode = NULL;
++	int idx = 0, error = 0;
++
++	if (lea_ino_array == NULL)
++		return 0;
++
++	for (; idx < lea_ino_array->xia_count; ++idx) {
++		if (!ext4_handle_has_enough_credits(handle, credits)) {
++			error = ext4_journal_extend(handle, credits);
++			if (error > 0)
++				error = ext4_journal_restart(handle, credits);
++
++			if (error != 0) {
++				ext4_warning(inode->i_sb,
++					"couldn't extend journal "
++					"(err %d)", error);
++				return error;
++			}
++		}
++		ea_inode = ext4_xattr_inode_iget(inode,
++				lea_ino_array->xia_inodes[idx], &error);
++		if (error)
++			continue;
++		ext4_orphan_add(handle, ea_inode);
++		/* the inode's i_count will be released by caller */
++	}
++
++	return 0;
++}
+ 
  /*
   * ext4_xattr_delete_inode()
   *
@@ -817,13 +854,14 @@ Index: linux-3.10.0-123.13.2.el7.x86_64/fs/ext4/xattr.c
 +	struct ext4_iloc iloc;
 +	struct ext4_xattr_entry *entry;
 +	int credits = 3, error = 0;
-+
+ 
+-	if (!EXT4_I(inode)->i_file_acl)
 +	if (!ext4_test_inode_state(inode, EXT4_STATE_XATTR))
 +		goto delete_external_ea;
 +
 +	error = ext4_get_inode_loc(inode, &iloc);
 +	if (error)
-+		goto cleanup;
+ 		goto cleanup;
 +	raw_inode = ext4_raw_inode(&iloc);
 +	header = IHDR(inode, raw_inode);
 +	entry = IFIRST(header);
@@ -838,12 +876,18 @@ Index: linux-3.10.0-123.13.2.el7.x86_64/fs/ext4/xattr.c
 +		entry->e_value_inum = 0;
 +	}
 +	brelse(iloc.bh);
-
++
 +delete_external_ea:
- 	if (!EXT4_I(inode)->i_file_acl)
- 		goto cleanup;
++	if (!EXT4_I(inode)->i_file_acl) {
++		/* add xattr inode to orphan list */
++		ext4_xattr_inode_orphan_add(handle, inode, credits,
++						*lea_ino_array);
++		goto cleanup;
++	}
  	bh = sb_bread(inode->i_sb, EXT4_I(inode)->i_file_acl);
-@@ -1504,11 +1887,88 @@ ext4_xattr_delete_inode(handle_t *handle
+ 	if (!bh) {
+ 		EXT4_ERROR_INODE(inode, "block %llu read error",
+@@ -1504,11 +1931,69 @@ ext4_xattr_delete_inode(handle_t *handle
  				 EXT4_I(inode)->i_file_acl);
  		goto cleanup;
  	}
@@ -859,30 +903,10 @@ Index: linux-3.10.0-123.13.2.el7.x86_64/fs/ext4/xattr.c
 +	}
 +
 +	/* add xattr inode to orphan list */
-+	if (*lea_ino_array != NULL) {
-+		struct inode *ea_inode = NULL;
-+		int idx = 0;
-+
-+		for (; idx < (*lea_ino_array)->xia_count; ++idx) {
-+			if (!ext4_handle_has_enough_credits(handle, 3)) {
-+				error = ext4_journal_extend(handle, 3);
-+				if (error > 0)
-+					error = ext4_journal_restart(handle, 3);
-+				if (error != 0) {
-+					ext4_warning(inode->i_sb,
-+						"couldn't extend journal "
-+						"(err %d)", error);
-+					goto cleanup;
-+				}
-+			}
-+			ea_inode = ext4_xattr_inode_iget(inode,
-+				(*lea_ino_array)->xia_inodes[idx], &error);
-+			if (error)
-+				continue;
-+			ext4_orphan_add(handle, ea_inode);
-+			/* the inode's i_count will be released by caller */
-+		}
-+	}
++	error = ext4_xattr_inode_orphan_add(handle, inode, credits,
++					*lea_ino_array);
++	if (error != 0)
++		goto cleanup;
 +
 +	if (!IS_NOQUOTA(inode))
 +		credits += 2 * EXT4_QUOTA_DEL_BLOCKS(inode->i_sb);
@@ -900,7 +924,7 @@ Index: linux-3.10.0-123.13.2.el7.x86_64/fs/ext4/xattr.c
 +
  	ext4_xattr_release_block(handle, inode, bh);
  	EXT4_I(inode)->i_file_acl = 0;
-
+ 
  cleanup:
  	brelse(bh);
 +
@@ -923,14 +947,15 @@ Index: linux-3.10.0-123.13.2.el7.x86_64/fs/ext4/xattr.c
 +				lea_ino_array->xia_inodes[idx], &err);
 +		if (err)
 +			continue;
-+		clear_nlink(ea_inode);
-+		iput(ea_inode);
 +		/* for inode's i_count get from ext4_xattr_delete_inode */
++		if (!list_empty(&EXT4_I(ea_inode)->i_orphan))
++			iput(ea_inode);
++		clear_nlink(ea_inode);
 +		iput(ea_inode);
 +	}
 +	kfree(lea_ino_array);
  }
-
+ 
  /*
 @@ -1578,10 +2038,9 @@ ext4_xattr_cmp(struct ext4_xattr_header
  		    entry1->e_name_index != entry2->e_name_index ||
