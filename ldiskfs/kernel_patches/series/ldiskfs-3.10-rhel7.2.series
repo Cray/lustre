@@ -15,3 +15,4 @@ rhel7/ext4-nocmtime.patch
 rhel7.2/ext4-pdirop.patch
 rhel7/ext4-max-dir-size.patch
 rhel7/ext4-remove-truncate-warning.patch
+rhel7/ext4-jcb-optimization.patch
