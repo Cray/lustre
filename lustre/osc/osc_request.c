@@ -2126,9 +2126,6 @@ int osc_enqueue_base(struct obd_export *exp, struct ldlm_res_id *res_id,
 	struct lustre_handle lockh = { 0 };
 	struct ptlrpc_request *req = NULL;
 	int intent = *flags & LDLM_FL_HAS_INTENT;
-	/* Normal lock requests must wait for the LVB to be ready before
-	 * matching a lock; speculative lock requests do not need to,
-	 * because they will not actually use the lock. */
 	__u64 match_flags = *flags;
 	ldlm_mode_t mode;
 	int rc;
@@ -2163,6 +2160,9 @@ int osc_enqueue_base(struct obd_export *exp, struct ldlm_res_id *res_id,
         mode = einfo->ei_mode;
         if (einfo->ei_mode == LCK_PR)
                 mode |= LCK_PW;
+	/* Normal lock requests must wait for the LVB to be ready before
+	 * matching a lock; speculative lock requests do not need to,
+	 * because they will not actually use the lock. */
 	if (speculative == 0)
 		match_flags |= LDLM_FL_LVB_READY;
 	if (intent != 0)
