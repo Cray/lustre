@@ -107,11 +107,6 @@
             </file>
             <file>
                 <name>
-                    cray-lustre-ari_s-sim.spec
-                </name>
-            </file>
-            <file>
-                <name>
                     cray-lustre-ari_s-cos.spec
                 </name>
             </file>
@@ -120,11 +115,6 @@
                     cray-lnet-devel.spec
                 </name>
                 <extract group="1" name="branch" pattern="^%define\s+branch\s+(\S+)"/>
-            </file>
-            <file>
-                <name>
-                    cray-lustre-ari_m.spec
-                </name>
             </file>
             <file>
                 <name>
