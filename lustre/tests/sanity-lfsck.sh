@@ -21,6 +21,16 @@ init_logging
 	skip "test LFSCK only for ldiskfs" && exit 0
 require_dsh_mds || exit 0
 
+load_modules
+
+if ! check_versions; then
+	skip "It is NOT necessary to test lfsck under interoperation mode"
+	exit 0
+fi
+
+[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.3.60) ]] &&
+	skip "Need MDS version at least 2.3.60" && exit 0
+
 MCREATE=${MCREATE:-mcreate}
 SAVED_MDSSIZE=${MDSSIZE}
 SAVED_OSTSIZE=${OSTSIZE}
@@ -30,10 +40,6 @@ MDSSIZE=100000
 OSTSIZE=100000
 
 check_and_setup_lustre
-
-[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.3.60) ]] &&
-	skip "Need MDS version at least 2.3.60" && check_and_cleanup_lustre &&
-	exit 0
 
 [[ $(lustre_version_code $SINGLEMDS) -le $(version_code 2.4.90) ]] &&
 	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 2c"
