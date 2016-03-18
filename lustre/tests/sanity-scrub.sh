@@ -19,6 +19,22 @@ init_logging
 
 require_dsh_mds || exit 0
 
+load_modules
+
+if ! check_versions; then
+	skip "It is NOT necessary to test scrub under interoperation mode"
+	exit 0
+fi
+
+[ $(facet_fstype $SINGLEMDS) != "ldiskfs" ] &&
+	skip "test OI scrub only for ldiskfs" && exit 0
+
+[ $(facet_fstype ost1) != "ldiskfs" ] &&
+	skip "test OI scrub only for ldiskfs" && exit 0
+
+[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.2.90) ]] &&
+	skip "Need MDS version at least 2.2.90" && exit 0
+
 SAVED_MDSSIZE=${MDSSIZE}
 SAVED_OSTSIZE=${OSTSIZE}
 SAVED_OSTCOUNT=${OSTCOUNT}
@@ -35,16 +51,6 @@ MOUNT_2=""
 # build up a clean test environment.
 formatall
 setupall
-
-[ $(facet_fstype $SINGLEMDS) != "ldiskfs" ] &&
-	skip "test OI scrub only for ldiskfs" && check_and_cleanup_lustre &&
-	exit 0
-[ $(facet_fstype ost1) != "ldiskfs" ] &&
-	skip "test OI scrub only for ldiskfs" && check_and_cleanup_lustre &&
-	exit 0
-[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.2.90) ]] &&
-	skip "Need MDS version at least 2.2.90" && check_and_cleanup_lustre &&
-	exit 0
 
 [[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.3.90) ]] &&
 	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 1a"
@@ -1072,7 +1078,7 @@ test_14() {
 	mount_client $MOUNT || error "(5) Fail to start client!"
 
 	local LF_REPAIRED=$($SHOW_SCRUB_ON_OST |
-			    awk '/^lf_reparied/ { print $2 }')
+			    awk '/^lf_repa[ri]*ed/ { print $2 }')
 	[ $LF_REPAIRED -gt 0 ] ||
 		error "(6) Some entry under /lost+found should be repaired"
 
