@@ -136,7 +136,7 @@ lss_cleanup()
 	# so can NOT destroy the snapshot during list with 'xargs'.
 	while true; do
 		local ssname=$(lsnapshot_list | grep snapshot_name |
-				awk '{ print $2 }' | head -n 1)
+			grep lss_ | awk '{ print $2 }' | head -n 1)
 		[ -z "$ssname" ] && break
 
 		lsnapshot_destroy -n $ssname -f ||
