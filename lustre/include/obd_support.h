@@ -609,6 +609,8 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_DT_DELETE			0x2017
 #define OBD_FAIL_DT_LOOKUP			0x2018
 
+#define OBD_FAIL_OSP_FAKE_PRECREATE		0x2102
+
 /* barrier */
 #define OBD_FAIL_MGS_BARRIER_READ_NET		0x2200
 #define OBD_FAIL_MGS_BARRIER_NOTIFY_NET		0x2201
