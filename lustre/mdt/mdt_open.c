@@ -571,8 +571,11 @@ static void mdt_empty_transno(struct mdt_thread_info *info, int rc)
         struct ptlrpc_request  *req = mdt_info_req(info);
         struct tg_export_data  *ted;
         struct lsd_client_data *lcd;
-
         ENTRY;
+
+	if (mdt_rdonly(req->rq_export))
+                RETURN_EXIT;
+
         /* transaction has occurred already */
         if (lustre_msg_get_transno(req->rq_repmsg) != 0)
                 RETURN_EXIT;
