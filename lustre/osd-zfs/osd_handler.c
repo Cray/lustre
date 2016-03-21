@@ -939,8 +939,9 @@ static int osd_mount(const struct lu_env *env,
 		o->od_posix_acl = 1;
 
 err:
-	if (rc != 0 && o->od_os != NULL) {
-		dmu_objset_disown(o->od_os, o);
+	if (rc) {
+		if (o->od_os)
+			dmu_objset_disown(o->od_os, o);
 		o->od_os = NULL;
 	}
 
