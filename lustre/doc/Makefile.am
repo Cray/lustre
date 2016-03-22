@@ -54,7 +54,8 @@ MANFILES = lustre.7 lfs.1 mount.lustre.8 lctl.8 lnetctl.8 \
 	llapi_layout_stripe_count_get.3 llapi_layout_stripe_count_set.3 \
 	llapi_layout_stripe_size_get.3  llapi_layout_stripe_size_set.3 \
 	llapi_path2fid.3 llapi_group_lock.3 llapi_group_unlock.3 \
-	ll_decode_filter_fid.8 llapi_path2parent.3 llapi_fd2parent.3
+	ll_decode_filter_fid.8 llapi_path2parent.3 llapi_fd2parent.3 \
+	lfs-ladvise.1 llapi_ladvise.3
 
 SERVER_MANFILES = mkfs.lustre.8 tunefs.lustre.8
 

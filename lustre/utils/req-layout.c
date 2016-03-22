@@ -46,6 +46,7 @@
 
 #include <libcfs/libcfs.h>
 #include <lustre/lustre_idl.h>
+#include <lustre/lustreapi.h>
 
 #define __REQ_LAYOUT_USER__ (1)
 
@@ -107,6 +108,8 @@
 #define lustre_swab_lfsck_reply NULL
 #define lustre_swab_barrier_request NULL
 #define lustre_swab_barrier_reply NULL
+#define lustre_swab_ladvise_hdr NULL
+#define lustre_swab_ladvise NULL
 
 /*
  * Yes, include .c file.

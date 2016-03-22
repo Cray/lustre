@@ -130,7 +130,10 @@ int osc_punch_base(struct obd_export *exp, struct obd_info *oinfo,
 int osc_sync_base(struct obd_export *exp, struct obd_info *oinfo,
 		  obd_enqueue_update_f upcall, void *cookie,
 		  struct ptlrpc_request_set *rqset);
-
+int osc_ladvise_base(struct obd_export *exp, struct obdo *oa,
+		     struct ladvise_hdr *ladvise_hdr,
+		     obd_enqueue_update_f upcall, void *cookie,
+		     struct ptlrpc_request_set *rqset);
 int osc_process_config_base(struct obd_device *obd, struct lustre_cfg *cfg);
 int osc_build_rpc(const struct lu_env *env, struct client_obd *cli,
 		  struct list_head *ext_list, int cmd);

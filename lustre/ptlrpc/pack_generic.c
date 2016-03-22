@@ -2710,3 +2710,22 @@ void lustre_swab_barrier_reply(struct barrier_reply *br)
 	CLASSERT(offsetof(typeof(*br), br_padding_2) != 0);
 }
 EXPORT_SYMBOL(lustre_swab_barrier_reply);
+
+void lustre_swab_ladvise(struct lu_ladvise *ladvise)
+{
+	__swab64s(&ladvise->lla_start);
+	__swab64s(&ladvise->lla_end);
+	__swab64s(&ladvise->lla_advice);
+	CLASSERT(offsetof(typeof(*ladvise), lla_padding) != 0);
+}
+EXPORT_SYMBOL(lustre_swab_ladvise);
+
+void lustre_swab_ladvise_hdr(struct ladvise_hdr *ladvise_hdr)
+{
+	__swab32s(&ladvise_hdr->lah_magic);
+	__swab32s(&ladvise_hdr->lah_count);
+	__swab64s(&ladvise_hdr->lah_flags);
+	CLASSERT(offsetof(typeof(*ladvise_hdr), lah_padding1) != 0);
+	CLASSERT(offsetof(typeof(*ladvise_hdr), lah_padding2) != 0);
+}
+EXPORT_SYMBOL(lustre_swab_ladvise_hdr);
