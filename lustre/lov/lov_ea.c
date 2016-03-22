@@ -152,25 +152,22 @@ lsm_stripe_by_offset_plain(struct lov_stripe_md *lsm, int *stripeno,
 		*swidth = (loff_t)lsm->lsm_stripe_size * lsm->lsm_stripe_count;
 }
 
-/* Find minimum stripe maxbytes value.  For inactive or
- * reconnecting targets use LUSTRE_EXT3_STRIPE_MAXBYTES. */
+/* Find minimum stripe maxbytes value (0 is unset).  For inactive or
+ * reconnecting targets leave stripe_maxbytes unset. */
 static void lov_tgt_maxbytes(struct lov_tgt_desc *tgt, __u64 *stripe_maxbytes)
 {
-        struct obd_import *imp = tgt->ltd_obd->u.cli.cl_import;
+	struct obd_import *imp = tgt->ltd_obd->u.cli.cl_import;
 
-        if (imp == NULL || !tgt->ltd_active) {
-		*stripe_maxbytes = LUSTRE_EXT3_STRIPE_MAXBYTES;
-                return;
-        }
+	if (imp == NULL || !tgt->ltd_active)
+		return;
 
 	spin_lock(&imp->imp_lock);
 	if (imp->imp_state == LUSTRE_IMP_FULL &&
 	    (imp->imp_connect_data.ocd_connect_flags & OBD_CONNECT_MAXBYTES) &&
 	    imp->imp_connect_data.ocd_maxbytes > 0) {
-		if (*stripe_maxbytes > imp->imp_connect_data.ocd_maxbytes)
+		if (*stripe_maxbytes == 0 ||
+		    *stripe_maxbytes > imp->imp_connect_data.ocd_maxbytes)
 			*stripe_maxbytes = imp->imp_connect_data.ocd_maxbytes;
-	} else {
-		*stripe_maxbytes = LUSTRE_EXT3_STRIPE_MAXBYTES;
 	}
 	spin_unlock(&imp->imp_lock);
 }
@@ -202,9 +199,10 @@ static int lsm_unpackmd_v1(struct lov_obd *lov, struct lov_stripe_md *lsm,
 			   struct lov_mds_md_v1 *lmm)
 {
         struct lov_oinfo *loi;
+	__u64 stripe_maxbytes = 0;
+	__u64 lov_bytes;
         int i;
 	int stripe_count;
-        __u64 stripe_maxbytes = OBD_OBJECT_EOF;
 
         lsm_unpackmd_common(lsm, lmm);
 
@@ -235,9 +233,16 @@ static int lsm_unpackmd_v1(struct lov_obd *lov, struct lov_stripe_md *lsm,
                                  &stripe_maxbytes);
         }
 
-	lsm->lsm_maxbytes = stripe_maxbytes * lsm->lsm_stripe_count;
-	if (lsm->lsm_stripe_count == 0)
-		lsm->lsm_maxbytes = stripe_maxbytes * lov->desc.ld_tgt_count;
+	if (stripe_maxbytes == 0)
+		stripe_maxbytes = LUSTRE_EXT3_STRIPE_MAXBYTES;
+
+	stripe_count = lsm->lsm_stripe_count ?: lov->desc.ld_tgt_count;
+	lov_bytes = stripe_maxbytes * stripe_count;
+
+	if (lov_bytes < stripe_maxbytes) /* handle overflow */
+		lsm->lsm_maxbytes = MAX_LFS_FILESIZE;
+	else
+		lsm->lsm_maxbytes = lov_bytes;
 
 	return 0;
 }
@@ -285,7 +290,8 @@ static int lsm_unpackmd_v3(struct lov_obd *lov, struct lov_stripe_md *lsm,
         struct lov_oinfo *loi;
         int i;
 	int stripe_count;
-        __u64 stripe_maxbytes = OBD_OBJECT_EOF;
+	__u64 stripe_maxbytes = 0;
+	__u64 lov_bytes;
 	int cplen = 0;
 
         lmm = (struct lov_mds_md_v3 *)lmmv1;
@@ -324,10 +330,16 @@ static int lsm_unpackmd_v3(struct lov_obd *lov, struct lov_stripe_md *lsm,
                                  &stripe_maxbytes);
         }
 
-	lsm->lsm_maxbytes = stripe_maxbytes * lsm->lsm_stripe_count;
-	if (lsm->lsm_stripe_count == 0)
-		lsm->lsm_maxbytes = stripe_maxbytes * lov->desc.ld_tgt_count;
+	if (stripe_maxbytes == 0)
+		stripe_maxbytes = LUSTRE_EXT3_STRIPE_MAXBYTES;
 
+	stripe_count = lsm->lsm_stripe_count ?: lov->desc.ld_tgt_count;
+	lov_bytes = stripe_maxbytes * stripe_count;
+
+	if (lov_bytes < stripe_maxbytes) /* handle overflow */
+		lsm->lsm_maxbytes = MAX_LFS_FILESIZE;
+	else
+		lsm->lsm_maxbytes = lov_bytes;
 	return 0;
 }
 
