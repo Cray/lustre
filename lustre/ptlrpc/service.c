@@ -2918,7 +2918,15 @@ int ptlrpc_hr_init(void)
 		atomic_set(&hrp->hrp_nstopped, 0);
 
 		hrp->hrp_nthrs = cfs_cpt_weight(ptlrpc_hr.hr_cpt_table, i);
-		hrp->hrp_nthrs /= weight;
+
+		/*
+		 * It's possible to specify exactly one CPU in a CPT.
+		 * cfs_cpt_weight(...) will return 1. That CPU can have
+		 * HT enabled; therefore weight > 1. In this case set the
+		 * hrp_nthrs to the number of cores in the partition
+		 */
+		if (hrp->hrp_nthrs >= weight)
+			hrp->hrp_nthrs /= weight;
 
 		LASSERT(hrp->hrp_nthrs > 0);
 		OBD_CPT_ALLOC(hrp->hrp_thrs, ptlrpc_hr.hr_cpt_table, i,
