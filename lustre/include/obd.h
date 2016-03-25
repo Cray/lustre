@@ -1125,9 +1125,6 @@ struct md_ops {
 
 	int (*m_null_inode)(struct obd_export *, const struct lu_fid *);
 
-	int (*m_find_cbdata)(struct obd_export *, const struct lu_fid *,
-			     ldlm_iterator_t, void *);
-
 	int (*m_done_writing)(struct obd_export *, struct md_op_data  *,
 			      struct md_open_data *);
 
