@@ -832,7 +832,7 @@ static void snapshot_create_usage(void)
 		"Usage:\n"
 		"snapshot_create [-b | --barrier [on | off]] "
 				"[-c | --comment comment] "
-				"<-F | --fsname fsname] "
+				"<-F | --fsname fsname> "
 				"[-h | --help] <-n | --name ssname> "
 				"[-r | --rsh remote_shell]"
 				"[-t | --timeout timeout]\n"
@@ -2022,7 +2022,7 @@ static void snapshot_umount_usage(void)
 	fprintf(stderr,
 		"Umount the specified snapshot.\n"
 		"Usage:\n"
-		"snapshot_umount [-F | --fsname fsname] [-h | --help] "
+		"snapshot_umount <-F | --fsname fsname> [-h | --help] "
 				"<-n | --name ssname> "
 				"[-r | --rsh remote_shell]\n"
 		"Options:\n"
