@@ -677,7 +677,6 @@ kiblnd_setup_mtu_locked(struct rdma_cm_id *cmid)
                 cmid->route.path_rec->mtu = mtu;
 }
 
-#ifdef HAVE_OFED_IB_COMP_VECTOR
 static int
 kiblnd_get_completion_vector(kib_conn_t *conn, int cpt)
 {
@@ -702,7 +701,6 @@ kiblnd_get_completion_vector(kib_conn_t *conn, int cpt)
 	LBUG();
 	return 1;
 }
-#endif
 
 kib_conn_t *
 kiblnd_create_conn(kib_peer_t *peer, struct rdma_cm_id *cmid,
@@ -720,6 +718,9 @@ kiblnd_create_conn(kib_peer_t *peer, struct rdma_cm_id *cmid,
 	kib_dev_t              *dev;
 	struct ib_qp_init_attr *init_qp_attr;
 	struct kib_sched_info	*sched;
+#ifdef HAVE_IB_CQ_INIT_ATTR
+	struct ib_cq_init_attr  cq_attr = {};
+#endif
 	kib_conn_t		*conn;
 	struct ib_cq		*cq;
 	unsigned long		flags;
@@ -815,15 +816,17 @@ kiblnd_create_conn(kib_peer_t *peer, struct rdma_cm_id *cmid,
 
 	kiblnd_map_rx_descs(conn);
 
-#ifdef HAVE_OFED_IB_COMP_VECTOR
+#ifdef HAVE_IB_CQ_INIT_ATTR
+	cq_attr.cqe = IBLND_CQ_ENTRIES(version);
+	cq_attr.comp_vector = kiblnd_get_completion_vector(conn, cpt);
+	cq = ib_create_cq(cmid->device,
+			  kiblnd_cq_completion, kiblnd_cq_event, conn,
+			  &cq_attr);
+#else
 	cq = ib_create_cq(cmid->device,
 			  kiblnd_cq_completion, kiblnd_cq_event, conn,
 			  IBLND_CQ_ENTRIES(version),
 			  kiblnd_get_completion_vector(conn, cpt));
-#else
-        cq = ib_create_cq(cmid->device,
-                          kiblnd_cq_completion, kiblnd_cq_event, conn,
-                          IBLND_CQ_ENTRIES(version));
 #endif
         if (IS_ERR(cq)) {
                 CERROR("Can't create CQ: %ld, cqe: %d\n",
@@ -2767,11 +2770,7 @@ kiblnd_create_dev(char *ifname)
                 return NULL;
 
         memset(dev, 0, sizeof(*dev));
-#ifdef HAVE_DEV_GET_BY_NAME_2ARG
         netdev = dev_get_by_name(&init_net, ifname);
-#else
-        netdev = dev_get_by_name(ifname);
-#endif
         if (netdev == NULL) {
                 dev->ibd_can_failover = 0;
         } else {
