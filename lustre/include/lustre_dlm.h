@@ -159,6 +159,23 @@ static inline int lockmode_compat(ldlm_mode_t exist_mode, ldlm_mode_t new_mode)
        return (lck_compat_array[exist_mode] & new_mode);
 }
 
+enum interval_iter ldlm_extent_match_cb(struct interval_node *n,
+                                               void * data);
+
+/* Only RES_LINK and SL_MODE are used */
+enum ldlm_lock_list {
+        L_LRU           = 0,
+        L_RES_LINK      = 1,
+        L_PENDING       = 2,
+        L_BL_AST        = 3,
+        L_CP_AST        = 4,
+        L_RK_AST        = 5,
+        L_SL_MODE       = 6,
+        L_SL_POLICY     = 7,
+        L_EXP_REFS      = 8,
+        L_EXP_LIST      = 9,
+};
+
 /*
  *
  * cluster name spaces
@@ -641,6 +658,20 @@ void ldlm_convert_policy_to_wire(ldlm_type_t type,
 void ldlm_convert_policy_to_local(struct obd_export *exp, ldlm_type_t type,
                                   const ldlm_wire_policy_data_t *wpolicy,
                                   ldlm_policy_data_t *lpolicy);
+
+struct ldlm_extent_match_args {
+	struct ldlm_lock *lock, *old_lock;
+	ldlm_mode_t *mode;
+	ldlm_policy_data_t *policy;
+	__u64 flags;
+	int unref;
+};
+
+struct ldlm_lock *search_queue(struct list_head *queue,
+                                      ldlm_mode_t *mode,
+                                      ldlm_policy_data_t *policy,
+                                      struct ldlm_lock *old_lock, __u64 flags,
+                                      int unref, int which_list);
 
 enum lvb_type {
 	LVB_T_NONE	= 0,
