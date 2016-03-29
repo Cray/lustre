@@ -1220,9 +1220,9 @@ struct ldlm_lock *dlmlock_at_pgoff(const struct lu_env *env,
 	 * with a uniq gid and it conflicts with all other lock modes too
 	 */
 again:
-	mode = ldlm_lock_match(osc_export(obj)->exp_obd->obd_namespace,
-			       flags, resname, LDLM_EXTENT, policy,
-			       LCK_PR | LCK_PW | LCK_GROUP, &lockh, canceling);
+	mode = osc_match_base(osc_export(obj), resname, LDLM_EXTENT, policy,
+			LCK_PR | LCK_PW | LCK_GROUP, &flags, obj, &lockh,
+			canceling);
 	if (mode != 0) {
 		lock = ldlm_handle2lock(&lockh);
 		/* RACE: the lock is cancelled so let's try again */

@@ -114,6 +114,7 @@ static int osc_io_read_ahead(const struct lu_env *env,
 
 	dlmlock = dlmlock_at_pgoff(env, osc, start, 0, 0);
 	if (dlmlock != NULL) {
+		LASSERT(dlmlock->l_ast_data == osc);
 		if (dlmlock->l_req_mode != LCK_PR) {
 			struct lustre_handle lockh;
 			ldlm_lock2handle(dlmlock, &lockh);
