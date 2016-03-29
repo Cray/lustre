@@ -731,10 +731,12 @@ static int vvp_io_setattr_start(const struct lu_env *env,
 	struct inode		*inode = vvp_object_inode(io->ci_obj);
 	struct ll_inode_info	*lli   = ll_i2info(inode);
 
-	mutex_lock(&inode->i_mutex);
 	if (cl_io_is_trunc(io)) {
 		down_write(&lli->lli_trunc_sem);
+		mutex_lock(&inode->i_mutex);
 		inode_dio_wait(inode);
+	} else {
+		mutex_lock(&inode->i_mutex);
 	}
 
 	return vvp_io_setattr_time(env, ios);
@@ -752,9 +754,11 @@ static void vvp_io_setattr_end(const struct lu_env *env,
 		 * because osc has already notified to destroy osc_extents. */
 		vvp_do_vmtruncate(inode, io->u.ci_setattr.sa_attr.lvb_size);
 		inode_dio_write_done(inode);
+		mutex_unlock(&inode->i_mutex);
 		up_write(&lli->lli_trunc_sem);
+	} else {
+		mutex_unlock(&inode->i_mutex);
 	}
-	mutex_unlock(&inode->i_mutex);
 }
 
 static void vvp_io_setattr_fini(const struct lu_env *env,
