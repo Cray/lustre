@@ -2690,6 +2690,11 @@ static int ldlm_bl_thread_main(void *arg)
 			OBD_FREE(blwi, sizeof(*blwi));
 		else
 			complete(&blwi->blwi_comp);
+
+		/* If there are many namespaces, we will not sleep waiting for
+		 * work, and must do a cond_resched to avoid holding the CPU
+		 * for too long */
+		cond_resched();
 	}
 
 	atomic_dec(&blp->blp_busy_threads);
