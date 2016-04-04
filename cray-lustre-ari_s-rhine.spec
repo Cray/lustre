@@ -189,7 +189,7 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 /usr/lib64/*
 
 %post
-ln -s /sbin/ko2iblnd-probe /usr/sbin
+%{__ln_s} %{_sbindir}/ko2iblnd-probe /usr/sbin
 
 /sbin/ldconfig
 
@@ -201,7 +201,7 @@ fi
 depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
 
 %preun
-rm -f /usr/sbin/ko2iblnd-probe
+%{__rm} -f /usr/sbin/ko2iblnd-probe
 
 %postun
 if [ "$1" = "0" ]; then

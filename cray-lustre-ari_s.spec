@@ -241,6 +241,8 @@ popd
 /usr/lib64/*
 
 %post
+%{__ln_s} %{_sbindir}/ko2iblnd-probe /usr/sbin
+
 for f in %{pc_files}
 do
     %{__ln_s} -f /opt/cray/lustre-%{flavor}/default/lib64/pkgconfig/${f} /usr/lib64/pkgconfig/${f}
@@ -261,6 +263,8 @@ fi
 /opt/cray/lustre-utils/default/bin/lustrerelswitch -p lustre-%{flavor} -l %{version}-%{release} ${switch_extra}
 
 %preun
+%{__rm} -f /usr/sbin/ko2iblnd-probe
+
 for file in `cat %{_sysconfdir}/switch.files`
 do
     %switchable_unlink ${file}
