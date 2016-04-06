@@ -908,7 +908,15 @@ int mdt_hsm_cdt_init(struct mdt_device *mdt);
 int mdt_hsm_cdt_start(struct mdt_device *mdt);
 int mdt_hsm_cdt_stop(struct mdt_device *mdt);
 int mdt_hsm_cdt_fini(struct mdt_device *mdt);
-int mdt_hsm_cdt_wakeup(struct mdt_device *mdt);
+
+/*
+ * Signal the coordinator has work to do
+ * \param cdt [IN] coordinator
+ */
+static inline void mdt_hsm_cdt_event(struct coordinator *cdt)
+{
+	cdt->cdt_event = true;
+}
 
 /* coordinator control /proc interface */
 ssize_t mdt_hsm_cdt_control_seq_write(struct file *file, const char *buffer,
