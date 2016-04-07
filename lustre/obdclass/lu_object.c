@@ -155,7 +155,7 @@ void lu_object_put(const struct lu_env *env, struct lu_object *o)
 		LASSERT(list_empty(&top->loh_lru));
 		list_add_tail(&top->loh_lru, &bkt->lsb_lru);
 		bkt->lsb_lru_len++;
-		lprocfs_counter_incr(site->ls_stats, LU_SS_LRU_LEN);
+		percpu_counter_inc(&site->ls_lru_len_counter);
 		CDEBUG(D_INODE, "Add %p to site lru. hash: %p, bkt: %p, "
 		       "lru_len: %ld\n",
 		       o, site->ls_obj_hash, bkt, bkt->lsb_lru_len);
@@ -218,7 +218,7 @@ void lu_object_unhash(const struct lu_env *env, struct lu_object *o)
 			list_del_init(&top->loh_lru);
 			bkt = cfs_hash_bd_extra_get(obj_hash, &bd);
 			bkt->lsb_lru_len--;
-			lprocfs_counter_decr(site->ls_stats, LU_SS_LRU_LEN);
+			percpu_counter_dec(&site->ls_lru_len_counter);
 		}
 		cfs_hash_bd_del_locked(obj_hash, &bd, &top->loh_hash);
 		cfs_hash_bd_unlock(obj_hash, &bd, 1);
@@ -396,7 +396,7 @@ int lu_site_purge(const struct lu_env *env, struct lu_site *s, int nr)
                                                &bd2, &h->loh_hash);
 			list_move(&h->loh_lru, &dispose);
 			bkt->lsb_lru_len--;
-			lprocfs_counter_decr(s->ls_stats, LU_SS_LRU_LEN);
+			percpu_counter_dec(&s->ls_lru_len_counter);
                         if (did_sth == 0)
                                 did_sth = 1;
 
@@ -612,7 +612,7 @@ static struct lu_object *htable_lookup(struct lu_site *s,
 		if (!list_empty(&h->loh_lru)) {
 			list_del_init(&h->loh_lru);
 			bkt->lsb_lru_len--;
-			lprocfs_counter_decr(s->ls_stats, LU_SS_LRU_LEN);
+			percpu_counter_dec(&s->ls_lru_len_counter);
 		}
                 return lu_object_top(h);
         }
@@ -863,7 +863,7 @@ EXPORT_SYMBOL(lu_device_type_fini);
  * Global list of all sites on this node
  */
 static struct list_head lu_sites;
-static DEFINE_MUTEX(lu_sites_guard);
+static struct rw_semaphore lu_sites_guard;
 
 /**
  * Global environment used by site shrinker.
@@ -1055,10 +1055,16 @@ int lu_site_init(struct lu_site *s, struct lu_device *top)
 	char name[16];
 	unsigned long bits;
 	unsigned int i;
+	int rc;
 	ENTRY;
 
 	memset(s, 0, sizeof *s);
 	mutex_init(&s->ls_purge_mutex);
+
+	rc = percpu_counter_init(&s->ls_lru_len_counter, 0);
+	if (rc)
+		return -ENOMEM;
+
 	bits = lu_htable_order(top);
 	snprintf(name, sizeof(name), "lu_site_%s", top->ld_type->ldt_name);
 	for (bits = clamp_t(typeof(bits), bits,
@@ -1107,12 +1113,6 @@ int lu_site_init(struct lu_site *s, struct lu_device *top)
                              0, "cache_death_race", "cache_death_race");
         lprocfs_counter_init(s->ls_stats, LU_SS_LRU_PURGED,
                              0, "lru_purged", "lru_purged");
-	/*
-	 * Unlike other counters, lru_len can be decremented so
-	 * need lc_sum instead of just lc_count
-	 */
-	lprocfs_counter_init(s->ls_stats, LU_SS_LRU_LEN,
-			     LPROCFS_CNTR_AVGMINMAX, "lru_len", "lru_len");
 
 	INIT_LIST_HEAD(&s->ls_linkage);
         s->ls_top_dev = top;
@@ -1134,9 +1134,11 @@ EXPORT_SYMBOL(lu_site_init);
  */
 void lu_site_fini(struct lu_site *s)
 {
-	mutex_lock(&lu_sites_guard);
+	down_write(&lu_sites_guard);
 	list_del_init(&s->ls_linkage);
-	mutex_unlock(&lu_sites_guard);
+	up_write(&lu_sites_guard);
+
+	percpu_counter_destroy(&s->ls_lru_len_counter);
 
         if (s->ls_obj_hash != NULL) {
                 cfs_hash_putref(s->ls_obj_hash);
@@ -1161,11 +1163,11 @@ EXPORT_SYMBOL(lu_site_fini);
 int lu_site_init_finish(struct lu_site *s)
 {
         int result;
-	mutex_lock(&lu_sites_guard);
+	down_write(&lu_sites_guard);
         result = lu_context_refill(&lu_shrink_env.le_ctx);
         if (result == 0)
 		list_add(&s->ls_linkage, &lu_sites);
-	mutex_unlock(&lu_sites_guard);
+	up_write(&lu_sites_guard);
         return result;
 }
 EXPORT_SYMBOL(lu_site_init_finish);
@@ -1977,11 +1979,10 @@ static unsigned long lu_cache_shrink_count(struct shrinker *sk,
 	if (!(sc->gfp_mask & __GFP_FS))
 		return 0;
 
-	mutex_lock(&lu_sites_guard);
-	list_for_each_entry_safe(s, tmp, &lu_sites, ls_linkage) {
-		cached += ls_stats_read(s->ls_stats, LU_SS_LRU_LEN);
-	}
-	mutex_unlock(&lu_sites_guard);
+	down_read(&lu_sites_guard);
+	list_for_each_entry_safe(s, tmp, &lu_sites, ls_linkage) 
+		cached += percpu_counter_read_positive(&s->ls_lru_len_counter);
+	up_read(&lu_sites_guard);
 
 	cached = (cached / 100) * sysctl_vfs_cache_pressure;
 	CDEBUG(D_INODE, "%ld objects cached, cache pressure %d\n",
@@ -2012,7 +2013,7 @@ static unsigned long lu_cache_shrink_scan(struct shrinker *sk,
 		 */
 		return SHRINK_STOP;
 
-	mutex_lock(&lu_sites_guard);
+	down_read(&lu_sites_guard);
 	list_for_each_entry_safe(s, tmp, &lu_sites, ls_linkage) {
 		remain = lu_site_purge(&lu_shrink_env, s, remain);
 		/*
@@ -2022,7 +2023,7 @@ static unsigned long lu_cache_shrink_scan(struct shrinker *sk,
 		list_move_tail(&s->ls_linkage, &splice);
 	}
 	list_splice(&splice, lu_sites.prev);
-	mutex_unlock(&lu_sites_guard);
+	up_read(&lu_sites_guard);
 
 	return sc->nr_to_scan - remain;
 }
@@ -2132,6 +2133,7 @@ int lu_global_init(void)
 	INIT_LIST_HEAD(&lu_device_types);
 	INIT_LIST_HEAD(&lu_context_remembered);
 	INIT_LIST_HEAD(&lu_sites);
+	init_rwsem(&lu_sites_guard);
 
         result = lu_ref_global_init();
         if (result != 0)
@@ -2147,9 +2149,9 @@ int lu_global_init(void)
          * conservatively. This should not be too bad, because this
          * environment is global.
          */
-	mutex_lock(&lu_sites_guard);
+	down_write(&lu_sites_guard);
         result = lu_env_init(&lu_shrink_env, LCT_SHRINKER);
-	mutex_unlock(&lu_sites_guard);
+	up_write(&lu_sites_guard);
         if (result != 0)
                 return result;
 
@@ -2181,9 +2183,11 @@ void lu_global_fini(void)
          * Tear shrinker environment down _after_ de-registering
          * lu_global_key, because the latter has a value in the former.
          */
-	mutex_lock(&lu_sites_guard);
+	down_write(&lu_sites_guard);
         lu_env_fini(&lu_shrink_env);
-	mutex_unlock(&lu_sites_guard);
+	up_write(&lu_sites_guard);
+
+	fini_rwsem(&lu_sites_guard);
 
         lu_ref_global_fini();
 }
@@ -2194,14 +2198,7 @@ static __u32 ls_stats_read(struct lprocfs_stats *stats, int idx)
 	struct lprocfs_counter ret;
 
 	lprocfs_stats_collect(stats, idx, &ret);
-	if (idx == LU_SS_LRU_LEN)
-		/*
-		 * protect against counter on cpu A being decremented
-		 * before counter is incremented on cpu B; unlikely
-		 */
-		return (__u32)((ret.lc_sum > 0) ? ret.lc_sum : 0);
-	else
-		return (__u32)ret.lc_count;
+	return (__u32)ret.lc_count;
 #else
 	return 0;
 #endif
@@ -2218,7 +2215,7 @@ int lu_site_stats_seq_print(const struct lu_site *s, struct seq_file *m)
 	memset(&stats, 0, sizeof(stats));
 	lu_site_stats_get(s->ls_obj_hash, &stats, 1);
 
-	return seq_printf(m, "%d/%d %d/%d %d %d %d %d %d %d %d %d\n",
+	return seq_printf(m, "%d/%d %d/%d %d %d %d %d %d %d %d\n",
 			  stats.lss_busy,
 			  stats.lss_total,
 			  stats.lss_populated,
@@ -2229,8 +2226,7 @@ int lu_site_stats_seq_print(const struct lu_site *s, struct seq_file *m)
 			  ls_stats_read(s->ls_stats, LU_SS_CACHE_MISS),
 			  ls_stats_read(s->ls_stats, LU_SS_CACHE_RACE),
 			  ls_stats_read(s->ls_stats, LU_SS_CACHE_DEATH_RACE),
-			  ls_stats_read(s->ls_stats, LU_SS_LRU_PURGED),
-			  ls_stats_read(s->ls_stats, LU_SS_LRU_LEN));
+			  ls_stats_read(s->ls_stats, LU_SS_LRU_PURGED));
 }
 EXPORT_SYMBOL(lu_site_stats_seq_print);
 
@@ -2241,7 +2237,7 @@ int lu_site_stats_print(const struct lu_site *s, char *page, int count)
 	memset(&stats, 0, sizeof(stats));
 	lu_site_stats_get(s->ls_obj_hash, &stats, 1);
 
-	return snprintf(page, count, "%d/%d %d/%d %d %d %d %d %d %d %d %d\n",
+	return snprintf(page, count, "%d/%d %d/%d %d %d %d %d %d %d %d\n",
 			stats.lss_busy,
 			stats.lss_total,
 			stats.lss_populated,
@@ -2252,8 +2248,7 @@ int lu_site_stats_print(const struct lu_site *s, char *page, int count)
 			ls_stats_read(s->ls_stats, LU_SS_CACHE_MISS),
 			ls_stats_read(s->ls_stats, LU_SS_CACHE_RACE),
 			ls_stats_read(s->ls_stats, LU_SS_CACHE_DEATH_RACE),
-			ls_stats_read(s->ls_stats, LU_SS_LRU_PURGED),
-			ls_stats_read(s->ls_stats, LU_SS_LRU_LEN));
+			ls_stats_read(s->ls_stats, LU_SS_LRU_PURGED));
 }
 
 /**
