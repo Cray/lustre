@@ -177,7 +177,7 @@ static int mdt_coordinator_cb(const struct lu_env *env,
 		int i, empty_slot, found;
 
 		/* Are agents full? */
-		if (atomic_read(&cdt->cdt_request_count) ==
+		if (atomic_read(&cdt->cdt_request_count) >=
 		    cdt->cdt_max_requests)
 			break;
 
@@ -530,7 +530,7 @@ static int mdt_coordinator(void *data)
 			enum agent_req_status	 status;
 
 			/* still room for work ? */
-			if (atomic_read(&cdt->cdt_request_count) ==
+			if (atomic_read(&cdt->cdt_request_count) >=
 			    cdt->cdt_max_requests)
 				break;
 
