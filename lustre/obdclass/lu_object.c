@@ -1957,12 +1957,15 @@ static void lu_site_stats_get(cfs_hash_t *hs,
 
 
 /*
- * lu_cache_shrink_count returns the number of cached objects that are
- * candidates to be freed by shrink_slab(). A counter, which tracks
- * the number of items in the site's lru, is maintained in the per cpu
- * stats of each site. The counter is incremented when an object is added
- * to a site's lru and decremented when one is removed. The number of
- * free-able objects is the sum of all per cpu counters for all sites.
+ * lu_cache_shrink_count() returns an approximate number of cached objects
+ * that can be freed by shrink_slab(). A counter, which tracks the 
+ * number of items in the site's lru, is maintained in a percpu_counter 
+ * for each site. The percpu values are incremented and decremented as 
+ * objects are added or removed from the lru. The percpu values are summed
+ * and saved whenever a percpu value exceeds a threshold. Thus the saved,
+ * summed value at any given time may not accurately reflect the current
+ * lru length. But this value is sufficiently accurate for the needs of
+ * a shrinker.
  *
  * Using a per cpu counter is a compromise solution to concurrent access:
  * lu_object_put() can update the counter without locking the site and
@@ -2013,7 +2016,7 @@ static unsigned long lu_cache_shrink_scan(struct shrinker *sk,
 		 */
 		return SHRINK_STOP;
 
-	down_read(&lu_sites_guard);
+	down_write(&lu_sites_guard);
 	list_for_each_entry_safe(s, tmp, &lu_sites, ls_linkage) {
 		remain = lu_site_purge(&lu_shrink_env, s, remain);
 		/*
@@ -2023,7 +2026,7 @@ static unsigned long lu_cache_shrink_scan(struct shrinker *sk,
 		list_move_tail(&s->ls_linkage, &splice);
 	}
 	list_splice(&splice, lu_sites.prev);
-	up_read(&lu_sites_guard);
+	up_write(&lu_sites_guard);
 
 	return sc->nr_to_scan - remain;
 }
