@@ -587,7 +587,7 @@ int ll_file_open(struct inode *inode, struct file *file)
 
 	fd = ll_file_data_get();
 	if (fd == NULL)
-		GOTO(out_openerr, rc = -ENOMEM);
+		GOTO(out_nofiledata, rc = -ENOMEM);
 
 	fd->fd_file = file;
 	if (S_ISDIR(inode->i_mode))
@@ -750,6 +750,7 @@ out_openerr:
                 ll_stats_ops_tally(ll_i2sbi(inode), LPROC_LL_OPEN, 1);
         }
 
+out_nofiledata:
 	if (it && it_disposition(it, DISP_ENQ_OPEN_REF)) {
 		ptlrpc_req_finished(it->d.lustre.it_data);
 		it_clear_disposition(it, DISP_ENQ_OPEN_REF);
