@@ -42,16 +42,6 @@
 /* Max allocation to satisfy single HSM RPC. */
 #define MDT_HSM_ALLOC_MAX (1 << 20)
 
-#define MDT_HSM_ALLOC(ptr, size)			\
-	do {						\
-		if ((size) <= MDT_HSM_ALLOC_MAX)	\
-			OBD_ALLOC_LARGE((ptr), (size));	\
-		else					\
-			(ptr) = NULL;			\
-	} while (0)
-
-#define MDT_HSM_FREE(ptr, size) OBD_FREE_LARGE((ptr), (size))
-
 /**
  * Update on-disk HSM attributes.
  */
@@ -384,9 +374,10 @@ int mdt_hsm_action(struct tgt_session_info *tsi)
 {
 	struct mdt_thread_info		*info;
 	struct hsm_current_action	*hca;
+	struct mdt_hal_item		*hal_item;
 	struct hsm_action_list		*hal = NULL;
 	struct hsm_action_item		*hai;
-	int				 hal_size;
+	int				 hal_item_size;
 	int				 rc;
 	ENTRY;
 
@@ -410,13 +401,17 @@ int mdt_hsm_action(struct tgt_session_info *tsi)
 							&RMF_CAPA1));
 
 	/* Coordinator information */
-	hal_size = sizeof(*hal) +
-		   cfs_size_round(MTI_NAME_MAXLEN) /* fsname */ +
-		   cfs_size_round(sizeof(*hai));
+	hal_item_size = sizeof(*hal_item) +
+		cfs_size_round(MTI_NAME_MAXLEN) /* fsname */ +
+		cfs_size_round(sizeof(*hai));
 
-	MDT_HSM_ALLOC(hal, hal_size);
-	if (hal == NULL)
+	MDT_HSM_ALLOC(hal_item, hal_item_size);
+	if (hal_item == NULL)
 		GOTO(out_ucred, rc = -ENOMEM);
+
+	INIT_LIST_HEAD(&hal_item->list);
+	hal_item->size = hal_item_size;
+	hal = &hal_item->hal;
 
 	hal->hal_version = HAL_VERSION;
 	hal->hal_archive_id = 0;
@@ -431,7 +426,7 @@ int mdt_hsm_action(struct tgt_session_info *tsi)
 	hai->hai_fid = info->mti_body->mbo_fid1;
 	hai->hai_len = sizeof(*hai);
 
-	rc = mdt_hsm_get_actions(info, hal);
+	rc = mdt_hsm_get_actions(info, hal_item);
 	if (rc)
 		GOTO(out_free, rc);
 
@@ -469,7 +464,7 @@ int mdt_hsm_action(struct tgt_session_info *tsi)
 
 	EXIT;
 out_free:
-	MDT_HSM_FREE(hal, hal_size);
+	MDT_HSM_FREE(hal_item, hal_item_size);
 out_ucred:
 	mdt_exit_ucred(info);
 out:
@@ -507,13 +502,14 @@ int mdt_hsm_request(struct tgt_session_info *tsi)
 	struct req_capsule		*pill = tsi->tsi_pill;
 	struct hsm_request		*hr;
 	struct hsm_user_item		*hui;
+	struct mdt_hal_item		*hal_item;
 	struct hsm_action_list		*hal;
 	struct hsm_action_item		*hai;
 	const void			*data;
 	int				 hui_list_size;
 	int				 data_size;
 	enum hsm_copytool_action	 action = HSMA_NONE;
-	int				 hal_size, i, rc;
+	int				 hal_item_size, i, rc;
 	ENTRY;
 
 	hr = req_capsule_client_get(pill, &RMF_MDS_HSM_REQUEST);
@@ -566,14 +562,18 @@ int mdt_hsm_request(struct tgt_session_info *tsi)
 		GOTO(out_ucred, rc = -EINVAL);
 	}
 
-	hal_size = sizeof(*hal) + cfs_size_round(MTI_NAME_MAXLEN) /* fsname */ +
-		   (sizeof(*hai) + cfs_size_round(hr->hr_data_len)) *
-		   hr->hr_itemcount;
+	hal_item_size = sizeof(*hal_item) +
+		cfs_size_round(MTI_NAME_MAXLEN) /* fsname */ +
+		(sizeof(*hai) + cfs_size_round(hr->hr_data_len)) *
+		hr->hr_itemcount;
 
-	MDT_HSM_ALLOC(hal, hal_size);
-	if (hal == NULL)
+	MDT_HSM_ALLOC(hal_item, hal_item_size);
+	if (hal_item == NULL)
 		GOTO(out_ucred, rc = -ENOMEM);
 
+	hal_item->size = hal_item_size;
+	INIT_LIST_HEAD(&hal_item->list);
+	hal = &hal_item->hal;
 	hal->hal_version = HAL_VERSION;
 	hal->hal_archive_id = hr->hr_archive_id;
 	hal->hal_flags = hr->hr_flags;
@@ -599,9 +599,9 @@ int mdt_hsm_request(struct tgt_session_info *tsi)
 		hal->hal_count++;
 	}
 
-	rc = mdt_hsm_add_actions(info, hal);
-
-	MDT_HSM_FREE(hal, hal_size);
+	rc = mdt_hsm_add_actions(info, hal_item);
+	if (rc)
+		MDT_HSM_FREE(hal_item, hal_item_size);
 
 	GOTO(out_ucred, rc);
 

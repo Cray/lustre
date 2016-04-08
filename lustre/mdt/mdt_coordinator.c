@@ -25,6 +25,8 @@
  *
  * Copyright (c) 2013, 2014, Intel Corporation.
  * Use is subject to license terms.
+ *
+ * Copyright (c) 2016, Cray Inc. All rights reserved.
  */
 /*
  * lustre/mdt/mdt_coordinator.c
@@ -470,6 +472,10 @@ static void mdt_hsm_cdt_cleanup(struct mdt_device *mdt)
 		OBD_SLAB_FREE_PTR(crh, mdt_hsm_cdt_kmem);
 	}
 	mutex_unlock(&cdt->cdt_restore_lock);
+
+	mutex_lock(&cdt->cdt_deferred_hals_lock);
+	mdt_hsm_free_deferred_archives(&cdt->cdt_deferred_hals);
+	mutex_unlock(&cdt->cdt_deferred_hals_lock);
 }
 
 /*
@@ -588,6 +594,8 @@ static int mdt_coordinator(void *data)
 			CDEBUG(D_HSM, "disable state, coordinator sleeps\n");
 			continue;
 		}
+
+		mdt_hsm_process_deferred_archives(mti);
 
 		/* If no event, and no housekeeping to do, continue to
 		 * wait. */
@@ -894,10 +902,12 @@ int mdt_hsm_cdt_init(struct mdt_device *mdt)
 	init_rwsem(&cdt->cdt_request_lock);
 	mutex_init(&cdt->cdt_restore_lock);
 	spin_lock_init(&cdt->cdt_state_lock);
+	mutex_init(&cdt->cdt_deferred_hals_lock);
 
 	INIT_LIST_HEAD(&cdt->cdt_requests);
 	INIT_LIST_HEAD(&cdt->cdt_agents);
 	INIT_LIST_HEAD(&cdt->cdt_restore_hdl);
+	INIT_LIST_HEAD(&cdt->cdt_deferred_hals);
 
 	rc = lu_env_init(&cdt->cdt_env, LCT_MD_THREAD);
 	if (rc < 0)

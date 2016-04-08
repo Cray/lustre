@@ -131,6 +131,10 @@ struct coordinator {
 						       * list */
 	struct mutex		 cdt_restore_lock;    /**< protect restore
 						       * list */
+	struct mutex		 cdt_deferred_hals_lock; /**< protects
+							  * cdt_deferred_hals */
+	struct list_head         cdt_deferred_hals;    /** < HALS recently
+							* queued */
 	cfs_time_t		 cdt_loop_period;     /**< llog scan period */
 	cfs_time_t		 cdt_grace_delay;     /**< request grace
 						       * delay */
@@ -535,6 +539,12 @@ struct hsm_record_update {
 	enum agent_req_status status;
 };
 
+struct mdt_hal_item {
+	struct list_head	list;		/**< to chain the hals */
+	size_t			size;		/**< size of allocated struct */
+	struct hsm_action_list	hal;
+};
+
 static inline const struct md_device_operations *
 mdt_child_ops(struct mdt_device * m)
 {
@@ -881,9 +891,11 @@ int mdt_hsm_coordinator_update(struct mdt_thread_info *mti,
 			       struct hsm_progress_kernel *pgs);
 /* mdt/mdt_hsm_cdt_client.c */
 int mdt_hsm_add_actions(struct mdt_thread_info *info,
-			struct hsm_action_list *hal);
+			struct mdt_hal_item *hal_item);
+void mdt_hsm_free_deferred_archives(struct list_head *deferred_hals);
+int mdt_hsm_process_deferred_archives(struct mdt_thread_info *mti);
 int mdt_hsm_get_actions(struct mdt_thread_info *mti,
-			struct hsm_action_list *hal);
+			struct mdt_hal_item *hal_item);
 int mdt_hsm_get_running(struct mdt_thread_info *mti,
 			struct hsm_action_list *hal);
 bool mdt_hsm_restore_is_running(struct mdt_thread_info *mti,
@@ -1131,5 +1143,15 @@ static inline char *mdt_req_get_jobid(struct ptlrpc_request *req)
 
 	return jobid;
 }
+
+#define MDT_HSM_ALLOC(ptr, size)			\
+	do {						\
+		if ((size) <= MDT_HSM_ALLOC_MAX)	\
+			OBD_ALLOC_LARGE((ptr), (size));	\
+		else					\
+			(ptr) = NULL;			\
+	} while (0)
+
+#define MDT_HSM_FREE(ptr, size) OBD_FREE_LARGE((ptr), (size))
 
 #endif /* _MDT_INTERNAL_H */

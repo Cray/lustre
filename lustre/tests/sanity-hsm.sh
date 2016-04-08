@@ -3333,11 +3333,13 @@ test_90() {
 	wait_for_grace_delay
 	$LFS hsm_archive --filelist $FILELIST ||
 		error "cannot archive a file list"
+	sleep 3
 	wait_all_done 100
 	$LFS hsm_release --filelist $FILELIST ||
 		error "cannot release a file list"
 	$LFS hsm_restore --filelist $FILELIST ||
 		error "cannot restore a file list"
+	sleep 3
 	wait_all_done 100
 	copytool_cleanup
 }
@@ -3736,6 +3738,45 @@ test_112() {
 	copytool_cleanup
 }
 run_test 112 "State of recorded request"
+
+# Without a running copytool, push many identical requests for 2 files
+# and make sure only two end up in the catalog
+test_113() {
+	mkdir -p $DIR/$tdir
+	local file1=$DIR/$tdir/$tfile-1
+	local file2=$DIR/$tdir/$tfile-2
+	local fid1=$(make_small $file1) || error "cannot create small file"
+	local fid2=$(make_small $file2) || error "cannot create small file"
+
+	# Stop the copytool
+	copytool_cleanup
+
+	for i in $(seq 1 100); do
+		$LFS hsm_archive $file1 $file1 $file2 $file2
+		$LFS hsm_archive $file2 $file2 $file1 $file1
+		$LFS hsm_archive $file2 $file1 $file2 $file1
+		$LFS hsm_archive $file1 $file2 $file1 $file2
+		$LFS hsm_archive $file1 $file1 $file1 $file1
+		$LFS hsm_archive $file2 $file2 $file2 $file2
+	done
+
+	# Give enough time to the MDT coordinator to get the list and
+	# clean it.
+	sleep 5
+
+	local reqcnt=$(do_facet $SINGLEMDS \
+		"$LCTL get_param -n $HSM_PARAM.actions" | egrep "$fid1|$fid2" | wc -l)
+	[[ $reqcnt -eq 2 ]] || error "Request count should be 2, not $reqcnt"
+
+	# Perform the archive
+	copytool_setup
+
+	wait_request_state $fid1 ARCHIVE SUCCEED
+	wait_request_state $fid2 ARCHIVE SUCCEED
+
+	copytool_cleanup
+}
+run_test 113 "Duplicated archive requests"
 
 test_200() {
 	# test needs a running copytool

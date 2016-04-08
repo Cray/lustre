@@ -24,6 +24,7 @@
  *     alternatives
  *
  * Copyright (c) 2013, 2014, Intel Corporation.
+ * Copyright (c) 2016, Cray Inc. All rights reserved.
  */
 /*
  * lustre/mdt/mdt_hsm_cdt_client.c
@@ -49,7 +50,7 @@
  */
 struct hsm_compat_data_cb {
 	struct coordinator	*cdt;
-	struct hsm_action_list	*hal;
+	struct list_head	*hals;
 };
 
 /**
@@ -68,12 +69,11 @@ static int hsm_find_compatible_cb(const struct lu_env *env,
 {
 	struct llog_agent_req_rec	*larr;
 	struct hsm_compat_data_cb	*hcdcb;
-	struct hsm_action_item		*hai;
+	struct mdt_hal_item		*hal_item;
 	int				 i;
 	ENTRY;
 
 	larr = (struct llog_agent_req_rec *)hdr;
-	hcdcb = data;
 	/* a compatible request must be WAITING or STARTED
 	 * and not a cancel */
 	if ((larr->arr_status != ARS_WAITING &&
@@ -81,37 +81,49 @@ static int hsm_find_compatible_cb(const struct lu_env *env,
 	    larr->arr_hai.hai_action == HSMA_CANCEL)
 		RETURN(0);
 
-	hai = hai_first(hcdcb->hal);
-	for (i = 0; i < hcdcb->hal->hal_count; i++, hai = hai_next(hai)) {
-		/* if request is a CANCEL:
-		 * if cookie set in the request, there is no need to find a
-		 * compatible one, the cookie in the request is directly used.
-		 * if cookie is not set, we use the FID to find the request
-		 * to cancel (the "compatible" one)
-		 * if the caller sets the cookie, we assume he also sets the
-		 * arr_archive_id
-		 */
-		if (hai->hai_action == HSMA_CANCEL && hai->hai_cookie != 0)
-			continue;
+	hcdcb = data;
+	list_for_each_entry(hal_item, hcdcb->hals, list) {
+		struct hsm_action_list *hal = &hal_item->hal;
+		struct hsm_action_item *hai;
 
-		if (!lu_fid_eq(&hai->hai_fid, &larr->arr_hai.hai_fid))
-			continue;
+		hai = hai_first(hal);
+		for (i = 0; i < hal->hal_count; i++, hai = hai_next(hai)) {
+			/* if request is a CANCEL:
+			 * if cookie set in the request, there is no
+			 * need to find a compatible one, the cookie
+			 * in the request is directly used.
+			 * if cookie is not set, we use the FID to
+			 * find the request to cancel (the
+			 * "compatible" one)
+			 * if the caller sets the cookie, we assume he
+			 * also sets the arr_archive_id
+			 */
+			if (hai->hai_action == HSMA_CANCEL &&
+			    hai->hai_cookie != 0)
+				continue;
 
-		/* HSMA_NONE is used to find running request for some FID */
-		if (hai->hai_action == HSMA_NONE) {
-			hcdcb->hal->hal_archive_id = larr->arr_archive_id;
-			hcdcb->hal->hal_flags = larr->arr_flags;
-			*hai = larr->arr_hai;
-			continue;
+			if (!lu_fid_eq(&hai->hai_fid, &larr->arr_hai.hai_fid))
+				continue;
+
+			/* HSMA_NONE is used to find running request
+			 * for some FID */
+			if (hai->hai_action == HSMA_NONE) {
+				hal->hal_archive_id = larr->arr_archive_id;
+				hal->hal_flags = larr->arr_flags;
+				*hai = larr->arr_hai;
+				continue;
+			}
+			/* in V1 we do not manage partial transfer
+			 * so extent is always whole file
+			 */
+			hai->hai_cookie = larr->arr_hai.hai_cookie;
+
+			/* we read the archive number from the request
+			 * we cancel */
+			if (hai->hai_action == HSMA_CANCEL &&
+			    hal->hal_archive_id == 0)
+				hal->hal_archive_id = larr->arr_archive_id;
 		}
-		/* in V1 we do not manage partial transfer
-		 * so extent is always whole file
-		 */
-		hai->hai_cookie = larr->arr_hai.hai_cookie;
-		/* we read the archive number from the request we cancel */
-		if (hai->hai_action == HSMA_CANCEL &&
-		    hcdcb->hal->hal_archive_id == 0)
-			hcdcb->hal->hal_archive_id = larr->arr_archive_id;
 	}
 	RETURN(0);
 }
@@ -127,32 +139,43 @@ static int hsm_find_compatible_cb(const struct lu_env *env,
  * \retval -ve failure
  */
 static int hsm_find_compatible(const struct lu_env *env, struct mdt_device *mdt,
-			       struct hsm_action_list *hal)
+			       struct list_head *hals)
 {
-	struct hsm_action_item		*hai;
 	struct hsm_compat_data_cb	 hcdcb;
-	int				 rc, i, ok_cnt;
+	struct mdt_hal_item		*hal_item;
+	int				 rc, i;
+	bool				 all_cancel = true;
 	ENTRY;
 
-	ok_cnt = 0;
-	hai = hai_first(hal);
-	for (i = 0; i < hal->hal_count; i++, hai = hai_next(hai)) {
-		/* in a cancel request hai_cookie may be set by caller to
-		 * show the request to be canceled
-		 * if not we need to search by FID
-		 */
-		if (hai->hai_action == HSMA_CANCEL && hai->hai_cookie != 0)
-			ok_cnt++;
-		else
-			hai->hai_cookie = 0;
+	list_for_each_entry(hal_item, hals, list) {
+		struct hsm_action_list *hal = &hal_item->hal;
+		struct hsm_action_item *hai;
+		int ok_cnt = 0;
+
+		hai = hai_first(hal);
+		for (i = 0; i < hal->hal_count; i++, hai = hai_next(hai)) {
+			/* in a cancel request hai_cookie may be set
+			 * by caller to show the request to be
+			 * canceled
+			 * if not we need to search by FID
+			 */
+			if (hai->hai_action == HSMA_CANCEL &&
+			    hai->hai_cookie != 0)
+				ok_cnt++;
+			else
+				hai->hai_cookie = 0;
+		}
+
+		if (ok_cnt != hal->hal_count)
+			all_cancel = false;
 	}
 
 	/* if all requests are cancel with cookie, no need to find compatible */
-	if (ok_cnt == hal->hal_count)
+	if (all_cancel)
 		RETURN(0);
 
 	hcdcb.cdt = &mdt->mdt_coordinator;
-	hcdcb.hal = hal;
+	hcdcb.hals = hals;
 
 	rc = cdt_llog_process(env, mdt, hsm_find_compatible_cb, &hcdcb);
 
@@ -330,7 +353,7 @@ static int mdt_hsm_process_hal(struct mdt_thread_info *mti,
 		 * if restore, we take the layout lock
 		 */
 
-		/* Get HSM attributes and check permissions. */
+		/* Get HSM attributes. */
 		obj = mdt_hsm_get_md_hsm(mti, &hai->hai_fid, &mh);
 		if (IS_ERR(obj)) {
 			/* In case of REMOVE and CANCEL a Lustre file
@@ -343,12 +366,7 @@ static int mdt_hsm_process_hal(struct mdt_thread_info *mti,
 			else
 				GOTO(out, rc = PTR_ERR(obj));
 		}
-
-		rc = hsm_action_permission(mti, obj, hai->hai_action);
 		mdt_object_put(mti->mti_env, obj);
-
-		if (rc < 0)
-			GOTO(out, rc);
 
 		/* if action is cancel, also no need to check */
 		if (hai->hai_action == HSMA_CANCEL)
@@ -358,12 +376,6 @@ static int mdt_hsm_process_hal(struct mdt_thread_info *mti,
 		 * and HSM flags status */
 		if (!hsm_action_is_needed(hai, archive_id, flags, &mh))
 			continue;
-
-		/* Check if file request is compatible with HSM flags status
-		 * and stop at first incompatible
-		 */
-		if (!mdt_hsm_is_action_compat(hai, archive_id, flags, &mh))
-			GOTO(out, rc = -EPERM);
 
 		/* for cancel archive number is taken from canceled request
 		 * for other request, we take from lma if not specified,
@@ -463,6 +475,131 @@ out:
  * Coordinator external API
  */
 
+/* After some processing error, the deferred archives commands must be
+ * freed.
+ * The coordinator lock cdt_deferred_hals_lock must be held. */
+void mdt_hsm_free_deferred_archives(struct list_head *deferred_hals)
+{
+	struct mdt_hal_item *hal_item;
+	struct mdt_hal_item *tmp;
+
+	list_for_each_entry_safe(hal_item, tmp, deferred_hals, list) {
+		list_del(&hal_item->list);
+		MDT_HSM_FREE(hal_item, hal_item->size);
+	}
+}
+
+/* Form a list of HALs, find whether the FID in hai_in already
+ * exist. */
+static bool fid_in_hals(struct list_head *deferred_hals,
+			const struct hsm_action_item *hai_in)
+{
+	struct mdt_hal_item *hal_item;
+	int i;
+
+	list_for_each_entry(hal_item, deferred_hals, list) {
+		struct hsm_action_list *hal = &hal_item->hal;
+		struct hsm_action_item *hai;
+
+		hai = hai_first(hal);
+		for (i = 0; i < hal->hal_count; i++) {
+			if (hai == hai_in)
+				return false;
+
+			if (lu_fid_eq(&hai->hai_fid, &hai_in->hai_fid))
+				return true;
+
+			hai = hai_next(hai);
+		}
+	}
+
+	return false;
+}
+
+/* In the deferred HALs, remove any HAI that duplicates a previous
+ * one. If a HALs becomes empty because all its HAIs have been
+ * removed, the HAL is deleted. */
+static void remove_duplicates_in_hals(struct list_head *deferred_hals)
+{
+	struct mdt_hal_item *hal_item;
+	struct mdt_hal_item *tmp;
+
+	list_for_each_entry_safe(hal_item, tmp, deferred_hals, list) {
+		struct hsm_action_list *hal = &hal_item->hal;
+		struct hsm_action_item *hai;
+		int i;
+
+		hai = hai_first(hal);
+		for (i = 0; i < hal->hal_count; ) {
+			if (fid_in_hals(deferred_hals, hai)) {
+				/* This is a duplicate. Shift the next
+				 * HAIs over it. hai is now hai_next(hai). */
+				if (i < hal->hal_count)
+					memmove(hai, hai_next(hai),
+						hal_item->size -
+						((ptrdiff_t)hai_next(hai) -
+						 (ptrdiff_t)hal_item));
+				hal->hal_count--;
+			} else {
+				hai = hai_next(hai);
+				i++;
+			}
+		}
+
+		if (hal->hal_count == 0) {
+			/* All HAI have been removed from this HAL, so
+			 * remove from the list. */
+			list_del(&hal_item->list);
+			MDT_HSM_FREE(hal_item, hal_item->size);
+		}
+	}
+}
+
+int mdt_hsm_process_deferred_archives(struct mdt_thread_info *mti)
+{
+	struct mdt_device	*mdt = mti->mti_mdt;
+	struct coordinator	*cdt = &mdt->mdt_coordinator;
+	int			 rc = 0;
+	struct mdt_hal_item	*hal_item;
+	struct mdt_hal_item	*tmp;
+
+	mutex_lock(&cdt->cdt_deferred_hals_lock);
+
+	if (list_empty(&cdt->cdt_deferred_hals))
+		GOTO(out, rc = 0);
+
+	remove_duplicates_in_hals(&cdt->cdt_deferred_hals);
+
+	if (list_empty(&cdt->cdt_deferred_hals))
+		GOTO(out, rc = 0);
+
+	/* search for compatible request, if found hai_cookie is set
+	 * to the request cookie
+	 * it is also used to set the cookie for cancel request by FID
+	 */
+	rc = hsm_find_compatible(mti->mti_env, mdt, &cdt->cdt_deferred_hals);
+	if (rc) {
+		mdt_hsm_free_deferred_archives(&cdt->cdt_deferred_hals);
+		GOTO(out, rc);
+	}
+
+	list_for_each_entry_safe(hal_item, tmp, &cdt->cdt_deferred_hals, list) {
+		list_del(&hal_item->list);
+		mdt_hsm_process_hal(mti, mdt, cdt, &hal_item->hal);
+		MDT_HSM_FREE(hal_item, hal_item->size);
+	}
+
+	/* Work has been added, signal the coordinator */
+	mdt_hsm_cdt_event(cdt);
+
+	GOTO(out, rc = 0);
+
+out:
+	mutex_unlock(&cdt->cdt_deferred_hals_lock);
+
+	return rc;
+}
+
 /**
  * register a list of requests
  * \param mti [IN]
@@ -472,11 +609,15 @@ out:
  * in case of restore, caller must hold layout lock
  */
 int mdt_hsm_add_actions(struct mdt_thread_info *mti,
-			struct hsm_action_list *hal)
+			struct mdt_hal_item *hal_item)
 {
-	struct mdt_device	*mdt = mti->mti_mdt;
-	struct coordinator	*cdt = &mdt->mdt_coordinator;
-	int			 rc;
+	struct mdt_device *mdt = mti->mti_mdt;
+	struct coordinator *cdt = &mdt->mdt_coordinator;
+	struct hsm_action_list *hal = &hal_item->hal;
+	struct hsm_action_item *hai;
+	int rc;
+	struct list_head hal_head;
+	int i;
 	ENTRY;
 
 	/* no coordinator started, so we cannot serve requests */
@@ -486,22 +627,73 @@ int mdt_hsm_add_actions(struct mdt_thread_info *mti,
 	if (!hal_is_sane(hal))
 		RETURN(-EINVAL);
 
+	/* Check action permissions */
+	hai = hai_first(hal);
+	for (i = 0; i < hal->hal_count; i++, hai = hai_next(hai)) {
+		struct md_hsm mh;
+		struct mdt_object *obj = NULL;
+
+		/* Get HSM attributes and check permissions. */
+		obj = mdt_hsm_get_md_hsm(mti, &hai->hai_fid, &mh);
+		if (IS_ERR(obj)) {
+			/* In case of REMOVE and CANCEL a Lustre file
+			 * is not mandatory, but restrict this
+			 * exception to admins. */
+			if (md_capable(mdt_ucred(mti), CFS_CAP_SYS_ADMIN) &&
+			    (hai->hai_action == HSMA_REMOVE ||
+			     hai->hai_action == HSMA_CANCEL))
+				continue;
+			else
+				RETURN(PTR_ERR(obj));
+		} else {
+			rc = hsm_action_permission(mti, obj, hai->hai_action);
+			mdt_object_put(mti->mti_env, obj);
+
+			if (rc < 0)
+				RETURN(rc);
+		}
+
+		/* Check if an action is needed, compare request
+		 * and HSM flags status */
+		if (!hsm_action_is_needed(hai, 0, hal->hal_flags, &mh))
+			continue;
+
+		/* Check if file request is compatible with HSM flags status
+		 * and stop at first incompatible
+		 */
+		if (!mdt_hsm_is_action_compat(hai, 0, hal->hal_flags, &mh))
+			GOTO(out, rc = -EPERM);
+	}
+
+	hai = hai_first(hal);
+	if (hai->hai_action == HSMA_ARCHIVE &&
+	    cdt->cdt_state == CDT_RUNNING) {
+		mutex_lock(&cdt->cdt_deferred_hals_lock);
+		list_add_tail(&hal_item->list, &cdt->cdt_deferred_hals);
+		mutex_unlock(&cdt->cdt_deferred_hals_lock);
+
+		RETURN(0);
+	}
+
+	/* Any archive request that has been deferred must be
+	 * processed now. */
+	mdt_hsm_process_deferred_archives(mti);
+
+	INIT_LIST_HEAD(&hal_head);
+	list_add(&hal_item->list, &hal_head);
+
 	/* search for compatible request, if found hai_cookie is set
 	 * to the request cookie
 	 * it is also used to set the cookie for cancel request by FID
 	 */
-	rc = hsm_find_compatible(mti->mti_env, mdt, hal);
+	rc = hsm_find_compatible(mti->mti_env, mdt, &hal_head);
 	if (rc)
 		GOTO(out, rc);
 
-	rc = mdt_hsm_process_hal(mti, mdt, cdt, hal);
-
+	rc = mdt_hsm_process_hal(mti, mdt, cdt, &hal_item->hal);
 	GOTO(out, rc);
-out:
-	/* if work has been added, signal the coordinator */
-	if (rc == 0 || rc == -ENODATA)
-		mdt_hsm_cdt_event(cdt);
 
+out:
 	return rc;
 }
 
@@ -575,16 +767,18 @@ bool mdt_hsm_restore_is_running(struct mdt_thread_info *mti,
 /**
  * get registered action on a FID list
  * \param mti [IN]
- * \param hal [IN/OUT] requests
+ * \param hal_item [IN/OUT] contains a single HAL
  * \retval 0 success
  * \retval -ve failure
  */
 int mdt_hsm_get_actions(struct mdt_thread_info *mti,
-			struct hsm_action_list *hal)
+			struct mdt_hal_item *hal_item)
 {
 	struct mdt_device	*mdt = mti->mti_mdt;
 	struct coordinator	*cdt = &mdt->mdt_coordinator;
+	struct hsm_action_list	*hal = &hal_item->hal;
 	struct hsm_action_item	*hai;
+	struct list_head	 list;
 	int			 i, rc;
 	ENTRY;
 
@@ -596,7 +790,9 @@ int mdt_hsm_get_actions(struct mdt_thread_info *mti,
 	}
 
 	/* 1st we search in recorded requests */
-	rc = hsm_find_compatible(mti->mti_env, mdt, hal);
+	INIT_LIST_HEAD(&list);
+	list_add(&hal_item->list, &list);
+	rc = hsm_find_compatible(mti->mti_env, mdt, &list);
 	/* if llog file is not created, no action is recorded */
 	if (rc == -ENOENT)
 		RETURN(0);
