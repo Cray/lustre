@@ -1145,6 +1145,20 @@ void ldlm_grant_lock(struct ldlm_lock *lock, struct list_head *work_list)
         EXIT;
 }
 
+/* Only RES_LINK and SL_MODE are used */
+enum ldlm_lock_list {
+	L_LRU		= 0,
+	L_RES_LINK	= 1,
+	L_PENDING	= 2,
+	L_BL_AST	= 3,
+	L_CP_AST	= 4,
+	L_RK_AS		= 5,
+	L_SL_MODE	= 6,
+	L_SL_POLICY	= 7,
+	L_EXP_REFS	= 8,
+	L_EXP_LIST	= 9,
+};
+
 /**
  * Search for a lock with given properties in a queue.
  *
@@ -1155,7 +1169,7 @@ static struct ldlm_lock *search_queue(struct list_head *queue,
                                       ldlm_mode_t *mode,
                                       ldlm_policy_data_t *policy,
                                       struct ldlm_lock *old_lock, __u64 flags,
-				      int unref, ldlm_type_t type)
+				      int unref, int which_list)
 {
         struct ldlm_lock *lock;
 	struct list_head       *tmp;
@@ -1165,7 +1179,7 @@ static struct ldlm_lock *search_queue(struct list_head *queue,
 	list_for_each(tmp, queue) {
                 ldlm_mode_t match;
 
-		if (type == LDLM_EXTENT)
+		if (which_list == L_SL_POLICY)
 			lock = list_entry(tmp, struct ldlm_lock, l_sl_policy);
 		else
 			lock = list_entry(tmp, struct ldlm_lock, l_res_link);
@@ -1255,7 +1269,7 @@ static enum interval_iter ldlm_extent_match_cb(struct interval_node *n,
 
 	lock = search_queue(&node->li_group, priv->mode, priv->policy,
 			    priv->old_lock, priv->flags, priv->unref,
-			    LDLM_EXTENT);
+			    L_SL_POLICY);
 
 	priv->lock = lock;
 
@@ -1285,7 +1299,7 @@ static struct ldlm_lock *ldlm_extent_match_granted_queue(
                                       ldlm_mode_t *mode,
                                       ldlm_policy_data_t *policy,
                                       struct ldlm_lock *old_lock,
-				      __u64 flags, int unref, ldlm_type_t type)
+				      __u64 flags, int unref)
 {
 	struct ldlm_lock *found_lock = NULL;
 	struct ldlm_interval_tree *tree;
@@ -1317,7 +1331,7 @@ static struct ldlm_lock *ldlm_extent_match_granted_queue(
 
 			found_lock = search_queue(&node->li_group, mode,
 						   policy, old_lock, flags,
-						   unref, type);
+						   unref, L_SL_POLICY);
 
 			break;
 		}
@@ -1414,6 +1428,7 @@ ldlm_mode_t ldlm_lock_match(struct ldlm_namespace *ns, __u64 flags,
         struct ldlm_resource *res;
         struct ldlm_lock *lock, *old_lock = NULL;
         int rc = 0;
+	int which_list = L_RES_LINK;
         ENTRY;
 
         if (ns == NULL) {
@@ -1438,21 +1453,20 @@ ldlm_mode_t ldlm_lock_match(struct ldlm_namespace *ns, __u64 flags,
 
 	if (type == LDLM_EXTENT)
 		lock = ldlm_extent_match_granted_queue(res, &mode, policy,
-						       old_lock, flags, unref,
-						       type);
+						       old_lock, flags, unref);
 	else
         	lock = search_queue(&res->lr_granted, &mode, policy, old_lock,
-                            flags, unref, type);
+                            flags, unref, which_list);
         if (lock != NULL)
                 GOTO(out, rc = 1);
         if (flags & LDLM_FL_BLOCK_GRANTED)
                 GOTO(out, rc = 0);
         lock = search_queue(&res->lr_converting, &mode, policy, old_lock,
-                            flags, unref, type);
+                            flags, unref, which_list);
         if (lock != NULL)
                 GOTO(out, rc = 1);
         lock = search_queue(&res->lr_waiting, &mode, policy, old_lock,
-                            flags, unref, type);
+                            flags, unref, which_list);
         if (lock != NULL)
                 GOTO(out, rc = 1);
 
