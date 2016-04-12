@@ -46,6 +46,7 @@
 #include "obdctl.h"
 
 #define SNAPSHOT_CONF_DIR	"/etc/lsnapshot"
+#define LDEV_CONF		"/etc/ldev.conf"
 #define SNAPSHOT_LOG		"/var/log/lsnapshot.log"
 #define SNAPSHOT_MAGIC		"0x14F711B9"
 
@@ -169,31 +170,200 @@ static int snapshot_exec(const char *cmd)
 	return rc;
 }
 
-/* The format is:
+static int snapshot_load_conf_ldev(struct snapshot_instance *si, char *buf,
+				   struct snapshot_target *st, char **role)
+{
+	char *label = NULL;
+	char *device = NULL;
+	char *ignore = NULL;
+	char *ptr;
+	char *ptr1;
+	int len;
+	int rc;
+
+	rc = sscanf(buf, "%ms %ms %ms %ms",
+		    &st->st_host, &ignore, &label, &device);
+	if (rc < 4) {
+		rc = -EINVAL;
+		goto out;
+	}
+
+	free(ignore);
+
+	/* Format of device:
+	 * [md|zfs:][pool_dir/]<pool>/<filesystem> */
+	ptr = strchr(device, ':');
+	if (ptr != NULL) {
+		ptr++;
+		if (strncmp(device, "zfs:", strlen("zfs:")) != 0) {
+			rc = -EINVAL;
+			goto out;
+		}
+	} else {
+			ptr = device;
+	}
+
+	ptr1 = strrchr(ptr, '/');
+	if (ptr1 == NULL || ptr1 == ptr) {
+		rc = -EINVAL;
+		goto out;
+	}
+
+	len = strlen(ptr1);
+	st->st_filesystem = malloc(len);
+	if (st->st_filesystem == NULL) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	*ptr1 = '\0';
+	strncpy(st->st_filesystem, ptr1 + 1, len - 1);
+	st->st_filesystem[len - 1] = '\0';
+
+	if (*ptr == '/') {
+		ptr1 = strrchr(ptr, '/');
+		*ptr1 = '\0';
+		len = strlen(ptr);
+		st->st_dir = malloc(len + 1);
+		if (st->st_dir == NULL) {
+			rc = -ENOMEM;
+			goto out;
+		}
+
+		strncpy(st->st_dir, ptr, len);
+		st->st_dir[len] = '\0';
+		ptr = ptr1 + 1;
+	}
+
+	len = strlen(ptr);
+	st->st_pool = malloc(len + 1);
+	if (st->st_pool == NULL) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	strncpy(st->st_pool, ptr, len);
+	st->st_pool[len] = '\0';
+
+	/* Format of label:
+	 * fsname-<role><index> or <role><index> */
+	ptr = strchr(label, '-');
+	if (ptr != NULL) {
+		if (strncmp(si->si_fsname, label, ptr - label) != 0) {
+			/* This line is NOT for current filesystem .*/
+			rc = -EAGAIN;
+			goto out;
+		}
+
+		ptr++;
+	} else {
+		ptr = label;
+	}
+
+	if (strlen(ptr) < 3 || strlen(ptr) > 7) {
+		rc = -EINVAL;
+		goto out;
+	}
+
+	*role = malloc(4);
+	if (*role == NULL) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	strncpy(*role, ptr, 3);
+	(*role)[3] = 0;
+	ptr += 3;
+	len = 0;
+	while (isxdigit(ptr[len])) {
+		if (isdigit(ptr[len]))
+			st->st_index =
+				st->st_index * 16 + ptr[len] - '0';
+		else if (isupper(ptr[len]))
+			st->st_index =
+				st->st_index * 16 + ptr[len] - 'A' + 10;
+		else
+			st->st_index =
+				st->st_index * 16 + ptr[len] - 'a' + 10;
+		len++;
+	}
+
+	if (len == 0) {
+		if (strncasecmp(*role, "MGS", 3) != 0)
+			rc = -EINVAL;
+		else
+			rc = 0;
+
+		goto out;
+	}
+
+	if (!isxdigit(ptr[len]) && ptr[len] != '\0') {
+		rc = -EINVAL;
+		goto out;
+	}
+
+out:
+	if (label != NULL)
+		free(label);
+	if (device != NULL)
+		free(device);
+
+	return rc;
+}
+
+/**
+ * For old snasphot tools, the configration is in /etc/lsnapshot/${fsname}.conf,
+ * the format is:
  * <host> <pool_dir> <pool> <local_fsname> <role(,s)> <index>
  *
  * For example:
  *
- * RHEL6 /tmp lustre-mdt1 mdt1 MGS,MDT 0
- * RHEL6 /tmp lustre-mdt2 mdt2 MDT 1
- * RHEL6 /tmp lustre-ost1 ost1 OST 0
- * RHEL6 /tmp lustre-ost2 ost2 OST 1
+ * host-mdt1 /tmp myfs-mdt1 mdt1 MGS,MDT 0
+ * host-mdt2 /tmp myfs-mdt2 mdt2 MDT 1
+ * host-ost1 /tmp myfs-ost1 ost1 OST 0
+ * host-ost2 /tmp myfs-ost2 ost2 OST 1
  *
- * We do use scanf() family functions for parsing because that they may cause
- * buffer overflow if the given input is too large, even if we specify "%ns",
- * the left part(s) will be assigned to the next item unexpectedly. Sometime,
- * such trouble cannot be detected in time, then cause some strange behaviour.
  *
- * \retval	0 for success
- * \retval	+ve the line# with which the current line is conflict
- * \retval	-ve other failures
+ * For new snasphot tools, the configration is in /etc/ldev.conf, which is not
+ * only for snapshot, but also for other purpose. The format is:
+ * <host> foreign/- <label> <device> [journal-path]/- [raidtab]
+ *
+ * The format of <label> is:
+ * fsname-<role><index> or <role><index>
+ *
+ * The format of <device> is:
+ * [md|zfs:][pool_dir/]<pool>/<filesystem>
+ *
+ * Snapshot only uses the fields <host>, <label> and <device>.
+ *
+ * For example:
+ *
+ * host-mdt1 - myfs-MDT0000 zfs:/tmp/myfs-mdt1/mdt1
+ *
+ *
+ * \retval	 0	for success
+ * \retval	+ve	the line# with which the current line is conflict
+ * \retval	-EAGAIN	skip current line
+ * \retval	-ve	other failures
  */
 static int snapshot_load_conf_one(struct snapshot_instance *si,
-				  char *buf, int line_num)
+				  char *buf, int line_num, bool is_ldev)
 {
 	struct snapshot_target *st;
 	char *role = NULL;
 	int rc = 0;
+
+	/* filter out space */
+	while (isspace(*buf))
+		buf++;
+
+	/* skip empty line */
+	if (*buf == '\0')
+		return 0;
+
+	/* skip comment line */
+	if (*buf == '#')
+		return 0;
 
 	st = malloc(sizeof(*st));
 	if (st == NULL)
@@ -202,14 +372,18 @@ static int snapshot_load_conf_one(struct snapshot_instance *si,
 	memset(st, 0, sizeof(*st));
 	INIT_LIST_HEAD(&st->st_list);
 
-	rc = sscanf(buf, "%ms %ms %ms %ms %ms %d",
-		    &st->st_host, &st->st_dir, &st->st_pool, &st->st_filesystem,
-		    &role, &st->st_index);
-	if (rc < 6) {
-		rc = -EINVAL;
-		goto out;
+	if (is_ldev) {
+		rc = snapshot_load_conf_ldev(si, buf, st, &role);
+	} else {
+		rc = sscanf(buf, "%ms %ms %ms %ms %ms %d",
+			    &st->st_host, &st->st_dir, &st->st_pool,
+			    &st->st_filesystem, &role, &st->st_index);
+		if (rc < 6)
+			rc = -EINVAL;
 	}
 
+	if (rc < 0)
+		goto out;
 	rc = 0;
 
 	if (strncasecmp(role, "MGS", 3) == 0) {
@@ -313,17 +487,32 @@ static int snapshot_load_conf(struct snapshot_instance *si, int lock_mode)
 	int line_num = 1;
 	int fd = -1;
 	int rc = 0;
+	bool is_ldev = true;
 
 	memset(conf_name, 0, sizeof(conf_name));
-	snprintf(conf_name, sizeof(conf_name) - 1, "%s/%s.conf",
-		 SNAPSHOT_CONF_DIR, si->si_fsname);
-
+	strncpy(conf_name, LDEV_CONF, sizeof(conf_name) - 1);
 	fd = open(conf_name, O_RDONLY);
 	if (fd < 0) {
-		fprintf(stderr,
-			"Can't open the snapshot config file %s: %s\n",
-			conf_name, strerror(errno));
-		return fd;
+		if (errno != ENOENT) {
+			fprintf(stderr,
+				"Can't open the snapshot config file %s: %s\n",
+				conf_name, strerror(errno));
+
+			return fd;
+		}
+
+		snprintf(conf_name, sizeof(conf_name) - 1, "%s/%s.conf",
+			 SNAPSHOT_CONF_DIR, si->si_fsname);
+		fd = open(conf_name, O_RDONLY);
+		if (fd < 0) {
+			fprintf(stderr,
+				"Can't open the snapshot config file %s: %s\n",
+				conf_name, strerror(errno));
+
+			return fd;
+		}
+
+		is_ldev = false;
 	}
 
 	rc = flock(fd, lock_mode | LOCK_NB);
@@ -344,15 +533,16 @@ static int snapshot_load_conf(struct snapshot_instance *si, int lock_mode)
 		goto out;
 	}
 
-	while (fgets(buf, PAGE_SIZE, fp) != NULL) {
-		rc = snapshot_load_conf_one(si, buf, line_num);
+	while (snapshot_fgets(fp, buf, PAGE_SIZE) != NULL) {
+		rc = snapshot_load_conf_one(si, buf, line_num, is_ldev);
 		if (rc == -EINVAL) {
 			fprintf(stderr,
 				"Invalid snapshot config file %s at the line "
-				"%d '%s'. The right format should be:\n"
-				"host_name\tpool_dir\tpool_name\t"
-				"local_filesystem_name\trole(,s)\tindex\n",
-				conf_name, line_num, buf);
+				"%d '%s'\n", conf_name, line_num, buf);
+		} else if (rc == -EAGAIN) {
+			rc = 0;
+			line_num++;
+			continue;
 		} else if (rc > 0) {
 			fprintf(stderr,
 				"The config role has been specified repeatedly "
@@ -367,20 +557,18 @@ static int snapshot_load_conf(struct snapshot_instance *si, int lock_mode)
 		line_num++;
 	}
 
-	if (si->si_mgs == NULL) {
-		fprintf(stderr,
-			"Miss MGS in the config file %s\n",
-			conf_name);
-		rc = -1;
-		goto out;
-	}
-
 	if (si->si_mdt0 == NULL) {
 		fprintf(stderr,
 			"Miss MDT0 in the config file %s\n",
 			conf_name);
 		rc = -1;
 		goto out;
+	}
+
+	/* By default, the MGS is on the MDT0 if it is not specified. */
+	if (si->si_mgs == NULL) {
+		si->si_mgs = si->si_mdt0;
+		si->si_mgs->st_role |= SR_MGS;
 	}
 
 	if (list_empty(&si->si_osts_list)) {
@@ -692,7 +880,9 @@ static int mdt0_is_lustre_snapshot(struct snapshot_instance *si)
 	snprintf(buf, sizeof(buf) - 1,
 		 "%s %s 'zpool import -d %s %s > /dev/null 2>&1; "
 		 "zfs get -H -o value lustre:magic %s/%s@%s'",
-		 si->si_rsh, si->si_mdt0->st_host, si->si_mdt0->st_dir,
+		 si->si_rsh, si->si_mdt0->st_host,
+		 si->si_mdt0->st_dir != NULL ? si->si_mdt0->st_dir :
+			"/dev -d /tmp",
 		 si->si_mdt0->st_pool, si->si_mdt0->st_pool,
 		 si->si_mdt0->st_filesystem, si->si_ssname);
 	fp = popen(buf, "r");
@@ -775,7 +965,9 @@ static int snapshot_get_fsname(struct snapshot_instance *si,
 	snprintf(buf, sizeof(buf) - 1,
 		 "%s %s 'zpool import -d %s %s > /dev/null 2>&1; "
 		 "zfs get -H -o value lustre:fsname %s/%s@%s'",
-		 si->si_rsh, si->si_mdt0->st_host, si->si_mdt0->st_dir,
+		 si->si_rsh, si->si_mdt0->st_host,
+		 si->si_mdt0->st_dir != NULL ? si->si_mdt0->st_dir :
+			"/dev -d /tmp",
 		 si->si_mdt0->st_pool, si->si_mdt0->st_pool,
 		 si->si_mdt0->st_filesystem, si->si_ssname);
 	fp = popen(buf, "r");
@@ -1404,7 +1596,9 @@ static int __snapshot_modify(struct snapshot_instance *si,
 					 "zfs set lustre:comment=\"%s\" "
 					 "%s/%s@%s && "
 					 "zfs set lustre:mtime=%llu %s/%s@%s'",
-					 si->si_rsh, st->st_host, st->st_dir,
+					 si->si_rsh, st->st_host,
+					 st->st_dir != NULL ? st->st_dir :
+						"/dev -d /tmp",
 					 st->st_pool, st->st_pool,
 					 st->st_filesystem, si->si_ssname,
 					 st->st_pool, st->st_filesystem,
@@ -1419,7 +1613,9 @@ static int __snapshot_modify(struct snapshot_instance *si,
 					 "/dev/null 2>&1; "
 					 "zfs rename %s/%s@%s %s/%s@%s && "
 					 "zfs set lustre:mtime=%llu %s/%s@%s'",
-					 si->si_rsh, st->st_host, st->st_dir,
+					 si->si_rsh, st->st_host,
+					 st->st_dir != NULL ? st->st_dir :
+						"/dev -d /tmp",
 					 st->st_pool, st->st_pool,
 					 st->st_filesystem, si->si_ssname,
 					 st->st_pool, st->st_filesystem,
@@ -1431,7 +1627,9 @@ static int __snapshot_modify(struct snapshot_instance *si,
 					 "/dev/null 2>&1; zfs set "
 					 "lustre:comment=\"%s\" %s/%s@%s && "
 					 "zfs set lustre:mtime=%llu %s/%s@%s'",
-					 si->si_rsh, st->st_host, st->st_dir,
+					 si->si_rsh, st->st_host,
+					 st->st_dir != NULL ? st->st_dir :
+						"/dev -d /tmp",
 					 st->st_pool, si->si_comment,
 					 st->st_pool, st->st_filesystem,
 					 si->si_ssname, xtime, st->st_pool,
@@ -1555,8 +1753,9 @@ static int snapshot_list_one(struct snapshot_instance *si,
 		 "zfs get all %s/%s@%s | grep lustre: | grep local$ | "
 		 "awk '{ \\$1=\\\"\\\"; \\$NF=\\\"\\\"; print \\$0 }' | "
 		 "sed -e 's/^ //'\"",
-		 si->si_rsh, st->st_host, st->st_dir, st->st_pool,
-		 st->st_pool, st->st_filesystem, si->si_ssname);
+		 si->si_rsh, st->st_host,
+		 st->st_dir != NULL ? st->st_dir : "/dev -d /tmp",
+		 st->st_pool, st->st_pool, st->st_filesystem, si->si_ssname);
 	fp = popen(buf, "r");
 	if (fp == NULL) {
 		SNAPSHOT_ADD_LOG(si, "Popen fail to list one: %s\n",
@@ -1819,8 +2018,10 @@ static int snapshot_mount_target(struct snapshot_instance *si,
 		 "%s %s 'zpool import -d %s %s > /dev/null 2>&1; "
 		 "mkdir -p /mnt/%s_%s && mount -t lustre "
 		 "-o rdonly_dev%s %s/%s@%s /mnt/%s_%s'",
-		 si->si_rsh, st->st_host, st->st_dir, st->st_pool,
-		 si->si_ssname, name, st != si->si_mdt0 ? "" : optstr,
+		 si->si_rsh, st->st_host,
+		 st->st_dir != NULL ? st->st_dir : "/dev -d /tmp",
+		 st->st_pool, si->si_ssname, name,
+		 st != si->si_mdt0 ? "" : optstr,
 		 st->st_pool, st->st_filesystem, si->si_ssname,
 		 si->si_ssname, name);
 	rc = snapshot_exec(cmd);
