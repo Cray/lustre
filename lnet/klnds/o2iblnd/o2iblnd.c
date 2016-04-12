@@ -677,7 +677,6 @@ kiblnd_setup_mtu_locked(struct rdma_cm_id *cmid)
                 cmid->route.path_rec->mtu = mtu;
 }
 
-#ifdef HAVE_OFED_IB_COMP_VECTOR
 static int
 kiblnd_get_completion_vector(kib_conn_t *conn, int cpt)
 {
@@ -702,7 +701,6 @@ kiblnd_get_completion_vector(kib_conn_t *conn, int cpt)
 	LBUG();
 	return 1;
 }
-#endif
 
 kib_conn_t *
 kiblnd_create_conn(kib_peer_t *peer, struct rdma_cm_id *cmid,
@@ -720,6 +718,9 @@ kiblnd_create_conn(kib_peer_t *peer, struct rdma_cm_id *cmid,
 	kib_dev_t              *dev;
 	struct ib_qp_init_attr *init_qp_attr;
 	struct kib_sched_info	*sched;
+#ifdef HAVE_IB_CQ_INIT_ATTR
+	struct ib_cq_init_attr  cq_attr = {};
+#endif
 	kib_conn_t		*conn;
 	struct ib_cq		*cq;
 	unsigned long		flags;
@@ -815,15 +816,17 @@ kiblnd_create_conn(kib_peer_t *peer, struct rdma_cm_id *cmid,
 
 	kiblnd_map_rx_descs(conn);
 
-#ifdef HAVE_OFED_IB_COMP_VECTOR
+#ifdef HAVE_IB_CQ_INIT_ATTR
+	cq_attr.cqe = IBLND_CQ_ENTRIES(version);
+	cq_attr.comp_vector = kiblnd_get_completion_vector(conn, cpt);
+	cq = ib_create_cq(cmid->device,
+			  kiblnd_cq_completion, kiblnd_cq_event, conn,
+			  &cq_attr);
+#else
 	cq = ib_create_cq(cmid->device,
 			  kiblnd_cq_completion, kiblnd_cq_event, conn,
 			  IBLND_CQ_ENTRIES(version),
 			  kiblnd_get_completion_vector(conn, cpt));
-#else
-        cq = ib_create_cq(cmid->device,
-                          kiblnd_cq_completion, kiblnd_cq_event, conn,
-                          IBLND_CQ_ENTRIES(version));
 #endif
         if (IS_ERR(cq)) {
                 CERROR("Can't create CQ: %ld, cqe: %d\n",
@@ -843,8 +846,8 @@ kiblnd_create_conn(kib_peer_t *peer, struct rdma_cm_id *cmid,
         init_qp_attr->qp_context = conn;
         init_qp_attr->cap.max_send_wr = IBLND_SEND_WRS(version);
         init_qp_attr->cap.max_recv_wr = IBLND_RECV_WRS(version);
-        init_qp_attr->cap.max_send_sge = 1;
-        init_qp_attr->cap.max_recv_sge = 1;
+	init_qp_attr->cap.max_send_sge = *kiblnd_tunables.kib_wrq_sge;
+	init_qp_attr->cap.max_recv_sge = 1;
         init_qp_attr->sq_sig_type = IB_SIGNAL_REQ_WR;
         init_qp_attr->qp_type = IB_QPT_RC;
         init_qp_attr->send_cq = cq;
@@ -852,13 +855,16 @@ kiblnd_create_conn(kib_peer_t *peer, struct rdma_cm_id *cmid,
 
 	conn->ibc_sched = sched;
 
-        rc = rdma_create_qp(cmid, conn->ibc_hdev->ibh_pd, init_qp_attr);
-        if (rc != 0) {
-                CERROR("Can't create QP: %d, send_wr: %d, recv_wr: %d\n",
-                       rc, init_qp_attr->cap.max_send_wr,
-                       init_qp_attr->cap.max_recv_wr);
-                goto failed_2;
-        }
+	rc = rdma_create_qp(cmid, conn->ibc_hdev->ibh_pd, init_qp_attr);
+	if (rc != 0) {
+		CERROR("Can't create QP: %d, send_wr: %d, recv_wr: %d, "
+		       "send_sge: %d, recv_sge: %d\n",
+		       rc, init_qp_attr->cap.max_send_wr,
+		       init_qp_attr->cap.max_recv_wr,
+		       init_qp_attr->cap.max_send_sge,
+		       init_qp_attr->cap.max_recv_sge);
+		goto failed_2;
+	}
 
         LIBCFS_FREE(init_qp_attr, sizeof(*init_qp_attr));
 
@@ -2053,7 +2059,8 @@ kiblnd_destroy_tx_pool(kib_pool_t *pool)
                 goto out;
 
         for (i = 0; i < pool->po_size; i++) {
-                kib_tx_t *tx = &tpo->tpo_tx_descs[i];
+		kib_tx_t *tx = &tpo->tpo_tx_descs[i];
+		int	  wrq_sge = *kiblnd_tunables.kib_wrq_sge;
 
 		list_del(&tx->tx_list);
                 if (tx->tx_pages != NULL)
@@ -2069,9 +2076,9 @@ kiblnd_destroy_tx_pool(kib_pool_t *pool)
                                     (1 + IBLND_MAX_RDMA_FRAGS) *
                                     sizeof(*tx->tx_wrq));
                 if (tx->tx_sge != NULL)
-                        LIBCFS_FREE(tx->tx_sge,
-                                    (1 + IBLND_MAX_RDMA_FRAGS) *
-                                    sizeof(*tx->tx_sge));
+			LIBCFS_FREE(tx->tx_sge,
+				    IBLND_MAX_RDMA_FRAGS * wrq_sge *
+				    sizeof(*tx->tx_sge));
                 if (tx->tx_rd != NULL)
                         LIBCFS_FREE(tx->tx_rd,
                                     offsetof(kib_rdma_desc_t,
@@ -2129,7 +2136,8 @@ kiblnd_create_tx_pool(kib_poolset_t *ps, int size, kib_pool_t **pp_po)
         memset(tpo->tpo_tx_descs, 0, size * sizeof(kib_tx_t));
 
         for (i = 0; i < size; i++) {
-                kib_tx_t *tx = &tpo->tpo_tx_descs[i];
+		kib_tx_t *tx = &tpo->tpo_tx_descs[i];
+		int	  wrq_sge = *kiblnd_tunables.kib_wrq_sge;
 
                 tx->tx_pool = tpo;
 		if (ps->ps_net->ibn_fmr_ps != NULL) {
@@ -2154,7 +2162,7 @@ kiblnd_create_tx_pool(kib_poolset_t *ps, int size, kib_pool_t **pp_po)
 			break;
 
 		LIBCFS_CPT_ALLOC(tx->tx_sge, lnet_cpt_table(), ps->ps_cpt,
-				 (1 + IBLND_MAX_RDMA_FRAGS) *
+				 IBLND_MAX_RDMA_FRAGS * wrq_sge *
 				 sizeof(*tx->tx_sge));
 		if (tx->tx_sge == NULL)
 			break;
@@ -2767,11 +2775,7 @@ kiblnd_create_dev(char *ifname)
                 return NULL;
 
         memset(dev, 0, sizeof(*dev));
-#ifdef HAVE_DEV_GET_BY_NAME_2ARG
         netdev = dev_get_by_name(&init_net, ifname);
-#else
-        netdev = dev_get_by_name(ifname);
-#endif
         if (netdev == NULL) {
                 dev->ibd_can_failover = 0;
         } else {

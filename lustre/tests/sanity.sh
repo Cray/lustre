@@ -13206,6 +13206,14 @@ test_257() {
 }
 run_test 257 "signal vs CP callback race"
 
+test_260() {
+#define OBD_FAIL_MDC_CLOSE               0x806
+	$LCTL set_param fail_loc=0x80000806
+	touch $DIR/$tfile
+
+}
+run_test 260 "Check mdc_close fail"
+
 cleanup_test_300() {
 	trap 0
 	umask $SAVE_UMASK
@@ -13663,6 +13671,35 @@ test_401() {
 		error "One layout swap locked test failed"
 }
 run_test 401 "Various layout swap lock tests"
+
+test_403() {
+	local file1=$DIR/$tfile.1
+	local file2=$DIR/$tfile.2
+	local tfile=$TMP/$tfile
+
+	rm -f $file1 $file2 $tfile
+
+	touch $file1
+	ln $file1 $file2
+
+	# 30 sec OBD_TIMEOUT in ll_getattr()
+	# right before populating st_nlink
+	$LCTL set_param fail_loc=0x80001409
+	stat -c %h $file1 > $tfile &
+
+	# create an alias, drop all locks and reclaim the dentry
+	< $file2
+	cancel_lru_locks mdc
+	cancel_lru_locks osc
+	sysctl -w vm.drop_caches=2
+
+	wait
+
+	[ `cat $tfile` -gt 0 ] || error "wrong nlink count: `cat $tfile`"
+
+	rm -f $tfile $file1 $file2
+}
+run_test 403 "i_nlink should not drop to zero due to aliasing"
 
 #
 # tests that do cleanup/setup should be run at the end

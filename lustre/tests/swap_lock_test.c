@@ -270,7 +270,7 @@ static void test14(void)
 		strerror(-rc));
 
 	rc = llapi_fswap_layouts(0, 0, 0, 0, 0);
-	ASSERTF(rc == -ENOTTY, "llapi_fswap_layouts failed: %s",
+	ASSERTF(rc == -EINVAL, "llapi_fswap_layouts failed: %s",
 		strerror(-rc));
 
 	rc = llapi_fswap_layouts(456789076, 234567895, 0, 0, 0);
