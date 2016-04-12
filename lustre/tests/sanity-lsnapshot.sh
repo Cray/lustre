@@ -52,7 +52,7 @@ lsnapshot_umount()
 	do_facet mgs "$LCTL snapshot_umount -F $FSNAME $*"
 }
 
-LSNAPSHOT_CONF="/etc/lsnapshot/$FSNAME.conf"
+LSNAPSHOT_CONF="/etc/ldev.conf"
 LSNAPSHOT_LOG="/var/log/lsnapshot.log"
 
 lss_err()
@@ -73,9 +73,11 @@ lss_gen_conf_one()
 	local dir=$(dirname $(facet_vdevice $facet))
 	local pool=$(zpool_name $facet)
 	local lfsname=$(zfs_local_fsname $facet)
+	local label=${FSNAME}-${role}$(printf '%04x' $idx)
 
 	do_facet mgs \
-		"echo '$host $dir $pool $lfsname $role $idx' >> $LSNAPSHOT_CONF"
+		"echo '$host - $label zfs:${dir}/${pool}/${lfsname} - -' >> \
+		$LSNAPSHOT_CONF"
 }
 
 lss_gen_conf()
@@ -89,8 +91,14 @@ lss_gen_conf()
 			skip "Lustre snapshot 1 only works for ZFS backend" &&
 			exit 0
 
-		lss_gen_conf_one mgs MGS 0 ||
-			lss_err "generate lss conf (mgs)"
+		local host=$(facet_active_host mgs)
+		local dir=$(dirname $(facet_vdevice mgs))
+		local pool=$(zpool_name mgs)
+		local lfsname=$(zfs_local_fsname mgs)
+
+		do_facet mgs \
+			"echo '$host - MGS zfs:${dir}/${pool}/${lfsname} - -' >> \
+			$LSNAPSHOT_CONF" || lss_err "generate lss conf (mgs)"
 	fi
 
 	for num in `seq $MDSCOUNT`; do
@@ -98,18 +106,8 @@ lss_gen_conf()
 			skip "Lustre snapshot 1 only works for ZFS backend" &&
 			exit 0
 
-		if [ $num -eq 1 ]; then
-			if ! combined_mgs_mds ; then
-				lss_gen_conf_one mds1 MDT 0 ||
-					lss_err "generate lss conf (mds1)"
-			else
-				lss_gen_conf_one mds1 MGS,MDT 0 ||
-					lss_err "generate lss conf (mgs/mds1)"
-			fi
-		else
-			lss_gen_conf_one mds$num MDT $((num - 1)) ||
-				lss_err "generate lss conf (mds$num)"
-		fi
+		lss_gen_conf_one mds$num MDT $((num - 1)) ||
+			lss_err "generate lss conf (mds$num)"
 	done
 
 	for num in `seq $OSTCOUNT`; do
