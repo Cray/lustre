@@ -893,7 +893,7 @@ struct cl_page_operations {
                            const struct cl_page_slice *slice);
         /** Destructor. Frees resources and slice itself. */
         void (*cpo_fini)(const struct lu_env *env,
-                         struct cl_page_slice *slice);
+                         struct cl_page_slice *slice, int bulk);
         /**
          * Optional debugging helper. Prints given page slice.
          *
@@ -2247,6 +2247,9 @@ struct cl_page *cl_page_alloc       (const struct lu_env *env,
 void            cl_page_get         (struct cl_page *page);
 void            cl_page_put         (const struct lu_env *env,
                                      struct cl_page *page);
+void		cl_pagevec_put      (const struct lu_env *env,
+				     struct cl_page **cl_pvec,
+				     int count);
 void            cl_page_print       (const struct lu_env *env, void *cookie,
                                      lu_printer_t printer,
                                      const struct cl_page *pg);

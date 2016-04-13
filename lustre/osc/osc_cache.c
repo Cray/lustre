@@ -941,6 +941,10 @@ static int osc_extent_truncate(struct osc_extent *ext, pgoff_t trunc_index,
 	struct client_obd     *cli = osc_cli(obj);
 	struct osc_async_page *oap;
 	struct osc_async_page *tmp;
+	/* Used to store page pointers for bulk putting & releasing */
+	struct cl_page        **cl_pvec;
+	int		       pvec_max = 0;
+	int                    pvec_count = 0;
 	int                    pages_in_chunk = 0;
 	int                    ppc_bits    = cli->cl_chunkbits -
 					     PAGE_CACHE_SHIFT;
@@ -963,6 +967,9 @@ static int osc_extent_truncate(struct osc_extent *ext, pgoff_t trunc_index,
 	rc = cl_io_init(env, io, CIT_MISC, io->ci_obj);
 	if (rc < 0)
 		GOTO(out, rc);
+
+	pvec_max = ext->oe_nr_pages;
+	OBD_ALLOC(cl_pvec, pvec_max*sizeof(void *));
 
 	/* discard all pages with index greater than trunc_index */
 	list_for_each_entry_safe(oap, tmp, &ext->oe_pages,
@@ -997,11 +1004,16 @@ static int osc_extent_truncate(struct osc_extent *ext, pgoff_t trunc_index,
 		}
 
 		lu_ref_del(&page->cp_reference, "truncate", current);
-		cl_page_put(env, page);
+
+		cl_pvec[pvec_count] = page;
+		pvec_count++;
 
 		--ext->oe_nr_pages;
 		++nr_pages;
 	}
+	cl_pagevec_put(env, cl_pvec, pvec_count);
+	OBD_FREE(cl_pvec, pvec_max*sizeof(void *));
+
 	EASSERTF(ergo(ext->oe_start >= trunc_index + !!partial,
 		      ext->oe_nr_pages == 0),
 		ext, "trunc_index %lu, partial %d\n", trunc_index, partial);
@@ -3028,6 +3040,8 @@ int osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 {
 	struct osc_page *ops;
 	void            **pvec;
+	/* pvec of cl_pages; input to generic bulk page cleanup code */
+	struct cl_page	**cl_pvec;
 	pgoff_t         idx;
 	unsigned int    nr;
 	unsigned int    i;
@@ -3035,6 +3049,10 @@ int osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 	int             res = CLP_GANG_OKAY;
 	bool            tree_lock = true;
 	ENTRY;
+
+	OBD_ALLOC(cl_pvec, sizeof(void *)*OTI_PVEC_SIZE);
+	if (!cl_pvec)
+		RETURN(CLP_GANG_ABORT);
 
 	idx = start;
 	pvec = osc_env_info(env)->oti_pvec;
@@ -3084,8 +3102,10 @@ int osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 
 			page = ops->ops_cl.cpl_page;
 			lu_ref_del(&page->cp_reference, "gang_lookup", current);
-			cl_page_put(env, page);
+			cl_pvec[i] = page;
 		}
+		cl_pagevec_put(env, cl_pvec, j);
+
 		if (nr < OTI_PVEC_SIZE || end_of_region)
 			break;
 
@@ -3099,6 +3119,8 @@ int osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 	}
 	if (tree_lock)
 		spin_unlock(&osc->oo_tree_lock);
+	OBD_FREE(cl_pvec, sizeof(void *)*OTI_PVEC_SIZE);
+
 	RETURN(res);
 }
 

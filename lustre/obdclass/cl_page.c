@@ -45,6 +45,7 @@
 #include <obd_class.h>
 #include <obd_support.h>
 #include <libcfs/list.h>
+#include <linux/pagevec.h>
 
 #include <cl_object.h>
 #include "cl_internal.h"
@@ -130,7 +131,21 @@ cl_page_at_trusted(const struct cl_page *page,
 	RETURN(NULL);
 }
 
-static void cl_page_free(const struct lu_env *env, struct cl_page *page)
+/**
+ * Free a cl_page
+ *
+ * Normally, the vm page is release by the cpo_fini() functions, but when
+ * this is called with bulk = 1 (ie, from cl_pagevec_free), the vm page freeing
+ * is left to the caller instead.
+ *
+ * \param[in] env	lu_env of calling thread
+ * \param[in] page	cl_page to free
+ * \param[in] bulk	true if the caller is releasing vm pages in bulk, tells
+ * 			the cpo_fini() functions if they should release the
+ * 			associated vm page for this cl_page
+ */
+static void cl_page_free(const struct lu_env *env, struct cl_page *page,
+			 int bulk)
 {
 	struct cl_object *obj  = page->cp_obj;
 	int pagesize = cl_object_header(obj)->coh_page_bufsize;
@@ -148,7 +163,7 @@ static void cl_page_free(const struct lu_env *env, struct cl_page *page)
 				   struct cl_page_slice, cpl_linkage);
 		list_del_init(page->cp_layers.next);
 		if (unlikely(slice->cpl_ops->cpo_fini != NULL))
-			slice->cpl_ops->cpo_fini(env, slice);
+			slice->cpl_ops->cpo_fini(env, slice, bulk);
 	}
 	CS_PAGE_DEC(obj, total);
 	CS_PAGESTATE_DEC(obj, page->cp_state);
@@ -156,6 +171,45 @@ static void cl_page_free(const struct lu_env *env, struct cl_page *page)
 	cl_object_put(env, obj);
 	lu_ref_fini(&page->cp_reference);
 	OBD_FREE(page, pagesize);
+	EXIT;
+}
+
+/**
+ * Free a collection of pages at once
+ * 
+ * Used so we can call pagevec_release instead of page_release, which reduces
+ * lock contention in the page cache.
+ *
+ * \param[in] env	lu_env of calling thread
+ * \param[in] cl_pvec	array of pointers to cl_pages to free
+ * \param[in] count	number of cl_pages in the pagevec
+ */
+static void cl_pagevec_free(const struct lu_env *env, struct cl_page **cl_pvec,
+			    int count)
+{
+	struct pagevec pvec;
+	int i;
+
+	ENTRY;
+
+	pagevec_init(&pvec,0);
+
+	for (i = 0; i < count; i++) {
+		struct cl_page *page = cl_pvec[i];
+		struct page *vmpage = page->cp_vmpage;
+		pagevec_add(&pvec, vmpage);
+		cl_page_free(env, page, 1);
+		/* Release pagevec only when full */
+		if (pagevec_space(&pvec) == 0) {
+			pagevec_release(&pvec);
+			pagevec_reinit(&pvec);
+		}
+	}
+
+	/* Make sure we release trailing partial pagevec */
+	if (pagevec_count(&pvec) > 0)
+		pagevec_release(&pvec);
+
 	EXIT;
 }
 
@@ -202,7 +256,7 @@ struct cl_page *cl_page_alloc(const struct lu_env *env,
 								  ind);
 				if (result != 0) {
 					cl_page_delete0(env, page);
-					cl_page_free(env, page);
+					cl_page_free(env, page, 0);
 					page = ERR_PTR(result);
 					break;
 				}
@@ -363,18 +417,20 @@ void cl_page_get(struct cl_page *page)
 EXPORT_SYMBOL(cl_page_get);
 
 /**
- * Releases a reference to a page.
+ * Shared code between cl_page_put and cl_pagevec_put
  *
- * When last reference is released, page is returned to the cache, unless it
- * is in cl_page_state::CPS_FREEING state, in which case it is immediately
- * destroyed.
+ * 'puts' one page, and if reference count is zero, checks aspects of page
+ * state which must be true in that case.  Returns whether or not page is ready
+ * to be freed.
  *
- * \see cl_object_put(), cl_lock_put().
- */
-void cl_page_put(const struct lu_env *env, struct cl_page *page)
+ * \param[in] env	lu_env of calling thread
+ * \param[in] page	cl_page to put
+ * \retval 1 - No more references, free this page
+ * \retval 0 - Page still has references, don't free it yet
+ * */
+static int cl_page_put_common(const struct lu_env *env, struct cl_page *page)
 {
-        ENTRY;
-        CL_PAGE_HEADER(D_TRACE, env, page, "%d\n",
+	CL_PAGE_HEADER(D_TRACE, env, page, "%d\n",
 		       atomic_read(&page->cp_ref));
 
 	if (atomic_dec_and_test(&page->cp_ref)) {
@@ -384,15 +440,79 @@ void cl_page_put(const struct lu_env *env, struct cl_page *page)
 		PASSERT(env, page, page->cp_owner == NULL);
 		PASSERT(env, page, list_empty(&page->cp_batch));
 		/*
-		 * Page is no longer reachable by other threads. Tear
-		 * it down.
+		 * Page is no longer reachable by other threads. Tell
+		 * caller to tear it down.
 		 */
-		cl_page_free(env, page);
+		return 1;
 	}
+
+	return 0;
+}
+/**
+ * Releases a reference to a page.
+ *
+ * When last reference is released, page is returned to the cache, unless it
+ * is in cl_page_state::CPS_FREEING state, in which case it is immediately
+ * destroyed.
+ *
+ * \see cl_object_put(), cl_lock_put().
+ *
+ * \param[in] env	lu_env of calling thread
+ * \param[in] page	cl_page to put
+ */
+void cl_page_put(const struct lu_env *env, struct cl_page *page)
+{
+        ENTRY;
+
+	if (cl_page_put_common(env, page))
+		cl_page_free(env, page, 0);
 
 	EXIT;
 }
 EXPORT_SYMBOL(cl_page_put);
+
+
+/**
+ * Releases references to a set of pages
+ *
+ * When last reference is released, page is returned to the cache, unless it
+ * is in cl_page_state::CPS_FREEING state, in which case it is packaged up
+ * for freeing in bulk by cl_pagevec_free.
+ *
+ * \see cl_object_put(), cl_lock_put(), cl_pagevec_free()
+ *
+ * \param[in] env	lu_env of calling thread
+ * \param[in] cl_pvec	vector of cl_pages to put
+ */
+void cl_pagevec_put(const struct lu_env *env, struct cl_page **cl_pvec,
+		    int count)
+{
+	struct cl_page **pvec_free;
+	int free_count = 0;
+	int i;
+
+        ENTRY;
+
+	/* Count is the maximum number of pages we could end up freeing */
+	OBD_ALLOC(pvec_free, sizeof(void *)*count);
+
+	for(i = 0; i < count; i++) {
+		struct cl_page *page = ((struct cl_page **) cl_pvec)[i];
+
+		if (cl_page_put_common(env, page)) {
+			pvec_free[i] = page;
+			free_count++;
+		}
+	}
+
+	if (free_count > 0)
+		cl_pagevec_free(env, pvec_free, free_count);
+
+	OBD_FREE(pvec_free, sizeof(void *)*count);
+
+	EXIT;
+}
+EXPORT_SYMBOL(cl_pagevec_put);
 
 /**
  * Returns a cl_page associated with a VM page, and given cl_object.
