@@ -1428,7 +1428,6 @@ ldlm_mode_t ldlm_lock_match(struct ldlm_namespace *ns, __u64 flags,
         struct ldlm_resource *res;
         struct ldlm_lock *lock, *old_lock = NULL;
         int rc = 0;
-	int which_list = L_RES_LINK;
         ENTRY;
 
         if (ns == NULL) {
@@ -1456,17 +1455,17 @@ ldlm_mode_t ldlm_lock_match(struct ldlm_namespace *ns, __u64 flags,
 						       old_lock, flags, unref);
 	else
         	lock = search_queue(&res->lr_granted, &mode, policy, old_lock,
-                            flags, unref, which_list);
+                            flags, unref, L_RES_LINK);
         if (lock != NULL)
                 GOTO(out, rc = 1);
         if (flags & LDLM_FL_BLOCK_GRANTED)
                 GOTO(out, rc = 0);
         lock = search_queue(&res->lr_converting, &mode, policy, old_lock,
-                            flags, unref, which_list);
+                            flags, unref, L_RES_LINK);
         if (lock != NULL)
                 GOTO(out, rc = 1);
         lock = search_queue(&res->lr_waiting, &mode, policy, old_lock,
-                            flags, unref, which_list);
+                            flags, unref, L_RES_LINK);
         if (lock != NULL)
                 GOTO(out, rc = 1);
 
