@@ -1419,7 +1419,8 @@ int ldlm_ns_drop_cache(struct ldlm_namespace *ns)
 		int canceled, unused  = ns->ns_nr_unused;
 		/* Try to cancel all @ns_nr_unused locks. */
 		canceled = ldlm_cancel_lru(ns, unused, 0,
-					   LDLM_CANCEL_PASSED);
+					   LDLM_CANCEL_PASSED |
+					   LDLM_CANCEL_CLEANUP);
 		if (canceled < unused) {
 			CDEBUG(D_DLMTRACE,
 			       "not all requested locks are canceled, "
@@ -1430,7 +1431,8 @@ int ldlm_ns_drop_cache(struct ldlm_namespace *ns)
 	} else {
 		tmp = ns->ns_max_unused;
 		ns->ns_max_unused = 0;
-		ldlm_cancel_lru(ns, 0, 0, LDLM_CANCEL_PASSED);
+		ldlm_cancel_lru(ns, 0, 0, LDLM_CANCEL_PASSED |
+					  LDLM_CANCEL_CLEANUP);
 		ns->ns_max_unused = tmp;
 	}
 

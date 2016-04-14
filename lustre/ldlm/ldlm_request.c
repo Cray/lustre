@@ -1774,6 +1774,11 @@ static int ldlm_prepare_lru_list(struct ldlm_namespace *ns,
 		 * this flag and call l_blocking_ast */
 		lock->l_flags |= LDLM_FL_CBPENDING | LDLM_FL_CANCELING;
 
+		if ((flags & LDLM_CANCEL_CLEANUP) &&
+		    lock->l_resource->lr_type == LDLM_EXTENT &&
+		    lock->l_granted_mode == LCK_PR)
+			ldlm_set_discard_data(lock);
+
 		/* We can't re-add to l_lru as it confuses the
 		 * refcounting in ldlm_lock_remove_from_lru() if an AST
 		 * arrives after we drop lr_lock below. We use l_bl_ast

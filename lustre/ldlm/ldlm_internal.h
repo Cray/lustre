@@ -105,6 +105,11 @@ enum {
 	LDLM_CANCEL_NO_WAIT = 1 << 4,/* Cancel locks w/o blocking (neither
                                       * sending nor waiting for any rpcs) */
 	LDLM_CANCEL_LRUR_NO_WAIT = 1 << 5, /* LRUR + NO_WAIT */
+	LDLM_CANCEL_CLEANUP = 1 << 6, /* Used by ns_drop_cache, tells
+					 prepare_lru_list to set discard flag
+					 on PR extent locks so we don't waste
+					 time saving pages that will be
+					 discarded later*/
 };
 
 int ldlm_cancel_lru(struct ldlm_namespace *ns, int nr,

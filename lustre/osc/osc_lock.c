@@ -415,7 +415,8 @@ static int osc_lock_flush(struct osc_object *obj, pgoff_t start, pgoff_t end,
 			rc = 0;
 	}
 
-	rc2 = osc_lock_discard_pages(env, obj, start, end, mode);
+	rc2 = osc_lock_discard_pages(env, obj, start, end, mode,
+				     discard);
 	if (rc == 0 && rc2 < 0)
 		rc = rc2;
 
