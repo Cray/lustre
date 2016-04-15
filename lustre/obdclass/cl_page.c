@@ -197,18 +197,17 @@ static void cl_pagevec_free(const struct lu_env *env, struct cl_page **cl_pvec,
 	for (i = 0; i < count; i++) {
 		struct cl_page *page = cl_pvec[i];
 		struct page *vmpage = page->cp_vmpage;
-		pagevec_add(&pvec, vmpage);
 		cl_page_free(env, page, 1);
 		/* Release pagevec only when full */
-		if (pagevec_space(&pvec) == 0) {
+		if (pagevec_add(&pvec, vmpage) == 0) {
 			pagevec_release(&pvec);
 			pagevec_reinit(&pvec);
 		}
 	}
 
-	/* Make sure we release trailing partial pagevec */
-	if (pagevec_count(&pvec) > 0)
-		pagevec_release(&pvec);
+	/* Make sure we release trailing partial pagevec (pagevec_release checks
+	 * count) */
+	pagevec_release(&pvec);
 
 	EXIT;
 }
@@ -430,6 +429,8 @@ EXPORT_SYMBOL(cl_page_get);
  * */
 static int cl_page_put_common(const struct lu_env *env, struct cl_page *page)
 {
+	ENTRY;
+
 	CL_PAGE_HEADER(D_TRACE, env, page, "%d\n",
 		       atomic_read(&page->cp_ref));
 
@@ -443,10 +444,10 @@ static int cl_page_put_common(const struct lu_env *env, struct cl_page *page)
 		 * Page is no longer reachable by other threads. Tell
 		 * caller to tear it down.
 		 */
-		return 1;
+		RETURN(1);
 	}
 
-	return 0;
+	RETURN(0);
 }
 /**
  * Releases a reference to a page.
@@ -500,7 +501,7 @@ void cl_pagevec_put(const struct lu_env *env, struct cl_page **cl_pvec,
 		struct cl_page *page = ((struct cl_page **) cl_pvec)[i];
 
 		if (cl_page_put_common(env, page)) {
-			pvec_free[i] = page;
+			pvec_free[free_count] = page;
 			free_count++;
 		}
 	}
