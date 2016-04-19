@@ -5535,6 +5535,42 @@ test_87() { # MRP-153
 }
 run_test 87 "check tunefs correctly handles parameter addition and removal"
 
+test_89() {
+	local had_config
+
+	[ "$MDSCOUNT" -lt 2 ] && { skip "mdt count < 2"; return 0; }
+
+	had_config=$(do_facet mds1 "$LCTL get_param debug|grep config")
+	do_facet mds1 "$LCTL set_param debug=+config"
+	do_facet mds1 "$LCTL dk > /dev/null"
+
+	setup
+	do_facet mds2 "$TUNEFS --writeconf $(mdsdevname 2)" > /dev/null 2>&1
+	# mount after writeconf will make "add osp" added to mdt0 config:
+	# 53 (224)marker  60 (flags=0x01, v2.5.1.0) lustre-MDT0001  'add osp'
+	# 54 (080)add_uuid  nid=...  0:  1:...
+	# 55 (144)attach    0:lustre-MDT0001-osp-MDT0000  1:osp  2:...
+	# 56 (144)setup     0:lustre-MDT0001-osp-MDT0000  1:...  2:...
+	# 57 (136)modify_mdc_tgts add 0:lustre-MDT0000-mdtlov  1:...  2:1  3:1
+	# duplicate modify_mds_tgts caused crashes
+	for i in `seq 1 3`; do
+		stop_mdt 2
+		# though config processing stops after failed attach and setup
+		# it will proceed after the failed command after each writeconf
+		# this is the original scenario of the issue
+		do_facet mds2 "$TUNEFS --writeconf $(mdsdevname 2)" > /dev/null 2>&1
+		start_mdt 2
+		while [ -z "$(do_facet mds1 $LCTL dk|grep Processed\ log\ $FSNAME-MDT0000)" ] ; do
+			sleep 1
+		done
+	done
+
+	[ -z "$had_config" ] && do_facet mds1 lctl set_param debug=-config
+
+	reformat
+}
+run_test 89 "writeconf on mdt>0 shouldn't duplicate mdc/osp and crash"
+
 if ! combined_mgs_mds ; then
 	stop mgs
 fi
