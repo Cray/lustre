@@ -14002,6 +14002,15 @@ test_401c() {
 }
 run_test 401c "rescan barrier bitmap"
 
+test_402() {
+	$LFS setdirstripe -i 0 $DIR/$tdir || error "setdirstripe -i 0 failed"
+#define OBD_FAIL_MDS_FLD_LOOKUP 0x15c
+	do_facet mds1 "lctl set_param fail_loc=0x8000015c"
+	touch $DIR/$tdir/$tfile && error "touch should fail with ENOENT" ||
+		echo "Touch failed - OK"
+}
+run_test 402 "Return ENOENT to lod_generate_and_set_lovea"
+
 [[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.11.1) ]] ||
 	do_nodes $(comma_list $(facet_active_host mgs) $(mdts_nodes)) \
 	$LCTL set_param debug=-snapshot
@@ -14009,7 +14018,7 @@ run_test 401c "rescan barrier bitmap"
 saved_MDS_MOUNT_OPTS=$MDS_MOUNT_OPTS
 saved_OST_MOUNT_OPTS=$OST_MOUNT_OPTS
 
-cleanup_402() {
+cleanup_420() {
 	trap 0
 
 	stopall
@@ -14018,7 +14027,7 @@ cleanup_402() {
 	setupall
 }
 
-test_402() {
+test_420() {
 	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
 		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
 
@@ -14027,7 +14036,7 @@ test_402() {
 	cp $LUSTRE/tests/test-framework.sh $DIR/$tdir/ ||
 		error "(2) Fail to copy"
 
-	trap cleanup_402 EXIT
+	trap cleanup_420 EXIT
 
 	stopall
 
@@ -14052,9 +14061,9 @@ test_402() {
 	diff $LUSTRE/tests/test-framework.sh $DIR/$tdir/test-framework.sh ||
 		error "(7) Read should succeed under ro mode"
 
-	cleanup_402
+	cleanup_420
 }
-run_test 402 "simulate readonly device"
+run_test 420 "simulate readonly device"
 
 #
 # tests that do cleanup/setup should be run at the end
