@@ -488,28 +488,34 @@ EXPORT_SYMBOL(cl_page_put);
 void cl_pagevec_put(const struct lu_env *env, struct cl_page **cl_pvec,
 		    int count)
 {
-	struct cl_page **pvec_free;
+	struct cl_page **pvec_free = NULL;
 	int free_count = 0;
+	int oom = 0;
 	int i;
 
         ENTRY;
 
 	/* Count is the maximum number of pages we could end up freeing */
 	OBD_ALLOC(pvec_free, sizeof(void *)*count);
+	if (!pvec_free)
+		oom = 1;
 
 	for(i = 0; i < count; i++) {
 		struct cl_page *page = ((struct cl_page **) cl_pvec)[i];
 
-		if (cl_page_put_common(env, page)) {
+		if (!oom && cl_page_put_common(env, page)) {
 			pvec_free[free_count] = page;
 			free_count++;
 		}
+		if (oom)
+			cl_page_put(env, page);
 	}
 
 	if (free_count > 0)
 		cl_pagevec_free(env, pvec_free, free_count);
 
-	OBD_FREE(pvec_free, sizeof(void *)*count);
+	if (!oom)
+		OBD_FREE(pvec_free, sizeof(void *)*count);
 
 	EXIT;
 }

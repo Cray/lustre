@@ -942,7 +942,7 @@ static int osc_extent_truncate(struct osc_extent *ext, pgoff_t trunc_index,
 	struct osc_async_page *oap;
 	struct osc_async_page *tmp;
 	/* Used to store page pointers for bulk putting & releasing */
-	struct cl_page        **cl_pvec;
+	struct cl_page        **cl_pvec = NULL;
 	int		       pvec_max = 0;
 	int                    pvec_count = 0;
 	int                    pages_in_chunk = 0;
@@ -952,6 +952,7 @@ static int osc_extent_truncate(struct osc_extent *ext, pgoff_t trunc_index,
 	int                    grants   = 0;
 	int                    nr_pages = 0;
 	int                    rc       = 0;
+	int		       oom      = 0;
 	ENTRY;
 
 	LASSERT(sanity_check(ext) == 0);
@@ -970,6 +971,8 @@ static int osc_extent_truncate(struct osc_extent *ext, pgoff_t trunc_index,
 
 	pvec_max = ext->oe_nr_pages;
 	OBD_ALLOC(cl_pvec, pvec_max*sizeof(void *));
+	if (!cl_pvec)
+		oom = 1;
 
 	/* discard all pages with index greater than trunc_index */
 	list_for_each_entry_safe(oap, tmp, &ext->oe_pages,
@@ -1005,14 +1008,21 @@ static int osc_extent_truncate(struct osc_extent *ext, pgoff_t trunc_index,
 
 		lu_ref_del(&page->cp_reference, "truncate", current);
 
-		cl_pvec[pvec_count] = page;
-		pvec_count++;
+		if (!oom) {
+			cl_pvec[pvec_count] = page;
+			pvec_count++;
+		} else {
+			cl_page_put(env, page);
+		}
 
 		--ext->oe_nr_pages;
 		++nr_pages;
 	}
-	cl_pagevec_put(env, cl_pvec, pvec_count);
-	OBD_FREE(cl_pvec, pvec_max*sizeof(void *));
+
+	if (!oom) {
+		cl_pagevec_put(env, cl_pvec, pvec_count);
+		OBD_FREE(cl_pvec, pvec_max*sizeof(void *));
+	}
 
 	EASSERTF(ergo(ext->oe_start >= trunc_index + !!partial,
 		      ext->oe_nr_pages == 0),
@@ -3048,11 +3058,12 @@ int osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 	unsigned int    j;
 	int             res = CLP_GANG_OKAY;
 	bool            tree_lock = true;
+	bool            oom = 0;
 	ENTRY;
 
 	OBD_ALLOC(cl_pvec, sizeof(void *)*OTI_PVEC_SIZE);
 	if (!cl_pvec)
-		RETURN(CLP_GANG_ABORT);
+		oom = 1;
 
 	idx = start;
 	pvec = osc_env_info(env)->oti_pvec;
@@ -3102,9 +3113,13 @@ int osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 
 			page = ops->ops_cl.cpl_page;
 			lu_ref_del(&page->cp_reference, "gang_lookup", current);
-			cl_pvec[i] = page;
+			if (!oom)
+				cl_pvec[i] = page;
+			else
+				cl_page_put(env, page);
 		}
-		cl_pagevec_put(env, cl_pvec, j);
+		if (!oom)
+			cl_pagevec_put(env, cl_pvec, j);
 
 		if (nr < OTI_PVEC_SIZE || end_of_region)
 			break;
@@ -3119,7 +3134,8 @@ int osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 	}
 	if (tree_lock)
 		spin_unlock(&osc->oo_tree_lock);
-	OBD_FREE(cl_pvec, sizeof(void *)*OTI_PVEC_SIZE);
+	if (!oom)
+		OBD_FREE(cl_pvec, sizeof(void *)*OTI_PVEC_SIZE);
 
 	RETURN(res);
 }
