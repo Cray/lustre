@@ -1652,6 +1652,10 @@ ldlm_cancel_lru_policy(struct ldlm_namespace *ns, int flags)
  *                               (typically before replaying locks) w/o
  *                               sending any RPCs or waiting for any
  *                               outstanding RPC to complete.
+ *
+ * flags & LDLM_CANCEL_CLEANUP - when cancelling read locks, do not check for
+ *				 other read locks covering the same pages, just
+ *				 discard those pages.
  */
 static int ldlm_prepare_lru_list(struct ldlm_namespace *ns,
 				 struct list_head *cancels, int count, int max,

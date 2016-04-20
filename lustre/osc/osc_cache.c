@@ -3193,9 +3193,8 @@ int osc_lock_discard_pages(const struct lu_env *env, struct osc_object *osc,
 	if (result != 0)
 		GOTO(out, result);
 
-	cb = mode == CLM_READ ? check_and_discard_cb : discard_cb;
-	if (discard)
-		cb = discard_cb;
+	cb = (mode == CLM_READ && !discard) ? check_and_discard_cb :
+					      discard_cb;
 	info->oti_fn_index = info->oti_next_index = start;
 	do {
 		res = osc_page_gang_lookup(env, io, osc,
