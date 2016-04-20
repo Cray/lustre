@@ -2822,6 +2822,32 @@ test_76() { #LU-946
 }
 run_test 76 "Verify open file for 2048 files"
 
+test_79() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	test_mkdir -p $DIR/$tdir
+
+	# Prevent interference from layout intent RPCs due to
+	# asynchronous writeback. These will be tested in 130c below.
+	do_nodes ${CLIENTS:-$HOSTNAME} sync
+
+	setfattr -n trusted.name1 -v value1 $DIR/$tdir ||
+		error "setfattr -n trusted.name1=value1 $DIR/$tdir failed"
+
+#define OBD_FAIL_MDS_INTENT_DELAY		0x160
+	local mdtidx=$($LFS getstripe -M $DIR/$tdir)
+	local facet=mds$((mdtidx + 1))
+	stat $DIR/$tdir
+	set_nodes_failloc $(facet_active_host $facet) 0x80000160
+	getfattr -n trusted.name1 $DIR/$tdir 2> /dev/null  &
+	local pid=$!
+	sleep 2
+
+	rm -rf $DIR2/$tdir
+	wait $pid
+	return 0
+}
+run_test 79 "xattr: intent error"
+
 test_80() {
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local MDTIDX=1
