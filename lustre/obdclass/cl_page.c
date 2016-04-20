@@ -490,7 +490,7 @@ void cl_pagevec_put(const struct lu_env *env, struct cl_page **cl_pvec,
 {
 	struct cl_page **pvec_free = NULL;
 	int free_count = 0;
-	int oom = 0;
+	bool oom = 0;
 	int i;
 
         ENTRY;
