@@ -1145,6 +1145,20 @@ void ldlm_grant_lock(struct ldlm_lock *lock, struct list_head *work_list)
         EXIT;
 }
 
+/* Only RES_LINK and SL_MODE are used */
+enum ldlm_lock_list {
+	L_LRU		= 0,
+	L_RES_LINK	= 1,
+	L_PENDING	= 2,
+	L_BL_AST	= 3,
+	L_CP_AST	= 4,
+	L_RK_AS		= 5,
+	L_SL_MODE	= 6,
+	L_SL_POLICY	= 7,
+	L_EXP_REFS	= 8,
+	L_EXP_LIST	= 9,
+};
+
 /**
  * Search for a lock with given properties in a queue.
  *
@@ -1154,16 +1168,21 @@ void ldlm_grant_lock(struct ldlm_lock *lock, struct list_head *work_list)
 static struct ldlm_lock *search_queue(struct list_head *queue,
                                       ldlm_mode_t *mode,
                                       ldlm_policy_data_t *policy,
-                                      struct ldlm_lock *old_lock,
-				      __u64 flags, int unref)
+                                      struct ldlm_lock *old_lock, __u64 flags,
+				      int unref, int which_list)
 {
         struct ldlm_lock *lock;
 	struct list_head       *tmp;
 
+	ENTRY;
+
 	list_for_each(tmp, queue) {
                 ldlm_mode_t match;
 
-		lock = list_entry(tmp, struct ldlm_lock, l_res_link);
+		if (which_list == L_SL_POLICY)
+			lock = list_entry(tmp, struct ldlm_lock, l_sl_policy);
+		else
+			lock = list_entry(tmp, struct ldlm_lock, l_res_link);
 
                 if (lock == old_lock)
                         break;
@@ -1224,10 +1243,108 @@ static struct ldlm_lock *search_queue(struct list_head *queue,
                         ldlm_lock_addref_internal_nolock(lock, match);
                 }
                 *mode = match;
-                return lock;
+                RETURN(lock);
         }
 
-        return NULL;
+        RETURN(NULL);
+}
+
+struct ldlm_extent_match_args {
+	struct ldlm_lock *lock, *old_lock;
+	ldlm_mode_t *mode;
+	ldlm_policy_data_t *policy;
+	__u64 flags;
+	int unref;
+};
+
+/* Use search queue to check an overlapping lock or locks for compatibility. */
+static enum interval_iter ldlm_extent_match_cb(struct interval_node *n,
+					void * data)
+{
+	struct ldlm_extent_match_args *priv = data;
+	struct ldlm_lock *lock;
+	struct ldlm_interval *node = to_ldlm_interval(n);
+
+	ENTRY;
+
+	lock = search_queue(&node->li_group, priv->mode, priv->policy,
+			    priv->old_lock, priv->flags, priv->unref,
+			    L_SL_POLICY);
+
+	priv->lock = lock;
+
+	if (lock)
+		RETURN(INTERVAL_ITER_STOP);
+	else
+		RETURN(INTERVAL_ITER_CONT);
+}
+
+/* Helper for ldlm_lock_match, uses the extent tree to efficiently find all
+ * possible matches before calling search_queue, instead of searching the
+ * entire queue of granted locks. 
+ *
+ * \param[in] res	resource the locks are on
+ * \param[in] mode	the mode of the request we're trying to match
+ * \param[in] policy	the policy describing the lock we're requesting
+ * \param[in] old_lock	optional parameter, used to specify we only want to
+ * 			match a lock OTHER than this lock
+ * \param[in] flags	flags used for matching in search_queue
+ * \param[in] unref	return the lock even if it is being destroyed
+ *
+ * \retval !NULL	pointer to the lock found
+ * \retval NULL		no matching lock found
+ * */
+static struct ldlm_lock *ldlm_extent_match_granted_queue(
+				      struct ldlm_resource *res,
+                                      ldlm_mode_t *mode,
+                                      ldlm_policy_data_t *policy,
+                                      struct ldlm_lock *old_lock,
+				      __u64 flags, int unref)
+{
+	struct ldlm_lock *found_lock = NULL;
+	struct ldlm_interval_tree *tree;
+	struct ldlm_extent_match_args data = { .lock = NULL,
+					       .old_lock = old_lock,
+					       .mode = mode,
+					       .policy = policy,
+					       .flags = flags,
+					       .unref = unref};
+	struct interval_node_extent ex = { .start = policy->l_extent.start,
+					   .end = policy->l_extent.end };
+	int idx;
+
+	ENTRY;
+
+	/* Approach: Find overlapping extent locks (using interval_search),
+	 * then call search_queue on those locks to check for a match. */
+	for (idx = 0; idx < LCK_MODE_NUM; idx++) {
+		tree = &res->lr_itree[idx];
+		if (tree->lit_root == NULL) /* empty tree, skipped */
+			continue;
+
+		if (tree->lit_mode == LCK_GROUP) {
+			struct ldlm_interval *node;
+
+			/* There's only ever one group lock and it's exclusive,
+			 * so move on to search_queue, then exit */
+			node = to_ldlm_interval(tree->lit_root);
+
+			found_lock = search_queue(&node->li_group, mode,
+						   policy, old_lock, flags,
+						   unref, L_SL_POLICY);
+
+			break;
+		}
+
+		interval_search(tree->lit_root, &ex, ldlm_extent_match_cb,
+				&data);
+		if(data.lock) {
+			found_lock = data.lock;
+			break;
+		}
+	}
+
+	RETURN(found_lock);	
 }
 
 void ldlm_lock_fail_match_locked(struct ldlm_lock *lock)
@@ -1316,6 +1433,7 @@ ldlm_mode_t ldlm_lock_match(struct ldlm_namespace *ns, __u64 flags,
         if (ns == NULL) {
                 old_lock = ldlm_handle2lock(lockh);
                 LASSERT(old_lock);
+		LDLM_DEBUG(old_lock, "old lock\n");
 
                 ns = ldlm_lock_to_ns(old_lock);
                 res_id = &old_lock->l_resource->lr_name;
@@ -1332,18 +1450,22 @@ ldlm_mode_t ldlm_lock_match(struct ldlm_namespace *ns, __u64 flags,
         LDLM_RESOURCE_ADDREF(res);
         lock_res(res);
 
-        lock = search_queue(&res->lr_granted, &mode, policy, old_lock,
-                            flags, unref);
+	if (type == LDLM_EXTENT)
+		lock = ldlm_extent_match_granted_queue(res, &mode, policy,
+						       old_lock, flags, unref);
+	else
+        	lock = search_queue(&res->lr_granted, &mode, policy, old_lock,
+                            flags, unref, L_RES_LINK);
         if (lock != NULL)
                 GOTO(out, rc = 1);
         if (flags & LDLM_FL_BLOCK_GRANTED)
                 GOTO(out, rc = 0);
         lock = search_queue(&res->lr_converting, &mode, policy, old_lock,
-                            flags, unref);
+                            flags, unref, L_RES_LINK);
         if (lock != NULL)
                 GOTO(out, rc = 1);
         lock = search_queue(&res->lr_waiting, &mode, policy, old_lock,
-                            flags, unref);
+                            flags, unref, L_RES_LINK);
         if (lock != NULL)
                 GOTO(out, rc = 1);
 
