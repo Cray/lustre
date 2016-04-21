@@ -18,6 +18,7 @@
 %define lnet_ko_path lib/modules/%{cray_kernel_version}/updates/kernel/net/lustre
 # Override the _mandir so man pages don't end up in /man
 %define _mandir /usr/share/man
+%define _includedir /usr/include
 
 BuildRequires: cray-gni-devel
 BuildRequires: cray-gni-headers
@@ -136,15 +137,6 @@ if [ -e ${man_path} ]; then
     %{__rm} -rf ${man_path}/man5 ${man_path}/man8/lhbadm.8 ${man_path}/man8/ldev.8
 fi
 
-for header in  libiam.h lustreapi.h liblustreapi.h ll_fiemap.h lustre_idl.h lustre_user.h; do
-    found=`find %{buildroot} -name $header`
-    if [ -n "${found}" ]; then
-        for each in ${found}; do
-            install -D -m 0644 ${each} %{buildroot}/usr/include/`echo $each | sed 's/^.*include\///'`
-        done
-    fi
-done
-
 for file in libcfsutil.a libiam.a liblustre.a liblustre.so liblustreapi.a liblustreapi.so libptlctl.a
 do
     found=`find %{buildroot} -name $file`
@@ -155,7 +147,7 @@ popd
 
 for f in %{pc_files}
 do
-    eval "sed -i 's,^prefix=.*$,prefix=/,' %{_sourcedir}/${f}"
+    eval "sed -i 's,^prefix=.*$,prefix=/usr,' %{_sourcedir}/${f}"
     install -D -m 0644  %{_sourcedir}/${f} %{buildroot}/%{_pkgconfigdir}/${f}
     %{__rm} -f %{_sourcedir}/${f}
 done

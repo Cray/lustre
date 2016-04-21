@@ -34,6 +34,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 # Override _prefix to avoid installing into Cray locations under /opt/cray/
 %define _prefix    /
+%define _includedir /usr/include
 
 %description
 Kernel modules and userspace tools needed for a Lustre client on CLFS SLES-based
