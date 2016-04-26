@@ -229,7 +229,8 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 				  OBD_CONNECT_MAX_EASIZE |
 				  OBD_CONNECT_FLOCK_DEAD |
 				  OBD_CONNECT_DISP_STRIPE | OBD_CONNECT_LFSCK |
-				  OBD_CONNECT_OPEN_BY_FID;
+				  OBD_CONNECT_OPEN_BY_FID |
+				  OBD_CONNECT_BULK_MBITS;
 
         if (sbi->ll_flags & LL_SBI_SOM_PREVIEW)
                 data->ocd_connect_flags |= OBD_CONNECT_SOM;
@@ -443,7 +444,8 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 				  OBD_CONNECT_JOBSTATS | OBD_CONNECT_LVB_TYPE |
 				  OBD_CONNECT_LAYOUTLOCK |
 				  OBD_CONNECT_PINGLESS | OBD_CONNECT_LFSCK |
-				  OBD_CONNECT_LOCK_AHEAD;
+				  OBD_CONNECT_LOCK_AHEAD |
+				  OBD_CONNECT_BULK_MBITS;
 
 	if (sb->s_flags & MS_RDONLY)
 		data->ocd_connect_flags |= OBD_CONNECT_RDONLY;
