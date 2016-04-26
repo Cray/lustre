@@ -88,6 +88,7 @@ void ptlrpc_resend_req(struct ptlrpc_request *request);
 void ptlrpc_assign_next_xid_nolock(struct ptlrpc_request *req);
 __u64 ptlrpc_known_replied_xid(struct obd_import *imp);
 void ptlrpc_add_unreplied(struct ptlrpc_request *req);
+void ptlrpc_set_bulk_mbits(struct ptlrpc_request *req);
 
 /* events.c */
 int ptlrpc_init_portals(void);
