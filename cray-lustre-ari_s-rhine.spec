@@ -18,6 +18,7 @@
 %define lnet_ko_path lib/modules/%{cray_kernel_version}/updates/kernel/net/lustre
 # Override the _mandir so man pages don't end up in /man
 %define _mandir /usr/share/man
+%define _includedir /usr/include
 
 BuildRequires: cray-gni-devel
 BuildRequires: cray-gni-headers
@@ -78,6 +79,8 @@ Includes headers, dynamic, and static libraries.
 %define date %(date +%%F-%%R)
 %define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 
+%{__sed} -e 's/@VERSION@/%{version}-%{release}/g' version.in > .version
+
 export LUSTRE_VERS=%{lustre_version}
 export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
 
@@ -134,15 +137,6 @@ if [ -e ${man_path} ]; then
     %{__rm} -rf ${man_path}/man5 ${man_path}/man8/lhbadm.8 ${man_path}/man8/ldev.8
 fi
 
-for header in  libiam.h lustreapi.h liblustreapi.h ll_fiemap.h lustre_idl.h lustre_user.h; do
-    found=`find %{buildroot} -name $header`
-    if [ -n "${found}" ]; then
-        for each in ${found}; do
-            install -D -m 0644 ${each} %{buildroot}/usr/include/`echo $each | sed 's/^.*include\///'`
-        done
-    fi
-done
-
 for file in libcfsutil.a libiam.a liblustre.a liblustre.so liblustreapi.a liblustreapi.so libptlctl.a
 do
     found=`find %{buildroot} -name $file`
@@ -153,13 +147,17 @@ popd
 
 for f in %{pc_files}
 do
-    eval "sed -i 's/flavor/%{flavor}/g' %{_sourcedir}/${f}"
+    eval "sed -i 's,^prefix=.*$,prefix=/usr,' %{_sourcedir}/${f}"
     install -D -m 0644  %{_sourcedir}/${f} %{buildroot}/%{_pkgconfigdir}/${f}
     %{__rm} -f %{_sourcedir}/${f}
 done
 eval "sed -i 's/flavor/%{flavor}/g' %{_sourcedir}/cray-lustre.conf"
 install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/cray-lustre.conf
 %{__rm} -f %{_sourcedir}/cray-lustre.conf
+
+# Install module directories and files
+%{__install} -D -m 0644 .version %{buildroot}/%{_name_modulefiles_prefix}/.version
+%{__install} -D -m 0644 module %{buildroot}/%{_release_modulefile}
 
 %files
 %defattr(-,root,root)
@@ -189,7 +187,7 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 /usr/lib64/*
 
 %post
-ln -s /sbin/ko2iblnd-probe /usr/sbin
+%{__ln_s} %{_sbindir}/ko2iblnd-probe /usr/sbin
 
 /sbin/ldconfig
 
@@ -201,7 +199,7 @@ fi
 depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
 
 %preun
-rm -f /usr/sbin/ko2iblnd-probe
+%{__rm} -f /usr/sbin/ko2iblnd-probe
 
 %postun
 if [ "$1" = "0" ]; then

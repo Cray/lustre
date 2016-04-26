@@ -1061,7 +1061,11 @@ int lu_site_init(struct lu_site *s, struct lu_device *top)
 	memset(s, 0, sizeof *s);
 	mutex_init(&s->ls_purge_mutex);
 
+#ifdef HAVE_PERCPU_COUNTER_INIT_GFP_FLAG
+	rc = percpu_counter_init(&s->ls_lru_len_counter, 0, GFP_NOFS); 
+#else
 	rc = percpu_counter_init(&s->ls_lru_len_counter, 0);
+#endif
 	if (rc)
 		return -ENOMEM;
 

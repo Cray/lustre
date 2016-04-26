@@ -104,10 +104,16 @@ done
 %{__rm} -f %{buildroot}/lib/lustre/lc_common
 
 # Remove all the extras not needed for CNL
-for dir in %{_libdir} %{_mandir} %{_bindir} %{_includedir} %{_datadir}; do
+for dir in %{_libdir}/lustre %{_includedir} %{_datadir}; do
     find %{buildroot}$dir -type f | xargs rm -fv
     rm -frv %{buildroot}$dir
 done
+
+for dir in %{_mandir} %{_bindir}; do
+	find %{buildroot}$dir -type f \( ! -iname "*lfs*" \) | xargs rm -fv
+done
+
+rm -frv %{buildroot}/man/man3 %{buildroot}/man/man5 %{buildroot}/man/man7 %{buildroot}/man/man8
 
 # all of _prefix/sbin but lctl
 find %{buildroot}%{_sbindir} -print > install_files
@@ -117,9 +123,15 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 
 %files 
 %defattr(-,root,root)
+%{_libdir}
+%exclude %dir %{_libdir}
 /lib/modules/*
 /sbin/mount.lustre
 /sbin/lctl
+%{_bindir}
+%exclude %dir %{_bindir}
+%{_mandir}
+%exclude %dir %{_mandir}
 %config /etc/udev/rules.d/99-lustre.rules
 
 %files lnet
