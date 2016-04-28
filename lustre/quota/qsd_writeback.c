@@ -389,7 +389,7 @@ static bool qsd_job_pending(struct qsd_instance *qsd, struct list_head *upd,
 		return job_pending;
 	}
 
-	for (qtype = USRQUOTA; qtype < MAXQUOTAS; qtype++) {
+	for (qtype = USRQUOTA; qtype < LL_MAXQUOTAS; qtype++) {
 		struct qsd_qtype_info *qqi = qsd->qsd_type_array[qtype];
 
 		if (!qsd_type_enabled(qsd, qtype))
@@ -479,7 +479,7 @@ static int qsd_upd_thread(void *arg)
 		if (uptodate)
 			continue;
 
-		for (qtype = USRQUOTA; qtype < MAXQUOTAS; qtype++)
+		for (qtype = USRQUOTA; qtype < LL_MAXQUOTAS; qtype++)
 			qsd_start_reint_thread(qsd->qsd_type_array[qtype]);
 	}
 	lu_env_fini(env);
@@ -515,7 +515,7 @@ static void qsd_cleanup_deferred(struct qsd_instance *qsd)
 {
 	int	qtype;
 
-	for (qtype = USRQUOTA; qtype < MAXQUOTAS; qtype++) {
+	for (qtype = USRQUOTA; qtype < LL_MAXQUOTAS; qtype++) {
 		struct qsd_upd_rec	*upd, *tmp;
 		struct qsd_qtype_info	*qqi = qsd->qsd_type_array[qtype];
 
