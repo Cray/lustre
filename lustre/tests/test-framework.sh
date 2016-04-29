@@ -1267,6 +1267,11 @@ mount_facet() {
 		return $RC
 	fi
 
+	health=$(do_facet ${facet} "$LCTL get_param -n health_check")
+	if [[ "$health" != "healthy" ]]; then
+		error "$facet is in a unhealthy state"
+	fi
+
 	set_default_debug_facet $facet
 
 	if [[ $opts =~ .*nosvc.* ]]; then
