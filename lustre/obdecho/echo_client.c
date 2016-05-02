@@ -322,13 +322,14 @@ static void echo_page_completion(const struct lu_env *env,
 }
 
 static void echo_page_fini(const struct lu_env *env,
-			   struct cl_page_slice *slice)
+			   struct cl_page_slice *slice, int bulk)
 {
 	struct echo_object *eco = cl2echo_obj(slice->cpl_obj);
 	ENTRY;
 
 	atomic_dec(&eco->eo_npages);
-	page_cache_release(slice->cpl_page->cp_vmpage);
+	if (!bulk)
+		page_cache_release(slice->cpl_page->cp_vmpage);
 	EXIT;
 }
 
