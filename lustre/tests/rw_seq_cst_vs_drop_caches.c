@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+
+#ifdef HAVE_LIBPTHREAD
 #include <pthread.h>
 
 /*
@@ -114,3 +116,13 @@ int main(int argc, char *argv[])
 
 	return 0;
 }
+
+#else
+
+int main(int argc, char *argv[])
+{
+	fprintf(stderr, "Not supported without pthread\n");
+	return 1;
+}
+
+#endif
