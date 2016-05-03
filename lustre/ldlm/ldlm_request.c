@@ -1315,12 +1315,15 @@ static __u64 ldlm_cli_cancel_local(struct ldlm_lock *lock)
 	__u64 rc = LDLM_FL_LOCAL_ONLY;
         ENTRY;
 
-        if (lock->l_conn_export) {
-                bool local_only;
+	if (lock->l_conn_export) {
+		bool local_only;
 
-                LDLM_DEBUG(lock, "client-side cancel");
-                /* Set this flag to prevent others from getting new references*/
-                lock_res_and_lock(lock);
+		LDLM_DEBUG(lock, "client-side cancel");
+		OBD_FAIL_TIMEOUT(OBD_FAIL_LDLM_PAUSE_CANCEL_LOCAL,
+				 cfs_fail_val);
+
+		/* Set this flag to prevent others from getting new references*/
+		lock_res_and_lock(lock);
 		ldlm_set_cbpending(lock);
 		local_only = !!(lock->l_flags &
 				(LDLM_FL_LOCAL_ONLY|LDLM_FL_CANCEL_ON_BLOCK));
