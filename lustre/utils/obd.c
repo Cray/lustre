@@ -2092,15 +2092,18 @@ int jt_obd_test_brw(int argc, char **argv)
 	struct obd_ioctl_data data;
 	struct timeval start, next_time;
 	char rawbuf[MAX_IOC_BUFLEN], *buf = rawbuf;
-	__u64 count, next_count, len, stride, thr_offset = 0, objid = 3;
+	__u64 count, next_count, len, thr_offset = 0, objid = 3;
 	int write = 0, verbose = 1, cmd, i, rc = 0, pages = 1;
 	int offset_pages = 0;
-	long n;
 	int repeat_offset = 0;
-	unsigned long long ull;
-	int  nthr_per_obj = 0;
 	int  verify = 1;
+#ifdef HAVE_LIBPTHREAD
 	int  obj_idx = 0;
+	int  nthr_per_obj = 0;
+	__u64 stride = 0;
+	long n;
+	unsigned long long ull;
+#endif
 	char *end;
 
 	if (argc < 2 || argc > 7) {
@@ -2159,6 +2162,7 @@ int jt_obd_test_brw(int argc, char **argv)
 		}
 	}
 
+#ifdef HAVE_LIBPTHREAD
 	if (argc >= 6) {
 		if (thread && (n = strtol(argv[5], &end, 0)) > 0 &&
 		    *end == 't' && (ull = strtoull(end + 1, &end, 0)) > 0 &&
@@ -2178,6 +2182,7 @@ int jt_obd_test_brw(int argc, char **argv)
 			return CMD_HELP;
 		}
 	}
+#endif
 
 	memset(&data, 0, sizeof(data));
 	data.ioc_dev = cur_device;
@@ -2217,9 +2222,9 @@ int jt_obd_test_brw(int argc, char **argv)
 
 	len = pages * getpagesize();
 	thr_offset = offset_pages * getpagesize();
-	stride = len;
 
 #ifdef MAX_THREADS
+	stride = len;
 	if (thread) {
 		shmem_lock();
 		if (nthr_per_obj != 0) {
@@ -2308,7 +2313,6 @@ int jt_obd_test_brw(int argc, char **argv)
 			}
 #else
 			data.ioc_offset += len;
-			obj_idx = 0; /* avoids an unused var warning */
 #endif
 		}
 	}
