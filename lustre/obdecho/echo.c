@@ -144,7 +144,9 @@ static int echo_create(const struct lu_env *env, struct obd_export *exp,
 }
 
 static int echo_destroy(const struct lu_env *env, struct obd_export *exp,
-			struct obdo *oa, struct obd_trans_info *oti)
+			struct obdo *oa, struct lov_stripe_md *ea,
+			struct obd_trans_info *oti, struct obd_export *md_exp,
+			void *capa)
 {
         struct obd_device *obd = class_exp2obd(exp);
 
