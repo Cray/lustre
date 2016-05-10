@@ -206,6 +206,10 @@ static int reg_fail_timeout = GNILND_REGFAILTO_DISABLE;
 CFS_MODULE_PARM(reg_fail_timeout, "i", int, 0644,
 		"fmablk registration timeout LBUG");
 
+static int to_reconn_disable = 0;
+CFS_MODULE_PARM(to_reconn_disable, "i", int, 0644,
+		"Timed out connection waits for peer before reconnecting");
+
 kgn_tunables_t kgnilnd_tunables = {
 	.kgn_min_reconnect_interval = &min_reconnect_interval,
 	.kgn_max_reconnect_interval = &max_reconnect_interval,
@@ -248,6 +252,7 @@ kgn_tunables_t kgnilnd_tunables = {
 	.kgn_thread_affinity	    = &thread_affinity,
 	.kgn_thread_safe	    = &thread_safe,
 	.kgn_reg_fail_timeout	    = &reg_fail_timeout,
+	.kgn_to_reconn_disable	    = &to_reconn_disable,
 	.kgn_max_purgatory	    = &max_conn_purg
 };
 
@@ -568,6 +573,14 @@ static struct ctl_table kgnilnd_ctl_table[] = {
 		INIT_CTL_NAME
 		.procname = "reg_fail_timeout"
 		.data	  = &reg_fail_timeout,
+		.maxlen   = sizeof(int),
+		.mode	  = 0644,
+		.proc_handler = &proc_dointvec
+	},
+	{
+		INIT_CTL_NAME
+		.procname = "to_reconn_disable"
+		.data	  = &to_reconn_disable,
 		.maxlen   = sizeof(int),
 		.mode	  = 0644,
 		.proc_handler = &proc_dointvec

@@ -1270,7 +1270,8 @@ kgnilnd_peer_seq_show(struct seq_file *s, void *iter)
 		"reconn %dms to %lus \n",
 		peer, libcfs_nid2str(peer->gnp_nid),
 		atomic_read(&peer->gnp_refcount),
-		(peer->gnp_down == GNILND_RCA_NODE_DOWN) ? "down" : "up",
+		(peer->gnp_state == GNILND_PEER_DOWN) ? "down" :
+		peer->gnp_state == GNILND_PEER_TIMED_OUT ? "timedout" : "up",
 		peer->gnp_host_id,
 		kgnilnd_count_list(&peer->gnp_tx_queue),
 		conn_str,

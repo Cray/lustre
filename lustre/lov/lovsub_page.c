@@ -53,7 +53,7 @@
  */
 
 static void lovsub_page_fini(const struct lu_env *env,
-                             struct cl_page_slice *slice)
+                             struct cl_page_slice *slice, int bulk)
 {
 }
 
