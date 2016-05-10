@@ -3654,6 +3654,7 @@ get_agent_uuid() {
 	# copytool cmd-line.
 	local mntpnt=$(do_rpc_nodes $agent ps -C $HSMTOOL_BASE -o args= |
 		       awk '{print $NF}')
+
 	echo "mntpnt = '$mntpnt'" >&2
 	[ -n "$mntpnt" ] || error "Found no Agent or with no mount-point "\
 				  "parameter"
