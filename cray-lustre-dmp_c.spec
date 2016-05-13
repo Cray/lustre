@@ -13,7 +13,7 @@
 %define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-source)
 %define kernel_release_major %(rpm -q --qf "%{RELEASE}" kernel-source |  awk -F . '{print $1}')
 
-%define cray_kernel_version %{kernel_version}-%{kernel_release_major}-%{flavor}
+%define cray_kernel_version %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease)
 # Override the _mandir so man pages don't end up in /man
 %define _mandir /usr/share/man
 
@@ -50,7 +50,6 @@ service nodes.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
 %define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
-
 export LUSTRE_VERS=%{lustre_version}
 export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
 
