@@ -78,7 +78,7 @@ init_test_env $@
 . ${CONFIG:=$LUSTRE/tests/cfg/${NAME}.sh}
 init_logging
 
-[ "$SLOW" = "no" ] && EXCEPT_SLOW="24o 24D 27m 64b 68 71 77f 78 115 124b 230d 401"
+[ "$SLOW" = "no" ] && EXCEPT_SLOW="24o 24D 27m 64b 68 71 77f 78 115 124b 230d 801"
 
 if [ $(facet_fstype $SINGLEMDS) = "zfs" ]; then
 	# bug number for skipped test: LU-1593	LU-4536 LU-5242	 LU-1957 LU-2805
@@ -13923,11 +13923,20 @@ test_400b() { # LU-1606, LU-5011
 }
 run_test 400b "packaged headers can be compiled"
 
+test_402() {
+	$LFS setdirstripe -i 0 $DIR/$tdir || error "setdirstripe -i 0 failed"
+#define OBD_FAIL_MDS_FLD_LOOKUP 0x15c
+	do_facet mds1 "lctl set_param fail_loc=0x8000015c"
+	touch $DIR/$tdir/$tfile && error "touch should fail with ENOENT" ||
+		echo "Touch failed - OK"
+}
+run_test 402 "Return ENOENT to lod_generate_and_set_lovea"
+
 [[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.11.1) ]] ||
 	do_nodes $(comma_list $(facet_active_host mgs) $(mdts_nodes)) \
 	$LCTL set_param debug=+snapshot
 
-test_401a() {
+test_801a() {
 	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
 		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
 
@@ -13995,9 +14004,9 @@ test_401a() {
 	do_facet $SINGLEMDS $LCTL set_param fail_loc=0
 	do_facet mgs $LCTL barrier_thaw $FSNAME
 }
-run_test 401a "write barrier user interfaces and stat machine"
+run_test 801a "write barrier user interfaces and stat machine"
 
-test_401b() {
+test_801b() {
 	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
 		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
 
@@ -14066,9 +14075,9 @@ test_401b() {
 	wait $mv_pid || error "(19) rename should succeed"
 	wait $rm_pid || error "(20) unlink should succeed"
 }
-run_test 401b "modification will be blocked by write barrier"
+run_test 801b "modification will be blocked by write barrier"
 
-test_401c() {
+test_801c() {
 	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
 		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
 
@@ -14108,7 +14117,7 @@ test_401c() {
 	do_facet mgs $LCTL barrier_rescan $FSNAME ||
 		error "(7) Fail to rescan barrier bitmap"
 }
-run_test 401c "rescan barrier bitmap"
+run_test 801c "rescan barrier bitmap"
 
 [[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.11.1) ]] ||
 	do_nodes $(comma_list $(facet_active_host mgs) $(mdts_nodes)) \
@@ -14117,7 +14126,7 @@ run_test 401c "rescan barrier bitmap"
 saved_MDS_MOUNT_OPTS=$MDS_MOUNT_OPTS
 saved_OST_MOUNT_OPTS=$OST_MOUNT_OPTS
 
-cleanup_402() {
+cleanup_802() {
 	trap 0
 
 	stopall
@@ -14126,7 +14135,7 @@ cleanup_402() {
 	setupall
 }
 
-test_402() {
+test_802() {
 	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
 		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
 
@@ -14135,7 +14144,7 @@ test_402() {
 	cp $LUSTRE/tests/test-framework.sh $DIR/$tdir/ ||
 		error "(2) Fail to copy"
 
-	trap cleanup_402 EXIT
+	trap cleanup_802 EXIT
 
 	stopall
 
@@ -14160,9 +14169,9 @@ test_402() {
 	diff $LUSTRE/tests/test-framework.sh $DIR/$tdir/test-framework.sh ||
 		error "(7) Read should succeed under ro mode"
 
-	cleanup_402
+	cleanup_802
 }
-run_test 402 "simulate readonly device"
+run_test 802 "simulate readonly device"
 
 #
 # tests that do cleanup/setup should be run at the end
