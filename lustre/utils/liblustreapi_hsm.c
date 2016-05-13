@@ -477,6 +477,7 @@ int llapi_hsm_register_event_fifo(const char *path)
 	int rc;
 	int read_fd;
 	struct stat statbuf;
+	struct sigaction ignore_action;
 
 	/* Create the FIFO if necessary. */
 	if ((mkfifo(path, 0644) < 0) && (errno != EEXIST)) {
@@ -525,7 +526,10 @@ int llapi_hsm_register_event_fifo(const char *path)
 	}
 
 	/* Ignore SIGPIPEs -- can occur if the reader goes away. */
-	signal(SIGPIPE, SIG_IGN);
+	memset(&ignore_action, 0, sizeof(ignore_action));
+	ignore_action.sa_handler = SIG_IGN;
+	sigemptyset(&ignore_action.sa_mask);
+	sigaction(SIGPIPE, &ignore_action, NULL);
 
 	return 0;
 }
