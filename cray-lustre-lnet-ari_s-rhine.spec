@@ -95,7 +95,7 @@ echo "#define BUILD_VERSION \"%{lustre_version}\"" > ${lustre_build_header}
 echo "#define LUSTRE_RELEASE \"$build_release\"" >> ${lustre_build_header}
 
 pushd ./lustre/utils
-%{__make}
+%{__make} %_smp_mflags
 %{__mkdir_p} %{buildroot}/sbin
 %{__cp} lctl %{buildroot}/sbin
 popd

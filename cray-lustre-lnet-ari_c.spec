@@ -78,7 +78,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-obd-buffer-size=16384
 fi
-%{__make}
+%{__make} %_smp_mflags
 
 # build lustre/utils/lctl
 lustre_build_header="./lustre/include/lustre/lustre_build_version.h"
@@ -88,7 +88,7 @@ echo "#define BUILD_VERSION \"%{lustre_version}\"" > ${lustre_build_header}
 echo "#define LUSTRE_RELEASE \"$build_release\"" >> ${lustre_build_header}
 
 pushd ./lustre/utils
-%{__make}
+%{__make} %_smp_mflags
 %{__mkdir_p} %{buildroot}/sbin
 %{__cp} lctl %{buildroot}/sbin
 popd
