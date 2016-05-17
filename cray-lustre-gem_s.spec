@@ -37,6 +37,7 @@ Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
 Source0: %{source_name}.tar.gz
 Source1: %{flavorless_name}-switch-%{branch}.tar.gz
 Source99: cray-lustre-rpmlintrc
+URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %package lnet
