@@ -29,6 +29,7 @@ Release: %release
 Summary: Lustre File System for CLFS CentOS Nodes
 Version: %{vendor_version}_%{local_kernel_version}_%{kernel_release}
 Source: %{source_name}.tar.gz
+URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 # override OBS _prefix to allow us to munge things 

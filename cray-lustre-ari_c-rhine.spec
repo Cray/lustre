@@ -32,6 +32,7 @@ Requires: module-init-tools
 Summary: Lustre File System for CNL running CLE Rhine
 Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
 Source: %{source_name}.tar.gz
+URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %package lnet
