@@ -2210,7 +2210,7 @@ static int echo_create_object(const struct lu_env *env, struct echo_device *ed,
 
 failed:
 	if (created && rc != 0)
-		obd_destroy(env, ec->ec_exp, oa, oti);
+		obd_destroy(env, ec->ec_exp, oa, NULL, oti, NULL, NULL);
 
 	if (rc != 0)
 		CERROR("create object failed with: rc = %d\n", rc);
@@ -2698,7 +2698,8 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 
                 rc = echo_get_object(&eco, ed, oa);
                 if (rc == 0) {
-			rc = obd_destroy(env, ec->ec_exp, oa, &dummy_oti);
+			rc = obd_destroy(env, ec->ec_exp, oa, NULL,
+					 &dummy_oti, NULL, NULL);
                         if (rc == 0)
                                 eco->eo_deleted = 1;
                         echo_put_object(eco);
