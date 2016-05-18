@@ -280,8 +280,7 @@ struct osd_device {
 				 od_xattr_in_sa:1,
 				 od_quota_iused_est:1,
 				 od_is_ost:1,
-				 od_posix_acl:1,
-				 od_seq_init:1;
+				 od_posix_acl:1;
 
 	char			 od_mntdev[128];
 	char			 od_svname[128];
