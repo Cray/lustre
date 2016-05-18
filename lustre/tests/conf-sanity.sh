@@ -5565,7 +5565,186 @@ test_86() {
 }
 run_test 86 "Replacing mkfs.lustre -G option"
 
-test_87() { # MRP-153
+test_renamefs() {
+	local newname=$1
+	local rename_mgs=$2
+
+	echo "rename $FSNAME to $newname"
+
+	if [ "$rename_mgs" = "yes"  -a ! combined_mgs_mds ]; then
+		local facet=$(mgsdevname)
+
+		do_facet mgs \
+			"$TUNEFS --fsname=$newname --rename=$FSNAME -v $facet"||
+			error "(7) Fail to rename MGS"
+		if [ "$(facet_fstype $facet)" = "zfs" ]; then
+			reimport_zpool mgs $newname-mgs
+		fi
+	fi
+
+	for num in $(seq $MDSCOUNT); do
+		local facet=$(mdsdevname $num)
+
+		do_facet mds${num} \
+			"$TUNEFS --fsname=$newname --rename=$FSNAME -v $facet"||
+			error "(8) Fail to rename MDT $num"
+		if [ "$(facet_fstype $facet)" = "zfs" ]; then
+			reimport_zpool mds${num} $newname-mdt${num}
+		fi
+	done
+
+	for num in $(seq $OSTCOUNT); do
+		local facet=$(ostdevname $num)
+
+		do_facet ost${num} \
+			"$TUNEFS --fsname=$newname --rename=$FSNAME -v $facet"||
+			error "(9) Fail to rename OST $num"
+		if [ "$(facet_fstype $facet)" = "zfs" ]; then
+			reimport_zpool ost${num} $newname-ost${num}
+		fi
+	done
+}
+
+test_89() {
+	check_mount_and_prep
+	rm -rf $DIR/$tdir
+	mkdir $DIR/$tdir || error "(1) Fail to mkdir $DIR/$tdir"
+	cp $LUSTRE/tests/test-framework.sh $DIR/$tdir ||
+		error "(2) Fail to copy test-framework.sh"
+
+	do_facet mgs $LCTL pool_new $FSNAME.pool1 ||
+		error "(3) Fail to create $FSNAME.pool1"
+	# name the pool name as the fsname
+	do_facet mgs $LCTL pool_new $FSNAME.$FSNAME ||
+		error "(4) Fail to create $FSNAME.$FSNAME"
+	do_facet mgs $LCTL pool_add $FSNAME.$FSNAME ${FSNAME}-OST0000 ||
+		error "(5.1) Fail to add OST0 to $FSNAME.$FSNAME"
+	wait_update $HOSTNAME \
+		"lctl get_param -n lov.$FSNAME-clilov-*.pools.$FSNAME |
+		 grep OST0000" "$FSNAME-OST0000_UUID" ||
+		error "(5.2) OST0 is NOT in pool $FSNAME.$FSNAME"
+
+	$SETSTRIPE -p $FSNAME $DIR/$tdir/d0 ||
+		error "(6) Fail to setstripe on $DIR/$tdir/d0"
+
+	KEEP_ZPOOL=true
+	stopall
+
+	test_renamefs mylustre yes
+
+	local save_fsname=$FSNAME
+	FSNAME="mylustre"
+	setupall
+
+	stat $DIR/$tdir/test-framework.sh || error "(10) Fail to stat"
+	do_facet mgs $LCTL pool_list $FSNAME.pool1 ||
+		error "(11) Fail to list $FSNAME.pool1"
+	do_facet mgs $LCTL pool_list $FSNAME.$save_fsname ||
+		error "(12) Fail to list $FSNAME.$save_fsname"
+	do_facet mgs $LCTL pool_list $FSNAME.$save_fsname |
+		grep ${FSNAME}-OST0000 ||
+		error "(13) List $FSNAME.$save_fsname is invalid"
+	local pname=$($LFS getstripe --pool $DIR/$tdir/d0)
+	[ "$pname" = "$save_fsname" ] ||
+		error "(14) Unexpected pool name $pname"
+
+	if [ $OSTCOUNT -ge 2 ]; then
+		do_facet mgs $LCTL pool_add $FSNAME.$save_fsname \
+			${FSNAME}-OST0001 ||
+			error "(15.1) Fail to add OST1 to $FSNAME.$save_fsname"
+
+		wait_update $HOSTNAME "lctl get_param -n \
+			lov.$FSNAME-clilov-*.pools.$save_fsname |
+			 grep OST0001" "$FSNAME-OST0001_UUID" ||
+			error "(15.2) OST1 is NOT in pool $FSNAME.$save_fsname"
+	fi
+
+	$SETSTRIPE -p $save_fsname $DIR/$tdir/f0 ||
+		error "(16) Fail to setstripe on $DIR/$tdir/f0"
+
+	stopall
+
+	test_renamefs tfs yes
+
+	FSNAME="tfs"
+	setupall
+
+	stat $DIR/$tdir/test-framework.sh || error "(18) Fail to stat"
+	do_facet mgs $LCTL pool_list $FSNAME.pool1 ||
+		error "(19) Fail to list $FSNAME.pool1"
+	do_facet mgs $LCTL pool_list $FSNAME.$save_fsname ||
+		error "(20) Fail to list $FSNAME.$save_fsname"
+	do_facet mgs $LCTL pool_list $FSNAME.$save_fsname |
+		grep ${FSNAME}-OST0000 ||
+		error "(21) List $FSNAME.$save_fsname is invalid"
+	local pname=$($LFS getstripe --pool $DIR/$tdir/d0)
+	[ "$pname" = "$save_fsname" ] ||
+		error "(22) Unexpected pool name $pname"
+
+	stopall
+
+	test_renamefs $save_fsname yes
+
+	FSNAME=$save_fsname
+	setupall
+	KEEP_ZPOOL=false
+}
+run_test 89 "rename filesystem name"
+
+test_98()
+{
+	local mountopt
+	local temp=$MDS_MOUNT_OPTS
+
+	setup
+	check_mount || return 41
+	mountopt="user_xattr"
+	for x in $(seq 1 400); do
+		mountopt="$mountopt,user_xattr"
+	done
+	stop_mds
+	MDS_MOUNT_OPTS="-o $mountopt"
+	out_str=$(start_mds 2>&1)
+	[[ "$out_str" =~ "mount options exceeds page size of kernel" ]] \
+	|| error "Buffer overflow check failed"
+	MDS_MOUNT_OPTS=$temp
+	start_mds
+	cleanup || return $?
+}
+run_test 98 "Buffer-overflow check while parsing mount_opts"
+
+test_99()
+{
+	[[ $(facet_fstype ost1) != ldiskfs ]] &&
+		{ skip "Only applicable to ldiskfs-based OSTs" && return; }
+
+	local ost_opts="$(mkfs_opts ost1 $(ostdevname 1)) \
+		--reformat $(ostdevname 1) $(ostvdevname 1)"
+	do_facet ost1 $DEBUGFS -c -R stats `ostdevname 1` | grep "meta_bg" &&
+		skip "meta_bg already set" && return
+
+	local opts=ost_opts
+	if [[ ${!opts} != *mkfsoptions* ]]; then
+		eval opts=\"${!opts} \
+		--mkfsoptions='\\\"-O ^resize_inode,meta_bg\\\"'\"
+	else
+		local val=${!opts//--mkfsoptions=\\\"/ \
+		--mkfsoptions=\\\"-O ^resize_inode,meta_bg }
+		eval opts='${val}'
+	fi
+
+	echo "params: $opts"
+
+	add ost1 $opts || error "add ost1 failed with new params"
+
+	do_facet ost1 $DEBUGFS -c -R stats `ostdevname 1` | grep "meta_bg" ||
+		error "meta_bg is not set"
+
+	return 0
+}
+run_test 99 "Adding meta_bg option"
+
+test_121() { # MRP-153
 	local key=failover.node
 	local val1=192.0.2.254@tcp0 # Reserved IPs, see RFC 5735
 	local val2=192.0.2.255@tcp0
@@ -5608,12 +5787,12 @@ test_87() { # MRP-153
 
 	reformat
 }
-run_test 87 "check tunefs correctly handles parameter addition and removal"
+run_test 121 "check tunefs correctly handles parameter addition and removal"
 
 #
 # set number of permanent parameters
 #
-test_88_set_params() {
+test_122_set_params() {
 	local fsname=$1
 
 	set_conf_param_and_check mds				    \
@@ -5644,7 +5823,7 @@ test_88_set_params() {
 #
 # check permanent parameters
 #
-test_88_test_params() {
+test_122_test_params() {
 	local fsname=$1
 
 	local atime_diff=$(do_facet mds $LCTL \
@@ -5663,7 +5842,7 @@ pool_list $fsname.pool1 | grep -v "^Pool:" | sed 's/_UUID//')
 #
 # run lctl clear_conf, store CONFIGS before and after that
 #
-test_88_clear_conf()
+test_122_clear_conf()
 {
 	local clear_conf_arg=$1
 	local mgsdev
@@ -5694,7 +5873,7 @@ $DEBUGFS -c -R \\\"rdump CONFIGS $TMP/conf1\\\" $mgsdev"
 $DEBUGFS -c -R \\\"rdump CONFIGS $TMP/conf2\\\" $mgsdev"
 }
 
-test_88_file_shortened() {
+test_122_file_shortened() {
 	local file=$1
 	local sizes=($(do_facet mgs stat -c %s $TMP/conf1/CONFIGS/$file \
 $TMP/conf2/CONFIGS/$file))
@@ -5702,7 +5881,7 @@ $TMP/conf2/CONFIGS/$file))
 	return 1
 }
 
-test_88a()
+test_122a()
 {
 	reformat
 	setup_noconfig
@@ -5711,32 +5890,32 @@ test_88a()
 	#
 	# set number of permanent parameters
 	#
-	test_88_set_params $FSNAME
+	test_122_set_params $FSNAME
 
 	umount_client $MOUNT || error "umount_client failed"
 	stop_ost || error "stop_ost failed"
 	stop_mds || error "stop_mds failed"
 
-	test_88_clear_conf $FSNAME
+	test_122_clear_conf $FSNAME
 	#
 	# make sure that all configs are cleared
 	#
-	test_88_file_shortened $FSNAME-MDT0000 || error "faled to clear MDT0000"
-	test_88_file_shortened $FSNAME-client || error "failed to clear client"
+	test_122_file_shortened $FSNAME-MDT0000 || error "faled to clear MDT0000"
+	test_122_file_shortened $FSNAME-client || error "failed to clear client"
 
 	setup_noconfig
 
 	#
 	# check that configurations is intact
 	#
-	test_88_test_params $FSNAME
+	test_122_test_params $FSNAME
 
 	cleanup
 	reformat
 }
-run_test 88a "test lctl clear_conf fsname"
+run_test 122a "test lctl clear_conf fsname"
 
-test_88b()
+test_122b()
 {
 	reformat
 	setup_noconfig
@@ -5745,32 +5924,32 @@ test_88b()
 	#
 	# set number of permanent parameters
 	#
-	test_88_set_params $FSNAME
+	test_122_set_params $FSNAME
 
 	umount_client $MOUNT || error "umount_client failed"
 	stop_ost || error "stop_ost failed"
 	stop_mds || error "stop_mds failed"
 
-	test_88_clear_conf $FSNAME-MDT0000
+	test_122_clear_conf $FSNAME-MDT0000
 	#
 	# make sure that only one config is cleared
 	#
-	test_88_file_shortened $FSNAME-MDT0000 || error "faled to clear MDT0000"
-	test_88_file_shortened $FSNAME-client && error "client cleared"
+	test_122_file_shortened $FSNAME-MDT0000 || error "faled to clear MDT0000"
+	test_122_file_shortened $FSNAME-client && error "client cleared"
 
 	setup_noconfig
 
 	#
 	# check that configurations is intact
 	#
-	test_88_test_params $FSNAME
+	test_122_test_params $FSNAME
 
 	cleanup
 	reformat
 }
-run_test 88b "test lctl clear_conf one config"
+run_test 122b "test lctl clear_conf one config"
 
-test_89() {
+test_123() {
 	local had_config
 
 	[ "$MDSCOUNT" -lt 2 ] && { skip "mdt count < 2"; return 0; }
@@ -5804,9 +5983,9 @@ test_89() {
 
 	reformat
 }
-run_test 89 "writeconf on mdt>0 shouldn't duplicate mdc/osp and crash"
+run_test 123 "writeconf on mdt>0 shouldn't duplicate mdc/osp and crash"
 
-test_90()
+test_124()
 {
 	[ "$OSTCOUNT" -lt "2" ] && skip_env "$OSTCOUNT < 2, skipping" && return
 	stopall
@@ -5838,61 +6017,7 @@ test_90()
 
 	stopall
 }
-run_test 90 "test ost registration failure after writeconf"
-
-test_91()
-{
-	local mountopt
-	local temp=$MDS_MOUNT_OPTS
-
-	setup
-	check_mount || return 41
-	mountopt="user_xattr"
-	for x in $(seq 1 400); do
-		mountopt="$mountopt,user_xattr"
-	done
-	stop_mds
-	MDS_MOUNT_OPTS="-o $mountopt"
-	out_str=$(start_mds 2>&1)
-	[[ "$out_str" =~ "mount options exceeds page size of kernel" ]] \
-	|| error "Buffer overflow check failed"
-	MDS_MOUNT_OPTS=$temp
-	start_mds
-	cleanup || return $?
-}
-run_test 91 "Buffer-overflow check while parsing mount_opts"
-
-
-test_99()
-{
-	[[ $(facet_fstype ost1) != ldiskfs ]] &&
-		{ skip "Only applicable to ldiskfs-based OSTs" && return; }
-
-	local ost_opts="$(mkfs_opts ost1 $(ostdevname 1)) \
-		--reformat $(ostdevname 1) $(ostvdevname 1)"
-	do_facet ost1 $DEBUGFS -c -R stats `ostdevname 1` | grep "meta_bg" &&
-		skip "meta_bg already set" && return
-
-	local opts=ost_opts
-	if [[ ${!opts} != *mkfsoptions* ]]; then
-		eval opts=\"${!opts} \
-		--mkfsoptions='\\\"-O ^resize_inode,meta_bg\\\"'\"
-	else
-		local val=${!opts//--mkfsoptions=\\\"/ \
-		--mkfsoptions=\\\"-O ^resize_inode,meta_bg }
-		eval opts='${val}'
-	fi
-
-	echo "params: $opts"
-
-	add ost1 $opts || error "add ost1 failed with new params"
-
-	do_facet ost1 $DEBUGFS -c -R stats `ostdevname 1` | grep "meta_bg" ||
-		error "meta_bg is not set"
-
-	return 0
-}
-run_test 99 "Adding meta_bg option"
+run_test 124 "test ost registration failure after writeconf"
 
 if ! combined_mgs_mds ; then
 	stop mgs
