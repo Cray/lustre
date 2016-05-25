@@ -46,7 +46,7 @@ int tgt_init(const struct lu_env *env, struct lu_target *lut,
 	struct lu_attr		 attr;
 	struct lu_fid		 fid;
 	struct dt_object	*o;
-	int			 rc = 0;
+	int i, rc = 0;
 
 	ENTRY;
 
@@ -161,9 +161,17 @@ out:
 	if (lut->lut_reply_data != NULL)
 		lu_object_put(env, &lut->lut_reply_data->do_lu);
 	lut->lut_reply_data = NULL;
-	if (lut->lut_reply_bitmap != NULL)
+	if (lut->lut_reply_bitmap != NULL) {
+		for (i = 0; i < LUT_REPLY_SLOTS_MAX_CHUNKS; i++) {
+			if (lut->lut_reply_bitmap[i] != NULL)
+				OBD_FREE_LARGE(lut->lut_reply_bitmap[i],
+				    BITS_TO_LONGS(LUT_REPLY_SLOTS_PER_CHUNK) *
+				    sizeof(long));
+			lut->lut_reply_bitmap[i] = NULL;
+		}
 		OBD_FREE(lut->lut_reply_bitmap,
 			 LUT_REPLY_SLOTS_MAX_CHUNKS * sizeof(unsigned long *));
+	}
 	lut->lut_reply_bitmap = NULL;
 	return rc;
 }
@@ -195,7 +203,7 @@ void tgt_fini(const struct lu_env *env, struct lu_target *lut)
 	if (lut->lut_reply_bitmap != NULL) {
 		for (i = 0; i < LUT_REPLY_SLOTS_MAX_CHUNKS; i++) {
 			if (lut->lut_reply_bitmap[i] != NULL)
-				OBD_FREE(lut->lut_reply_bitmap[i],
+				OBD_FREE_LARGE(lut->lut_reply_bitmap[i],
 				    BITS_TO_LONGS(LUT_REPLY_SLOTS_PER_CHUNK) *
 				    sizeof(long));
 			lut->lut_reply_bitmap[i] = NULL;
