@@ -10,12 +10,11 @@
 
 # Override _prefix to avoid installing into Cray locations under /opt/cray/
 %define _prefix    /
-
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
 %define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-source)
-%define full_kernel_version %(rpm -q --qf "%{VERSION}-%{RELEASE}" kernel-source | sed 's/\.[0-9][0-9]*\.[0-9][0-9]*$//')
-%define cray_kernel_version %{full_kernel_version}-%{flavor}
+%define cray_kernel_version %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease) 
 %define lnet_ko_path lib/modules/%{cray_kernel_version}/updates/kernel/net/lustre
+
 # Override the _mandir so man pages don't end up in /man
 %define _mandir /usr/share/man
 %define _includedir /usr/include
