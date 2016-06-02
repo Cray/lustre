@@ -31,11 +31,11 @@ BuildRequires: module-init-tools
 BuildRequires: pkgconfig
 BuildRequires: libtool
 Summary: The lnet development package
-URL: %url
 Vendor: Cray Inc.
 Version: %{branch}
 Source0: %{srcbase}.tar.gz
 Source1: %{pkgsrcbase}.tar.gz
+URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %description
