@@ -1123,8 +1123,11 @@ int tgt_sendpage(struct tgt_session_info *tsi, struct lu_rdpg *rdpg, int nob)
 
 	ENTRY;
 
-	desc = ptlrpc_prep_bulk_exp(req, rdpg->rp_npages, 1, BULK_PUT_SOURCE,
-				    MDS_BULK_PORTAL);
+	desc = ptlrpc_prep_bulk_exp(req, rdpg->rp_npages, 1,
+				    PTLRPC_BULK_PUT_SOURCE |
+					PTLRPC_BULK_BUF_KIOV,
+				    MDS_BULK_PORTAL,
+				    &ptlrpc_bulk_kiov_pin_ops);
 	if (desc == NULL)
 		RETURN(-ENOMEM);
 
@@ -1136,12 +1139,13 @@ int tgt_sendpage(struct tgt_session_info *tsi, struct lu_rdpg *rdpg, int nob)
 	for (i = 0, tmpcount = nob; i < rdpg->rp_npages && tmpcount > 0;
 	     i++, tmpcount -= tmpsize) {
 		tmpsize = min_t(int, tmpcount, PAGE_CACHE_SIZE);
-		ptlrpc_prep_bulk_page_pin(desc, rdpg->rp_pages[i], 0, tmpsize);
+		desc->bd_frag_ops->add_kiov_frag(desc, rdpg->rp_pages[i], 0,
+						 tmpsize);
 	}
 
 	LASSERT(desc->bd_nob == nob);
 	rc = target_bulk_io(exp, desc, lwi);
-	ptlrpc_free_bulk_pin(desc);
+	ptlrpc_free_bulk(desc);
 	RETURN(rc);
 }
 EXPORT_SYMBOL(tgt_sendpage);
@@ -1704,6 +1708,8 @@ static __u32 tgt_checksum_bulk(struct lu_target *tgt,
 	unsigned char			cfs_alg = cksum_obd2cfs(cksum_type);
 	__u32				cksum;
 
+	LASSERT(ptlrpc_is_bulk_desc_kiov(desc->bd_type));
+
 	hdesc = cfs_crypto_hash_init(cfs_alg, NULL, 0);
 	if (IS_ERR(hdesc)) {
 		CERROR("%s: unable to initialize checksum hash %s\n",
@@ -1717,10 +1723,11 @@ static __u32 tgt_checksum_bulk(struct lu_target *tgt,
 		 * simulate a client->OST data error */
 		if (i == 0 && opc == OST_WRITE &&
 		    OBD_FAIL_CHECK(OBD_FAIL_OST_CHECKSUM_RECEIVE)) {
-			int off = desc->bd_iov[i].kiov_offset & ~CFS_PAGE_MASK;
-			int len = desc->bd_iov[i].kiov_len;
+			int off = BD_GET_KIOV(desc, i).kiov_offset &
+				~PAGE_MASK;
+			int len = BD_GET_KIOV(desc, i).kiov_len;
 			struct page *np = tgt_page_to_corrupt;
-			char *ptr = kmap(desc->bd_iov[i].kiov_page) + off;
+			char *ptr = kmap(BD_GET_KIOV(desc, i).kiov_page) + off;
 
 			if (np) {
 				char *ptr2 = kmap(np) + off;
@@ -1728,24 +1735,28 @@ static __u32 tgt_checksum_bulk(struct lu_target *tgt,
 				memcpy(ptr2, ptr, len);
 				memcpy(ptr2, "bad3", min(4, len));
 				kunmap(np);
-				desc->bd_iov[i].kiov_page = np;
+				BD_GET_KIOV(desc, i).kiov_page = np;
 			} else {
 				CERROR("%s: can't alloc page for corruption\n",
 				       tgt_name(tgt));
 			}
 		}
-		cfs_crypto_hash_update_page(hdesc, desc->bd_iov[i].kiov_page,
-				  desc->bd_iov[i].kiov_offset & ~CFS_PAGE_MASK,
-				  desc->bd_iov[i].kiov_len);
+		cfs_crypto_hash_update_page(hdesc,
+				  BD_GET_KIOV(desc, i).kiov_page,
+				  BD_GET_KIOV(desc, i).kiov_offset &
+					~PAGE_MASK,
+				  BD_GET_KIOV(desc, i).kiov_len);
 
 		 /* corrupt the data after we compute the checksum, to
 		 * simulate an OST->client data error */
 		if (i == 0 && opc == OST_READ &&
 		    OBD_FAIL_CHECK(OBD_FAIL_OST_CHECKSUM_SEND)) {
-			int off = desc->bd_iov[i].kiov_offset & ~CFS_PAGE_MASK;
-			int len = desc->bd_iov[i].kiov_len;
+			int off = BD_GET_KIOV(desc, i).kiov_offset
+			  & ~PAGE_MASK;
+			int len = BD_GET_KIOV(desc, i).kiov_len;
 			struct page *np = tgt_page_to_corrupt;
-			char *ptr = kmap(desc->bd_iov[i].kiov_page) + off;
+			char *ptr =
+			  kmap(BD_GET_KIOV(desc, i).kiov_page) + off;
 
 			if (np) {
 				char *ptr2 = kmap(np) + off;
@@ -1753,7 +1764,7 @@ static __u32 tgt_checksum_bulk(struct lu_target *tgt,
 				memcpy(ptr2, ptr, len);
 				memcpy(ptr2, "bad4", min(4, len));
 				kunmap(np);
-				desc->bd_iov[i].kiov_page = np;
+				BD_GET_KIOV(desc, i).kiov_page = np;
 			} else {
 				CERROR("%s: can't alloc page for corruption\n",
 				       tgt_name(tgt));
@@ -1856,7 +1867,10 @@ int tgt_brw_read(struct tgt_session_info *tsi)
 		GOTO(out_lock, rc);
 
 	desc = ptlrpc_prep_bulk_exp(req, npages, ioobj_max_brw_get(ioo),
-				    BULK_PUT_SOURCE, OST_BULK_PORTAL);
+				    PTLRPC_BULK_PUT_SOURCE |
+					PTLRPC_BULK_BUF_KIOV,
+				    OST_BULK_PORTAL,
+				    &ptlrpc_bulk_kiov_nopin_ops);
 	if (desc == NULL)
 		GOTO(out_commitrw, rc = -ENOMEM);
 
@@ -1872,9 +1886,10 @@ int tgt_brw_read(struct tgt_session_info *tsi)
 		nob += page_rc;
 		if (page_rc != 0) { /* some data! */
 			LASSERT(local_nb[i].lnb_page != NULL);
-			ptlrpc_prep_bulk_page_nopin(desc, local_nb[i].lnb_page,
-						    local_nb[i].lnb_page_offset,
-						    page_rc);
+			desc->bd_frag_ops->add_kiov_frag
+			  (desc, local_nb[i].lnb_page,
+			   local_nb[i].lnb_page_offset,
+			   page_rc);
 		}
 
 		if (page_rc != local_nb[i].lnb_len) { /* short read */
@@ -1919,7 +1934,7 @@ out_lock:
 	tgt_brw_unlock(ioo, remote_nb, &lockh, LCK_PR);
 
 	if (desc && !CFS_FAIL_PRECHECK(OBD_FAIL_PTLRPC_CLIENT_BULK_CB2))
-		ptlrpc_free_bulk_nopin(desc);
+		ptlrpc_free_bulk(desc);
 
 	LASSERT(rc <= 0);
 	if (rc == 0) {
@@ -1947,7 +1962,7 @@ out_lock:
 		lwi1 = LWI_TIMEOUT_INTR(cfs_time_seconds(3), NULL, NULL, NULL);
 		l_wait_event(waitq, 0, &lwi1);
 		target_bulk_io(exp, desc, &lwi);
-		ptlrpc_free_bulk_nopin(desc);
+		ptlrpc_free_bulk(desc);
 	}
 
 	RETURN(rc);
@@ -2125,15 +2140,18 @@ int tgt_brw_write(struct tgt_session_info *tsi)
 		GOTO(out_lock, rc);
 
 	desc = ptlrpc_prep_bulk_exp(req, npages, ioobj_max_brw_get(ioo),
-				    BULK_GET_SINK, OST_BULK_PORTAL);
+				    PTLRPC_BULK_GET_SINK | PTLRPC_BULK_BUF_KIOV,
+				    OST_BULK_PORTAL,
+				    &ptlrpc_bulk_kiov_nopin_ops);
 	if (desc == NULL)
 		GOTO(skip_transfer, rc = -ENOMEM);
 
 	/* NB Having prepped, we must commit... */
 	for (i = 0; i < npages; i++)
-		ptlrpc_prep_bulk_page_nopin(desc, local_nb[i].lnb_page,
-					    local_nb[i].lnb_page_offset,
-					    local_nb[i].lnb_len);
+		desc->bd_frag_ops->add_kiov_frag(desc,
+						 local_nb[i].lnb_page,
+						 local_nb[i].lnb_page_offset,
+						 local_nb[i].lnb_len);
 
 	rc = sptlrpc_svc_prep_bulk(req, desc);
 	if (rc != 0)
@@ -2215,7 +2233,7 @@ skip_transfer:
 out_lock:
 	tgt_brw_unlock(ioo, remote_nb, &lockh, LCK_PW);
 	if (desc)
-		ptlrpc_free_bulk_nopin(desc);
+		ptlrpc_free_bulk(desc);
 out:
 	if (no_reply) {
 		req->rq_no_reply = 1;
