@@ -3012,9 +3012,30 @@ test_23b() {
 
 	check_mount_and_prep
 
+	[[ -d $MOUNT/.lustre/lost+found/MDT0000 ]] || {
+		# Trigger LFSCK firstly, that will generate the
+		# .lustre/lost+found/MDTxxxx in advance to avoid
+		# reusing the local object for the dangling name
+		# entry. LU-7429
+		$START_NAMESPACE -r ||
+			error "(0) Fail to start LFSCK for namespace"
+
+		wait_update_facet $SINGLEMDS "$LCTL get_param -n \
+			mdd.${MDT_DEV}.lfsck_namespace |
+			awk '/^status/ { print \\\$2 }'" "completed" 32 || {
+			$SHOW_NAMESPACE
+			error "(0.1) unexpected status"
+             }
+	}
+
 	$LFS mkdir -i 0 $DIR/$tdir/d0 || error "(1) Fail to mkdir d0 on MDT0"
+	$LFS path2fid $DIR/$tdir/d0
+
 	echo "dummy" > $DIR/$tdir/d0/f0 || error "(2) Fail to touch on MDT0"
+	$LFS path2fid $DIR/$tdir/d0/f0
+
 	echo "dead" > $DIR/$tdir/d0/f1 || error "(3) Fail to touch on MDT0"
+	$LFS path2fid $DIR/$tdir/d0/f1
 
 	local OID=$($LFS path2fid $DIR/$tdir/d0/f1 | awk -F':' '{print $2}')
 	OID=$(printf %d $OID)
@@ -3025,6 +3046,7 @@ test_23b() {
 			error "(3.1) Fail to unlink $DIR/$tdir/d0/f0"
 		echo "dummy" > $DIR/$tdir/d0/f0 ||
 			error "(3.2) Fail to touch on MDT0"
+		$LFS path2fid $DIR/$tdir/d0/f0
 	fi
 
 	echo "Inject failure stub on MDT0 to simulate dangling name entry"
@@ -3080,11 +3102,34 @@ test_23c() {
 	echo "LFSCK cannot replace it."
 	echo "#####"
 
+	start_full_debug_logging
+
 	check_mount_and_prep
 
+	[[ -d $MOUNT/.lustre/lost+found/MDT0000 ]] || {
+		# Trigger LFSCK firstly, that will generate the
+		# .lustre/lost+found/MDTxxxx in advance to avoid
+		# reusing the local object for the dangling name
+		# entry. LU-7429
+		$START_NAMESPACE -r ||
+			error "(0) Fail to start LFSCK for namespace"
+
+		wait_update_facet $SINGLEMDS "$LCTL get_param -n \
+			mdd.${MDT_DEV}.lfsck_namespace |
+			awk '/^status/ { print \\\$2 }'" "completed" 32 || {
+			$SHOW_NAMESPACE
+			error "(0.1) unexpected status"
+             }
+	}
+
 	$LFS mkdir -i 0 $DIR/$tdir/d0 || error "(1) Fail to mkdir d0 on MDT0"
+	$LFS path2fid $DIR/$tdir/d0
+
 	echo "dummy" > $DIR/$tdir/d0/f0 || error "(2) Fail to touch on MDT0"
+	$LFS path2fid $DIR/$tdir/d0/f0
+
 	echo "dead" > $DIR/$tdir/d0/f1 || error "(3) Fail to touch on MDT0"
+	$LFS path2fid $DIR/$tdir/d0/f1
 
 	local OID=$($LFS path2fid $DIR/$tdir/d0/f1 | awk -F':' '{print $2}')
 	OID=$(printf %d $OID)
@@ -3095,6 +3140,7 @@ test_23c() {
 			error "(3.1) Fail to unlink $DIR/$tdir/d0/f0"
 		echo "dummy" > $DIR/$tdir/d0/f0 ||
 			error "(3.2) Fail to touch on MDT0"
+		$LFS path2fid $DIR/$tdir/d0/f0
 	fi
 
 	echo "Inject failure stub on MDT0 to simulate dangling name entry"
@@ -3133,6 +3179,8 @@ test_23c() {
 		$SHOW_NAMESPACE
 		error "(10) unexpected status"
 	}
+
+	stop_full_debug_logging
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^dangling_repaired/ { print $2 }')
