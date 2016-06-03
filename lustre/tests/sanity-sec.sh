@@ -811,8 +811,8 @@ test_7() {
 	local rc
 
 	remote_mgs_nodsh && skip "remote MGS with nodsh" && return
-	[ $(lustre_version_code $SINGLEMGS) -lt $(version_code 2.5.53) ] &&
-		skip "No nodemap on $(get_lustre_version) MGS, need 2.5.53+" &&
+	[ $(lustre_version_code mgs) -lt $(version_code 2.5.53) ] &&
+		skip "No nodemap on $(lustre_build_version mgs) MGS < 2.5.53" &&
 		return
 
 	create_nodemaps
@@ -831,8 +831,8 @@ test_8() {
 	local rc
 
 	remote_mgs_nodsh && skip "remote MGS with nodsh" && return
-	[ $(lustre_version_code $SINGLEMGS) -lt $(version_code 2.5.53) ] &&
-		skip "No nodemap on $(get_lustre_version) MGS, need 2.5.53+" &&
+	[ $(lustre_version_code mgs) -lt $(version_code 2.5.53) ] &&
+		skip "No nodemap on $(lustre_build_version mgs) MGS < 2.5.53" &&
 		return
 
 	# Set up nodemaps
@@ -862,8 +862,8 @@ test_9() {
 	local rc
 
 	remote_mgs_nodsh && skip "remote MGS with nodsh" && return
-	[ $(lustre_version_code $SINGLEMGS) -lt $(version_code 2.5.53) ] &&
-		skip "No nodemap on $(get_lustre_version) MGS, need 2.5.53+" &&
+	[ $(lustre_version_code mgs) -lt $(version_code 2.5.53) ] &&
+		skip "No nodemap on $(lustre_build_version mgs) MGS < 2.5.53" &&
 		return
 
 	rc=0
@@ -900,8 +900,8 @@ test_10() {
 	local rc
 
 	remote_mgs_nodsh && skip "remote MGS with nodsh" && return
-	[ $(lustre_version_code $SINGLEMGS) -lt $(version_code 2.5.53) ] &&
-		skip "No nodemap on $(get_lustre_version) MGS, need 2.5.53+" &&
+	[ $(lustre_version_code mgs) -lt $(version_code 2.5.53) ] &&
+		skip "No nodemap on $(lustre_build_version mgs) MGS < 2.5.53" &&
 		return
 
 	rc=0
@@ -947,8 +947,8 @@ test_11() {
 	local rc
 
 	remote_mgs_nodsh && skip "remote MGS with nodsh" && return
-	[ $(lustre_version_code $SINGLEMGS) -lt $(version_code 2.5.53) ] &&
-		skip "No nodemap on $(get_lustre_version) MGS, need 2.5.53+" &&
+	[ $(lustre_version_code mgs) -lt $(version_code 2.5.53) ] &&
+		skip "No nodemap on $(lustre_build_version mgs) MGS < 2.5.53" &&
 		return
 
 	rc=0
@@ -977,8 +977,8 @@ test_12() {
 	local rc
 
 	remote_mgs_nodsh && skip "remote MGS with nodsh" && return
-	[ $(lustre_version_code $SINGLEMGS) -lt $(version_code 2.5.53) ] &&
-		skip "No nodemap on $(get_lustre_version) MGS, need 2.5.53+" &&
+	[ $(lustre_version_code mgs) -lt $(version_code 2.5.53) ] &&
+		skip "No nodemap on $(lustre_build_version mgs) MGS < 2.5.53" &&
 		return
 
 	rc=0
@@ -1015,8 +1015,8 @@ test_13() {
 	local rc
 
 	remote_mgs_nodsh && skip "remote MGS with nodsh" && return
-	[ $(lustre_version_code $SINGLEMGS) -lt $(version_code 2.5.53) ] &&
-		skip "No nodemap on $(get_lustre_version) MGS, need 2.5.53+" &&
+	[ $(lustre_version_code mgs) -lt $(version_code 2.5.53) ] &&
+		skip "No nodemap on $(lustre_build_version mgs) MGS < 2.5.53" &&
 		return
 
 	rc=0
@@ -1058,8 +1058,8 @@ test_14() {
 	local rc
 
 	remote_mgs_nodsh && skip "remote MGS with nodsh" && return
-	[ $(lustre_version_code $SINGLEMGS) -lt $(version_code 2.5.53) ] &&
-		skip "No nodemap on $(get_lustre_version) MGS, need 2.5.53+" &&
+	[ $(lustre_version_code mgs) -lt $(version_code 2.5.53) ] &&
+		skip "No nodemap on $(lustre_build_version mgs) MGS < 2.5.53" &&
 		return
 
 	rc=0
@@ -1093,8 +1093,8 @@ test_15() {
 	local rc
 
 	remote_mgs_nodsh && skip "remote MGS with nodsh" && return
-	[ $(lustre_version_code $SINGLEMGS) -lt $(version_code 2.5.53) ] &&
-		skip "No nodemap on $(get_lustre_version) MGS, need 2.5.53+" &&
+	[ $(lustre_version_code mgs) -lt $(version_code 2.5.53) ] &&
+		skip "No nodemap on $(lustre_build_version mgs) MGS < 2.5.53" &&
 		return
 
 	rc=0
