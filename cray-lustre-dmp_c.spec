@@ -96,12 +96,17 @@ popd
 %{__ln_s} -f /sbin/l_getidentity %{buildroot}/usr/sbin/l_getidentity
 
 %post
+%{__ln_s} %{_sbindir}/ko2iblnd-probe /usr/sbin
+
 DEPMOD_OPTS=""
 if [ -f /boot/System.map-%{cray_kernel_version} ]; then
     DEPMOD_OPTS="-F /boot/System.map-%{cray_kernel_version}"
 fi
 
 depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
+
+%preun
+%{__rm} -f /usr/sbin/ko2iblnd-probe
 
 %files
 %defattr(-,root,root)
