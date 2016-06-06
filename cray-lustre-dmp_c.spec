@@ -15,6 +15,7 @@
 
 %define cray_kernel_version %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease)
 # Override the _mandir so man pages don't end up in /man
+%define pc_files cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc cray-lustre-ptlctl-devel.pc
 %define _mandir /usr/share/man
 
 BuildRequires: kernel-source
@@ -94,6 +95,25 @@ popd
 # set l_getidentity to the default location
 %{__mkdir_p} %{buildroot}/usr/sbin
 %{__ln_s} -f /sbin/l_getidentity %{buildroot}/usr/sbin/l_getidentity
+
+for file in libcfsutil.a libiam.a liblustre.a liblustre.so liblustreapi.a liblustreapi.so libptlctl.a
+do
+    found=`find %{buildroot} -name $file`
+    [ -n "${found}" ] && install -D -m 0644 ${found} %{buildroot}/usr/lib64/${file}
+done
+
+for f in %{pc_files}
+do
+    eval "sed -i 's,^prefix=.*$,prefix=/usr,' %{_sourcedir}/${f}"
+    install -D -m 0644  %{_sourcedir}/${f} %{buildroot}/%{_pkgconfigdir}/${f}
+    %{__rm} -f %{_sourcedir}/${f}
+done
+
+%{__sed} -e 's/@VERSION@/%{version}-%{release}/g' version.in > .version
+
+# Install module directories and files
+%{__install} -D -m 0644 .version %{buildroot}/%{_name_modulefiles_prefix}/.version
+%{__install} -D -m 0644 module %{buildroot}/%{_release_modulefile}
 
 %post
 %{__ln_s} %{_sbindir}/ko2iblnd-probe /usr/sbin
