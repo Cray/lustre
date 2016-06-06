@@ -387,6 +387,7 @@ AS_IF([test $ENABLEO2IB = "no"], [
 		O2IBLND=""
 		O2IBPATH=$(readlink --canonicalize $O2IBPATH)
 		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -I$O2IBPATH/include"
+		EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 		LB_CHECK_COMPILE([whether to enable OpenIB gen2 support],
 		openib_gen2_support, [
 			#ifdef HAVE_COMPAT_RDMA
@@ -464,6 +465,7 @@ AS_IF([test $ENABLEO2IB = "no"], [
 		])
 
 		LN_CONFIG_OFED_SPEC
+		EXTRA_CHECK_INCLUDE=""
 	fi
 ])
 AC_SUBST(EXTRA_OFED_CONFIG)
@@ -473,6 +475,7 @@ AC_SUBST(O2IBPATH)
 
 # In RHEL 6.2, rdma_create_id() takes the queue-pair type as a fourth argument
 AS_IF([test $ENABLEO2IB != "no"], [
+	EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 	LB_CHECK_COMPILE([if 'rdma_create_id' wants four args],
 	rdma_create_id_4args, [
 		#ifdef HAVE_COMPAT_RDMA
@@ -491,6 +494,7 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		AC_DEFINE(HAVE_RDMA_CREATE_ID_4ARG, 1,
 			[rdma_create_id wants 4 args])
 	])
+	EXTRA_CHECK_INCLUDE=""
 ])
 
 #
@@ -501,6 +505,7 @@ AS_IF([test $ENABLEO2IB != "no"], [
 # we need to always test functionality testings.
 #
 AS_IF([test $ENABLEO2IB != "no"], [
+	EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 	LB_CHECK_COMPILE([if 'struct ib_cq_init_attr' is used],
 	ib_cq_init_attr, [
 		#ifdef HAVE_COMPAT_RDMA
@@ -515,6 +520,7 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		AC_DEFINE(HAVE_IB_CQ_INIT_ATTR, 1,
 			[struct ib_cq_init_attr is used by ib_create_cq])
 	])
+	EXTRA_CHECK_INCLUDE=""
 ])
 ]) # LN_CONFIG_O2IB
 
@@ -686,10 +692,14 @@ LN_CONFIG_O2IB
 LN_CONFIG_RALND
 LN_CONFIG_GNILND
 LN_CONFIG_MX
+# OFED checks, so add extra OFED include
+EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 # 2.6.36
 LN_CONFIG_TCP_SENDPAGE
 # 3.15
 LN_CONFIG_SK_DATA_READY
+# remove extra include for none OFED code
+EXTRA_CHECK_INCLUDE=""
 ]) # LN_PROG_LINUX
 
 #
