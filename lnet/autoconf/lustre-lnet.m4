@@ -479,7 +479,7 @@ else
 		AC_MSG_CHECKING([whether to enable OpenIB gen2 support])
 		O2IBPATH=$(readlink --canonicalize $O2IBPATH)
 		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -I$O2IBPATH/include"
-
+		EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 		LB_LINUX_TRY_COMPILE([
 			#ifdef HAVE_COMPAT_RDMA
 			#undef PACKAGE_NAME
@@ -560,6 +560,7 @@ else
 		])
 
 		LN_CONFIG_OFED_SPEC
+		EXTRA_CHECK_INCLUDE=""
 	fi
 fi
 
@@ -569,6 +570,7 @@ AC_SUBST(O2IBLND)
 AC_SUBST(O2IBPATH)
 AC_SUBST(ENABLEO2IB)
 
+EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 # In RHEL 6.2, rdma_create_id() takes the queue-pair type as a fourth argument
 if test $ENABLEO2IB != "no"; then
 	AC_MSG_CHECKING([if rdma_create_id wants four args])
@@ -616,6 +618,7 @@ AS_IF([test $ENABLEO2IB != "no"], [
 			[struct ib_cq_init_attr is used by ib_create_cq])
 	])
 ])
+EXTRA_CHECK_INCLUDE=""
 ])
 
 #
@@ -821,10 +824,14 @@ LN_CONFIG_RALND
 LN_CONFIG_GNILND
 LN_CONFIG_PTLLND
 LN_CONFIG_MX
+# OFED checks, so add extra OFED include
+EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 # 2.6.32
 LN_5ARGS_SYSCTL_PROC_HANDLER
 # 2.6.36
 LN_CONFIG_TCP_SENDPAGE
+# remove extra include for none OFED code
+EXTRA_CHECK_INCLUDE=""
 ])
 
 #
