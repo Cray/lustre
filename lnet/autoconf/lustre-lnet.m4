@@ -377,6 +377,7 @@ directory which is likely in ${O2IBPATH%-*}
 		O2IBLND=""
 		O2IBPATH=$(readlink --canonicalize $O2IBPATH)
 		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -I$O2IBPATH/include"
+		EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 		LB_CHECK_COMPILE([whether to enable OpenIB gen2 support],
 		openib_gen2_support, [
 			#ifdef HAVE_COMPAT_RDMA
@@ -452,6 +453,7 @@ directory which is likely in ${O2IBPATH%-*}
 				EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_IS_KTHREAD"
 			fi
 		])
+		EXTRA_CHECK_INCLUDE=""
 	fi
 ])
 AC_SUBST(EXTRA_OFED_CONFIG)
@@ -459,6 +461,7 @@ AC_SUBST(EXTRA_OFED_INCLUDE)
 AC_SUBST(O2IBLND)
 
 AS_IF([test $ENABLEO2IB != "no"], [
+	EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 	# In RHEL 6.2, rdma_create_id() takes the queue-pair type as a fourth argument
 	LB_CHECK_COMPILE([if 'rdma_create_id' wants four args],
 	rdma_create_id_4args, [
@@ -583,6 +586,7 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		AC_DEFINE(HAVE_IB_MAP_MR_SG, 1,
 			[ib_map_mr_sg exists])
 	])
+	EXTRA_CHECK_INCLUDE=""
 ]) # ENABLEO2IB != "no"
 ]) # LN_CONFIG_O2IB
 
@@ -806,13 +810,18 @@ LN_CONFIG_O2IB
 LN_CONFIG_RALND
 LN_CONFIG_GNILND
 LN_CONFIG_MX
-LN_CONFIG_IB_INC_RKEY
+# OFED checks, so add extra OFED include
+EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 # 2.6.35
 LN_CONFIG_SK_SLEEP
 # 2.6.36
 LN_CONFIG_TCP_SENDPAGE
+# 3.8.1
+LN_CONFIG_IB_INC_RKEY
 # 3.15
 LN_CONFIG_SK_DATA_READY
+# remove extra include for none OFED code
+EXTRA_CHECK_INCLUDE=""
 ]) # LN_PROG_LINUX
 
 #
