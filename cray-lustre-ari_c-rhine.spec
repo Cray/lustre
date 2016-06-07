@@ -9,8 +9,7 @@
 
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
 %define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-source)
-%define full_kernel_version %(rpm -q --qf "%{VERSION}-%{RELEASE}" kernel-source | sed 's/\.[0-9][0-9]*\.[0-9][0-9]*$//')
-%define cray_kernel_version %{full_kernel_version}-%{flavor}
+%define cray_kernel_version %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease) 
 
 BuildRequires: cray-gni-devel
 BuildRequires: cray-gni-headers
@@ -32,6 +31,7 @@ Requires: module-init-tools
 Summary: Lustre File System for CNL running CLE Rhine
 Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
 Source: %{source_name}.tar.gz
+URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %package lnet

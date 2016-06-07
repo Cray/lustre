@@ -33,6 +33,7 @@ Release: %release
 Summary: Lustre File System for CNL
 Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
 Source: %{source_name}.tar.gz
+URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %package lnet
@@ -83,7 +84,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-obd-buffer-size=16384
 fi
-%{__make}
+%{__make} %_smp_mflags
 
 %install
 # LUSTRE_VERS used in ko versioning.

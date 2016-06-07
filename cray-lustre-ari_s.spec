@@ -37,6 +37,7 @@ Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
 Source0: %{source_name}.tar.gz
 Source1: %{flavorless_name}-switch-%{branch}.tar.gz
 Source99: cray-lustre-rpmlintrc
+URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %package lnet
@@ -98,7 +99,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --with-o2ib=${O2IBPATH} \
            --with-obd-buffer-size=16384
 fi
-%{__make}
+%{__make} %_smp_mflags
 
 #
 # make switching file
@@ -107,7 +108,7 @@ pushd switch
 
 %CRAYconfigure -- --with-module=%{_release_modulefile}
 
-%{__make}
+%{__make} %_smp_mflags
 
 popd
 

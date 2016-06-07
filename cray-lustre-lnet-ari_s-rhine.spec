@@ -13,8 +13,7 @@
 
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
 %define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-source)
-%define full_kernel_version %(rpm -q --qf "%{VERSION}-%{RELEASE}" kernel-source | sed 's/\.[0-9][0-9]*\.[0-9][0-9]*$//')
-%define cray_kernel_version %{full_kernel_version}-%{flavor}
+%define cray_kernel_version %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease) 
 %define lnet_ko_path lib/modules/%{cray_kernel_version}/updates/kernel/net/lustre
 # Override the _mandir so man pages don't end up in /man
 %define _mandir /usr/share/man
@@ -39,6 +38,7 @@ Summary: Lustre networking for Aries Service Nodes running CLE Rhine
 Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
 Source0: %{source_name}.tar.gz
 Source1: %{flavorless_name}-switch-%{branch}.tar.gz
+URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %description
@@ -95,7 +95,7 @@ echo "#define BUILD_VERSION \"%{lustre_version}\"" > ${lustre_build_header}
 echo "#define LUSTRE_RELEASE \"$build_release\"" >> ${lustre_build_header}
 
 pushd ./lustre/utils
-%{__make}
+%{__make} %_smp_mflags
 %{__mkdir_p} %{buildroot}/sbin
 %{__cp} lctl %{buildroot}/sbin
 popd
