@@ -22,6 +22,7 @@ BuildRequires: lsb-cray-hss-devel
 BuildRequires: module-init-tools
 BuildRequires: pkgconfig
 BuildRequires: udev
+BuildConflicts: post-build-checks
 BuildRequires: libtool
 Group: System/Filesystems
 License: GPL
