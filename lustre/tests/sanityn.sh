@@ -1274,10 +1274,10 @@ test_40a() {
 	rmdir $DIR2/$tfile-3
 	check_pdo_conflict $PID1 || error "unlink is blocked"
 
-	# all operations above shouldn't wait the first one
+	#  all operations above shouldn't wait the first one
 	check_pdo_conflict $PID1 || error "parallel operation is blocked"
 	wait $PID1
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 40a "pdirops: create vs others =============="
@@ -1306,7 +1306,7 @@ test_40b() {
 
         check_pdo_conflict $PID1 || error "parallel operation is blocked"
 	wait $PID1
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 40b "pdirops: open|create and others =============="
@@ -1336,7 +1336,7 @@ test_40c() {
         # all operations above shouldn't wait the first one
 	check_pdo_conflict $PID1 || error "parallel operation is blocked"
 	wait $PID1
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 40c "pdirops: link and others =============="
@@ -1393,7 +1393,7 @@ test_40e() {
        # all operations above shouldn't wait the first one
 	check_pdo_conflict $PID1 || error "parallel operation is blocked"
 	wait $PID1
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 40e "pdirops: rename and others =============="
@@ -1407,7 +1407,7 @@ test_41a() {
 	sleep 1
 	mkdir $DIR2/$tfile && error "mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; echo "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41a "pdirops: create vs mkdir =============="
@@ -1420,7 +1420,7 @@ test_41b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c && error "create must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41b "pdirops: create vs create =============="
@@ -1434,7 +1434,7 @@ test_41c() {
 	sleep 1
 	link $DIR2/$tfile-2 $DIR2/$tfile && error "link must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41c "pdirops: create vs link =============="
@@ -1447,7 +1447,7 @@ test_41d() {
 	sleep 1
 	rm $DIR2/$tfile || error "unlink must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41d "pdirops: create vs unlink =============="
@@ -1461,7 +1461,7 @@ test_41e() {
 	sleep 1
 	mv $DIR2/$tfile-2 $DIR2/$tfile || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41e "pdirops: create and rename (tgt) =============="
@@ -1474,7 +1474,7 @@ test_41f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-2 || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41f "pdirops: create and rename (src) =============="
@@ -1487,7 +1487,7 @@ test_41g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null || error "stat must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41g "pdirops: create vs getattr =============="
@@ -1500,7 +1500,7 @@ test_41h() {
 	sleep 1
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1; error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41h "pdirops: create vs readdir =============="
@@ -1514,7 +1514,7 @@ test_42a() {
 	sleep 1
 	mkdir $DIR2/$tfile && error "mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42a "pdirops: mkdir vs mkdir =============="
@@ -1527,7 +1527,7 @@ test_42b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c && error "create must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42b "pdirops: mkdir vs create =============="
@@ -1541,7 +1541,7 @@ test_42c() {
 	sleep 1
 	link $DIR2/$tfile-2 $DIR2/$tfile && error "link must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42c "pdirops: mkdir vs link =============="
@@ -1554,7 +1554,7 @@ test_42d() {
 	sleep 1
 	rmdir $DIR2/$tfile || error "unlink must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42d "pdirops: mkdir vs unlink =============="
@@ -1568,7 +1568,7 @@ test_42e() {
 	sleep 1
 	mv -T $DIR2/$tfile-2 $DIR2/$tfile && error "rename must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42e "pdirops: mkdir and rename (tgt) =============="
@@ -1581,7 +1581,7 @@ test_42f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-2 || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42f "pdirops: mkdir and rename (src) =============="
@@ -1594,7 +1594,7 @@ test_42g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null || error "stat must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42g "pdirops: mkdir vs getattr =============="
@@ -1607,7 +1607,7 @@ test_42h() {
 	sleep 1
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1; error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42h "pdirops: mkdir vs readdir =============="
@@ -1622,7 +1622,7 @@ test_43a() {
 	sleep 1
 	mkdir $DIR2/$tfile || error "mkdir must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43a "pdirops: unlink vs mkdir =============="
@@ -1636,7 +1636,7 @@ test_43b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c || error "create must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43b "pdirops: unlink vs create =============="
@@ -1651,7 +1651,7 @@ test_43c() {
 	sleep 1
 	link $DIR2/$tfile-2 $DIR2/$tfile || error "link must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43c "pdirops: unlink vs link =============="
@@ -1665,7 +1665,7 @@ test_43d() {
 	sleep 1
 	rm $DIR2/$tfile && error "unlink must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43d "pdirops: unlink vs unlink =============="
@@ -1680,7 +1680,7 @@ test_43e() {
 	sleep 1
 	mv -u $DIR2/$tfile-2 $DIR2/$tfile || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43e "pdirops: unlink and rename (tgt) =============="
@@ -1694,7 +1694,7 @@ test_43f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-2 && error "rename must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43f "pdirops: unlink and rename (src) =============="
@@ -1708,7 +1708,7 @@ test_43g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null && error "stat must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43g "pdirops: unlink vs getattr =============="
@@ -1722,7 +1722,7 @@ test_43h() {
 	sleep 1
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1; error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43h "pdirops: unlink vs readdir =============="
@@ -1738,7 +1738,7 @@ test_43i() {
 	$LFS mkdir -i 1 $DIR2/$tfile || error "remote mkdir must succeed"
 	check_pdo_conflict $PID1 &&
 		{ wait $PID1; error "remote mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43i "pdirops: unlink vs remote mkdir"
@@ -1753,7 +1753,7 @@ test_44a() {
 	sleep 1
 	mkdir $DIR2/$tfile && error "mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44a "pdirops: rename tgt vs mkdir =============="
@@ -1767,7 +1767,7 @@ test_44b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c && error "create must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44b "pdirops: rename tgt vs create =============="
@@ -1782,7 +1782,7 @@ test_44c() {
 	sleep 1
 	link $DIR2/$tfile-3 $DIR2/$tfile && error "link must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44c "pdirops: rename tgt vs link =============="
@@ -1796,7 +1796,7 @@ test_44d() {
 	sleep 1
 	rm $DIR2/$tfile || error "unlink must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44d "pdirops: rename tgt vs unlink =============="
@@ -1812,7 +1812,7 @@ test_44e() {
 	sleep 1
 	mv $DIR2/$tfile-3 $DIR2/$tfile || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44e "pdirops: rename tgt and rename (tgt) =============="
@@ -1827,7 +1827,7 @@ test_44f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-3 || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44f "pdirops: rename tgt and rename (src) =============="
@@ -1841,7 +1841,7 @@ test_44g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null || error "stat must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44g "pdirops: rename tgt vs getattr =============="
@@ -1855,7 +1855,7 @@ test_44h() {
 	sleep 1
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1; error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44h "pdirops: rename tgt vs readdir =============="
@@ -1872,7 +1872,7 @@ test_44i() {
 	$LFS mkdir -i 1 $DIR2/$tfile && error "remote mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1;
 				error "remote mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44i "pdirops: rename tgt vs remote mkdir"
@@ -1887,7 +1887,7 @@ test_45a() {
 	sleep 1
 	mkdir $DIR2/$tfile || error "mkdir must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45a "pdirops: rename src vs mkdir =============="
@@ -1901,7 +1901,7 @@ test_45b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c || error "create must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45b "pdirops: rename src vs create =============="
@@ -1916,7 +1916,7 @@ test_45c() {
 	sleep 1
 	link $DIR2/$tfile-3 $DIR2/$tfile || error "link must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45c "pdirops: rename src vs link =============="
@@ -1930,7 +1930,7 @@ test_45d() {
 	sleep 1
 	rm $DIR2/$tfile && error "unlink must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45d "pdirops: rename src vs unlink =============="
@@ -1945,7 +1945,7 @@ test_45e() {
 	sleep 1
 	mv $DIR2/$tfile-3 $DIR2/$tfile || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45e "pdirops: rename src and rename (tgt) =============="
@@ -1959,7 +1959,7 @@ test_45f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-3 && error "rename must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45f "pdirops: rename src and rename (src) =============="
@@ -1973,7 +1973,7 @@ test_45g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null && error "stat must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45g "pdirops: rename src vs getattr =============="
@@ -1987,7 +1987,7 @@ test_45h() {
 	sleep 1
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1; error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45h "pdirops: unlink vs readdir =============="
@@ -2003,7 +2003,7 @@ test_45i() {
 	$LFS mkdir -i 1 $DIR2/$tfile || error "create remote dir must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1;
 				error "create remote dir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45i "pdirops: rename src vs remote mkdir"
@@ -2018,7 +2018,7 @@ test_46a() {
 	sleep 1
 	mkdir $DIR2/$tfile && error "mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46a "pdirops: link vs mkdir =============="
@@ -2032,7 +2032,7 @@ test_46b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c && error "create must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46b "pdirops: link vs create =============="
@@ -2046,7 +2046,7 @@ test_46c() {
 	sleep 1
 	link $DIR2/$tfile $DIR2/$tfile && error "link must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46c "pdirops: link vs link =============="
@@ -2060,7 +2060,7 @@ test_46d() {
 	sleep 1
 	rm $DIR2/$tfile || error "unlink must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46d "pdirops: link vs unlink =============="
@@ -2075,7 +2075,7 @@ test_46e() {
 	sleep 1
 	mv $DIR2/$tfile-3 $DIR2/$tfile || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46e "pdirops: link and rename (tgt) =============="
@@ -2090,7 +2090,7 @@ test_46f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-3 || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46f "pdirops: link and rename (src) =============="
@@ -2104,7 +2104,7 @@ test_46g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null || error "stat must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46g "pdirops: link vs getattr =============="
@@ -2119,7 +2119,7 @@ test_46h() {
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1;
 			error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46h "pdirops: link vs readdir =============="
@@ -2135,7 +2135,7 @@ test_46i() {
 	$LFS mkdir -i 1 $DIR2/$tfile && error "remote mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1;
 				error "remote mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46i "pdirops: link vs remote mkdir"
@@ -2150,7 +2150,7 @@ test_47a() {
 	sleep 1
 	mkdir $DIR2/$tfile && error "mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47a "pdirops: remote mkdir vs mkdir"
@@ -2165,7 +2165,7 @@ test_47b() {
 	multiop $DIR2/$tfile oO_CREAT:O_EXCL:c && error "create must fail"
 	check_pdo_conflict $PID1 && { wait $PID1;
 					error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47b "pdirops: remote mkdir vs create"
@@ -2180,7 +2180,7 @@ test_47c() {
 	sleep 1
 	link $DIR2/$tfile-2 $DIR2/$tfile && error "link must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47c "pdirops: remote mkdir vs link"
@@ -2195,7 +2195,7 @@ test_47d() {
 	rmdir $DIR2/$tfile || error "unlink must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1;
 					error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47d "pdirops: remote mkdir vs unlink"
@@ -2211,7 +2211,7 @@ test_47e() {
 	mv -T $DIR2/$tfile-2 $DIR2/$tfile && error "rename must fail"
 	check_pdo_conflict $PID1 && { wait $PID1;
 					error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47e "pdirops: remote mkdir and rename (tgt)"
@@ -2226,7 +2226,7 @@ test_47f() {
 	mv $DIR2/$tfile $DIR2/$tfile-2 || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1;
 					error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47f "pdirops: remote mkdir and rename (src)"
@@ -2241,7 +2241,7 @@ test_47g() {
 	stat $DIR2/$tfile > /dev/null || error "stat must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1;
 					error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47g "pdirops: remote mkdir vs getattr"
