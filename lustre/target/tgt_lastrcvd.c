@@ -1677,19 +1677,30 @@ int tgt_txn_start_cb(const struct lu_env *env, struct thandle *th,
 	if (tsi->tsi_exp == NULL)
 		return 0;
 
-	tti_buf_lcd(tti);
-	rc = dt_declare_record_write(env, tgt->lut_last_rcvd,
-				     &tti->tti_buf,
-				     tsi->tsi_exp->exp_target_data.ted_lr_off,
-				     th);
-	if (rc)
-		return rc;
-
-	tti_buf_lsd(tti);
-	rc = dt_declare_record_write(env, tgt->lut_last_rcvd,
-				     &tti->tti_buf, 0, th);
-	if (rc)
-		return rc;
+	if (tgt_is_multimodrpcs_client(tsi->tsi_exp)) {
+		/*
+		 * Use maximum possible file offset for declaration to ensure
+		 * ZFS will reserve enough credits for a write anywhere in this
+		 * file, since we don't know where in the file the write will be
+		 * because a replay slot has not been assigned.  This should be
+		 * replaced by dmu_tx_hold_append() when available.
+		 */
+		tti->tti_off = atomic_read(&tgt->lut_num_clients) * 8 *
+				sizeof(struct lsd_reply_data);
+		tti->tti_buf.lb_buf = NULL;
+		tti->tti_buf.lb_len = sizeof(struct lsd_reply_data);
+		rc = dt_declare_record_write(env, tgt->lut_reply_data,
+					     &tti->tti_buf, tti->tti_off, th);
+		if (rc)
+			return rc;
+	} else {
+		tti_buf_lcd(tti);
+		tti->tti_off = tsi->tsi_exp->exp_target_data.ted_lr_off;
+		rc = dt_declare_record_write(env, tgt->lut_last_rcvd,
+					     &tti->tti_buf, tti->tti_off, th);
+		if (rc)
+			return rc;
+	}
 
 	if (tsi->tsi_vbr_obj != NULL &&
 	    !lu_object_remote(&tsi->tsi_vbr_obj->do_lu))
