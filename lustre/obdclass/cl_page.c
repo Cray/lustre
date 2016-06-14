@@ -1059,10 +1059,35 @@ EXPORT_SYMBOL(cl_page_completion);
  * \pre  cl_page->cp_state == CPS_CACHED
  * \post cl_page->cp_state == CPS_PAGEIN || cl_page->cp_state == CPS_PAGEOUT
  *
- * \see cl_page_operations::cpo_make_ready()
+ * \see cl_page_operations::cpo_make_ready_start/end()
  */
-int cl_page_make_ready(const struct lu_env *env, struct cl_page *cl_page,
-                       enum cl_req_type crt)
+int cl_page_make_ready_start(const struct lu_env *env, struct cl_page *cl_page,
+			     enum cl_req_type crt)
+{
+	const struct cl_page_slice *slice;
+        int result = 0;
+	int i;
+
+	PINVRNT(env, cl_page, crt < CRT_NR);
+
+	ENTRY;
+	if (crt >= CRT_NR)
+		RETURN(-EINVAL);
+
+	cl_page_slice_for_each(cl_page, slice, i) {
+		if (slice->cpl_ops->io[crt].cpo_make_ready_start != NULL)
+			result = (*slice->cpl_ops->io[crt].cpo_make_ready_start)
+								(env, slice);
+		if (result != 0)
+			break;
+	}
+
+	RETURN(result);
+}
+EXPORT_SYMBOL(cl_page_make_ready_start);
+
+int cl_page_make_ready_end(const struct lu_env *env, struct cl_page *cl_page,
+			   enum cl_req_type crt)
 {
 	const struct cl_page_slice *slice;
 	int result = 0;
@@ -1074,8 +1099,9 @@ int cl_page_make_ready(const struct lu_env *env, struct cl_page *cl_page,
 		RETURN(-EINVAL);
 
 	cl_page_slice_for_each(cl_page, slice, i) {
-		if (slice->cpl_ops->io[crt].cpo_make_ready != NULL)
-			result = (*slice->cpl_ops->io[crt].cpo_make_ready)(env, slice);
+		if (slice->cpl_ops->io[crt].cpo_make_ready_end != NULL)
+			result = (*slice->cpl_ops->io[crt].cpo_make_ready_end)
+								(env, slice);
 		if (result != 0)
 			break;
 	}
@@ -1089,7 +1115,7 @@ int cl_page_make_ready(const struct lu_env *env, struct cl_page *cl_page,
 
 	RETURN(result);
 }
-EXPORT_SYMBOL(cl_page_make_ready);
+EXPORT_SYMBOL(cl_page_make_ready_end);
 
 /**
  * Called if a page is being written back by kernel's intention.
