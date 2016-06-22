@@ -2101,6 +2101,7 @@ run_test 28 "create/mknod/mkdir with bad file types ============"
 
 test_29() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
+	sync; sleep 1; sync # flush out any dirty pages from previous tests
 	cancel_lru_locks mdc
 	test_mkdir $DIR/d29
 	touch $DIR/d29/foo
