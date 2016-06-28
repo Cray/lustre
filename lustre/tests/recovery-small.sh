@@ -261,6 +261,7 @@ test_10d() {
 	local rec2len=5
 	$MULTIOP $TMP/$tfile oO_CREAT:O_WRONLY:T0z${rec1len}w${rec2len}c
 
+	remount_client $MOUNT
 	mount_client $MOUNT2
 
 	$LFS setstripe -i 0 -c 1 $DIR1/$tfile
@@ -279,8 +280,9 @@ test_10d() {
 
 	client_reconnect
 
-	cmp $DIR1/$tfile $DIR2/$tfile || error "file contents differ"
-	cmp $DIR1/$tfile $TMP/$tfile || error "wrong content found"
+	cancel_lru_locks osc
+	cmp -l $DIR1/$tfile $DIR2/$tfile || error "file contents differ"
+	cmp -l $DIR1/$tfile $TMP/$tfile || error "wrong content found"
 
 	evict=$(do_facet client $LCTL get_param osc.$FSNAME-OST0000*.state | \
 		tr -d '\-\[\] ' | \
@@ -531,10 +533,10 @@ test_18c() {
     do_facet ost1 lctl set_param fail_loc=0x80000225
     # force reconnect
     sleep 1
-    df $MOUNT > /dev/null 2>&1
+    $LFS df $MOUNT > /dev/null 2>&1
     sleep 2
     # my understanding is that there should be nothing in the page
-    # cache after the client reconnects?     
+    # cache after the client reconnects?
     rc=0
     pgcache_empty || rc=2
     rm -f $f $TMP/$tfile
@@ -1510,6 +1512,11 @@ check_target_ir_state()
         local recovery_proc=obdfilter.${!name}.recovery_status
         local st
 
+	while : ; do
+		st=$(do_facet $target "$LCTL get_param -n $recovery_proc |
+			awk '/status:/{ print \\\$2}'")
+		[ x$st = xRECOVERING ] || break
+	done
         st=$(do_facet $target "lctl get_param -n $recovery_proc |
                                awk '/IR:/{ print \\\$2}'")
 	[ $st != ON -o $st != OFF -o $st != ENABLED -o $st != DISABLED ] ||
