@@ -49,7 +49,7 @@ test_0a() {
     # needs to run during initial client->OST connection
     #define OBD_FAIL_OST_ALL_REPLY_NET       0x211
     do_facet ost1 "lctl set_param fail_loc=0x80000211"
-    zconf_mount `hostname` $MOUNT && df $MOUNT || error "0a mount fail"
+    zconf_mount $(hostname) $MOUNT && $LFS df $MOUNT || error "mount fail"
 }
 run_test 0a "target handle mismatch (bug 5317) `date +%H:%M:%S`"
 
@@ -384,13 +384,13 @@ test_8e() {
 	sleep 1 # ensure we have a fresh statfs
 #define OBD_FAIL_OST_STATFS_EINPROGRESS 0x231
 	do_facet ost1 "lctl set_param fail_loc=0x231"
-	df $MOUNT &
+	$LFS df $MOUNT &
 	dfpid=$!
 	sleep $TIMEOUT
 	if ! ps -p $dfpid  > /dev/null 2>&1; then
-			do_facet ost1 "lctl set_param fail_loc=0"
-			error "df shouldn't have completed!"
-			return 1
+		do_facet ost1 "lctl set_param fail_loc=0"
+		error "df shouldn't have completed!"
+		return 1
 	fi
 	do_facet ost1 "lctl set_param fail_loc=0"
 }
