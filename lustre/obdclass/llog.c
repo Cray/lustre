@@ -719,6 +719,11 @@ EXPORT_SYMBOL(llog_reverse_process);
  *      llog_declare_add - declare llog catalog record addition
  *      llog_add - add llog record in catalog, need transaction handle
  */
+
+#define LLOG_API_ERROR(fmt, ...) do {				\
+	CERROR("sanity check failed: " fmt, ## __VA_ARGS__);	\
+} while (0)
+
 int llog_exist(struct llog_handle *loghandle)
 {
 	struct llog_operations	*lop;
@@ -818,11 +823,29 @@ int llog_write_rec(const struct lu_env *env, struct llog_handle *handle,
 
 	ENTRY;
 
+	/* API sanity checks */
+	if (handle == NULL) {
+		LLOG_API_ERROR("loghandle is missed\n");
+		RETURN(-EPROTO);
+	} else if (handle->lgh_obj == NULL) {
+		LLOG_API_ERROR("loghandle %p with NULL object\n",
+				handle);
+		RETURN(-EPROTO);
+	} else if (th == NULL) {
+		LLOG_API_ERROR("obd %s, missed transaction handle\n",
+			handle->lgh_obj->do_lu.lo_dev->ld_obd->obd_name);
+		RETURN(-EPROTO);
+	} else if (handle->lgh_hdr == NULL) {
+		LLOG_API_ERROR("obd %s, loghandle %p with no header\n",
+			handle->lgh_obj->do_lu.lo_dev->ld_obd->obd_name,
+			handle);
+		RETURN(-EPROTO);
+	}
+
 	rc = llog_handle2ops(handle, &lop);
 	if (rc)
 		RETURN(rc);
 
-	LASSERT(lop);
 	if (lop->lop_write_rec == NULL)
 		RETURN(-EOPNOTSUPP);
 
