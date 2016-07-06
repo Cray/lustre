@@ -2168,6 +2168,23 @@ posix_acl_valid, [
 ]) # LC_HAVE_POSIX_ACL_VALID_USER_NS
 
 #
+# LC_HAVE_INODE_LOCK
+#
+# 4.5 introduced inode_lock
+#
+AC_DEFUN([LC_HAVE_INODE_LOCK], [
+LB_CHECK_COMPILE([if 'inode_lock' is defined],
+inode_lock, [
+	#include <linux/fs.h>
+],[
+	inode_lock(NULL);
+], [
+	AC_DEFINE(HAVE_INODE_LOCK, 1,
+		  [inode_lock is defined])
+])
+]) # LC_HAVE_INODE_LOCK
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -2341,6 +2358,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 4.8
 	LC_HAVE_POSIX_ACL_VALID_USER_NS
+
+	# 4.5
+	LC_HAVE_INODE_LOCK
 
 	#
 	AS_IF([test "x$enable_server" != xno], [
