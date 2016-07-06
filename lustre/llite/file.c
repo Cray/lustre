@@ -2344,13 +2344,13 @@ static int ll_hsm_import(struct inode *inode, struct file *file,
 			 ATTR_MTIME | ATTR_MTIME_SET |
 			 ATTR_ATIME | ATTR_ATIME_SET;
 
-	mutex_lock(&inode->i_mutex);
+	inode_lock(inode);
 
 	rc = ll_setattr_raw(file->f_path.dentry, attr, true);
 	if (rc == -ENODATA)
 		rc = 0;
 
-	mutex_unlock(&inode->i_mutex);
+	inode_unlock(inode);
 
 out:
 	if (hss != NULL)
@@ -2397,9 +2397,9 @@ static int ll_file_futimes_3(struct file *file, const struct ll_futimes_3 *lfu)
 	if (!S_ISREG(inode->i_mode))
 		RETURN(-EINVAL);
 
-	mutex_lock(&inode->i_mutex);
+	inode_lock(inode);
 	rc = ll_setattr_raw(file->f_path.dentry, &ia, false);
-	mutex_unlock(&inode->i_mutex);
+	inode_unlock(inode);
 
 	RETURN(rc);
 }
@@ -2806,9 +2806,9 @@ generic_file_llseek_size(struct file *file, loff_t offset, int origin,
 		 * SEEK_CURs. Note that parallel writes and reads behave
 		 * like SEEK_SET.
 		 */
-		mutex_lock(&inode->i_mutex);
+		inode_lock(inode);
 		offset = llseek_execute(file, file->f_pos + offset, maxsize);
-		mutex_unlock(&inode->i_mutex);
+		inode_unlock(inode);
 		return offset;
 	case SEEK_DATA:
 		/*
@@ -2973,7 +2973,7 @@ int ll_fsync(struct file *file, struct dentry *dentry, int datasync)
 
 #ifdef HAVE_FILE_FSYNC_4ARGS
 	rc = filemap_write_and_wait_range(inode->i_mapping, start, end);
-	mutex_lock(&inode->i_mutex);
+	inode_lock(inode);
 #else
 	/* fsync's caller has already called _fdata{sync,write}, we want
 	 * that IO to finish before calling the osc and mdc sync methods */
@@ -3014,7 +3014,7 @@ int ll_fsync(struct file *file, struct dentry *dentry, int datasync)
 	}
 
 #ifdef HAVE_FILE_FSYNC_4ARGS
-	mutex_unlock(&inode->i_mutex);
+	inode_unlock(inode);
 #endif
 	RETURN(rc);
 }
@@ -3220,7 +3220,7 @@ int ll_migrate(struct inode *parent, struct file *file, int mdtidx,
 		if (dchild->d_inode != NULL) {
 			child_inode = igrab(dchild->d_inode);
 			if (child_inode != NULL) {
-				mutex_lock(&child_inode->i_mutex);
+				inode_lock(child_inode);
 				op_data->op_fid3 = *ll_inode2fid(child_inode);
 				ll_invalidate_aliases(child_inode);
 			}
@@ -3264,7 +3264,7 @@ int ll_migrate(struct inode *parent, struct file *file, int mdtidx,
 out_free:
 	if (child_inode != NULL) {
 		clear_nlink(child_inode);
-		mutex_unlock(&child_inode->i_mutex);
+		inode_unlock(child_inode);
 		iput(child_inode);
 	}
 

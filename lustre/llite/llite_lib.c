@@ -1730,7 +1730,7 @@ int ll_setattr_raw(struct dentry *dentry, struct iattr *attr, bool hsm_import)
 	if (!S_ISDIR(inode->i_mode)) {
 		if (attr->ia_valid & ATTR_SIZE)
 			inode_dio_write_done(inode);
-		mutex_unlock(&inode->i_mutex);
+		inode_unlock(inode);
 	}
 
 	/* truncate on a released file must failed with -ENODATA,
@@ -1812,7 +1812,7 @@ out:
 		ll_finish_md_op_data(op_data);
 	}
 	if (!S_ISDIR(inode->i_mode)) {
-		mutex_lock(&inode->i_mutex);
+		inode_lock(inode);
 		if ((attr->ia_valid & ATTR_SIZE) && !hsm_import)
 			inode_dio_wait(inode);
 	}
