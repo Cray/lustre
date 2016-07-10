@@ -3698,6 +3698,9 @@ static int mdt_intent_opc(long itopc, struct mdt_thread_info *info,
 		if (qmt == NULL)
 			RETURN(-EOPNOTSUPP);
 
+		if (mdt_rdonly(req->rq_export))
+			RETURN(-EROFS);
+
 		(*lockp)->l_lvb_type = LVB_T_LQUOTA;
 		/* pass the request to quota master */
 		rc = qmt_hdls.qmth_intent_policy(info->mti_env, qmt,
