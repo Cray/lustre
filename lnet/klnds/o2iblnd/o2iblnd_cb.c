@@ -2604,12 +2604,11 @@ kiblnd_check_reconnect(kib_conn_t *conn, int version,
  out:
 	write_unlock_irqrestore(&kiblnd_data.kib_global_lock, flags);
 
-	CNETERR("%s: %s (%s), %x, %x, msg_size: %d, queue_depth: %d/%d, max_frags: %d/%d\n",
+	CNETERR("%s: %s (%s), %x, %x, msg_size: %d, queue_depth: %d, max_frags: %d\n",
 		libcfs_nid2str(peer->ibp_nid),
 		reconnect ? "reconnect" : "don't reconnect",
 		reason, IBLND_MSG_VERSION, version, msg_size,
-		conn->ibc_queue_depth, queue_dep,
-		conn->ibc_max_frags, frag_num);
+		queue_dep, frag_num);
 	/*
 	 * if conn::ibc_reconnect is TRUE, connd will reconnect to the peer
 	 * while destroying the zombie
