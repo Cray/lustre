@@ -1197,7 +1197,7 @@ EXPORT_SYMBOL(cl_offset);
 /**
  * Converts a page index into a byte offset within object \a obj.
  */
-pgoff_t cl_index(const struct cl_object *obj, loff_t offset)
+pgoff_t cl_index(const struct cl_object *obj, pgoff_t offset)
 {
 	return offset >> PAGE_CACHE_SHIFT;
 }
