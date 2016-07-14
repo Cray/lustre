@@ -2405,6 +2405,8 @@ test_130c() {
 run_test 130c "layout intent resend on a stale inode"
 
 test_131() {
+	remote_ost_nodsh && skip "remote OST with nodsh" && return 0
+
 	rm -f $DIR/$tfile
 	# get a lock on client so that export would reach the stale list
 	$SETSTRIPE -i 0 $DIR/$tfile || error "setstripe failed"
@@ -2413,6 +2415,7 @@ test_131() {
 	# another IO under the same lock
 	#define OBD_FAIL_OSC_DELAY_IO            0x413
 	$LCTL set_param fail_loc=0x80000413
+	$LCTL set_param fail_val=4 fail_loc=0x80000413
 	dd if=/dev/zero of=$DIR/$tfile count=1 conv=notrunc oflag=dsync &
 	local pid=$!
 	sleep 1
