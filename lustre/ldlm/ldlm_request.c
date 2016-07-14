@@ -2156,8 +2156,9 @@ static int ldlm_chain_lock_for_replay(struct ldlm_lock *lock, void *closure)
         /* bug 9573: don't replay locks left after eviction, or
          * bug 17614: locks being actively cancelled. Get a reference
          * on a lock so that it does not disapear under us (e.g. due to cancel)
+	 * Bug 17614 comment no longer accurate see LU-8175.
          */
-        if (!(lock->l_flags & (LDLM_FL_FAILED|LDLM_FL_CANCELING))) {
+	if (!(lock->l_flags & (LDLM_FL_FAILED|LDLM_FL_BL_DONE))) {
 		list_add(&lock->l_pending_chain, list);
                 LDLM_LOCK_GET(lock);
         }
@@ -2224,9 +2225,7 @@ static int replay_one_lock(struct obd_import *imp, struct ldlm_lock *lock)
         int flags;
         ENTRY;
 
-
-        /* Bug 11974: Do not replay a lock which is actively being canceled */
-	if (ldlm_is_canceling(lock)) {
+	if (ldlm_is_bl_done(lock)) {
                 LDLM_DEBUG(lock, "Not replaying canceled lock:");
                 RETURN(0);
         }

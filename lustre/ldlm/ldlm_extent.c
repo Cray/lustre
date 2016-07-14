@@ -451,7 +451,10 @@ ldlm_extent_compat_queue(struct list_head *queue, struct ldlm_lock *req,
 			if (!work_list || (*flags & LDLM_FL_BLOCK_NOWAIT)) {
 				rc = interval_is_overlapped(tree->lit_root,
 							    &ex);
-				if (rc && (*flags & LDLM_FL_BLOCK_NOWAIT)) {
+				/* Non-blocking group locks do NOT consider
+				 * non-group locks blocking. */
+				if (rc && (*flags & LDLM_FL_BLOCK_NOWAIT)
+				    && req_mode != LCK_GROUP) {
 					compat = -EWOULDBLOCK;
 					goto destroylock;
 				} else if (rc) {
@@ -1011,6 +1014,26 @@ void ldlm_extent_add_lock(struct ldlm_resource *res,
         /* even though we use interval tree to manage the extent lock, we also
          * add the locks into grant list, for debug purpose, .. */
         ldlm_resource_add_lock(res, &res->lr_granted, lock);
+
+	if (OBD_FAIL_CHECK(OBD_FAIL_LDLM_GRANT_CHECK)) {
+		struct ldlm_lock *lck;
+
+		list_for_each_entry_reverse(lck, &res->lr_granted,
+					    l_res_link) {
+			if (lck == lock)
+				continue;
+			if (lockmode_compat(lck->l_granted_mode,
+					    lock->l_granted_mode))
+				continue;
+			if (ldlm_extent_overlap(&lck->l_req_extent,
+						&lock->l_req_extent)) {
+				CDEBUG(D_ERROR, "granting conflicting lock %p "
+						"%p\n", lck, lock);
+				ldlm_resource_dump(D_ERROR, res);
+				LBUG();
+			}
+		}
+	}
 }
 
 /** Remove cancelled lock from resource interval tree. */
