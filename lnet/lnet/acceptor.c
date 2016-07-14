@@ -35,6 +35,9 @@
  */
 
 #define DEBUG_SUBSYSTEM S_LNET
+
+#include <linux/completion.h>
+#include <net/sock.h>
 #include <lnet/lib-lnet.h>
 
 static int   accept_port    = 988;
