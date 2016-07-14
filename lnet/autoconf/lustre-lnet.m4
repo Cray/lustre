@@ -462,6 +462,7 @@ AC_SUBST(O2IBLND)
 
 AS_IF([test $ENABLEO2IB != "no"], [
 	EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
+
 	# In RHEL 6.2, rdma_create_id() takes the queue-pair type as a fourth argument
 	LB_CHECK_COMPILE([if 'rdma_create_id' wants four args],
 	rdma_create_id_4args, [
@@ -608,6 +609,26 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		AC_DEFINE(HAVE_IB_DEVICE_ATTRS, 1,
 			[struct ib_device.attrs is defined])
 	])
+
+	LB_CHECK_COMPILE([if function 'ib_inc_rkey' is defined],
+	ib_inc_rkey, [
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		(void)ib_inc_rkey(0);
+	],[
+		AC_DEFINE(HAVE_IB_INC_RKEY, 1,
+			  [function ib_inc_rkey exist])
+	])
+
 	EXTRA_CHECK_INCLUDE=""
 ]) # ENABLEO2IB != "no"
 ]) # LN_CONFIG_O2IB
@@ -711,15 +732,6 @@ AC_SUBST(GNILND)
 AC_DEFUN([LN_CONFIG_SK_SLEEP], [
 LB_CHECK_COMPILE([if Linux kernel has 'sk_sleep'],
 sk_sleep, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <net/sock.h>
 ],[
 	sk_sleep(NULL);
@@ -732,22 +744,14 @@ sk_sleep, [
 #
 # LN_CONFIG_TCP_SENDPAGE
 #
-# 2.6.36 tcp_sendpage() first parameter is 'struct sock' instead of 'struct socket'.
+# 2.6.36 tcp_sendpage() first parameter is 'struct sock'
+# instead of 'struct socket'.
 #
 AC_DEFUN([LN_CONFIG_TCP_SENDPAGE], [
 tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'tcp_sendpage' first parameter is socket],
 tcp_sendpage_socket, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <linux/net.h>
 	#include <net/tcp.h>
 ],[
@@ -769,15 +773,6 @@ tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'sk_data_ready' takes only one argument],
 sk_data_ready, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <linux/net.h>
 	#include <net/sock.h>
 ],[
@@ -788,33 +783,6 @@ sk_data_ready, [
 ])
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LN_CONFIG_SK_DATA_READY
-
-#
-# LN_CONFIG_IB_INC_RKEY
-#
-AC_DEFUN([LN_CONFIG_IB_INC_RKEY], [
-tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-Werror"
-LB_CHECK_COMPILE([if function 'ib_inc_rkey' is defined],
-ib_inc_rkey, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
-	#include <rdma/ib_verbs.h>
-],[
-	(void)ib_inc_rkey(0);
-],[
-	AC_DEFINE(HAVE_IB_INC_RKEY, 1,
-		  [function ib_inc_rkey exist])
-])
-EXTRA_KCFLAGS="$tmp_flags"
-]) # LN_CONFIG_IB_INC_RKEY
 
 #
 # LN_PROG_LINUX
@@ -832,18 +800,12 @@ LN_CONFIG_O2IB
 LN_CONFIG_RALND
 LN_CONFIG_GNILND
 LN_CONFIG_MX
-# OFED checks, so add extra OFED include
-EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 # 2.6.35
 LN_CONFIG_SK_SLEEP
 # 2.6.36
 LN_CONFIG_TCP_SENDPAGE
-# 3.8.1
-LN_CONFIG_IB_INC_RKEY
 # 3.15
 LN_CONFIG_SK_DATA_READY
-# remove extra include for none OFED code
-EXTRA_CHECK_INCLUDE=""
 ]) # LN_PROG_LINUX
 
 #
