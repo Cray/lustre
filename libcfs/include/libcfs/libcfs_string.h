@@ -133,7 +133,9 @@ int cfs_ip_addr_match(__u32 addr, struct list_head *list);
 void cfs_ip_addr_free(struct list_head *list);
 
 #ifdef __KERNEL__
+#if !defined(strtoul)
 #define	strtoul(str, endp, base)	simple_strtoul(str, endp, base)
+#endif
 #endif
 
 #endif
