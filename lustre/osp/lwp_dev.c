@@ -411,6 +411,8 @@ static int lwp_notify_main(void *args)
 	struct ptlrpc_thread	*thread;
 
 	LASSERT(exp != NULL);
+	class_export_get(exp);
+
 	lwp = lu2lwp_dev(exp->exp_obd->obd_lu_dev);
 	thread = &lwp->lpd_notify_thread;
 
@@ -419,6 +421,7 @@ static int lwp_notify_main(void *args)
 
 	lustre_notify_lwp_list(exp);
 
+	class_export_put(exp);
 	thread_set_flags(thread, SVC_STOPPED);
 	wake_up(&thread->t_ctl_waitq);
 	return 0;
