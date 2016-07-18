@@ -1248,7 +1248,8 @@ static int osd_trans_stop(const struct lu_env *env, struct dt_device *dt,
 	qtrans = oh->ot_quota_trans;
 	oh->ot_quota_trans = NULL;
 
-        if (oh->ot_handle != NULL) {
+	if (oh->ot_handle != NULL) {
+		int rc2;
                 handle_t *hdl = oh->ot_handle;
 
                 /*
@@ -1270,10 +1271,12 @@ static int osd_trans_stop(const struct lu_env *env, struct dt_device *dt,
 		hdl->h_sync = th->th_sync;
 
 		oh->ot_handle = NULL;
-		OSD_CHECK_SLOW_TH(oh, osd, rc = ldiskfs_journal_stop(hdl));
-		if (rc != 0)
+		OSD_CHECK_SLOW_TH(oh, osd, rc2 = ldiskfs_journal_stop(hdl));
+		if (rc2 != 0)
 			CERROR("%s: failed to stop transaction: rc = %d\n",
-			       osd_name(osd), rc);
+			       osd_name(osd), rc2);
+		if (!rc)
+			rc = rc2;
 	} else {
 		thandle_put(&oh->ot_super);
 	}
