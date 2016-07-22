@@ -108,12 +108,19 @@ ll_fault_io_init(struct vm_area_struct *vma, struct lu_env **env_ret,
 	struct cl_io	       *io;
 	struct cl_fault_io     *fio;
 	struct lu_env	       *env;
+	pgoff_t			size;
 	int			rc;
 	ENTRY;
 
         *env_ret = NULL;
         if (ll_file_nolock(file))
                 RETURN(ERR_PTR(-EOPNOTSUPP));
+
+	size = (i_size_read(inode) + PAGE_CACHE_SIZE - 1) >> PAGE_CACHE_SHIFT;
+	if (index >= size) {
+		CDEBUG(D_PAGE, "Requested page beyond file size.\n");
+		RETURN(ERR_PTR(-EIO));
+	}
 
         /*
          * page fault can be called when lustre IO is
