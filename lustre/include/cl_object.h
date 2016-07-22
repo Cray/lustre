@@ -2320,7 +2320,7 @@ int     cl_page_is_vmlocked(const struct lu_env *env,
 void    cl_page_export(const struct lu_env *env,
 		       struct cl_page *pg, int uptodate);
 loff_t  cl_offset(const struct cl_object *obj, pgoff_t idx);
-pgoff_t cl_index(const struct cl_object *obj, pgoff_t offset);
+pgoff_t cl_index(const struct cl_object *obj, loff_t offset);
 size_t  cl_page_size(const struct cl_object *obj);
 
 void cl_lock_print(const struct lu_env *env, void *cookie,
