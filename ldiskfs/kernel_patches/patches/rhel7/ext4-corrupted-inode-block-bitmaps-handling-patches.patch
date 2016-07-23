@@ -94,7 +94,7 @@ index d2b07bd..695ccd3 100644
 +		 */
 +		grp->bb_free = free;
 +		set_bit(EXT4_GROUP_INFO_BBITMAP_CORRUPT_BIT, &grp->bb_state);
-+		
++
  	}
  	mb_set_largest_free_order(sb, grp);
  
