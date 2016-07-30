@@ -2057,8 +2057,8 @@ test_110g () {
 
 	createmany -o $remote_dir/f 100
 
-	#define OBD_FAIL_MIGRATE_NET_REP	0x1702
-	do_facet mds$MDTIDX lctl set_param fail_loc=0x1702
+	#define OBD_FAIL_MIGRATE_NET_REP	0x1800
+	do_facet mds$MDTIDX lctl set_param fail_loc=0x1800
 	$LFS mv -M $MDTIDX $remote_dir || error "migrate failed"
 	do_facet mds$MDTIDX lctl set_param fail_loc=0x0
 
