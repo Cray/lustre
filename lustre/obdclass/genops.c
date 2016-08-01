@@ -53,8 +53,6 @@ static struct kmem_cache *import_cachep;
 static struct list_head obd_zombie_imports;
 static struct list_head obd_zombie_exports;
 static spinlock_t  obd_zombie_impexp_lock;
-struct kmem_cache *ldlm_glimpse_work_kmem;
-EXPORT_SYMBOL(ldlm_glimpse_work_kmem);
 
 static void obd_zombie_impexp_notify(void);
 static void obd_zombie_export_add(struct obd_export *exp);
