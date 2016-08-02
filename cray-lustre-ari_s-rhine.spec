@@ -1,5 +1,5 @@
 %define vendor_name lustre
-%define vendor_version 2.7.1.2
+%define vendor_version 2.7.1.3
 %define flavor cray_ari_s
 %define intranamespace_name %{vendor_name}-%{flavor}_rhine
 %define flavorless_name %{namespace}-%{vendor_name}
