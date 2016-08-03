@@ -3050,10 +3050,14 @@ static int ll_file_flock_lock(struct file *file, struct file_lock *file_lock)
 	 * 2. unlock - never conflicts with anything.
 	 */
 	file_lock->fl_flags &= ~FL_SLEEP;
+#ifdef HAVE_LOCKS_LOCK_FILE_WAIT
+	rc  = locks_lock_file_wait(file, file_lock);
+#else
 	if (file_lock->fl_flags & FL_FLOCK)
 		rc = flock_lock_file_wait(file, file_lock);
 	if (file_lock->fl_flags & FL_POSIX)
 		rc = posix_lock_file(file, file_lock, NULL);
+#endif /* HAVE_LOCKS_LOCK_FILE_WAIT */
 	if (rc)
 		CDEBUG(D_ERROR, "kernel lock failed rc=%d\n", rc);
 
