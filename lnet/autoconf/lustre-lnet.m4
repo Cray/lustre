@@ -519,6 +519,28 @@ AS_IF([test $ENABLEO2IB != "no"], [
 			[struct ib_cq_init_attr is used by ib_create_cq])
 	])
 ])
+
+# 4.4 added network namespace parameter for rdma_create_id()
+AS_IF([test $ENABLEO2IB != "no"], [
+	LB_CHECK_COMPILE([if 'rdma_create_id' wants five args],
+	rdma_create_id_5args, [
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/rdma_cm.h>
+	],[
+		rdma_create_id(NULL, NULL, NULL, 0, 0);
+	],[
+		AC_DEFINE(HAVE_RDMA_CREATE_ID_5ARG, 1,
+			[rdma_create_id wants 5 args])
+	])
+])
 EXTRA_CHECK_INCLUDE=""
 ]) # LN_CONFIG_O2IB
 
@@ -550,6 +572,7 @@ EXTRA_KCFLAGS="$EXTRA_KCFLAGS_save"
 AC_SUBST(RACPPFLAGS)
 AC_SUBST(RALND)
 ]) # LN_CONFIG_RALND
+
 
 #
 # LN_CONFIG_GNILND
