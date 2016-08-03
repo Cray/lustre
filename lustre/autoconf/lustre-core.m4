@@ -1960,6 +1960,25 @@ symlink_use_nameidata, [
 ]) # LC_SYMLINK_OPS_USE_NAMEIDATA
 
 #
+#
+# LC_HAVE_LOCKS_LOCK_FILE_WAIT
+#
+# 4.4 kernel have moved locks API users to
+# locks_lock_inode_wait()
+#
+AC_DEFUN([LC_HAVE_LOCKS_LOCK_FILE_WAIT], [
+LB_CHECK_COMPILE([if 'locks_lock_file_wait' exists],
+locks_lock_file_wait, [
+	#include <linux/fs.h>
+],[
+	locks_lock_file_wait(NULL, NULL);
+],[
+	AC_DEFINE(HAVE_LOCKS_LOCK_FILE_WAIT, 1,
+		[kernel has locks_lock_file_wait])
+])
+]) # LC_HAVE_LOCKS_LOCK_FILE_WAIT
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -2118,6 +2137,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_NEW_CANCEL_DIRTY_PAGE
 	LC_BIO_ENDIO_USES_ONE_ARG
 	LC_SYMLINK_OPS_USE_NAMEIDATA
+
+	# 4.4
+	LC_HAVE_LOCKS_LOCK_FILE_WAIT
 
 	#
 	AS_IF([test "x$enable_server" != xno], [
