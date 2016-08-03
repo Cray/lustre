@@ -48,12 +48,11 @@ static int mdc_max_rpcs_in_flight_seq_show(struct seq_file *m, void *v)
 {
 	struct obd_device *dev = m->private;
 	__u32 max;
-	int rc;
 
 	max = obd_get_max_rpcs_in_flight(&dev->u.cli);
-	rc = seq_printf(m, "%u\n", max);
+	seq_printf(m, "%u\n", max);
 
-	return rc;
+	return 0;
 }
 
 static ssize_t mdc_max_rpcs_in_flight_seq_write(struct file *file,
@@ -81,12 +80,11 @@ static int mdc_max_mod_rpcs_in_flight_seq_show(struct seq_file *m, void *v)
 {
 	struct obd_device *dev = m->private;
 	__u16 max;
-	int rc;
 
 	max = obd_get_max_mod_rpcs_in_flight(&dev->u.cli);
-	rc = seq_printf(m, "%hu\n", max);
+	seq_printf(m, "%hu\n", max);
 
-	return rc;
+	return 0;
 }
 
 static ssize_t mdc_max_mod_rpcs_in_flight_seq_write(struct file *file,

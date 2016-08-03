@@ -217,7 +217,8 @@ static int mdt_identity_expire_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", mdt->mdt_identity_cache->uc_entry_expire);
+	seq_printf(m, "%u\n", mdt->mdt_identity_cache->uc_entry_expire);
+	return 0;
 }
 
 static ssize_t
@@ -243,7 +244,8 @@ static int mdt_identity_acquire_expire_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", mdt->mdt_identity_cache->uc_acquire_expire);
+	seq_printf(m, "%u\n", mdt->mdt_identity_cache->uc_acquire_expire);
+	return 0;
 }
 
 static ssize_t
@@ -415,9 +417,10 @@ static int mdt_capa_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "capability on: %s %s\n",
-			  mdt->mdt_lut.lut_oss_capa ? "oss" : "",
-			  mdt->mdt_lut.lut_mds_capa ? "mds" : "");
+	seq_printf(m, "capability on: %s %s\n",
+		   mdt->mdt_lut.lut_oss_capa ? "oss" : "",
+		   mdt->mdt_lut.lut_mds_capa ? "mds" : "");
+	return 0;
 }
 
 static ssize_t
@@ -466,8 +469,9 @@ LPROC_SEQ_FOPS(mdt_capa);
 
 static int mdt_capa_count_seq_show(struct seq_file *m, void *data)
 {
-	return seq_printf(m, "%d %d\n", capa_count[CAPA_SITE_CLIENT],
-			  capa_count[CAPA_SITE_SERVER]);
+	seq_printf(m, "%d %d\n", capa_count[CAPA_SITE_CLIENT],
+		   capa_count[CAPA_SITE_SERVER]);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(mdt_capa_count);
 
@@ -485,7 +489,8 @@ static int mdt_capa_timeout_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%lu\n", mdt->mdt_capa_timeout);
+	seq_printf(m, "%lu\n", mdt->mdt_capa_timeout);
+	return 0;
 }
 
 static ssize_t
@@ -512,7 +517,8 @@ static int mdt_ck_timeout_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%lu\n", mdt->mdt_ck_timeout);
+	seq_printf(m, "%lu\n", mdt->mdt_ck_timeout);
+	return 0;
 }
 
 static ssize_t
@@ -621,7 +627,8 @@ static int mdt_sec_level_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%d\n", mdt->mdt_lut.lut_sec_level);
+	seq_printf(m, "%d\n", mdt->mdt_lut.lut_sec_level);
+	return 0;
 }
 
 static ssize_t
@@ -656,7 +663,8 @@ static int mdt_cos_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", mdt_cos_is_enabled(mdt));
+	seq_printf(m, "%u\n", mdt_cos_is_enabled(mdt));
+	return 0;
 }
 
 static ssize_t
@@ -682,8 +690,9 @@ static int mdt_root_squash_seq_show(struct seq_file *m, void *data)
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 	struct root_squash_info *squash = &mdt->mdt_squash;
 
-	return seq_printf(m, "%u:%u\n", squash->rsi_uid,
-			  squash->rsi_gid);
+	seq_printf(m, "%u:%u\n", squash->rsi_uid,
+		   squash->rsi_gid);
+	return 0;
 }
 
 static ssize_t
@@ -705,19 +714,19 @@ static int mdt_nosquash_nids_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 	struct root_squash_info *squash = &mdt->mdt_squash;
-	int len = 0, rc;
+	int len = 0;
 
 	down_read(&squash->rsi_sem);
 	if (!list_empty(&squash->rsi_nosquash_nids)) {
 		len = cfs_print_nidlist(m->buf + m->count, m->size - m->count,
 					&squash->rsi_nosquash_nids);
 		m->count += len;
-		rc = seq_printf(m, "\n");
+		seq_putc(m, '\n');
 	} else
-		rc = seq_printf(m, "NONE\n");
+		seq_puts(m, "NONE\n");
 	up_read(&squash->rsi_sem);
 
-	return rc;
+	return 0;
 }
 
 static ssize_t
@@ -739,8 +748,9 @@ static int mdt_som_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%sabled\n",
-			  mdt->mdt_som_conf ? "en" : "dis");
+	seq_printf(m, "%sabled\n",
+		   mdt->mdt_som_conf ? "en" : "dis");
+	return 0;
 }
 
 static ssize_t
@@ -801,7 +811,8 @@ static int mdt_enable_remote_dir_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", mdt->mdt_enable_remote_dir);
+	seq_printf(m, "%u\n", mdt->mdt_enable_remote_dir);
+	return 0;
 }
 
 static ssize_t
@@ -831,8 +842,9 @@ static int mdt_enable_remote_dir_gid_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%d\n",
-			  (int)mdt->mdt_enable_remote_dir_gid);
+	seq_printf(m, "%d\n",
+		  (int)mdt->mdt_enable_remote_dir_gid);
+	return 0;
 }
 
 static ssize_t
