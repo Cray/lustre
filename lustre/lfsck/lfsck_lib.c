@@ -1624,8 +1624,8 @@ static inline int lfsck_instance_add(struct lfsck_instance *lfsck)
 	return 0;
 }
 
-int lfsck_bits_dump(struct seq_file *m, int bits, const char *names[],
-		    const char *prefix)
+void lfsck_bits_dump(struct seq_file *m, int bits, const char *names[],
+		     const char *prefix)
 {
 	int flag;
 	int i;
@@ -1647,36 +1647,36 @@ int lfsck_bits_dump(struct seq_file *m, int bits, const char *names[],
 	}
 
 	if (!newline)
-		seq_printf(m, "\n");
-	return 0;
+		seq_putc(m, '\n');
 }
 
-int lfsck_time_dump(struct seq_file *m, __u64 time, const char *prefix)
+void lfsck_time_dump(struct seq_file *m, __u64 time, const char *name)
 {
-	if (time != 0)
-		seq_printf(m, "%s: "LPU64" seconds\n", prefix,
-			  cfs_time_current_sec() - time);
-	else
-		seq_printf(m, "%s: N/A\n", prefix);
-	return 0;
+	if (time == 0) {
+		seq_printf(m, "%s_time: N/A\n", name);
+		seq_printf(m, "time_since_%s: N/A\n", name);
+	} else {
+		seq_printf(m, "%s_time: "LPU64"\n", name, time);
+		seq_printf(m, "time_since_%s: "LPU64" seconds\n",
+			   name, cfs_time_current_sec() - time);
+	}
 }
 
-int lfsck_pos_dump(struct seq_file *m, struct lfsck_position *pos,
-		   const char *prefix)
+void lfsck_pos_dump(struct seq_file *m, struct lfsck_position *pos,
+		    const char *prefix)
 {
 	if (fid_is_zero(&pos->lp_dir_parent)) {
-		if (pos->lp_oit_cookie == 0)
-			seq_printf(m, "%s: N/A, N/A, N/A\n",
-				   prefix);
-		else
-			seq_printf(m, "%s: "LPU64", N/A, N/A\n",
-				   prefix, pos->lp_oit_cookie);
+		if (pos->lp_oit_cookie == 0) {
+			seq_printf(m, "%s: N/A, N/A, N/A\n", prefix);
+			return;
+		}
+		seq_printf(m, "%s: "LPU64", N/A, N/A\n",
+			   prefix, pos->lp_oit_cookie);
 	} else {
 		seq_printf(m, "%s: "LPU64", "DFID", "LPX64"\n",
 			   prefix, pos->lp_oit_cookie,
 			   PFID(&pos->lp_dir_parent), pos->lp_dir_cookie);
 	}
-	return 0;
 }
 
 void lfsck_pos_fill(const struct lu_env *env, struct lfsck_instance *lfsck,
@@ -2494,7 +2494,7 @@ int lfsck_dump(struct seq_file *m, struct dt_device *key, enum lfsck_type type)
 	if (likely(lfsck != NULL)) {
 		com = lfsck_component_find(lfsck, type);
 		if (likely(com != NULL)) {
-			rc = com->lc_ops->lfsck_dump(&env, com, m);
+			com->lc_ops->lfsck_dump(&env, com, m);
 			lfsck_component_put(&env, com);
 		} else {
 			rc = -ENOTSUPP;
