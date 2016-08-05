@@ -13745,8 +13745,8 @@ test_401a() {
 	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
 		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
 
-	#define OBD_FAIL_BARRIER_DELAY		0x2102
-	do_facet mgs $LCTL set_param fail_val=3 fail_loc=0x2102
+	#define OBD_FAIL_BARRIER_DELAY		0x2202
+	do_facet mgs $LCTL set_param fail_val=3 fail_loc=0x2202
 	do_facet mgs $LCTL barrier_freeze $FSNAME 30 &
 
 	sleep 1
@@ -13780,8 +13780,8 @@ test_401a() {
 	[ "$barrier_status" = "'frozen'" ] ||
 		error "(5) unexpected barrier status $barrier_status"
 
-	#define OBD_FAIL_BARRIER_DELAY		0x2102
-	do_facet mgs $LCTL set_param fail_val=3 fail_loc=0x2102
+	#define OBD_FAIL_BARRIER_DELAY		0x2202
+	do_facet mgs $LCTL set_param fail_val=3 fail_loc=0x2202
 	do_facet mgs $LCTL barrier_thaw $FSNAME &
 
 	sleep 1
@@ -13797,8 +13797,8 @@ test_401a() {
 	[ "$barrier_status" = "'thawed'" ] ||
 		error "(7) unexpected barrier status $barrier_status"
 
-	#define OBD_FAIL_BARRIER_FAILURE	0x2103
-	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x2103
+	#define OBD_FAIL_BARRIER_FAILURE	0x2203
+	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x2203
 	do_facet mgs $LCTL barrier_freeze $FSNAME
 
 	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
