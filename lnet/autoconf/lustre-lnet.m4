@@ -568,6 +568,25 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		AC_DEFINE(HAVE_IB_ALLOC_FAST_REG_MR, 1,
 			[ib_alloc_fast_reg_mr is defined])
 	])
+
+	LB_CHECK_COMPILE([if 'ib_map_mr_sg' exists],
+	ib_map_mr_sg, [
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		ib_map_mr_sg(NULL, NULL, 0, 0);
+	],[
+		AC_DEFINE(HAVE_IB_MAP_MR_SG, 1,
+			[ib_map_mr_sg exists])
+	])
 	EXTRA_CHECK_INCLUDE=""
 ]) # ENABLEO2IB != "no"
 ]) # LN_CONFIG_O2IB
