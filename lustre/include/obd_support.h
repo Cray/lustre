@@ -625,11 +625,11 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_DT_LOOKUP			0x2018
 
 /* barrier */
-#define OBD_FAIL_MGS_BARRIER_READ_NET		0x2100
-#define OBD_FAIL_MGS_BARRIER_NOTIFY_NET		0x2101
+#define OBD_FAIL_MGS_BARRIER_READ_NET		0x2200
+#define OBD_FAIL_MGS_BARRIER_NOTIFY_NET		0x2201
 
-#define OBD_FAIL_BARRIER_DELAY			0x2102
-#define OBD_FAIL_BARRIER_FAILURE		0x2103
+#define OBD_FAIL_BARRIER_DELAY			0x2202
+#define OBD_FAIL_BARRIER_FAILURE		0x2203
 
 /* Assign references to moved code to reduce code changes */
 #define OBD_FAIL_PRECHECK(id)                   CFS_FAIL_PRECHECK(id)
