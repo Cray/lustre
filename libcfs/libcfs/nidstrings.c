@@ -812,10 +812,8 @@ parse_nidrange(struct cfs_lstr *src, struct list_head *nidlist)
 {
 	struct cfs_lstr addrrange;
 	struct cfs_lstr net;
-	struct cfs_lstr tmp;
         struct nidrange *nr;
 
-        tmp = *src;
 	if (cfs_gettok(src, '@', &addrrange) == 0)
                 goto failed;
 
@@ -831,7 +829,6 @@ parse_nidrange(struct cfs_lstr *src, struct list_head *nidlist)
 
         return 1;
  failed:
-        CWARN("can't parse nidrange: \"%.*s\"\n", tmp.ls_len, tmp.ls_str);
         return 0;
 }
 
