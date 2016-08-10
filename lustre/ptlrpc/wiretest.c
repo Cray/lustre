@@ -135,8 +135,8 @@ void lustre_assert_wire_constants(void)
 		 (long long)MDS_CONNECT);
 	LASSERTF(MDS_DISCONNECT == 39, "found %lld\n",
 		 (long long)MDS_DISCONNECT);
-	LASSERTF(MDS_GETSTATUS == 40, "found %lld\n",
-		 (long long)MDS_GETSTATUS);
+	LASSERTF(MDS_GET_ROOT == 40, "found %lld\n",
+		 (long long)MDS_GET_ROOT);
 	LASSERTF(MDS_STATFS == 41, "found %lld\n",
 		 (long long)MDS_STATFS);
 	LASSERTF(MDS_PIN == 42, "found %lld\n",
@@ -1243,6 +1243,10 @@ void lustre_assert_wire_constants(void)
 		 OBD_CONNECT_MULTIMODRPCS);
 	LASSERTF(OBD_CONNECT_DIR_STRIPE == 0x400000000000000ULL, "found 0x%.16llxULL\n",
 		 OBD_CONNECT_DIR_STRIPE);
+	LASSERTF(OBD_CONNECT_SUBTREE == 0x800000000000000ULL, "found 0x%.16llxULL\n",
+		 OBD_CONNECT_SUBTREE);
+	LASSERTF(OBD_CONNECT_BULK_MBITS == 0x2000000000000000ULL, "found 0x%.16llxULL\n",
+		 OBD_CONNECT_BULK_MBITS);
 	LASSERTF(OBD_CKSUM_CRC32 == 0x00000001UL, "found 0x%.8xUL\n",
 		(unsigned)OBD_CKSUM_CRC32);
 	LASSERTF(OBD_CKSUM_ADLER == 0x00000002UL, "found 0x%.8xUL\n",
@@ -4095,10 +4099,14 @@ void lustre_assert_wire_constants(void)
 		 (long long)(int)offsetof(struct getinfo_fid2path, gf_pathlen));
 	LASSERTF((int)sizeof(((struct getinfo_fid2path *)0)->gf_pathlen) == 4, "found %lld\n",
 		 (long long)(int)sizeof(((struct getinfo_fid2path *)0)->gf_pathlen));
-	LASSERTF((int)offsetof(struct getinfo_fid2path, gf_path[0]) == 32, "found %lld\n",
-		 (long long)(int)offsetof(struct getinfo_fid2path, gf_path[0]));
-	LASSERTF((int)sizeof(((struct getinfo_fid2path *)0)->gf_path[0]) == 1, "found %lld\n",
-		 (long long)(int)sizeof(((struct getinfo_fid2path *)0)->gf_path[0]));
+	LASSERTF((int)offsetof(struct getinfo_fid2path, gf_u.gf_path[0]) == 32, "found %lld\n",
+		 (long long)(int)offsetof(struct getinfo_fid2path, gf_u.gf_path[0]));
+	LASSERTF((int)sizeof(((struct getinfo_fid2path *)0)->gf_u.gf_path[0]) == 1, "found %lld\n",
+		 (long long)(int)sizeof(((struct getinfo_fid2path *)0)->gf_u.gf_path[0]));
+	LASSERTF((int)offsetof(struct getinfo_fid2path, gf_u.gf_root_fid) == 32, "found %lld\n",
+		 (long long)(int)offsetof(struct getinfo_fid2path, gf_u.gf_root_fid));
+	LASSERTF((int)sizeof(((struct getinfo_fid2path *)0)->gf_u.gf_root_fid) == 0, "found %lld\n",
+		 (long long)(int)sizeof(((struct getinfo_fid2path *)0)->gf_u.gf_root_fid));
 
 	/* Checks for struct fiemap */
 	LASSERTF((int)sizeof(struct fiemap) == 32, "found %lld\n",

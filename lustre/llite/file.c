@@ -2046,6 +2046,10 @@ int ll_fid2path(struct inode *inode, void __user *arg)
 
 	if (copy_from_user(gfout, arg, sizeof(*gfout)))
 		GOTO(gf_free, rc = -EFAULT);
+	/* append root FID after gfout to let MDT know the root FID so that it
+	 * can lookup the correct path, this is mainly for fileset.
+	 * old server without fileset mount support will ignore this. */
+	*gfout->gf_u.gf_root_fid = *ll_inode2fid(inode);
 
 	/* Call mdc_iocontrol */
 	rc = obd_iocontrol(OBD_IOC_FID2PATH, exp, outsize, gfout, NULL);
@@ -3399,7 +3403,18 @@ int ll_migrate(struct inode *parent, struct file *file, int mdtidx,
 	if (dchild != NULL) {
 		if (dchild->d_inode != NULL) {
 			child_inode = igrab(dchild->d_inode);
-			if (child_inode != NULL) {
+
+			/*
+			 * lfs migrate command needs to be blocked on the client
+			 * by checking the migrate FID against the FID of the
+			 * filesystem root.
+			 */
+			if (child_inode == parent->i_sb->s_root->d_inode) {
+				iput(child_inode);
+				child_inode = NULL;
+				dput(dchild);
+				GOTO(out_free, rc = -EINVAL);
+			} else if (child_inode != NULL) {
 				mutex_lock(&child_inode->i_mutex);
 				op_data->op_fid3 = *ll_inode2fid(child_inode);
 				ll_invalidate_aliases(child_inode);
