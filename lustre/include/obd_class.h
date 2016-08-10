@@ -1430,16 +1430,16 @@ static inline int obd_register_observer(struct obd_device *obd,
 }
 
 /* metadata helpers */
-static inline int md_getstatus(struct obd_export *exp,
-                               struct lu_fid *fid, struct obd_capa **pc)
+static inline int md_get_root(struct obd_export *exp, const char *fileset,
+			      struct lu_fid *fid, struct obd_capa **pc)
 {
-        int rc;
-        ENTRY;
+	int rc;
+	ENTRY;
 
-        EXP_CHECK_MD_OP(exp, getstatus);
-        EXP_MD_COUNTER_INCREMENT(exp, getstatus);
-        rc = MDP(exp->exp_obd, getstatus)(exp, fid, pc);
-        RETURN(rc);
+	EXP_CHECK_MD_OP(exp, getstatus);
+	EXP_MD_COUNTER_INCREMENT(exp, getstatus);
+	rc = MDP(exp->exp_obd, getstatus)(exp, fileset, fid, pc);
+	RETURN(rc);
 }
 
 static inline int md_getattr(struct obd_export *exp, struct md_op_data *op_data,

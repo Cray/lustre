@@ -444,6 +444,14 @@ check_ptlrpc_body(void)
 	CHECK_VALUE_X(MSG_CONNECT_TRANSNO);
 }
 
+/* XXX README XXX:
+ * Please DO NOT add flag values here before first ensuring that this same
+ * flag value is not in use on some other branch.  Please clear any such
+ * changes with senior engineers before starting to use a new flag.  Then,
+ * submit a small patch against EVERY branch that ONLY adds the new flag,
+ * updates obd_connect_names[] for lprocfs_rd_connect_flags(), adds the
+ * flag to check_obd_connect_data(), and updates wiretests accordingly, so it
+ * can be approved and landed easily to reserve the flag for future use. */
 static void
 check_obd_connect_data(void)
 {
@@ -540,6 +548,7 @@ check_obd_connect_data(void)
 	CHECK_DEFINE_64X(OBD_CONNECT_UNLINK_CLOSE);
 	CHECK_DEFINE_64X(OBD_CONNECT_MULTIMODRPCS);
 	CHECK_DEFINE_64X(OBD_CONNECT_DIR_STRIPE);
+	CHECK_DEFINE_64X(OBD_CONNECT_SUBTREE);
 	CHECK_DEFINE_64X(OBD_CONNECT_BULK_MBITS);
 
 	CHECK_VALUE_X(OBD_CKSUM_CRC32);
@@ -1803,7 +1812,8 @@ check_getinfo_fid2path(void)
 	CHECK_MEMBER(getinfo_fid2path, gf_recno);
 	CHECK_MEMBER(getinfo_fid2path, gf_linkno);
 	CHECK_MEMBER(getinfo_fid2path, gf_pathlen);
-	CHECK_MEMBER(getinfo_fid2path, gf_path[0]);
+	CHECK_MEMBER(getinfo_fid2path, gf_u.gf_path[0]);
+	CHECK_MEMBER(getinfo_fid2path, gf_u.gf_root_fid);
 }
 
 /* We don't control the definitions of posix_acl_xattr_{entry,header}
@@ -2333,7 +2343,7 @@ main(int argc, char **argv)
 	CHECK_VALUE(MDS_READPAGE);
 	CHECK_VALUE(MDS_CONNECT);
 	CHECK_VALUE(MDS_DISCONNECT);
-	CHECK_VALUE(MDS_GETSTATUS);
+	CHECK_VALUE(MDS_GET_ROOT);
 	CHECK_VALUE(MDS_STATFS);
 	CHECK_VALUE(MDS_PIN);
 	CHECK_VALUE(MDS_UNPIN);
