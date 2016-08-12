@@ -161,7 +161,7 @@ static int lov_init_sub(const struct lu_env *env, struct lov_object *lov,
 		 * lov_oinfo of lsm_stripe_data which will be freed due to
 		 * this failure. */
 		cl_object_kill(env, stripe);
-		cl_object_put(env, stripe);
+		cl_object_put(env, stripe, -1);
 		return -EIO;
 	}
 
@@ -210,7 +210,7 @@ static int lov_init_sub(const struct lu_env *env, struct lov_object *lov,
 				"stripe %d is already owned.\n", idx);
 		LU_OBJECT_DEBUG(mask, env, old_obj, "owned.\n");
 		LU_OBJECT_HEADER(mask, env, lov2lu(lov), "try to own.\n");
-		cl_object_put(env, stripe);
+		cl_object_put(env, stripe, -1);
 	}
 	return result;
 }
@@ -389,7 +389,7 @@ static void lov_subobject_kill(const struct lu_env *env, struct lov_object *lov,
         cl_object_kill(env, sub);
         /* release a reference to the sub-object and ... */
         lu_object_ref_del(&sub->co_lu, "lov-parent", lov);
-        cl_object_put(env, sub);
+        cl_object_put(env, sub, -1);
 
         /* ... wait until it is actually destroyed---sub-object clears its
          * ->lo_sub[] slot in lovsub_object_fini() */
@@ -1379,7 +1379,7 @@ inactive_tgt:
 				enough = true;
 		} while (!ost_done && !ost_eof);
 
-		cl_object_put(env, subobj);
+		cl_object_put(env, subobj, -1);
 		subobj = NULL;
 
 		if (cur_stripe_wrap == last_stripe)
@@ -1403,7 +1403,7 @@ skip_last_device_calc:
 	fiemap->fm_mapped_extents = current_extent;
 obj_put:
 	if (subobj != NULL)
-		cl_object_put(env, subobj);
+		cl_object_put(env, subobj, -1);
 out:
 	if (fm_local != NULL)
 		OBD_FREE_LARGE(fm_local, buffer_size);

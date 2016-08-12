@@ -2174,8 +2174,8 @@ struct cl_object *cl_object_find(const struct lu_env *env, struct cl_device *cd,
 
 int  cl_object_header_init(struct cl_object_header *h);
 void cl_object_header_fini(struct cl_object_header *h);
-void cl_object_put        (const struct lu_env *env, struct cl_object *o);
-void cl_object_get        (struct cl_object *o);
+void cl_object_put        (const struct lu_env *env, struct cl_object *o, int type);
+void cl_object_get        (struct cl_object *o, int type);
 void cl_object_attr_lock  (struct cl_object *o);
 void cl_object_attr_unlock(struct cl_object *o);
 int  cl_object_attr_get   (const struct lu_env *env, struct cl_object *obj,

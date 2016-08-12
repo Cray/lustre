@@ -1301,8 +1301,12 @@ EXPORT_SYMBOL(lu_object_add);
  */
 int lu_object_header_init(struct lu_object_header *h)
 {
+	int i;
+
         memset(h, 0, sizeof *h);
 	atomic_set(&h->loh_ref, 1);
+	for (i=0; i < ARRAY_SIZE(h->loh_ref_by_type); i++)
+		atomic_set(&h->loh_ref_by_type[i], 0);
 	INIT_HLIST_NODE(&h->loh_hash);
 	INIT_LIST_HEAD(&h->loh_lru);
 	INIT_LIST_HEAD(&h->loh_layers);
@@ -1316,6 +1320,15 @@ EXPORT_SYMBOL(lu_object_header_init);
  */
 void lu_object_header_fini(struct lu_object_header *h)
 {
+	WARN_ON(atomic_read(&h->loh_ref_by_type[CL_OBJECT_REF_REQ]));
+	WARN_ON(atomic_read(&h->loh_ref_by_type[CL_OBJECT_REF_PAGE]));
+	WARN_ON(atomic_read(&h->loh_ref_by_type[CL_OBJECT_REF_CHECK]));
+	WARN_ON(atomic_read(&h->loh_ref_by_type[CL_OBJECT_REF_BLAST]));
+	WARN_ON(atomic_read(&h->loh_ref_by_type[CL_OBJECT_REF_GLAST]));
+	WARN_ON(atomic_read(&h->loh_ref_by_type[CL_OBJECT_REF_ENQ]));
+	WARN_ON(atomic_read(&h->loh_ref_by_type[CL_OBJECT_REF_SHRINK]));
+	WARN_ON(atomic_read(&h->loh_ref_by_type[CL_OBJECT_REF_INVAL]));
+	WARN_ON(atomic_read(&h->loh_ref_by_type[CL_OBJECT_REF_DUMP]));
 	LASSERT(list_empty(&h->loh_layers));
 	LASSERT(list_empty(&h->loh_lru));
 	LASSERT(hlist_unhashed(&h->loh_hash));

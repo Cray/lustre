@@ -533,6 +533,19 @@ struct lu_object_header {
 	 * Object reference count. Protected by lu_site::ls_guard.
 	 */
 	atomic_t		loh_ref;
+
+#define CL_OBJECT_REF_REQ	0
+#define CL_OBJECT_REF_PAGE	1
+#define CL_OBJECT_REF_CHECK	2
+#define CL_OBJECT_REF_BLAST	3
+#define CL_OBJECT_REF_GLAST	4
+#define CL_OBJECT_REF_ENQ	5
+#define CL_OBJECT_REF_SHRINK	6
+#define CL_OBJECT_REF_INVAL	7
+#define CL_OBJECT_REF_DUMP	8
+
+	/* 9 counters for specific types */
+	atomic_t		loh_ref_by_type[9];
 	/**
 	 * Common object attributes, cached for efficiency. From enum
 	 * lu_object_header_attr.
@@ -717,6 +730,11 @@ static inline void lu_object_get(struct lu_object *o)
 	atomic_inc(&o->lo_header->loh_ref);
 }
 
+static inline void lu_object_get_by_type(struct lu_object *o, int type)
+{
+	atomic_inc(&o->lo_header->loh_ref_by_type[type]);
+}
+
 /**
  * Return true of object will not be cached after last reference to it is
  * released.
@@ -727,6 +745,12 @@ static inline int lu_object_is_dying(const struct lu_object_header *h)
 }
 
 void lu_object_put(const struct lu_env *env, struct lu_object *o);
+
+static inline void lu_object_put_by_type(struct lu_object *o, int type)
+{
+	atomic_dec(&o->lo_header->loh_ref_by_type[type]);
+}
+
 void lu_object_put_nocache(const struct lu_env *env, struct lu_object *o);
 void lu_object_unhash(const struct lu_env *env, struct lu_object *o);
 
