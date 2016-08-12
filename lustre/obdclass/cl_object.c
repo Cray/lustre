@@ -117,9 +117,11 @@ EXPORT_SYMBOL(cl_object_find);
  *
  * \see cl_page_put(), cl_lock_put().
  */
-void cl_object_put(const struct lu_env *env, struct cl_object *o)
+void cl_object_put(const struct lu_env *env, struct cl_object *o, int type)
 {
-        lu_object_put(env, &o->co_lu);
+	if (type != -1)
+		lu_object_put_by_type(&o->co_lu, type);
+	lu_object_put(env, &o->co_lu);
 }
 EXPORT_SYMBOL(cl_object_put);
 
@@ -131,9 +133,11 @@ EXPORT_SYMBOL(cl_object_put);
  *
  * \see cl_page_get(), cl_lock_get().
  */
-void cl_object_get(struct cl_object *o)
+void cl_object_get(struct cl_object *o, int type)
 {
-        lu_object_get(&o->co_lu);
+	lu_object_get(&o->co_lu);
+	if (type != -1)
+		lu_object_get_by_type(&o->co_lu, type);
 }
 EXPORT_SYMBOL(cl_object_get);
 

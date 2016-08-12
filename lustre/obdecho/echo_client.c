@@ -1159,7 +1159,7 @@ cl_echo_object_find(struct echo_device *d, const struct ost_id *oi)
 
         eco = cl2echo_obj(obj);
         if (eco->eo_deleted) {
-                cl_object_put(env, obj);
+                cl_object_put(env, obj, -1);
                 eco = ERR_PTR(-EAGAIN);
         }
 
@@ -1189,7 +1189,7 @@ static int cl_echo_object_put(struct echo_object *eco)
 		set_bit(LU_OBJECT_HEARD_BANSHEE, &loh->loh_flags);
         }
 
-        cl_object_put(env, obj);
+        cl_object_put(env, obj, -1);
         cl_env_put(env, &refcheck);
         RETURN(0);
 }

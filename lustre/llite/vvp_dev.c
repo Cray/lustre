@@ -421,6 +421,7 @@ static struct cl_object *vvp_pgcache_obj(const struct lu_env *env,
 		lu_obj = lu_object_locate(id->vpi_obj, dev->ld_type);
 		if (lu_obj != NULL) {
 			lu_object_ref_add(lu_obj, "dump", current);
+			lu_object_get_by_type(lu_obj, CL_OBJECT_REF_DUMP);
 			return lu2cl(lu_obj);
 		}
 		lu_object_put(env, lu_object_top(id->vpi_obj));
@@ -460,7 +461,7 @@ static loff_t vvp_pgcache_find(const struct lu_env *env,
 			}
 
 			lu_object_ref_del(&clob->co_lu, "dump", current);
-			cl_object_put(env, clob);
+			cl_object_put(env, clob, CL_OBJECT_REF_DUMP);
 			if (nr > 0)
 				return vvp_pgcache_id_pack(&id);
 		}
@@ -549,7 +550,7 @@ static int vvp_pgcache_show(struct seq_file *f, void *v)
 			} else
 				seq_puts(f, "missing\n");
 			lu_object_ref_del(&clob->co_lu, "dump", current);
-			cl_object_put(env, clob);
+			cl_object_put(env, clob, CL_OBJECT_REF_DUMP);
 		} else
 			seq_printf(f, "%llx missing\n", pos);
 		cl_env_put(env, &refcheck);
