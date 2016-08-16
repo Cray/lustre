@@ -1,5 +1,5 @@
 %define vendor_name lustre
-%define vendor_version 2.7.1.3
+%define vendor_version 2.7.1.4
 %if %{with athena}
 %define flavor cray_ari_athena_s_cos
 %else
