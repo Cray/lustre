@@ -2178,7 +2178,7 @@ __must_hold(&cli->cl_loi_list_lock)
 			break;
 		}
 
-		cl_object_get(obj);
+		cl_object_get(obj, CL_OBJECT_REF_CHECK);
 		spin_unlock(&cli->cl_loi_list_lock);
 		lu_object_ref_add_at(&obj->co_lu, &link, "check", current);
 
@@ -2222,7 +2222,7 @@ __must_hold(&cli->cl_loi_list_lock)
 
 		osc_list_maint(cli, osc);
 		lu_object_ref_del_at(&obj->co_lu, &link, "check", current);
-		cl_object_put(env, obj);
+		cl_object_put(env, obj, CL_OBJECT_REF_CHECK);
 
 		spin_lock(&cli->cl_loi_list_lock);
 	}

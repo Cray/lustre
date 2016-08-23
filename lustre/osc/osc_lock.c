@@ -386,7 +386,7 @@ static int osc_lock_upcall_speculative(void *cookie,
 	LDLM_LOCK_PUT(dlmlock);
 
 out:
-	cl_object_put(env, osc2cl(osc));
+	cl_object_put(env, osc2cl(osc), CL_OBJECT_REF_ENQ);
 	cl_env_nested_put(&nest, env);
 	RETURN(ldlm_error2errno(errcode));
 }
@@ -455,7 +455,7 @@ static int osc_dlm_blocking_ast0(const struct lu_env *env,
 		obj = osc2cl(dlmlock->l_ast_data);
 		dlmlock->l_ast_data = NULL;
 
-		cl_object_get(obj);
+		cl_object_get(obj, CL_OBJECT_REF_BLAST);
 	}
 
 	unlock_res_and_lock(dlmlock);
@@ -486,7 +486,7 @@ static int osc_dlm_blocking_ast0(const struct lu_env *env,
 		cl_object_attr_unlock(obj);
 		unlock_res_and_lock(dlmlock);
 
-		cl_object_put(env, obj);
+		cl_object_put(env, obj, CL_OBJECT_REF_BLAST);
 	}
 	RETURN(result);
 }
@@ -601,7 +601,7 @@ static int osc_ldlm_glimpse_ast(struct ldlm_lock *dlmlock, void *data)
 		lock_res_and_lock(dlmlock);
 		if (dlmlock->l_ast_data != NULL) {
 			obj = osc2cl(dlmlock->l_ast_data);
-			cl_object_get(obj);
+			cl_object_get(obj, CL_OBJECT_REF_GLAST);
 		}
 		unlock_res_and_lock(dlmlock);
 
@@ -626,7 +626,7 @@ static int osc_ldlm_glimpse_ast(struct ldlm_lock *dlmlock, void *data)
 						   &RMF_DLM_LVB,
 						   sizeof(struct ost_lvb_v1),
 						   RCL_SERVER);
-			cl_object_put(env, obj);
+			cl_object_put(env, obj, CL_OBJECT_REF_GLAST);
                 } else {
                         /*
                          * These errors are normal races, so we don't want to
@@ -995,7 +995,7 @@ enqueue_base:
 	if (oscl->ols_speculative) {
 		oscl->ols_einfo.ei_cbdata = NULL;
 		/* hold a reference for callback */
-		cl_object_get(osc2cl(osc));
+		cl_object_get(osc2cl(osc), CL_OBJECT_REF_ENQ);
 		upcall = osc_lock_upcall_speculative;
 		cookie = osc;
 	}
@@ -1010,7 +1010,7 @@ enqueue_base:
 		osc_lock_wake_waiters(env, osc, oscl);
 
 		if (oscl->ols_speculative) {
-			cl_object_put(env, osc2cl(osc));
+			cl_object_put(env, osc2cl(osc), CL_OBJECT_REF_ENQ);
 			if (oscl->ols_glimpse) {
 				/* hide error for AGL request */
 				result = 0;

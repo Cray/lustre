@@ -313,7 +313,7 @@ static void cl_object_put_last(struct lu_env *env, struct cl_object *obj)
 		remove_wait_queue(&bkt->lsb_marche_funebre, &waiter);
 	}
 
-	cl_object_put(env, obj);
+	cl_object_put(env, obj, -1);
 }
 
 void cl_inode_fini(struct inode *inode)

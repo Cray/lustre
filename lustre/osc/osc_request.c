@@ -2692,7 +2692,7 @@ static int osc_ldlm_resource_invalidate(struct cfs_hash *hs,
 	list_for_each_entry(lock, &res->lr_granted, l_res_link) {
 		if (lock->l_ast_data != NULL && osc == NULL) {
 			osc = lock->l_ast_data;
-			cl_object_get(osc2cl(osc));
+			cl_object_get(osc2cl(osc), CL_OBJECT_REF_INVAL);
 		}
 		lock->l_ast_data = NULL;
 	}
@@ -2700,7 +2700,7 @@ static int osc_ldlm_resource_invalidate(struct cfs_hash *hs,
 
 	if (osc != NULL) {
 		osc_object_invalidate(env, osc);
-		cl_object_put(env, osc2cl(osc));
+		cl_object_put(env, osc2cl(osc), CL_OBJECT_REF_INVAL);
 	}
 
 	RETURN(0);

@@ -1202,7 +1202,7 @@ static void cl_req_free(const struct lu_env *env, struct cl_req *req)
 				lu_object_ref_del_at(&obj->co_lu,
 						     &req->crq_o[i].ro_obj_ref,
 						     "cl_req", req);
-				cl_object_put(env, obj);
+				cl_object_put(env, obj, CL_OBJECT_REF_REQ);
 			}
                 }
                 OBD_FREE(req->crq_o, req->crq_nrobjs * sizeof req->crq_o[0]);
@@ -1316,7 +1316,7 @@ void cl_req_page_add(const struct lu_env *env,
         for (i = 0, rqo = req->crq_o; obj != rqo->ro_obj; ++i, ++rqo) {
                 if (rqo->ro_obj == NULL) {
                         rqo->ro_obj = obj;
-                        cl_object_get(obj);
+                        cl_object_get(obj, CL_OBJECT_REF_REQ);
 			lu_object_ref_add_at(&obj->co_lu, &rqo->ro_obj_ref,
 					     "cl_req", req);
 			break;

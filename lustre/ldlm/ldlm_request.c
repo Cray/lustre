@@ -303,6 +303,9 @@ noreproc:
                 /* Go to sleep until the lock is granted or cancelled. */
                 rc = l_wait_event(lock->l_waitq,
                                   is_granted_or_cancelled(lock), &lwi);
+		/* Returning -ERESTARTSYS here allows restartability */
+		if (rc == -EINTR)
+			rc = -ERESTARTSYS;
         }
 
         if (rc) {

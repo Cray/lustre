@@ -705,7 +705,7 @@ long osc_lru_shrink(const struct lu_env *env, struct client_obd *cli,
 		if (clobj != page->cp_obj) {
 			struct cl_object *tmp = page->cp_obj;
 
-			cl_object_get(tmp);
+			cl_object_get(tmp, CL_OBJECT_REF_SHRINK);
 			spin_unlock(&cli->cl_lru_list_lock);
 
 			if (clobj != NULL) {
@@ -713,7 +713,7 @@ long osc_lru_shrink(const struct lu_env *env, struct client_obd *cli,
 				index = 0;
 
 				cl_io_fini(env, io);
-				cl_object_put(env, clobj);
+				cl_object_put(env, clobj, CL_OBJECT_REF_SHRINK);
 				clobj = NULL;
 			}
 
@@ -769,7 +769,7 @@ long osc_lru_shrink(const struct lu_env *env, struct client_obd *cli,
 		discard_pagevec(env, io, pvec, index);
 
 		cl_io_fini(env, io);
-		cl_object_put(env, clobj);
+		cl_object_put(env, clobj, CL_OBJECT_REF_SHRINK);
 	}
 
 	atomic_dec(&cli->cl_lru_shrinkers);
