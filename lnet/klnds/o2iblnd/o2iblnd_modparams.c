@@ -149,7 +149,7 @@ static int use_privileged_port = 1;
 CFS_MODULE_PARM(use_privileged_port, "i", int, 0644,
                 "use privileged port when initiating connection");
 
-#define IBLND_WRQ_SGE		1
+#define IBLND_WRQ_SGE		2
 
 static int wrq_sge = IBLND_WRQ_SGE;
 CFS_MODULE_PARM(wrq_sge, "i", int, 0444,
