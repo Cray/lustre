@@ -42,21 +42,6 @@ fi
 ]) # LN_CHECK_GCC_VERSION
 
 #
-# LN_FUNC_DEV_GET_BY_NAME_2ARG
-#
-AC_DEFUN([LN_FUNC_DEV_GET_BY_NAME_2ARG], [
-LB_CHECK_COMPILE([if 'dev_get_by_name' has two args],
-dev_get_by_name_2args, [
-	#include <linux/netdevice.h>
-],[
-	dev_get_by_name(NULL, NULL);
-],[
-	AC_DEFINE(HAVE_DEV_GET_BY_NAME_2ARG, 1,
-		[dev_get_by_name has 2 args])
-])
-]) # LN_FUNC_DEV_GET_BY_NAME_2ARG
-
-#
 # LN_CONFIG_AFFINITY
 #
 # check if cpu affinity is available/wanted
@@ -464,7 +449,6 @@ AS_IF([test $ENABLEO2IB = "no"], [
 			fi
 		])
 
-		LN_CONFIG_OFED_SPEC
 		EXTRA_CHECK_INCLUDE=""
 	fi
 ])
@@ -687,7 +671,6 @@ AC_DEFUN([LN_PROG_LINUX], [
 AC_MSG_NOTICE([LNet kernel checks
 ==============================================================================])
 
-LN_FUNC_DEV_GET_BY_NAME_2ARG
 LN_CONFIG_AFFINITY
 LN_CONFIG_BACKOFF
 LN_CONFIG_QUADRICS
