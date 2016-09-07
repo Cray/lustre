@@ -1187,6 +1187,7 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
                 LASSERT(imp->imp_replayable);
                 imp->imp_remote_handle =
                                 *lustre_msg_get_handle(request->rq_repmsg);
+		imp->imp_replay_cursor = &imp->imp_committed_list;
                 imp->imp_last_replay_transno = 0;
                 IMPORT_SET_STATE(imp, LUSTRE_IMP_REPLAY);
         } else {
