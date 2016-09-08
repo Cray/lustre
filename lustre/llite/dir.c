@@ -172,7 +172,7 @@ void ll_release_page(struct inode *inode, struct page *page,
 			truncate_complete_page(page->mapping, page);
 		unlock_page(page);
 	}
-	page_cache_release(page);
+	put_page(page);
 }
 
 #ifdef HAVE_DIR_CONTEXT
