@@ -363,6 +363,24 @@ LB_CHECK_LINUX_HEADER([asm/fpu/api.h], [
 ]) # LIBCFS_FPU_API
 
 #
+# Kernel version 4.6 removed both struct task_struct and struct mm_struct
+# arguments to get_user_pages
+#
+AC_DEFUN([LIBCFS_GET_USER_PAGES_6ARG], [
+LB_CHECK_COMPILE([if 'get_user_pages()' takes 6 arguments],
+get_user_pages_6arg, [
+	#include <linux/mm.h>
+],[
+	int rc;
+
+	rc = get_user_pages(0, 0, 0, 0, NULL, NULL);
+],[
+	AC_DEFINE(HAVE_GET_USER_PAGES_6ARG, 1,
+		[get_user_pages takes 6 arguments])
+])
+]) # LIBCFS_GET_USER_PAGES_6ARG
+
+#
 # LIBCFS_PROG_LINUX
 #
 # LibCFS linux kernel checks
@@ -406,6 +424,8 @@ LIBCFS_HLIST_ADD_AFTER
 # 4.2
 LIBCFS_HAVE_TOPOLOGY_SIBLING_CPUMASK
 LIBCFS_FPU_API
+# 4.6
+LIBCFS_GET_USER_PAGES_6ARG
 ]) # LIBCFS_PROG_LINUX
 
 #
