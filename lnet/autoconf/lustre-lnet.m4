@@ -520,6 +520,12 @@ AS_IF([test $ENABLEO2IB != "no"], [
 	LB_CHECK_COMPILE([if 'struct ib_cq_init_attr' is used],
 	ib_cq_init_attr, [
 		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
 		#include <linux/compat-2.6.h>
 		#endif
 		#include <rdma/ib_verbs.h>
