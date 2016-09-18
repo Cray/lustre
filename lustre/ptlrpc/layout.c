@@ -82,10 +82,12 @@ static const struct req_msg_field *mgs_target_info_only[] = {
         &RMF_MGS_TARGET_INFO
 };
 
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 13, 53, 0)
 static const struct req_msg_field *mgs_set_info[] = {
         &RMF_PTLRPC_BODY,
         &RMF_MGS_SEND_PARAM
 };
+#endif
 
 static const struct req_msg_field *mgs_config_read_client[] = {
         &RMF_PTLRPC_BODY,
@@ -731,7 +733,9 @@ static struct req_format *req_formats[] = {
 	&RQF_OBD_IDX_READ,
         &RQF_SEC_CTX,
         &RQF_MGS_TARGET_REG,
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 13, 53, 0)
         &RQF_MGS_SET_INFO,
+#endif
         &RQF_MGS_CONFIG_READ,
         &RQF_SEQ_QUERY,
         &RQF_FLD_QUERY,
@@ -879,11 +883,13 @@ struct req_msg_field RMF_MGS_TARGET_INFO =
                     lustre_swab_mgs_target_info, NULL);
 EXPORT_SYMBOL(RMF_MGS_TARGET_INFO);
 
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 13, 53, 0)
 struct req_msg_field RMF_MGS_SEND_PARAM =
         DEFINE_MSGF("mgs_send_param", 0,
                     sizeof(struct mgs_send_param),
                     NULL, NULL);
 EXPORT_SYMBOL(RMF_MGS_SEND_PARAM);
+#endif
 
 struct req_msg_field RMF_MGS_CONFIG_BODY =
         DEFINE_MSGF("mgs_config_read request", 0,
@@ -1293,10 +1299,12 @@ struct req_format RQF_MGS_TARGET_REG =
                          mgs_target_info_only);
 EXPORT_SYMBOL(RQF_MGS_TARGET_REG);
 
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 13, 53, 0)
 struct req_format RQF_MGS_SET_INFO =
         DEFINE_REQ_FMT0("MGS_SET_INFO", mgs_set_info,
                          mgs_set_info);
 EXPORT_SYMBOL(RQF_MGS_SET_INFO);
+#endif
 
 struct req_format RQF_MGS_CONFIG_READ =
         DEFINE_REQ_FMT0("MGS_CONFIG_READ", mgs_config_read_client,

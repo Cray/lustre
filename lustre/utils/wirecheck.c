@@ -1430,6 +1430,7 @@ check_ldlm_gl_lquota_desc(void)
 }
 
 
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 13, 53, 0)
 static void
 check_mgs_send_param(void)
 {
@@ -1438,6 +1439,7 @@ check_mgs_send_param(void)
 	CHECK_CVALUE(MGS_PARAM_MAXLEN);
 	CHECK_MEMBER(mgs_send_param, mgs_param[MGS_PARAM_MAXLEN]);
 }
+#endif
 
 static void
 check_cfg_marker(void)
@@ -2577,7 +2579,9 @@ main(int argc, char **argv)
 	check_ldlm_ost_lvb();
 	check_ldlm_lquota_lvb();
 	check_ldlm_gl_lquota_desc();
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 13, 53, 0)
 	check_mgs_send_param();
+#endif
 	check_cfg_marker();
 	check_llog_logid();
 	check_llog_catid();

@@ -1068,6 +1068,7 @@ static int mgc_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *desc,
 #define  MGC_TARGET_REG_LIMIT 10
 #define  MGC_SEND_PARAM_LIMIT 10
 
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 13, 53, 0)
 /* Send parameter to MGS*/
 static int mgc_set_mgs_param(struct obd_export *exp,
                              struct mgs_send_param *msp)
@@ -1104,6 +1105,7 @@ static int mgc_set_mgs_param(struct obd_export *exp,
 
         RETURN(rc);
 }
+#endif
 
 /* Take a config lock so we can get cancel notifications */
 static int mgc_enqueue(struct obd_export *exp, struct lov_stripe_md *lsm,
@@ -1267,6 +1269,7 @@ static int mgc_set_info_async(const struct lu_env *env, struct obd_export *exp,
 		rc = mgc_fs_cleanup(env, exp->exp_obd);
 		RETURN(rc);
 	}
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 13, 53, 0)
         if (KEY_IS(KEY_SET_INFO)) {
                 struct mgs_send_param *msp;
 
@@ -1274,6 +1277,7 @@ static int mgc_set_info_async(const struct lu_env *env, struct obd_export *exp,
                 rc =  mgc_set_mgs_param(exp, msp);
                 RETURN(rc);
         }
+#endif
         if (KEY_IS(KEY_MGSSEC)) {
                 struct client_obd     *cli = &exp->exp_obd->u.cli;
                 struct sptlrpc_flavor  flvr;
