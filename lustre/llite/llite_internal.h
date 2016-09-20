@@ -1527,4 +1527,14 @@ int ll_page_sync_io(const struct lu_env *env, struct cl_io *io,
 int ll_getparent(struct file *file, struct getparent __user *arg);
 int ll_lock_ahead(struct file *file, struct llapi_lock_ahead_arg __user *arg);
 
+#ifndef HAVE_IS_SXID
+static inline bool is_sxid(umode_t mode)
+{
+	return (mode & S_ISUID) || ((mode & S_ISGID) && (mode & S_IXGRP));
+}
+#endif
+
+#ifndef IS_NOSEC
+#define IS_NOSEC(inode)	(!is_sxid(inode->i_mode))
+#endif
 #endif /* LLITE_INTERNAL_H */
