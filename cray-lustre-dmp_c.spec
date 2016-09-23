@@ -27,7 +27,6 @@ BuildRequires: module-init-tools
 # Only required for DEV (craynum == 0000) builds and CLE 6.0UP02 and later
 BuildRequires: ofed-devel
 %endif
-%endif
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}
