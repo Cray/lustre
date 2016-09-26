@@ -23,6 +23,7 @@ BuildRequires: kernel-syms
 BuildRequires: pkgconfig
 BuildRequires: -post-build-checks
 BuildRequires: module-init-tools
+BuildRequires: libtool
 %if "%{?sle_version}" == "120000"
 # Only SLES 12 SP0 builds require this. Was needed for EDR IB support in eLogin
 # for 6.0UP02. Future versions will use in-kernel drivers.
