@@ -22,6 +22,7 @@ BuildRequires: kernel-syms
 BuildRequires: pkgconfig
 BuildRequires: -post-build-checks
 BuildRequires: module-init-tools
+BuildRequires: libtool
 %if "%{?craynum}" == "0000" || 0%{?cle_major}%{?cle_update} >= 62
 # Only required for DEV (craynum == 0000) builds and CLE 6.0UP02 and later
 BuildRequires: ofed-devel
