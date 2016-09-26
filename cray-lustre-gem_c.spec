@@ -1,5 +1,5 @@
 %define vendor_name lustre
-%define vendor_version 2.7
+%define vendor_version 2.7.2
 %define flavor cray_gem_c
 %define intranamespace_name %{vendor_name}-%{flavor}
 %define flavorless_name %{namespace}-%{vendor_name}
