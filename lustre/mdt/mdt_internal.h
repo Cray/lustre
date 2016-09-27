@@ -111,7 +111,7 @@ enum cdt_states { CDT_STOPPED = 0,
  */
 struct coordinator {
 	wait_queue_head_t	 cdt_waitq;	     /**< cdt wait queue */
-	unsigned int		 cdt_flags;	     /**< cdt event flags */
+	bool			 cdt_event;	     /**< coordinator event */
 	struct lu_env		 cdt_env;	     /**< coordinator lustre
 						      * env */
 	struct lu_context	 cdt_session;	     /** session for lu_ucred */

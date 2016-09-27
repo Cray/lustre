@@ -39,7 +39,6 @@
 #define DEBUG_SUBSYSTEM S_MDS
 
 #include <obd_support.h>
-#include <lustre_net.h>
 #include <lustre_export.h>
 #include <obd.h>
 #include <lprocfs_status.h>
@@ -545,8 +544,7 @@ static int mdt_coordinator(void *data)
 		lwi = LWI_TIMEOUT(cfs_time_seconds(cdt->cdt_loop_period),
 				  NULL, NULL);
 		l_wait_event(cdt->cdt_waitq,
-			     (cdt->cdt_flags & SVC_EVENT) ||
-			     (cdt->cdt_state == CDT_STOPPING),
+			     cdt->cdt_event || (cdt->cdt_state == CDT_STOPPING),
 			     &lwi);
 
 		CDEBUG(D_HSM, "coordinator resumes\n");
@@ -556,9 +554,7 @@ static int mdt_coordinator(void *data)
 			break;
 		}
 
-		/* wake up before timeout, new work arrives */
-		if (cdt->cdt_flags & SVC_EVENT)
-			cdt->cdt_flags &= ~SVC_EVENT;
+		cdt->cdt_event = false;
 
 		/* if coordinator is suspended continue to wait */
 		if (cdt->cdt_state == CDT_DISABLE) {
@@ -841,7 +837,7 @@ int mdt_hsm_cdt_wakeup(struct mdt_device *mdt)
 		RETURN(-ESRCH);
 
 	/* wake up coordinator */
-	cdt->cdt_flags = SVC_EVENT;
+	cdt->cdt_event = true;
 	wake_up(&cdt->cdt_waitq);
 
 	RETURN(0);
