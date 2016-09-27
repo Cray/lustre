@@ -6560,6 +6560,7 @@ test_101f() {
 		> /dev/null 2>&1
 
 	echo checking missing pages
+	$LCTL get_param llite.*.read_ahead_stats
 	local miss=$($LCTL get_param -n llite.*.read_ahead_stats |
 			get_named_value 'misses' | cut -d" " -f1 | calc_total)
 
