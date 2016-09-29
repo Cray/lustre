@@ -73,6 +73,7 @@ Includes headers, dynamic, and static libraries.
 %incremental_setup -q -n %{source_name} -a 1
 
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 # LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
