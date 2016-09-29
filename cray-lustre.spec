@@ -139,6 +139,7 @@ A package that contains pc files and a lustre module file.
 %setup -n cray-lustre
  
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 sed -i '1i%%define _prefix /' lustre.spec.in
 sed -i '1i%%define _includedir /usr/include' lustre.spec.in
 sed -i '/Requires: kernel = %{krequires}/d' lustre.spec.in

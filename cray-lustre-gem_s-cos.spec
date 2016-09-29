@@ -44,6 +44,7 @@ Userspace tools and files for the Lustre file system on Baker CentOS nodes.
 %incremental_setup -q -n %{source_name}
 
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 # LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)

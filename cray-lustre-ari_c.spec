@@ -55,6 +55,7 @@ Userspace tools and files for Lustre networking on XT compute nodes.
 %incremental_setup -q -n %{source_name}
 
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 # LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)

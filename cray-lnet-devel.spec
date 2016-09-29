@@ -48,6 +48,7 @@ Header files for lnet.
 %incremental_setup -q -n %{srcbase} -a 1
 
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{srcbase}/configure ];then
         chmod +x autogen.sh
         ./autogen.sh

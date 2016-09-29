@@ -49,6 +49,7 @@ Userspace tools and files for Lustre networking on XT SIO nodes.
 %incremental_setup -q -n %{source_name} -a 1
 
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
 %define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
