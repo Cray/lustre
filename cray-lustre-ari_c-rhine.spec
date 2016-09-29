@@ -1,11 +1,9 @@
 %define vendor_name lustre
-%define vendor_version 2.7
+%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define flavor cray_ari_c
 %define intranamespace_name %{vendor_name}-%{flavor}_rhine
-%define flavorless_name %{namespace}-%{vendor_name}
 %define branch trunk
-# use non-customized version so source doesn't need to be repackaged for custom versions.
-%define source_name %{flavorless_name}
+%define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
 %define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-source)
@@ -30,8 +28,8 @@ Name: %{namespace}-%{intranamespace_name}
 Release: %release
 Requires: module-init-tools
 Summary: Lustre File System for CNL running CLE Rhine
-Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
-Source: %{source_name}.tar.gz
+Version: %{_version}_%{kernel_version}_%{kernel_release}
+Source: %{source_name}.tar.bz2
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
@@ -63,7 +61,7 @@ Includes headers, dynamic, and static libraries.
 %prep
 # using source_name here results in too deep of a macro stack, so use
 # definition of source_name directly
-%incremental_setup -q -n %{flavorless_name}
+%incremental_setup -q -n %{source_name}
 
 %build
 # LUSTRE_VERS used in ko versioning.
@@ -72,7 +70,7 @@ Includes headers, dynamic, and static libraries.
 %define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 
 export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
+export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -100,10 +98,6 @@ fi
 %{__make} %_smp_mflags
 
 %install
-# LUSTRE_VERS used in ko versioning.
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
-
 # don't use %makeinstall for compute node RPMS - it needlessly puts things into 
 #  /opt/cray/,.....
 

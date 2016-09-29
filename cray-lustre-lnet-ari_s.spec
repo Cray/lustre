@@ -1,11 +1,9 @@
 %define vendor_name lustre
-%define vendor_version 2.7
+%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define flavor cray_ari_s
 %define namespace_flavor %{namespace}_%{flavor}
 %define intranamespace_name %{vendor_name}-%{flavor}
-%define flavorless_name %{namespace}-%{vendor_name}
-# use non-customized version so source doesn't need to be repackaged for custom versions.
-%define source_name %{flavorless_name}
+%define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 %define branch trunk
 
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
@@ -36,9 +34,9 @@ Release: %{release}
 Requires: %{switch_requires}
 Summary: Lustre networking for Aries Service Nodes
 
-Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
-Source0: %{source_name}.tar.gz
-Source1: %{flavorless_name}-switch-%{branch}.tar.gz
+Version: %{_version}_%{kernel_version}_%{kernel_release}
+Source0: %{source_name}.tar.bz2
+Source1: %{vendor_namespace}-%{vendor_name}-switch-%{_version}.tar.bz2
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
@@ -48,7 +46,7 @@ Userspace tools and files for Lustre networking on XT SIO nodes.
 %prep
 # using source_name here results in too deep of a macro stack, so use
 # definition of source_name directly
-%incremental_setup -q -n %{flavorless_name} -a 1
+%incremental_setup -q -n %{source_name} -a 1
 
 %build
 %define version_path %(basename %url)
