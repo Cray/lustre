@@ -3178,10 +3178,16 @@ void ptlrpc_set_bulk_mbits(struct ptlrpc_request *req)
 	} else { /* needs to generate a new matchbits for resend */
 		__u64	old_mbits = req->rq_mbits;
 
-		if (OCD_HAS_FLAG(&bd->bd_import->imp_connect_data, BULK_MBITS))
+		if (OCD_HAS_FLAG(&bd->bd_import->imp_connect_data,
+				 BULK_MBITS)) {
 			req->rq_mbits = ptlrpc_next_xid();
-		else /* old version transfers rq_xid to peer as matchbits */
-			req->rq_mbits = req->rq_xid = ptlrpc_next_xid();
+		} else { /* old version transfers rq_xid to peer as matchbits */
+			spin_lock(&req->rq_import->imp_lock);
+			list_del_init(&req->rq_unreplied_list);
+			ptlrpc_assign_next_xid_nolock(req);
+			req->rq_mbits = req->rq_xid;
+			spin_unlock(&req->rq_import->imp_lock);
+		}
 
 		CDEBUG(D_HA, "resend bulk old x"LPU64" new x"LPU64"\n",
 		       old_mbits, req->rq_mbits);
