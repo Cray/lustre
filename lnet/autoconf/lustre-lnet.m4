@@ -314,18 +314,6 @@ AS_IF([test $ENABLEO2IB = "no"], [
 			   -f ${O2IBPATH}/include/rdma/ib_cm.h -a \
 			   -f ${O2IBPATH}/include/rdma/ib_verbs.h -a \
 			   -f ${O2IBPATH}/include/rdma/ib_fmr_pool.h \)], [
-			AS_IF([test \( \( \( -d ${O2IBPATH}/patches -a \
-				   \( "x$OFED" = "xyes" \) \) -o \
-				   -d ${O2IBPATH}/kernel_patches \) -a \
-				   -f ${O2IBPATH}/Makefile \)], [
-				AC_MSG_RESULT([no])
-				AC_MSG_ERROR([
-
-trying to use the, explicit or detected, OFED distribution's source
-directory (${O2IBPATH}) rather than the "development/headers"
-directory which is likely in ${O2IBPATH%-*}
-])
-			])
 			o2ib_found=true
 			break
 		])
