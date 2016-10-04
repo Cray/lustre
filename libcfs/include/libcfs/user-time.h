@@ -169,8 +169,6 @@ static inline int cfs_fs_time_beforeq(cfs_fs_time_t *t1, cfs_fs_time_t *t2)
         return *t1 <= *t2;
 }
 
-#define CFS_TICK                (1)
-
 #define cfs_time_current_64 cfs_time_current
 #define cfs_time_add_64     cfs_time_add
 #define cfs_time_shift_64   cfs_time_shift
