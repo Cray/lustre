@@ -28,7 +28,9 @@ BuildRequires: kernel-syms
 BuildRequires: %{namespace}-krca-devel
 BuildRequires: lsb-cray-hss-devel
 BuildRequires: module-init-tools
+%if 0%{?sle_version} <= 120000
 BuildRequires: ofed-devel
+%endif
 BuildRequires: pkgconfig
 BuildRequires: sles-release
 BuildRequires: -post-build-checks
