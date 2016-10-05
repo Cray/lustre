@@ -149,6 +149,8 @@ static int osp_statfs_interpret(const struct lu_env *env,
 	RETURN(0);
 out:
 	/* couldn't update statfs, try again as soon as possible */
+	d->opd_statfs_fresh_till = cfs_time_shift(-1);
+	d->opd_statfs_update_in_progress = 0;
 	if (d->opd_pre != NULL && osp_precreate_running(d))
 		wake_up(&d->opd_pre_waitq);
 
@@ -1144,6 +1146,7 @@ static int osp_precreate_thread(void *_arg)
 
 			d->opd_new_connection = 0;
 			d->opd_got_disconnected = 0;
+			d->opd_statfs_fresh_till = cfs_time_shift(-1);
 			break;
 		}
 
@@ -1165,7 +1168,8 @@ static int osp_precreate_thread(void *_arg)
 			continue;
 		}
 
-		osp_statfs_update(d);
+		if (osp_statfs_need_update(d))
+			osp_statfs_update(d);
 
 		/*
 		 * Clean up orphans or recreate missing objects.
