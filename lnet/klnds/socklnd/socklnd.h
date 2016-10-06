@@ -31,9 +31,6 @@
 #define DEBUG_PORTAL_ALLOC
 #define DEBUG_SUBSYSTEM S_LND
 
-#ifdef HAVE_COMPAT_RDMA
-#include <linux/compat-2.6.h>
-#endif
 #include <linux/crc32.h>
 #include <linux/errno.h>
 #include <linux/if.h>
@@ -105,7 +102,7 @@ typedef struct                                  /* per scheduler state */
 	struct page		*kss_rx_scratch_pgs[LNET_MAX_IOV];
 #endif
 #if !SOCKNAL_SINGLE_FRAG_TX || !SOCKNAL_SINGLE_FRAG_RX
-	struct iovec		kss_scratch_iov[LNET_MAX_IOV];
+	struct kvec		kss_scratch_iov[LNET_MAX_IOV];
 #endif
 } ksock_sched_t;
 
@@ -258,12 +255,12 @@ typedef struct
 #define SOCKNAL_INIT_ALL        2
 
 /* A packet just assembled for transmission is represented by 1 or more
- * struct iovec fragments (the first frag contains the portals header),
+ * struct kvec fragments (the first frag contains the portals header),
  * followed by 0 or more lnet_kiov_t fragments.
  *
- * On the receive side, initially 1 struct iovec fragment is posted for
+ * On the receive side, initially 1 struct kvec fragment is posted for
  * receive (the header).  Once the header has been received, the payload is
- * received into either struct iovec or lnet_kiov_t fragments, depending on
+ * received into either struct kvec or lnet_kiov_t fragments, depending on
  * what the header matched or whether the message needs forwarding. */
 
 struct ksock_conn;                              /* forward ref */
@@ -278,8 +275,8 @@ typedef struct                                  /* transmit packet */
 	atomic_t       tx_refcount;    /* tx reference count */
 	int            tx_nob;         /* # packet bytes */
 	int            tx_resid;       /* residual bytes */
-        int            tx_niov;        /* # packet iovec frags */
-        struct iovec  *tx_iov;         /* packet iovec frags */
+	int            tx_niov;        /* # packet kvec frags */
+	struct kvec  *tx_iov;         /* packet kvec frags */
         int            tx_nkiov;       /* # packet page frags */
         unsigned short tx_zc_aborted;  /* aborted ZC request */
         unsigned short tx_zc_capable:1; /* payload is large enough for ZC */
@@ -293,11 +290,11 @@ typedef struct                                  /* transmit packet */
         int            tx_desc_size;   /* size of this descriptor */
         union {
                 struct {
-                        struct iovec iov;       /* virt hdr */
-                        lnet_kiov_t  kiov[0];   /* paged payload */
+			struct kvec iov;	/* virt hdr */
+			lnet_kiov_t kiov[0];	/* paged payload */
                 }                  paged;
                 struct {
-                        struct iovec iov[1];    /* virt hdr + payload */
+			struct kvec iov[1];	/* virt hdr + payload */
                 }                  virt;
         }                       tx_frags;
 } ksock_tx_t;
@@ -309,7 +306,7 @@ typedef struct                                  /* transmit packet */
 /* space for the rx frag descriptors; we either read a single contiguous
  * header, or up to LNET_MAX_IOV frags of payload of either type. */
 typedef union {
-        struct iovec     iov[LNET_MAX_IOV];
+	struct kvec     iov[LNET_MAX_IOV];
         lnet_kiov_t      kiov[LNET_MAX_IOV];
 } ksock_rxiovspace_t;
 
@@ -352,8 +349,8 @@ typedef struct ksock_conn
         __u8                  ksnc_rx_state;    /* what is being read */
         int                   ksnc_rx_nob_left; /* # bytes to next hdr/body */
         int                   ksnc_rx_nob_wanted; /* bytes actually wanted */
-        int                   ksnc_rx_niov;     /* # iovec frags */
-        struct iovec         *ksnc_rx_iov;      /* the iovec frags */
+	int                   ksnc_rx_niov;     /* # kvec frags */
+	struct kvec          *ksnc_rx_iov;      /* the kvec frags */
         int                   ksnc_rx_nkiov;    /* # page frags */
         lnet_kiov_t          *ksnc_rx_kiov;     /* the page frags */
         ksock_rxiovspace_t    ksnc_rx_iov_space;/* space for frag descriptors */
@@ -613,9 +610,9 @@ int ksocknal_startup (lnet_ni_t *ni);
 void ksocknal_shutdown (lnet_ni_t *ni);
 int ksocknal_ctl(lnet_ni_t *ni, unsigned int cmd, void *arg);
 int ksocknal_send (lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg);
-int ksocknal_recv(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg, 
-                  int delayed, unsigned int niov, 
-                  struct iovec *iov, lnet_kiov_t *kiov,
+int ksocknal_recv(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg,
+		  int delayed, unsigned int niov,
+		  struct kvec *iov, lnet_kiov_t *kiov,
                   unsigned int offset, unsigned int mlen, unsigned int rlen);
 int ksocknal_accept(lnet_ni_t *ni, struct socket *sock);
 

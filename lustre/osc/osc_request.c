@@ -3104,7 +3104,7 @@ static void /*__exit*/ osc_exit(void)
 	ptlrpc_free_rq_pool(osc_rq_pool);
 }
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Object Storage Client (OSC)");
 MODULE_LICENSE("GPL");
 

@@ -420,4 +420,9 @@ static void exit_libcfs_module(void)
 	libcfs_arch_cleanup();
 }
 
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
+MODULE_DESCRIPTION("Libcfs v3.1");
+MODULE_VERSION("1.0.0");
+MODULE_LICENSE("GPL");
+
 cfs_module(libcfs, "1.0.0", init_libcfs_module, exit_libcfs_module);
