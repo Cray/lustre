@@ -819,20 +819,19 @@ lock_manager_ops_lm_xxx, [
 #
 # LC_INODE_DIO_WAIT
 #
-# 3.1 kills inode->i_alloc_sem, use i_dio_count and inode_dio_wait/
-#     inode_dio_done instead.
+# 3.1 kills inode->i_alloc_sem, use i_dio_count and inode_dio_wait
+#     instead.
 # see kernel commit bd5fe6c5eb9c548d7f07fe8f89a150bb6705e8e3
 #
 AC_DEFUN([LC_INODE_DIO_WAIT], [
-LB_CHECK_COMPILE([if 'inode->i_alloc_sem' is killed and use inode_dio_wait/done],
+LB_CHECK_COMPILE([if 'inode->i_alloc_sem' is killed and use inode_dio_wait],
 inode_dio_wait, [
 	#include <linux/fs.h>
 ],[
 	inode_dio_wait((struct inode *)0);
-	inode_dio_done((struct inode *)0);
 ],[
 	AC_DEFINE(HAVE_INODE_DIO_WAIT, 1,
-		[inode->i_alloc_sem is killed and use inode_dio_wait/done])
+		[inode->i_alloc_sem is killed and use inode_dio_wait])
 ])
 ]) # LC_INODE_DIO_WAIT
 
@@ -1774,6 +1773,62 @@ EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_DQUOT_QC_DQBLK
 
 #
+# LC_BACKING_DEV_INFO_REMOVAL
+#
+# 3.20 kernel removed backing_dev_info from address_space
+#
+AC_DEFUN([LC_BACKING_DEV_INFO_REMOVAL], [
+LB_CHECK_COMPILE([if struct address_space has backing_dev_info],
+backing_dev_info, [
+	#include <linux/fs.h>
+],[
+	struct address_space mapping;
+
+	mapping.backing_dev_info = NULL;
+],[
+	AC_DEFINE(HAVE_BACKING_DEV_INFO, 1, [backing_dev_info exist])
+])
+]) # LC_BACKING_DEV_INFO_REMOVAL
+
+#
+# LC_HAVE_BDI_CAP_MAP_COPY
+#
+# 3.20  removed mmap handling for backing devices since
+#	it breaks on non-MMU systems. See kernel commit
+#	b4caecd48005fbed3949dde6c1cb233142fd69e9
+#
+AC_DEFUN([LC_HAVE_BDI_CAP_MAP_COPY], [
+LB_CHECK_COMPILE([if have 'BDI_CAP_MAP_COPY'],
+bdi_cap_map_copy, [
+	#include <linux/backing-dev.h>
+],[
+	struct backing_dev_info info;
+
+	info.capabilities = BDI_CAP_MAP_COPY;
+],[
+	AC_DEFINE(HAVE_BDI_CAP_MAP_COPY, 1,
+		[BDI_CAP_MAP_COPY exist])
+])
+]) # LC_HAVE_BDI_CAP_MAP_COPY
+
+#
+# LC_CANCEL_DIRTY_PAGE
+#
+# 4.0.0 kernel removed cancel_dirty_page
+#
+AC_DEFUN([LC_CANCEL_DIRTY_PAGE], [
+LB_CHECK_COMPILE([if cancel_dirty_page still exist],
+cancel_dirty_page, [
+	#include <linux/mm.h>
+],[
+	cancel_dirty_page(NULL, PAGE_SIZE);
+],[
+	AC_DEFINE(HAVE_CANCEL_DIRTY_PAGE, 1,
+		[cancel_dirty_page is still available])
+])
+]) # LC_CANCEL_DIRTY_PAGE
+
+#
 # LC_IOV_ITER_RW
 #
 # 4.1 kernel has iov_iter_rw
@@ -1792,6 +1847,111 @@ iov_iter_rw, [
 		[iov_iter_rw exist])
 ])
 ]) # LC_IOV_ITER_RW
+
+#
+# LC_HAVE_SYNC_READ_WRITE
+#
+# 4.1 new_sync_[read|write] no longer exported
+#
+AC_DEFUN([LC_HAVE_SYNC_READ_WRITE], [
+LB_CHECK_EXPORT([new_sync_read], [fs/read_write.c],
+	[AC_DEFINE(HAVE_SYNC_READ_WRITE, 1,
+			[new_sync_[read|write] is exported by the kernel])])
+]) # LC_HAVE_SYNC_READ_WRITE
+
+#
+# LC_NEW_CANCEL_DIRTY_PAGE
+#
+# 4.2 kernel has new cancel_dirty_page
+#
+AC_DEFUN([LC_NEW_CANCEL_DIRTY_PAGE], [
+LB_CHECK_COMPILE([if cancel_dirty_page with one argument exist],
+new_cancel_dirty_page, [
+	#include <linux/mm.h>
+],[
+	cancel_dirty_page(NULL);
+],[
+	AC_DEFINE(HAVE_NEW_CANCEL_DIRTY_PAGE, 1,
+		[cancel_dirty_page with one arguement is available])
+])
+]) # LC_NEW_CANCEL_DIRTY_PAGE
+
+#
+# LC_SYMLINK_OPS_USE_NAMEIDATA
+#
+# For the 4.2+ kernels the file system internal symlink api no
+# longer uses struct nameidata as a argument
+#
+AC_DEFUN([LC_SYMLINK_OPS_USE_NAMEIDATA], [
+LB_CHECK_COMPILE([if symlink inode operations have struct nameidata argument],
+symlink_use_nameidata, [
+	#include <linux/namei.h>
+	#include <linux/fs.h>
+],[
+	struct nameidata *nd = NULL;
+
+	((struct inode_operations *)0)->follow_link(NULL, nd);
+	((struct inode_operations *)0)->put_link(NULL, nd, NULL);
+],[
+	AC_DEFINE(HAVE_SYMLINK_OPS_USE_NAMEIDATA, 1,
+		[symlink inode operations need struct nameidata argument])
+])
+]) # LC_SYMLINK_OPS_USE_NAMEIDATA
+
+#
+# LC_BIO_ENDIO_USES_ONE_ARG
+#
+# 4.2 kernel bio_endio now only takes one argument
+#
+AC_DEFUN([LC_BIO_ENDIO_USES_ONE_ARG], [
+LB_CHECK_COMPILE([if 'bio_endio' with one argument exist],
+bio_endio, [
+	#include <linux/bio.h>
+],[
+	bio_endio(NULL);
+],[
+	AC_DEFINE(HAVE_BIO_ENDIO_USES_ONE_ARG, 1,
+		[bio_endio takes only one argument])
+])
+]) # LC_BIO_ENDIO_USES_ONE_ARG
+
+#
+# LC_HAVE_LOCKS_LOCK_FILE_WAIT
+#
+# 4.4 kernel have moved locks API users to
+# locks_lock_inode_wait()
+#
+AC_DEFUN([LC_HAVE_LOCKS_LOCK_FILE_WAIT], [
+LB_CHECK_COMPILE([if 'locks_lock_file_wait' exists],
+locks_lock_file_wait, [
+	#include <linux/fs.h>
+],[
+	locks_lock_file_wait(NULL, NULL);
+],[
+	AC_DEFINE(HAVE_LOCKS_LOCK_FILE_WAIT, 1,
+		[kernel has locks_lock_file_wait])
+])
+]) # LC_HAVE_LOCKS_LOCK_FILE_WAIT
+
+#
+# LC_HAVE_QC_MAKE_REQUEST_FN
+#
+# 4.4 request_queue.make_request_fn defined as function returns with blk_qc_t
+# see kernel commit dece16353ef47d8d33f5302bc158072a9d65e26f
+#
+AC_DEFUN([LC_HAVE_QC_MAKE_REQUEST_FN], [
+LB_CHECK_COMPILE([if 'request_queue.make_request_fn' returns blk_qc_t],
+make_request_fn_blk_qc_t, [
+	#include <linux/blkdev.h>
+],[
+	blk_qc_t ret;
+	make_request_fn *mrf;
+	ret = mrf(NULL, NULL);
+],[
+	AC_DEFINE(HAVE_QC_MAKE_REQUEST_FN, 1,
+		[request_queue.make_request_fn returns blk_qc_t])
+])
+]) # LC_HAVE_QC_MAKE_REQUEST_FN
 
 #
 # LC_PROG_LINUX
@@ -1936,8 +2096,25 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 3.19
 	LC_HAVE_DQUOT_QC_DQBLK
 
+	# 3.20
+	LC_BACKING_DEV_INFO_REMOVAL
+	LC_HAVE_BDI_CAP_MAP_COPY
+
+	# 4.0.0
+	LC_CANCEL_DIRTY_PAGE
+
 	# 4.1.0
 	LC_IOV_ITER_RW
+	LC_HAVE_SYNC_READ_WRITE
+
+	# 4.2
+	LC_NEW_CANCEL_DIRTY_PAGE
+	LC_BIO_ENDIO_USES_ONE_ARG
+	LC_SYMLINK_OPS_USE_NAMEIDATA
+
+	# 4.4
+	LC_HAVE_LOCKS_LOCK_FILE_WAIT
+	LC_HAVE_QC_MAKE_REQUEST_FN
 
 	#
 	AS_IF([test "x$enable_server" != xno], [

@@ -993,14 +993,15 @@ static int tracefiled(void *arg)
 		MMSPACE_OPEN;
 
 		list_for_each_entry_safe(tage, tmp, &pc.pc_pages, linkage) {
-                        static loff_t f_pos;
+			struct dentry *de = filp->f_path.dentry;
+			static loff_t f_pos;
 
-                        __LASSERT_TAGE_INVARIANT(tage);
+			__LASSERT_TAGE_INVARIANT(tage);
 
-                        if (f_pos >= (off_t)cfs_tracefile_size)
-                                f_pos = 0;
-			else if (f_pos > (off_t)filp_size(filp))
-				f_pos = filp_size(filp);
+			if (f_pos >= (off_t)cfs_tracefile_size)
+				f_pos = 0;
+			else if (f_pos > i_size_read(de->d_inode))
+				f_pos = i_size_read(de->d_inode);
 
 			rc = filp_write(filp, page_address(tage->page),
 					tage->used, &f_pos);
