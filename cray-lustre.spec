@@ -1,11 +1,13 @@
 BuildRequires: pkgconfig
 BuildRequires: module-init-tools
+BuildRequires: libtool
 
 %if %{with clfs}
 BuildRequires: kernel-debug-headers
 BuildRequires: kernel-devel
 BuildRequires: libselinux-devel
 BuildRequires: redhat-rpm-config
+BuildRequires: ofed-devel
 %endif
 
 %if  %{with compute} || %{with dal} || %{with service}
@@ -24,10 +26,6 @@ BuildRequires: libselinux-devel
 
 %if %{with compute} || %{with service}
 BuildRequires: libtool
-%endif
-
-%if %{with clfs} || %{with dal} || %{with service}
-BuildRequires: ofed-devel
 %endif
 
 %if %{with clfs} || %{with dal} || %{with service} || %{with elogin}
@@ -107,9 +105,16 @@ Requires: liblustreapi.so()(64bit)
 %endif
 
 %if %{with clfs}
-%define config_args --with-linux=/usr/src/kernels/%{kernel_version}-%{kernel_release}.%{_target_cpu} --enable-ldiskfs --with-o2ib=${O2IBPATH} %{disable_server}
+%define config_args --with-linux=/usr/src/kernels/%{kernel_version}-%{kernel_release}.%{_target_cpu} --enable-ldiskfs %{disable_server}
 %define ksource kernel-devel
-%else
+%endif
+
+%if %{with dal}  
+%define config_args --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} %{gni} %{disable_server}
+%define ksource kernel-source
+%endif
+
+%if %{without clfs} && %{without dal}
 %define config_args --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} --with-o2ib=${O2IBPATH} %{gni} %{disable_server}
 %define ksource kernel-source
 %endif
