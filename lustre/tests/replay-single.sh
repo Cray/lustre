@@ -2883,7 +2883,7 @@ test_92() {
         mount_facet ost1 -o errors=panic
         sleep 30
    done
-   wait $pid
+   kill -9 $pid
    rm -rf $DIR/$tdir
 }
 run_test 92 "Check failback with errors=panic"
