@@ -87,8 +87,7 @@ static void ll_invalidatepage(struct page *vmpage,
         struct lu_env    *env;
         struct cl_page   *page;
         struct cl_object *obj;
-
-        int refcheck;
+	void             *cookie;
 
         LASSERT(PageLocked(vmpage));
         LASSERT(!PageWriteback(vmpage));
@@ -103,21 +102,25 @@ static void ll_invalidatepage(struct page *vmpage,
 #else
 	if (offset == 0) {
 #endif
-                env = cl_env_get(&refcheck);
-                if (!IS_ERR(env)) {
-                        inode = vmpage->mapping->host;
-                        obj = ll_i2info(inode)->lli_clob;
-                        if (obj != NULL) {
-                                page = cl_vmpage_page(vmpage, obj);
-                                if (page != NULL) {
-                                        cl_page_delete(env, page);
-                                        cl_page_put(env, page);
-                                }
-                        } else
-                                LASSERT(vmpage->private == 0);
-                        cl_env_put(env, &refcheck);
-                }
-        }
+		/* See the comment in ll_releasepage */
+		cookie = cl_env_reenter();
+		env = cl_env_percpu_get();
+		LASSERT(!IS_ERR(env));
+
+		inode = vmpage->mapping->host;
+		obj = ll_i2info(inode)->lli_clob;
+		if (obj != NULL) {
+			page = cl_vmpage_page(vmpage, obj);
+			if (page != NULL) {
+				cl_page_delete(env, page);
+				cl_page_put(env, page);
+			}
+		} else
+			LASSERT(vmpage->private == 0);
+
+		cl_env_percpu_put(env);
+		cl_env_reexit(cookie);
+	}
 }
 
 #ifdef HAVE_RELEASEPAGE_WITH_INT
@@ -631,9 +634,9 @@ static int ll_write_begin(struct file *file, struct address_space *mapping,
 			  struct page **pagep, void **fsdata)
 {
 	struct ll_cl_context *lcc;
-	const struct lu_env  *env;
+	const struct lu_env  *env = NULL;
 	struct cl_io   *io;
-	struct cl_page *page;
+	struct cl_page *page = NULL;
 
 	struct cl_object *clob = ll_i2info(mapping->host)->lli_clob;
 	pgoff_t index = pos >> PAGE_CACHE_SHIFT;
@@ -717,6 +720,10 @@ out:
 		if (vmpage != NULL) {
 			unlock_page(vmpage);
 			page_cache_release(vmpage);
+		}
+		if (!IS_ERR_OR_NULL(page)) {
+			lu_ref_del(&page->cp_reference, "cl_io", io);
+			cl_page_put(env, page);
 		}
 	} else {
 		*pagep = vmpage;
