@@ -1717,12 +1717,10 @@ int tgt_txn_start_cb(const struct lu_env *env, struct thandle *th,
 		 * because a replay slot has not been assigned.  This should be
 		 * replaced by dmu_tx_hold_append() when available.
 		 */
-		tti->tti_off = atomic_read(&tgt->lut_num_clients) * 8 *
-				sizeof(struct lsd_reply_data);
 		tti->tti_buf.lb_buf = NULL;
 		tti->tti_buf.lb_len = sizeof(struct lsd_reply_data);
 		rc = dt_declare_record_write(env, tgt->lut_reply_data,
-					     &tti->tti_buf, tti->tti_off, th);
+					     &tti->tti_buf, -1, th);
 		if (rc)
 			return rc;
 	} else {
