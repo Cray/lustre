@@ -734,10 +734,10 @@ static int vvp_io_setattr_start(const struct lu_env *env,
 
 	if (cl_io_is_trunc(io)) {
 		down_write(&lli->lli_trunc_sem);
-		mutex_lock(&inode->i_mutex);
+		inode_lock(inode);
 		inode_dio_wait(inode);
 	} else {
-		mutex_lock(&inode->i_mutex);
+		inode_lock(inode);
 	}
 
 	return vvp_io_setattr_time(env, ios);
@@ -755,10 +755,10 @@ static void vvp_io_setattr_end(const struct lu_env *env,
 		 * because osc has already notified to destroy osc_extents. */
 		vvp_do_vmtruncate(inode, io->u.ci_setattr.sa_attr.lvb_size);
 		inode_dio_write_done(inode);
-		mutex_unlock(&inode->i_mutex);
+		inode_unlock(inode);
 		up_write(&lli->lli_trunc_sem);
 	} else {
-		mutex_unlock(&inode->i_mutex);
+		inode_unlock(inode);
 	}
 }
 
@@ -1100,7 +1100,7 @@ static int vvp_io_write_start(const struct lu_env *env,
 		bool lock_node = !IS_NOSEC(inode);
 
 		if (lock_node)
-			mutex_lock(&inode->i_mutex);
+			inode_lock(inode);
 
 #ifdef HAVE_FILE_OPERATIONS_READ_WRITE_ITER
 		result = __generic_file_write_iter(vio->vui_iocb, vio->vui_iter);
@@ -1111,7 +1111,7 @@ static int vvp_io_write_start(const struct lu_env *env,
 						  &vio->vui_iocb->ki_pos);
 #endif
 		if (lock_node)
-			mutex_unlock(&inode->i_mutex);
+			inode_unlock(inode);
 
 		if (result > 0 || result == -EIOCBQUEUED) {
 			ssize_t err;
