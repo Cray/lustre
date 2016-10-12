@@ -68,6 +68,7 @@ fi
 
 if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
     _with_o2ib="--with-o2ib=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}"
+    _with_symvers="--with-symvers=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}/Modules.symvers"
 fi
 
 CFLAGS="%{optflags} -Werror"
@@ -77,6 +78,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --disable-server \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            ${_with_o2ib} \
+           ${_with_symvers} \
            --with-obd-buffer-size=16384
 fi
 %{__make} %_smp_mflags
