@@ -647,6 +647,7 @@ int main(int argc, char *const argv[])
 	struct mount_opts mop;
 	char *options;
 	int i, rc, flags;
+	bool client;
 
 	progname = strrchr(argv[0], '/');
 	progname = progname ? progname + 1 : argv[0];
@@ -709,7 +710,8 @@ int main(int argc, char *const argv[])
                 return rc;
         }
 
-	if (!strstr(mop.mo_usource, ":/")) {
+	client = (strstr(mop.mo_usource, ":/") != NULL);
+	if (!client) {
 		rc = parse_ldd(mop.mo_source, &mop, options);
 		if (rc)
 			return rc;
@@ -724,8 +726,7 @@ int main(int argc, char *const argv[])
                 printf("mounting device %s at %s, flags=%#x options=%s\n",
 		       mop.mo_source, mop.mo_target, flags, options);
 
-	if (!strstr(mop.mo_usource, ":/") &&
-	    osd_tune_lustre(mop.mo_source, &mop)) {
+	if (!client && osd_tune_lustre(mop.mo_source, &mop)) {
 		if (verbose)
 			fprintf(stderr, "%s: unable to set tunables for %s"
 					" (may cause reduced IO performance)\n",
@@ -740,7 +741,8 @@ int main(int argc, char *const argv[])
 			rc = mount(mop.mo_source, mop.mo_target, "lustre",
 				   flags, (void *)options);
 			if (rc == 0) {
-				label_lustre(&mop);
+				if (!client)
+					label_lustre(&mop);
 			} else {
                                 if (verbose) {
                                         fprintf(stderr, "%s: mount %s at %s "
