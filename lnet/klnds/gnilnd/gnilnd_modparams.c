@@ -101,9 +101,9 @@ CFS_MODULE_PARM(ptag, "i", int, 0444,
 static int pkey = GNI_JOB_CREATE_COOKIE(GNI_PKEY_LND, 0);
 CFS_MODULE_PARM(pkey, "i", int, 0444, "pkey for CDM");
 
-static int max_retransmits = 1024;
+static int max_retransmits = 128;
 CFS_MODULE_PARM(max_retransmits, "i", int, 0444,
-		"max retransmits for FMA");
+		"max retransmits for FMA before entering delay queue");
 
 static int nwildcard = 4;
 CFS_MODULE_PARM(nwildcard, "i", int, 0444,
