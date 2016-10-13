@@ -1,6 +1,6 @@
 10-13-2016 Intel Corporation
        * version 2.5.42.21
-       * See http://wiki.whamcloud.com/display/PUB/Lustre+Support+Matrix
+       * See https://wiki.hpdd.intel.com/display/PUB/Lustre+Support+Matrix
        * Server support for kernels:
 	 2.6.32-431.29.2.el6  (RHEL6.5)
 	 2.6.32-504.30.3.el6  (RHEL6.6)
@@ -17,7 +17,8 @@
 	 3.0.101-0.47.71      (SLES11 SP3)
 	 3.0.101-84           (SLES11 SP4)
 	 3.12.48-52.27        (SLES12)
-       * Recommended e2fsprogs version: 1.42.9.wc1 or newer
+       * Recommended e2fsprogs version: 1.42.13.wc5 or newer
+       * Tested with ZFS / SPL version: 0.6.4.2
        * NFS export disabled when stack size < 8192 (32-bit Lustre clients),
          since the NFSv4 export of Lustre filesystem with 4K stack may cause a
          stack overflow. For more information, please refer to bugzilla 17630.
