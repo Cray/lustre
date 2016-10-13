@@ -119,7 +119,9 @@ Requires: liblustreapi.so()(64bit)
 %define ksource kernel-source
 %endif
 
-Name:       cray-lustre-module 
+%define node_type %(echo %{distribution} | awk '{print $1}' | awk -F: '{print $NF}')
+
+Name:       cray-lustre-%{node_type}-module 
 Version:    %{vendor_version}
 Release:    %{release}
 Source:     cray-lustre.tar.gz
@@ -176,7 +178,7 @@ else
 fi
 
 sh autogen.sh
-%configure --includedir=/usr/include %{config_args} 
+%configure --includedir=/usr/include --with-rpmsubname=%{node_type} %{config_args} 
 %{__make} %_smp_mflags rpms 
 
 %if %{with SLES11} 

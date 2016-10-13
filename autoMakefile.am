@@ -160,7 +160,7 @@ rpms: srpm
 		--define "_tmppath $$rpmbuilddir/TMP" \
 		--define "_topdir $$rpmbuilddir" \
 		@RPMBUILD_BINARY_ARGS@ \
-		--rebuild $(distdir)-*.src.rpm || exit 1; \
+		--rebuild *.src.rpm || exit 1; \
 	cp $$rpmbuilddir/RPMS/*/*.rpm $(top_srcdir) || exit 1; \
 	rm -rf $$rpmbuilddir
 
@@ -175,7 +175,7 @@ srpm: @PACKAGE_TARNAME@.spec dist Makefile
 		--define "dist %{nil}" \
 		--define "configure_args $$(echo @ac_configure_args@ | tr -d \')" \
 		-ts $(distdir).tar.gz || exit 1; \
-	cp $$rpmbuilddir/SRPMS/$(distdir)-*.src.rpm $(top_srcdir) || exit 1; \
+	cp $$rpmbuilddir/SRPMS/*.src.rpm $(top_srcdir) || exit 1; \
 	rm -rf $$rpmbuilddir
 
 # In the debs target, first make sure what's in the changelog reflects
