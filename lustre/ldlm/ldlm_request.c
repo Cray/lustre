@@ -79,6 +79,11 @@ unsigned int ldlm_enqueue_min = OBD_TIMEOUT_DEFAULT;
 CFS_MODULE_PARM(ldlm_enqueue_min, "i", uint, 0644,
                 "lock enqueue timeout minimum");
 
+/* Limit number of locks in lru so ldlm_bl threads do not monopolize cpus */
+uint ldlm_max_lru_size = 20000;
+CFS_MODULE_PARM(ldlm_max_lru_size, "i", uint, 0644,
+	        "maximum number of ldlm locks in LRU per namespace");
+
 /* in client side, whether the cached locks will be canceled before replay */
 unsigned int ldlm_cancel_unused_locks_before_replay = 1;
 
@@ -1511,8 +1516,9 @@ static ldlm_policy_res_t ldlm_cancel_lrur_policy(struct ldlm_namespace *ns,
 	ldlm_pool_set_clv(pl, lv);
 
 	/* Stop when SLV is not yet come from server or lv is smaller than
-	 * it is. */
-	if (slv == 0 || lv < slv)
+	 * it is and lru capacity has not been exceeded. */
+	if ((slv == 0 || lv < slv) && 
+ 	    (ldlm_max_lru_size == 0 || ns->ns_nr_unused < ldlm_max_lru_size))
 		return LDLM_POLICY_KEEP_LOCK;
 
 	return LDLM_POLICY_CANCEL_LOCK;
