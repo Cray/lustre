@@ -167,9 +167,18 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 %files
 %defattr(-,root,root)
 %{_prefix}
-%dir /etc
-%dir /etc/ld.so.conf.d
-/etc/ld.so.conf.d/cray-lustre.conf
+%exclude %dir %{_prefix}
+%exclude %dir /lib/modules
+%exclude %dir /etc
+%exclude %dir /opt
+%exclude %dir /usr
+%exclude %dir %{_bindir}
+%exclude %dir %{_includedir}
+%exclude %dir %{_libdir}
+%exclude %dir %{_libexecdir}
+%exclude %dir %{_mandir}
+%exclude %dir %{_sbindir}
+%exclude %dir %{_datadir}
 
 %files lnet
 %defattr(-,root,root)
