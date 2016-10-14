@@ -1099,6 +1099,13 @@ static int vvp_io_write_start(const struct lu_env *env,
 		 */
 		bool lock_node = !IS_NOSEC(inode);
 
+		/* Tests to verify we take the i_mutex correctly */
+		if (OBD_FAIL_CHECK(OBD_FAIL_LLITE_IMUTEX_SEC) && !lock_node)
+			RETURN(-EINVAL);
+
+		if (OBD_FAIL_CHECK(OBD_FAIL_LLITE_IMUTEX_NOSEC) && lock_node)
+			RETURN(-EINVAL);
+
 		if (lock_node)
 			inode_lock(inode);
 

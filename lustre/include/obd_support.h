@@ -529,6 +529,8 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_MAKE_LOVEA_HOLE		    0x1406
 #define OBD_FAIL_LLITE_LOST_LAYOUT		    0x1407
 #define OBD_FAIL_GETATTR_DELAY			    0x1409
+#define OBD_FAIL_LLITE_IMUTEX_SEC		    0x140c
+#define OBD_FAIL_LLITE_IMUTEX_NOSEC		    0x140d
 
 #define OBD_FAIL_FID_INDIR	0x1501
 #define OBD_FAIL_FID_INLMA	0x1502
