@@ -91,6 +91,7 @@ struct osp_precreate {
 	int				 osp_pre_create_slow;
 	/* cleaning up orphans or recreating missing objects */
 	int				 osp_pre_recovering;
+	int				 osp_pre_delorphan_sent;
 };
 
 struct osp_device {
