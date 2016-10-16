@@ -708,6 +708,7 @@ int main(int argc, char *const argv[])
 	char *options;
 	int i, flags;
 	int rc;
+	bool client;
 	size_t maxopt_len;
 	size_t g_pagesize;
 
@@ -787,7 +788,8 @@ int main(int argc, char *const argv[])
 		goto out_options;
 	}
 
-	if (strstr(mop.mo_usource, ":/") == NULL) {
+	client = (strstr(mop.mo_usource, ":/") != NULL);
+	if (!client) {
 		rc = osd_init();
 		if (rc)
 			goto out_options;
@@ -807,8 +809,7 @@ int main(int argc, char *const argv[])
 		printf("mounting device %s at %s, flags=%#x options=%s\n",
 		       mop.mo_source, mop.mo_target, flags, options);
 
-	if (strstr(mop.mo_usource, ":/") == NULL &&
-	    osd_tune_lustre(mop.mo_source, &mop)) {
+	if (!client && osd_tune_lustre(mop.mo_source, &mop)) {
 		if (verbose)
 			fprintf(stderr, "%s: unable to set tunables for %s"
 					" (may cause reduced IO performance)\n",
@@ -823,7 +824,8 @@ int main(int argc, char *const argv[])
 			rc = mount(mop.mo_source, mop.mo_target, "lustre",
 				   flags, (void *)options);
 			if (rc == 0) {
-				label_lustre(&mop);
+				if (!client)
+					label_lustre(&mop);
 			} else {
                                 if (verbose) {
                                         fprintf(stderr, "%s: mount %s at %s "
@@ -913,7 +915,7 @@ int main(int argc, char *const argv[])
 	}
 
 out_osd:
-	if (strstr(mop.mo_usource, ":/") == NULL)
+	if (!client)
 		osd_fini();
 out_options:
 	free(options);
