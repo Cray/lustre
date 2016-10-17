@@ -1887,6 +1887,23 @@ file_function_iter, [
 ]) # LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
 
 #
+# LC_HAVE_LM_GRANT_2ARGS
+#
+# 3.17 removed unused argument from lm_grant
+#
+AC_DEFUN([LC_HAVE_LM_GRANT_2ARGS], [
+LB_CHECK_COMPILE([if 'lock_manager_operations.lm_grant' takes two args],
+lm_grant, [
+	#include <linux/fs.h>
+],[
+	((struct lock_manager_operations *)NULL)->lm_grant(NULL, 0);
+],[
+	AC_DEFINE(HAVE_LM_GRANT_2ARGS, 1,
+		[lock_manager_operations.lm_grant takes two args])
+])
+]) # LC_HAVE_LM_GRANT_2ARGS
+
+#
 # LC_PERCPU_COUNTER_INIT
 #
 # 3.18	For kernels 3.18 and after percpu_counter_init starts
@@ -2366,6 +2383,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_IOV_ITER_INIT_DIRECTION
 	LC_HAVE_IOV_ITER_TRUNCATE
 	LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
+
+	# 3.17
+	LC_HAVE_LM_GRANT_2ARGS
 
 	# 3.18
 	LC_PERCPU_COUNTER_INIT
