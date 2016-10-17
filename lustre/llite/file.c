@@ -3264,7 +3264,11 @@ static void ll_file_flock_async_cb(struct ldlm_flock_info *args, int err)
 	struct file_lock *flc = &args->fa_flc;
 	struct file *file = args->fa_file;
 	struct inode *inode = file->f_path.dentry->d_inode;
+#ifdef HAVE_LM_GRANT_2ARGS
+	int (*notify)(struct file_lock *, int);
+#else
 	int (*notify)(struct file_lock *, struct file_lock *, int);
+#endif
 	int rc = 0;
 	int rc2;
 	ENTRY;
@@ -3281,7 +3285,11 @@ static void ll_file_flock_async_cb(struct ldlm_flock_info *args, int err)
 		if (err == 0)
 			ll_file_flock_lock(file, flc);
 		notify = args->fa_notify;
+#ifdef HAVE_LM_GRANT_2ARGS
+		rc2 = notify(file_lock, err);
+#else
 		rc2 = notify(file_lock, NULL, err);
+#endif
 		if (rc2)
 			CDEBUG(D_ERROR, "notify failed file_lock=%p err=%d\n",
 			       file_lock, err);

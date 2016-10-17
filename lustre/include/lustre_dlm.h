@@ -1108,7 +1108,11 @@ struct ldlm_flock_info {
 	struct file_lock fa_flc; /* lock copy */
 	int fa_flags;
 	int fa_mode;
+#ifdef HAVE_LM_GRANT_2ARGS
+	int (*fa_notify)(struct file_lock *, int);
+#else
 	int (*fa_notify)(struct file_lock *, struct file_lock *, int);
+#endif
 	int fa_err;
 };
 
