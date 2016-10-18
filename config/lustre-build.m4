@@ -1,3 +1,17 @@
+#
+# LB_SET_RPMSUBNAME
+#
+# Allow the rpm name to be appended to
+#
+AC_DEFUN([LB_SET_RPMSUBNAME], [
+AC_ARG_WITH(rpmsubname,
+AC_HELP_STRING([--with-rpmsubname],
+        [Use the specified rpm subname (default is '')]),
+        [rpmsubname=-${withval}],
+        [rpmsubname=''])
+AC_SUBST([rpmsubname])
+]) # LB_SET_RPMSUBNAME
+
 # LB_SET_PKGCONFIG_DIR
 #
 # Allow the pkg-config directory to be set
@@ -633,6 +647,7 @@ AC_DEFUN([LB_CONFIGURE], [
 AC_MSG_NOTICE([Lustre base checks
 ==============================================================================])
 LB_SET_PKGCONFIG_DIR
+LB_SET_RPMSUBNAME
 LB_CANONICAL_SYSTEM
 
 LB_CONFIG_DIST
