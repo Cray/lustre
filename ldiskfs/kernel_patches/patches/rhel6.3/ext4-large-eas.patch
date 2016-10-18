@@ -772,7 +772,7 @@ Index: linux-stage/fs/ext4/xattr.c
 +						*lea_ino_array);
  		goto cleanup;
 +	}
- 	bh = sb_bread_dss(inode->i_sb, EXT4_I(inode)->i_file_acl, DSS_XATTR);
+	bh = sb_bread(inode->i_sb, EXT4_I(inode)->i_file_acl);
  	if (!bh) {
  		ext4_error(inode->i_sb, "inode %lu: block %llu read error",
 @@ -1383,11 +1807,71 @@ ext4_xattr_delete_inode(handle_t *handle
