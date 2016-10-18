@@ -1364,17 +1364,9 @@ search_again:
 static inline void
 kgnilnd_tx_log_retrans(kgn_conn_t *conn, kgn_tx_t *tx)
 {
-	int             max_retrans = *kgnilnd_tunables.kgn_max_retransmits;
 	int             log_retrans;
-	int             log_retrans_level;
 
-	/* I need kgni credits to send this.  Replace tx at the head of the
-	 * fmaq and I'll get rescheduled when credits appear */
-	tx->tx_state = 0;
-	tx->tx_retrans++;
-	conn->gnc_tx_retrans++;
 	log_retrans = ((tx->tx_retrans < 25) || ((tx->tx_retrans % 25) == 0));
-	log_retrans_level = tx->tx_retrans < (max_retrans * 4) ? D_NET : D_NETERROR;
 
 	/* we don't care about TX timeout - it could be that the network is slower
 	 * or throttled. We'll keep retranmitting - so if the network is so slow
@@ -1386,8 +1378,9 @@ kgnilnd_tx_log_retrans(kgn_conn_t *conn, kgn_tx_t *tx)
 	if (log_retrans) {
 		unsigned long now = jiffies;
 		/* XXX Nic: Mystical TX debug here... */
-		GNIDBG_SMSG_CREDS(log_retrans_level, conn);
-		GNIDBG_TOMSG(log_retrans_level, &tx->tx_msg,
+		/* We expect retransmissions so only log when D_NET is enabled */
+		GNIDBG_SMSG_CREDS(D_NET, conn);
+		GNIDBG_TOMSG(D_NET, &tx->tx_msg,
 			"NOT_DONE on conn 0x%p->%s id %x retrans %d wait %dus"
 			" last_msg %uus/%uus last_cq %uus/%uus",
 			conn, libcfs_nid2str(conn->gnc_peer->gnp_nid),
@@ -1532,6 +1525,14 @@ kgnilnd_sendmsg_nolock(kgn_tx_t *tx, void *immediate, unsigned int immediatenob,
 		if (state_lock == NULL) {
 			return -EAGAIN;
 		}
+
+		/* I need kgni credits to send this.  Replace tx at the head of the
+		 * fmaq and I'll get rescheduled when credits appear. Reset the tx_state
+		 * and bump retrans counts since we are requeueing the tx.
+		 */
+		tx->tx_state = 0;
+		tx->tx_retrans++;
+		conn->gnc_tx_retrans++;
 
 		kgnilnd_tx_log_retrans(conn, tx);
 		/* add to head of list for the state and retries */
