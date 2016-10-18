@@ -30,6 +30,7 @@ BuildRequires: kernel-syms
 BuildRequires: module-init-tools
 BuildRequires: pkgconfig
 BuildRequires: libtool
+BuildConflicts: post-build-checks
 Summary: The lnet development package
 Vendor: Cray Inc.
 Version: %{branch}
