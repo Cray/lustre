@@ -88,7 +88,8 @@ BuildConflicts: post-build-checks
 %else
 %define intranamespace_name %{vendor_name}-%{flavor}
 %endif
-%define source_name %{vendor_namespace}-%{intranamespace_name}-%{_version}
+%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
+%define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 
 Requires: liblustreapi.so()(64bit) 
 
@@ -124,7 +125,7 @@ Requires: liblustreapi.so()(64bit)
 Name:       cray-lustre-%{node_type}-module 
 Version:    %{_version}
 Release:    %{release}
-Source:     %{source_name}.tar.gz
+Source:     %{source_name}.tar.bz2
 Summary:    Lustre module file and pc files
 Group:      System/Filesystems
 License:    Cray Software License Agreement
@@ -136,7 +137,7 @@ BuildRoot:  %{_tmppath}/%{name}-%{version}-root
 A package that contains pc files and a lustre module file. 
  
 %prep
-%setup -n cray-lustre
+%setup -n %{source_name}
  
 %build
 echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
