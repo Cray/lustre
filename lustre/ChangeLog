@@ -1,5 +1,5 @@
-10-13-2016 Intel Corporation
-       * version 2.5.42.21
+10-26-2016 Intel Corporation
+       * version 2.5.42.22
        * See https://wiki.hpdd.intel.com/display/PUB/Lustre+Support+Matrix
        * Server support for kernels:
 	 2.6.32-431.29.2.el6  (RHEL6.5)
