@@ -778,6 +778,7 @@ __must_hold(&conn->ibc_lock)
 	LASSERT(tx->tx_queued);
 	/* We rely on this for QP sizing */
 	LASSERT(tx->tx_nwrq > 0 && tx->tx_nsge >= 0);
+	LASSERT(tx->tx_nwrq <= 1 + conn->ibc_max_frags);
 
 	LASSERT(credit == 0 || credit == 1);
 	LASSERT(conn->ibc_outstanding_credits >= 0);
@@ -1082,14 +1083,6 @@ kiblnd_init_rdma(kib_conn_t *conn, kib_tx_t *tx, int type,
 	LASSERT(tx->tx_nwrq == 0 && tx->tx_nsge == 0);
 	LASSERT(type == IBLND_MSG_GET_DONE || type == IBLND_MSG_PUT_DONE);
 
-	if (kiblnd_rd_size(srcrd) > conn->ibc_max_frags << PAGE_SHIFT) {
-		CERROR("RDMA is too large for peer %s (%d), src size: %d dst size: %d\n",
-		       libcfs_nid2str(conn->ibc_peer->ibp_nid),
-		       conn->ibc_max_frags << PAGE_SHIFT,
-		       kiblnd_rd_size(srcrd), kiblnd_rd_size(dstrd));
-		GOTO(too_big, rc = -EMSGSIZE);
-	}
-
 	for (srcidx = dstidx = wrq_sge = sge_nob = 0;
 	     resid > 0; resid -= sge_nob) {
 		int	prev = dstidx;
@@ -1106,11 +1099,11 @@ kiblnd_init_rdma(kib_conn_t *conn, kib_tx_t *tx, int type,
 			break;
 		}
 
-		if (tx->tx_nwrq >= IBLND_MAX_RDMA_FRAGS) {
+		if (tx->tx_nwrq >= conn->ibc_max_frags) {
 			CERROR("RDMA has too many fragments for peer %s (%d), "
 			       "src idx/frags: %d/%d dst idx/frags: %d/%d\n",
 			       libcfs_nid2str(conn->ibc_peer->ibp_nid),
-			       IBLND_MAX_RDMA_FRAGS,
+			       conn->ibc_max_frags,
 			       srcidx, srcrd->rd_nfrags,
 			       dstidx, dstrd->rd_nfrags);
 			rc = -EMSGSIZE;
@@ -1159,7 +1152,6 @@ kiblnd_init_rdma(kib_conn_t *conn, kib_tx_t *tx, int type,
 		tx->tx_nsge++;
 	}
 
-too_big:
 	if (rc < 0)	/* no RDMA if completing with failure */
 		tx->tx_nwrq = tx->tx_nsge = 0;
 
@@ -2255,7 +2247,6 @@ kiblnd_passive_connect(struct rdma_cm_id *cmid, void *priv, int priv_nob)
         kib_rej_t              rej;
 	int                    version = IBLND_MSG_VERSION;
 	unsigned long          flags;
-	int max_frags;
 	int                    rc;
 	struct sockaddr_in    *peer_addr;
 	LASSERT (!in_interrupt());
@@ -2359,23 +2350,26 @@ kiblnd_passive_connect(struct rdma_cm_id *cmid, void *priv, int priv_nob)
 		goto failed;
 	}
 
-	max_frags = reqmsg->ibm_u.connparams.ibcp_max_frags >> IBLND_FRAG_SHIFT;
-	if (max_frags > kiblnd_rdma_frags(version, ni)) {
+	if (reqmsg->ibm_u.connparams.ibcp_max_frags >
+	    kiblnd_rdma_frags(version, ni)) {
 		CWARN("Can't accept conn from %s (version %x): "
-		      "max message size %d is too large (%d wanted)\n",
-		      libcfs_nid2str(nid), version, max_frags,
+		      "max_frags %d too large (%d wanted)\n",
+		      libcfs_nid2str(nid), version,
+		      reqmsg->ibm_u.connparams.ibcp_max_frags,
 		      kiblnd_rdma_frags(version, ni));
 
 		if (version >= IBLND_MSG_VERSION)
 			rej.ibr_why = IBLND_REJECT_RDMA_FRAGS;
 
 		goto failed;
-	} else if ((max_frags < kiblnd_rdma_frags(version, ni)) &&
+	} else if (reqmsg->ibm_u.connparams.ibcp_max_frags <
+		   kiblnd_rdma_frags(version, ni) &&
 		   net->ibn_fmr_ps == NULL) {
 		CWARN("Can't accept conn from %s (version %x): "
-		      "max message size %d incompatible without FMR pool "
+		      "max_frags %d incompatible without FMR pool "
 		      "(%d wanted)\n",
-		      libcfs_nid2str(nid), version, max_frags,
+		      libcfs_nid2str(nid), version,
+		      reqmsg->ibm_u.connparams.ibcp_max_frags,
 		      kiblnd_rdma_frags(version, ni));
 
 		if (version == IBLND_MSG_VERSION)
@@ -2401,7 +2395,7 @@ kiblnd_passive_connect(struct rdma_cm_id *cmid, void *priv, int priv_nob)
 	}
 
 	/* We have validated the peer's parameters so use those */
-	peer->ibp_max_frags = max_frags;
+	peer->ibp_max_frags = reqmsg->ibm_u.connparams.ibcp_max_frags;
 	peer->ibp_queue_depth = reqmsg->ibm_u.connparams.ibcp_queue_depth;
 
 	write_lock_irqsave(g_lock, flags);
@@ -2516,7 +2510,7 @@ kiblnd_passive_connect(struct rdma_cm_id *cmid, void *priv, int priv_nob)
         kiblnd_init_msg(ackmsg, IBLND_MSG_CONNACK,
                         sizeof(ackmsg->ibm_u.connparams));
 	ackmsg->ibm_u.connparams.ibcp_queue_depth  = conn->ibc_queue_depth;
-	ackmsg->ibm_u.connparams.ibcp_max_frags = conn->ibc_max_frags << IBLND_FRAG_SHIFT;
+	ackmsg->ibm_u.connparams.ibcp_max_frags    = conn->ibc_max_frags;
 	ackmsg->ibm_u.connparams.ibcp_max_msg_size = IBLND_MSG_SIZE;
 
         kiblnd_pack_msg(ni, ackmsg, version, 0, nid, reqmsg->ibm_srcstamp);
@@ -2579,7 +2573,7 @@ kiblnd_check_reconnect(kib_conn_t *conn, int version,
 
 	if (cp) {
 		msg_size	= cp->ibcp_max_msg_size;
-		frag_num	= cp->ibcp_max_frags << IBLND_FRAG_SHIFT;
+		frag_num	= cp->ibcp_max_frags;
 		queue_dep	= cp->ibcp_queue_depth;
 	}
 
@@ -2840,11 +2834,11 @@ kiblnd_check_connreply (kib_conn_t *conn, void *priv, int priv_nob)
 		goto failed;
 	}
 
-	if ((msg->ibm_u.connparams.ibcp_max_frags >> IBLND_FRAG_SHIFT) >
+	if (msg->ibm_u.connparams.ibcp_max_frags >
 	    conn->ibc_max_frags) {
 		CERROR("%s has incompatible max_frags %d (<=%d wanted)\n",
 		       libcfs_nid2str(peer->ibp_nid),
-		       msg->ibm_u.connparams.ibcp_max_frags >> IBLND_FRAG_SHIFT,
+		       msg->ibm_u.connparams.ibcp_max_frags,
 		       conn->ibc_max_frags);
 		rc = -EPROTO;
 		goto failed;
@@ -2879,7 +2873,7 @@ kiblnd_check_connreply (kib_conn_t *conn, void *priv, int priv_nob)
 	conn->ibc_credits          = msg->ibm_u.connparams.ibcp_queue_depth;
 	conn->ibc_reserved_credits = msg->ibm_u.connparams.ibcp_queue_depth;
 	conn->ibc_queue_depth      = msg->ibm_u.connparams.ibcp_queue_depth;
-	conn->ibc_max_frags = msg->ibm_u.connparams.ibcp_max_frags >> IBLND_FRAG_SHIFT;
+	conn->ibc_max_frags        = msg->ibm_u.connparams.ibcp_max_frags;
 	LASSERT(conn->ibc_credits + conn->ibc_reserved_credits +
 		IBLND_OOB_MSGS(ver) <= IBLND_RX_MSGS(conn));
 
@@ -2934,7 +2928,7 @@ kiblnd_active_connect (struct rdma_cm_id *cmid)
 	memset(msg, 0, sizeof(*msg));
 	kiblnd_init_msg(msg, IBLND_MSG_CONNREQ, sizeof(msg->ibm_u.connparams));
 	msg->ibm_u.connparams.ibcp_queue_depth  = conn->ibc_queue_depth;
-	msg->ibm_u.connparams.ibcp_max_frags = conn->ibc_max_frags << IBLND_FRAG_SHIFT;
+	msg->ibm_u.connparams.ibcp_max_frags    = conn->ibc_max_frags;
 	msg->ibm_u.connparams.ibcp_max_msg_size = IBLND_MSG_SIZE;
 
         kiblnd_pack_msg(peer->ibp_ni, msg, version,
