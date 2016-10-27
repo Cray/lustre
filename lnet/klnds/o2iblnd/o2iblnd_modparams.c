@@ -150,6 +150,12 @@ static int use_privileged_port = 1;
 CFS_MODULE_PARM(use_privileged_port, "i", int, 0644,
                 "use privileged port when initiating connection");
 
+#define IBLND_WRQ_SGE 1
+
+static int wrq_sge = IBLND_WRQ_SGE;
+CFS_MODULE_PARM(wrq_sge, "i", int, 0444,
+		"# scatter/gather element per work request");
+
 kib_tunables_t kiblnd_tunables = {
         .kib_dev_failover           = &dev_failover,
         .kib_service                = &service,
@@ -163,7 +169,8 @@ kib_tunables_t kiblnd_tunables = {
         .kib_ib_mtu                 = &ib_mtu,
         .kib_require_priv_port      = &require_privileged_port,
 	.kib_use_priv_port	    = &use_privileged_port,
-	.kib_nscheds		    = &nscheds
+	.kib_nscheds		    = &nscheds,
+	.kib_wrq_sge		    = &wrq_sge
 };
 
 static struct lnet_ioctl_config_o2iblnd_tunables default_tunables;
@@ -333,6 +340,14 @@ static struct ctl_table kiblnd_ctl_table[] = {
 		.mode		= 0444,
 		.proc_handler	= &proc_dointvec
 	},
+	{
+		INIT_CTL_NAME
+		.procname	= "wrq_sge",
+		.data		= &wrq_sge,
+		.maxlen		= sizeof(int),
+		.mode		= 0444,
+		.proc_handler	= &proc_dointvec
+	},
 	{ 0 }
 };
 
@@ -493,6 +508,12 @@ kiblnd_tunables_setup(lnet_ni_t *ni)
 		CWARN("Concurrent sends %d is lower than message "
 		      "queue size: %d, performance may drop slightly.\n",
 		      tunables->lnd_concurrent_sends, ni->ni_peertxcredits);
+	}
+
+	if (*kiblnd_tunables.kib_wrq_sge < 1) {
+		CWARN("invalid wrq_sge value %d, use default %d\n",
+		      *kiblnd_tunables.kib_wrq_sge, IBLND_WRQ_SGE);
+		*kiblnd_tunables.kib_wrq_sge = IBLND_WRQ_SGE;
 	}
 
 	if (!tunables->lnd_fmr_pool_size)
