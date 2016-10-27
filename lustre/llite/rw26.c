@@ -87,8 +87,6 @@ static void ll_invalidatepage(struct page *vmpage,
         struct lu_env    *env;
         struct cl_page   *page;
         struct cl_object *obj;
-	__u16 refcheck;
-	void             *cookie;
 
         LASSERT(PageLocked(vmpage));
         LASSERT(!PageWriteback(vmpage));
@@ -104,7 +102,6 @@ static void ll_invalidatepage(struct page *vmpage,
 	if (offset == 0) {
 #endif
 		/* See the comment in ll_releasepage */
-		cookie = cl_env_reenter();
 		env = cl_env_percpu_get();
 		LASSERT(!IS_ERR(env));
 
@@ -120,7 +117,6 @@ static void ll_invalidatepage(struct page *vmpage,
 			LASSERT(vmpage->private == 0);
 
 		cl_env_percpu_put(env);
-		cl_env_reexit(cookie);
 	}
 }
 
