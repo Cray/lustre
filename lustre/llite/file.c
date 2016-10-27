@@ -2373,39 +2373,6 @@ putgl:
 		ll_put_grouplock(llss->inode1, file1, gid);
 	}
 
-	/* rc can be set from obd_iocontrol() or from a GOTO(putgl, ...) */
-	if (rc != 0)
-		GOTO(free, rc);
-
-	/* clear useless flags */
-	if (!(lsl->sl_flags & SWAP_LAYOUTS_KEEP_MTIME)) {
-		llss->ia1.ia_valid &= ~ATTR_MTIME;
-		llss->ia2.ia_valid &= ~ATTR_MTIME;
-	}
-
-	if (!(lsl->sl_flags & SWAP_LAYOUTS_KEEP_ATIME)) {
-		llss->ia1.ia_valid &= ~ATTR_ATIME;
-		llss->ia2.ia_valid &= ~ATTR_ATIME;
-	}
-
-	/* update time if requested */
-	rc = 0;
-	if (llss->ia2.ia_valid != 0) {
-		mutex_lock(&llss->inode1->i_mutex);
-		rc = ll_setattr(file1->f_path.dentry, &llss->ia2);
-		mutex_unlock(&llss->inode1->i_mutex);
-	}
-
-	if (llss->ia1.ia_valid != 0) {
-		int rc1;
-
-		mutex_lock(&llss->inode2->i_mutex);
-		rc1 = ll_setattr(file2->f_path.dentry, &llss->ia1);
-		mutex_unlock(&llss->inode2->i_mutex);
-		if (rc == 0)
-			rc = rc1;
-	}
-
 free:
 	if (llss != NULL)
 		OBD_FREE_PTR(llss);
