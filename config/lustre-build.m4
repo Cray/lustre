@@ -51,6 +51,17 @@ AC_SUBST(lb_target_os)
 ]) # LB_CANONICAL_SYSTEM
 
 #
+# LB_DOWNSTREAM_VERSION
+#
+AC_DEFUN([LB_DOWNSTREAM_VERSION],
+[AC_ARG_WITH([downstream-version],
+	AC_HELP_STRING([--with-downstream-version=string],
+		       [set additional string at RPM Release: string (default is nothing)]),
+	[DOWNSTREAM_VERSION=$with_downstream_version],
+	[])
+])
+
+#
 # LB_DOWNSTREAM_RELEASE
 #
 AC_DEFUN([LB_DOWNSTREAM_RELEASE],
@@ -347,7 +358,7 @@ ENABLE_INIT_SCRIPTS=0
 AS_IF([test x$enable_utils = xyes], [
 	AC_CACHE_CHECK([whether to install init scripts], [lb_cv_enable_init_scripts], [
 	# our scripts only work on red hat systems
-	AS_IF([test -f /etc/centos-release],
+	AS_IF([test -f /etc/redhat-release],
 		[lb_cv_enable_init_scripts="yes"],
 		[lb_cv_enable_init_scripts="no"])
 	])
@@ -560,6 +571,9 @@ CONFIGURE_ARGS=
 eval set -- $ac_configure_args
 for arg; do
 	case $arg in
+		--*dir=* ) ;;
+		-C | --cache-file=* ) ;;
+		--prefix=* | --*-prefix=* ) ;;
 		--enable-dist ) ;;
 		--with-release=* ) ;;
 		--with-kmp-moddir=* ) ;;
@@ -570,6 +584,7 @@ for arg; do
 		--enable-tests | --disable-tests ) ;;
 		--enable-utils | --disable-utils ) ;;
 		--enable-iokit | --disable-iokit ) ;;
+		--enable-dlc | --disable-dlc ) ;;
 		* ) CONFIGURE_ARGS="$CONFIGURE_ARGS '$arg'" ;;
 	esac
 done
@@ -581,9 +596,6 @@ if test -n "$LINUX" ; then
 	if test -n "$LINUX_OBJ" -a "$LINUX_OBJ" != x"$LINUX" ; then
 		RPMBINARGS="$RPMBINARGS --define \"kobjdir $LINUX_OBJ\""
 	fi
-fi
-if test -n "$KMP_MODDIR" ; then
-	RPMBINARGS="$RPMBINARGS --define \"kmoddir $KMP_MODDIR\""
 fi
 if test -n "$CROSS_PATH" ; then
 	if test x$enable_server = xyes ; then
@@ -626,11 +638,9 @@ if test x$enable_zfs = xyes ; then
 fi
 if test x$enable_iokit != xyes ; then
 	RPMBINARGS="$RPMBINARGS --without lustre_iokit"
-	RPMSRCARGS="$RPMSRCARGS --without lustre_iokit"
 fi
-if test x$BUILD_DLC != xyes ; then
-	RPMBINARGS="$RPMBINARGS --without lnet_dlc"
-	RPMSRCARGS="$RPMSRCARGS --without lnet_dlc"
+if test x$USE_DLC = xyes ; then
+	RPMBINARGS="$RPMBINARGS --with lnet_dlc"
 fi
 
 RPMBUILD_BINARY_ARGS=$RPMBINARGS
@@ -652,6 +662,7 @@ LB_CANONICAL_SYSTEM
 
 LB_CONFIG_DIST
 
+LB_DOWNSTREAM_VERSION
 LB_DOWNSTREAM_RELEASE
 LB_USES_DPKG
 LB_BUILDID

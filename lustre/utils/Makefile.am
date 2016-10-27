@@ -3,6 +3,8 @@
 AM_CFLAGS=$(LLCFLAGS)
 AM_CPPFLAGS=$(LLCPPFLAGS) -DLUSTRE_UTILS=1 -D_FILE_OFFSET_BITS=64
 AM_LDFLAGS := -L$(top_builddir)/lnet/utils
+CONFDIRdir=$(sysconfdir)/lustre
+CONFDIR_DATA =
 
 MNTMODLDFLAGS := -rdynamic -ldl
 MNTMODCFLAGS := -DPLUGIN_DIR=\"${pkglibdir}\"
@@ -36,9 +38,16 @@ if SERVER
 sbin_PROGRAMS += mkfs.lustre tunefs.lustre llverdev lr_reader \
 	ll_recover_lost_found_objs ll_decode_filter_fid llog_reader
 endif
+if GETIDENTITY_NSS_BUILD
+sbin_PROGRAMS += l_getidentity_nss
+endif
 if LIBPTHREAD
 sbin_PROGRAMS += lhsmtool_posix
 endif
+if LDAP_BUILD
+sbin_PROGRAMS += l_adsidentity
+endif
+endif # UTILS
 
 pkglib_LTLIBRARIES =
 lib_LIBRARIES = liblustreapi.a
@@ -46,9 +55,8 @@ if LDISKFS_ENABLED
 lib_LIBRARIES += libiam.a
 endif
 noinst_LIBRARIES = liblustreapitmp.a
-endif # UTILS
 
-lctl_SOURCES = lustre_lfsck.c obd.c lustre_cfg.c lctl.c obdctl.h
+lctl_SOURCES = lustre_lfsck.c obd.c lustre_cfg.c lctl.c obdctl.h lsnapshot.c
 lctl_LDADD :=  liblustreapi.a $(LIBPTLCTL) $(PTHREAD_LIBS) $(LIBREADLINE)
 lctl_DEPENDENCIES := $(LIBPTLCTL) liblustreapi.a
 
@@ -117,12 +125,10 @@ endif
 req_layout_SOURCES = req-layout.c
 
 llog_reader_SOURCES = llog_reader.c
-llog_reader_LDADD := $(LIBPTLCTL)
-llog_reader_DEPENDENCIES := $(LIBPTLCTL)
+llog_reader_LDADD := $(LIBPTLCTL) liblustreapi.a
+llog_reader_DEPENDENCIES := $(LIBPTLCTL) liblustreapi.a
 
 lr_reader_SOURCES = lr_reader.c
-
-if UTILS
 
 if ZFS_ENABLED
 pkglib_LTLIBRARIES += mount_osd_zfs.la
@@ -161,8 +167,24 @@ tunefs_lustre_DEPENDENCIES := $(mkfs_lustre_DEPENDENCIES)
 tunefs_lustre_LDFLAGS = ${MNTMODLDFLAGS}
 
 l_getidentity_SOURCES = l_getidentity.c
-l_getidentity_LDADD := $(LIBPTLCTL)
+l_getidentity_LDADD := $(LIBPTLCTL) 
 l_getidentity_DEPENDENCIES := $(LIBPTLCTL)
+CONFDIR_DATA += configs/perm.conf
+
+if LDAP_BUILD
+l_adsidentity_SOURCES = l_adsidentity.c
+l_adsidentity_LDADD := $(LIBPTLCTL) $(LDAP)
+l_adsidentity_DEPENDENCIES := $(LIBPTLCTL)
+
+CONFDIR_DATA += configs/ads.conf
+endif
+
+if GETIDENTITY_NSS_BUILD
+l_getidentity_nss_SOURCES = l_getidentity_nss.c
+l_getidentity_nss_LDADD := $(LIBPTLCTL)
+l_getidentity_nss_LDFLAGS = -ldl
+l_getidentity_nss_DEPENDENCIES := $(LIBPTLCTL)
+endif
 
 ltrack_stats_SOURCES = ltrack_stats.c
 
@@ -175,9 +197,7 @@ wirecheck_CPPFLAGS = -DCC="\"$(CC)\""
 
 wiretest_SOURCES = wiretest.c
 
-endif # UTILS
-
-EXTRA_DIST = llstat llobdstat plot-llstat
+EXTRA_DIST = llstat llobdstat plot-llstat $(CONFDIR_DATA)
 
 # NOTE: this should only be run on i386.
 newwiretest: wirehdr.c wirecheck

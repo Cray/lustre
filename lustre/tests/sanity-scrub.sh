@@ -19,6 +19,22 @@ init_logging
 
 require_dsh_mds || exit 0
 
+load_modules
+
+if ! check_versions; then
+	skip "It is NOT necessary to test scrub under interoperation mode"
+	exit 0
+fi
+
+[ $(facet_fstype $SINGLEMDS) != "ldiskfs" ] &&
+	skip "test OI scrub only for ldiskfs" && exit 0
+
+[ $(facet_fstype ost1) != "ldiskfs" ] &&
+	skip "test OI scrub only for ldiskfs" && exit 0
+
+[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.2.90) ]] &&
+	skip "Need MDS version at least 2.2.90" && exit 0
+
 SAVED_MDSSIZE=${MDSSIZE}
 SAVED_OSTSIZE=${OSTSIZE}
 SAVED_OSTCOUNT=${OSTCOUNT}
@@ -35,16 +51,6 @@ MOUNT_2=""
 # build up a clean test environment.
 formatall
 setupall
-
-[ $(facet_fstype $SINGLEMDS) != "ldiskfs" ] &&
-	skip "test OI scrub only for ldiskfs" && check_and_cleanup_lustre &&
-	exit 0
-[ $(facet_fstype ost1) != "ldiskfs" ] &&
-	skip "test OI scrub only for ldiskfs" && check_and_cleanup_lustre &&
-	exit 0
-[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.2.90) ]] &&
-	skip "Need MDS version at least 2.2.90" && check_and_cleanup_lustre &&
-	exit 0
 
 [[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.3.90) ]] &&
 	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 1a"
@@ -401,7 +407,7 @@ test_3() {
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
 	scrub_check_status 3 init
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 }
 #run_test 3 "Do not trigger OI scrub when MDT mounts if 'noscrub' specified"
 
@@ -410,7 +416,7 @@ test_4a() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 	full_scrub_ratio 0
@@ -444,7 +450,7 @@ test_4b() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 	full_scrub_ratio 10
@@ -510,7 +516,7 @@ test_4c() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 	full_scrub_ratio 2
@@ -580,7 +586,7 @@ test_5() {
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
 	scrub_check_status 3 init
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 
@@ -647,7 +653,7 @@ test_6() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 
@@ -725,7 +731,7 @@ test_7() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 
@@ -743,7 +749,7 @@ test_7() {
 	done
 
 	scrub_check_status 8 scanning
-	scrub_check_flags 9 inconsistent,auto
+	scrub_check_flags 9 recreated,inconsistent,auto
 
 	do_nodes $(comma_list $(mdts_nodes)) \
 		$LCTL set_param fail_loc=0 fail_val=0
@@ -758,7 +764,7 @@ test_8() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 
 	#define OBD_FAIL_OSD_SCRUB_DELAY	 0x190
 	do_nodes $(comma_list $(mdts_nodes)) \
@@ -790,7 +796,7 @@ test_9() {
 
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 
 	local BASE_SPEED1=100
 	local RUN_TIME1=10
@@ -864,7 +870,7 @@ test_10a() {
 	scrub_backup_restore 1
 	echo "starting mds$n with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 	mount_client $MOUNT || error "(5) Fail to start client!"
 	scrub_enable_auto
 
@@ -899,7 +905,7 @@ test_10b() {
 	scrub_backup_restore 1
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 
 	#define OBD_FAIL_OSD_SCRUB_DELAY	 0x190
 	do_nodes $(comma_list $(mdts_nodes)) \
@@ -947,14 +953,13 @@ test_11() {
 
 	# OI scrub should skip the new created objects for the first accessing
 	# notice we're creating a new llog for every OST on every startup
-	# new features can make this even less stable, so we only check
-	# that the number of skipped files is less than 2x the number of files
-	local MAXIMUM=$((CREATED * 2))
+	# new features can make this even less stable, so we only check that
+	# the number of skipped files is more than the number or known created
 	local MINIMUM=$((CREATED + 1)) # files + directory
 	for n in $(seq $MDSCOUNT); do
 		local SKIPPED=$(scrub_status $n | awk '/^noscrub/ { print $2 }')
-		[ $SKIPPED -ge $MAXIMUM -o $SKIPPED -lt $MINIMUM ] &&
-			error "(5) Expect [ $MINIMUM , $MAXIMUM ) objects" \
+		[ $SKIPPED -lt $MINIMUM ] &&
+			error "(5) Expect at least $MINIMUM objects" \
 				"skipped on mds$n, but got $SKIPPED"
 
 		checked0[$n]=$(scrub_status $n | awk '/^checked/ { print $2 }')
@@ -1072,7 +1077,7 @@ test_14() {
 	mount_client $MOUNT || error "(5) Fail to start client!"
 
 	local LF_REPAIRED=$($SHOW_SCRUB_ON_OST |
-			    awk '/^lf_reparied/ { print $2 }')
+			    awk '/^lf_repa[ri]*ed/ { print $2 }')
 	[ $LF_REPAIRED -gt 0 ] ||
 		error "(6) Some entry under /lost+found should be repaired"
 
@@ -1089,7 +1094,7 @@ test_15() {
 	echo "starting MDTs with OI scrub disabled"
 	scrub_start_mds 2 "$MOUNT_OPTS_NOSCRUB"
 	scrub_check_status 3 init
-	scrub_check_flags 4 inconsistent
+	scrub_check_flags 4 recreated,inconsistent
 
 	# run under dryrun mode
 	if [ $server_version -lt $(version_code 2.5.58) ]; then
@@ -1098,7 +1103,7 @@ test_15() {
 		scrub_start 5 --dryrun
 	fi
 	scrub_check_status 6 completed
-	scrub_check_flags 7 inconsistent
+	scrub_check_flags 7 recreated,inconsistent
 	scrub_check_params 8 dryrun
 	scrub_check_repaired 9 20
 
@@ -1109,7 +1114,7 @@ test_15() {
 		scrub_start 10 --dryrun
 	fi
 	scrub_check_status 11 completed
-	scrub_check_flags 12 inconsistent
+	scrub_check_flags 12 recreated,inconsistent
 	scrub_check_params 13 dryrun
 	scrub_check_repaired 14 20
 

@@ -512,11 +512,24 @@ static void ptlrpc_at_set_reply(struct ptlrpc_request *req, int flags)
          * (to be ignored by client) if it's a error reply during recovery.
          * (bz15815) */
         if (req->rq_type == PTL_RPC_MSG_ERR &&
-            (req->rq_export == NULL || req->rq_export->exp_obd->obd_recovering))
+	    (req->rq_export == NULL ||
+	     req->rq_export->exp_obd->obd_recovering)) {
                 lustre_msg_set_timeout(req->rq_repmsg, 0);
-        else
-                lustre_msg_set_timeout(req->rq_repmsg,
-				       at_get(&svcpt->scp_at_estimate));
+	} else {
+		__u32 timeout;
+
+		if (req->rq_export && req->rq_reqmsg != NULL &&
+		    lustre_msg_get_flags(req->rq_reqmsg) &
+		    (MSG_REPLAY | MSG_REQ_REPLAY_DONE | MSG_LOCK_REPLAY_DONE))
+			timeout = cfs_time_current_sec() -
+				req->rq_arrival_time.tv_sec +
+				min(at_extra,
+				    req->rq_export->exp_obd->
+				    obd_recovery_timeout / 4);
+		else
+			timeout = at_get(&svcpt->scp_at_estimate);
+		lustre_msg_set_timeout(req->rq_repmsg, timeout);
+	}
 
         if (req->rq_reqmsg &&
             !(lustre_msghdr_get_flags(req->rq_reqmsg) & MSGHDR_AT_SUPPORT)) {
@@ -711,6 +724,33 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 	lustre_msghdr_set_flags(request->rq_reqmsg,
 				imp->imp_msghdr_flags);
 
+	/* If it's the first time to resend the request for EINPROGRESS,
+	 * we need to allocate a new XID (see after_reply()), it's different
+	 * from the resend for reply timeout. */
+	if (request->rq_nr_resend != 0 &&
+	    list_empty(&request->rq_unreplied_list)) {
+		__u64 min_xid = 0;
+		/* resend for EINPROGRESS, allocate new xid to avoid reply
+		 * reconstruction */
+		spin_lock(&imp->imp_lock);
+		ptlrpc_assign_next_xid_nolock(request);
+		min_xid = ptlrpc_known_replied_xid(imp);
+		spin_unlock(&imp->imp_lock);
+
+		lustre_msg_set_last_xid(request->rq_reqmsg, min_xid);
+		DEBUG_REQ(D_RPCTRACE, request, "Allocating new xid for "
+			  "resend on EINPROGRESS");
+	}
+
+	if (list_empty(&request->rq_unreplied_list) ||
+	    request->rq_xid <= imp->imp_known_replied_xid) {
+		DEBUG_REQ(D_ERROR, request, "xid: "LPU64", replied: "LPU64", "
+			  "list_empty:%d\n", request->rq_xid,
+			  imp->imp_known_replied_xid,
+			  list_empty(&request->rq_unreplied_list));
+		LBUG();
+	}
+
 	/** For enabled AT all request should have AT_SUPPORT in the
 	 * FULL import state when OBD_CONNECT_AT is set */
 	LASSERT(AT_OFF || imp->imp_state != LUSTRE_IMP_FULL ||
@@ -726,9 +766,13 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
         if (request->rq_memalloc)
                 mpflag = cfs_memory_pressure_get_and_set();
 
-        rc = sptlrpc_cli_wrap_request(request);
-        if (rc)
-                GOTO(out, rc);
+	rc = sptlrpc_cli_wrap_request(request);
+	if (rc == -ENOMEM)
+		/* set rq_sent so that this request is treated
+		 * as a delayed send in the upper layers */
+		request->rq_sent = cfs_time_current_sec();
+	if (rc)
+		GOTO(out, rc);
 
         /* bulk register should be done after wrap_request() */
         if (request->rq_bulk != NULL) {

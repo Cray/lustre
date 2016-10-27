@@ -658,7 +658,11 @@ int lod_generate_and_set_lovea(const struct lu_env *env,
 
 		ostid_cpu_to_le(&info->lti_ostid, &objs[i].l_ost_oi);
 		objs[i].l_ost_gen    = cpu_to_le32(0);
-		rc = lod_fld_lookup(env, lod, fid, &index, &type);
+		if (OBD_FAIL_CHECK(OBD_FAIL_MDS_FLD_LOOKUP))
+			rc = -ENOENT;
+		else
+			rc = lod_fld_lookup(env, lod, fid,
+					    &index, &type);
 		if (rc < 0) {
 			CERROR("%s: Can not locate "DFID": rc = %d\n",
 			       lod2obd(lod)->obd_name, PFID(fid), rc);
@@ -1271,9 +1275,9 @@ int lod_pools_init(struct lod_device *lod, struct lustre_cfg *lcfg)
 	/* Set up allocation policy (QoS and RR) */
 	INIT_LIST_HEAD(&lod->lod_qos.lq_oss_list);
 	init_rwsem(&lod->lod_qos.lq_rw_sem);
-	lod->lod_qos.lq_dirty = 1;
+	set_bit(LQ_DIRTY, &lod->lod_qos.lq_flags);
 	lod->lod_qos.lq_rr.lqr_dirty = 1;
-	lod->lod_qos.lq_reset = 1;
+	set_bit(LQ_RESET, &lod->lod_qos.lq_flags);
 	/* Default priority is toward free space balance */
 	lod->lod_qos.lq_prio_free = 232;
 	/* Default threshold for rr (roughly 17%) */
@@ -1295,6 +1299,7 @@ int lod_pools_init(struct lod_device *lod, struct lustre_cfg *lcfg)
 	rc = lod_ost_pool_init(&lod->lod_pool_info, 0);
 	if (rc)
 		GOTO(out_hash, rc);
+	lod_qos_rr_init(&lod->lod_qos.lq_rr);
 	rc = lod_ost_pool_init(&lod->lod_qos.lq_rr.lqr_pool, 0);
 	if (rc)
 		GOTO(out_pool_info, rc);

@@ -64,18 +64,19 @@ static int lnet_ping(lnet_process_id_t id, int timeout_ms,
 
 static int lnet_read_file(const char *name, char *config, size_t size)
 {
-        cfs_file_t      *filp;
+        struct file    *filp;
         int             rc;
         loff_t          pos = 0;
 
-        filp = cfs_filp_open(name, O_RDONLY, 0600, &rc);
-        if (!filp) {
+        filp = filp_open(name, O_RDONLY, 0600);
+        if (IS_ERR(filp)) {
+                rc = PTR_ERR(filp);
                 CERROR("Can't open file %s: rc %d\n", name, rc);
                 return rc;
         }
 
-        rc = cfs_user_read(filp, config, size, &pos);
-        cfs_filp_close(filp);
+        rc = filp_user_read(filp, config, size, &pos);
+        filp_close(filp, NULL);
         if (rc < 0)
                 CERROR("Can't read file %s: rc %d\n", name, rc);
 
@@ -107,34 +108,29 @@ static char *lnet_read_file_mem(const char *name, size_t max_size)
 
 #define CFS_CONF_FILE_SIZE      (1024 * 1024)
 /* Caller should free memory */
+
 static char *
-lnet_get_routes(void)
+lnet_get_routes(int *should_free)
 {
+        char            *config = ERR_PTR(-ENOENT);
+
+        *should_free = 0;
         if (*routes == '/') {
                 /* Read routes config file to memory */
-                return lnet_read_file_mem(routes, CFS_CONF_FILE_SIZE);
+                config = lnet_read_file_mem(routes, CFS_CONF_FILE_SIZE);
+                if (!IS_ERR(config))
+                        *should_free = 1;
+                return config;
         } else {
                 return routes;
         }
 }
 
-void
-lnet_put_routes(char *rbuf)
-{
-        if (rbuf != NULL && rbuf != routes)
-                vfree(rbuf);
-}
-
 static char *
 lnet_get_networks(void)
 {
-	char   *nets;
-	char   *config = NULL;
+	char   *nets, *config;
 	int     rc;
-
-        if (*networks == 0 && *ip2nets == 0)
-                /* default to "tcp" when nothing specified */
-                return "tcp";
 
 	if (*networks != 0 && *ip2nets != 0) {
 		LCONSOLE_ERROR_MSG(0x101, "Please specify EITHER 'networks' or "
@@ -142,25 +138,24 @@ lnet_get_networks(void)
 		return NULL;
 	}
 
+	if (*ip2nets == '/') {
+		config = lnet_read_file_mem(ip2nets, CFS_CONF_FILE_SIZE);
+		if (!IS_ERR(config)) {
+			rc = lnet_parse_ip2nets(&nets, config);
+			vfree(config);
+			return (rc == 0) ? nets : NULL;
+		} else {
+			return NULL;
+		}
+	} else if (*ip2nets != 0) {
+		rc = lnet_parse_ip2nets(&nets, ip2nets);
+		return (rc == 0) ? nets : NULL;
+	}
+
 	if (*networks != 0)
 		return networks;
 
-        LASSERT(*ip2nets != 0);
-
-        if (*ip2nets == '/') {
-                /* read config from file in ip2nets */
-                config = lnet_read_file_mem(ip2nets, CFS_CONF_FILE_SIZE);
-                if (IS_ERR(config))
-                        return NULL;
-        } else if (*ip2nets != 0) {
-                config = ip2nets;
-        }
-
-        rc = lnet_parse_ip2nets(&nets, config);
-        if (config != ip2nets)
-                vfree(config);
-
-        return (rc == 0) ? nets : NULL;
+	return "tcp";
 }
 
 static void
@@ -1574,12 +1569,12 @@ int
 LNetNIInit(lnet_pid_t requested_pid)
 {
 	int			im_a_router = 0;
-	int			rc;
+	int			rc, should_free;
 	int			ni_count;
 	lnet_ping_info_t	*pinfo;
 	lnet_handle_md_t	md_handle;
 	struct list_head	net_head;
-	char			*routes_cfg;
+	char        *routes_cfg;
 
 	INIT_LIST_HEAD(&net_head);
 
@@ -1625,16 +1620,17 @@ LNetNIInit(lnet_pid_t requested_pid)
 	}
 
 	if (!the_lnet.ln_nis_from_mod_params) {
-		routes_cfg = lnet_get_routes();
+		routes_cfg = lnet_get_routes(&should_free);
 		if (IS_ERR(routes_cfg)) {
 			rc = PTR_ERR(routes_cfg);
 			goto failed1;
 		}
 
 		rc = lnet_parse_routes(routes_cfg, &im_a_router);
-		lnet_put_routes(routes_cfg);
+		if (should_free == 1)
+			vfree(routes_cfg);
 		if (rc != 0)
-			goto failed2;
+			goto failed1;
 
 		rc = lnet_check_routes();
 		if (rc != 0)
@@ -2427,6 +2423,7 @@ lnet_ping(lnet_process_id_t id, int timeout_ms, lnet_process_id_t __user *ids,
 
 	rc = -EFAULT;                           /* If I SEGV... */
 
+	memset(&tmpid, 0, sizeof(tmpid));
 	for (i = 0; i < n_ids; i++) {
 		tmpid.pid = info->pi_pid;
 		tmpid.nid = info->pi_ni[i].ns_nid;

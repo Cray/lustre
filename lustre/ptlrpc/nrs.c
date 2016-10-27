@@ -86,16 +86,10 @@ static int nrs_policy_ctl_locked(struct ptlrpc_nrs_policy *policy,
 
 static void nrs_policy_stop0(struct ptlrpc_nrs_policy *policy)
 {
-	struct ptlrpc_nrs *nrs = policy->pol_nrs;
 	ENTRY;
 
-	if (policy->pol_desc->pd_ops->op_policy_stop != NULL) {
-		spin_unlock(&nrs->nrs_lock);
-
+	if (policy->pol_desc->pd_ops->op_policy_stop != NULL)
 		policy->pol_desc->pd_ops->op_policy_stop(policy);
-
-		spin_lock(&nrs->nrs_lock);
-	}
 
 	LASSERT(list_empty(&policy->pol_list_queued));
 	LASSERT(policy->pol_req_queued == 0 &&
@@ -670,6 +664,10 @@ static int nrs_policy_ctl(struct ptlrpc_nrs *nrs, char *name,
 	policy = nrs_policy_find_locked(nrs, name);
 	if (policy == NULL)
 		GOTO(out, rc = -ENOENT);
+
+	if (policy->pol_state != NRS_POL_STATE_STARTED &&
+	    policy->pol_state != NRS_POL_STATE_STOPPED)
+		GOTO(out, rc = -EAGAIN);
 
 	switch (opc) {
 		/**
@@ -1306,6 +1304,7 @@ fail:
 
 	RETURN(rc);
 }
+EXPORT_SYMBOL(ptlrpc_nrs_policy_register);
 
 /**
  * Unregisters a previously registered policy with NRS core. All instances of
@@ -1372,6 +1371,7 @@ not_exist:
 
 	RETURN(rc);
 }
+EXPORT_SYMBOL(ptlrpc_nrs_policy_unregister);
 
 /**
  * Setup NRS heads on all service partitions of service \a svc, and register

@@ -102,6 +102,7 @@ static struct ll_sb_info *ll_init_sbi(void)
 	sbi->ll_ra_info.ra_max_pages = sbi->ll_ra_info.ra_max_pages_per_file;
 	sbi->ll_ra_info.ra_max_read_ahead_whole_pages =
 					   SBI_DEFAULT_READAHEAD_WHOLE_MAX;
+	sbi->ll_ra_info.ra_increase_step = ONE_MB_BRW_SIZE >> PAGE_CACHE_SHIFT;
 	INIT_LIST_HEAD(&sbi->ll_conn_chain);
 	INIT_LIST_HEAD(&sbi->ll_orphan_dentry_list);
 
@@ -136,6 +137,7 @@ static struct ll_sb_info *ll_init_sbi(void)
 	atomic_set(&sbi->ll_sa_running, 0);
 	atomic_set(&sbi->ll_agl_total, 0);
 	sbi->ll_flags |= LL_SBI_AGL_ENABLED;
+	sbi->ll_flags |= LL_SBI_FAST_READ;
 
 	/* root squash */
 	sbi->ll_squash.rsi_uid = 0;
@@ -443,6 +445,8 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 				  OBD_CONNECT_PINGLESS | OBD_CONNECT_LFSCK |
 				  OBD_CONNECT_LOCK_AHEAD;
 
+	if (sb->s_flags & MS_RDONLY)
+		data->ocd_connect_flags |= OBD_CONNECT_RDONLY;
         if (sbi->ll_flags & LL_SBI_SOM_PREVIEW)
                 data->ocd_connect_flags |= OBD_CONNECT_SOM;
 
@@ -598,11 +602,21 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
         err = obd_set_info_async(NULL, sbi->ll_dt_exp, sizeof(KEY_CHECKSUM),
                                  KEY_CHECKSUM, sizeof(checksum), &checksum,
                                  NULL);
-        cl_sb_init(sb);
+	if (err) {
+		CERROR("%s: Set checksum failed: rc = %d\n",
+		       sbi->ll_dt_exp->exp_obd->obd_name, err);
+		GOTO(out_root, err);
+	}
+	cl_sb_init(sb);
 
 	err = obd_set_info_async(NULL, sbi->ll_dt_exp, sizeof(KEY_CACHE_SET),
 				 KEY_CACHE_SET, sizeof(*sbi->ll_cache),
 				 sbi->ll_cache, NULL);
+	if (err) {
+		CERROR("%s: Set cache_set failed: rc = %d\n",
+		       sbi->ll_dt_exp->exp_obd->obd_name, err);
+		GOTO(out_root, err);
+	}
 
 	sb->s_root = d_make_root(root);
 	if (sb->s_root == NULL) {
@@ -905,6 +919,18 @@ static int ll_options(char *options, int *flags)
                         *flags &= ~tmp;
                         goto next;
                 }
+		tmp = ll_set_opt("context", s1, 1);
+		if (tmp)
+			goto next;
+		tmp = ll_set_opt("fscontext", s1, 1);
+		if (tmp)
+			goto next;
+		tmp = ll_set_opt("defcontext", s1, 1);
+		if (tmp)
+			goto next;
+		tmp = ll_set_opt("rootcontext", s1, 1);
+		if (tmp)
+			goto next;
 		tmp = ll_set_opt("remote_client", s1, LL_SBI_RMT_CLIENT);
 		if (tmp) {
 			*flags |= tmp;
@@ -1066,19 +1092,18 @@ int ll_fill_super(struct super_block *sb, struct vfsmount *mnt)
 
         CDEBUG(D_VFSTRACE, "VFS Op: sb %p\n", sb);
 
-        OBD_ALLOC_PTR(cfg);
-        if (cfg == NULL)
-                RETURN(-ENOMEM);
-
 	try_module_get(THIS_MODULE);
+
+        OBD_ALLOC_PTR(cfg);
+	if (cfg == NULL) {
+		ll_put_super(sb);
+		RETURN(-ENOMEM);
+	}
 
 	/* client additional sb info */
 	lsi->lsi_llsbi = sbi = ll_init_sbi();
-	if (!sbi) {
-		module_put(THIS_MODULE);
-		OBD_FREE_PTR(cfg);
-		RETURN(-ENOMEM);
-	}
+	if (!sbi)
+		GOTO(out_free, err = -ENOMEM);
 
         err = ll_options(lsi->lsi_lmd->lmd_opts, &sbi->ll_flags);
         if (err)
@@ -2444,7 +2469,11 @@ int ll_prep_inode(struct inode **inode, struct ptlrpc_request *req,
                  * At this point server returns to client's same fid as client
                  * generated for creating. So using ->fid1 is okay here.
                  */
-		LASSERT(fid_is_sane(&md.body->mbo_fid1));
+		if (!fid_is_sane(&md.body->mbo_fid1)) {
+			CERROR("Fid is insane "DFID"\n",
+				PFID(&md.body->mbo_fid1));
+			GOTO(out, rc = -EINVAL);
+		}
 
 		*inode = ll_iget(sb, cl_fid_build_ino(&md.body->mbo_fid1,
 					     sbi->ll_flags & LL_SBI_32BIT_API),
@@ -2487,6 +2516,9 @@ int ll_prep_inode(struct inode **inode, struct ptlrpc_request *req,
 			conf.coc_lock = lock;
 			conf.u.coc_md = &md;
 			(void)ll_layout_conf(*inode, &conf);
+		} else {
+			ll_i2info(*inode)->lli_has_smd =
+				lsm_has_objects(md.lsm);
 		}
 		LDLM_LOCK_PUT(lock);
 	}

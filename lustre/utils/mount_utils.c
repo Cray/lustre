@@ -111,11 +111,13 @@ int add_param(char *buf, char *key, char *val)
 {
 	int end = sizeof(((struct lustre_disk_data *)0)->ldd_params);
 	int start = strlen(buf);
+	int vallen = strlen(val);
 	int keylen = 0;
 
 	if (key)
 		keylen = strlen(key);
-	if (start + 1 + keylen + strlen(val) >= end) {
+	if (start + 1 + keylen + vallen >= end ||
+	    keylen + vallen > PARAM_MAX) {
 		fprintf(stderr, "%s: params are too long-\n%s %s%s\n",
 			progname, buf, key ? key : "", val);
 		return 1;
@@ -366,7 +368,7 @@ int loop_setup(struct mkfs_opts *mop)
 		char cmd[PATH_MAX];
 		int cmdsz = sizeof(cmd);
 
-#ifdef LOOP_CTL_GET_FREE
+#ifdef HAVE_LOOP_CTL_GET_FREE
 		ret = open("/dev/loop-control", O_RDWR);
 		if (ret < 0) {
 			fprintf(stderr, "%s: can't access loop control\n", progname);
@@ -587,7 +589,6 @@ int osd_write_ldd(struct mkfs_opts *mop)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->write_ldd(mop);
-
 	else
 		ret = EINVAL;
 
@@ -601,7 +602,6 @@ int osd_read_ldd(char *dev, struct lustre_disk_data *ldd)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->read_ldd(dev, ldd);
-
 	else
 		ret = EINVAL;
 
@@ -635,7 +635,6 @@ int osd_make_lustre(struct mkfs_opts *mop)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->make_lustre(mop);
-
 	else
 		ret = EINVAL;
 
@@ -653,7 +652,6 @@ int osd_prepare_lustre(struct mkfs_opts *mop,
 		ret = backfs_ops[ldd->ldd_mount_type]->prepare_lustre(mop,
 			default_mountopts, default_len,
 			always_mountopts, always_len);
-
 	else
 		ret = EINVAL;
 
@@ -667,7 +665,6 @@ int osd_tune_lustre(char *dev, struct mount_opts *mop)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->tune_lustre(dev, mop);
-
 	else
 		ret = EINVAL;
 
@@ -681,7 +678,6 @@ int osd_label_lustre(struct mount_opts *mop)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->label_lustre(mop);
-
 	else
 		ret = EINVAL;
 
@@ -696,7 +692,6 @@ int osd_enable_quota(struct mkfs_opts *mop)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->enable_quota(mop);
-
 	else
 		ret = EINVAL;
 

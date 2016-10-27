@@ -56,9 +56,10 @@
 #define LOV_OFFSET_DEFAULT		((__u16)-1)
 
 struct lod_qos_rr {
+	spinlock_t		 lqr_alloc;	/* protect allocation index */
 	__u32			 lqr_start_idx;	/* start index of new inode */
-	__u32			 lqr_offset_idx; /* aliasing for start_idx */
-	int			 lqr_start_count; /* reseed counter */
+	__u32			 lqr_offset_idx;/* aliasing for start_idx */
+	int			 lqr_start_count;/* reseed counter */
 	struct ost_pool		 lqr_pool;	/* round-robin optimized list */
 	unsigned long		 lqr_dirty:1;	/* recalc round-robin list */
 };
@@ -79,6 +80,14 @@ struct pool_desc {
 #define pool_tgt_array(p)  ((p)->pool_obds.op_array)
 #define pool_tgt_rw_sem(p) ((p)->pool_obds.op_rw_sem)
 
+enum lq_flag {
+	LQ_DIRTY	= 0, /* recalc qos data */
+	LQ_SAME_SPACE	= 1, /* the ost's all have approx.
+                                the same space avail */
+	LQ_RESET	= 2, /* zero current penalties */
+
+};
+
 struct lod_qos {
 	struct list_head	 lq_oss_list;
 	struct rw_semaphore	 lq_rw_sem;
@@ -86,10 +95,7 @@ struct lod_qos {
 	unsigned int		 lq_prio_free;   /* priority for free space */
 	unsigned int		 lq_threshold_rr;/* priority for rr */
 	struct lod_qos_rr	 lq_rr;          /* round robin qos data */
-	bool			 lq_dirty:1,     /* recalc qos data */
-				 lq_same_space:1,/* the ost's all have approx.
-						    the same space avail */
-				 lq_reset:1;     /* zero current penalties */
+	unsigned long		 lq_flags;       /* statfs op flags */
 };
 
 struct lod_qos_oss {
@@ -386,6 +392,10 @@ lod_name_get(const struct lu_env *env, const void *area, int len)
 	if ((__dev)->lod_osts_size > 0)	\
 		cfs_foreach_bit((__dev)->lod_ost_bitmap, (index))
 
+#define lod_foreach_mdt(__dev, index)	\
+	if ((__dev)->lod_mdts_size > 0)	\
+		cfs_foreach_bit((__dev)->lod_mdt_bitmap, (index))
+
 /* lod_dev.c */
 extern struct kmem_cache *lod_object_kmem;
 int lod_fld_lookup(const struct lu_env *env, struct lod_device *lod,
@@ -463,6 +473,7 @@ int lod_qos_prep_create(const struct lu_env *env, struct lod_object *lo,
 			struct thandle *th);
 int qos_add_tgt(struct lod_device*, struct lod_tgt_desc *);
 int qos_del_tgt(struct lod_device *, struct lod_tgt_desc *);
+void lod_qos_rr_init(struct lod_qos_rr *lqr);
 
 /* lproc_lod.c */
 int lod_procfs_init(struct lod_device *lod);

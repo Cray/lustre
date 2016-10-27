@@ -56,7 +56,7 @@
 #include <linux/posix_acl_xattr.h>
 
 #define filp_size(f)					\
-	(i_size_read((f)->f_dentry->d_inode))
+	(i_size_read((f)->f_path.dentry->d_inode))
 #define filp_poff(f)					\
 	(&(f)->f_pos)
 
@@ -93,6 +93,8 @@ ssize_t cfs_user_read(cfs_file_t *filp, char *buf, size_t count,
 
 ssize_t filp_user_write(struct file *filp, const void *buf, size_t count,
 			loff_t *offset);
+ssize_t filp_user_read(struct file *filp, char *buf, size_t count,
+		       loff_t *offset);
 
 #ifndef IFSHIFT
 #define IFSHIFT			12

@@ -39,6 +39,7 @@
 
 #include <linux/fs_struct.h>
 #include <linux/namei.h>
+#include <linux/bio.h>
 
 #include <lustre_patchless_compat.h>
 
@@ -281,6 +282,7 @@ unsigned int ll_crypto_tfm_alg_min_keysize(struct crypto_blkcipher *tfm)
 
 #ifndef HAVE_LM_XXX_LOCK_MANAGER_OPS
 # define lm_compare_owner	fl_compare_owner
+# define lm_grant		fl_grant
 #endif
 
 /*
@@ -397,6 +399,26 @@ static inline void truncate_inode_pages_final(struct address_space *map)
 
 #ifndef SIZE_MAX
 #define SIZE_MAX	(~(size_t)0)
+#endif
+
+#ifdef HAVE_SECURITY_IINITSEC_CALLBACK
+# define ll_security_inode_init_security(inode, dir, name, value, len, \
+					 initxattrs, dentry)	       \
+	 security_inode_init_security(inode, dir, &((dentry)->d_name), \
+				      initxattrs, dentry)
+#elif defined HAVE_SECURITY_IINITSEC_QSTR
+# define ll_security_inode_init_security(inode, dir, name, value, len, \
+					 initxattrs, dentry)	       \
+	 security_inode_init_security(inode, dir, &((dentry)->d_name), \
+				      name, value, len)
+#else /* !HAVE_SECURITY_IINITSEC_CALLBACK && !HAVE_SECURITY_IINITSEC_QSTR */
+# define ll_security_inode_init_security(inode, dir, name, value, len, \
+					 initxattrs, dentry)	       \
+	 security_inode_init_security(inode, dir, name, value, len)
+#endif
+
+#ifndef bio_for_each_segment_all /* since kernel version 3.9 */
+#define bio_for_each_segment_all(bv, bio, it) bio_for_each_segment(bv, bio, it)
 #endif
 
 #endif /* _LUSTRE_COMPAT_H */

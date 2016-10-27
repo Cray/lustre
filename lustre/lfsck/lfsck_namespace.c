@@ -4205,8 +4205,9 @@ static int lfsck_namespace_post(const struct lu_env *env,
 	rc = lfsck_namespace_store(env, com, false);
 	up_write(&com->lc_sem);
 
-	CDEBUG(D_LFSCK, "%s: namespace LFSCK post done: rc = %d\n",
-	       lfsck_lfsck2name(lfsck), rc);
+	CDEBUG(D_LFSCK, "%s: namespace LFSCK post done, status = %d, "
+	       "result = %d: rc = %d\n",
+	       lfsck_lfsck2name(lfsck), ns->ln_status, result, rc);
 
 	RETURN(rc);
 }
@@ -4907,7 +4908,7 @@ log:
 	       "name %s. %s: rc = %d\n", lfsck_lfsck2name(lfsck),
 	       PFID(&lnr->lnr_lar.lar_fid), PFID(lfsck_dto2fid(child)),
 	       type, cname->ln_name,
-	       create ? "Create the lost OST-object as required" :
+	       create ? "Create the lost MDT-object as required" :
 			"Keep the MDT-object there by default", rc);
 
 	if (rc <= 0) {
@@ -5963,6 +5964,10 @@ static int lfsck_namespace_assistant_handler_p2(const struct lu_env *env,
 	int			 rc;
 	int			 i;
 	ENTRY;
+
+	LASSERTF(ns->ln_status == LS_SCANNING_PHASE2,
+		 "%s: unexpected namespace phase2 status %d\n",
+		 lfsck_lfsck2name(lfsck), ns->ln_status);
 
 	while (!list_empty(&lfsck->li_list_lmv)) {
 		struct lfsck_lmv_unit *llu;

@@ -189,6 +189,11 @@ kiblnd_post_rx (kib_rx_t *rx, int credit)
 
         rx->rx_nob = -1;                        /* flag posted */
 
+	/* Transfer ownership from CPU to device just before the call
+	 * to post the message to device to receive data. */
+	kiblnd_dma_sync_single_for_device(conn->ibc_hdev->ibh_ibdev,
+		rx->rx_msgaddr, IBLND_MSG_SIZE, DMA_FROM_DEVICE);
+
 	/* NB: need an extra reference after ib_post_recv because we don't
 	 * own this rx (and rx::rx_conn) anymore, LU-5678.
 	 */
@@ -495,6 +500,9 @@ kiblnd_rx_complete (kib_rx_t *rx, int status, int nob)
         LASSERT (nob >= 0);
         rx->rx_nob = nob;
 
+	kiblnd_dma_sync_single_for_cpu(conn->ibc_hdev->ibh_ibdev,
+		rx->rx_msgaddr, IBLND_MSG_SIZE, DMA_FROM_DEVICE);
+
         rc = kiblnd_unpack_msg(msg, rx->rx_nob);
         if (rc != 0) {
                 CERROR ("Error %d unpacking rx from %s\n",
@@ -603,6 +611,9 @@ kiblnd_unmap_tx(lnet_ni_t *ni, kib_tx_t *tx)
 
 	if (net->ibn_fmr_ps != NULL)
 		kiblnd_fmr_pool_unmap(&tx->fmr, tx->tx_status);
+
+	kiblnd_dma_sync_single_for_cpu(tx->tx_pool->tpo_hdev->ibh_ibdev,
+		tx->tx_msgaddr, tx->tx_msg->ibm_nob, DMA_TO_DEVICE);
 
         if (tx->tx_nfrags != 0) {
                 kiblnd_dma_unmap_sg(tx->tx_pool->tpo_hdev->ibh_ibdev,

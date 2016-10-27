@@ -611,7 +611,7 @@ static const char *obd_connect_names[] = {
 	"truncate_lock",
 	"initial_transno",
 	"inode_bit_locks",
-	"join_file(obsolete)",
+	"barrier",
 	"getattr_by_fid",
 	"no_oh_for_devices",
 	"remote_client",
@@ -655,7 +655,7 @@ static const char *obd_connect_names[] = {
 	"lfsck",
 	"unknown",
 	"unlink_close",
-	"unknown",
+	"multi_mod_rpcs",
 	"dir_stripe",
 	"unknown",
 	NULL
@@ -700,7 +700,7 @@ EXPORT_SYMBOL(obd_connect_flags2str);
 static void obd_connect_data_seqprint(struct seq_file *m,
 				      struct obd_connect_data *ocd)
 {
-	int flags;
+	__u64 flags;
 
 	LASSERT(ocd != NULL);
 	flags = ocd->ocd_connect_flags;
@@ -745,6 +745,9 @@ static void obd_connect_data_seqprint(struct seq_file *m,
 	if (flags & OBD_CONNECT_MAXBYTES)
 		seq_printf(m, "       max_object_bytes: "LPU64"\n",
 			   ocd->ocd_maxbytes);
+	if (flags & OBD_CONNECT_MULTIMODRPCS)
+		seq_printf(m, "       max_mod_rpcs: %hu\n",
+			   ocd->ocd_maxmodrpcs);
 }
 
 int lprocfs_import_seq_show(struct seq_file *m, void *data)
@@ -1058,6 +1061,7 @@ int lprocfs_stats_alloc_one(struct lprocfs_stats *stats, unsigned int cpuid)
 	}
 	return rc;
 }
+EXPORT_SYMBOL(lprocfs_stats_alloc_one);
 
 struct lprocfs_stats *lprocfs_alloc_stats(unsigned int num,
                                           enum lprocfs_stats_flags flags)
@@ -1356,6 +1360,7 @@ void lprocfs_init_mps_stats(int num_private_stats, struct lprocfs_stats *stats)
         LPROCFS_MD_OP_INIT(num_private_stats, stats, create);
         LPROCFS_MD_OP_INIT(num_private_stats, stats, done_writing);
         LPROCFS_MD_OP_INIT(num_private_stats, stats, enqueue);
+	LPROCFS_MD_OP_INIT(num_private_stats, stats, enqueue_async);
         LPROCFS_MD_OP_INIT(num_private_stats, stats, getattr);
         LPROCFS_MD_OP_INIT(num_private_stats, stats, getattr_name);
         LPROCFS_MD_OP_INIT(num_private_stats, stats, intent_lock);
@@ -1925,6 +1930,7 @@ int lprocfs_wr_nosquash_nids(const char __user *buffer, unsigned long count,
 	char *kernbuf = NULL;
 	char *errmsg;
 	struct list_head tmp;
+	int len = count;
 	ENTRY;
 
 	if (count > 4096) {
@@ -1944,9 +1950,10 @@ int lprocfs_wr_nosquash_nids(const char __user *buffer, unsigned long count,
 	kernbuf[count] = '\0';
 
 	if (count > 0 && kernbuf[count - 1] == '\n')
-		kernbuf[count - 1] = '\0';
+		len = count - 1;
 
-	if (strcmp(kernbuf, "NONE") == 0 || strcmp(kernbuf, "clear") == 0) {
+	if ((len == 4 && strncmp(kernbuf, "NONE", len) == 0) ||
+	    (len == 5 && strncmp(kernbuf, "clear", len) == 0)) {
 		/* empty string is special case */
 		down_write(&squash->rsi_sem);
 		if (!list_empty(&squash->rsi_nosquash_nids))

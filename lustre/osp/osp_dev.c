@@ -709,7 +709,7 @@ static int osp_sync(const struct lu_env *env, struct dt_device *dev)
 	if (rc != 0)
 		GOTO(out, rc);
 
-	CDEBUG(D_CACHE, "%s: id: used %lu, processed %lu\n",
+	CDEBUG(D_CACHE, "%s: id: used %lu, processed "LPU64"\n",
 	       d->opd_obd->obd_name, id, d->opd_syn_last_processed_id);
 
 	/* wait till all-in-line are processed */
@@ -1037,9 +1037,11 @@ static int osp_init0(const struct lu_env *env, struct osp_device *osp,
 	if (!osp->opd_connect_mdt) {
 		/* Initialize last id from the storage - will be
 		 * used in orphan cleanup. */
-		rc = osp_last_used_init(env, osp);
-		if (rc)
-			GOTO(out_fid, rc);
+		if (!osp->opd_storage->dd_rdonly) {
+			rc = osp_last_used_init(env, osp);
+			if (rc != 0)
+				GOTO(out_fid, rc);
+		}
 
 
 		/* Initialize precreation thread, it handles new
@@ -1267,47 +1269,19 @@ static int osp_obd_connect(const struct lu_env *env, struct obd_export **exp,
 			   struct obd_connect_data *data, void *localdata)
 {
 	struct osp_device       *osp = lu2osp_dev(obd->obd_lu_dev);
-	struct obd_connect_data *ocd;
-	struct obd_import       *imp;
-	struct lustre_handle     conn;
 	int                      rc;
 
 	ENTRY;
 
-	CDEBUG(D_CONFIG, "connect #%d\n", osp->opd_connects);
-
-	rc = class_connect(&conn, obd, cluuid);
-	if (rc)
-		RETURN(rc);
-
-	*exp = class_conn2export(&conn);
-	/* Why should there ever be more than 1 connect? */
-	osp->opd_connects++;
-	LASSERT(osp->opd_connects == 1);
-
-	osp->opd_exp = *exp;
-
-	imp = osp->opd_obd->u.cli.cl_import;
-	imp->imp_dlm_handle = conn;
-
 	LASSERT(data != NULL);
 	LASSERT(data->ocd_connect_flags & OBD_CONNECT_INDEX);
-	ocd = &imp->imp_connect_data;
-	*ocd = *data;
 
-	imp->imp_connect_flags_orig = ocd->ocd_connect_flags;
-
-	ocd->ocd_version = LUSTRE_VERSION_CODE;
-	ocd->ocd_index = data->ocd_index;
-	imp->imp_connect_flags_orig = ocd->ocd_connect_flags;
-
-	rc = ptlrpc_connect_import(imp);
-	if (rc) {
-		CERROR("%s: can't connect obd: rc = %d\n", obd->obd_name, rc);
+	rc = client_connect_import(env, &osp->opd_exp, obd, cluuid, data, localdata);
+	if (rc != 0)
 		GOTO(out, rc);
-	}
 
-	ptlrpc_pinger_add_import(imp);
+	*exp = osp->opd_exp;
+
 out:
 	RETURN(rc);
 }
@@ -1327,13 +1301,8 @@ out:
 static int osp_obd_disconnect(struct obd_export *exp)
 {
 	struct obd_device *obd = exp->exp_obd;
-	struct osp_device *osp = lu2osp_dev(obd->obd_lu_dev);
 	int                rc;
 	ENTRY;
-
-	/* Only disconnect the underlying layers on the final disconnect. */
-	LASSERT(osp->opd_connects == 1);
-	osp->opd_connects--;
 
 	rc = class_disconnect(exp);
 	if (rc) {
@@ -1459,6 +1428,7 @@ static int osp_import_event(struct obd_device *obd, struct obd_import *imp,
 			    enum obd_import_event event)
 {
 	struct osp_device *d = lu2osp_dev(obd->obd_lu_dev);
+	int rc;
 
 	switch (event) {
 	case IMP_EVENT_DISCON:
@@ -1476,11 +1446,15 @@ static int osp_import_event(struct obd_device *obd, struct obd_import *imp,
 		break;
 	case IMP_EVENT_INACTIVE:
 		d->opd_imp_active = 0;
+		d->opd_imp_connected = 0;
+		d->opd_obd->obd_inactive = 1;
 		if (d->opd_connect_mdt)
 			break;
-
 		if (d->opd_pre != NULL) {
-			osp_pre_update_status(d, -ENODEV);
+			/* Import is invalid, we can`t get stripes so
+			 * wakeup waiters */
+			rc = imp->imp_deactive ? -ESHUTDOWN : -ENODEV;
+			osp_pre_update_status(d, rc);
 			wake_up(&d->opd_pre_waitq);
 		}
 
@@ -1494,6 +1468,7 @@ static int osp_import_event(struct obd_device *obd, struct obd_import *imp,
 			d->opd_new_connection = 1;
 		d->opd_imp_connected = 1;
 		d->opd_imp_seen_connected = 1;
+		d->opd_obd->obd_inactive = 0;
 		if (d->opd_connect_mdt)
 			break;
 
@@ -1577,6 +1552,24 @@ static int osp_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 	}
 	module_put(THIS_MODULE);
 	return rc;
+}
+
+
+static int osp_set_info_async(const struct lu_env *env,
+			      struct obd_export *exp,
+			      u32 keylen, void *key,
+			      u32 vallen, void *val,
+			      struct ptlrpc_request_set *set)
+{
+	ENTRY;
+
+	if (KEY_IS(KEY_SPTLRPC_CONF)) {
+		sptlrpc_conf_client_adapt(exp->exp_obd);
+		RETURN(0);
+	}
+
+	CERROR("Unknown key %s\n", (char *)key);
+	RETURN(-EINVAL);
 }
 
 /**
@@ -1723,6 +1716,7 @@ static struct obd_ops osp_obd_device_ops = {
 	.o_fid_init	= client_fid_init,
 	.o_fid_fini	= client_fid_fini,
 	.o_fid_alloc	= osp_fid_alloc,
+	.o_set_info_async   = osp_set_info_async,
 };
 
 struct llog_operations osp_mds_ost_orig_logops;
