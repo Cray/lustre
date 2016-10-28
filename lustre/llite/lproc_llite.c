@@ -1074,7 +1074,8 @@ static int ll_fast_read_seq_show(struct seq_file *m, void *v)
 	struct super_block *sb = m->private;
 	struct ll_sb_info *sbi = ll_s2sbi(sb);
 
-	return seq_printf(m, "%u\n", !!(sbi->ll_flags & LL_SBI_FAST_READ));
+	seq_printf(m, "%u\n", !!(sbi->ll_flags & LL_SBI_FAST_READ));
+	return 0;
 }
 
 static ssize_t ll_fast_read_seq_write(
