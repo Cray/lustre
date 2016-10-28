@@ -3178,7 +3178,11 @@ static int ll_file_flock_lock(struct file *file, struct file_lock *file_lock)
 	 */
 	file_lock->fl_flags &= ~FL_SLEEP;
 	if (file_lock->fl_flags & FL_FLOCK)
+#ifdef HAVE_LOCKS_LOCK_FILE_WAIT
+		rc = locks_lock_file_wait(file, file_lock);
+#else
 		rc = flock_lock_file_wait(file, file_lock);
+#endif
 	if (file_lock->fl_flags & FL_POSIX)
 		rc = posix_lock_file(file, file_lock, NULL);
 	if (rc)
