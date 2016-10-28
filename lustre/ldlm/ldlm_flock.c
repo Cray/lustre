@@ -881,18 +881,6 @@ granted:
 		RETURN(rc);
 	}
 
-	/* Without asynchronous flock support, 0 mode locks are only valid
-	 * when a deadlock is detected.  Otherwise we must return -EIO and
-	 * destroy the lock.  See bug 827722. */
-	if (lock->l_granted_mode == 0 &&
-	     !(lock->l_flags & LDLM_FL_FLOCK_DEADLOCK))
-	{
-		unlock_res_and_lock(lock);
-		LDLM_DEBUG(lock, "Rejecting 0 mode lock - See 827722");
-		CERROR("Rejecting 0 mode lock - See 827722\n");
-		RETURN(-EIO);
-	}
-
 	args = lock->l_ast_data;
 
 	if (lock->l_granted_mode == 0) {
