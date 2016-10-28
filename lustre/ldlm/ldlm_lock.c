@@ -1157,20 +1157,6 @@ void ldlm_grant_lock(struct ldlm_lock *lock, struct list_head *work_list)
         EXIT;
 }
 
-/* Only RES_LINK and SL_MODE are used */
-enum ldlm_lock_list {
-	L_LRU		= 0,
-	L_RES_LINK	= 1,
-	L_PENDING	= 2,
-	L_BL_AST	= 3,
-	L_CP_AST	= 4,
-	L_RK_AS		= 5,
-	L_SL_MODE	= 6,
-	L_SL_POLICY	= 7,
-	L_EXP_REFS	= 8,
-	L_EXP_LIST	= 9,
-};
-
 /**
  * Describe the overlap between two locks.  itree_overlap_cb data.
  */
@@ -1429,7 +1415,6 @@ ldlm_mode_t ldlm_lock_match(struct ldlm_namespace *ns, __u64 flags,
 	if (ns == NULL) {
 		data.lmd_old = ldlm_handle2lock(lockh);
 		LASSERT(data.lmd_old != NULL);
-		LDLM_DEBUG(data.lmd_old, "old lock\n");
 
 		ns = ldlm_lock_to_ns(data.lmd_old);
 		res_id = &data.lmd_old->l_resource->lr_name;
