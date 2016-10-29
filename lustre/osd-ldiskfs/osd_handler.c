@@ -3787,10 +3787,18 @@ static int osd_index_declare_ea_delete(const struct lu_env *env,
 	oh = container_of0(handle, struct osd_thandle, ot_super);
 	LASSERT(oh->ot_handle == NULL);
 
-	/* due to DNE we may need to remove an agent inode */
 	osd_trans_declare_op(env, oh, OSD_OT_DELETE,
-			     osd_dto_credits_noquota[DTO_INDEX_DELETE] +
-			     osd_dto_credits_noquota[DTO_OBJECT_DELETE]);
+			     osd_dto_credits_noquota[DTO_INDEX_DELETE]);
+	/* local agent inode can be removed. it can be a directory, so
+	 * +3 to remove the block storing . and .. */
+	osd_trans_declare_op(env, oh, OSD_OT_DESTROY,
+			osd_dto_credits_noquota[DTO_OBJECT_DELETE] + 3);
+	if (key != NULL && unlikely(strcmp((char *)key, dotdot) == 0)) {
+		/* '..' to a remote object has a local representative */
+		/* + 1 to reset LMAI_REMOTE_PARENT */
+		osd_trans_declare_op(env, oh, OSD_OT_DESTROY, 1 +
+				    osd_dto_credits_noquota[DTO_OBJECT_DELETE]);
+	}
 
 	inode = osd_dt_obj(dt)->oo_inode;
 	LASSERT(inode);
@@ -3868,8 +3876,6 @@ static int osd_index_ea_delete(const struct lu_env *env, struct dt_object *dt,
 	LINVRNT(osd_invariant(obj));
 	LASSERT(!dt_object_remote(dt));
 	LASSERT(handle != NULL);
-
-	osd_trans_exec_op(env, handle, OSD_OT_DELETE);
 
         oh = container_of(handle, struct osd_thandle, ot_super);
         LASSERT(oh->ot_handle != NULL);
@@ -3952,13 +3958,17 @@ static int osd_index_ea_delete(const struct lu_env *env, struct dt_object *dt,
 				/* Need to delete agent inode */
 				ino = le32_to_cpu(de->inode);
 		}
+		osd_trans_exec_op(env, handle, OSD_OT_DELETE);
                 rc = ldiskfs_delete_entry(oh->ot_handle, dir, de, bh);
+		osd_trans_exec_check(env, handle, OSD_OT_DELETE);
                 brelse(bh);
 		if (rc == 0 && unlikely(ino != 0)) {
 			int ret;
 
+			osd_trans_exec_op(env, handle, OSD_OT_DESTROY);
 			ret = osd_delete_local_agent_inode(env, osd, fid,
 							   ino, oh);
+			osd_trans_exec_check(env, handle, OSD_OT_DESTROY);
 			if (ret != 0)
 				/* Sigh, the entry has been deleted, and
 				 * it is not easy to revert it back, so
@@ -3984,8 +3994,10 @@ static int osd_index_ea_delete(const struct lu_env *env, struct dt_object *dt,
 	if (unlikely(strcmp((char *)key, dotdot) == 0)) {
 		int ret;
 
+		osd_trans_exec_op(env, handle, OSD_OT_DESTROY);
 		ret = osd_delete_from_remote_parent(env, osd_obj2dev(obj),
 						    obj, oh);
+		osd_trans_exec_check(env, handle, OSD_OT_DESTROY);
 		if (ret != 0)
 			/* Sigh, the entry has been deleted, and
 			 * it is not easy to revert it back, so
@@ -3996,7 +4008,6 @@ static int osd_index_ea_delete(const struct lu_env *env, struct dt_object *dt,
 	}
 out:
         LASSERT(osd_invariant(obj));
-	osd_trans_exec_check(env, handle, OSD_OT_DELETE);
         RETURN(rc);
 }
 
