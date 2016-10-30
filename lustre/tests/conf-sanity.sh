@@ -5654,6 +5654,10 @@ test_renamefs() {
 
 test_89() {
 	check_mount_and_prep
+
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.17) ] &&
+		skip "lustre < 2.7.17 does not support rename fsname" && return
+
 	rm -rf $DIR/$tdir
 	mkdir $DIR/$tdir || error "(1) Fail to mkdir $DIR/$tdir"
 	cp $LUSTRE/tests/test-framework.sh $DIR/$tdir ||
