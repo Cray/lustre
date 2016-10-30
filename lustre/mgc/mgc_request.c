@@ -1933,17 +1933,13 @@ static int mgc_process_cfg_log(struct obd_device *mgc,
 		sptlrpc_started = true;
 	}
 
-	/* logname and instance info should be the same, so use our
-	 * copy of the instance for the update.  The cfg_last_idx will
-	 * be updated here. */
-	rc = class_config_parse_llog(env, ctxt, cld->cld_logname,
-				     &cld->cld_cfg);
-	if (rc == -ENOENT && lsi != NULL && IS_SERVER(lsi) && !IS_MGS(lsi) &&
+	rc = -EAGAIN;
+	if (lsi != NULL && IS_SERVER(lsi) && !IS_MGS(lsi) &&
 	    lsi->lsi_dt_dev->dd_rdonly) {
 		struct llog_ctxt *rctxt;
 
-		/* Under readonly mode, we may have no local copy, so
-		 * try to use remote llog directly. */
+		/* Under readonly mode, we may have no local copy or local
+		 * copy is incomplete, so try to use remote llog firstly. */
 		rctxt = llog_get_context(mgc, LLOG_CONFIG_REPL_CTXT);
 		LASSERT(rctxt != NULL);
 
@@ -1951,6 +1947,10 @@ static int mgc_process_cfg_log(struct obd_device *mgc,
 					     &cld->cld_cfg);
 		llog_ctxt_put(rctxt);
 	}
+
+	if (rc && rc != -ENOENT)
+		rc = class_config_parse_llog(env, ctxt, cld->cld_logname,
+					     &cld->cld_cfg);
 
 	EXIT;
 

@@ -14165,6 +14165,7 @@ run_test 801c "rescan barrier bitmap"
 	do_nodes $(comma_list $(facet_active_host mgs) $(mdts_nodes)) \
 	$LCTL set_param debug=-snapshot
 
+saved_MGS_MOUNT_OPTS=$MGS_MOUNT_OPTS
 saved_MDS_MOUNT_OPTS=$MDS_MOUNT_OPTS
 saved_OST_MOUNT_OPTS=$OST_MOUNT_OPTS
 
@@ -14172,6 +14173,7 @@ cleanup_802() {
 	trap 0
 
 	stopall
+	MGS_MOUNT_OPTS=$saved_MGS_MOUNT_OPTS
 	MDS_MOUNT_OPTS=$saved_MDS_MOUNT_OPTS
 	OST_MOUNT_OPTS=$saved_OST_MOUNT_OPTS
 	setupall
@@ -14188,10 +14190,14 @@ test_802() {
 
 	trap cleanup_802 EXIT
 
+	# sync by force before remount as readonly
+	sync; sync_all_data; sleep 3; sync_all_data
+
 	stopall
 
+	MGS_MOUNT_OPTS=$(csa_add "$MGS_MOUNT_OPTS" -o rdonly_dev)
 	MDS_MOUNT_OPTS=$(csa_add "$MDS_MOUNT_OPTS" -o rdonly_dev)
-	OSS_MOUNT_OPTS=$(csa_add "$OST_MOUNT_OPTS" -o rdonly_dev)
+	OST_MOUNT_OPTS=$(csa_add "$OST_MOUNT_OPTS" -o rdonly_dev)
 
 	echo "Mount the server as read only"
 	setupall server_only || error "(3) Fail to start servers"
