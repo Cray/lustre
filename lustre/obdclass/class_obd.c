@@ -123,6 +123,8 @@ struct lprocfs_stats *obd_memory = NULL;
 EXPORT_SYMBOL(obd_memory);
 #endif
 
+char obd_jobid_node[LUSTRE_JOBID_SIZE + 1];
+
 /* Get jobid of current process by reading the environment variable
  * stored in between the "env_start" & "env_end" of task struct.
  *
@@ -145,6 +147,12 @@ int lustre_get_jobid(char *jobid)
 	/* Jobstats isn't enabled */
 	if (strcmp(obd_jobid_var, JOBSTATS_DISABLE) == 0)
 		RETURN(0);
+
+	/* Whole node dedicated to single job */
+	if (strcmp(obd_jobid_var, JOBSTATS_NODELOCAL) == 0) {
+		memcpy(jobid, obd_jobid_node, LUSTRE_JOBID_SIZE);
+		RETURN(0);
+	}
 
 	/* Use process name + fsuid as jobid */
 	if (strcmp(obd_jobid_var, JOBSTATS_PROCNAME_UID) == 0) {
@@ -364,7 +372,11 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
                         GOTO(out, err = -EINVAL);
                 }
 
-                obd = class_num2obd(index);
+		read_lock(&obd_dev_lock);
+		obd = class_num2obd(index);
+		if (obd)
+			class_incref(obd, __FUNCTION__, current);
+		read_unlock(&obd_dev_lock);
                 if (!obd)
                         GOTO(out, err = -ENOENT);
 
@@ -393,9 +405,17 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
                         GOTO(out, err = -EINVAL);
                 if (strnlen(data->ioc_inlbuf4, MAX_OBD_NAME) >= MAX_OBD_NAME)
                         GOTO(out, err = -EINVAL);
-                obd = class_name2obd(data->ioc_inlbuf4);
-        } else if (data->ioc_dev < class_devno_max()) {
-                obd = class_num2obd(data->ioc_dev);
+		read_lock(&obd_dev_lock);
+		obd = class_name2obd(data->ioc_inlbuf4);
+		if (obd)
+			class_incref(obd, __FUNCTION__, current);
+		read_unlock(&obd_dev_lock);
+	} else if (data->ioc_dev < class_devno_max()) {
+		read_lock(&obd_dev_lock);
+		obd = class_num2obd(data->ioc_dev);
+		if (obd)
+			class_incref(obd, __FUNCTION__, current);
+		read_unlock(&obd_dev_lock);
         } else {
                 CERROR("OBD ioctl: No device\n");
                 GOTO(out, err = -EINVAL);
@@ -437,6 +457,8 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
         }
 
  out:
+	if (obd)
+		class_decref(obd, __FUNCTION__, current);
         if (buf)
                 obd_ioctl_freedata(buf, len);
         RETURN(err);
@@ -521,6 +543,10 @@ static int __init init_obdclass(void)
 
         for (i = CAPA_SITE_CLIENT; i < CAPA_SITE_MAX; i++)
 		INIT_LIST_HEAD(&capa_list[i]);
+
+	spin_lock_init(&obd_stale_export_lock);
+	INIT_LIST_HEAD(&obd_stale_exports);
+	atomic_set(&obd_stale_export_num, 0);
 
         LCONSOLE_INFO("Lustre: Build Version: "BUILD_VERSION"\n");
 
@@ -677,6 +703,7 @@ static void cleanup_obdclass(void)
         class_handle_cleanup();
         class_exit_uuidlist();
         obd_zombie_impexp_stop();
+	LASSERT(list_empty(&obd_stale_exports));
 
         memory_leaked = obd_memory_sum();
         pages_leaked = obd_pages_sum();

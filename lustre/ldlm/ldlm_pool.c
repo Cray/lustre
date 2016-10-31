@@ -914,9 +914,15 @@ void ldlm_pool_add(struct ldlm_pool *pl, struct ldlm_lock *lock)
 	 * cancelled, instead special kind of lock is used to drop them.
 	 * also there is no LRU for flock locks, so no point in tracking
 	 * them anyway.
+	 *
+	 * PLAIN locks are used by config and quota, the quantity is small
+	 * and usually they are not in LRU.
 	 */
-	if (lock->l_resource->lr_type == LDLM_FLOCK)
+	if (lock->l_resource->lr_type == LDLM_FLOCK ||
+	    lock->l_resource->lr_type == LDLM_PLAIN)
 		return;
+
+	ldlm_reclaim_add(lock);
 
 	atomic_inc(&pl->pl_granted);
 	atomic_inc(&pl->pl_grant_rate);
@@ -938,10 +944,14 @@ EXPORT_SYMBOL(ldlm_pool_add);
 void ldlm_pool_del(struct ldlm_pool *pl, struct ldlm_lock *lock)
 {
 	/*
-	 * Filter out FLOCK locks. Read above comment in ldlm_pool_add().
+	 * Filter out FLOCK & PLAIN locks. Read above comment in
+	 * ldlm_pool_add().
 	 */
-	if (lock->l_resource->lr_type == LDLM_FLOCK)
+	if (lock->l_resource->lr_type == LDLM_FLOCK ||
+	    lock->l_resource->lr_type == LDLM_PLAIN)
 		return;
+
+	ldlm_reclaim_del(lock);
 
 	LASSERT(atomic_read(&pl->pl_granted) > 0);
 	atomic_dec(&pl->pl_granted);
@@ -1052,15 +1062,12 @@ static unsigned long ldlm_pools_count(ldlm_side_t client, gfp_t gfp_mask)
 	int nr_ns;
 	struct ldlm_namespace *ns;
 	struct ldlm_namespace *ns_old = NULL; /* loop detection */
-	void *cookie;
 
 	if (client == LDLM_NAMESPACE_CLIENT && !(gfp_mask & __GFP_FS))
 		return 0;
 
 	CDEBUG(D_DLMTRACE, "Request to count %s locks from all pools\n",
 	       client == LDLM_NAMESPACE_CLIENT ? "client" : "server");
-
-	cookie = cl_env_reenter();
 
 	/*
 	 * Find out how many resources we may release.
@@ -1070,7 +1077,6 @@ static unsigned long ldlm_pools_count(ldlm_side_t client, gfp_t gfp_mask)
 		mutex_lock(ldlm_namespace_lock(client));
 		if (list_empty(ldlm_namespace_list(client))) {
 			mutex_unlock(ldlm_namespace_lock(client));
-			cl_env_reexit(cookie);
 			return 0;
 		}
 		ns = ldlm_namespace_first_locked(client);
@@ -1096,7 +1102,6 @@ static unsigned long ldlm_pools_count(ldlm_side_t client, gfp_t gfp_mask)
 		ldlm_namespace_put(ns);
 	}
 
-	cl_env_reexit(cookie);
 	return total;
 }
 
@@ -1106,12 +1111,9 @@ static unsigned long ldlm_pools_scan(ldlm_side_t client, int nr,
 	unsigned long freed = 0;
 	int tmp, nr_ns;
 	struct ldlm_namespace *ns;
-	void *cookie;
 
 	if (client == LDLM_NAMESPACE_CLIENT && !(gfp_mask & __GFP_FS))
 		return -1;
-
-	cookie = cl_env_reenter();
 
 	/*
 	 * Shrink at least ldlm_namespace_nr_read(client) namespaces.
@@ -1142,7 +1144,6 @@ static unsigned long ldlm_pools_scan(ldlm_side_t client, int nr,
 		freed += ldlm_pool_shrink(&ns->ns_pool, cancel, gfp_mask);
 		ldlm_namespace_put(ns);
 	}
-	cl_env_reexit(cookie);
 	/*
 	 * we only decrease the SLV in server pools shrinker, return
 	 * SHRINK_STOP to kernel to avoid needless loop. LU-1128
@@ -1224,7 +1225,9 @@ int ldlm_pools_recalc(ldlm_side_t client)
         struct ldlm_namespace *ns;
         struct ldlm_namespace *ns_old = NULL;
         int nr, equal = 0;
-	int time = 50; /* seconds of sleep if no active namespaces */
+	/* seconds of sleep if no active namespaces */
+	int time = client ? LDLM_POOL_CLI_DEF_RECALC_PERIOD :
+			    LDLM_POOL_SRV_DEF_RECALC_PERIOD;
 
 	/*
 	 * No need to setup pool limit for client pools.
@@ -1368,6 +1371,10 @@ int ldlm_pools_recalc(ldlm_side_t client)
 			ldlm_namespace_put(ns);
 		}
         }
+
+	/* Wake up the blocking threads from time to time. */
+	ldlm_bl_thread_wakeup();
+
 	return time;
 }
 EXPORT_SYMBOL(ldlm_pools_recalc);

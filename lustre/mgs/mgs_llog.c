@@ -56,14 +56,15 @@
 /********************** Class functions ********************/
 
 /* Find all logs in CONFIG directory and link then into list */
-int class_dentry_readdir(const struct lu_env *env,
-			 struct mgs_device *mgs, struct list_head *log_list)
+int class_dentry_readdir(const struct lu_env *env, struct mgs_device *mgs,
+			 struct list_head *log_list, const char *except)
 {
 	struct dt_object    *dir = mgs->mgs_configs_dir;
 	const struct dt_it_ops *iops;
 	struct dt_it        *it;
 	struct mgs_direntry *de;
 	char		    *key;
+	int		     len = (except == NULL ? 0 : strlen(except));
 	int		     rc, key_sz;
 
 	INIT_LIST_HEAD(log_list);
@@ -100,6 +101,21 @@ int class_dentry_readdir(const struct lu_env *env,
 				goto next;
 		}
 
+		if (except != NULL && key_sz > len &&
+		    key[len] == '-' && strncmp(key, except, len) == 0) {
+			rc = -EEXIST;
+			break;
+		}
+
+		/* filter out ".bak" files */
+		/* sizeof(".bak") - 1 == 4 */
+		if (key_sz >= 4 &&
+		    !memcmp(".bak", key + key_sz - 4, 4)) {
+			CDEBUG(D_MGS, "Skipping backup file %.*s\n",
+			       key_sz, key);
+			goto next;
+		}
+
 		de = mgs_direntry_alloc(key_sz + 1);
 		if (de == NULL) {
 			rc = -ENOMEM;
@@ -114,15 +130,26 @@ int class_dentry_readdir(const struct lu_env *env,
 next:
 		rc = iops->next(env, it);
 	} while (rc == 0);
-	rc = 0;
+
+	if (rc > 0)
+		rc = 0;
 
 	iops->put(env, it);
 
 fini:
 	iops->fini(env, it);
-	if (rc)
+	if (rc != 0) {
+		struct mgs_direntry *n;
+
 		CERROR("%s: key failed when listing %s: rc = %d\n",
 		       mgs->mgs_obd->obd_name, MOUNT_CONFIGS_DIR, rc);
+
+		list_for_each_entry_safe(de, n, log_list, mde_list) {
+			list_del_init(&de->mde_list);
+			mgs_direntry_free(de);
+		}
+	}
+
 	RETURN(rc);
 }
 
@@ -135,7 +162,9 @@ static inline int name_create(char **newname, char *prefix, char *suffix)
         if (!*newname)
                 return -ENOMEM;
         sprintf(*newname, "%s%s", prefix, suffix);
-        return 0;
+	CDEBUG(D_MGS, "create log name %s\n", *newname);
+
+	return 0;
 }
 
 static inline void name_destroy(char **name)
@@ -211,9 +240,11 @@ static int mgs_fsdb_handler(const struct lu_env *env, struct llog_handle *llh,
                 }
                 rc = 0;
                 CDEBUG(D_MGS, "MDT index is %u\n", index);
-		set_bit(index, fsdb->fsdb_mdt_index_map);
-                fsdb->fsdb_mdt_count ++;
-        }
+		if (!test_bit(index, fsdb->fsdb_mdt_index_map)) {
+			set_bit(index, fsdb->fsdb_mdt_index_map);
+			fsdb->fsdb_mdt_count++;
+		}
+	}
 
 	/**
 	 * figure out the old config. fsdb_gen = 0 means old log
@@ -311,7 +342,7 @@ static void mgs_free_fsdb_srpc(struct fs_db *fsdb)
         sptlrpc_rule_set_free(&fsdb->fsdb_srpc_gen);
 }
 
-struct fs_db *mgs_find_fsdb(struct mgs_device *mgs, char *fsname)
+struct fs_db *mgs_find_fsdb(struct mgs_device *mgs, const char *fsname)
 {
         struct fs_db *fsdb;
 	struct list_head *tmp;
@@ -346,28 +377,42 @@ static struct fs_db *mgs_new_fsdb(const struct lu_env *env,
 	set_bit(FSDB_UDESC, &fsdb->fsdb_flags);
 	fsdb->fsdb_gen = 1;
 
-        if (strcmp(fsname, MGSSELF_NAME) == 0) {
+	if (strcmp(fsname, MGSSELF_NAME) == 0) {
 		set_bit(FSDB_MGS_SELF, &fsdb->fsdb_flags);
-        } else {
-                OBD_ALLOC(fsdb->fsdb_ost_index_map, INDEX_MAP_SIZE);
-                OBD_ALLOC(fsdb->fsdb_mdt_index_map, INDEX_MAP_SIZE);
-                if (!fsdb->fsdb_ost_index_map || !fsdb->fsdb_mdt_index_map) {
-                        CERROR("No memory for index maps\n");
+		fsdb->fsdb_mgs = mgs;
+	} else {
+		OBD_ALLOC(fsdb->fsdb_mdt_index_map, INDEX_MAP_SIZE);
+		if (fsdb->fsdb_mdt_index_map == NULL) {
+			CERROR("No memory for MDT index maps\n");
+
 			GOTO(err, rc = -ENOMEM);
-                }
+		}
 
-                rc = name_create(&fsdb->fsdb_clilov, fsname, "-clilov");
-                if (rc)
-                        GOTO(err, rc);
-                rc = name_create(&fsdb->fsdb_clilmv, fsname, "-clilmv");
-                if (rc)
-                        GOTO(err, rc);
+		OBD_ALLOC(fsdb->fsdb_ost_index_map, INDEX_MAP_SIZE);
+		if (fsdb->fsdb_ost_index_map == NULL) {
+			CERROR("No memory for OST index maps\n");
 
-                /* initialise data for NID table */
-		mgs_ir_init_fs(env, mgs, fsdb);
+			GOTO(err, rc = -ENOMEM);
+		}
 
-		lproc_mgs_add_live(mgs, fsdb);
-        }
+		INIT_LIST_HEAD(&fsdb->fsdb_clients);
+		atomic_set(&fsdb->fsdb_notify_phase, 0);
+		init_waitqueue_head(&fsdb->fsdb_notify_waitq);
+		init_completion(&fsdb->fsdb_notify_comp);
+
+		if (!logname_is_barrier(fsname)) {
+			rc = name_create(&fsdb->fsdb_clilov, fsname, "-clilov");
+			if (rc != 0)
+				GOTO(err, rc);
+			rc = name_create(&fsdb->fsdb_clilmv, fsname, "-clilmv");
+			if (rc != 0)
+				GOTO(err, rc);
+
+			/* initialise data for NID table */
+			mgs_ir_init_fs(env, mgs, fsdb);
+			lproc_mgs_add_live(mgs, fsdb);
+		}
+	}
 
 	list_add(&fsdb->fsdb_list, &mgs->mgs_fs_db_list);
 
@@ -390,8 +435,9 @@ static void mgs_free_fsdb(struct mgs_device *mgs, struct fs_db *fsdb)
 	lproc_mgs_del_live(mgs, fsdb);
 	list_del(&fsdb->fsdb_list);
 
-        /* deinitialize fsr */
-	mgs_ir_fini_fs(mgs, fsdb);
+	/* deinitialize fsr */
+	if (fsdb->fsdb_mgs != NULL)
+		mgs_ir_fini_fs(mgs, fsdb);
 
         if (fsdb->fsdb_ost_index_map)
                 OBD_FREE(fsdb->fsdb_ost_index_map, INDEX_MAP_SIZE);
@@ -424,9 +470,8 @@ int mgs_cleanup_fsdb_list(struct mgs_device *mgs)
 	return 0;
 }
 
-int mgs_find_or_make_fsdb(const struct lu_env *env,
-			  struct mgs_device *mgs, char *name,
-                          struct fs_db **dbh)
+int mgs_find_or_make_fsdb(const struct lu_env *env, struct mgs_device *mgs,
+			  char *name, struct fs_db **dbh)
 {
         struct fs_db *fsdb;
         int rc = 0;
@@ -440,17 +485,25 @@ int mgs_find_or_make_fsdb(const struct lu_env *env,
 		RETURN(0);
         }
 
-        CDEBUG(D_MGS, "Creating new db\n");
+        CDEBUG(D_MGS, "Creating new db %s\n", name);
 	fsdb = mgs_new_fsdb(env, mgs, name);
 	/* lock fsdb_mutex until the db is loaded from llogs */
 	if (fsdb)
 		mutex_lock(&fsdb->fsdb_mutex);
 	mutex_unlock(&mgs->mgs_mutex);
-        if (!fsdb)
+	if (fsdb == NULL)
 		RETURN(-ENOMEM);
 
-	if (!test_bit(FSDB_MGS_SELF, &fsdb->fsdb_flags)) {
-                /* populate the db from the client llog */
+	if (logname_is_barrier(name)) {
+		mutex_unlock(&fsdb->fsdb_mutex);
+		*dbh = fsdb;
+
+		RETURN(0);
+	}
+
+	if (!test_bit(FSDB_MGS_SELF, &fsdb->fsdb_flags) &&
+	    strcmp(PARAMS_FILENAME, name) != 0) {
+		/* populate the db from the client llog */
 		rc = mgs_get_fsdb_from_llog(env, mgs, fsdb);
                 if (rc) {
                         CERROR("Can't get db from client log %d\n", rc);
@@ -555,8 +608,6 @@ static int mgs_set_index(const struct lu_env *env,
                 if (rc == -1)
 			GOTO(out_up, rc = -ERANGE);
                 mti->mti_stripe_index = rc;
-                if (mti->mti_flags & LDD_F_SV_TYPE_MDT)
-                        fsdb->fsdb_mdt_count ++;
         }
 
 	/* the last index(0xffff) is reserved for default value. */
@@ -584,7 +635,12 @@ static int mgs_set_index(const struct lu_env *env,
                 }
         }
 
-	set_bit(mti->mti_stripe_index, imap);
+	if (!test_bit(mti->mti_stripe_index, imap)) {
+		set_bit(mti->mti_stripe_index, imap);
+		if (mti->mti_flags & LDD_F_SV_TYPE_MDT)
+			fsdb->fsdb_mdt_count++;
+	}
+
 	clear_bit(FSDB_LOG_EMPTY, &fsdb->fsdb_flags);
 	mutex_unlock(&fsdb->fsdb_mutex);
 	server_make_name(mti->mti_flags & ~(LDD_F_VIRGIN | LDD_F_WRITECONF),
@@ -723,7 +779,7 @@ out_pop:
 }
 
 /** This structure is passed to mgs_replace_handler */
-struct mgs_replace_uuid_lookup {
+struct mgs_replace_data {
 	/* Nids are replaced for this target device */
 	struct mgs_target_info target;
 	/* Temporary modified llog */
@@ -741,42 +797,42 @@ struct mgs_replace_uuid_lookup {
  * b) is it target block
  *
  * \param[in] lcfg
- * \param[in] mrul
+ * \param[in] mrd
  *
  * \retval 0 should not to be skipped
  * \retval 1 should to be skipped
  */
 static int check_markers(struct lustre_cfg *lcfg,
-			 struct mgs_replace_uuid_lookup *mrul)
+			 struct mgs_replace_data *mrd)
 {
 	 struct cfg_marker *marker;
 
 	/* Track markers. Find given device */
 	if (lcfg->lcfg_command == LCFG_MARKER) {
 		marker = lustre_cfg_buf(lcfg, 1);
-		/* Clean llog from records marked as CM_EXCLUDE.
-		   CM_SKIP records are used for "active" command
+		/* Clean llog from records marked as CM_SKIP.
+		   CM_EXCLUDE records are used for "active" command
 		   and can be restored if needed */
-		if ((marker->cm_flags & (CM_EXCLUDE | CM_START)) ==
-		    (CM_EXCLUDE | CM_START)) {
-			mrul->skip_it = 1;
+		if ((marker->cm_flags & (CM_SKIP | CM_START)) ==
+		    (CM_SKIP | CM_START)) {
+			mrd->skip_it = 1;
 			return 1;
 		}
 
-		if ((marker->cm_flags & (CM_EXCLUDE | CM_END)) ==
-		    (CM_EXCLUDE | CM_END)) {
-			mrul->skip_it = 0;
+		if ((marker->cm_flags & (CM_SKIP | CM_END)) ==
+		    (CM_SKIP | CM_END)) {
+			mrd->skip_it = 0;
 			return 1;
 		}
 
-		if (strcmp(mrul->target.mti_svname, marker->cm_tgtname) == 0) {
+		if (strcmp(mrd->target.mti_svname, marker->cm_tgtname) == 0) {
 			LASSERT(!(marker->cm_flags & CM_START) ||
 				!(marker->cm_flags & CM_END));
 			if (marker->cm_flags & CM_START) {
-				mrul->in_target_device = 1;
-				mrul->device_nids_added = 0;
+				mrd->in_target_device = 1;
+				mrd->device_nids_added = 0;
 			} else if (marker->cm_flags & CM_END)
-				mrul->in_target_device = 0;
+				mrd->in_target_device = 0;
 		}
 	}
 
@@ -857,7 +913,7 @@ static inline int record_setup(const struct lu_env *env,
  * \retval 0 record is not processed.
  */
 static int process_command(const struct lu_env *env, struct lustre_cfg *lcfg,
-			   struct mgs_replace_uuid_lookup *mrul)
+			   struct mgs_replace_data *mrd)
 {
 	int nids_added = 0;
 	lnet_nid_t nid;
@@ -867,15 +923,15 @@ static int process_command(const struct lu_env *env, struct lustre_cfg *lcfg,
 	if (lcfg->lcfg_command == LCFG_ADD_UUID) {
 		/* LCFG_ADD_UUID command found. Let's skip original command
 		   and add passed nids */
-		ptr = mrul->target.mti_params;
+		ptr = mrd->target.mti_params;
 		while (class_parse_nid(ptr, &nid, &ptr) == 0) {
 			CDEBUG(D_MGS, "add nid %s with uuid %s, "
 			       "device %s\n", libcfs_nid2str(nid),
-				mrul->target.mti_params,
-				mrul->target.mti_svname);
+				mrd->target.mti_params,
+				mrd->target.mti_svname);
 			rc = record_add_uuid(env,
-					     mrul->temp_llh, nid,
-					     mrul->target.mti_params);
+					     mrd->temp_llh, nid,
+					     mrd->target.mti_params);
 			if (!rc)
 				nids_added++;
 		}
@@ -883,27 +939,27 @@ static int process_command(const struct lu_env *env, struct lustre_cfg *lcfg,
 		if (nids_added == 0) {
 			CERROR("No new nids were added, nid %s with uuid %s, "
 			       "device %s\n", libcfs_nid2str(nid),
-			       mrul->target.mti_params,
-			       mrul->target.mti_svname);
+			       mrd->target.mti_params,
+			       mrd->target.mti_svname);
 			RETURN(-ENXIO);
 		} else {
-			mrul->device_nids_added = 1;
+			mrd->device_nids_added = 1;
 		}
 
 		return nids_added;
 	}
 
-	if (mrul->device_nids_added && lcfg->lcfg_command == LCFG_SETUP) {
+	if (mrd->device_nids_added && lcfg->lcfg_command == LCFG_SETUP) {
 		/* LCFG_SETUP command found. UUID should be changed */
 		rc = record_setup(env,
-				  mrul->temp_llh,
+				  mrd->temp_llh,
 				  /* devname the same */
 				  lustre_cfg_string(lcfg, 0),
 				  /* s1 is not changed */
 				  lustre_cfg_string(lcfg, 1),
 				  /* new uuid should be
 				  the full nidlist */
-				  mrul->target.mti_params,
+				  mrd->target.mti_params,
 				  /* s3 is not changed */
 				  lustre_cfg_string(lcfg, 3),
 				  /* s4 is not changed */
@@ -921,22 +977,22 @@ static int process_command(const struct lu_env *env, struct lustre_cfg *lcfg,
  *
  * \param[in] llh       log to be processed
  * \param[in] rec       current record
- * \param[in] data      mgs_replace_uuid_lookup structure
+ * \param[in] data      mgs_replace_data structure
  *
  * \retval 0    success
  */
-static int mgs_replace_handler(const struct lu_env *env,
-			       struct llog_handle *llh,
-			       struct llog_rec_hdr *rec,
-			       void *data)
+static int mgs_replace_nids_handler(const struct lu_env *env,
+				    struct llog_handle *llh,
+				    struct llog_rec_hdr *rec,
+				    void *data)
 {
-	struct mgs_replace_uuid_lookup *mrul;
+	struct mgs_replace_data *mrd;
 	struct lustre_cfg *lcfg = REC_DATA(rec);
 	int cfg_len = REC_DATA_LEN(rec);
 	int rc;
 	ENTRY;
 
-	mrul = (struct mgs_replace_uuid_lookup *)data;
+	mrd = (struct mgs_replace_data *)data;
 
 	if (rec->lrh_type != OBD_CFG_REC) {
 		CERROR("unhandled lrh_type: %#x, cmd %x %s %s\n",
@@ -952,23 +1008,23 @@ static int mgs_replace_handler(const struct lu_env *env,
 		GOTO(skip_out, rc = 0);
 	}
 
-	rc = check_markers(lcfg, mrul);
-	if (rc || mrul->skip_it)
+	rc = check_markers(lcfg, mrd);
+	if (rc || mrd->skip_it)
 		GOTO(skip_out, rc = 0);
 
 	/* Write to new log all commands outside target device block */
-	if (!mrul->in_target_device)
+	if (!mrd->in_target_device)
 		GOTO(copy_out, rc = 0);
 
 	/* Skip all other LCFG_ADD_UUID and LCFG_ADD_CONN records
 	   (failover nids) for this target, assuming that if then
 	   primary is changing then so is the failover */
-	if (mrul->device_nids_added &&
+	if (mrd->device_nids_added &&
 	    (lcfg->lcfg_command == LCFG_ADD_UUID ||
 	     lcfg->lcfg_command == LCFG_ADD_CONN))
 		GOTO(skip_out, rc = 0);
 
-	rc = process_command(env, lcfg, mrul);
+	rc = process_command(env, lcfg, mrd);
 	if (rc < 0)
 		RETURN(rc);
 
@@ -976,7 +1032,7 @@ static int mgs_replace_handler(const struct lu_env *env,
 		RETURN(0);
 copy_out:
 	/* Record is placed in temporary llog as is */
-	rc = llog_write(env, mrul->temp_llh, rec, LLOG_NEXT_IDX);
+	rc = llog_write(env, mrd->temp_llh, rec, LLOG_NEXT_IDX);
 
 	CDEBUG(D_MGS, "Copied idx=%d, rc=%d, len=%d, cmd %x %s %s\n",
 	       rec->lrh_index, rc, rec->lrh_len, lcfg->lcfg_command,
@@ -1004,20 +1060,19 @@ static int mgs_log_is_empty(const struct lu_env *env,
 	return rc;
 }
 
-static int mgs_replace_nids_log(const struct lu_env *env,
-				struct obd_device *mgs, struct fs_db *fsdb,
-				char *logname, char *devname, char *nids)
+static int mgs_replace_log(const struct lu_env *env,
+			   struct obd_device *mgs,
+			   char *logname, char *devname,
+			   llog_cb_t replace_handler, void *data)
 {
 	struct llog_handle *orig_llh, *backup_llh;
 	struct llog_ctxt *ctxt;
-	struct mgs_replace_uuid_lookup *mrul;
+	struct mgs_replace_data *mrd;
 	struct mgs_device *mgs_dev = lu2mgs_dev(mgs->obd_lu_dev);
 	static struct obd_uuid	 cfg_uuid = { .uuid = "config_uuid" };
 	char *backup;
 	int rc, rc2;
 	ENTRY;
-
-	CDEBUG(D_MGS, "Replace nids for %s in %s\n", devname, logname);
 
 	ctxt = llog_get_context(mgs, LLOG_CONFIG_ORIG_CTXT);
 	LASSERT(ctxt != NULL);
@@ -1068,20 +1123,23 @@ static int mgs_replace_nids_log(const struct lu_env *env,
 	if (llog_get_size(backup_llh) <= 1)
 		GOTO(out_close, rc = 0);
 
-	OBD_ALLOC_PTR(mrul);
-	if (!mrul)
+	OBD_ALLOC_PTR(mrd);
+	if (!mrd)
 		GOTO(out_close, rc = -ENOMEM);
 	/* devname is only needed information to replace UUID records */
-	strlcpy(mrul->target.mti_svname, devname,
-		sizeof(mrul->target.mti_svname));
-	/* parse nids later */
-	strlcpy(mrul->target.mti_params, nids, sizeof(mrul->target.mti_params));
+	if (devname)
+		strlcpy(mrd->target.mti_svname, devname,
+			sizeof(mrd->target.mti_svname));
+	/* data is parsed in llog callback */
+	if (data)
+		strlcpy(mrd->target.mti_params, (char *)data,
+			sizeof(mrd->target.mti_params));
 	/* Copy records to this temporary llog */
-	mrul->temp_llh = orig_llh;
+	mrd->temp_llh = orig_llh;
 
-	rc = llog_process(env, backup_llh, mgs_replace_handler,
-			  (void *)mrul, NULL);
-	OBD_FREE_PTR(mrul);
+	rc = llog_process(env, backup_llh, replace_handler,
+			  (void *)mrd, NULL);
+	OBD_FREE_PTR(mrd);
 out_close:
 	rc2 = llog_close(NULL, backup_llh);
 	if (!rc)
@@ -1109,10 +1167,19 @@ out_put:
 	llog_ctxt_put(ctxt);
 
 	if (rc)
-		CERROR("%s: failed to replace nids in log %s: rc = %d\n",
+		CERROR("%s: failed to replace log %s: rc = %d\n",
 		       mgs->obd_name, logname, rc);
 
 	RETURN(rc);
+}
+
+static int mgs_replace_nids_log(const struct lu_env *env,
+				struct obd_device *obd,
+				char *logname, char *devname, char *nids)
+{
+	CDEBUG(D_MGS, "Replace nids for %s in %s\n", devname, logname);
+	return mgs_replace_log(env, obd, logname, devname,
+			       mgs_replace_nids_handler, nids);
 }
 
 /**
@@ -1241,7 +1308,7 @@ int mgs_replace_nids(const struct lu_env *env,
 
 	/* Process client llogs */
 	name_create(&logname, fsname, "-client");
-	rc = mgs_replace_nids_log(env, mgs_obd, fsdb, logname, devname, nids);
+	rc = mgs_replace_nids_log(env, mgs_obd, logname, devname, nids);
 	name_destroy(&logname);
 	if (rc) {
 		CERROR("%s: error while replacing NIDs for %s: rc = %d\n",
@@ -1254,12 +1321,169 @@ int mgs_replace_nids(const struct lu_env *env,
 		if (!test_bit(i, fsdb->fsdb_mdt_index_map))
 			continue;
 		name_create_mdt(&logname, fsname, i);
-		rc = mgs_replace_nids_log(env, mgs_obd, fsdb, logname, devname, nids);
+		rc = mgs_replace_nids_log(env, mgs_obd, logname, devname, nids);
 		name_destroy(&logname);
 		if (rc)
 			GOTO(out, rc);
 	}
 
+out:
+	spin_lock(&mgs_obd->obd_dev_lock);
+	mgs_obd->obd_no_conn = conn_state;
+	spin_unlock(&mgs_obd->obd_dev_lock);
+
+	RETURN(rc);
+}
+
+/**
+ * This is called for every record in llog. Some of records are
+ * skipped, others are copied to new log as is.
+ * Records to be skipped are
+ *  marker records marked SKIP
+ *  records enclosed between SKIP markers
+ *
+ * \param[in] llh	log to be processed
+ * \param[in] rec	current record
+ * \param[in] data	mgs_replace_data structure
+ *
+ * \retval 0	success
+ **/
+static int mgs_clear_config_handler(const struct lu_env *env,
+				    struct llog_handle *llh,
+				    struct llog_rec_hdr *rec, void *data)
+{
+	struct mgs_replace_data *mrd;
+	struct lustre_cfg *lcfg = REC_DATA(rec);
+	int cfg_len = REC_DATA_LEN(rec);
+	int rc;
+	ENTRY;
+
+	mrd = (struct mgs_replace_data *)data;
+
+	if (rec->lrh_type != OBD_CFG_REC) {
+		CERROR("unhandled lrh_type: %#x\n", rec->lrh_type);
+		RETURN(-EINVAL);
+	}
+
+	rc = lustre_cfg_sanity_check(lcfg, cfg_len);
+	if (rc) {
+		CWARN("Insane cfg\n");
+		RETURN(-EINVAL);
+	}
+
+	if (lcfg->lcfg_command == LCFG_MARKER) {
+		struct cfg_marker *marker;
+
+		marker = lustre_cfg_buf(lcfg, 1);
+		if (marker->cm_flags & CM_SKIP) {
+			if (marker->cm_flags & CM_START)
+				mrd->skip_it = 1;
+			if (marker->cm_flags & CM_END)
+				mrd->skip_it = 0;
+			/* SKIP section started or finished */
+			CDEBUG(D_MGS, "Skip idx=%d, rc=%d, len=%d, "
+			       "cmd %x %s %s\n", rec->lrh_index, rc,
+			       rec->lrh_len, lcfg->lcfg_command,
+			       lustre_cfg_string(lcfg, 0),
+			       lustre_cfg_string(lcfg, 1));
+			RETURN(0);
+		}
+	} else {
+		if (mrd->skip_it) {
+			/* record enclosed between SKIP markers, skip it */
+			CDEBUG(D_MGS, "Skip idx=%d, rc=%d, len=%d, "
+			       "cmd %x %s %s\n", rec->lrh_index, rc,
+			       rec->lrh_len, lcfg->lcfg_command,
+			       lustre_cfg_string(lcfg, 0),
+			       lustre_cfg_string(lcfg, 1));
+			RETURN(0);
+		}
+	}
+
+	/* Record is placed in temporary llog as is */
+	rc = llog_write(env, mrd->temp_llh, rec, LLOG_NEXT_IDX);
+
+	CDEBUG(D_MGS, "Copied idx=%d, rc=%d, len=%d, cmd %x %s %s\n",
+	       rec->lrh_index, rc, rec->lrh_len, lcfg->lcfg_command,
+	       lustre_cfg_string(lcfg, 0), lustre_cfg_string(lcfg, 1));
+	RETURN(rc);
+}
+
+/* directory CONFIGS/ may contain files which are not config logs to
+ * be cleared */
+static int config_to_clear(const char *logname)
+{
+	if (!strcmp(logname + strlen(logname) - 4, ".bak") ||
+	    logname[strlen(logname) - 1] == 'T')
+		/* skip logname ending with ".bak" or 'T' */
+		return 0;
+	return 1;
+}
+
+/**
+ * Clear config logs for \a name
+ *
+ * \param env
+ * \param mgs		MGS device
+ * \param name		name of device or of filesystem
+ * (ex. lustre-OST0000 or lustre)
+ *			in later case all logs will be cleared
+ *
+ * \retval 0	success
+ **/
+int mgs_clear_configs(const struct lu_env *env,
+		     struct mgs_device *mgs, const char *name)
+{
+	struct list_head dentry_list;
+	struct mgs_direntry *dirent, *n;
+	char *namedash;
+	int conn_state;
+	struct obd_device *mgs_obd = mgs->mgs_obd;
+	int rc;
+	ENTRY;
+
+	/* Prevent clients and servers from connecting to mgs */
+	spin_lock(&mgs_obd->obd_dev_lock);
+	conn_state = mgs_obd->obd_no_conn;
+	mgs_obd->obd_no_conn = 1;
+	spin_unlock(&mgs_obd->obd_dev_lock);
+
+	/* config logs can not be cleared if not only MGS is started */
+	if (!only_mgs_is_running(mgs_obd)) {
+		CERROR("Only MGS is allowed to be started\n");
+		GOTO(out, rc = -EINPROGRESS);
+	}
+
+	/* Find all the logs in the CONFIGS directory */
+	rc = class_dentry_readdir(env, mgs, &dentry_list, NULL);
+	if (rc) {
+		CERROR("Can't read %s dir\n", MOUNT_CONFIGS_DIR);
+		GOTO(out, rc);
+	}
+
+	OBD_ALLOC(namedash, strlen(name) + 2);
+	if (namedash == NULL)
+		GOTO(out, rc = -ENOMEM);
+	snprintf(namedash, strlen(name) + 2, "%s-", name);
+
+	list_for_each_entry(dirent, &dentry_list, mde_list) {
+		if (strcmp(name, dirent->mde_name) &&
+		    strncmp(namedash, dirent->mde_name, strlen(namedash)))
+			continue;
+		if (!config_to_clear(dirent->mde_name))
+			continue;
+		CDEBUG(D_MGS, "Clear config log %s\n", dirent->mde_name);
+		rc = mgs_replace_log(env, mgs_obd, dirent->mde_name, NULL,
+				     mgs_clear_config_handler, NULL);
+		if (rc)
+			break;
+	}
+
+	list_for_each_entry_safe(dirent, n, &dentry_list, mde_list) {
+		list_del_init(&dirent->mde_list);
+		mgs_direntry_free(dirent);
+	}
+	OBD_FREE(namedash, strlen(name) + 2);
 out:
 	spin_lock(&mgs_obd->obd_dev_lock);
 	mgs_obd->obd_no_conn = conn_state;
@@ -1459,7 +1683,7 @@ static int mgs_write_log_direct_all(const struct lu_env *env,
 
 	ENTRY;
 	/* Find all the logs in the CONFIGS directory */
-	rc = class_dentry_readdir(env, mgs, &log_list);
+	rc = class_dentry_readdir(env, mgs, &log_list, NULL);
 	if (rc)
 		RETURN(rc);
 
@@ -1968,6 +2192,11 @@ static int mgs_write_log_mdc_to_lmv(const struct lu_env *env,
 	if (rc)
 		GOTO(out_free, rc);
 
+	rc = mgs_modify(env, mgs, fsdb, mti, logname, mti->mti_svname,
+			"add mdc", CM_SKIP);
+	if (rc < 0)
+		GOTO(out_free, rc);
+
 	rc = record_start_log(env, mgs, &llh, logname);
 	if (rc)
 		GOTO(out_free, rc);
@@ -2109,6 +2338,11 @@ static int mgs_write_log_osp_to_mdt(const struct lu_env *env,
 
 	rc = name_create(&mdtuuid, mdtname, "_UUID");
 	if (rc)
+		GOTO(out_destory, rc);
+
+	rc = mgs_modify(env, mgs, fsdb, mti, logname, mti->mti_svname,
+			"add osp", CM_SKIP);
+	if (rc < 0)
 		GOTO(out_destory, rc);
 
 	rc = record_start_log(env, mgs, &llh, logname);
@@ -2384,6 +2618,13 @@ static int mgs_write_log_osc_to_lov(const struct lu_env *env,
 	if (rc)
 		GOTO(out_free, rc);
 
+	/* if "add osc" config record for this target presents in the
+	 * log already it has to be marked with CM_SKIP flag,
+	 * otherwise a log consumer would get confused */
+	rc = mgs_modify(env, mgs, fsdb, mti, logname, mti->mti_svname,
+			"add osc", CM_SKIP);
+	if (rc < 0)
+		GOTO(out_free, rc);
 
         /*
         #03 L add_uuid nid=uml1@tcp(0x20000c0a80201) 0:  1:uml1_UUID
@@ -3055,6 +3296,9 @@ static int mgs_srpc_set_param_mem(struct fs_db *fsdb,
                 }
 
                 rset = &tgtconf->mtsc_rset;
+	} else if (strcmp(svname, MGSSELF_NAME) == 0) {
+		/* put _mgs related srpc rule directly in mgs ruleset */
+		rset = &fsdb->fsdb_mgs->mgs_lut.lut_sptlrpc_rset;
         } else {
                 rset = &fsdb->fsdb_srpc_gen;
         }
@@ -3568,7 +3812,8 @@ static int mgs_write_log_param(const struct lu_env *env,
 		GOTO(end, rc);
 	}
 
-        LCONSOLE_WARN("Ignoring unrecognized param '%s'\n", ptr);
+        LCONSOLE_WARN("Unrecognized param '%s' mounting of target will fail " \
+			"with 'Function not implemented'\n", ptr);
         rc2 = -ENOSYS;
 
 end:
@@ -3716,25 +3961,42 @@ int mgs_erase_log(const struct lu_env *env, struct mgs_device *mgs, char *name)
 }
 
 /* erase all logs for the given fs */
-int mgs_erase_logs(const struct lu_env *env, struct mgs_device *mgs, char *fsname)
+int mgs_erase_logs(const struct lu_env *env, struct mgs_device *mgs,
+		   const char *fsname)
 {
 	struct fs_db *fsdb;
 	struct list_head log_list;
 	struct mgs_direntry *dirent, *n;
-	int rc, len = strlen(fsname);
+	char barrier_name[20];
 	char *suffix;
+	int count = 0;
+	int rc, len = strlen(fsname);
 	ENTRY;
-
-	/* Find all the logs in the CONFIGS directory */
-	rc = class_dentry_readdir(env, mgs, &log_list);
-	if (rc)
-		RETURN(rc);
 
 	mutex_lock(&mgs->mgs_mutex);
 
-        /* Delete the fs db */
+	/* Find all the logs in the CONFIGS directory */
+	rc = class_dentry_readdir(env, mgs, &log_list, NULL);
+	if (rc != 0) {
+		mutex_unlock(&mgs->mgs_mutex);
+		RETURN(rc);
+	}
+
+	if (list_empty(&log_list)) {
+		mutex_unlock(&mgs->mgs_mutex);
+		RETURN(-ENOENT);
+	}
+
+	memset(barrier_name, 0, sizeof(barrier_name));
+	snprintf(barrier_name, 19, "%s.%s", fsname, BARRIER_FILENAME);
+	/* Delete the barrier fsdb */
+	fsdb = mgs_find_fsdb(mgs, barrier_name);
+	if (fsdb != NULL)
+		mgs_free_fsdb(mgs, fsdb);
+
+	/* Delete the config fsdb */
 	fsdb = mgs_find_fsdb(mgs, fsname);
-        if (fsdb)
+	if (fsdb != NULL)
 		mgs_free_fsdb(mgs, fsdb);
 
 	mutex_unlock(&mgs->mgs_mutex);
@@ -3748,12 +4010,16 @@ int mgs_erase_logs(const struct lu_env *env, struct mgs_device *mgs, char *fsnam
 				CDEBUG(D_MGS, "Removing log %s\n",
 				       dirent->mde_name);
 				mgs_erase_log(env, mgs, dirent->mde_name);
+				count++;
 			}
 		}
 		mgs_direntry_free(dirent);
 	}
 
-        RETURN(rc);
+	if (count == 0)
+		rc = -ENOENT;
+
+	RETURN(rc);
 }
 
 /* list all logs for the given fs */
@@ -3768,7 +4034,7 @@ int mgs_list_logs(const struct lu_env *env, struct mgs_device *mgs,
 	ENTRY;
 
 	/* Find all the logs in the CONFIGS directory */
-	rc = class_dentry_readdir(env, mgs, &log_list);
+	rc = class_dentry_readdir(env, mgs, &log_list, NULL);
 	if (rc)
 		RETURN(rc);
 
@@ -3787,6 +4053,391 @@ int mgs_list_logs(const struct lu_env *env, struct mgs_device *mgs,
 		if (remains <= 0)
 			break;
 	}
+	RETURN(rc);
+}
+
+struct mgs_lcfg_fork_data {
+	struct lustre_cfg_bufs	 mlfd_bufs;
+	struct mgs_device	*mlfd_mgs;
+	struct llog_handle	*mlfd_llh;
+	const char		*mlfd_oldname;
+	const char		*mlfd_newname;
+	char			 mlfd_data[0];
+};
+
+static bool contain_valid_fsname(char *buf, const char *fsname,
+				 int buflen, int namelen)
+{
+	if (buflen < namelen)
+		return false;
+
+	if (memcmp(buf, fsname, namelen) != 0)
+		return false;
+
+	if (buf[namelen] != '\0' && buf[namelen] != '-')
+		return false;
+
+	return true;
+}
+
+static int mgs_lcfg_fork_handler(const struct lu_env *env,
+				 struct llog_handle *o_llh,
+				 struct llog_rec_hdr *o_rec, void *data)
+{
+	struct mgs_lcfg_fork_data *mlfd = data;
+	struct lustre_cfg_bufs *n_bufs = &mlfd->mlfd_bufs;
+	struct lustre_cfg *o_lcfg = (struct lustre_cfg *)(o_rec + 1);
+	struct llog_cfg_rec *lcr;
+	char *o_buf;
+	char *n_buf = mlfd->mlfd_data;
+	int o_buflen;
+	int o_namelen = strlen(mlfd->mlfd_oldname);
+	int n_namelen = strlen(mlfd->mlfd_newname);
+	int diff = n_namelen - o_namelen;
+	__u32 cmd = o_lcfg->lcfg_command;
+	__u32 cnt = o_lcfg->lcfg_bufcount;
+	int rc;
+	int i;
+	ENTRY;
+
+	/* buf[0] */
+	o_buf = lustre_cfg_buf(o_lcfg, 0);
+	o_buflen = o_lcfg->lcfg_buflens[0];
+	if (contain_valid_fsname(o_buf, mlfd->mlfd_oldname, o_buflen,
+				 o_namelen)) {
+		memcpy(n_buf, mlfd->mlfd_newname, n_namelen);
+		memcpy(n_buf + n_namelen, o_buf + o_namelen,
+		       o_buflen - o_namelen);
+		lustre_cfg_bufs_reset(n_bufs, n_buf);
+		n_buf += cfs_size_round(o_buflen + diff);
+	} else {
+		lustre_cfg_bufs_reset(n_bufs, o_buflen != 0 ? o_buf : NULL);
+	}
+
+	switch (cmd) {
+	case LCFG_MARKER: {
+		struct cfg_marker *o_marker;
+		struct cfg_marker *n_marker;
+		int tgt_namelen;
+
+		if (cnt != 2) {
+			CDEBUG(D_MGS, "Unknown cfg marker entry with %d "
+			       "buffers\n", cnt);
+			RETURN(-EINVAL);
+		}
+
+		/* buf[1] is marker */
+		o_buf = lustre_cfg_buf(o_lcfg, 1);
+		o_buflen = o_lcfg->lcfg_buflens[1];
+		o_marker = (struct cfg_marker *)o_buf;
+		if (!contain_valid_fsname(o_marker->cm_tgtname,
+					  mlfd->mlfd_oldname,
+					  sizeof(o_marker->cm_tgtname),
+					  o_namelen)) {
+			lustre_cfg_bufs_set(n_bufs, 1, o_marker,
+					    sizeof(*o_marker));
+			break;
+		}
+
+		n_marker = (struct cfg_marker *)n_buf;
+		*n_marker = *o_marker;
+		memcpy(n_marker->cm_tgtname, mlfd->mlfd_newname, n_namelen);
+		tgt_namelen = strlen(o_marker->cm_tgtname);
+		if (tgt_namelen > o_namelen)
+			memcpy(n_marker->cm_tgtname + n_namelen,
+			       o_marker->cm_tgtname + o_namelen,
+			       tgt_namelen - o_namelen);
+		n_marker->cm_tgtname[tgt_namelen + diff] = '\0';
+		lustre_cfg_bufs_set(n_bufs, 1, n_marker, sizeof(*n_marker));
+		n_buf += cfs_size_round(sizeof(*n_marker));
+		break;
+	}
+	case LCFG_PARAM:
+	case LCFG_SET_PARAM: {
+		for (i = 1; i < cnt; i++)
+			/* buf[i] is the param value, reuse it directly */
+			lustre_cfg_bufs_set(n_bufs, i,
+					    lustre_cfg_buf(o_lcfg, i),
+					    o_lcfg->lcfg_buflens[i]);
+		break;
+	}
+	case LCFG_POOL_NEW:
+	case LCFG_POOL_ADD:
+	case LCFG_POOL_REM:
+	case LCFG_POOL_DEL: {
+		if (cnt < 3 || cnt > 4) {
+			CDEBUG(D_MGS, "Unknown cfg pool (%x) entry with %d "
+			       "buffers\n", cmd, cnt);
+			RETURN(-EINVAL);
+		}
+
+		/* buf[1] is fsname */
+		o_buf = lustre_cfg_buf(o_lcfg, 1);
+		o_buflen = o_lcfg->lcfg_buflens[1];
+		memcpy(n_buf, mlfd->mlfd_newname, n_namelen);
+		memcpy(n_buf + n_namelen, o_buf + o_namelen,
+		       o_buflen - o_namelen);
+		lustre_cfg_bufs_set(n_bufs, 1, n_buf, o_buflen + diff);
+		n_buf += cfs_size_round(o_buflen + diff);
+
+		/* buf[2] is the pool name, reuse it directly */
+		lustre_cfg_bufs_set(n_bufs, 2, lustre_cfg_buf(o_lcfg, 2),
+				    o_lcfg->lcfg_buflens[2]);
+
+		if (cnt == 3)
+			break;
+
+		/* buf[3] is ostname */
+		o_buf = lustre_cfg_buf(o_lcfg, 3);
+		o_buflen = o_lcfg->lcfg_buflens[3];
+		memcpy(n_buf, mlfd->mlfd_newname, n_namelen);
+		memcpy(n_buf + n_namelen, o_buf + o_namelen,
+		       o_buflen - o_namelen);
+		lustre_cfg_bufs_set(n_bufs, 3, n_buf, o_buflen + diff);
+		n_buf += cfs_size_round(o_buflen + diff);
+		break;
+	}
+	case LCFG_SETUP: {
+		if (cnt == 2) {
+			o_buflen = o_lcfg->lcfg_buflens[1];
+			if (o_buflen == sizeof(struct lov_desc) ||
+			    o_buflen == sizeof(struct lmv_desc)) {
+				char *o_uuid;
+				char *n_uuid;
+				int uuid_len;
+
+				/* buf[1] */
+				o_buf = lustre_cfg_buf(o_lcfg, 1);
+				if (o_buflen == sizeof(struct lov_desc)) {
+					struct lov_desc *o_desc =
+						(struct lov_desc *)o_buf;
+					struct lov_desc *n_desc =
+						(struct lov_desc *)n_buf;
+
+					*n_desc = *o_desc;
+					o_uuid = o_desc->ld_uuid.uuid;
+					n_uuid = n_desc->ld_uuid.uuid;
+					uuid_len = sizeof(o_desc->ld_uuid.uuid);
+				} else {
+					struct lmv_desc *o_desc =
+						(struct lmv_desc *)o_buf;
+					struct lmv_desc *n_desc =
+						(struct lmv_desc *)n_buf;
+
+					*n_desc = *o_desc;
+					o_uuid = o_desc->ld_uuid.uuid;
+					n_uuid = n_desc->ld_uuid.uuid;
+					uuid_len = sizeof(o_desc->ld_uuid.uuid);
+				}
+
+				if (unlikely(!contain_valid_fsname(o_uuid,
+						mlfd->mlfd_oldname, uuid_len,
+						o_namelen))) {
+					lustre_cfg_bufs_set(n_bufs, 1, o_buf,
+							    o_buflen);
+					break;
+				}
+
+				memcpy(n_uuid, mlfd->mlfd_newname, n_namelen);
+				uuid_len = strlen(o_uuid);
+				if (uuid_len > o_namelen)
+					memcpy(n_uuid + n_namelen,
+					       o_uuid + o_namelen,
+					       uuid_len - o_namelen);
+				n_uuid[uuid_len + diff] = '\0';
+				lustre_cfg_bufs_set(n_bufs, 1, n_buf, o_buflen);
+				n_buf += cfs_size_round(o_buflen);
+				break;
+			} /* else case go through */
+		} /* else case go through */
+	}
+	default: {
+		for (i = 1; i < cnt; i++) {
+			o_buflen = o_lcfg->lcfg_buflens[i];
+			if (o_buflen == 0)
+				continue;
+
+			o_buf = lustre_cfg_buf(o_lcfg, i);
+			if (!contain_valid_fsname(o_buf, mlfd->mlfd_oldname,
+						  o_buflen, o_namelen)) {
+				lustre_cfg_bufs_set(n_bufs, i, o_buf, o_buflen);
+				continue;
+			}
+
+			memcpy(n_buf, mlfd->mlfd_newname, n_namelen);
+			if (o_buflen == o_namelen) {
+				lustre_cfg_bufs_set(n_bufs, i, n_buf,
+						    n_namelen);
+				n_buf += cfs_size_round(n_namelen);
+				continue;
+			}
+
+			memcpy(n_buf + n_namelen, o_buf + o_namelen,
+			       o_buflen - o_namelen);
+			lustre_cfg_bufs_set(n_bufs, i, n_buf, o_buflen + diff);
+			n_buf += cfs_size_round(o_buflen + diff);
+		}
+		break;
+	}
+	}
+
+	lcr = lustre_cfg_rec_new(cmd, n_bufs);
+	if (lcr == NULL)
+		RETURN(-ENOMEM);
+
+	lcr->lcr_cfg = *o_lcfg;
+	rc = llog_write(env, mlfd->mlfd_llh, &lcr->lcr_hdr, LLOG_NEXT_IDX);
+	lustre_cfg_rec_free(lcr);
+
+	RETURN(rc);
+}
+
+static int mgs_lcfg_fork_one(const struct lu_env *env, struct mgs_device *mgs,
+			     struct mgs_direntry *mde, const char *oldname,
+			     const char *newname)
+{
+	struct llog_handle		*old_llh	= NULL;
+	struct llog_handle		*new_llh	= NULL;
+	struct llog_ctxt		*ctxt		= NULL;
+	struct mgs_lcfg_fork_data	*mlfd		= NULL;
+	char				*name_buf	= NULL;
+	int				 name_buflen;
+	int				 old_namelen	= strlen(oldname);
+	int				 new_namelen	= strlen(newname);
+	int				 rc;
+	ENTRY;
+
+	name_buflen = mde->mde_len + new_namelen - old_namelen;
+	OBD_ALLOC(name_buf, name_buflen);
+	if (name_buf == NULL)
+		RETURN(-ENOMEM);
+
+	memcpy(name_buf, newname, new_namelen);
+	memcpy(name_buf + new_namelen, mde->mde_name + old_namelen,
+	       mde->mde_len - old_namelen);
+
+	CDEBUG(D_MGS, "Fork the config-log from %s to %s\n",
+	       mde->mde_name, name_buf);
+
+	ctxt = llog_get_context(mgs->mgs_obd, LLOG_CONFIG_ORIG_CTXT);
+	LASSERT(ctxt != NULL);
+
+	rc = llog_open_create(env, ctxt, &new_llh, NULL, name_buf);
+	if (rc != 0)
+		GOTO(out, rc);
+
+	rc = llog_init_handle(env, new_llh, LLOG_F_IS_PLAIN, NULL);
+	if (rc != 0)
+		GOTO(out, rc);
+
+	if (unlikely(mgs_log_is_empty(env, mgs, mde->mde_name)))
+		GOTO(out, rc = 0);
+
+	rc = llog_open(env, ctxt, &old_llh, NULL, mde->mde_name,
+		       LLOG_OPEN_EXISTS);
+	if (rc != 0)
+		GOTO(out, rc);
+
+	rc = llog_init_handle(env, old_llh, LLOG_F_IS_PLAIN, NULL);
+	if (rc != 0)
+		GOTO(out, rc);
+
+	OBD_ALLOC(mlfd, PAGE_CACHE_SIZE);
+	if (mlfd == NULL)
+		GOTO(out, rc = -ENOMEM);
+
+	mlfd->mlfd_mgs = mgs;
+	mlfd->mlfd_llh = new_llh;
+	mlfd->mlfd_oldname = oldname;
+	mlfd->mlfd_newname = newname;
+
+	rc = llog_process(env, old_llh, mgs_lcfg_fork_handler, mlfd, NULL);
+	OBD_FREE(mlfd, PAGE_CACHE_SIZE);
+
+	GOTO(out, rc);
+
+out:
+	if (old_llh != NULL)
+		llog_close(env, old_llh);
+	if (new_llh != NULL)
+		llog_close(env, new_llh);
+	if (name_buf != NULL)
+		OBD_FREE(name_buf, name_buflen);
+	if (ctxt != NULL)
+		llog_ctxt_put(ctxt);
+
+	return rc;
+}
+
+int mgs_lcfg_fork(const struct lu_env *env, struct mgs_device *mgs,
+		  const char *oldname, const char *newname)
+{
+	struct list_head	 log_list;
+	struct mgs_direntry	*dirent, *n;
+	int			 len = strlen(oldname);
+	int			 rc = 0;
+	ENTRY;
+
+	if (strcmp(oldname, newname) == 0)
+		RETURN(-EINVAL);
+
+	/* lock it to prevent fork/erase/register in parallel. */
+	mutex_lock(&mgs->mgs_mutex);
+
+	rc = class_dentry_readdir(env, mgs, &log_list, newname);
+	if (rc != 0) {
+		mutex_unlock(&mgs->mgs_mutex);
+		RETURN(rc);
+	}
+
+	if (list_empty(&log_list)) {
+		mutex_unlock(&mgs->mgs_mutex);
+		RETURN(-ENOENT);
+	}
+
+	list_for_each_entry_safe(dirent, n, &log_list, mde_list) {
+		char *ptr;
+
+		list_del_init(&dirent->mde_list);
+		ptr = strrchr(dirent->mde_name, '-');
+		if (ptr == NULL)
+			goto next;
+
+		if (ptr - dirent->mde_name != len)
+			goto next;
+
+		if (strncmp(oldname, dirent->mde_name, len) != 0)
+			goto next;
+
+		rc = mgs_lcfg_fork_one(env, mgs, dirent, oldname, newname);
+
+next:
+		mgs_direntry_free(dirent);
+		if (rc != 0)
+			break;
+	}
+
+	mutex_unlock(&mgs->mgs_mutex);
+
+	list_for_each_entry_safe(dirent, n, &log_list, mde_list) {
+		list_del_init(&dirent->mde_list);
+		mgs_direntry_free(dirent);
+	}
+
+	if (rc != 0)
+		mgs_erase_logs(env, mgs, newname);
+
+	RETURN(rc);
+}
+
+int mgs_lcfg_erase(const struct lu_env *env, struct mgs_device *mgs,
+		   const char *fsname)
+{
+	int	rc;
+	ENTRY;
+
+	rc = mgs_erase_logs(env, mgs, fsname);
+
 	RETURN(rc);
 }
 
@@ -3814,6 +4465,19 @@ static void print_lustre_cfg(struct lustre_cfg *lcfg)
         EXIT;
 }
 
+/* Setup _mgs fsdb and log
+ */
+int mgs__mgs_fsdb_setup(const struct lu_env *env, struct mgs_device *mgs,
+			  struct fs_db *fsdb)
+{
+	int			rc;
+	ENTRY;
+
+	rc = mgs_find_or_make_fsdb(env, mgs, MGSSELF_NAME, &fsdb);
+
+	RETURN(rc);
+}
+
 /* Setup params fsdb and log
  */
 int mgs_params_fsdb_setup(const struct lu_env *env, struct mgs_device *mgs,
@@ -3839,7 +4503,10 @@ int mgs_params_fsdb_setup(const struct lu_env *env, struct mgs_device *mgs,
  */
 int mgs_params_fsdb_cleanup(const struct lu_env *env, struct mgs_device *mgs)
 {
-	return mgs_erase_logs(env, mgs, PARAMS_FILENAME);
+	int rc;
+
+	rc = mgs_erase_logs(env, mgs, PARAMS_FILENAME);
+	return rc == -ENOENT ? 0 : rc;
 }
 
 /* Set a permanent (config log) param for a target or fs

@@ -79,6 +79,7 @@ extern struct kmem_cache *dynlock_cachep;
 
 /* OI scrub should skip this inode. */
 #define LDISKFS_STATE_LUSTRE_NOSCRUB	31
+#define LDISKFS_STATE_LUSTRE_DESTROY	30
 
 /** Enable thandle usage statistics */
 #define OSD_THANDLE_STATS (0)
@@ -216,6 +217,12 @@ struct osd_otable_it {
 				 ooi_waiting:1; /* it::next is waiting. */
 };
 
+struct osd_obj_orphan {
+	struct list_head oor_list;
+	struct lu_env	*oor_env; /* to identify "own" records */
+	__u32 oor_ino;
+};
+
 /*
  * osd device.
  */
@@ -287,6 +294,9 @@ struct osd_device {
 	 * exceeds the osd_device::od_full_scrub_threshold_rate,
 	 * then trigger OI scrub to scan the whole device. */
 	__u64			 od_full_scrub_threshold_rate;
+
+	/* a list of orphaned agent inodes, protected with od_osfs_lock */
+	struct list_head	 od_orphan_list;
 };
 
 enum osd_full_scrub_ratio {
@@ -341,6 +351,7 @@ struct osd_thandle {
         unsigned short          ot_credits;
         unsigned short          ot_id_cnt;
         unsigned short          ot_id_type;
+	int			ot_remove_agents:1;
         uid_t                   ot_id_array[OSD_MAX_UGID_CNT];
 	struct lquota_trans    *ot_quota_trans;
 #if OSD_THANDLE_STATS
@@ -885,6 +896,11 @@ static inline char *osd_name(struct osd_device *osd)
 	return osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name;
 }
 
+static inline bool osd_is_ea_inode(struct inode *inode)
+{
+	return !!(LDISKFS_I(inode)->i_flags & LDISKFS_EA_INODE_FL);
+}
+
 extern const struct dt_body_operations osd_body_ops;
 extern struct lu_context_key osd_key;
 
@@ -920,6 +936,10 @@ static inline void osd_ipd_put(const struct lu_env *env,
 {
         bag->ic_descr->id_ops->id_ipd_free(ipd);
 }
+
+int osd_calc_bkmap_credits(struct super_block *sb, struct inode *inode,
+			   const loff_t size, const loff_t pos,
+			   const int blocks);
 
 int osd_ldiskfs_read(struct inode *inode, void *buf, int size, loff_t *offs);
 int osd_ldiskfs_write_record(struct inode *inode, void *buf, int bufsize,
@@ -1137,7 +1157,7 @@ static inline struct buffer_head *__ldiskfs_bread(handle_t *handle,
 #ifdef JOURNAL_START_HAS_3ARGS
 # define osd_journal_start_sb(sb, type, nblock) \
 		ldiskfs_journal_start_sb(sb, type, nblock)
-# define osd_ldiskfs_append(handle, inode, nblock, err) \
+# define osd_ldiskfs_append(handle, inode, nblock) \
 		ldiskfs_append(handle, inode, nblock)
 # define osd_ldiskfs_find_entry(dir, name, de, inlined, lock) \
 		__ldiskfs_find_entry(dir, name, de, inlined, lock)
@@ -1149,8 +1169,21 @@ static inline struct buffer_head *__ldiskfs_bread(handle_t *handle,
 # define LDISKFS_HT_MISC	0
 # define osd_journal_start_sb(sb, type, nblock) \
 		ldiskfs_journal_start_sb(sb, nblock)
-# define osd_ldiskfs_append(handle, inode, nblock, err) \
-		ldiskfs_append(handle, inode, nblock, err)
+
+static inline struct buffer_head *osd_ldiskfs_append(handle_t *handle,
+						     struct inode *inode,
+						     ldiskfs_lblk_t *nblock)
+{
+	struct buffer_head *bh;
+	int err = 0;
+
+	bh = ldiskfs_append(handle, inode, nblock, &err);
+	if (bh == NULL)
+		bh = ERR_PTR(err);
+
+	return bh;
+}
+
 # define osd_ldiskfs_find_entry(dir, name, de, inlined, lock) \
 		__ldiskfs_find_entry(dir, name, de, lock)
 # define osd_journal_start(inode, type, nblocks) \

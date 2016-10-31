@@ -9,6 +9,7 @@ ldlm_objs += $(LDLM)ldlm_request.o $(LDLM)ldlm_lockd.o
 ldlm_objs += $(LDLM)ldlm_flock.o $(LDLM)ldlm_inodebits.o
 ldlm_objs += $(LDLM)ldlm_pool.o
 ldlm_objs += $(LDLM)interval_tree.o
+ldlm_objs += $(LDLM)ldlm_reclaim.o
 ptlrpc_objs := client.o recover.o connection.o niobuf.o pack_generic.o
 ptlrpc_objs += events.o ptlrpc_module.o service.o pinger.o
 ptlrpc_objs += llog_net.o llog_client.o llog_server.o import.o ptlrpcd.o
@@ -24,7 +25,7 @@ target_objs += $(TARGET)out_lib.o
 nodemap_objs = nodemap_handler.o nodemap_lproc.o nodemap_range.o
 nodemap_objs += nodemap_idmap.o nodemap_rbtree.o nodemap_member.o
 
-ptlrpc-objs := $(ldlm_objs) $(ptlrpc_objs)
+ptlrpc-objs := $(ldlm_objs) $(ptlrpc_objs) $(TARGET)barrier.o
 @SERVER_TRUE@ptlrpc-objs += $(target_objs) $(nodemap_objs)
 
 @GSS_TRUE@subdir-m += gss
@@ -44,6 +45,9 @@ tgt_%.c: @LUSTRE@/target/tgt_%.c
 	ln -sf $< $@
 
 out_%.c: @LUSTRE@/target/out_%.c
+	ln -sf $< $@
+
+barrier.c: @LUSTRE@/target/barrier.c
 	ln -sf $< $@
 
 EXTRA_DIST := $(ptlrpc_objs:.o=.c) ptlrpc_internal.h

@@ -404,12 +404,12 @@ static int mdc_xattr_common(struct obd_export *exp,const struct req_format *fmt,
 
         /* make rpc */
         if (opcode == MDS_REINT)
-                mdc_get_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
+		mdc_get_mod_rpc_slot(req, NULL);
 
         rc = ptlrpc_queue_wait(req);
 
         if (opcode == MDS_REINT)
-                mdc_put_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
+		mdc_put_mod_rpc_slot(req, NULL);
 
         if (rc)
                 ptlrpc_req_finished(req);
@@ -793,10 +793,9 @@ static void mdc_free_open(struct md_open_data *mod)
 	 * close request wasn`t sent. It is not fatal to client.
 	 * The worst thing is eviction if the client gets open lock
 	 **/
-	if (mod->mod_open_req->rq_replay != 0)
-		CWARN("Close open request with rq_replay == 1\n");
 
-	DEBUG_REQ(D_RPCTRACE, mod->mod_open_req, "free open request\n");
+	DEBUG_REQ(D_RPCTRACE, mod->mod_open_req, "free open request rq_replay"
+		  "= %d\n", mod->mod_open_req->rq_replay);
 
 	ptlrpc_request_committed(mod->mod_open_req, committed);
 	if (mod->mod_close_req)
@@ -894,6 +893,12 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 		CDEBUG(D_HA, "couldn't find open req; expecting close error\n");
 	}
 	if (req == NULL) {
+		/**
+		 * TODO: repeat close after errors
+		 */
+		CWARN("%s: close of FID "DFID" failed, file reference will be "
+		      "dropped when this client unmounts or is evicted\n",
+		      obd->obd_name, PFID(&op_data->op_fid1));
 		GOTO(out, rc = -ENOMEM);
 	}
 
@@ -921,9 +926,9 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 
         ptlrpc_request_set_replen(req);
 
-        mdc_get_rpc_lock(obd->u.cli.cl_close_lock, NULL);
-        rc = ptlrpc_queue_wait(req);
-        mdc_put_rpc_lock(obd->u.cli.cl_close_lock, NULL);
+	mdc_get_mod_rpc_slot(req, NULL);
+	rc = ptlrpc_queue_wait(req);
+	mdc_put_mod_rpc_slot(req, NULL);
 
         if (req->rq_repmsg == NULL) {
                 CDEBUG(D_RPCTRACE, "request failed to send: %p, %d\n", req,
@@ -973,71 +978,8 @@ out:
 static int mdc_done_writing(struct obd_export *exp, struct md_op_data *op_data,
 			    struct md_open_data *mod)
 {
-        struct obd_device     *obd = class_exp2obd(exp);
-        struct ptlrpc_request *req;
-        int                    rc;
-        ENTRY;
-
-        req = ptlrpc_request_alloc(class_exp2cliimp(exp),
-                                   &RQF_MDS_DONE_WRITING);
-        if (req == NULL)
-                RETURN(-ENOMEM);
-
-        mdc_set_capa_size(req, &RMF_CAPA1, op_data->op_capa1);
-        rc = ptlrpc_request_pack(req, LUSTRE_MDS_VERSION, MDS_DONE_WRITING);
-        if (rc) {
-                ptlrpc_request_free(req);
-                RETURN(rc);
-        }
-
-        if (mod != NULL) {
-                LASSERTF(mod->mod_open_req != NULL &&
-                         mod->mod_open_req->rq_type != LI_POISON,
-                         "POISONED setattr %p!\n", mod->mod_open_req);
-
-                mod->mod_close_req = req;
-                DEBUG_REQ(D_HA, mod->mod_open_req, "matched setattr");
-                /* We no longer want to preserve this setattr for replay even
-                 * though the open was committed. b=3632, b=3633 */
-		spin_lock(&mod->mod_open_req->rq_lock);
-		mod->mod_open_req->rq_replay = 0;
-		spin_unlock(&mod->mod_open_req->rq_lock);
-        }
-
-        mdc_close_pack(req, op_data);
-        ptlrpc_request_set_replen(req);
-
-        mdc_get_rpc_lock(obd->u.cli.cl_close_lock, NULL);
-        rc = ptlrpc_queue_wait(req);
-        mdc_put_rpc_lock(obd->u.cli.cl_close_lock, NULL);
-
-        if (rc == -ESTALE) {
-                /**
-                 * it can be allowed error after 3633 if open or setattr were
-                 * committed and server failed before close was sent.
-                 * Let's check if mod exists and return no error in that case
-                 */
-                if (mod) {
-                        LASSERT(mod->mod_open_req != NULL);
-                        if (mod->mod_open_req->rq_committed)
-                                rc = 0;
-                }
-        }
-
-        if (mod) {
-                if (rc != 0)
-                        mod->mod_close_req = NULL;
-		LASSERT(mod->mod_open_req != NULL);
-		mdc_free_open(mod);
-
-                /* Since now, mod is accessed through setattr req only,
-                 * thus DW req does not keep a reference on mod anymore. */
-                obd_mod_put(mod);
-        }
-
-        mdc_close_handle_reply(req, op_data, rc);
-        ptlrpc_req_finished(req);
-        RETURN(rc);
+	/* is not used anymore */
+	return 0;
 }
 
 static int mdc_getpage(struct obd_export *exp, const struct lu_fid *fid,
@@ -1715,10 +1657,9 @@ static int mdc_ioc_hsm_progress(struct obd_export *exp,
 
 	ptlrpc_request_set_replen(req);
 
-	mdc_get_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
-	rc = ptlrpc_queue_wait(req);
-	mdc_put_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
-
+	mdc_get_mod_rpc_slot(req, NULL);
+	rc = mdc_queue_wait(req);
+	mdc_put_mod_rpc_slot(req, NULL);
 	GOTO(out, rc);
 out:
 	ptlrpc_req_finished(req);
@@ -1900,9 +1841,9 @@ static int mdc_ioc_hsm_state_set(struct obd_export *exp,
 
 	ptlrpc_request_set_replen(req);
 
-	mdc_get_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
-	rc = ptlrpc_queue_wait(req);
-	mdc_put_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
+	mdc_get_mod_rpc_slot(req, NULL);
+	rc = mdc_queue_wait(req);
+	mdc_put_mod_rpc_slot(req, NULL);
 
 	GOTO(out, rc);
 out:
@@ -1960,9 +1901,9 @@ static int mdc_ioc_hsm_request(struct obd_export *exp,
 
 	ptlrpc_request_set_replen(req);
 
-	mdc_get_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
-	rc = ptlrpc_queue_wait(req);
-	mdc_put_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
+	mdc_get_mod_rpc_slot(req, NULL);
+	rc = mdc_queue_wait(req);
+	mdc_put_mod_rpc_slot(req, NULL);
 
 	GOTO(out, rc);
 
@@ -2888,27 +2829,16 @@ static void mdc_llog_finish(struct obd_device *obd)
 
 static int mdc_setup(struct obd_device *obd, struct lustre_cfg *cfg)
 {
-	struct client_obd		*cli = &obd->u.cli;
 	int				rc;
 	ENTRY;
 
-        OBD_ALLOC(cli->cl_rpc_lock, sizeof (*cli->cl_rpc_lock));
-        if (!cli->cl_rpc_lock)
-                RETURN(-ENOMEM);
-        mdc_init_rpc_lock(cli->cl_rpc_lock);
-
 	rc = ptlrpcd_addref();
 	if (rc < 0)
-		GOTO(err_rpc_lock, rc);
-
-        OBD_ALLOC(cli->cl_close_lock, sizeof (*cli->cl_close_lock));
-        if (!cli->cl_close_lock)
-                GOTO(err_ptlrpcd_decref, rc = -ENOMEM);
-        mdc_init_rpc_lock(cli->cl_close_lock);
+		RETURN(rc);
 
         rc = client_obd_setup(obd, cfg);
         if (rc)
-                GOTO(err_close_lock, rc);
+		GOTO(err_ptlrpcd_decref, rc);
 #ifdef CONFIG_PROC_FS
 	obd->obd_vars = lprocfs_mdc_obd_vars;
 	lprocfs_obd_setup(obd);
@@ -2925,16 +2855,13 @@ static int mdc_setup(struct obd_device *obd, struct lustre_cfg *cfg)
         if (rc) {
                 mdc_cleanup(obd);
                 CERROR("failed to setup llogging subsystems\n");
+		RETURN(rc);
         }
 
         RETURN(rc);
 
-err_close_lock:
-        OBD_FREE(cli->cl_close_lock, sizeof (*cli->cl_close_lock));
 err_ptlrpcd_decref:
         ptlrpcd_decref();
-err_rpc_lock:
-        OBD_FREE(cli->cl_rpc_lock, sizeof (*cli->cl_rpc_lock));
         RETURN(rc);
 }
 
@@ -2994,11 +2921,6 @@ static int mdc_precleanup(struct obd_device *obd, enum obd_cleanup_stage stage)
 
 static int mdc_cleanup(struct obd_device *obd)
 {
-        struct client_obd *cli = &obd->u.cli;
-
-        OBD_FREE(cli->cl_rpc_lock, sizeof (*cli->cl_rpc_lock));
-        OBD_FREE(cli->cl_close_lock, sizeof (*cli->cl_close_lock));
-
         ptlrpcd_decref();
 
         return client_obd_cleanup(obd);
@@ -3136,6 +3058,7 @@ static struct md_ops mdc_md_ops = {
         .m_create           = mdc_create,
         .m_done_writing     = mdc_done_writing,
         .m_enqueue          = mdc_enqueue,
+	.m_enqueue_async    = mdc_enqueue_async,
         .m_getattr          = mdc_getattr,
         .m_getattr_name     = mdc_getattr_name,
         .m_intent_lock      = mdc_intent_lock,

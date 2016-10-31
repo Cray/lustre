@@ -36,6 +36,7 @@
 
 #define DEBUG_SUBSYSTEM S_LNET
 
+#include <linux/completion.h>
 #include <net/sock.h>
 #include <lnet/lib-lnet.h>
 

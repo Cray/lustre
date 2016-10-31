@@ -743,7 +743,7 @@ void *cfs_hash_lookup(cfs_hash_t *hs, const void *key);
 void cfs_hash_for_each(cfs_hash_t *hs, cfs_hash_for_each_cb_t, void *data);
 void cfs_hash_for_each_safe(cfs_hash_t *hs, cfs_hash_for_each_cb_t, void *data);
 int  cfs_hash_for_each_nolock(cfs_hash_t *hs, cfs_hash_for_each_cb_t,
-				void *data);
+				void *data, int start);
 int  cfs_hash_for_each_empty(cfs_hash_t *hs, cfs_hash_for_each_cb_t,
 				void *data);
 void cfs_hash_for_each_key(cfs_hash_t *hs, const void *key,
@@ -884,6 +884,10 @@ cfs_hash_u64_hash(const __u64 key, unsigned mask)
              (bd)->bd_offset < CFS_HASH_BKT_NHLIST(hs) &&       \
              (hlist = cfs_hash_bd_hhead(hs, bd)) != NULL;       \
              (bd)->bd_offset++)
+
+#ifdef HAVE_HLIST_ADD_AFTER
+#define hlist_add_behind(hnode, tail)	hlist_add_after(tail, hnode)
+#endif /* HAVE_HLIST_ADD_AFTER */
 
 /* !__LIBCFS__HASH_H__ */
 #endif

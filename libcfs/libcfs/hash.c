@@ -1041,7 +1041,7 @@ cfs_hash_create(char *name, unsigned cur_bits, unsigned max_bits,
         LASSERT(ops->hs_object);
         LASSERT(ops->hs_keycmp);
         LASSERT(ops->hs_get != NULL);
-        LASSERT(ops->hs_put_locked != NULL);
+	LASSERT(ops->hs_put != NULL || ops->hs_put_locked != NULL);
 
         if ((flags & CFS_HASH_REHASH) != 0)
                 flags |= CFS_HASH_COUNTER; /* must have counter */
@@ -1587,70 +1587,100 @@ EXPORT_SYMBOL(cfs_hash_size_get);
  * two cases, so iteration has to be stopped on change.
  */
 static int
-cfs_hash_for_each_relax(cfs_hash_t *hs, cfs_hash_for_each_cb_t func, void *data)
+cfs_hash_for_each_relax(cfs_hash_t *hs, cfs_hash_for_each_cb_t func,
+			void *data, int start)
 {
 	struct hlist_node *hnode;
-	struct hlist_node *tmp;
+	struct hlist_node *next = NULL;
         cfs_hash_bd_t     bd;
         __u32             version;
         int               count = 0;
         int               stop_on_change;
-        int               rc;
-        int               i;
+        int               no_put_locked;
+        int               rc = 0;
+        int               i, end = -1;
         ENTRY;
 
         stop_on_change = cfs_hash_with_rehash_key(hs) ||
-                         !cfs_hash_with_no_itemref(hs) ||
-                         CFS_HOP(hs, put_locked) == NULL;
+			 !cfs_hash_with_no_itemref(hs);
+	no_put_locked = CFS_HOP(hs, put_locked) == NULL;
         cfs_hash_lock(hs, 0);
+again:
         LASSERT(!cfs_hash_is_rehashing(hs));
 
 	cfs_hash_for_each_bucket(hs, &bd, i) {
 		struct hlist_head *hhead;
 
+		if (i < start)
+			continue;
+		else if (end > 0 && i >= end)
+			break;
+
                 cfs_hash_bd_lock(hs, &bd, 0);
                 version = cfs_hash_bd_version_get(&bd);
 
                 cfs_hash_bd_for_each_hlist(hs, &bd, hhead) {
-                        for (hnode = hhead->first; hnode != NULL;) {
-                                cfs_hash_bucket_validate(hs, &bd, hnode);
-                                cfs_hash_get(hs, hnode);
+			hnode = hhead->first;
+			if (hnode == NULL)
+				continue;
+			cfs_hash_get(hs, hnode);
+			for (; hnode != NULL; hnode = next) {
+				cfs_hash_bucket_validate(hs, &bd, hnode);
+				next = hnode->next;
+				if (next != NULL)
+					cfs_hash_get(hs, next);
                                 cfs_hash_bd_unlock(hs, &bd, 0);
                                 cfs_hash_unlock(hs, 0);
 
-				rc = func(hs, &bd, hnode, data);
-				if (stop_on_change)
+                                rc = func(hs, &bd, hnode, data);
+				if (stop_on_change || no_put_locked)
 					cfs_hash_put(hs, hnode);
-				cond_resched();
-				count++;
+
+                                cond_resched();
+                                count++;
 
                                 cfs_hash_lock(hs, 0);
                                 cfs_hash_bd_lock(hs, &bd, 0);
-                                if (!stop_on_change) {
-                                        tmp = hnode->next;
-                                        cfs_hash_put_locked(hs, hnode);
-                                        hnode = tmp;
-                                } else { /* bucket changed? */
-                                        if (version !=
-                                            cfs_hash_bd_version_get(&bd))
-                                                break;
-                                        /* safe to continue because no change */
-                                        hnode = hnode->next;
-                                }
+				if (stop_on_change) {
+					if (version !=
+					    cfs_hash_bd_version_get(&bd))
+						rc = -EINTR;
+				} else if (!no_put_locked) {
+					cfs_hash_put_locked(hs, hnode);
+				}
                                 if (rc) /* callback wants to break iteration */
                                         break;
                         }
+			if (next != NULL) {
+				if (!no_put_locked) {
+					cfs_hash_put_locked(hs, next);
+					next = NULL;
+				}
+				break;
+			} else if (rc != 0) {
+				break;
+			}
                 }
                 cfs_hash_bd_unlock(hs, &bd, 0);
+		if (next != NULL && no_put_locked) {
+			cfs_hash_put(hs, next);
+			next  = NULL;
+		}
         }
-        cfs_hash_unlock(hs, 0);
 
-        return count;
+	if (start > 0 && rc != 0) {
+		end = start;
+		start = 0;
+		goto again;
+	}
+
+	cfs_hash_unlock(hs, 0);
+	RETURN(count);
 }
 
 int
 cfs_hash_for_each_nolock(cfs_hash_t *hs,
-                         cfs_hash_for_each_cb_t func, void *data)
+			 cfs_hash_for_each_cb_t func, void *data, int start)
 {
         ENTRY;
 
@@ -1664,11 +1694,11 @@ cfs_hash_for_each_nolock(cfs_hash_t *hs,
              CFS_HOP(hs, put_locked) == NULL))
                 RETURN(-EOPNOTSUPP);
 
-        cfs_hash_for_each_enter(hs);
-        cfs_hash_for_each_relax(hs, func, data);
-        cfs_hash_for_each_exit(hs);
+	cfs_hash_for_each_enter(hs);
+	cfs_hash_for_each_relax(hs, func, data, start);
+	cfs_hash_for_each_exit(hs);
 
-        RETURN(0);
+	RETURN(0);
 }
 EXPORT_SYMBOL(cfs_hash_for_each_nolock);
 
@@ -1698,13 +1728,13 @@ cfs_hash_for_each_empty(cfs_hash_t *hs,
              CFS_HOP(hs, put_locked) == NULL))
                 return -EOPNOTSUPP;
 
-        cfs_hash_for_each_enter(hs);
-        while (cfs_hash_for_each_relax(hs, func, data)) {
-                CDEBUG(D_INFO, "Try to empty hash: %s, loop: %u\n",
-                       hs->hs_name, i++);
-        }
-        cfs_hash_for_each_exit(hs);
-        RETURN(0);
+	cfs_hash_for_each_enter(hs);
+	while (cfs_hash_for_each_relax(hs, func, data, 0)) {
+		CDEBUG(D_INFO, "Try to empty hash: %s, loop: %u\n",
+		       hs->hs_name, i++);
+	}
+	cfs_hash_for_each_exit(hs);
+	RETURN(0);
 }
 EXPORT_SYMBOL(cfs_hash_for_each_empty);
 

@@ -24,8 +24,10 @@ init_logging
 
 MULTIOP=${MULTIOP:-multiop}
 OPENFILE=${OPENFILE:-openfile}
+MMAP_CAT=${MMAP_CAT:-mmap_cat}
 MOUNT_2=${MOUNT_2:-"yes"}
 FAIL_ON_ERROR=false
+CLIENT1=${CLIENT1:-$(hostname)}
 
 # script only handles up to 10 MDTs (because of MDT_PREFIX)
 [ $MDSCOUNT -gt 9 ] &&
@@ -84,6 +86,8 @@ init_agt_vars() {
 				agent=CLIENT2
 		fi
 		eval export agt${n}_HOST=\$\{agt${n}_HOST:-${!agent}\}
+		local var=agt${n}_HOST
+		[[ ! -z "${!var}" ]] || error "agt${n}_HOST is empty!"
 	done
 
 	export SINGLEAGT=${SINGLEAGT:-agt1}
@@ -94,7 +98,16 @@ init_agt_vars() {
 	export HSMTOOL_EVENT_FIFO=${HSMTOOL_EVENT_FIFO:=""}
 	export HSMTOOL_TESTDIR
 	export HSMTOOL_BASE=$(basename "$HSMTOOL" | cut -f1 -d" ")
+	# $hsm_root/$HSMTMP Makes $hsm_root dir path less generic to ensure
+	# rm -rf $hsm_root/* is safe even if $hsm_root becomes unset to avoid
+	# deleting everything in filesystem, independent of any copytool.
+	export HSMTMP=${HSMTMP:-"shsm"}
+
 	HSM_ARCHIVE=$(copytool_device $SINGLEAGT)
+
+	[ -z "${HSM_ARCHIVE// /}" ] && error "HSM_ARCHIVE is empty!"
+	HSM_ARCHIVE=$HSM_ARCHIVE/$HSMTMP
+
 	HSM_ARCHIVE_NUMBER=2
 
 	# The test only support up to 10 MDTs
@@ -112,6 +125,8 @@ init_agt_vars() {
 copytool_device() {
 	local facet=$1
 	local dev=AGTDEV$(facet_number $facet)
+	[[ ! -z ${!dev} ]] ||
+		error "Value echo-ed by copytool_device() is empty"
 
 	echo -n ${!dev}
 }
@@ -136,15 +151,36 @@ get_mdt_devices() {
 }
 
 search_copytools() {
-	local agents=${1:-$(facet_active_host $SINGLEAGT)}
-	do_nodesv $agents "pgrep -x $HSMTOOL_BASE"
+	local hosts=${1:-$(facet_active_host $SINGLEAGT)}
+	do_nodesv $hosts "pgrep -x $HSMTOOL_BASE"
 }
 
-search_and_kill_copytool() {
-	local agents=${1:-$(facet_active_host $SINGLEAGT)}
+kill_copytools() {
+	local hosts=${1:-$(facet_active_host $SINGLEAGT)}
 
-	echo "Killing existing copytools on $agents"
-	do_nodesv $agents "killall -q $HSMTOOL_BASE" || true
+	echo "Killing existing copytools on $hosts"
+	do_nodesv $hosts "killall -q $HSMTOOL_BASE" || true
+}
+
+wait_copytools() {
+	local hosts=${1:-$(facet_active_host $SINGLEAGT)}
+	local wait_timeout=200
+	local wait_start=$SECONDS
+	local wait_end=$((wait_start + wait_timeout))
+
+	while ((SECONDS < wait_end)); do
+		sleep 2
+		if ! search_copytools $hosts; then
+			echo "copytools stopped in $((SECONDS - wait_start))s"
+			return 0
+		fi
+
+		echo "copytools still running on $hosts"
+	done
+
+	echo "copytools failed to stop in ${wait_timeout}s"
+
+	return 1
 }
 
 copytool_monitor_setup() {
@@ -209,6 +245,9 @@ copytool_setup() {
 	local lustre_mntpnt=${2:-$MOUNT}
 	local arc_id=$3
 	local hsm_root=${4:-$(copytool_device $facet)}
+
+	[ -z "${hsm_root// /}" ] && error "copytool_setup: hsm_root empty!"
+
 	local agent=$(facet_active_host $facet)
 
 	if [[ -z "$arc_id" ]] &&
@@ -219,14 +258,16 @@ copytool_setup() {
 
 	if $HSM_ARCHIVE_PURGE; then
 		echo "Purging archive on $agent"
-		do_facet $facet "rm -rf $hsm_root/*"
+		do_facet $facet "rm -rf $hsm_root/$HSMTMP/*"
 	fi
 
 	echo "Starting copytool $facet on $agent"
-	do_facet $facet "mkdir -p $hsm_root" || error "mkdir '$hsm_root' failed"
+	do_facet $facet "mkdir -p $hsm_root/$HSMTMP/" ||
+			error "mkdir '$hsm_root/$HSMTMP' failed"
 	# bandwidth is limited to 1MB/s so the copy time is known and
 	# independent of hardware
-	local cmd="$HSMTOOL $HSMTOOL_VERBOSE --daemon --hsm-root $hsm_root"
+	local cmd="$HSMTOOL $HSMTOOL_VERBOSE --daemon"
+	cmd+=" --hsm-root $hsm_root/$HSMTMP"
 	[[ -z "$arc_id" ]] || cmd+=" --archive $arc_id"
 	[[ -z "$HSMTOOL_UPDATE_INTERVAL" ]] ||
 		cmd+=" --update-interval $HSMTOOL_UPDATE_INTERVAL"
@@ -263,54 +304,60 @@ get_copytool_event_log() {
 
 copytool_cleanup() {
 	trap - EXIT
-	local facet=$SINGLEAGT
-	local agents=${1:-$(facet_active_host $facet)}
-	local mdtno
-	local idx
-	local oldstate
-	local mdt_hsmctrl
-	local hsm_root=$(copytool_device $facet)
-	local end_wait=$(( SECONDS + TIMEOUT ))
+	local agt_facet=$SINGLEAGT
+	local agt_hosts=${1:-$(facet_active_host $agt_facet)}
+	local hsm_root=$(copytool_device $agt_facet)
+	local i
+	local facet
+	local param
+	local -a state
 
-	do_nodesv $agents "pkill -INT -x $HSMTOOL_BASE" || return 0
+	[ -z "${hsm_root// /}" ] && error "copytool_cleanup: hsm_root empty!"
 
-	while (( SECONDS < end_wait )); do
-		sleep 2
-		do_nodesv $agents "pgrep -x $HSMTOOL_BASE"
-		if [ $? -ne 0 ]; then
-			echo "Copytool is stopped on $agents"
-			break
-		fi
-		echo "Copytool still running on $agents"
+	kill_copytools $agt_hosts
+	wait_copytools $agt_hosts || error "copytools failed to stop"
+
+	# Clean all CDTs orphans requests from previous tests that
+	# would otherwise need to timeout to clear.
+	for ((i = 0; i < MDSCOUNT; i++)); do
+		facet=mds$((i + 1))
+		param=$(printf 'mdt.%s-MDT%04x.hsm_control' $FSNAME $i)
+		state[$i]=$(do_facet $facet "$LCTL get_param -n $param")
+
+		# Skip already stopping or stopped CDTs.
+		[[ "${state[$i]}" =~ ^stop ]] && continue
+
+		do_facet $facet "$LCTL set_param $param=shutdown"
 	done
-	if do_nodesv $agents "pgrep -x $HSMTOOL_BASE"; then
-		error "Copytool failed to stop in ${TIMEOUT}s ..."
-	else
-		echo "Copytool has stopped in " \
-		     "$((TIMEOUT - (end_wait - SECONDS)))s."
-	fi
 
-	# clean all CDTs orphans requests from previous tests
-	# that would otherwise need to timeout to clear.
-	for mdtno in $(seq 1 $MDSCOUNT); do
-		idx=$(($mdtno - 1))
-		mdt_hsmctrl="mdt.$FSNAME-MDT000${idx}.hsm_control"
-		oldstate=$(do_facet mds${mdtno} "$LCTL get_param -n " \
-				   "$mdt_hsmctrl")
-		# skip already stop[ed,ing] CDTs
-		echo $oldstate | grep stop && continue
+	for ((i = 0; i < MDSCOUNT; i++)); do
+		# Only check and restore CDTs that we stopped in the first loop.
+		[[ "${state[$i]}" =~ ^stop ]] && continue
 
-		do_facet mds${mdtno} "$LCTL set_param $mdt_hsmctrl=shutdown"
-		wait_result mds${mdtno} "$LCTL get_param -n $mdt_hsmctrl" \
-			"stopped" 20 ||
-			error "mds${mdtno} cdt state is not stopped"
-		do_facet mds${mdtno} "$LCTL set_param $mdt_hsmctrl=$oldstate"
-		wait_result mds${mdtno} "$LCTL get_param -n $mdt_hsmctrl" \
-			"$oldstate" 20 ||
-			error "mds${mdtno} cdt state is not $oldstate"
+		facet=mds$((i + 1))
+		param=$(printf 'mdt.%s-MDT%04x.hsm_control' $FSNAME $i)
+
+		wait_result $facet "$LCTL get_param -n $param" stopped 20 ||
+			error "$facet CDT state is not stopped"
+
+		# Restore old CDT state.
+		do_facet $facet "$LCTL set_param $param=${state[$i]}"
 	done
-	if do_facet $facet "df $hsm_root" >/dev/null 2>&1 ; then
-		do_facet $facet "rm -rf $hsm_root/*"
+
+	for ((i = 0; i < MDSCOUNT; i++)); do
+		# Only check CDTs that we stopped in the first loop.
+		[[ "${state[$i]}" =~ ^stop ]] && continue
+
+		facet=mds$((i + 1))
+		param=$(printf 'mdt.%s-MDT%04x.hsm_control' $FSNAME $i)
+
+		# Check that the old CDT state was restored.
+		wait_result $facet "$LCTL get_param -n $param" "${state[$i]}" \
+			20 || error "$facet CDT state is not '${state[$i]}'"
+	done
+
+	if do_facet $agt_facet "df $hsm_root" >/dev/null 2>&1 ; then
+		do_facet $agt_facet "rm -rf $hsm_root/$HSMTMP/*"
 	fi
 }
 
@@ -475,6 +522,13 @@ cdt_clear_mount_state() {
 
 cdt_set_mount_state() {
 	mdts_set_param "-P" hsm_control "$1"
+	# set_param -P is asynchronous operation and could race with set_param.
+	# In such case configs could be retrieved and applied at mgc after
+	# set_param -P completion. Sleep here to avoid race with set_param.
+	# We need at least 20 seconds. 10 for mgc_requeue_thread to wake up
+	# MGC_TIMEOUT_MIN_SECONDS + MGC_TIMEOUT_RAND_CENTISEC(5 + 5)
+	# and 10 seconds to retrieve config from server.
+	sleep 20
 }
 
 cdt_check_state() {
@@ -614,71 +668,28 @@ check_enough_free_space() {
 	local unit=$2
 	local need=$((nb * unit /1024))
 	local free=$(df -kP $MOUNT | tail -1 | awk '{print $4}')
+
 	(( $need >= $free )) && return 1
 	return 0
 }
 
-make_large_for_striping() {
+make_custom_file_for_progress() {
 	local file2=${1/$DIR/$DIR2}
+	local fsize=${2:-"39"}
 	local sz=$($LCTL get_param -n lov.*-clilov-*.stripesize | head -n1)
+	sz=${3:-$sz}
+
+	[[ $fsize -gt  0 ]] ||
+		error "Invalid file size"
+	[[ $sz -gt 0 ]] ||
+		error "Invalid stripe size"
 
 	cleanup_large_files
-
-	check_enough_free_space 5 $sz
+	check_enough_free_space $fsize $sz
 	[ $? != 0 ] && return $?
-
-	dd if=/dev/urandom of=$file2 count=5 bs=$sz conv=fsync ||
+	dd if=/dev/zero of=$file2 count=$fsize bs=$sz conv=fsync ||
 		file_creation_failure dd $file2 $?
 
-	path2fid $1 || error "cannot get fid on $1"
-}
-
-make_large_for_progress() {
-	local file2=${1/$DIR/$DIR2}
-
-	cleanup_large_files
-
-	check_enough_free_space 39 1000000
-	[ $? != 0 ] && return $?
-
-	# big file is large enough, so copy time is > 30s
-	# so copytool make 1 progress
-	# size is not a multiple of 1M to avoid stripe
-	# aligment
-	dd if=/dev/urandom of=$file2 count=39 bs=1000000 conv=fsync ||
-		file_creation_failure dd $file2 $?
-
-	path2fid $1 || error "cannot get fid on $1"
-}
-
-make_large_for_progress_aligned() {
-	local file2=${1/$DIR/$DIR2}
-
-	cleanup_large_files
-
-	check_enough_free_space 33 1048576
-	[ $? != 0 ] && return $?
-
-	# big file is large enough, so copy time is > 30s
-	# so copytool make 1 progress
-	# size is a multiple of 1M to have stripe
-	# aligment
-	dd if=/dev/urandom of=$file2 count=33 bs=1M conv=fsync ||
-		file_creation_failure dd $file2 $?
-	path2fid $1 || error "cannot get fid on $1"
-}
-
-make_large_for_cancel() {
-	local file2=${1/$DIR/$DIR2}
-
-	cleanup_large_files
-
-	check_enough_free_space 103 1048576
-	[ $? != 0 ] && return $?
-
-	# Copy timeout is 100s. 105MB => 105s
-	dd if=/dev/urandom of=$file2 count=103 bs=1M conv=fsync ||
-		file_creation_failure dd $file2 $?
 	path2fid $1 || error "cannot get fid on $1"
 }
 
@@ -748,14 +759,14 @@ parse_json_event() {
 	echo $raw_event | python -c "$json_parser"
 }
 
-# populate MDT device array
-get_mdt_devices
-
 # initiate variables
 init_agt_vars
 
+# populate MDT device array
+get_mdt_devices
+
 # cleanup from previous bad setup
-search_and_kill_copytool
+kill_copytools
 
 # for recovery tests, coordinator needs to be started at mount
 # so force it
@@ -807,6 +818,23 @@ test_1() {
 
 }
 run_test 1 "lfs hsm flags root/non-root access"
+
+test_1a() {
+	mkdir -p $DIR/$tdir
+	local f=$DIR/$tdir/$tfile
+	local fid=$(make_small $f)
+
+	$LFS hsm_archive $f || error "could not archive file"
+	wait_request_state $fid ARCHIVE SUCCEED
+
+	# Release and check states
+	$LFS hsm_release $f || error "could not release file"
+	echo -n "Verifying released state: "
+	check_hsm_flags $f "0x0000000d"
+
+	$MMAP_CAT $f > /dev/null || error "failed mmap & cat release file"
+}
+run_test 1a "mmap & cat a HSM released file"
 
 test_2() {
 	mkdir -p $DIR/$tdir
@@ -1159,7 +1187,7 @@ test_12c() {
 	local f=$DIR/$tdir/$tfile
 	$LFS setstripe -c 2 $f
 	local fid
-	fid=$(make_large_for_striping $f)
+	fid=$(make_custom_file_for_progress $f 5)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	local FILE_CRC=$(md5sum $f)
@@ -1888,6 +1916,7 @@ test_24c() {
 	local user_save
 	local group_save
 	local other_save
+	local fid
 
 	# test needs a running copytool
 	copytool_setup
@@ -1911,7 +1940,8 @@ test_24c() {
 
 	# User.
 	rm -f $file
-	make_small $file
+	fid=$(make_small $file)
+
 	chown $RUNAS_ID:nobody $file ||
 		error "cannot chown '$file' to '$RUNAS_ID:nobody'"
 
@@ -1923,9 +1953,12 @@ test_24c() {
 	$RUNAS $LFS hsm_$action $file ||
 		error "$action by user should succeed"
 
+	wait_request_state $fid ARCHIVE SUCCEED
+
 	# Group.
 	rm -f $file
-	make_small $file
+	fid=$(make_small $file)
+
 	chown nobody:$RUNAS_GID $file ||
 		error "cannot chown '$file' to 'nobody:$RUNAS_GID'"
 
@@ -1937,9 +1970,12 @@ test_24c() {
 	$RUNAS $LFS hsm_$action $file ||
 		error "$action by group should succeed"
 
+	wait_request_state $fid ARCHIVE SUCCEED
+
 	# Other.
 	rm -f $file
-	make_small $file
+	fid=$(make_small $file)
+
 	chown nobody:nobody $file ||
 		error "cannot chown '$file' to 'nobody:nobody'"
 
@@ -1950,6 +1986,8 @@ test_24c() {
 	set_hsm_param other_request_mask $action
 	$RUNAS $LFS hsm_$action $file ||
 		error "$action by other should succeed"
+
+	wait_request_state $fid ARCHIVE SUCCEED
 
 	copytool_cleanup
 	cleanup_test_24c
@@ -1993,7 +2031,7 @@ test_24d() {
 	wait_request_state $fid1 RESTORE SUCCEED
 
 	$LFS hsm_release $file1 || error "cannot release '$file1'"
-	dd if=$file2 of=/dev/null bs=1M || "cannot read '$file2'"
+	dd if=$file2 of=/dev/null bs=1M || error "cannot read '$file2'"
 
 	$LFS hsm_release $file2 &&
 		error "release should fail on read-only mount"
@@ -2106,7 +2144,7 @@ test_26() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2146,7 +2184,7 @@ test_27b() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2168,7 +2206,7 @@ test_28() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2349,7 +2387,7 @@ test_31b() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2373,7 +2411,7 @@ test_31c() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress_aligned $f)
+	fid=$(make_custom_file_for_progress $f 33 1048576)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2397,7 +2435,7 @@ test_33() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2464,7 +2502,7 @@ test_34() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2500,7 +2538,7 @@ test_35() {
 	local f=$DIR/$tdir/$tfile
 	local f1=$DIR/$tdir/$tfile-1
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	local fid1=$(copy_file /etc/passwd $f1)
@@ -2539,7 +2577,7 @@ test_36() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -2567,6 +2605,31 @@ test_36() {
 	copytool_cleanup
 }
 run_test 36 "Move file during restore"
+
+test_37() {
+	# LU-5683: check that an archived dirty file can be rearchived.
+	copytool_cleanup
+	copytool_setup $SINGLEAGT $MOUNT2
+
+	mkdir -p $DIR/$tdir
+	local f=$DIR/$tdir/$tfile
+	local fid
+
+	fid=$(make_small $f) || error "cannot create small file"
+
+	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
+	wait_request_state $fid ARCHIVE SUCCEED
+	$LFS hsm_release $f || error "cannot release $f"
+
+	# Dirty file.
+	dd if=/dev/urandom of=$f bs=1M count=1 || error "cannot dirty file"
+
+	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
+	wait_request_state $fid ARCHIVE SUCCEED
+
+	copytool_cleanup
+}
+run_test 37 "re-archive a dirty file"
 
 multi_archive() {
 	local prefix=$1
@@ -2678,7 +2741,7 @@ test_54() {
 
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
-	local fid=$(make_large_for_progress $f)
+	local fid=$(make_custom_file_for_progress $f 39 1000000)
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f ||
 		error "could not archive file"
@@ -2706,7 +2769,7 @@ test_55() {
 
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
-	local fid=$(make_large_for_progress $f)
+	local fid=$(make_custom_file_for_progress $f 39 1000000)
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f ||
 		error "could not archive file"
@@ -2735,7 +2798,7 @@ test_56() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f ||
@@ -2846,17 +2909,28 @@ test_58() {
 run_test 58 "Truncate a released file will trigger restore"
 
 test_59() {
-	local fid
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -ge $(version_code 2.7.11) ]] ||
+	[[ $server_version -ge $(version_code 2.5.38) &&
+	   $server_version -lt $(version_code 2.5.50) ]] ||
+		{ skip "Need MDS version 2.5.38+ or 2.7.11+"; return; }
+
+	# test needs a running copytool
 	copytool_setup
-	$MCREATE $DIR/$tfile || error "mcreate failed"
-	$TRUNCATE $DIR/$tfile 42 || error "truncate failed"
-	$LFS hsm_archive $DIR/$tfile || error "archive request failed"
-	fid=$(path2fid $DIR/$tfile)
-	wait_request_state $fid ARCHIVE SUCCEED
-	$LFS hsm_release $DIR/$tfile || error "release failed"
+
+	mkdir -p $DIR/$tdir
+	local f=$DIR/$tdir/$tfile
+	local fid=$(copy_file /etc/passwd $f)
+	cdt_disable
+	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
+	rm -f $f
+	cdt_enable
+	wait_request_state $fid ARCHIVE FAILED
+
 	copytool_cleanup
 }
-run_test 59 "Release stripeless file with non-zero size"
+run_test 59 "Waiting archive of a removed file should fail"
 
 test_60() {
 	# This test validates the fix for LU-4512. Ensure that the -u
@@ -2872,7 +2946,7 @@ test_60() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 10)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	local mdtidx=0
@@ -2892,7 +2966,6 @@ test_60() {
 	local prefix=$TESTLOG_PREFIX
 	[[ -z "$TESTNAME" ]] || prefix=$prefix.$TESTNAME
 	local copytool_log=$prefix.copytool_log.$agent.log
-
 
 	wait_update $agent \
 	    "grep -o start.copy $copytool_log" "start copy" 100 ||
@@ -2921,16 +2994,78 @@ test_60() {
 
 	local finish_at=$(date +%s)
 	local elapsed=$((finish_at - start_at))
-
+	# "let elapsed=elapsed+1" is added to cover boundary condition
+	# Ex:  Suppose the operation completes in the 5th second but
+	# (4-5) our elapsed time calculation does not take fractions of
+	# 5th sec to consideration, so elapsed will be rounded off to 4
+	# So we can add 1 to elapsed time to consider fraction case
+	# and which will be rounded off to 5.
+	let elapsed=elapsed+1
 	# Ensure that the progress update occurred within the expected window.
 	if [ $elapsed -lt $interval ]; then
 		error "Expected progress update after at least $interval seconds"
 	fi
 
+	echo "Wait for on going archive hsm action to complete"
+	wait_update $agent \
+		"grep -o copied $copytool_log" "copied" 10 ||
+		echo "File archiving not completed even after 10 secs"
+
 	cdt_clear_no_retry
 	copytool_cleanup
 }
 run_test 60 "Changing progress update interval from default"
+
+test_61() {
+	local fid
+	copytool_setup
+	$MCREATE $DIR/$tfile || error "mcreate failed"
+	$TRUNCATE $DIR/$tfile 42 || error "truncate failed"
+	$LFS hsm_archive $DIR/$tfile || error "archive request failed"
+	fid=$(path2fid $DIR/$tfile)
+	wait_request_state $fid ARCHIVE SUCCEED
+	$LFS hsm_release $DIR/$tfile || error "release failed"
+	copytool_cleanup
+}
+run_test 61 "Release stripeless file with non-zero size"
+
+test_62() {
+	local facet=$SINGLEAGT
+	local agents=${1:-$(facet_active_host $facet)}
+
+	copytool_setup
+
+	mkdir -p $DIR/$tdir
+	local f=$DIR/$tdir/$tfile
+	local fid
+	fid=$(make_custom_file_for_progress $f 39)
+	[ $? != 0 ] && skip "not enough free space" && return
+
+	local FILE_HASH_BEFORE_ARCHIVE=$(md5sum $f)
+	$LFS hsm_archive $f
+	wait_request_state $fid ARCHIVE SUCCEED
+	$LFS hsm_release $f
+
+	# Run md5sum in the back ground
+	md5sum $f &
+
+	# Kill copytool while md5sum is running
+	do_nodesv $agents "pkill -INT -x $HSMTOOL_BASE" ||
+		error "failed to kill the copy tool" || return
+	sleep 1
+	echo "Copytool is stopped on $agents"
+
+	wait_request_state $fid RESTORE CANCELED
+
+	local FILE_HASH_AFTER_ARCHIVE=$(md5sum $f)
+
+	[ "$FILE_HASH_AFTER_ARCHIVE" = \
+		"$FILE_HASH_BEFORE_ARCHIVE" ] ||
+			error "Restore incomplete"
+
+	copytool_cleanup
+}
+run_test 62 "md5sum should return after killing the copy tool"
 
 test_70() {
 	# test needs a new running copytool
@@ -2991,7 +3126,7 @@ test_71() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f ||
@@ -3269,7 +3404,7 @@ test_104() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	# if cdt is on, it can serve too quickly the request
@@ -3282,6 +3417,9 @@ test_104() {
 
 	[[ "$data1" == "$DATAHEX" ]] ||
 		error "Data field in records is ($data1) and not ($DATAHEX)"
+
+	# Wait for the archive request to complete for smooth exit
+	wait_request_state $fid ARCHIVE SUCCEED
 
 	copytool_cleanup
 }
@@ -3583,7 +3721,7 @@ test_200() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_cancel $f)
+	fid=$(make_custom_file_for_progress $f 103 1048576)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	# test with cdt on is made in test_221
@@ -3627,7 +3765,7 @@ test_202() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
@@ -3675,7 +3813,7 @@ test_221() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_cancel $f)
+	fid=$(make_custom_file_for_progress $f 103 1048576)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	changelog_setup
@@ -3784,7 +3922,7 @@ test_223b() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	changelog_setup
@@ -3846,7 +3984,7 @@ test_225() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_progress $f)
+	fid=$(make_custom_file_for_progress $f 39 1000000)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	changelog_setup
@@ -4051,7 +4189,7 @@ test_251() {
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_large_for_cancel $f)
+	fid=$(make_custom_file_for_progress $f 103 1048576)
 	[ $? != 0 ] && skip "not enough free space" && return
 
 	cdt_disable
@@ -4079,6 +4217,50 @@ test_251() {
 	copytool_cleanup
 }
 run_test 251 "Coordinator request timeout"
+
+test_252() {
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -ge $(version_code 2.7.11) ]] ||
+	[[ $server_version -ge $(version_code 2.5.38) &&
+	   $server_version -lt $(version_code 2.5.50) ]] ||
+		{ skip "Need MDS version 2.5.38+ or 2.7.11+"; return; }
+
+	# test needs a running copytool
+	copytool_setup
+
+	mkdir -p $DIR/$tdir
+	local f=$DIR/$tdir/$tfile
+	local fid=$(make_custom_file_for_progress $f 103 1048576)
+
+	cdt_disable
+	# to have a short test
+	local old_to=$(get_hsm_param active_request_timeout)
+	set_hsm_param active_request_timeout 20
+	# to be sure the cdt will wake up frequently so
+	# it will be able to cancel the "old" request
+	local old_loop=$(get_hsm_param loop_period)
+	set_hsm_param loop_period 2
+	cdt_enable
+
+	# clear locks to avoid extra delay caused by flush/cancel
+	# and thus prevent early copytool death to timeout.
+	cancel_lru_locks osc
+
+	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
+	wait_request_state $fid ARCHIVE STARTED
+	rm -f $f
+
+	# wait but less than active_request_timeout+grace_delay
+	sleep 25
+	wait_request_state $fid ARCHIVE CANCELED
+
+	set_hsm_param active_request_timeout $old_to
+	set_hsm_param loop_period $old_loop
+
+	copytool_cleanup
+}
+run_test 252 "Timeout'ed running archive of a removed file should be canceled"
 
 test_300() {
 	# the only way to test ondisk conf is to restart MDS ...

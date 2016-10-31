@@ -138,6 +138,7 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 %{_mandir}
 %exclude %dir %{_mandir}
 %config /etc/udev/rules.d/99-lustre.rules
+%exclude %{_sysconfdir}/lustre/perm.conf
 
 %files lnet
 %defattr(-,root,root)

@@ -37,6 +37,8 @@
 #ifndef _OBDCTL_H_
 #define _OBDCTL_H_
 
+#include <lustre/lustre_barrier_user.h>
+
 #define MAX_IOC_BUFLEN 8192
 
 /* obd.c */
@@ -77,12 +79,15 @@ int jt_obd_test_ldlm(int argc, char **argv);
 int jt_obd_ldlm_regress_start(int argc, char **argv);
 int jt_obd_ldlm_regress_stop(int argc, char **argv);
 int jt_replace_nids(int arc, char **argv);
+int jt_clear_configs(int argc, char **argv);
 int jt_obd_activate(int argc, char **argv);
 int jt_obd_deactivate(int argc, char **argv);
 int jt_obd_recover(int argc, char **argv);
 int jt_obd_mdc_lookup(int argc, char **argv);
 int jt_get_version(int argc, char **argv);
 int jt_cfg_dump_log(int argc, char **argv);
+int jt_lcfg_fork(int argc, char **argv);
+int jt_lcfg_erase(int argc, char **argv);
 int jt_get_obj_version(int argc, char **argv);
 
 int jt_llog_catlist(int argc, char **argv);
@@ -123,6 +128,17 @@ int jt_blockdev_detach(int argc, char **argv);
 int jt_blockdev_info(int argc, char **argv);
 
 int jt_pool_cmd(int argc, char **argv);
+int jt_barrier_freeze(int argc, char **argv);
+int jt_barrier_thaw(int argc, char **argv);
+int __jt_barrier_stat(int argc, char **argv, struct barrier_ctl *bc);
+int jt_barrier_stat(int argc, char **argv);
+int jt_barrier_rescan(int argc, char **argv);
+int jt_snapshot_create(int argc, char **argv);
+int jt_snapshot_destroy(int argc, char **argv);
+int jt_snapshot_modify(int argc, char **argv);
+int jt_snapshot_list(int argc, char **argv);
+int jt_snapshot_mount(int argc, char **argv);
+int jt_snapshot_umount(int argc, char **argv);
 int jt_nodemap_activate(int argc, char **argv);
 int jt_nodemap_add(int argc, char **argv);
 int jt_nodemap_del(int argc, char **argv);

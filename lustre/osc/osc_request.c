@@ -2226,7 +2226,7 @@ int osc_enqueue_base(struct obd_export *exp, struct ldlm_res_id *res_id,
 	}
 
 no_match:
-	if (*flags & LDLM_FL_TEST_LOCK)
+	if (*flags & (LDLM_FL_TEST_LOCK | LDLM_FL_MATCH_LOCK))
 		RETURN(-ENOLCK);
 
 	if (intent) {
@@ -2708,7 +2708,11 @@ static int osc_ldlm_resource_invalidate(struct cfs_hash *hs,
 			osc = lock->l_ast_data;
 			cl_object_get(osc2cl(osc), CL_OBJECT_REF_INVAL);
 		}
-		lock->l_ast_data = NULL;
+
+		/* clear LDLM_FL_CLEANED flag to make sure it will be canceled
+		 * by the 2nd round of ldlm_namespace_clean() call in
+		 * osc_import_event(). */
+		ldlm_clear_cleaned(lock);
 	}
 	unlock_res(res);
 
@@ -2746,7 +2750,7 @@ static int osc_import_event(struct obd_device *obd,
         case IMP_EVENT_INVALIDATE: {
                 struct ldlm_namespace *ns = obd->obd_namespace;
                 struct lu_env         *env;
-                int                    refcheck;
+		__u16                  refcheck;
 
 		ldlm_namespace_cleanup(ns, LDLM_FL_LOCAL_ONLY);
 
@@ -2756,7 +2760,7 @@ static int osc_import_event(struct obd_device *obd,
 
 			cfs_hash_for_each_nolock(ns->ns_rs_hash,
 						 osc_ldlm_resource_invalidate,
-						 env);
+						 env, 0);
 			cl_env_put(env, &refcheck);
 
 			ldlm_namespace_cleanup(ns, LDLM_FL_LOCAL_ONLY);

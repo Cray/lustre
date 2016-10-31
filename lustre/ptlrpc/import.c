@@ -372,7 +372,7 @@ void ptlrpc_invalidate_import(struct obd_import *imp)
 				}
 
 				CERROR("%s: Unregistering RPCs found (%d). "
-				       "Network is sluggish? Waiting them "
+				       "Network is sluggish? Waiting for them "
 				       "to error out.\n", cli_tgt,
 				       atomic_read(&imp->imp_unregistering));
 			}
@@ -902,6 +902,14 @@ static int ptlrpc_connect_set_flags(struct obd_import *imp,
 
 	client_adjust_max_dirty(cli);
 
+	/* Update client max modify RPCs in flight with value returned
+	 * by the server */
+	if (ocd->ocd_connect_flags & OBD_CONNECT_MULTIMODRPCS)
+		cli->cl_max_mod_rpcs_in_flight = min(
+					cli->cl_max_mod_rpcs_in_flight,
+					ocd->ocd_maxmodrpcs);
+	else
+		cli->cl_max_mod_rpcs_in_flight = 1;
 
 	/* Reset ns_connect_flags only for initial connect. It might be
 	 * changed in while using FS and if we reset it in reconnect
@@ -938,6 +946,37 @@ static int ptlrpc_connect_set_flags(struct obd_import *imp,
 		imp->imp_msghdr_flags &= ~MSGHDR_CKSUM_INCOMPAT18;
 
 	return 0;
+}
+
+/**
+ * Add all replay requests back to unreplied list before start replay,
+ * so that we can make sure the known replied XID is always increased
+ * only even if when replaying requests.
+ */
+static void ptlrpc_prepare_replay(struct obd_import *imp)
+{
+	struct ptlrpc_request *req;
+
+	if (imp->imp_state != LUSTRE_IMP_REPLAY ||
+	    imp->imp_resend_replay)
+		return;
+
+	/* If the server was restart during repaly, the requests may
+	 * have been added to the unreplied list in former replay. */
+	spin_lock(&imp->imp_lock);
+
+	list_for_each_entry(req, &imp->imp_committed_list, rq_replay_list) {
+		if (list_empty(&req->rq_unreplied_list))
+			ptlrpc_add_unreplied(req);
+	}
+
+	list_for_each_entry(req, &imp->imp_replay_list, rq_replay_list) {
+		if (list_empty(&req->rq_unreplied_list))
+			ptlrpc_add_unreplied(req);
+	}
+
+	imp->imp_known_replied_xid = ptlrpc_known_replied_xid(imp);
+	spin_unlock(&imp->imp_lock);
 }
 
 /**
@@ -1069,6 +1108,12 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 	if (rc != 0)
 		GOTO(out, rc);
 
+	/* The net statistics after (re-)connect is not valid anymore,
+	 * because may reflect other routing, etc. */
+	at_init(&imp->imp_at.iat_net_latency, 0, 0);
+	ptlrpc_at_adj_net_latency(request,
+			lustre_msg_get_service_time(request->rq_repmsg));
+
 	obd_import_event(imp->imp_obd, imp, IMP_EVENT_OCD);
 
 	if (aa->pcaa_initial_connect) {
@@ -1189,6 +1234,7 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
                                 *lustre_msg_get_handle(request->rq_repmsg);
 		imp->imp_replay_cursor = &imp->imp_committed_list;
                 imp->imp_last_replay_transno = 0;
+		imp->imp_replay_cursor = &imp->imp_committed_list;
                 IMPORT_SET_STATE(imp, LUSTRE_IMP_REPLAY);
         } else {
                 DEBUG_REQ(D_HA, request, "%s: evicting (reconnect/recover flags"
@@ -1216,6 +1262,7 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
         }
 
 finish:
+	ptlrpc_prepare_replay(imp);
 	rc = ptlrpc_import_recovery_state_machine(imp);
 	if (rc == -ENOTCONN) {
 		CDEBUG(D_HA, "evicted/aborted by %s@%s during recovery;"

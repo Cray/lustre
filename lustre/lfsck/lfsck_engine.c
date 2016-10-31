@@ -664,6 +664,23 @@ static int lfsck_post(const struct lu_env *env, struct lfsck_instance *lfsck,
 			       (__u32)com->lc_type, rc);
 	}
 
+	list_for_each_entry_safe(com, next, &lfsck->li_list_scan, lc_link) {
+		rc = com->lc_ops->lfsck_query(env, com);
+		if (rc != LS_SCANNING_PHASE2) {
+			struct lfsck_assistant_data *lad = com->lc_data;
+
+			CDEBUG(D_LFSCK, "%s: the component %s status after "
+			       "post is %d, not the phase2 %d\n",
+			       lfsck_lfsck2name(lfsck), lad->lad_name, rc,
+			       LS_SCANNING_PHASE2);
+
+			if (result > 0)
+				result = 0;
+
+			break;
+		}
+	}
+
 	lfsck->li_time_last_checkpoint = cfs_time_current();
 	lfsck->li_time_next_checkpoint = lfsck->li_time_last_checkpoint +
 				cfs_time_seconds(LFSCK_CHECKPOINT_INTERVAL);
@@ -779,8 +796,7 @@ static int lfsck_master_dir_engine(const struct lu_env *env,
 				goto checkpoint;
 		}
 
-		if (ent->lde_attrs & LUDA_IGNORE &&
-		    strcmp(ent->lde_name, dotdot) != 0)
+		if (ent->lde_attrs & LUDA_IGNORE)
 			goto checkpoint;
 
 		/* The type in the @ent structure may has been overwritten,
@@ -1041,6 +1057,18 @@ int lfsck_master_engine(void *args)
 	int			  rc;
 	ENTRY;
 
+	/* There will be some objects verification during the LFSCK start,
+	 * such as the subsequent lfsck_verify_lpf(). Trigger low layer OI
+	 * OI scrub before that to handle the potential inconsistence. */
+	oit_di = oit_iops->init(env, oit_obj, lfsck->li_args_oit, BYPASS_CAPA);
+	if (IS_ERR(oit_di)) {
+		rc = PTR_ERR(oit_di);
+		CDEBUG(D_LFSCK, "%s: master engine fail to init iteration: "
+		       "rc = %d\n", lfsck_lfsck2name(lfsck), rc);
+
+		GOTO(fini_args, rc);
+	}
+
 	if (lfsck->li_master &&
 	    (!list_empty(&lfsck->li_list_scan) ||
 	     !list_empty(&lfsck->li_list_double_scan))) {
@@ -1054,15 +1082,6 @@ int lfsck_master_engine(void *args)
 			CDEBUG(D_LFSCK, "%s: master engine fail to verify the "
 			       ".lustre/lost+found/, go ahead: rc = %d\n",
 			       lfsck_lfsck2name(lfsck), rc);
-	}
-
-	oit_di = oit_iops->init(env, oit_obj, lfsck->li_args_oit, BYPASS_CAPA);
-	if (IS_ERR(oit_di)) {
-		rc = PTR_ERR(oit_di);
-		CDEBUG(D_LFSCK, "%s: master engine fail to init iteration: "
-		       "rc = %d\n", lfsck_lfsck2name(lfsck), rc);
-
-		GOTO(fini_args, rc);
 	}
 
 	spin_lock(&lfsck->li_lock);

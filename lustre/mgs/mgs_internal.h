@@ -121,16 +121,22 @@ struct mgs_tgt_srpc_conf {
 #define FSDB_REVOKING_PARAMS	(6)  /* DLM lock is being revoked */
 
 struct fs_db {
-	char		  fsdb_name[9];
+	char		  fsdb_name[20];
 	struct list_head  fsdb_list;		/* list of databases */
 	struct mutex	  fsdb_mutex;
-	void		 *fsdb_ost_index_map;	/* bitmap of used indicies */
+	union {
+		void	 *fsdb_ost_index_map;	/* bitmap of used indicies */
+		void	 *fsdb_barrier_map;	/* bitmap of barrier */
+	};
 	void		 *fsdb_mdt_index_map;	/* bitmap of used indicies */
 	int		  fsdb_mdt_count;
+	__u32		  fsdb_gen;
 	char		 *fsdb_clilov;	/* COMPAT_146 client lov name */
 	char		 *fsdb_clilmv;
 	unsigned long	  fsdb_flags;
-	__u32		  fsdb_gen;
+	__u32		  fsdb_barrier_status;
+	__u32		  fsdb_barrier_timeout;
+	__u64		  fsdb_barrier_latest_create_time;
 
         /* in-memory copy of the srpc rules, guarded by fsdb_lock */
         struct sptlrpc_rule_set   fsdb_srpc_gen;
@@ -151,11 +157,13 @@ struct fs_db {
 	cfs_time_t            fsdb_notify_start;
 	atomic_t	      fsdb_notify_phase;
 	volatile unsigned int fsdb_notify_async:1,
-                             fsdb_notify_stop:1;
-        /* statistic data */
-        unsigned int         fsdb_notify_total;
-        unsigned int         fsdb_notify_max;
-        unsigned int         fsdb_notify_count;
+			      fsdb_notify_stop:1,
+			      fsdb_has_lproc_entry:1,
+			      fsdb_barrier_disabled:1;
+	/* statistic data */
+	unsigned int	fsdb_notify_total;
+	unsigned int	fsdb_notify_max;
+	unsigned int	fsdb_notify_count;
 };
 
 struct mgs_device {
@@ -176,6 +184,7 @@ struct mgs_device {
 	struct local_oid_storage	*mgs_los;
 	struct mutex			 mgs_mutex;
 	struct mutex			 mgs_health_mutex;
+	struct rw_semaphore		 mgs_barrier_rwsem;
 	struct lu_target		 mgs_lut;
 };
 
@@ -189,12 +198,14 @@ struct mgs_object {
 
 int mgs_init_fsdb_list(struct mgs_device *mgs);
 int mgs_cleanup_fsdb_list(struct mgs_device *mgs);
+int mgs__mgs_fsdb_setup(const struct lu_env *env, struct mgs_device *mgs,
+			struct fs_db *fsdb);
 int mgs_params_fsdb_setup(const struct lu_env *env, struct mgs_device *mgs,
 			  struct fs_db *fsdb);
 int mgs_params_fsdb_cleanup(const struct lu_env *env, struct mgs_device *mgs);
 int mgs_find_or_make_fsdb(const struct lu_env *env, struct mgs_device *mgs,
 			  char *name, struct fs_db **dbh);
-struct fs_db *mgs_find_fsdb(struct mgs_device *mgs, char *fsname);
+struct fs_db *mgs_find_fsdb(struct mgs_device *mgs, const char *fsname);
 int mgs_get_fsdb_srpc_from_llog(const struct lu_env *env,
 				struct mgs_device *mgs, struct fs_db *fsdb);
 int mgs_check_index(const struct lu_env *env, struct mgs_device *mgs,
@@ -205,10 +216,12 @@ int mgs_write_log_target(const struct lu_env *env, struct mgs_device *mgs,
 			 struct mgs_target_info *mti, struct fs_db *fsdb);
 int mgs_replace_nids(const struct lu_env *env, struct mgs_device *mgs,
 		     char *devname, char *nids);
+int mgs_clear_configs(const struct lu_env *env, struct mgs_device *mgs,
+		      const char *devname);
 int mgs_erase_log(const struct lu_env *env, struct mgs_device *mgs,
 		  char *name);
 int mgs_erase_logs(const struct lu_env *env, struct mgs_device *mgs,
-		   char *fsname);
+		   const char *fsname);
 int mgs_setparam(const struct lu_env *env, struct mgs_device *mgs,
 		 struct lustre_cfg *lcfg, char *fsname);
 int mgs_list_logs(const struct lu_env *env, struct mgs_device *mgs,
@@ -220,11 +233,18 @@ int mgs_nodemap_cmd(const struct lu_env *env, struct mgs_device *mgs,
 		    enum lcfg_command_type cmd, const char *nodemap_name,
 		    char *param);
 
+/* mgs_barrier.c*/
+int mgs_iocontrol_barrier(const struct lu_env *env,
+			  struct mgs_device *mgs,
+			  struct obd_ioctl_data *data);
+int mgs_barrier_read(struct tgt_session_info *tsi);
+int mgs_barrier_notify(struct tgt_session_info *tsi);
+
 /* mgs_handler.c */
 int  mgs_get_lock(struct obd_device *obd, struct ldlm_res_id *res,
                   struct lustre_handle *lockh);
 int  mgs_put_lock(struct lustre_handle *lockh);
-void mgs_revoke_lock(struct mgs_device *mgs, struct fs_db *fsdb, int type);
+int mgs_revoke_lock(struct mgs_device *mgs, struct fs_db *fsdb, int type);
 
 /* mgs_nids.c */
 int  mgs_ir_update(const struct lu_env *env, struct mgs_device *mgs,
@@ -413,6 +433,10 @@ static inline struct mgs_direntry *mgs_direntry_alloc(int len)
 
 /* mgs_llog.c */
 int class_dentry_readdir(const struct lu_env *env, struct mgs_device *mgs,
-			 struct list_head *list);
+			 struct list_head *list, const char *exc_name);
+int mgs_lcfg_fork(const struct lu_env *env, struct mgs_device *mgs,
+		  const char *oldname, const char *newname);
+int mgs_lcfg_erase(const struct lu_env *env, struct mgs_device *mgs,
+		   const char *fsname);
 
 #endif /* _MGS_INTERNAL_H */

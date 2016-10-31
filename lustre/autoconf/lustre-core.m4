@@ -289,6 +289,40 @@ Cannot enable gss keyring. See above for details.
 ]) # LC_CONFIG_GSS_KEYRING
 
 #
+# LC_HAVE_CRED_TGCRED
+#
+# rhel7 struct cred has no member tgcred
+#
+AC_DEFUN([LC_HAVE_CRED_TGCRED], [
+LB_CHECK_COMPILE([if 'struct cred' has member 'tgcred'],
+cred_tgcred, [
+	#include <linux/cred.h>
+],[
+	((struct cred *)0)->tgcred = NULL;
+],[
+	AC_DEFINE(HAVE_CRED_TGCRED, 1,
+		[struct cred has member tgcred])
+])
+]) # LC_HAVE_CRED_TGCRED
+
+#
+# LC_KEY_TYPE_INSTANTIATE_2ARGS
+#
+# rhel7 key_type->instantiate takes 2 args (struct key, struct key_preparsed_payload)
+#
+AC_DEFUN([LC_KEY_TYPE_INSTANTIATE_2ARGS], [
+LB_CHECK_COMPILE([if 'key_type->instantiate' has two args],
+key_type_instantiate_2args, [
+	#include <linux/key-type.h>
+],[
+	((struct key_type *)0)->instantiate(0, NULL);
+],[
+	AC_DEFINE(HAVE_KEY_TYPE_INSTANTIATE_2ARGS, 1,
+		[key_type->instantiate has two args])
+])
+]) # LC_KEY_TYPE_INSTANTIATE_2ARGS
+
+#
 # LC_CONFIG_SUNRPC
 #
 AC_DEFUN([LC_CONFIG_SUNRPC], [
@@ -316,6 +350,8 @@ AC_MSG_RESULT([$enable_gss])
 
 AS_IF([test "x$enable_gss" != xno], [
 	LC_CONFIG_GSS_KEYRING
+	LC_HAVE_CRED_TGCRED
+	LC_KEY_TYPE_INSTANTIATE_2ARGS
 	sunrpc_required=$enable_gss
 	LC_CONFIG_SUNRPC
 	sunrpc_required="no"
@@ -334,36 +370,39 @@ AS_IF([test "x$enable_gss" != xno], [
 	require_krb5="no"
 
 	AS_IF([test -n "$KRBDIR"], [
-		AC_CHECK_LIB([gssapi], [gss_export_lucid_sec_context], [
-			GSSAPI_LIBS="$GSSAPI_LDFLAGS -lgssapi"
-			gss_conf_test="success"
-		], [
-			AC_CHECK_LIB([gssglue], [gss_export_lucid_sec_context], [
-				GSSAPI_LIBS="$GSSAPI_LDFLAGS -lgssglue"
-				gss_conf_test="success"
-			], [
-				AS_IF([test "x$enable_gss" = xyes], [
-					AC_MSG_ERROR([
-
-libgssapi or libgssglue is not found, which is required by GSS.
-])
-				], [
-					AC_MSG_WARN([
-
-libgssapi or libgssglue is not found, which is required by GSS.
-])
-				])
-			])
-		])
-		AC_SUBST(GSSAPI_LIBS)
+		gss_conf_test="success"
+	], [
+		AC_MSG_WARN([not found!])
+		gss_conf_test="failure"
 	])
 
 	AS_IF([test "x$gss_conf_test" = xsuccess], [
 		AC_DEFINE([HAVE_GSS], [1], [Define this is if you enable gss])
 		enable_gss="yes"
+	], [
+		enable_gss="no"
 	])
 ])
 ]) # LC_CONFIG_GSS
+
+#
+# DSS (Differentiated Storage Services)
+#
+
+AC_DEFUN([LC_CONFIG_DSS],
+[AC_MSG_CHECKING([if kernel supports DSS])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/dss_types.h>
+],[
+	int class = dss_tag_file_type(NULL);
+],[
+	AC_MSG_RESULT([yes])
+	AC_DEFINE(HAVE_DSS, 1,
+		  [kernel supports DSS.])
+],[
+	AC_MSG_RESULT([no])
+])
+])
 
 #
 # LC_INODE_PERMISION_2ARGS
@@ -920,6 +959,33 @@ inode_i_nlink_protected, [
 		[inode->i_nlink is protected from direct modification])
 ])
 ]) # LC_HAVE_PROTECT_I_NLINK
+
+#
+# 2.6.39 security_inode_init_security takes a 'struct qstr' parameter
+#
+# 3.2 security_inode_init_security takes a callback to set xattrs
+#
+AC_DEFUN([LC_HAVE_SECURITY_IINITSEC], [
+LB_CHECK_COMPILE([if security_inode_init_security takes a callback],
+security_inode_init_security_callback, [
+	#include <linux/security.h>
+],[
+	security_inode_init_security(NULL, NULL, NULL, (const initxattrs)NULL, NULL);
+],[
+	AC_DEFINE(HAVE_SECURITY_IINITSEC_CALLBACK, 1,
+		  [security_inode_init_security takes a callback to set xattrs])
+],[
+	LB_CHECK_COMPILE([if security_inode_init_security takes a 'struct qstr' parameter],
+	security_inode_init_security_qstr, [
+		#include <linux/security.h>
+	],[
+		security_inode_init_security(NULL, NULL, (struct qstr *)NULL, NULL, NULL, NULL);
+	],[
+		AC_DEFINE(HAVE_SECURITY_IINITSEC_QSTR, 1,
+			  [security_inode_init_security takes a 'struct qstr' parameter])
+	])
+])
+]) # LC_HAVE_SECURITY_IINITSEC
 
 #
 # LC_HAVE_MIGRATE_HEADER
@@ -1682,6 +1748,23 @@ file_function_iter, [
 ]) # LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
 
 #
+# LC_HAVE_LM_GRANT_2ARGS
+#
+# 3.17 removed unused argument from lm_grant
+#
+AC_DEFUN([LC_HAVE_LM_GRANT_2ARGS], [
+LB_CHECK_COMPILE([if 'lock_manager_operations.lm_grant' takes two args],
+lm_grant, [
+	#include <linux/fs.h>
+],[
+	((struct lock_manager_operations *)NULL)->lm_grant(NULL, 0);
+],[
+	AC_DEFINE(HAVE_LM_GRANT_2ARGS, 1,
+		[lock_manager_operations.lm_grant takes two args])
+])
+]) # LC_HAVE_LM_GRANT_2ARGS
+
+#
 # LC_HAVE_SMP_MB__BEFORE_ATOMIC
 #
 # smp_mb__before_clear_bit() was deprecated in kernel 3.16 and removed in
@@ -1700,34 +1783,22 @@ smp_mb__before_atomic, [
 ]) # LC_HAVE_SMP_MB__BEFORE_ATOMIC
 
 #
-# LC_NFS_FILLDIR_USE_CTX
+# LC_KEY_MATCH_DATA
 #
-# 3.18 kernel moved from void cookie to struct dir_context
+# 3.17	replaces key_type::match with match_preparse
+#	and has new struct key_match_data
 #
-AC_DEFUN([LC_NFS_FILLDIR_USE_CTX], [
-tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-Werror"
-LB_CHECK_COMPILE([if filldir_t uses struct dir_context],
-filldir_ctx, [
-        #include <linux/fs.h>
+AC_DEFUN([LC_KEY_MATCH_DATA], [
+LB_CHECK_COMPILE([if struct key_match field exist],
+key_match, [
+	#include <linux/key-type.h>
 ],[
-        int filldir(struct dir_context *ctx, const char* name,
-                    int i, loff_t off, u64 tmp, unsigned temp)
-        {
-                return 0;
-        }
-
-        struct dir_context ctx = {
-                .actor = filldir,
-        };
-
-        ctx.actor(NULL, "test", 0, (loff_t) 0, 0, 0);
+	struct key_match_data data;
 ],[
-        AC_DEFINE(HAVE_FILLDIR_USE_CTX, 1,
-                [filldir_t needs struct dir_context as argument])
+	AC_DEFINE(HAVE_KEY_MATCH_DATA, 1,
+		[struct key_match_data exist])
 ])
-EXTRA_KCFLAGS="$tmp_flags"
-]) # LC_NFS_FILLDIR_USE_CTX
+]) # LC_KEY_MATCH_DATA
 
 #
 # LC_PERCPU_COUNTER_INIT
@@ -1747,6 +1818,36 @@ percpu_counter_init, [
 		[percpu_counter_init uses GFP_* flag])
 ])
 ]) # LC_PERCPU_COUNTER_INIT
+
+#
+# LC_NFS_FILLDIR_USE_CTX
+#
+# 3.18 kernel moved from void cookie to struct dir_context
+#
+AC_DEFUN([LC_NFS_FILLDIR_USE_CTX], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if filldir_t uses struct dir_context],
+filldir_ctx, [
+	#include <linux/fs.h>
+],[
+	int filldir(struct dir_context *ctx, const char* name,
+		    int i, loff_t off, u64 tmp, unsigned temp)
+	{
+		return 0;
+	}
+
+	struct dir_context ctx = {
+		.actor = filldir,
+	};
+
+	ctx.actor(NULL, "test", 0, (loff_t) 0, 0, 0);
+],[
+	AC_DEFINE(HAVE_FILLDIR_USE_CTX, 1,
+		[filldir_t needs struct dir_context as argument])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_NFS_FILLDIR_USE_CTX
 
 #
 # LC_HAVE_DQUOT_QC_DQBLK
@@ -1916,6 +2017,32 @@ bio_endio, [
 ]) # LC_BIO_ENDIO_USES_ONE_ARG
 
 #
+# LC_HAVE_LOOP_CTL_GET_FREE
+#
+# 4.x kernel have moved userspace APIs to
+# the separate directory and all of them
+# support LOOP_CTL_GET_FREE
+#
+AC_DEFUN([LC_HAVE_LOOP_CTL_GET_FREE], [
+LB_CHECK_FILE([$LINUX/include/linux/loop.h], [
+	LB_CHECK_COMPILE([if have 'HAVE_LOOP_CTL_GET_FREE'],
+	LOOP_CTL_GET_FREE, [
+		#include <linux/loop.h>
+	],[
+		int i;
+
+		i = LOOP_CTL_GET_FREE;
+	],[
+		AC_DEFINE(HAVE_LOOP_CTL_GET_FREE, 1,
+			[LOOP_CTL_GET_FREE exist])
+	])
+],[
+	AC_DEFINE(HAVE_LOOP_CTL_GET_FREE, 1,
+		[kernel has LOOP_CTL_GET_FREE])
+])
+]) # LC_HAVE_LOOP_CTL_GET_FREE
+
+#
 # LC_HAVE_LOCKS_LOCK_FILE_WAIT
 #
 # 4.4 kernel have moved locks API users to
@@ -1989,6 +2116,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_CAPA_CRYPTO
 	LC_CONFIG_RMTCLIENT
 	LC_CONFIG_GSS
+	LC_CONFIG_DSS
 
 	# 2.6.32
 	LC_BLK_QUEUE_MAX_SEGMENTS
@@ -2023,6 +2151,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_FSTYPE_MOUNT
 	LC_IOP_TRUNCATE
 	LC_HAVE_INODE_OWNER_OR_CAPABLE
+	LC_HAVE_SECURITY_IINITSEC
 
 	# 3.0
 	LC_DIRTY_INODE_WITH_FLAG
@@ -2034,6 +2163,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_FILE_LLSEEK_SIZE
 	LC_INODE_PERMISION_2ARGS
 	LC_RADIX_EXCEPTION_ENTRY
+	LC_HAVE_LOOP_CTL_GET_FREE
 
 	# 3.2
 	LC_HAVE_VOID_MAKE_REQUEST_FN
@@ -2105,6 +2235,10 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_IOV_ITER_INIT_DIRECTION
 	LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
 	LC_HAVE_SMP_MB__BEFORE_ATOMIC
+
+	# 3.17
+	LC_HAVE_LM_GRANT_2ARGS
+	LC_KEY_MATCH_DATA
 
 	# 3.18
 	LC_PERCPU_COUNTER_INIT
@@ -2362,6 +2496,24 @@ No selinux package found, unable to build selinux enabled tools
 ])
 AC_SUBST(SELINUX)
 
+LDAP=""
+AC_CHECK_LIB([ldap],
+             [ldap_sasl_bind_s],
+             [AC_CHECK_HEADERS([ldap.h],
+                               [LDAP="-lldap"
+                                AC_DEFINE([HAVE_LDAP], 1,
+                                          [support alder32 checksum type])],
+                               [AC_MSG_WARN([No ldap-devel package found])])],
+             [AC_MSG_WARN([No ldap package found])]
+)
+AC_SUBST(LDAP)
+
+# l_getidenity_nss
+AC_ARG_ENABLE([getidentity_nss],
+      AC_HELP_STRING([--enable-getidentity-nss],
+                      [Compile l_getidentity_nss utility with NSS modules support]),
+      [],[enable_getidentity_nss=yes])
+
 # Super safe df
 AC_MSG_CHECKING([whether to report minimum OST free space])
 AC_ARG_ENABLE([mindf],
@@ -2431,6 +2583,8 @@ AM_CONDITIONAL(GSS_KEYRING, test x$enable_gss_keyring = xyes)
 AM_CONDITIONAL(GSS_PIPEFS, test x$enable_gss_pipefs = xyes)
 AM_CONDITIONAL(LIBPTHREAD, test x$enable_libpthread = xyes)
 AM_CONDITIONAL(LLITE_LLOOP, test x$enable_llite_lloop_module = xyes)
+AM_CONDITIONAL(LDAP_BUILD, test x$LDAP != x)
+AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
 ]) # LC_CONDITIONALS
 
 #
@@ -2458,6 +2612,7 @@ lustre/kernel_patches/targets/2.6-sles11.target
 lustre/kernel_patches/targets/3.0-sles11.target
 lustre/kernel_patches/targets/3.0-sles11sp3.target
 lustre/kernel_patches/targets/3.0-sles11sp4.target
+lustre/kernel_patches/targets/3.12-sles12.target
 lustre/kernel_patches/targets/2.6-fc11.target
 lustre/kernel_patches/targets/2.6-fc12.target
 lustre/kernel_patches/targets/2.6-fc15.target

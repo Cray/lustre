@@ -88,31 +88,25 @@ struct vm_area_struct *our_vma(struct mm_struct *mm, unsigned long addr,
 
 /**
  * API independent part for page fault initialization.
- * \param vma - virtual memory area addressed to page fault
  * \param env - corespondent lu_env to processing
- * \param nest - nested level
+ * \param vma - virtual memory area addressed to page fault
  * \param index - page index corespondent to fault.
  * \parm ra_flags - vma readahead flags.
  *
- * \return allocated and initialized env for fault operation.
- * \retval EINVAL if env can't allocated
- * \return other error codes from cl_io_init.
+ * \return error codes from cl_io_init.
  */
 static struct cl_io *
-ll_fault_io_init(struct vm_area_struct *vma, struct lu_env **env_ret,
-		 struct cl_env_nest *nest, pgoff_t index,
-		 unsigned long *ra_flags)
+ll_fault_io_init(const struct lu_env *env, struct vm_area_struct *vma,
+		 pgoff_t index, unsigned long *ra_flags)
 {
 	struct file	       *file = vma->vm_file;
 	struct inode	       *inode = file->f_path.dentry->d_inode;
 	struct cl_io	       *io;
 	struct cl_fault_io     *fio;
-	struct lu_env	       *env;
 	pgoff_t			size;
 	int			rc;
 	ENTRY;
 
-        *env_ret = NULL;
         if (ll_file_nolock(file))
                 RETURN(ERR_PTR(-EOPNOTSUPP));
 
@@ -129,12 +123,8 @@ ll_fault_io_init(struct vm_area_struct *vma, struct lu_env **env_ret,
          * stomping on existing context, optionally force an allocation of a new
          * one.
          */
-        env = cl_env_nested_get(nest);
-        if (IS_ERR(env))
-                 RETURN(ERR_PTR(-EINVAL));
 
-        *env_ret = env;
-
+restart:
         io = ccc_env_thread_io(env);
         io->ci_obj = ll_i2info(inode)->lli_clob;
         LASSERT(io->ci_obj != NULL);
@@ -170,11 +160,13 @@ ll_fault_io_init(struct vm_area_struct *vma, struct lu_env **env_ret,
 	} else {
 		LASSERT(rc < 0);
 		cl_io_fini(env, io);
-		cl_env_nested_put(nest, env);
+		if (io->ci_need_restart)
+			goto restart;
+
 		io = ERR_PTR(rc);
 	}
 
-	return io;
+	RETURN(io);
 }
 
 /* Sharing code of page_mkwrite method for rhel5 and rhel6 */
@@ -184,8 +176,8 @@ static int ll_page_mkwrite0(struct vm_area_struct *vma, struct page *vmpage,
 	struct lu_env           *env;
 	struct cl_io            *io;
 	struct vvp_io           *vio;
-	struct cl_env_nest       nest;
 	int                      result;
+	__u16			 refcheck;
 	sigset_t		 set;
 	struct inode             *inode;
 	struct ll_inode_info     *lli;
@@ -193,7 +185,11 @@ static int ll_page_mkwrite0(struct vm_area_struct *vma, struct page *vmpage,
 
 	LASSERT(vmpage != NULL);
 
-	io = ll_fault_io_init(vma, &env,  &nest, vmpage->index, NULL);
+	env = cl_env_get(&refcheck);
+	if (IS_ERR(env))
+		RETURN(PTR_ERR(env));
+
+	io = ll_fault_io_init(env, vma, vmpage->index, NULL);
 	if (IS_ERR(io))
 		GOTO(out, result = PTR_ERR(io));
 
@@ -254,8 +250,8 @@ static int ll_page_mkwrite0(struct vm_area_struct *vma, struct page *vmpage,
 
 out_io:
 	cl_io_fini(env, io);
-	cl_env_nested_put(&nest, env);
 out:
+	cl_env_put(env, &refcheck);
 	CDEBUG(D_MMAP, "%s mkwrite with %d\n", current->comm, result);
 	LASSERT(ergo(result == 0, PageLocked(vmpage)));
 
@@ -299,14 +295,37 @@ static int ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
         struct vvp_io           *vio = NULL;
         struct page             *vmpage;
         unsigned long            ra_flags;
-        struct cl_env_nest       nest;
-        int                      result;
+        int                      result = 0;
+	__u16                    refcheck;
         int                      fault_ret = 0;
         ENTRY;
 
-        io = ll_fault_io_init(vma, &env,  &nest, vmf->pgoff, &ra_flags);
+	env = cl_env_get(&refcheck);
+	if (IS_ERR(env))
+		RETURN(to_fault_error(PTR_ERR(env)));
+
+	if (ll_sbi_has_fast_read(
+			ll_i2sbi(vma->vm_file->f_path.dentry->d_inode))) {
+		/* do fast fault */
+		ll_cl_add(vma->vm_file, env, NULL, LCC_MMAP);
+		fault_ret = filemap_fault(vma, vmf);
+		ll_cl_remove(vma->vm_file, env);
+
+		/* - If there is no error, then the page was found in cache and
+		 *   uptodate;
+		 * - If VM_FAULT_RETRY is set, the page existed but failed to
+		 *   lock. It will return to kernel and retry;
+		 * - Otherwise, it should try normal fault under DLM lock. */
+		if ((fault_ret & VM_FAULT_RETRY) ||
+		    !(fault_ret & VM_FAULT_ERROR))
+			GOTO(out, result = 0);
+
+		fault_ret = 0;
+	}
+
+        io = ll_fault_io_init(env, vma, vmf->pgoff, &ra_flags);
         if (IS_ERR(io))
-		RETURN(to_fault_error(PTR_ERR(io)));
+		GOTO(out, result = PTR_ERR(io));
 
         result = io->ci_result;
 	if (result == 0) {
@@ -318,7 +337,7 @@ static int ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
 		vio->u.fault.ft_flags_valid = 0;
 
 		/* May call ll_readpage() */
-		ll_cl_add(vma->vm_file, env, io);
+		ll_cl_add(vma->vm_file, env, io, LCC_MMAP);
 
 		result = cl_io_loop(env, io);
 
@@ -336,14 +355,14 @@ static int ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
 		}
         }
 	cl_io_fini(env, io);
-	cl_env_nested_put(&nest, env);
 
 	vma->vm_flags |= ra_flags;
+out:
+	cl_env_put(env, &refcheck);
 	if (result != 0 && !(fault_ret & VM_FAULT_RETRY))
 		fault_ret |= to_fault_error(result);
 
-	CDEBUG(D_MMAP, "%s fault %d/%d\n",
-	       current->comm, fault_ret, result);
+	CDEBUG(D_MMAP, "%s fault %d/%d\n", current->comm, fault_ret, result);
 	RETURN(fault_ret);
 }
 
@@ -359,10 +378,12 @@ static int ll_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	 * other signals. */
 	set = cfs_block_sigsinv(sigmask(SIGKILL) | sigmask(SIGTERM));
 
+	ll_stats_ops_tally(ll_i2sbi(vma->vm_file->f_path.dentry->d_inode),
+			   LPROC_LL_FAULT, 1);
+
 restart:
         result = ll_fault0(vma, vmf);
-        LASSERT(!(result & VM_FAULT_LOCKED));
-        if (result == 0) {
+	if (!(result & (VM_FAULT_RETRY | VM_FAULT_ERROR | VM_FAULT_LOCKED))) {
                 struct page *vmpage = vmf->page;
 
                 /* check if this page has been truncated */
@@ -394,6 +415,9 @@ static int ll_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf)
         bool printed = false;
         bool retry;
         int result;
+
+	ll_stats_ops_tally(ll_i2sbi(vma->vm_file->f_path.dentry->d_inode),
+			   LPROC_LL_MKWRITE, 1);
 
         do {
                 retry = false;

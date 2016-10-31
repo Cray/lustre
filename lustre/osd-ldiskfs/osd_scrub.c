@@ -180,7 +180,8 @@ static int osd_scrub_refresh_mapping(struct osd_thread_info *info,
 	if (rc < 0)
 		CDEBUG(D_LFSCK, "%s: fail to refresh OI map for scrub op %d "
 		       DFID" => %u/%u: rc = %d\n", osd_name(dev), ops,
-		       PFID(fid), id->oii_ino, id->oii_gen, rc);
+		       PFID(fid), id ? id->oii_ino : -1, id ? id->oii_gen : -1,
+		       rc);
 
 	RETURN(rc);
 }
@@ -495,7 +496,12 @@ osd_scrub_check_update(struct osd_thread_info *info, struct osd_device *dev,
 			GOTO(out, rc);
 		}
 
-		sf->sf_flags |= SF_UPGRADE;
+		/* The inode has been reused as EA inode, ignore it. */
+		if (unlikely(osd_is_ea_inode(inode)))
+			GOTO(out, rc = 0);
+
+		if (!(sf->sf_param & SP_DRYRUN))
+			sf->sf_flags |= SF_UPGRADE;
 		sf->sf_internal_flags &= ~SIF_NO_HANDLE_OLD_FID;
 		dev->od_check_ff = 1;
 		rc = osd_scrub_convert_ff(info, dev, inode, fid);
@@ -534,6 +540,10 @@ iget:
 					rc = 0;
 				GOTO(out, rc);
 			}
+
+			/* The inode has been reused as EA inode, ignore it. */
+			if (unlikely(osd_is_ea_inode(inode)))
+				GOTO(out, rc = 0);
 		}
 
 		if (!scrub->os_partial_scan)
@@ -613,7 +623,8 @@ out:
 	/* There may be conflict unlink during the OI scrub,
 	 * if happend, then remove the new added OI mapping. */
 	if (ops == DTO_INDEX_INSERT && inode != NULL && !IS_ERR(inode) &&
-	    unlikely(inode->i_nlink == 0))
+	    unlikely(ldiskfs_test_inode_state(inode,
+					      LDISKFS_STATE_LUSTRE_DESTROY)))
 		osd_scrub_refresh_mapping(info, dev, fid, lid,
 				DTO_INDEX_DELETE, false,
 				(val == SCRUB_NEXT_OSTOBJ ||
@@ -625,13 +636,11 @@ out:
 		iput(inode);
 
 	if (oii != NULL) {
-		LASSERT(!list_empty(&oii->oii_list));
+		LASSERT(list_empty(&oii->oii_list));
 
-		spin_lock(&scrub->os_lock);
-		list_del_init(&oii->oii_list);
-		spin_unlock(&scrub->os_lock);
 		OBD_FREE_PTR(oii);
 	}
+
 	RETURN(sf->sf_param & SP_FAILOUT ? rc : 0);
 }
 
@@ -956,6 +965,10 @@ static int osd_iit_iget(struct osd_thread_info *info, struct osd_device *dev,
 		RETURN(rc);
 	}
 
+	/* It is an EA inode, no OI mapping for it, skip it. */
+	if (osd_is_ea_inode(inode))
+		GOTO(put, rc = SCRUB_NEXT_CONTINUE);
+
 	if (scrub &&
 	    ldiskfs_test_inode_state(inode, LDISKFS_STATE_LUSTRE_NOSCRUB)) {
 		/* Only skip it for the first OI scrub accessing. */
@@ -1007,13 +1020,20 @@ static int osd_scrub_next(struct osd_thread_info *info, struct osd_device *dev,
 		return SCRUB_NEXT_EXIT;
 
 	if (!list_empty(&scrub->os_inconsistent_items)) {
-		struct osd_inconsistent_item *oii;
+		spin_lock(&scrub->os_lock);
+		if (likely(!list_empty(&scrub->os_inconsistent_items))) {
+			struct osd_inconsistent_item *oii;
 
-		oii = list_entry(scrub->os_inconsistent_items.next,
-				 struct osd_inconsistent_item, oii_list);
-		*oic = &oii->oii_cache;
-		scrub->os_in_prior = 1;
-		return 0;
+			oii = list_entry(scrub->os_inconsistent_items.next,
+				struct osd_inconsistent_item, oii_list);
+			list_del_init(&oii->oii_list);
+			spin_unlock(&scrub->os_lock);
+			*oic = &oii->oii_cache;
+			scrub->os_in_prior = 1;
+
+			return 0;
+		}
+		spin_unlock(&scrub->os_lock);
 	}
 
 	if (noslot)
@@ -1100,8 +1120,10 @@ static int osd_scrub_exec(struct osd_thread_info *info, struct osd_device *dev,
 	}
 
 	rc = osd_scrub_check_update(info, dev, oic, rc);
-	if (rc != 0)
+	if (rc != 0) {
+		scrub->os_in_prior = 0;
 		return rc;
+	}
 
 	rc = osd_scrub_checkpoint(scrub);
 	if (rc != 0) {
@@ -1519,12 +1541,24 @@ noenv:
 typedef int (*scandir_t)(struct osd_thread_info *, struct osd_device *,
 			 struct dentry *, filldir_t filldir);
 
+#ifdef HAVE_FILLDIR_USE_CTX
+static int osd_ios_varfid_fill(struct dir_context *buf, const char *name,
+			       int namelen, loff_t offset, __u64 ino,
+			       unsigned d_type);
+static int osd_ios_lf_fill(struct dir_context *buf, const char *name,
+			   int namelen, loff_t offset, __u64 ino,
+			   unsigned d_type);
+static int osd_ios_dl_fill(struct dir_context *buf, const char *name,
+			   int namelen, loff_t offset, __u64 ino,
+			   unsigned d_type);
+#else
 static int osd_ios_varfid_fill(void *buf, const char *name, int namelen,
 			       loff_t offset, __u64 ino, unsigned d_type);
 static int osd_ios_lf_fill(void *buf, const char *name, int namelen,
 			   loff_t offset, __u64 ino, unsigned d_type);
 static int osd_ios_dl_fill(void *buf, const char *name, int namelen,
 			   loff_t offset, __u64 ino, unsigned d_type);
+#endif
 
 static int
 osd_ios_general_scan(struct osd_thread_info *info, struct osd_device *dev,
@@ -1592,6 +1626,10 @@ static const struct osd_lf_map osd_lf_maps[] = {
 	/* last_rcvd */
 	{ LAST_RCVD, { FID_SEQ_LOCAL_FILE, LAST_RECV_OID, 0 }, OLF_SHOW_NAME,
 		sizeof(LAST_RCVD) - 1, NULL, NULL },
+
+	/* reply_data */
+	{ REPLY_DATA, { FID_SEQ_LOCAL_FILE, REPLY_DATA_OID, 0 }, OLF_SHOW_NAME,
+		sizeof(REPLY_DATA) - 1, NULL, NULL },
 
 	/* lov_objid */
 	{ LOV_OBJID, { FID_SEQ_LOCAL_FILE, MDD_LOV_OBJ_OID, 0 }, OLF_SHOW_NAME,
@@ -1814,10 +1852,16 @@ osd_ios_scan_one(struct osd_thread_info *info, struct osd_device *dev,
  * It scans the /lost+found, and for the OST-object (with filter_fid
  * or filter_fid_old), move them back to its proper /O/<seq>/d<x>.
  */
+#ifdef HAVE_FILLDIR_USE_CTX
+static int osd_ios_lf_fill(struct dir_context *buf, const char *name,
+			   int namelen,
+#else
 static int osd_ios_lf_fill(void *buf, const char *name, int namelen,
+#endif
 			   loff_t offset, __u64 ino, unsigned d_type)
 {
-	struct osd_ios_filldir_buf *fill_buf = buf;
+	struct osd_ios_filldir_buf *fill_buf =
+		(struct osd_ios_filldir_buf *)buf;
 	struct osd_thread_info     *info     = fill_buf->oifb_info;
 	struct osd_device	   *dev      = fill_buf->oifb_dev;
 	struct lu_fid		   *fid      = &info->oti_fid;
@@ -1882,10 +1926,16 @@ put:
 	return 0;
 }
 
+#ifdef HAVE_FILLDIR_USE_CTX
+static int osd_ios_varfid_fill(struct dir_context  *buf, const char *name,
+			       int namelen,
+#else
 static int osd_ios_varfid_fill(void *buf, const char *name, int namelen,
+#endif
 			       loff_t offset, __u64 ino, unsigned d_type)
 {
-	struct osd_ios_filldir_buf *fill_buf = buf;
+	struct osd_ios_filldir_buf *fill_buf =
+		(struct osd_ios_filldir_buf *)buf;
 	struct osd_device	   *dev      = fill_buf->oifb_dev;
 	struct dentry		   *child;
 	int			    rc;
@@ -1909,10 +1959,16 @@ static int osd_ios_varfid_fill(void *buf, const char *name, int namelen,
 	RETURN(rc);
 }
 
+#ifdef HAVE_FILLDIR_USE_CTX
+static int osd_ios_dl_fill(struct dir_context  *buf, const char *name,
+			   int namelen,
+#else
 static int osd_ios_dl_fill(void *buf, const char *name, int namelen,
+#endif
 			   loff_t offset, __u64 ino, unsigned d_type)
 {
-	struct osd_ios_filldir_buf *fill_buf = buf;
+	struct osd_ios_filldir_buf *fill_buf =
+		(struct osd_ios_filldir_buf *)buf;
 	struct osd_device	   *dev      = fill_buf->oifb_dev;
 	const struct osd_lf_map    *map;
 	struct dentry		   *child;
@@ -1945,10 +2001,16 @@ static int osd_ios_dl_fill(void *buf, const char *name, int namelen,
 	RETURN(rc);
 }
 
+#ifdef HAVE_FILLDIR_USE_CTX
+static int osd_ios_root_fill(struct dir_context *buf, const char *name,
+			     int namelen,
+#else
 static int osd_ios_root_fill(void *buf, const char *name, int namelen,
+#endif
 			     loff_t offset, __u64 ino, unsigned d_type)
 {
-	struct osd_ios_filldir_buf *fill_buf = buf;
+	struct osd_ios_filldir_buf *fill_buf =
+		(struct osd_ios_filldir_buf *)buf;
 	struct osd_device	   *dev      = fill_buf->oifb_dev;
 	const struct osd_lf_map    *map;
 	struct dentry		   *child;
@@ -2245,13 +2307,17 @@ static int do_osd_scrub_start(struct osd_device *dev, __u32 flags)
 	int		      rc;
 	ENTRY;
 
+	if (dev->od_dt_dev.dd_rdonly)
+		RETURN(-EROFS);
+
 	/* os_lock: sync status between stop and scrub thread */
 	spin_lock(&scrub->os_lock);
 
 again:
 	if (thread_is_running(thread)) {
 		spin_unlock(&scrub->os_lock);
-		if (!(scrub->os_file.sf_flags & SF_AUTO) ||
+		if (!(scrub->os_file.sf_flags & SF_AUTO ||
+		      scrub->os_partial_scan) ||
 		     (flags & (SS_AUTO_FULL | SS_AUTO_PARTIAL)))
 			RETURN(-EALREADY);
 
@@ -2360,7 +2426,8 @@ int osd_scrub_setup(const struct lu_env *env, struct osd_device *dev)
 	struct file		   *filp;
 	struct inode		   *inode;
 	struct lu_fid		   *fid    = &info->oti_fid;
-	int			    dirty  = 0;
+	bool			    dirty  = false;
+	bool			    restored = false;
 	int			    rc     = 0;
 	ENTRY;
 
@@ -2414,16 +2481,17 @@ int osd_scrub_setup(const struct lu_env *env, struct osd_device *dev)
 		 * have their FID mapping in OI files already. */
 		if (dev->od_maybe_new)
 			sf->sf_internal_flags = SIF_NO_HANDLE_OLD_FID;
-		dirty = 1;
+		dirty = true;
 	} else if (rc != 0) {
 		GOTO(cleanup_inode, rc);
 	} else {
 		if (memcmp(sf->sf_uuid, es->s_uuid, 16) != 0) {
 			osd_scrub_file_reset(scrub, es->s_uuid,SF_INCONSISTENT);
-			dirty = 1;
+			dirty = true;
+			restored = true;
 		} else if (sf->sf_status == SS_SCANNING) {
 			sf->sf_status = SS_CRASHED;
-			dirty = 1;
+			dirty = true;
 		}
 	}
 
@@ -2432,14 +2500,14 @@ int osd_scrub_setup(const struct lu_env *env, struct osd_device *dev)
 	else
 		scrub->os_pos_current = LDISKFS_FIRST_INO(sb) + 1;
 
-	if (dirty != 0) {
+	if (dirty) {
 		rc = osd_scrub_file_store(scrub);
 		if (rc != 0)
 			GOTO(cleanup_inode, rc);
 	}
 
 	/* Initialize OI files. */
-	rc = osd_oi_init(info, dev);
+	rc = osd_oi_init(info, dev, restored);
 	if (rc < 0)
 		GOTO(cleanup_inode, rc);
 
@@ -2468,7 +2536,7 @@ int osd_scrub_setup(const struct lu_env *env, struct osd_device *dev)
 		 * later if found that the system is upgrading. */
 		dev->od_igif_inoi = 1;
 
-	if (!dev->od_noscrub &&
+	if (!dev->od_dt_dev.dd_rdonly && !dev->od_noscrub &&
 	    ((sf->sf_status == SS_PAUSED) ||
 	     (sf->sf_status == SS_CRASHED &&
 	      sf->sf_flags & (SF_RECREATED | SF_INCONSISTENT |
@@ -2728,6 +2796,8 @@ static int osd_otable_it_load(const struct lu_env *env,
 	/* Forbid to set iteration position after iteration started. */
 	if (it->ooi_user_ready)
 		RETURN(-EPERM);
+
+	LASSERT(!scrub->os_partial_scan);
 
 	if (hash > OSD_OTABLE_MAX_HASH)
 		hash = OSD_OTABLE_MAX_HASH;

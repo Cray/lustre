@@ -87,7 +87,6 @@ static void ll_invalidatepage(struct page *vmpage,
         struct lu_env    *env;
         struct cl_page   *page;
         struct cl_object *obj;
-	void             *cookie;
 
         LASSERT(PageLocked(vmpage));
         LASSERT(!PageWriteback(vmpage));
@@ -103,7 +102,6 @@ static void ll_invalidatepage(struct page *vmpage,
 	if (offset == 0) {
 #endif
 		/* See the comment in ll_releasepage */
-		cookie = cl_env_reenter();
 		env = cl_env_percpu_get();
 		LASSERT(!IS_ERR(env));
 
@@ -119,7 +117,6 @@ static void ll_invalidatepage(struct page *vmpage,
 			LASSERT(vmpage->private == 0);
 
 		cl_env_percpu_put(env);
-		cl_env_reexit(cookie);
 	}
 }
 
@@ -131,7 +128,6 @@ static void ll_invalidatepage(struct page *vmpage,
 static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
 {
 	struct lu_env		*env;
-	void			*cookie;
 	struct cl_object	*obj;
 	struct cl_page		*page;
 	struct address_space	*mapping;
@@ -157,7 +153,6 @@ static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
 	if (page == NULL)
 		return 1;
 
-	cookie = cl_env_reenter();
 	env = cl_env_percpu_get();
 	LASSERT(!IS_ERR(env));
 
@@ -183,7 +178,6 @@ static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
 	cl_page_put(env, page);
 
 	cl_env_percpu_put(env);
-	cl_env_reexit(cookie);
 	return result;
 }
 
@@ -370,6 +364,7 @@ ll_direct_IO_seg(const struct lu_env *env, struct cl_io *io, int rw,
  * up to 22MB for 128kB kmalloc and up to 682MB for 4MB kmalloc. */
 #define MAX_DIO_SIZE ((MAX_MALLOC / sizeof(struct brw_page) * PAGE_CACHE_SIZE) & \
 		      ~(DT_MAX_BRW_SIZE - 1))
+
 #ifndef HAVE_IOV_ITER_RW
 # define iov_iter_rw(iter)	rw
 #endif
@@ -378,11 +373,12 @@ ll_direct_IO_seg(const struct lu_env *env, struct cl_io *io, int rw,
 static ssize_t
 ll_direct_IO(
 # ifndef HAVE_IOV_ITER_RW
-	     int rw,
+	    int rw,
 # endif
-	     struct kiocb *iocb, struct iov_iter *iter,
-	     loff_t file_offset)
+	    struct kiocb *iocb, struct iov_iter *iter,
+	    loff_t file_offset)
 {
+	struct ll_cl_context *lcc;
 	struct lu_env *env;
 	struct cl_io *io;
 	struct file *file = iocb->ki_filp;
@@ -391,7 +387,6 @@ ll_direct_IO(
 	ssize_t tot_bytes = 0, result = 0;
 	struct ll_inode_info *lli = ll_i2info(inode);
 	size_t size = MAX_DIO_SIZE;
-	int refcheck;
 
 	if (!lli->lli_has_smd)
 		RETURN(-EBADF);
@@ -410,9 +405,13 @@ ll_direct_IO(
 	if (iov_iter_alignment(iter) & ~PAGE_MASK)
 		return -EINVAL;
 
-	env = cl_env_get(&refcheck);
+	lcc = ll_cl_find(file);
+	if (lcc == NULL)
+		RETURN(-EIO);
+
+	env = (typeof(env))lcc->lcc_env;
 	LASSERT(!IS_ERR(env));
-	io = vvp_env_io(env)->vui_cl.cis_io;
+	io = lcc->lcc_io;
 	LASSERT(io != NULL);
 
 	/* 0. Need locking between buffered and direct access. and race with
@@ -480,7 +479,6 @@ out:
 		vio->u.write.vui_written += tot_bytes;
 	}
 
-	cl_env_put(env, &refcheck);
 	return tot_bytes ? : result;
 }
 #else /* !HAVE_DIRECTIO_ITER && !HAVE_IOV_ITER_RW */
@@ -488,6 +486,7 @@ static ssize_t
 ll_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
 	     loff_t file_offset, unsigned long nr_segs)
 {
+	struct ll_cl_context *lcc;
 	struct lu_env *env;
 	struct cl_io *io;
 	struct file *file = iocb->ki_filp;
@@ -497,7 +496,6 @@ ll_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
 	struct ll_inode_info *lli = ll_i2info(inode);
 	unsigned long seg = 0;
 	size_t size = MAX_DIO_SIZE;
-	int refcheck;
 	ENTRY;
 
 	if (!lli->lli_has_smd)
@@ -520,9 +518,13 @@ ll_direct_IO(int rw, struct kiocb *iocb, const struct iovec *iov,
                         RETURN(-EINVAL);
         }
 
-        env = cl_env_get(&refcheck);
+	lcc = ll_cl_find(file);
+	if (lcc == NULL)
+		RETURN(-EIO);
+
+        env = (typeof(env))lcc->lcc_env;
         LASSERT(!IS_ERR(env));
-	io = vvp_env_io(env)->vui_cl.cis_io;
+        io = lcc->lcc_io;
         LASSERT(io != NULL);
 
         for (seg = 0; seg < nr_segs; seg++) {
@@ -590,7 +592,6 @@ out:
 		vio->u.write.vui_written += tot_bytes;
 	}
 
-	cl_env_put(env, &refcheck);
 	RETURN(tot_bytes ? tot_bytes : result);
 }
 #endif /* HAVE_DIRECTIO_ITER || HAVE_IOV_ITER_RW */

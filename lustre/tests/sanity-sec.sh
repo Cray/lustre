@@ -267,6 +267,8 @@ test_2 () {
     	run_rmtacl_subtest misc || error "misc"
     	echo "performing permissions..."
     	run_rmtacl_subtest permissions || error "permissions"
+	echo "performing permissions xattr..."
+	run_rmtacl_subtest permissions_xattr || error "permissions_xattr"
     	echo "performing setfacl..."
     	run_rmtacl_subtest setfacl || error "setfacl"
 
@@ -758,9 +760,11 @@ squash_id() {
 	fi
 }
 
-# ensure that the squash defaults are the expected defaults
-squash_id default 99 0
-squash_id default 99 1
+if [[ $(lustre_version_code mgs) -ge $(version_code 2.5.53) ]]; then
+	# ensure that the squash defaults are the expected defaults
+	squash_id default 99 0
+	squash_id default 99 1
+fi
 
 test_nid() {
 	local cmd

@@ -101,6 +101,7 @@ done
 %files 
 %defattr(-,root,root)
 %{_prefix}
+%exclude %{_sysconfdir}/lustre/perm.conf
 
 %clean
 %clean_build_root

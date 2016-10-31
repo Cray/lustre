@@ -436,10 +436,10 @@ int sptlrpc_req_get_ctx(struct ptlrpc_request *req)
 
         sptlrpc_sec_put(sec);
 
-        if (!req->rq_cli_ctx) {
-                CERROR("req %p: fail to get context\n", req);
-                RETURN(-ENOMEM);
-        }
+	if (!req->rq_cli_ctx) {
+		CERROR("req %p: fail to get context\n", req);
+		RETURN(-ECONNREFUSED);
+	}
 
         RETURN(0);
 }
@@ -577,6 +577,14 @@ int sptlrpc_req_replace_dead_ctx(struct ptlrpc_request *req)
 
 		schedule_timeout_and_set_state(TASK_INTERRUPTIBLE,
 			msecs_to_jiffies(MSEC_PER_SEC));
+	} else if (unlikely(test_bit(PTLRPC_CTX_UPTODATE_BIT, &newctx->cc_flags)
+			    == 0)) {
+		/*
+		 * new ctx not up to date yet
+		 */
+		CDEBUG(D_SEC,
+		       "ctx (%p, fl %lx) doesn't switch, not up to date yet\n",
+		       newctx, newctx->cc_flags);
 	} else {
                 /*
                  * it's possible newctx == oldctx if we're switching

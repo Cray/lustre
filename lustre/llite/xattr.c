@@ -162,6 +162,14 @@ int ll_setxattr_common(struct inode *inode, const char *name,
             strcmp(name, "security.selinux") == 0)
                 RETURN(-EOPNOTSUPP);
 
+	/* In user.* namespace, only regular files and directories can have
+	 * extended attributes.
+	 */
+	if (xattr_type == XATTR_USER_T) {
+		if (!S_ISREG(inode->i_mode) && !S_ISDIR(inode->i_mode))
+			return -EPERM;
+	}
+
 #ifdef CONFIG_FS_POSIX_ACL
 	if (sbi->ll_flags & LL_SBI_RMT_CLIENT &&
 	    (xattr_type == XATTR_ACL_ACCESS_T ||
@@ -432,7 +440,10 @@ int ll_getxattr_common(struct inode *inode, const char *name,
 #endif
 
 do_getxattr:
-	if (sbi->ll_xattr_cache_enabled && xattr_type != XATTR_ACL_ACCESS_T) {
+	if (sbi->ll_xattr_cache_enabled &&
+	    xattr_type != XATTR_ACL_ACCESS_T &&
+	    (xattr_type != XATTR_SECURITY_T ||
+		strcmp(name, "security.selinux") != 0)) {
 		rc = ll_xattr_cache_get(inode, name, buffer, size, valid);
 		if (rc == -EAGAIN)
 			goto getxattr_nocache;
@@ -575,7 +586,7 @@ ssize_t ll_getxattr(struct dentry *dentry, const char *name,
                 }
 
                 if (size < lmmsize) {
-                        CERROR("server bug: replied size %d > %d for %s (%s)\n",
+                        CDEBUG(D_INODE, "replied size %d > %d for %s (%s)\n",
                                lmmsize, (int)size, dentry->d_name.name, name);
                         GOTO(out, rc = -ERANGE);
                 }

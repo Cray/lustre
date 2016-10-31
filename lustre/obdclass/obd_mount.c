@@ -383,7 +383,7 @@ int lustre_start_mgc(struct super_block *sb)
 			if (rc == 0)
 				++i;
                         /* Stop at the first failover nid */
-                        if (*ptr == ':')
+			if (*ptr == ':' || *ptr == ',')
                                 break;
                 }
         }
@@ -395,6 +395,9 @@ int lustre_start_mgc(struct super_block *sb)
 
         /* Random uuid for MGC allows easier reconnects */
         OBD_ALLOC_PTR(uuid);
+	if (uuid == NULL)
+		GOTO(out_free, rc = -ENOMEM);
+
         ll_generate_random_uuid(uuidc);
         class_uuid_unparse(uuidc, uuid);
 
@@ -408,7 +411,7 @@ int lustre_start_mgc(struct super_block *sb)
 
         /* Add any failover MGS nids */
         i = 1;
-	while (ptr && ((*ptr == ':' ||
+	while (ptr && ((*ptr == ':' || *ptr == ',' ||
 	       class_find_param(ptr, PARAM_MGSNODE, &ptr) == 0))) {
 		/* New failover node */
 		sprintf(niduuid, "%s_%x", mgcname, i);
@@ -418,7 +421,7 @@ int lustre_start_mgc(struct super_block *sb)
 				     niduuid, NULL, NULL, NULL);
 			if (rc == 0)
 				++j;
-			if (*ptr == ':')
+			if (*ptr == ':' || *ptr == ',')
 				break;
 		}
 		if (j > 0) {
@@ -452,7 +455,7 @@ int lustre_start_mgc(struct super_block *sb)
 	/* We connect to the MGS at setup, and don't disconnect until cleanup */
 	data->ocd_connect_flags = OBD_CONNECT_VERSION | OBD_CONNECT_AT |
 				  OBD_CONNECT_FULL20 | OBD_CONNECT_IMP_RECOV |
-				  OBD_CONNECT_LVB_TYPE;
+				  OBD_CONNECT_LVB_TYPE | OBD_CONNECT_BARRIER;
 
 #if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(3, 0, 53, 0)
 	data->ocd_connect_flags |= OBD_CONNECT_MNE_SWAB;
@@ -1108,6 +1111,9 @@ static int lmd_parse(char *options, struct lustre_mount_data *lmd)
 		} else if (strncmp(s1, "noscrub", 7) == 0) {
 			lmd->lmd_flags |= LMD_FLG_NOSCRUB;
 			clear++;
+		} else if (strncmp(s1, "rdonly_dev", 10) == 0) {
+			lmd->lmd_flags |= LMD_FLG_DEV_RDONLY;
+			clear++;
 		} else if (strncmp(s1, PARAM_MGSNODE,
 				   sizeof(PARAM_MGSNODE) - 1) == 0) {
 			s2 = s1 + sizeof(PARAM_MGSNODE) - 1;
@@ -1277,12 +1283,6 @@ static int lustre_fill_super(struct super_block *sb, void *data, int silent)
                 RETURN(-ENOMEM);
         lmd = lsi->lsi_lmd;
 
-	/*
-	 * Disable lockdep during mount, because mount locking patterns are
-	 * `special'.
-	 */
-	lockdep_off();
-
         /*
          * LU-639: the obd cleanup of last mount may not finish yet, wait here.
          */
@@ -1341,7 +1341,6 @@ out:
                 CDEBUG(D_SUPER, "Mount %s complete\n",
                        lmd->lmd_dev);
         }
-	lockdep_on();
 	return rc;
 }
 
@@ -1401,8 +1400,7 @@ static struct file_system_type lustre_fs_type = {
         .get_sb       = lustre_get_sb,
 #endif
         .kill_sb      = lustre_kill_super,
-	.fs_flags     = FS_BINARY_MOUNTDATA | FS_REQUIRES_DEV |
-			FS_HAS_FIEMAP | FS_RENAME_DOES_D_MOVE,
+	.fs_flags     = FS_REQUIRES_DEV | FS_HAS_FIEMAP | FS_RENAME_DOES_D_MOVE,
 };
 MODULE_ALIAS_FS("lustre");
 

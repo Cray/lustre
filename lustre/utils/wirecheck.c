@@ -354,7 +354,9 @@ check_ptlrpc_body(void)
 	CHECK_MEMBER(ptlrpc_body, pb_opc);
 	CHECK_MEMBER(ptlrpc_body, pb_status);
 	CHECK_MEMBER(ptlrpc_body, pb_last_xid);
-	CHECK_MEMBER(ptlrpc_body, pb_last_seen);
+	CHECK_MEMBER(ptlrpc_body, pb_tag);
+	CHECK_MEMBER(ptlrpc_body, pb_padding0);
+	CHECK_MEMBER(ptlrpc_body, pb_padding1);
 	CHECK_MEMBER(ptlrpc_body, pb_last_committed);
 	CHECK_MEMBER(ptlrpc_body, pb_transno);
 	CHECK_MEMBER(ptlrpc_body, pb_flags);
@@ -376,7 +378,9 @@ check_ptlrpc_body(void)
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_opc);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_status);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_last_xid);
-	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_last_seen);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_tag);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_padding0);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_padding1);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_last_committed);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_transno);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_flags);
@@ -455,6 +459,8 @@ check_obd_connect_data(void)
 	CHECK_MEMBER(obd_connect_data, ocd_max_easize);
 	CHECK_MEMBER(obd_connect_data, ocd_instance);
 	CHECK_MEMBER(obd_connect_data, ocd_maxbytes);
+	CHECK_MEMBER(obd_connect_data, ocd_maxmodrpcs);
+	CHECK_MEMBER(obd_connect_data, padding0);
 	CHECK_MEMBER(obd_connect_data, padding1);
 	CHECK_MEMBER(obd_connect_data, padding2);
 	CHECK_MEMBER(obd_connect_data, padding3);
@@ -484,7 +490,7 @@ check_obd_connect_data(void)
 	CHECK_DEFINE_64X(OBD_CONNECT_TRUNCLOCK);
 	CHECK_DEFINE_64X(OBD_CONNECT_TRANSNO);
 	CHECK_DEFINE_64X(OBD_CONNECT_IBITS);
-	CHECK_DEFINE_64X(OBD_CONNECT_JOIN);
+	CHECK_DEFINE_64X(OBD_CONNECT_BARRIER);
 	CHECK_DEFINE_64X(OBD_CONNECT_ATTRFID);
 	CHECK_DEFINE_64X(OBD_CONNECT_NODEVOH);
 	CHECK_DEFINE_64X(OBD_CONNECT_RMT_CLIENT);
@@ -526,6 +532,7 @@ check_obd_connect_data(void)
 	CHECK_DEFINE_64X(OBD_CONNECT_OPEN_BY_FID);
 	CHECK_DEFINE_64X(OBD_CONNECT_LFSCK);
 	CHECK_DEFINE_64X(OBD_CONNECT_UNLINK_CLOSE);
+	CHECK_DEFINE_64X(OBD_CONNECT_MULTIMODRPCS);
 	CHECK_DEFINE_64X(OBD_CONNECT_DIR_STRIPE);
 	CHECK_DEFINE_64X(OBD_CONNECT_LOCK_AHEAD);
 
@@ -2172,6 +2179,36 @@ static void check_lfsck_reply(void)
 	CHECK_MEMBER(lfsck_reply, lr_padding_2);
 }
 
+static void check_barrier_request(void)
+{
+	BLANK_LINE();
+	CHECK_STRUCT(barrier_request);
+	CHECK_MEMBER(barrier_request, br_name);
+	CHECK_MEMBER(barrier_request, br_event);
+	CHECK_MEMBER(barrier_request, br_gen);
+	CHECK_MEMBER(barrier_request, br_index);
+	CHECK_MEMBER(barrier_request, br_padding_1);
+	CHECK_MEMBER(barrier_request, br_padding_2);
+
+	CHECK_VALUE(BNE_READ);
+	CHECK_VALUE(BNE_FREEZE_DONE_P1);
+	CHECK_VALUE(BNE_FREEZE_DONE_P2);
+	CHECK_VALUE(BNE_FREEZE_FAILED);
+	CHECK_VALUE(BNE_THAW_DONE);
+	CHECK_VALUE(BNE_EXPIRED);
+}
+
+static void check_barrier_reply(void)
+{
+	BLANK_LINE();
+	CHECK_STRUCT(barrier_reply);
+	CHECK_MEMBER(barrier_reply, br_status);
+	CHECK_MEMBER(barrier_reply, br_gen);
+	CHECK_MEMBER(barrier_reply, br_timeout);
+	CHECK_MEMBER(barrier_reply, br_padding_1);
+	CHECK_MEMBER(barrier_reply, br_padding_2);
+}
+
 static void system_string(char *cmdline, char *str, int len)
 {
 	int   fds[2];
@@ -2443,6 +2480,9 @@ main(int argc, char **argv)
 	CHECK_VALUE(MGS_TARGET_REG);
 	CHECK_VALUE(MGS_TARGET_DEL);
 	CHECK_VALUE(MGS_SET_INFO);
+	CHECK_VALUE(MGS_CONFIG_READ);
+	CHECK_VALUE(MGS_BARRIER_READ);
+	CHECK_VALUE(MGS_BARRIER_NOTIFY);
 	CHECK_VALUE(MGS_LAST_OPC);
 
 	CHECK_VALUE(SEC_CTX_INIT);
@@ -2573,6 +2613,9 @@ main(int argc, char **argv)
 
 	check_lfsck_request();
 	check_lfsck_reply();
+
+	check_barrier_request();
+	check_barrier_reply();
 
 	printf("}\n\n");
 

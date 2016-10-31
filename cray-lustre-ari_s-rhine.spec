@@ -181,6 +181,7 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 %exclude %dir %{_mandir}
 %exclude %dir %{_sbindir}
 %exclude %dir %{_datadir}
+%exclude %{_sysconfdir}/lustre/perm.conf
 
 %files lnet
 %defattr(-,root,root)

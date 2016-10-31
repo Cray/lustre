@@ -140,10 +140,6 @@ struct hsm_scan_data {
 		int			 hal_used_sz;
 		struct hsm_action_list	*hal;
 	} *request;
-	/* records to be canceled */
-	int				 max_cookie;	/** vector size */
-	int				 cookie_cnt;	/** used count */
-	__u64				*cookies;
 };
 
 /**
@@ -162,7 +158,7 @@ static int mdt_coordinator_cb(const struct lu_env *env,
 			      struct llog_rec_hdr *hdr,
 			      void *data)
 {
-	const struct llog_agent_req_rec	*larr;
+	struct llog_agent_req_rec	*larr;
 	struct hsm_scan_data		*hsd;
 	struct hsm_action_item		*hai;
 	struct mdt_device		*mdt;
@@ -290,7 +286,9 @@ static int mdt_coordinator_cb(const struct lu_env *env,
 		break;
 	}
 	case ARS_STARTED: {
+		struct hsm_progress_kernel pgs;
 		struct cdt_agent_req *car;
+		cfs_time_t now = cfs_time_current_sec();
 		cfs_time_t last;
 
 		/* we search for a running request
@@ -307,74 +305,53 @@ static int mdt_coordinator_cb(const struct lu_env *env,
 
 		/* test if request too long, if yes cancel it
 		 * the same way the copy tool acknowledge a cancel request */
-		if ((last + cdt->cdt_active_req_timeout)
-		     < cfs_time_current_sec()) {
-			struct hsm_progress_kernel pgs;
+		if (now <= last + cdt->cdt_active_req_timeout)
+			RETURN(0);
 
-			dump_llog_agent_req_rec("mdt_coordinator_cb(): "
-						"request timed out, start "
-						"cleaning", larr);
-			/* a too old cancel request just needs to be removed
-			 * this can happen, if copy tool does not support cancel
-			 * for other requests, we have to remove the running
-			 * request and notify the copytool
-			 */
-			pgs.hpk_fid = larr->arr_hai.hai_fid;
-			pgs.hpk_cookie = larr->arr_hai.hai_cookie;
-			pgs.hpk_extent = larr->arr_hai.hai_extent;
-			pgs.hpk_flags = HP_FLAG_COMPLETED;
-			pgs.hpk_errval = ENOSYS;
-			pgs.hpk_data_version = 0;
-			/* update request state, but do not record in llog, to
-			 * avoid deadlock on cdt_llog_lock
-			 */
-			rc = mdt_hsm_update_request_state(hsd->mti, &pgs, 0);
-			if (rc)
-				CERROR("%s: Cannot cleanup timed out request: "
-				       DFID" for cookie "LPX64" action=%s\n",
-				       mdt_obd_name(mdt),
-				       PFID(&pgs.hpk_fid), pgs.hpk_cookie,
-				       hsm_copytool_action2name(
-						     larr->arr_hai.hai_action));
+		dump_llog_agent_req_rec("request timed out, start cleaning",
+					larr);
+		/* a too old cancel request just needs to be removed
+		 * this can happen, if copy tool does not support
+		 * cancel for other requests, we have to remove the
+		 * running request and notify the copytool */
+		pgs.hpk_fid = larr->arr_hai.hai_fid;
+		pgs.hpk_cookie = larr->arr_hai.hai_cookie;
+		pgs.hpk_extent = larr->arr_hai.hai_extent;
+		pgs.hpk_flags = HP_FLAG_COMPLETED;
+		pgs.hpk_errval = ENOSYS;
+		pgs.hpk_data_version = 0;
 
-			if (rc == -ENOENT) {
-				/* The request no longer exists, forget
-				 * about it, and do not send a cancel request
-				 * to the client, for which an error will be
-				 * sent back, leading to an endless cycle of
-				 * cancellation. */
-				RETURN(LLOG_DEL_RECORD);
-			}
+		/* update request state, but do not record in llog, to
+		 * avoid deadlock on cdt_llog_lock */
+		rc = mdt_hsm_update_request_state(hsd->mti, &pgs, 0);
+		if (rc)
+			CERROR("%s: cannot cleanup timed out request: "
+			       DFID" for cookie "LPX64" action=%s\n",
+			       mdt_obd_name(mdt),
+			       PFID(&pgs.hpk_fid), pgs.hpk_cookie,
+			       hsm_copytool_action2name(
+				       larr->arr_hai.hai_action));
 
-			/* add the cookie to the list of record to be
-			 * canceled by caller */
-			if (hsd->max_cookie == (hsd->cookie_cnt - 1)) {
-				__u64 *ptr, *old_ptr;
-				int old_sz, new_sz, new_cnt;
-
-				/* need to increase vector size */
-				old_sz = sizeof(__u64) * hsd->max_cookie;
-				old_ptr = hsd->cookies;
-
-				new_cnt = 2 * hsd->max_cookie;
-				new_sz = sizeof(__u64) * new_cnt;
-
-				OBD_ALLOC(ptr, new_sz);
-				if (!ptr) {
-					CERROR("%s: Cannot allocate memory "
-					       "(%d o) for cookie vector\n",
-					       mdt_obd_name(mdt), new_sz);
-					RETURN(-ENOMEM);
-				}
-				memcpy(ptr, hsd->cookies, old_sz);
-				hsd->cookies = ptr;
-				hsd->max_cookie = new_cnt;
-				OBD_FREE(old_ptr, old_sz);
-			}
-			hsd->cookies[hsd->cookie_cnt] =
-						       larr->arr_hai.hai_cookie;
-			hsd->cookie_cnt++;
+		if (rc == -ENOENT) {
+			/* The request no longer exists, forget
+			 * about it, and do not send a cancel request
+			 * to the client, for which an error will be
+			 * sent back, leading to an endless cycle of
+			 * cancellation. */
+			RETURN(LLOG_DEL_RECORD);
 		}
+
+		/* XXX A cancel request cannot be cancelled. */
+		if (larr->arr_hai.hai_action == HSMA_CANCEL)
+			RETURN(0);
+
+		larr->arr_status = ARS_CANCELED;
+		larr->arr_req_change = now;
+		rc = llog_write(hsd->mti->mti_env, llh, hdr,
+				hdr->lrh_index);
+		if (rc < 0)
+			CERROR("%s: cannot update agent log: rc = %d\n",
+			       mdt_obd_name(mdt), rc);
 		break;
 	}
 	case ARS_FAILED:
@@ -459,10 +436,6 @@ static int mdt_coordinator(void *data)
 	CDEBUG(D_HSM, "%s: coordinator thread starting, pid=%d\n",
 	       mdt_obd_name(mdt), current_pid());
 
-	/* timeouted cookie vector initialization */
-	hsd.max_cookie = 0;
-	hsd.cookie_cnt = 0;
-	hsd.cookies = NULL;
 	/* we use a copy of cdt_max_requests in the cb, so if cdt_max_requests
 	 * increases due to a change from /proc we do not overflow the
 	 * hsd.request[] vector
@@ -523,16 +496,6 @@ static int mdt_coordinator(void *data)
 			}
 		}
 
-		/* create canceled cookie vector for an arbitrary size
-		 * if needed, vector will grow during llog scan
-		 */
-		hsd.max_cookie = 10;
-		hsd.cookie_cnt = 0;
-		OBD_ALLOC(hsd.cookies, hsd.max_cookie * sizeof(__u64));
-		if (!hsd.cookies) {
-			rc = -ENOMEM;
-			goto clean_cb_alloc;
-		}
 		hsd.request_cnt = 0;
 
 		rc = cdt_llog_process(mti->mti_env, mdt,
@@ -540,23 +503,7 @@ static int mdt_coordinator(void *data)
 		if (rc < 0)
 			goto clean_cb_alloc;
 
-		CDEBUG(D_HSM, "Found %d requests to send and %d"
-			      " requests to cancel\n",
-		       hsd.request_cnt, hsd.cookie_cnt);
-		/* first we cancel llog records of the timed out requests */
-		if (hsd.cookie_cnt > 0) {
-			rc = mdt_agent_record_update(mti->mti_env, mdt,
-						     hsd.cookies,
-						     hsd.cookie_cnt,
-						     ARS_CANCELED);
-			if (rc)
-				CERROR("%s: mdt_agent_record_update() failed, "
-				       "rc=%d, cannot update status to %s "
-				       "for %d cookies\n",
-				       mdt_obd_name(mdt), rc,
-				       agent_req_status2name(ARS_CANCELED),
-				       hsd.cookie_cnt);
-		}
+		CDEBUG(D_HSM, "found %d requests to send\n", hsd.request_cnt);
 
 		if (list_empty(&cdt->cdt_agents)) {
 			CDEBUG(D_HSM, "no agent available, "
@@ -596,8 +543,9 @@ static int mdt_coordinator(void *data)
 			}
 			memcpy(hal, hsd.request[i].hal,
 			       hsd.request[i].hal_used_sz);
-
-			rc = mdt_hsm_agent_send(mti, hal, 0);
+			/* 4th arg = 0, which indicates copy tool
+			 * yet to be un-registered */
+			rc = mdt_hsm_agent_send(mti, hal, 0, 0);
 			/* if failure, we suppose it is temporary
 			 * if the copy tool failed to do the request
 			 * it has to use hsm_progress
@@ -638,14 +586,6 @@ static int mdt_coordinator(void *data)
 			kuc_free(hal, hsd.request[i].hal_used_sz);
 		}
 clean_cb_alloc:
-		/* free cookie vector allocated for/by callback */
-		if (hsd.cookies) {
-			OBD_FREE(hsd.cookies, hsd.max_cookie * sizeof(__u64));
-			hsd.max_cookie = 0;
-			hsd.cookie_cnt = 0;
-			hsd.cookies = NULL;
-		}
-
 		/* free hal allocated by callback */
 		for (i = 0; i < hsd.max_requests; i++) {
 			if (hsd.request[i].hal) {
@@ -665,9 +605,6 @@ clean_cb_alloc:
 out:
 	if (hsd.request)
 		OBD_FREE(hsd.request, hsd.request_sz);
-
-	if (hsd.cookies)
-		OBD_FREE(hsd.cookies, hsd.max_cookie * sizeof(__u64));
 
 	if (cdt->cdt_state == CDT_STOPPING) {
 		/* request comes from /proc path, so we need to clean cdt
@@ -1133,8 +1070,6 @@ int mdt_hsm_add_hal(struct mdt_thread_info *mti,
 			struct md_hsm hsm;
 
 			obj = mdt_hsm_get_md_hsm(mti, &hai->hai_fid, &hsm);
-			if (IS_ERR(obj) && (PTR_ERR(obj) == -ENOENT))
-				continue;
 			if (IS_ERR(obj))
 				GOTO(out, rc = PTR_ERR(obj));
 
@@ -1153,8 +1088,10 @@ int mdt_hsm_add_hal(struct mdt_thread_info *mti,
 			GOTO(out, rc = PTR_ERR(car));
 
 		rc = mdt_cdt_add_request(cdt, car);
-		if (rc != 0)
+		if (rc < 0) {
 			mdt_cdt_free_request(car);
+			GOTO(out, rc);
+		}
 	}
 out:
 	RETURN(rc);
@@ -1230,9 +1167,9 @@ out:
  * \retval -ve failure
  */
 static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
-				     struct hsm_progress_kernel *pgs,
-				     const struct cdt_agent_req *car,
-				     enum agent_req_status *status)
+				struct hsm_progress_kernel *pgs,
+				struct cdt_agent_req *car,
+				enum agent_req_status *status)
 {
 	const struct lu_env	*env = mti->mti_env;
 	struct mdt_device	*mdt = mti->mti_mdt;
@@ -1433,6 +1370,15 @@ unlock:
 	GOTO(out, rc);
 
 out:
+	/* Unregister copytool(CT) process is waiting on hai_waitq.
+	 * We should complete the hsm action running on a CT and
+	 * then unregister the CT if there is no other CT running
+	 * with same archive ID. This will make sure the process
+	 * eg: md5sum on archived and release file will not be
+	 * be stuck till time out*/
+	car->car_progress.crp_status = 0;
+	wake_up(&car->car_waitq);
+
 	if (obj != NULL && !IS_ERR(obj)) {
 		mo_changelog(env, CL_HSM, cl_flags,
 			     mdt_object_child(obj));
@@ -1471,8 +1417,7 @@ int mdt_hsm_update_request_state(struct mdt_thread_info *mti,
 		       " on fid="DFID"\n",
 		       mdt_obd_name(mdt),
 		       pgs->hpk_cookie, PFID(&pgs->hpk_fid));
-		if (car == NULL)
-			RETURN(-ENOENT);
+
 		RETURN(PTR_ERR(car));
 	}
 
@@ -1603,18 +1548,20 @@ static int mdt_cancel_all_cb(const struct lu_env *env,
 	    larr->arr_status == ARS_STARTED) {
 		larr->arr_status = ARS_CANCELED;
 		larr->arr_req_change = cfs_time_current_sec();
-		rc = mdt_agent_llog_update_rec(env, hcad->mdt, llh, larr);
-		if (rc == 0)
-			RETURN(LLOG_DEL_RECORD);
+		rc = llog_write(env, llh, hdr, hdr->lrh_index);
 	}
+
 	RETURN(rc);
 }
 
 /**
  * cancel all actions
  * \param obd [IN] MDT device
+ * \param cl_evicted = 1, client evicted, cancel the requests
+ * \param agent_unregistered = 1, already un registered
  */
-static int hsm_cancel_all_actions(struct mdt_device *mdt)
+int hsm_cancel_all_actions(struct mdt_device *mdt,
+	const struct obd_uuid *uuid, int cl_evicted, int agent_unregistered)
 {
 	struct mdt_thread_info		*mti;
 	struct coordinator		*cdt = &mdt->mdt_coordinator;
@@ -1622,8 +1569,11 @@ static int hsm_cancel_all_actions(struct mdt_device *mdt)
 	struct hsm_action_list		*hal = NULL;
 	struct hsm_action_item		*hai;
 	struct hsm_cancel_all_data	 hcad;
-	int				 hal_sz = 0, hal_len, rc;
+	int				 hal_sz = 0, hal_len, rc = 0;
 	enum cdt_states			 save_state;
+	struct mdt_object		*obj = NULL;
+	struct md_hsm			 mh;
+
 	ENTRY;
 
 	/* retrieve coordinator context */
@@ -1640,6 +1590,10 @@ static int hsm_cancel_all_actions(struct mdt_device *mdt)
 		/* request is not yet removed from list, it will be done
 		 * when copytool will return progress
 		 */
+
+		if (uuid != NULL &&
+			!obd_uuid_equals(&car->car_uuid, uuid))
+				continue;
 
 		if (car->car_hai->hai_action == HSMA_CANCEL) {
 			mdt_cdt_put_request(car);
@@ -1681,15 +1635,64 @@ static int hsm_cancel_all_actions(struct mdt_device *mdt)
 		hai->hai_action = HSMA_CANCEL;
 		hal->hal_count = 1;
 
-		/* it is possible to safely call mdt_hsm_agent_send()
+		/* Give back the lay out lock in case of below condition */
+		if (cl_evicted &&
+			car->car_hai->hai_action == HSMA_RESTORE) {
+
+			struct cdt_restore_handle	*crh;
+
+			/* find object by FID */
+			obj = mdt_hsm_get_md_hsm(mti, &car->car_hai->hai_fid, &mh);
+			if (IS_ERR(obj))
+				/* object removed */
+				goto out;
+
+			mutex_lock(&cdt->cdt_restore_lock);
+			crh = hsm_restore_hdl_find(cdt, &car->car_hai->hai_fid);
+			if (crh != NULL)
+				list_del(&crh->crh_list);
+			mutex_unlock(&cdt->cdt_restore_lock);
+
+			/* just give back layout lock, and put down
+			 * put down the obj ref count at goto out;
+			 */
+			if (!IS_ERR(obj) && crh != NULL)
+				mdt_object_unlock(mti, obj, &crh->crh_lh, 1);
+
+			if (crh != NULL)
+				OBD_SLAB_FREE_PTR(crh, mdt_hsm_cdt_kmem);
+		}
+		/* 1. it is possible to safely call mdt_hsm_agent_send()
 		 * (ie without a deadlock on cdt_request_lock), because the
 		 * write lock is taken only if we are not in purge mode
 		 * (mdt_hsm_agent_send() does not call mdt_cdt_add_request()
-		 *   nor mdt_cdt_remove_request())
+		 *  nor mdt_cdt_remove_request())
+		 *
+		 * 2. no conflict with cdt thread because cdt is disable and we
+		 * have the request lock
+		 *
+		 * 3. If it is called from unregister path then do not
+		 * unregister again. This happens in case of a specific
+		 * agent.
 		 */
-		/* no conflict with cdt thread because cdt is disable and we
-		 * have the request lock */
-		mdt_hsm_agent_send(mti, hal, 1);
+		rc = mdt_hsm_agent_send(mti, hal, 1, agent_unregistered);
+		/* 1. Wait for the hsm operation to complete. Otherwise
+		 * process waiting on it will get hung.
+		 * ex: Operation "md5sum" on released file requires
+		 * file to be restored.
+		 *
+		 * 2. Dont wait if client is evicted as there is no
+		 * copytool exists to complete the hsm operation
+		 *
+		 * 3. rc < 0 is not considered in the below comparison
+		 * as "HSMA_CANCEL" is not yet designed/coded. So
+		 * even in case of rc == 0, cancel request would not
+		 * be processed. Please do the reqd when HSMA_CANCEL
+		 * is implemented
+		 */
+		if (uuid != NULL && !cl_evicted)
+			l_wait_condition(car->car_waitq,
+				car->car_progress.crp_status == 0);
 
 		mdt_cdt_put_request(car);
 	}
@@ -1704,6 +1707,11 @@ static int hsm_cancel_all_actions(struct mdt_device *mdt)
 	rc = cdt_llog_process(mti->mti_env, mti->mti_mdt,
 			      mdt_cancel_all_cb, &hcad);
 out:
+	/* Put down the obj ref count, normally incase
+	 * of evicted client and for restore operation */
+	if (obj != NULL && !IS_ERR(obj))
+		mdt_object_put(mti->mti_env, obj);
+
 	/* enable coordinator */
 	cdt->cdt_state = save_state;
 
@@ -1997,7 +2005,10 @@ mdt_hsm_cdt_control_seq_write(struct file *file, const char __user *buffer,
 			cdt->cdt_state = CDT_RUNNING;
 			mdt_hsm_cdt_wakeup(mdt);
 		} else {
-			rc = mdt_hsm_cdt_start(mdt);
+			if (mdt->mdt_bottom->dd_rdonly)
+				rc = -EROFS;
+			else
+				rc = mdt_hsm_cdt_start(mdt);
 		}
 	} else if (strcmp(kernbuf, CDT_STOP_CMD) == 0) {
 		if ((cdt->cdt_state == CDT_STOPPING) ||
@@ -2018,7 +2029,10 @@ mdt_hsm_cdt_control_seq_write(struct file *file, const char __user *buffer,
 			cdt->cdt_state = CDT_DISABLE;
 		}
 	} else if (strcmp(kernbuf, CDT_PURGE_CMD) == 0) {
-		rc = hsm_cancel_all_actions(mdt);
+	/* 3rd arg = 0 indicates client is not evicted
+	 * 4th arg = 0 indicates CT agent yet to be unregistered
+	 */
+		rc = hsm_cancel_all_actions(mdt, NULL, 0, 0);
 	} else if (strcmp(kernbuf, CDT_HELP_CMD) == 0) {
 		usage = 1;
 	} else {
