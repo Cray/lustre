@@ -1564,20 +1564,6 @@ static inline void inode_has_no_xattr(struct inode *inode)
 {
 	return;
 }
-
-static inline void inode_has_no_xattr_lock(struct inode *inode)
-{
-	return;
-}
-
-#else /* MS_NOSEC */
-
-static inline void inode_has_no_xattr_lock(struct inode *inode)
-{
-	mutex_lock(&inode->i_mutex);
-	inode_has_no_xattr(inode);
-	mutex_unlock(&inode->i_mutex);
-}
 #endif
 
 static inline bool ll_sbi_has_fast_read(struct ll_sb_info *sbi)

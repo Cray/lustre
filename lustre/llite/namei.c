@@ -143,7 +143,6 @@ struct inode *ll_iget(struct super_block *sb, ino_t hash,
 			iput(inode);
 			inode = ERR_PTR(rc);
 		}
-		inode_has_no_xattr_lock(inode);
 	}
 
         RETURN(inode);
