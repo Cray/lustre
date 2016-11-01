@@ -91,38 +91,29 @@ export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
 
 make DESTDIR=${RPM_BUILD_ROOT} install 
 
-# Remove all the extras not needed for CNL
-for dir in %{_libdir} %{_mandir} %{_bindir} %{_includedir} %{_datadir}; do
-        find %{buildroot}$dir -type f | xargs rm -fv
-        rm -frv %{buildroot}$dir
-done
-
-for dir in init.d sysconfig ha.d; do
-      %{__rm} -fr %{buildroot}/etc/$dir
-done
-%{__rm} -f %{buildroot}/etc/lustre %{buildroot}/etc/ldev.conf
-%{__rm} -f %{buildroot}/etc/modprobe.d/ko2iblnd.conf
-%{__rm} -f %{buildroot}/lib/lustre/haconfig 
-%{__rm} -f %{buildroot}/lib/lustre/lc_common
-
-# all of _prefix/sbin but lctl
-find %{buildroot}%{_sbindir} -print > install_files
-find %{buildroot}%{_sbindir} -print | egrep -v '/lctl$' > install_files2
-find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' > install_files3
+# We only want lctl and mount.lustre from _sbindir
 find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' | xargs rm -fv
 
 %files 
 %defattr(-,root,root)
 /lib/modules/*
-/sbin/mount.lustre
-/sbin/lctl
+%{_sbindir}/mount.lustre
+%{_sbindir}/lctl
 %config /etc/udev/rules.d/99-lustre.rules
+%exclude %{_libdir}/*
+%exclude %{_mandir}/*
+%exclude %{_bindir}/*
+%exclude %{_includedir}/*
+%exclude %{_datadir}/*
 %exclude %{_sysconfdir}/lustre/perm.conf
+%exclude %{_sysconfdir}/lustre
+%exclude %{_sysconfdir}/ldev.conf
+%exclude %{_sysconfdir}/modprobe.d/ko2iblnd.conf
 
 %files lnet
 %defattr(-,root,root)
 /lib/modules/*/updates/kernel/net/lustre
-/sbin/lctl
+%{_sbindir}/lctl
 
 %clean
 %clean_build_root
