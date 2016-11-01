@@ -74,11 +74,6 @@ fi
 
 make DESTDIR=${RPM_BUILD_ROOT} install 
 
-for dir in var man/man5 etc/init.d etc/sysconfig etc/ha.d; do
-    %{__rm} -fr %{buildroot}/$dir
-done
-%{__rm} -f %{buildroot}/etc/lustre %{buildroot}/etc/ldev.conf
-
 %{__install} -D Module.symvers ${RPM_BUILD_ROOT}/%{_libdir}/symvers/Module.symvers
 
 %post
@@ -108,7 +103,11 @@ done
 %exclude %dir %{_sbindir}
 %{_datadir}
 %exclude %dir %{_datadir} 
-%exclude %{_sysconfdir}/lustre/perm.conf
+%exclude /etc/lustre/perm.conf
+%exclude /etc/init.d
+%exclude /etc/sysconfig
+%exclude /etc/ha.d
+%exclude /etc/ldev.conf
 
 %clean
 %clean_build_root
