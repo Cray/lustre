@@ -241,7 +241,8 @@ int __osd_object_attr_get(const struct lu_env *env, struct osd_device *o,
 		lma = (struct lustre_mdt_attrs *)info->oti_buf;
 		buf.lb_buf = lma;
 		buf.lb_len = sizeof(info->oti_buf);
-		rc = osd_xattr_get(env, &obj->oo_dt, &buf, XATTR_NAME_LMA);
+		rc = osd_xattr_get(env, &obj->oo_dt, &buf, XATTR_NAME_LMA,
+				   BYPASS_CAPA);
 		if (rc > 0) {
 			rc = 0;
 			lma->lma_incompat = le32_to_cpu(lma->lma_incompat);
@@ -1009,7 +1010,7 @@ static int osd_attr_set(const struct lu_env *env, struct dt_object *dt,
 			buf.lb_buf = lma;
 			buf.lb_len = sizeof(info->oti_buf);
 			rc = osd_xattr_get(env, &obj->oo_dt, &buf,
-					   XATTR_NAME_LMA);
+					   XATTR_NAME_LMA, capa);
 			if (rc > 0) {
 				lma->lma_incompat =
 					le32_to_cpu(lma->lma_incompat);
@@ -1022,7 +1023,7 @@ static int osd_attr_set(const struct lu_env *env, struct dt_object *dt,
 				rc = osd_xattr_set_internal(env, obj, &buf,
 							    XATTR_NAME_LMA,
 							    LU_XATTR_REPLACE,
-							    oh);
+							    oh, capa);
 			}
 			if (rc < 0) {
 				CWARN("%s: failed to set LMA flags: rc = %d\n",
