@@ -222,6 +222,7 @@ popd
 %dir /opt/cray/lustre-cray_gem_s/%{version}-%{release}/lib64
 %dir /opt/cray/lustre-cray_gem_s/%{version}-%{release}/lib64/pkgconfig/
 /opt/cray/lustre-cray_gem_s/%{version}-%{release}/lib64/pkgconfig/*.pc
+%exclude /etc/lustre
 
 %files lnet -f switch.directories.lnet
 %defattr(-,root,root)

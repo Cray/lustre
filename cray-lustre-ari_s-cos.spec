@@ -86,11 +86,6 @@ export SVN_CODE_REV=%{lustre_version}
 
 make DESTDIR=${RPM_BUILD_ROOT} install 
 
-for dir in var man/man5 etc/init.d etc/sysconfig etc/ha.d; do
-    %{__rm} -fr %{buildroot}/$dir
-done
-%{__rm} -f %{buildroot}/etc/lustre %{buildroot}/etc/ldev.conf
-
 # set l_getidentity to the default location
 %{__mkdir_p} %{buildroot}/usr/sbin
 %if %{without athena}
@@ -112,6 +107,11 @@ done
 %else
 %{_prefix}
 %endif
+%exclude %{_sysconfdir}/init.d
+%exclude %{_sysconfdir}/sysconfig
+%exclude %{_sysconfdir}/ha.d
+%exclude %{_sysconfdir}/ldev.conf
+%exclude %{_mandir}/man5
 
 %post
 %{__ln_s} -f /sbin/lctl /usr/sbin
