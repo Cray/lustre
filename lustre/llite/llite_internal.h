@@ -1537,4 +1537,12 @@ static inline bool is_sxid(umode_t mode)
 #ifndef IS_NOSEC
 #define IS_NOSEC(inode)	(!is_sxid(inode->i_mode))
 #endif
+
+#ifndef MS_NOSEC
+static inline void inode_has_no_xattr(struct inode *inode)
+{
+	return;
+}
+#endif
+
 #endif /* LLITE_INTERNAL_H */

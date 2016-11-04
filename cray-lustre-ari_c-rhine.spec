@@ -1,5 +1,5 @@
 %define vendor_name lustre
-%define vendor_version 2.7.1.11
+%define vendor_version 2.7.1.12
 %define flavor cray_ari_c
 %define intranamespace_name %{vendor_name}-%{flavor}_rhine
 %define flavorless_name %{namespace}-%{vendor_name}
@@ -70,6 +70,9 @@ if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         ./autogen.sh
 fi
 
+syms="$(pkg-config --variable=symversdir cray-gni)/%{flavor}/Module.symvers"
+syms="$syms $(pkg-config --variable=symversdir cray-krca)/%{flavor}/Module.symvers"
+
 export GNICPPFLAGS=`pkg-config --cflags cray-gni cray-gni-headers cray-krca lsb-cray-hss`
 
 HSS_FLAGS=`pkg-config --cflags lsb-cray-hss`
@@ -81,6 +84,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --disable-server \
            --with-o2ib=no \
            --enable-gni \
+           --with-symvers="$syms" \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-obd-buffer-size=16384
 fi
