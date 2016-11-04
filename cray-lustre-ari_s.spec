@@ -79,9 +79,13 @@ if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         ./autogen.sh
 fi
 
+syms="$(pkg-config --variable=symversdir cray-gni)/%{flavor}/Module.symvers"
+syms="$syms $(pkg-config --variable=symversdir cray-krca)/%{flavor}/Module.symvers"
+
 export GNICPPFLAGS=`pkg-config --cflags cray-gni cray-gni-headers cray-krca lsb-cray-hss`
 if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
     O2IBPATH=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}
+    syms="$syms /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}/Modules.symvers"
 elif [ -d /usr/src/ofed/%{_target_cpu}/%{flavor} ]; then
     O2IBPATH=/usr/src/ofed/%{_target_cpu}/%{flavor}
 else
@@ -97,6 +101,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --disable-server \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-o2ib=${O2IBPATH} \
+           --with-symvers="$syms" \
            --with-obd-buffer-size=16384
 fi
 %{__make} %_smp_mflags
