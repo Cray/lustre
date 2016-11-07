@@ -1342,12 +1342,6 @@ lnet_startup_lndni(struct lnet_ni *ni, struct lnet_ioctl_config_data *conf)
 
 	LASSERT(libcfs_isknown_lnd(lnd_type));
 
-	if (lnd_type == CIBLND || lnd_type == OPENIBLND ||
-	    lnd_type == IIBLND || lnd_type == VIBLND) {
-		CERROR("LND %s obsoleted\n", libcfs_lnd2str(lnd_type));
-		goto failed0;
-	}
-
 	/* Make sure this new NI is unique. */
 	lnet_net_lock(LNET_LOCK_EX);
 	rc = lnet_net_unique(LNET_NIDNET(ni->ni_nid), &the_lnet.ln_nis);
