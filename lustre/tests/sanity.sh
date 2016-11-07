@@ -13226,6 +13226,9 @@ run_test 258a
 test_258b() {
 #define OBD_FAIL_IMUTEX_NOSEC 0x141d
 	$LCTL set_param fail_loc=0x141d
+	touch $DIR/$tfile
+	chmod a+rwx $DIR
+	chmod a+rw $DIR/$tfile
 	$RUNAS dd if=/dev/zero of=$DIR/$tfile bs=4k count=1 oflag=append
 	RC=$?
 	if [ $RC -ne 0 ]; then
