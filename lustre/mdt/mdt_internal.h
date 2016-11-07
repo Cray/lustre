@@ -95,6 +95,7 @@ struct mdt_file_data {
  */
 #define CDT_DEFAULT_POLICY		CDT_NORETRY_ACTION
 
+/* Coordinator states. Keep the cdt_transition table in sync. */
 enum cdt_states { CDT_STOPPED = 0,
 		  CDT_INIT,
 		  CDT_RUNNING,
@@ -109,13 +110,16 @@ enum cdt_states { CDT_STOPPED = 0,
  * cdt_request_lock
  */
 struct coordinator {
-	struct ptlrpc_thread	 cdt_thread;	     /**< coordinator thread */
+	wait_queue_head_t	 cdt_waitq;	     /**< cdt wait queue */
+	bool			 cdt_event;	     /**< coordinator event */
+	struct task_struct	*cdt_task;		     /**< cdt thread handle */
 	struct lu_env		 cdt_env;	     /**< coordinator lustre
 						      * env */
 	struct lu_context	 cdt_session;	     /** session for lu_ucred */
 	struct proc_dir_entry	*cdt_proc_dir;	     /**< cdt /proc directory */
 	__u64			 cdt_policy;	     /**< policy flags */
 	enum cdt_states		 cdt_state;	      /**< state */
+	spinlock_t		 cdt_state_lock;      /**< cdt_state lock */
 	atomic_t		 cdt_compound_id;     /**< compound id
 						       * counter */
 	__u64			 cdt_last_cookie;     /**< last cookie
@@ -127,6 +131,10 @@ struct coordinator {
 						       * list */
 	struct mutex		 cdt_restore_lock;    /**< protect restore
 						       * list */
+	struct mutex		 cdt_deferred_hals_lock; /**< protects
+							  * cdt_deferred_hals */
+	struct list_head         cdt_deferred_hals;    /** < HALS recently
+							* queued */
 	cfs_time_t		 cdt_loop_period;     /**< llog scan period */
 	cfs_time_t		 cdt_grace_delay;     /**< request grace
 						       * delay */
@@ -526,6 +534,17 @@ struct cdt_restore_handle {
 };
 extern struct kmem_cache *mdt_hsm_cdt_kmem;	/** restore handle slab cache */
 
+struct hsm_record_update {
+	__u64 cookie;
+	enum agent_req_status status;
+};
+
+struct mdt_hal_item {
+	struct list_head	list;		/**< to chain the hals */
+	size_t			size;		/**< size of allocated struct */
+	struct hsm_action_list	hal;
+};
+
 static inline const struct md_device_operations *
 mdt_child_ops(struct mdt_device * m)
 {
@@ -845,9 +864,9 @@ int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
 int mdt_agent_record_add(const struct lu_env *env, struct mdt_device *mdt,
 			 __u64 compound_id, __u32 archive_id,
 			 __u64 flags, struct hsm_action_item *hai);
-int mdt_agent_record_update(const struct lu_env *env,
-			    struct mdt_device *mdt, __u64 *cookies,
-			    int cookies_count, enum agent_req_status status);
+int mdt_agent_record_update(const struct lu_env *env, struct mdt_device *mdt,
+			    struct hsm_record_update *updates,
+			    unsigned int updates_count);
 
 /* mdt/mdt_hsm_cdt_agent.c */
 extern const struct file_operations mdt_hsm_agent_fops;
@@ -872,9 +891,11 @@ int mdt_hsm_coordinator_update(struct mdt_thread_info *mti,
 			       struct hsm_progress_kernel *pgs);
 /* mdt/mdt_hsm_cdt_client.c */
 int mdt_hsm_add_actions(struct mdt_thread_info *info,
-			struct hsm_action_list *hal, __u64 *compound_id);
+			struct mdt_hal_item *hal_item);
+void mdt_hsm_free_deferred_archives(struct list_head *deferred_hals);
+int mdt_hsm_process_deferred_archives(struct mdt_thread_info *mti);
 int mdt_hsm_get_actions(struct mdt_thread_info *mti,
-			struct hsm_action_list *hal);
+			struct mdt_hal_item *hal_item);
 int mdt_hsm_get_running(struct mdt_thread_info *mti,
 			struct hsm_action_list *hal);
 bool mdt_hsm_restore_is_running(struct mdt_thread_info *mti,
@@ -904,7 +925,15 @@ int mdt_hsm_cdt_init(struct mdt_device *mdt);
 int mdt_hsm_cdt_start(struct mdt_device *mdt);
 int mdt_hsm_cdt_stop(struct mdt_device *mdt);
 int mdt_hsm_cdt_fini(struct mdt_device *mdt);
-int mdt_hsm_cdt_wakeup(struct mdt_device *mdt);
+
+/*
+ * Signal the coordinator has work to do
+ * \param cdt [IN] coordinator
+ */
+static inline void mdt_hsm_cdt_event(struct coordinator *cdt)
+{
+	cdt->cdt_event = true;
+}
 
 /* coordinator control /proc interface */
 ssize_t mdt_hsm_cdt_control_seq_write(struct file *file, const char *buffer,
@@ -1114,5 +1143,15 @@ static inline char *mdt_req_get_jobid(struct ptlrpc_request *req)
 
 	return jobid;
 }
+
+#define MDT_HSM_ALLOC(ptr, size)			\
+	do {						\
+		if ((size) <= MDT_HSM_ALLOC_MAX)	\
+			OBD_ALLOC_LARGE((ptr), (size));	\
+		else					\
+			(ptr) = NULL;			\
+	} while (0)
+
+#define MDT_HSM_FREE(ptr, size) OBD_FREE_LARGE((ptr), (size))
 
 #endif /* _MDT_INTERNAL_H */
