@@ -1556,6 +1556,7 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 	struct ofd_seq		*oseq;
 	int			 rc = 0, diff;
 	int			 sync_trans = 0;
+	long			 granted = 0;
 
 	ENTRY;
 
@@ -1693,10 +1694,12 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 		if (!(oa->o_valid & OBD_MD_FLFLAGS) ||
 		    !(oa->o_flags & OBD_FL_DELORPHAN)) {
 			/* don't enforce grant during orphan recovery */
-			rc = ofd_grant_create(tsi->tsi_env,
-					      ofd_obd(ofd)->obd_self_export,
-					      &diff);
-			if (rc) {
+			granted = ofd_grant_create(tsi->tsi_env,
+						  ofd_obd(ofd)->obd_self_export,
+						   &diff);
+			if (granted < 0) {
+				rc = granted;
+				granted = 0;
 				CDEBUG(D_HA, "%s: failed to acquire grant "
 				       "space for precreate (%d): rc = %d\n",
 				       ofd_name(ofd), diff, rc);
@@ -1763,9 +1766,11 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 			       ofd_name(ofd), rc);
 
 		if (!(oa->o_valid & OBD_MD_FLFLAGS) ||
-		    !(oa->o_flags & OBD_FL_DELORPHAN))
-			ofd_grant_commit(tsi->tsi_env,
-					 ofd_obd(ofd)->obd_self_export, rc);
+		    !(oa->o_flags & OBD_FL_DELORPHAN)) {
+			ofd_grant_commit(ofd_obd(ofd)->obd_self_export, granted,
+					 rc);
+			granted = 0;
+		}
 
 		ostid_set_id(&rep_oa->o_oi, ofd_seq_last_oid(oseq));
 	}
