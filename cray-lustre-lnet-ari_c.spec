@@ -1,11 +1,9 @@
 %define vendor_name lustre
-%define vendor_version 2.7.2
+%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define flavor cray_ari_c
 %define intranamespace_name %{vendor_name}-%{flavor}
-%define flavorless_name %{namespace}-%{vendor_name}
 %define branch trunk
-# use non-customized version so source doesn't need to be repackaged for custom versions.
-%define source_name %{flavorless_name}
+%define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 %define rel_path opt/%{namespace}/%{vendor_name}-%{flavor}/%{version}-%{release}
 
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
@@ -29,8 +27,8 @@ Name: %{namespace}-%{intranamespace_name}-lnet
 Release: %release
 Summary: Lustre networking for Gemini Compute Nodes
 
-Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
-Source: %{source_name}.tar.gz
+Version: %{_version}_%{kernel_version}_%{kernel_release}
+Source: %{source_name}.tar.bz2
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
@@ -44,9 +42,10 @@ Userspace tools and files for Lustre networking on XT compute nodes.
 %prep
 # using source_name here results in too deep of a macro stack, so use
 # definition of source_name directly
-%incremental_setup -q -n %{flavorless_name}
+%incremental_setup -q -n %{source_name}
 
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 # LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
@@ -58,7 +57,7 @@ sed -i '1iSUBDIRS := . @LIBCFS_SUBDIR@ lnet \nDIST_SUBDIRS := @LIBCFS_SUBDIR@ ln
 
 [ -f Makefile.in ] && sed -i '/lustre/d' Makefile.in 
 export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
+export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
     chmod +x autogen.sh
@@ -95,10 +94,6 @@ pushd ./lustre/utils
 popd
 
 %install
-# LUSTRE_VERS used in ko versioning.
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
-
 # don't use %makeinstall for compute node RPMS - it needlessly puts things into 
 #  /opt/cray/,.....
 

@@ -82,13 +82,14 @@ BuildConflicts: post-build-checks
 %define kernel_version %(rpm -q --qf '%{VERSION}' %{ksource})
 %define kernel_release %(rpm -q --qf '%{RELEASE}' %{ksource})
 %define vendor_name lustre
-%define vendor_version 2.7.2
 %define pc_files cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc cray-lustre-ptlctl-devel.pc
 %if %{with SLES12}
 %define intranamespace_name %{vendor_name}-%{flavor}_rhine
 %else
 %define intranamespace_name %{vendor_name}-%{flavor}
 %endif
+%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
+%define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 
 Requires: liblustreapi.so()(64bit) 
 
@@ -122,9 +123,9 @@ Requires: liblustreapi.so()(64bit)
 %define node_type %(echo %{distribution} | awk '{print $1}' | awk -F: '{print $NF}')
 
 Name:       cray-lustre-%{node_type}-module 
-Version:    %{vendor_version}
+Version:    %{_version}
 Release:    %{release}
-Source:     cray-lustre.tar.gz
+Source:     %{source_name}.tar.bz2
 Summary:    Lustre module file and pc files
 Group:      System/Filesystems
 License:    Cray Software License Agreement
@@ -136,9 +137,10 @@ BuildRoot:  %{_tmppath}/%{name}-%{version}-root
 A package that contains pc files and a lustre module file. 
  
 %prep
-%setup -n cray-lustre
+%setup -n %{source_name}
  
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 sed -i '1i%%define _prefix /' lustre.spec.in
 sed -i '1i%%define _includedir /usr/include' lustre.spec.in
 sed -i '/Requires: kernel = %{krequires}/d' lustre.spec.in
@@ -147,7 +149,7 @@ sed -i '/Release.*/c\Release: %{release}' lustre.spec.in
 %{__sed} -e 's/@VERSION@/%{version}-%{release}/g' version.in > .version
 
 export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
+export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
 
 %if %{with xc} || %{with xedal}
 export GNICPPFLAGS=`pkg-config --cflags cray-gni cray-gni-headers cray-krca lsb-cray-hss`

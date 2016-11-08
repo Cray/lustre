@@ -8,16 +8,18 @@
 %define flavor cray_ari_s
 %endif
 %endif
-%define version 0.1
-%define lustre_version 2.7
+
+%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define branch trunk
 
+# This package is a build requirement for DVS. Changing the name of this package
+# requires a corresponding change to the DVS package.
+%define lnet_version 2.7
 %define pkgbase %{namespace}-%{intranamespace_name}
-%define pkgname %{pkgbase}-%{lustre_version}-devel
-%define pkg_config_name %{pkgbase}.pc
+%define pkgname %{pkgbase}-%{lnet_version}-devel
 
-%define srcbase %{namespace}-lustre
-%define pkgsrcbase %{pkgbase}-devel-%{branch}
+%define srcbase %{namespace}-lustre-%{_version}
+%define pkgsrcbase %{pkgbase}-devel-%{_version}
 
 Group: Development/Libraries/C and C++
 License: GPL
@@ -33,9 +35,9 @@ BuildRequires: libtool
 BuildConflicts: post-build-checks
 Summary: The lnet development package
 Vendor: Cray Inc.
-Version: %{branch}
-Source0: %{srcbase}.tar.gz
-Source1: %{pkgsrcbase}.tar.gz
+Version: %{_version}
+Source0: %{srcbase}.tar.bz2
+Source1: %{pkgsrcbase}.tar.bz2
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
@@ -43,16 +45,15 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 Header files for lnet.
 
 %prep
-# using source_name here results in too deep of a macro stack, so use
-# definition of source_name directly
 %incremental_setup -q -n %{srcbase} -a 1
 
 %build
-if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
+if [ "%reconfigure" == "1" -o ! -x %_builddir/%{srcbase}/configure ];then
         chmod +x autogen.sh
         ./autogen.sh
 fi
-if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
+if [ "%reconfigure" == "1" -o ! -f %_builddir/%{srcbase}/Makefile ];then
         %configure --disable-checksum \
            --disable-server \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
@@ -70,7 +71,7 @@ for header in `find lnet/include lustre/include libcfs/include -name \*.h`
 do
 	install -D -m 0644 ${header} %{buildroot}/%{_includedir}/${header}
 done
-install -D -m 0644  %{pkgsrcbase}/%{pkgbase}-devel.pc %{buildroot}/%{_pkgconfigdir}/%{pkg_config_name}
+install -D -m 0644  %{pkgsrcbase}/%{pkgbase}-devel.pc %{buildroot}/%{_pkgconfigdir}/%{pkgbase}.pc
 install -D -m 0644  %{pkgsrcbase}/module %{buildroot}/%{_release_modulefile}
 install -D -m 0644  %{pkgsrcbase}/.version %{buildroot}/%{_release_prefix}/etc/.version
 

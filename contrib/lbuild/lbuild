@@ -820,9 +820,6 @@ load_target() {
         # kernel.  don't make it look like one
         if $PATCHLESS || [ -n "$SERIES" ]; then
             EXTRA_VERSION=$(echo $EXTRA_VERSION | sed -e "s/\(.*_lustre\)\..*/\1/")
-            if ! $PATCHLESS && [ -n "$BUILDID" ]; then
-                EXTRA_VERSION="${EXTRA_VERSION}.${BUILDID}"
-            fi
         fi
     fi
     # EXTRA_VERSION=${EXTRA_VERSION//-/_}
@@ -1135,7 +1132,7 @@ build_lustre() {
 # Only zfs Lustre DKMS Server is supported
 build_lustre_dkms() {
     [ -n "$MPSS_VERSION" ] && return 0
-    local ver=$(eval echo  $(awk '/LUSTRE_VERSION_STRING/ {print $3}'  lustre/include/lustre_ver.h))
+    local ver=$(sed -n -e 's/^LUSTRE_VERSION = //p' LUSTRE-VERSION-FILE)
     echo "Building Lustre DKMS RPMs for: $BUILD_ARCHS..."
     ./configure --enable-dist || return 255
 
@@ -2283,10 +2280,6 @@ done
 check_options
 
 unpack_lustre
-
-# XXX - should we _always_ get the buildid from the META file?  what are the
-# other (i.e. non-lustre-tarball use cases of lbuild)?
-BUILDID=$(sed -n -e 's/^BUILDID = //p' lustre/META)
 
 load_target
 
