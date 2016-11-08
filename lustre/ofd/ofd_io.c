@@ -659,7 +659,7 @@ err:
 	ofd_read_unlock(env, fo);
 	ofd_object_put(env, fo);
 	/* ofd_grant_prepare_write() was called, so we must commit */
-	ofd_grant_commit(env, exp, rc);
+	ofd_grant_commit(exp, oa->o_grant_used, rc);
 	ofd_object_put(env, fo);
 out:
 	/* let's still process incoming grant information packed in the oa,
@@ -1018,6 +1018,7 @@ static int ofd_soft_sync_cb_add(struct thandle *th, struct obd_export *exp)
  * \param[in] objcount	always 1
  * \param[in] niocount	number of local buffers
  * \param[in] lnb	local buffers
+ * \param[in] granted	grant space consumed for the bulk I/O
  * \param[in] old_rc	result of processing at this point
  *
  * \retval		0 on successful commit
@@ -1027,7 +1028,8 @@ static int
 ofd_commitrw_write(const struct lu_env *env, struct obd_export *exp,
 		   struct ofd_device *ofd, const struct lu_fid *fid,
 		   struct lu_attr *la, struct filter_fid *ff, int objcount,
-		   int niocount, struct niobuf_local *lnb, int old_rc)
+		   int niocount, struct niobuf_local *lnb,
+		   unsigned long granted, int old_rc)
 {
 	struct ofd_thread_info	*info = ofd_info(env);
 	struct ofd_object	*fo = info->fti_obj;
@@ -1125,6 +1127,11 @@ out_stop:
 		cb_registered = true;
 	}
 
+	if (rc == 0 && granted > 0) {
+		if (ofd_grant_commit_cb_add(th, exp, granted) == 0)
+			granted = 0;
+	}
+
 	CFS_FAIL_TIMEOUT(OBD_FAIL_TGT_CLIENT_DEL, 10);
 	ofd_trans_stop(env, ofd, th, rc);
 	if (rc == -ENOSPC && retries++ < 3) {
@@ -1146,7 +1153,8 @@ out:
 	/* put is pair to object_get in ofd_preprw_write */
 	ofd_object_put(env, fo);
 	info->fti_obj = NULL;
-	ofd_grant_commit(env, info->fti_exp, old_rc);
+	if (granted > 0)
+		ofd_grant_commit(exp, granted, old_rc);
 	RETURN(rc);
 }
 
@@ -1211,7 +1219,8 @@ int ofd_commitrw(const struct lu_env *env, int cmd, struct obd_export *exp,
 		}
 
 		rc = ofd_commitrw_write(env, exp, ofd, fid, &info->fti_attr,
-					ff, objcount, npages, lnb, old_rc);
+					ff, objcount, npages, lnb,
+					oa->o_grant_used, old_rc);
 		if (rc == 0)
 			obdo_from_la(oa, &info->fti_attr,
 				     OFD_VALID_FLAGS | LA_GID | LA_UID);
