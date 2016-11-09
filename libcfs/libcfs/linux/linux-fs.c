@@ -77,7 +77,7 @@ filp_user_read(struct file *filp, char *buf, size_t count, loff_t *offset)
         fs = get_fs();
         set_fs(KERNEL_DS);
         while ((ssize_t)count > 0) {
-                size = filp->f_op->read(filp, (char *)buf, count, offset);
+                size = vfs_read(filp, (char __user *)buf, count, offset);
                 if (size <= 0)
                         break;
                 count -= size;
