@@ -2930,6 +2930,7 @@ test_43() {
 	touch $DIR/$tdir-rootdir/tfile-2 ||
 		error "$ST: root create permission is denied"
 	echo "$ST: root create permission is granted - ok"
+	cleanup
 }
 run_test 43 "check root_squash and nosquash_nids"
 
@@ -5688,6 +5689,7 @@ test_89() {
 	FSNAME=$save_fsname
 	setupall
 	KEEP_ZPOOL=false
+	stopall
 }
 run_test 89 "rename filesystem name"
 
