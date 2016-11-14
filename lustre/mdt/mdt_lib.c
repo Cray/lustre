@@ -500,13 +500,12 @@ static int old_init_ucred(struct mdt_thread_info *info,
 	uc->uc_suppgids[0] = body->mbo_suppgid;
 	uc->uc_suppgids[1] = -1;
 	uc->uc_ginfo = NULL;
-	uc->uc_cap = body->mbo_capability;
 	if (!is_identity_get_disabled(mdt->mdt_identity_cache)) {
 		identity = mdt_identity_get(mdt->mdt_identity_cache,
 					    uc->uc_fsuid);
 		if (IS_ERR(identity)) {
 			if (unlikely(PTR_ERR(identity) == -EREMCHG ||
-				     uc->uc_cap & CFS_CAP_FS_MASK)) {
+				     body->mbo_capability & CFS_CAP_FS_MASK)) {
 				identity = NULL;
 			} else {
 				CDEBUG(D_SEC, "Deny access without identity: "
@@ -524,7 +523,9 @@ static int old_init_ucred(struct mdt_thread_info *info,
 
 	/* remove fs privilege for non-root user. */
 	if (uc->uc_fsuid != 0 && drop_fs_cap)
-		uc->uc_cap &= ~CFS_CAP_FS_MASK;
+		uc->uc_cap = body->mbo_capability & ~CFS_CAP_FS_MASK;
+	else
+		uc->uc_cap = body->mbo_capability;
 	uc->uc_valid = UCRED_OLD;
 	ucred_set_jobid(info, uc);
 
