@@ -2670,7 +2670,7 @@ test_41c() {
 
 	cleanup
 	# MDT concurent start
-	load_modules
+	LOAD_MODULES_REMOTE=true load_modules
 	do_facet $SINGLEMDS "lsmod | grep -q lustre" || return 1
 	do_facet ost1 "lsmod | grep -q lustre" || return 1
 	#define OBD_FAIL_TGT_MOUNT_RACE 0x716
