@@ -79,8 +79,6 @@ BuildConflicts: post-build-checks
 %define date %(date +%%F-%%R)
 %define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 %define branch trunk
-%define kernel_version %(rpm -q --qf '%{VERSION}' %{ksource})
-%define kernel_release %(rpm -q --qf '%{RELEASE}' %{ksource})
 %define vendor_name lustre
 %define pc_files cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc cray-lustre-ptlctl-devel.pc
 %if %{with SLES12}
@@ -106,18 +104,11 @@ Requires: liblustreapi.so()(64bit)
 %endif
 
 %if %{with clfs}
-%define config_args --with-linux=/usr/src/kernels/%{kernel_version}-%{kernel_release}.%{_target_cpu} --enable-ldiskfs %{disable_server}
-%define ksource kernel-devel
-%endif
-
-%if %{with dal}  
+%define kernel_version %(rpm -q --qf '%{VERSION}' kernel-devel)
+%define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-devel)
+%define config_args --with-linux=/usr/src/kernels/%{kernel_version}-%{kernel_release}.%{_target_cpu} --enable-ldiskfs
+%else
 %define config_args --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} %{gni} %{disable_server}
-%define ksource kernel-source
-%endif
-
-%if %{without clfs} && %{without dal}
-%define config_args --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} --with-o2ib=${O2IBPATH} %{gni} %{disable_server}
-%define ksource kernel-source
 %endif
 
 %define node_type %(echo %{distribution} | awk '{print $1}' | awk -F: '{print $NF}')
@@ -171,16 +162,21 @@ CFLAGS="%{optflags} -Werror"
 CFLAGS="%{optflags} -Werror -fno-stack-protector"
 %endif
 
+%if %{without compute}
 if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
     O2IBPATH=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}
 elif [ -d /usr/src/ofed/%{_target_cpu}/%{flavor} ]; then
     O2IBPATH=/usr/src/ofed/%{_target_cpu}/%{flavor}
 else
-    O2IBPATH=no
+    O2IBPATH=yes
 fi
+%else
+O2IBPATH=no
+%endif
+
 
 sh autogen.sh
-%configure --includedir=/usr/include --with-rpmsubname=%{node_type} %{config_args} 
+%configure --includedir=/usr/include --with-rpmsubname=%{node_type} --with-o2ib=${O2IBPATH} %{config_args}
 %{__make} %_smp_mflags rpms 
 
 %if %{with SLES11} 
