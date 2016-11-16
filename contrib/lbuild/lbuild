@@ -1105,11 +1105,14 @@ build_lustre() {
 
     # move RPMs into place where they are expected to be
     for arch in $BUILD_ARCHS; do
-        mv -f lustre-*.${arch}.rpm $TOPDIR/RPMS/${arch}/
+        mv -f *lustre-*.${arch}.rpm $TOPDIR/RPMS/${arch}/
     done
     mv -f lustre-*.src.rpm $TOPDIR/SRPMS/
 
     popd >/dev/null
+	if type -p cleanup_rpmmacros; then
+		cleanup_rpmmacros
+	fi
 
     return 0
 }
@@ -1928,6 +1931,7 @@ EOF
 set -x
 .
 g/\/.*\/\(symset-table\)/s//$tmp\/\1/g
+g/\(\/usr\/src\/kernels\/\)/s//$tmp\/reused\1/g
 wq
 EOF
     ed symset-table <<EOF
