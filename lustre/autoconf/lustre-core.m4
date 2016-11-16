@@ -2202,7 +2202,6 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_CONFIG_CHECKSUM
 	LC_CONFIG_HEALTH_CHECK_WRITE
 	LC_CONFIG_LRU_RESIZE
-	LC_LLITE_LLOOP_MODULE
 
 	LC_GLIBC_SUPPORT_FHANDLES
 	LC_CAPA_CRYPTO
@@ -2486,25 +2485,6 @@ AS_IF([test "x$enable_nodemap_proc_debug" != xno],
 ]) # LC_NODEMAP_PROC_DEBUG
 
 #
-# LC_LLITE_LLOOP_MODULE
-#
-# lloop_llite.ko does not currently work with page sizes
-# of 64k or larger.
-#
-AC_DEFUN([LC_LLITE_LLOOP_MODULE], [
-LB_CHECK_COMPILE([whether to enable 'llite_lloop' module],
-enable_llite_lloop_module, [
-	#include <asm/page.h>
-],[
-	#if PAGE_SIZE >= 65536
-	#error "PAGE_SIZE >= 65536"
-	#endif
-],
-	[enable_llite_lloop_module="yes"],
-	[enable_llite_lloop_module="no"])
-]) # LC_LLITE_LLOOP_MODULE
-
-#
 # LC_OSD_ADDON
 #
 # configure support for optional OSD implementation
@@ -2683,7 +2663,6 @@ AM_CONDITIONAL(GSS, test x$enable_gss = xyes)
 AM_CONDITIONAL(GSS_KEYRING, test x$enable_gss_keyring = xyes)
 AM_CONDITIONAL(GSS_PIPEFS, test x$enable_gss_pipefs = xyes)
 AM_CONDITIONAL(LIBPTHREAD, test x$enable_libpthread = xyes)
-AM_CONDITIONAL(LLITE_LLOOP, test x$enable_llite_lloop_module = xyes)
 AM_CONDITIONAL(LDAP_BUILD, test x$LDAP != x)
 AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
 ]) # LC_CONDITIONALS
