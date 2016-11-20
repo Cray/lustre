@@ -793,16 +793,7 @@ static long ofd_grant_alloc(struct obd_export *exp, u64 curgrant,
 		RETURN(0);
 	}
 
-	/* Grant some fraction of the client's requested grant space so that
-	 * they are not always waiting for write credits (not all of it to
-	 * avoid overgranting in face of multiple RPCs in flight).  This
-	 * essentially will be able to control the OSC_MAX_RIF for a client.
-	 *
-	 * If we do have a large disparity between what the client thinks it
-	 * has and what we think it has, don't grant very much and let the
-	 * client consume its grant first.  Either it just has lots of RPCs
-	 * in flight, or it was evicted and its grants will soon be used up. */
-	if (curgrant >= want || curgrant >= fed->fed_grant + chunk)
+	if (curgrant >= want)
 		RETURN(0);
 
 	if (obd->obd_recovering)
@@ -823,6 +814,9 @@ static long ofd_grant_alloc(struct obd_export *exp, u64 curgrant,
 	/* Limit to grant_chunk if not reconnect/recovery */
 	if ((grant > chunk) && conservative)
 		grant = chunk;
+
+	if (fed->fed_grant + grant > want)
+		grant = want - fed->fed_grant;
 
 	ofd->ofd_tot_granted += grant;
 	fed->fed_grant += grant;
