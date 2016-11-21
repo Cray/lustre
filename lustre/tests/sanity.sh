@@ -10456,13 +10456,6 @@ test_156() {
 		log "cache hits:: before: $BEFORE, after: $AFTER"
 	fi
 
-test_253()
-{
-	test_mkdir -p $DIR/$tdir
-	lock_ahead_test -d $DIR/$tdir || error "A lock ahead test failed"
-}
-run_test 253 "various lock ahead tests"
-
 	log "Turn off read and write cache"
 	set_cache read off
 	set_cache writethrough off
@@ -13551,6 +13544,13 @@ test_252() {
 	echo -e "Number of reply data returned by $LR_READER is '$num'\n"
 }
 run_test 252 "check lr_reader tool"
+
+test_253()
+{
+	test_mkdir -p $DIR/$tdir
+	lock_ahead_test -d $DIR/$tdir || error "A lock ahead test failed"
+}
+run_test 253 "various lock ahead tests"
 
 test_254() {
 	local cl_user
