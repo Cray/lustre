@@ -61,7 +61,7 @@ CFS_MODULE_PARM(cpu_npartitions, "i", int, 0444, "# of CPU partitions");
  *
  * NB: If user specified cpu_pattern, cpu_npartitions will be ignored
  */
-static char	*cpu_pattern = "";
+static char	*cpu_pattern = "N";
 CFS_MODULE_PARM(cpu_pattern, "s", charp, 0444, "CPU partitions pattern");
 
 struct cfs_cpt_data {
@@ -1072,7 +1072,15 @@ cfs_cpu_init(void)
 #endif
 
 	if (*cpu_pattern != 0) {
-		cfs_cpt_table = cfs_cpt_table_create_pattern(cpu_pattern);
+		char *cpu_pattern_dup = kstrdup(cpu_pattern, GFP_KERNEL);
+
+		if (cpu_pattern_dup == NULL) {
+			CERROR("Failed to duplicate cpu_pattern\n");
+			goto failed;
+		}
+
+		cfs_cpt_table = cfs_cpt_table_create_pattern(cpu_pattern_dup);
+		kfree(cpu_pattern_dup);
 		if (cfs_cpt_table == NULL) {
 			CERROR("Failed to create cptab from pattern %s\n",
 			       cpu_pattern);
