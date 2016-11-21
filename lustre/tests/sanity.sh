@@ -10267,13 +10267,6 @@ test_156() {
         log "cache hits:: before: $BEFORE, after: $AFTER"
     fi
 
-test_253()
-{
-	test_mkdir -p $DIR/$tdir
-	lock_ahead_test -d $DIR/$tdir || error "A lock ahead test failed"
-}
-run_test 253 "various lock ahead tests"
-
     log "Turn off read and write cache"
     set_cache read off
     set_cache writethrough off
@@ -13175,6 +13168,13 @@ test_251() {
 	rm -f $DIR/$tfile
 }
 run_test 251 "Handling short read and write correctly"
+
+test_253()
+{
+	test_mkdir -p $DIR/$tdir
+	lock_ahead_test -d $DIR/$tdir || error "A lock ahead test failed"
+}
+run_test 253 "various lock ahead tests"
 
 test_257() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
