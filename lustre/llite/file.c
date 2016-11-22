@@ -2543,8 +2543,13 @@ out:
 				     (struct llapi_lock_ahead_arg __user *)arg));
 
 	case LL_IOC_REQUEST_ONLY:
-		fd->ll_req_only = true;
-		RETURN(0);
+		if (!fd->ll_req_only) {
+			fd->ll_req_only = true;
+			RETURN(1);
+		} else {
+			fd->ll_req_only = false;
+			RETURN(0);
+		}
 
 	case OBD_IOC_FID2PATH:
 		RETURN(ll_fid2path(inode, (void __user *)arg));
