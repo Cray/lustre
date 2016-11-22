@@ -34,7 +34,7 @@
  * otherwise the return value will be wrong.
  */
 #ifndef HAVE_STRLCPY /* not in glibc for RHEL 5.x, remove when obsolete */
-size_t strlcpy(char *dst, const char *src, size_t size)
+size_t ll_strlcpy(char *dst, const char *src, size_t size)
 {
 	size_t ret = strlen(src);
 
@@ -48,7 +48,7 @@ size_t strlcpy(char *dst, const char *src, size_t size)
 #endif
 
 #ifndef HAVE_STRLCAT /* not in glibc for RHEL 5.x, remove when obsolete */
-size_t strlcat(char *dst, const char *src, size_t size)
+size_t ll_strlcat(char *dst, const char *src, size_t size)
 {
 	size_t dsize = strlen(dst);
 	size_t len = strlen(src);
