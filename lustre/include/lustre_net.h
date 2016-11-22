@@ -56,7 +56,8 @@
  */
 
 #include <libcfs/libcfs.h>
-#include <lnet/lnet.h>
+#include <lnet/nidstr.h>
+#include <lnet/api.h>
 #include <lustre/lustre_idl.h>
 #include <lustre_ha.h>
 #include <lustre_sec.h>
@@ -739,7 +740,7 @@ struct ptlrpc_request_pool {
 	/** Maximum message size that would fit into a rquest from this pool */
 	int			prp_rq_size;
 	/** Function to allocate more requests for this pool */
-	void (*prp_populate)(struct ptlrpc_request_pool *, int);
+	int (*prp_populate)(struct ptlrpc_request_pool *, int);
 };
 
 struct lu_context;
@@ -1840,6 +1841,8 @@ struct ptlrpc_cli_req {
 	union ptlrpc_async_args		 cr_async_args;
 	/** Opaq data for replay and commit callbacks. */
 	void				*cr_cb_data;
+	/** Link to the imp->imp_unreplied_list */
+	struct list_head		 cr_unreplied_list;
 	/**
 	 * Commit callback, called when request is committed and about to be
 	 * freed.
@@ -1879,6 +1882,7 @@ struct ptlrpc_cli_req {
 #define rq_resend_cb		rq_cli.cr_resend_cb
 #define rq_async_args		rq_cli.cr_async_args
 #define rq_cb_data		rq_cli.cr_cb_data
+#define rq_unreplied_list	rq_cli.cr_unreplied_list
 #define rq_commit_cb		rq_cli.cr_commit_cb
 #define rq_replay_cb		rq_cli.cr_replay_cb
 
@@ -3001,11 +3005,11 @@ void ptlrpc_set_destroy(struct ptlrpc_request_set *);
 void ptlrpc_set_add_req(struct ptlrpc_request_set *, struct ptlrpc_request *);
 
 void ptlrpc_free_rq_pool(struct ptlrpc_request_pool *pool);
-void ptlrpc_add_rqs_to_pool(struct ptlrpc_request_pool *pool, int num_rq);
+int ptlrpc_add_rqs_to_pool(struct ptlrpc_request_pool *pool, int num_rq);
 
 struct ptlrpc_request_pool *
 ptlrpc_init_rq_pool(int, int,
-                    void (*populate_pool)(struct ptlrpc_request_pool *, int));
+		    int (*populate_pool)(struct ptlrpc_request_pool *, int));
 
 void ptlrpc_at_set_req_timeout(struct ptlrpc_request *req);
 struct ptlrpc_request *ptlrpc_request_alloc(struct obd_import *imp,
@@ -3237,6 +3241,7 @@ __u32 lustre_msg_get_version(struct lustre_msg *msg);
 void lustre_msg_add_version(struct lustre_msg *msg, __u32 version);
 __u32 lustre_msg_get_opc(struct lustre_msg *msg);
 __u64 lustre_msg_get_last_xid(struct lustre_msg *msg);
+__u16 lustre_msg_get_tag(struct lustre_msg *msg);
 __u64 lustre_msg_get_last_committed(struct lustre_msg *msg);
 __u64 *lustre_msg_get_versions(struct lustre_msg *msg);
 __u64 lustre_msg_get_transno(struct lustre_msg *msg);
@@ -3261,6 +3266,7 @@ void lustre_msg_set_handle(struct lustre_msg *msg,struct lustre_handle *handle);
 void lustre_msg_set_type(struct lustre_msg *msg, __u32 type);
 void lustre_msg_set_opc(struct lustre_msg *msg, __u32 opc);
 void lustre_msg_set_last_xid(struct lustre_msg *msg, __u64 last_xid);
+void lustre_msg_set_tag(struct lustre_msg *msg, __u16 tag);
 void lustre_msg_set_last_committed(struct lustre_msg *msg,__u64 last_committed);
 void lustre_msg_set_versions(struct lustre_msg *msg, __u64 *versions);
 void lustre_msg_set_transno(struct lustre_msg *msg, __u64 transno);
@@ -3572,7 +3578,6 @@ int llog_origin_handle_close(struct ptlrpc_request *req);
 
 /* ptlrpc/llog_client.c */
 extern struct llog_operations llog_client_ops;
-
 /** @} net */
 
 #endif

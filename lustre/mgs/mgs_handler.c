@@ -47,6 +47,7 @@
 #include <lprocfs_status.h>
 #include <lustre_ioctl.h>
 #include <lustre_param.h>
+#include <lustre/lustre_barrier_user.h>
 
 #include "mgs_internal.h"
 
@@ -94,11 +95,18 @@ static int mgs_exception(struct tgt_session_info *tsi)
 	RETURN(0);
 }
 
+static inline bool str_starts_with(const char *str, const char *prefix)
+{
+	return strncmp(str, prefix, strlen(prefix)) == 0;
+}
+
 static int mgs_set_info(struct tgt_session_info *tsi)
 {
 	struct mgs_thread_info	*mgi;
 	struct mgs_send_param	*msp, *rep_msp;
 	struct lustre_cfg	*lcfg;
+	size_t			 param_len;
+	char			*s;
 	int			 rc;
 
 	ENTRY;
@@ -110,6 +118,20 @@ static int mgs_set_info(struct tgt_session_info *tsi)
 	msp = req_capsule_client_get(tsi->tsi_pill, &RMF_MGS_SEND_PARAM);
 	if (msp == NULL)
 		RETURN(err_serious(-EFAULT));
+
+	param_len = strnlen(msp->mgs_param, sizeof(msp->mgs_param));
+	if (param_len == 0 || param_len == sizeof(msp->mgs_param))
+		RETURN(-EINVAL);
+
+	/* We only allow '*.lov.stripe{size,count,offset}=*' from an RPC. */
+	s = strchr(msp->mgs_param, '.');
+	if (s == NULL)
+		RETURN(-EINVAL);
+
+	if (!str_starts_with(s + 1, "lov.stripesize=") &&
+	    !str_starts_with(s + 1, "lov.stripecount=") &&
+	    !str_starts_with(s + 1, "lov.stripeoffset="))
+		RETURN(-EINVAL);
 
 	/* Construct lustre_cfg structure to pass to function mgs_setparam */
 	lustre_cfg_bufs_reset(&mgi->mgi_bufs, NULL);
@@ -139,7 +161,8 @@ out_cfg:
 enum ast_type {
 		AST_CONFIG = 1,
 		AST_PARAMS = 2,
-		AST_IR = 3
+		AST_IR = 3,
+		AST_BARRIER = 4,
 };
 
 static int mgs_completion_ast_generic(struct ldlm_lock *lock, __u64 flags,
@@ -173,6 +196,8 @@ static int mgs_completion_ast_generic(struct ldlm_lock *lock, __u64 flags,
 				case AST_IR:
 					mgs_ir_notify_complete(fsdb);
 					break;
+				case AST_BARRIER:
+					break;
 				default:
 					LBUG();
 			}
@@ -203,7 +228,13 @@ static int mgs_completion_ast_ir(struct ldlm_lock *lock, __u64 flags,
 	return mgs_completion_ast_generic(lock, flags, cbdata, AST_IR);
 }
 
-void mgs_revoke_lock(struct mgs_device *mgs, struct fs_db *fsdb, int type)
+static int mgs_completion_ast_barrier(struct ldlm_lock *lock, __u64 flags,
+				      void *cbdata)
+{
+	return mgs_completion_ast_generic(lock, flags, cbdata, AST_BARRIER);
+}
+
+int mgs_revoke_lock(struct mgs_device *mgs, struct fs_db *fsdb, int type)
 {
 	ldlm_completion_callback cp = NULL;
 	struct lustre_handle     lockh = { 0 };
@@ -228,11 +259,15 @@ void mgs_revoke_lock(struct mgs_device *mgs, struct fs_db *fsdb, int type)
 		break;
 	case CONFIG_T_RECOVER:
 		cp = mgs_completion_ast_ir;
+		break;
+	case CONFIG_T_BARRIER:
+		cp = mgs_completion_ast_barrier;
+		break;
 	default:
 		break;
 	}
 
-	if (!rc) {
+	if (rc == 0) {
 		LASSERT(cp != NULL);
 		rc = ldlm_cli_enqueue_local(mgs->mgs_obd->obd_namespace,
 					    &res_id, LDLM_PLAIN, NULL, LCK_EX,
@@ -255,7 +290,7 @@ void mgs_revoke_lock(struct mgs_device *mgs, struct fs_db *fsdb, int type)
 		/* lock has been cancelled in completion_ast. */
 	}
 
-	RETURN_EXIT;
+	RETURN(rc);
 }
 
 /* rc=0 means ok
@@ -321,7 +356,9 @@ static int mgs_target_reg(struct tgt_session_info *tsi)
 	struct obd_device	*obd = tsi->tsi_exp->exp_obd;
 	struct mgs_device	*mgs = exp2mgs_dev(tsi->tsi_exp);
 	struct mgs_target_info	*mti, *rep_mti;
-	struct fs_db		*fsdb;
+	struct fs_db		*b_fsdb = NULL; /* barrier fsdb */
+	struct fs_db		*c_fsdb = NULL; /* config fsdb */
+	char			 barrier_name[20];
 	int			 opc;
 	int			 rc = 0;
 
@@ -339,6 +376,8 @@ static int mgs_target_reg(struct tgt_session_info *tsi)
 		RETURN(err_serious(-EFAULT));
 	}
 
+	down_read(&mgs->mgs_barrier_rwsem);
+
 	if (OCD_HAS_FLAG(&tgt_ses_req(tsi)->rq_export->exp_connect_data,
 			 IMP_RECOV))
 		opc = mti->mti_flags & LDD_F_OPC_MASK;
@@ -354,15 +393,45 @@ static int mgs_target_reg(struct tgt_session_info *tsi)
                         CERROR("Update IR return with %d(ignore and IR "
                                "disabled)\n", rc);
                 }
-                GOTO(out_nolock, rc);
+                GOTO(out_norevoke, rc);
         }
 
         /* Do not support unregistering right now. */
         if (opc != LDD_F_OPC_REG)
-                GOTO(out_nolock, rc = -EINVAL);
+                GOTO(out_norevoke, rc = -EINVAL);
 
-        CDEBUG(D_MGS, "fs: %s index: %d is registered to MGS.\n",
-               mti->mti_fsname, mti->mti_stripe_index);
+	sprintf(barrier_name, "%s.%s", mti->mti_fsname, BARRIER_FILENAME);
+	rc = mgs_find_or_make_fsdb(tsi->tsi_env, mgs, barrier_name, &b_fsdb);
+	if (rc != 0) {
+		CERROR("Can't get db for %s: %d\n", barrier_name, rc);
+
+		GOTO(out_norevoke, rc);
+	}
+
+	CDEBUG(D_MGS, "fs: %s index: %d is registered to MGS.\n",
+	       mti->mti_fsname, mti->mti_stripe_index);
+
+	if (mti->mti_flags & LDD_F_SV_TYPE_MDT) {
+		if (b_fsdb->fsdb_barrier_status == BS_FREEZING_P1 ||
+		    b_fsdb->fsdb_barrier_status == BS_FREEZING_P2 ||
+		    b_fsdb->fsdb_barrier_status == BS_FROZEN) {
+			LCONSOLE_WARN("%s: the system is in barrier, refuse "
+				      "the connection from MDT %s temporary\n",
+				      obd->obd_name, mti->mti_svname);
+
+			GOTO(out_norevoke, rc = -EBUSY);
+		}
+
+		if (!(exp_connect_flags(tsi->tsi_exp) & OBD_CONNECT_BARRIER) &&
+		    !b_fsdb->fsdb_barrier_disabled) {
+			LCONSOLE_WARN("%s: the MDT %s does not support write "
+				      "barrier, so disable barrier on the "
+				      "whole system.\n",
+				      obd->obd_name, mti->mti_svname);
+
+			b_fsdb->fsdb_barrier_disabled = 1;
+		}
+	}
 
         if (mti->mti_flags & LDD_F_NEED_INDEX)
                 mti->mti_flags |= LDD_F_WRITECONF;
@@ -376,43 +445,66 @@ static int mgs_target_reg(struct tgt_session_info *tsi)
                 /* above will set appropriate mti flags */
                 if (rc <= 0)
                         /* Nothing wrong, or fatal error */
-                        GOTO(out_nolock, rc);
+                        GOTO(out_norevoke, rc);
 	} else if (!(mti->mti_flags & LDD_F_NO_PRIMNODE)) {
 		rc = mgs_check_failover_reg(mti);
 		if (rc)
-			GOTO(out_nolock, rc);
-        }
+			GOTO(out_norevoke, rc);
+	}
 
-        OBD_FAIL_TIMEOUT(OBD_FAIL_MGS_PAUSE_TARGET_REG, 10);
+	OBD_FAIL_TIMEOUT(OBD_FAIL_MGS_PAUSE_TARGET_REG, 10);
 
-        if (mti->mti_flags & LDD_F_WRITECONF) {
-                if (mti->mti_flags & LDD_F_SV_TYPE_MDT &&
-                    mti->mti_stripe_index == 0) {
+	if (mti->mti_flags & LDD_F_WRITECONF) {
+		if (mti->mti_flags & LDD_F_SV_TYPE_MDT &&
+		    mti->mti_stripe_index == 0) {
 			rc = mgs_erase_logs(tsi->tsi_env, mgs,
 					    mti->mti_fsname);
-                        LCONSOLE_WARN("%s: Logs for fs %s were removed by user "
-                                      "request.  All servers must be restarted "
-                                      "in order to regenerate the logs."
-                                      "\n", obd->obd_name, mti->mti_fsname);
-                } else if (mti->mti_flags &
-                           (LDD_F_SV_TYPE_OST | LDD_F_SV_TYPE_MDT)) {
-			rc = mgs_erase_log(tsi->tsi_env, mgs, mti->mti_svname);
-                        LCONSOLE_WARN("%s: Regenerating %s log by user "
-                                      "request.\n",
-                                      obd->obd_name, mti->mti_svname);
-                }
-                mti->mti_flags |= LDD_F_UPDATE;
-                /* Erased logs means start from scratch. */
-                mti->mti_flags &= ~LDD_F_UPGRADE14;
-		if (rc)
-			GOTO(out_nolock, rc);
-        }
+			LCONSOLE_WARN("%s: Logs for fs %s were removed by user "
+				      "request.  All servers must be restarted "
+				      "in order to regenerate the logs: rc = %d"
+				      "\n", obd->obd_name, mti->mti_fsname, rc);
+			if (rc != 0 && rc != -ENOENT)
+				GOTO(out_norevoke, rc);
 
-	rc = mgs_find_or_make_fsdb(tsi->tsi_env, mgs, mti->mti_fsname, &fsdb);
-        if (rc) {
-                CERROR("Can't get db for %s: %d\n", mti->mti_fsname, rc);
-                GOTO(out_nolock, rc);
-        }
+			rc = mgs_find_or_make_fsdb(tsi->tsi_env, mgs,
+						   barrier_name, &b_fsdb);
+			if (rc != 0) {
+				CERROR("Can't get db for %s: %d\n",
+				       barrier_name, rc);
+
+				GOTO(out_norevoke, rc);
+			}
+
+			if (!(exp_connect_flags(tsi->tsi_exp) &
+			      OBD_CONNECT_BARRIER)) {
+				LCONSOLE_WARN("%s: the MDT %s does not support "
+					      "write barrier, disable barrier "
+					      "on the whole system.\n",
+					      obd->obd_name, mti->mti_svname);
+
+				b_fsdb->fsdb_barrier_disabled = 1;
+			}
+		} else if (mti->mti_flags &
+			   (LDD_F_SV_TYPE_OST | LDD_F_SV_TYPE_MDT)) {
+			rc = mgs_erase_log(tsi->tsi_env, mgs, mti->mti_svname);
+			LCONSOLE_WARN("%s: Regenerating %s log by user "
+				      "request: rc = %d\n",
+				      obd->obd_name, mti->mti_svname, rc);
+			if (rc != 0)
+				GOTO(out_norevoke, rc);
+		}
+
+		mti->mti_flags |= LDD_F_UPDATE;
+		/* Erased logs means start from scratch. */
+		mti->mti_flags &= ~LDD_F_UPGRADE14;
+	}
+
+	rc = mgs_find_or_make_fsdb(tsi->tsi_env, mgs, mti->mti_fsname, &c_fsdb);
+	if (rc != 0) {
+		CERROR("Can't get db for %s: %d\n", mti->mti_fsname, rc);
+
+		GOTO(out_norevoke, rc);
+	}
 
         /*
          * Log writing contention is handled by the fsdb_mutex.
@@ -433,7 +525,7 @@ static int mgs_target_reg(struct tgt_session_info *tsi)
 
                 /* create or update the target log
                    and update the client/mdt logs */
-		rc = mgs_write_log_target(tsi->tsi_env, mgs, mti, fsdb);
+		rc = mgs_write_log_target(tsi->tsi_env, mgs, mti, c_fsdb);
                 if (rc) {
                         CERROR("Failed to write %s log (%d)\n",
                                mti->mti_svname, rc);
@@ -447,9 +539,27 @@ static int mgs_target_reg(struct tgt_session_info *tsi)
         }
 
 out:
-	mgs_revoke_lock(mgs, fsdb, CONFIG_T_CONFIG);
+	mgs_revoke_lock(mgs, c_fsdb, CONFIG_T_CONFIG);
 
-out_nolock:
+out_norevoke:
+	if (rc == 0 && mti->mti_flags & LDD_F_SV_TYPE_MDT && b_fsdb != NULL) {
+		if (c_fsdb == NULL) {
+			rc = mgs_find_or_make_fsdb(tsi->tsi_env, mgs,
+						   mti->mti_fsname, &c_fsdb);
+			if (rc != 0)
+				CERROR("Fail to get db for %s: %d\n",
+				       mti->mti_fsname, rc);
+		}
+
+		if (c_fsdb != NULL) {
+			memcpy(b_fsdb->fsdb_mdt_index_map,
+			       c_fsdb->fsdb_mdt_index_map, INDEX_MAP_SIZE);
+			b_fsdb->fsdb_mdt_count = c_fsdb->fsdb_mdt_count;
+		}
+	}
+
+	up_read(&mgs->mgs_barrier_rwsem);
+
 	CDEBUG(D_MGS, "replying with %s, index=%d, rc=%d\n", mti->mti_svname,
 	       mti->mti_stripe_index, rc);
 	 /* An error flag is set in the mti reply rather than an error code */
@@ -540,7 +650,7 @@ static int mgs_llog_open(struct tgt_session_info *tsi)
 
 	logname = req_capsule_client_get(tsi->tsi_pill, &RMF_NAME);
 	if (logname) {
-		char *ptr = strchr(logname, '-');
+		char *ptr = strrchr(logname, '-');
 		int   len = (ptr != NULL) ? (int)(ptr - logname) : 0;
 
 		if (ptr == NULL || len >= sizeof(mgi->mgi_fsname)) {
@@ -899,7 +1009,7 @@ out_free:
 			break;
 		}
 
-		if (data->ioc_plen1 > MTI_NAME_MAXLEN) {
+		if (data->ioc_inllen1 > MTI_NAME_MAXLEN) {
 			CERROR("Device name is too long\n");
 			rc = -EOVERFLOW;
 			break;
@@ -927,8 +1037,36 @@ out_free:
 		break;
 	}
 
+	case OBD_IOC_CLEAR_CONFIGS: {
+		if (!data->ioc_inllen1 || !data->ioc_inlbuf1) {
+			CERROR("No device or fs name specified!\n");
+			rc = -EINVAL;
+		}
+
+		if (data->ioc_inlbuf1[data->ioc_inllen1 - 1] != 0) {
+			CERROR("Device or fs name is not NUL terminated!\n");
+			rc = -EINVAL;
+		}
+
+		if (data->ioc_inllen1 > MTI_NAME_MAXLEN) {
+			CERROR("Device or fs name is too long\n");
+			rc = -EOVERFLOW;
+		}
+
+		/* remove records marked SKIP from config logs */
+		rc = mgs_clear_configs(&env, mgs, data->ioc_inlbuf1);
+		if (rc)
+			CERROR("error %d clearing config log\n", rc);
+
+		break;
+	}
+
 	case OBD_IOC_POOL:
 		rc = mgs_iocontrol_pool(&env, mgs, data);
+		break;
+
+	case OBD_IOC_BARRIER:
+		rc = mgs_iocontrol_barrier(&env, mgs, data);
 		break;
 
 	case OBD_IOC_NODEMAP:
@@ -946,6 +1084,15 @@ out_free:
 		break;
         }
 
+	case OBD_IOC_LCFG_FORK:
+		rc = mgs_lcfg_fork(&env, mgs, data->ioc_inlbuf1,
+				   data->ioc_inlbuf2);
+
+		break;
+	case OBD_IOC_LCFG_ERASE:
+		rc = mgs_lcfg_erase(&env, mgs, data->ioc_inlbuf1);
+
+		break;
 	case OBD_IOC_CATLOGLIST:
 		rc = mgs_list_logs(&env, mgs, data);
 		break;
@@ -1019,6 +1166,8 @@ TGT_MGS_HDL    (HABEO_REFERO | MUTABOR,	MGS_SET_INFO,	 mgs_set_info),
 TGT_MGS_HDL    (HABEO_REFERO | MUTABOR,	MGS_TARGET_REG,	 mgs_target_reg),
 TGT_MGS_HDL_VAR(0,			MGS_TARGET_DEL,	 mgs_target_del),
 TGT_MGS_HDL    (HABEO_REFERO,		MGS_CONFIG_READ, mgs_config_read),
+TGT_MGS_HDL    (HABEO_REFERO,		MGS_BARRIER_READ, mgs_barrier_read),
+TGT_MGS_HDL    (HABEO_REFERO,		MGS_BARRIER_NOTIFY, mgs_barrier_notify),
 };
 
 static struct tgt_handler mgs_obd_handlers[] = {
@@ -1089,6 +1238,7 @@ static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
 	struct lustre_mount_info	*lmi;
 	struct llog_ctxt		*ctxt;
 	struct fs_db			*fsdb = NULL;
+	struct fs_db			*fsdb_srpc = NULL;
 	int				 rc;
 
 	ENTRY;
@@ -1153,6 +1303,7 @@ static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
 	mgs->mgs_start_time = cfs_time_current_sec();
 	spin_lock_init(&mgs->mgs_lock);
 	mutex_init(&mgs->mgs_health_mutex);
+	init_rwsem(&mgs->mgs_barrier_rwsem);
 
 	rc = lproc_mgs_setup(mgs, lustre_cfg_string(lcfg, 3));
 	if (rc != 0) {
@@ -1168,6 +1319,9 @@ static int mgs_init0(const struct lu_env *env, struct mgs_device *mgs,
 		/* params fsdb and log can be setup later */
 		CERROR("%s: %s fsdb and log setup failed: rc = %d\n",
 		       obd->obd_name, PARAMS_FILENAME, rc);
+
+	/* Setup _mgs fsdb, useful for srpc */
+	mgs__mgs_fsdb_setup(env, mgs, fsdb_srpc);
 
 	ptlrpc_init_client(LDLM_CB_REQUEST_PORTAL, LDLM_CB_REPLY_PORTAL,
 			   "mgs_ldlm_client", &obd->obd_ldlm_client);
@@ -1267,7 +1421,6 @@ static int mgs_object_init(const struct lu_env *env, struct lu_object *o,
 	struct mgs_device *d = lu2mgs_dev(o->lo_dev);
 	struct lu_device  *under;
 	struct lu_object  *below;
-	int                rc = 0;
 	ENTRY;
 
 	/* do no set .do_ops as mgs calls to bottom osd directly */
@@ -1277,12 +1430,12 @@ static int mgs_object_init(const struct lu_env *env, struct lu_object *o,
 
 	under = &d->mgs_bottom->dd_lu_dev;
 	below = under->ld_ops->ldo_object_alloc(env, o->lo_header, under);
-	if (below != NULL)
-		lu_object_add(o, below);
-	else
-		rc = -ENOMEM;
+	if (below == NULL)
+		RETURN(-ENOMEM);
 
-	return 0;
+	lu_object_add(o, below);
+
+	RETURN(0);
 }
 
 static void mgs_object_free(const struct lu_env *env, struct lu_object *o)
@@ -1387,6 +1540,7 @@ static struct lu_device *mgs_device_fini(const struct lu_env *env,
 	mgs_params_fsdb_cleanup(env, mgs);
 	mgs_cleanup_fsdb_list(mgs);
 
+	ldlm_namespace_free_prior(obd->obd_namespace, NULL, 1);
 	obd_exports_barrier(obd);
 	obd_zombie_barrier();
 
@@ -1401,7 +1555,7 @@ static struct lu_device *mgs_device_fini(const struct lu_env *env,
 
 	mgs_fs_cleanup(env, mgs);
 
-	ldlm_namespace_free(obd->obd_namespace, NULL, 1);
+	ldlm_namespace_free_post(obd->obd_namespace);
 	obd->obd_namespace = NULL;
 
 	lu_site_purge(env, d->ld_site, ~0);
@@ -1556,7 +1710,7 @@ static void /*__exit*/ mgs_exit(void)
 	class_unregister_type(LUSTRE_MGS_NAME);
 }
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre  Management Server (MGS)");
 MODULE_LICENSE("GPL");
 

@@ -59,7 +59,8 @@ struct mdt_idmap_table;
  * Target-specific export data
  */
 struct tg_export_data {
-	/** Protects led_lcd below */
+	/** Protects ted_lcd, ted_reply_* and
+	 * ted_release_* fields below */
 	struct mutex		ted_lcd_lock;
 	/** Per-client data for each export */
 	struct lsd_client_data	*ted_lcd;
@@ -71,6 +72,18 @@ struct tg_export_data {
 	/** nodemap this export is a member of */
 	struct lu_nodemap	*ted_nodemap;
 	struct hlist_node	ted_nodemap_member;
+
+	/* Every reply data fields below are
+	 * protected by ted_lcd_lock */
+	/** List of reply data */
+	struct list_head	ted_reply_list;
+	int			ted_reply_cnt;
+	/** Reply data with highest transno is retained */
+	struct tg_reply_data	*ted_reply_last;
+	/* Statistics */
+	int			ted_reply_max; /* high water mark */
+	int			ted_release_xid;
+	int			ted_release_tag;
 };
 
 /**
@@ -180,8 +193,11 @@ struct obd_export {
 	struct obd_uuid		exp_client_uuid;
         /** To link all exports on an obd device */
 	struct list_head	exp_obd_chain;
+	/* Unlinked export list */
+	struct list_head	exp_stale_list;
 	struct hlist_node	exp_uuid_hash;	/** uuid-export hash*/
 	struct hlist_node	exp_nid_hash;	/** nid-export hash */
+	struct hlist_node	exp_gen_hash;   /** last_rcvd clt gen hash */
         /**
          * All exports eligible for ping evictor are linked into a list
          * through this field in "most time since last request on this export"
@@ -269,6 +285,11 @@ struct obd_export {
         } u;
 
 	struct adaptive_timeout    exp_bl_lock_at;
+
+	/** highest XID received by export client that has no
+	 * unreceived lower-numbered XID
+	 */
+	__u64			  exp_last_xid;
 };
 
 #define exp_target_data u.eu_target_data

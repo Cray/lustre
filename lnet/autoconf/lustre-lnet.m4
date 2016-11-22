@@ -252,27 +252,60 @@ AC_SUBST(MXLND)
 #
 # LN_CONFIG_O2IB
 #
+# If current OFED installed (assume with "ofed_info") and devel
+# headers are not found, error because we assume OFED infiniband
+# driver needs to be used and we must configure/build with it.
+# Current OFED headers detection mechanism allow for non-standard
+# prefix but relies on "ofed_info" command and on "%prefix/openib"
+# link (both are ok for 1.5.x and 3.x versions), and should work
+# for both source and DKMS builds.
+#
 AC_DEFUN([LN_CONFIG_O2IB], [
 AC_MSG_CHECKING([whether to use Compat RDMA])
 AC_ARG_WITH([o2ib],
-	AC_HELP_STRING([--with-o2ib=path],
+	AC_HELP_STRING([--with-o2ib=[yes|no|<path>]],
 		[build o2iblnd against path]),
-	[
-		case $with_o2ib in
-		yes)    O2IBPATHS="$LINUX $LINUX/drivers/infiniband"
-			ENABLEO2IB=2
-			;;
-		no)     ENABLEO2IB=0
-			;;
-		*)      O2IBPATHS=$with_o2ib
-			ENABLEO2IB=3
-			;;
-		esac
-	],[
-		O2IBPATHS="$LINUX $LINUX/drivers/infiniband"
-		ENABLEO2IB=1
-	])
-AS_IF([test $ENABLEO2IB -eq 0], [
+	[], [with_o2ib="yes"])
+
+case $with_o2ib in
+	yes)    AS_IF([which ofed_info 2>/dev/null], [
+			AS_IF([test x$uses_dpkg = xyes], [
+				OFED_INFO="ofed_info | awk '{print \[$]2}'"
+				LSPKG="dpkg --listfiles"
+			], [
+				OFED_INFO="ofed_info"
+				LSPKG="rpm -ql"
+			])
+			O2IBPATHS=$(eval $OFED_INFO | egrep -w 'mlnx-ofed-kernel-dkms|mlnx-ofa_kernel-devel|compat-rdma-devel|kernel-ib-devel|ofa_kernel-devel' | xargs $LSPKG | grep '\(/openib\|/ofa_kernel/default\)$' | head -n1)
+			AS_IF([test -z "$O2IBPATHS"], [
+				AC_MSG_ERROR([
+You seem to have an OFED installed but have not installed it's devel package.
+If you still want to build Lustre for your OFED I/B stack, you need to install its devel headers RPM.
+Instead, if you want to build Lustre for your kernel's built-in I/B stack rather than your installed OFED stack, either remove the OFED package(s) or use --with-o2ib=no.
+					     ])
+			])
+			AS_IF([test $(echo $O2IBPATHS | wc -w) -ge 2], [
+				AC_MSG_ERROR([
+It appears that you have multiple OFED versions installed.
+If you still want to build Lustre for your OFED I/B stack, you need to install a single version with its devel headers RPM.
+Instead, if you want to build Lustre for your kernel's built-in I/B stack rather than your installed OFED stack, either remove the OFED package(s) or use --with-o2ib=no.
+					     ])
+			])
+			OFED="yes"
+		], [
+			O2IBPATHS="$LINUX $LINUX/drivers/infiniband"
+		])
+		ENABLEO2IB="yes"
+		;;
+	no)     ENABLEO2IB="no"
+		;;
+	*)      O2IBPATHS=$with_o2ib
+		ENABLEO2IB="withpath"
+		OFED="yes"
+		;;
+esac
+
+AS_IF([test $ENABLEO2IB = "no"], [
 	AC_MSG_RESULT([no])
 ], [
 	o2ib_found=false
@@ -281,16 +314,6 @@ AS_IF([test $ENABLEO2IB -eq 0], [
 			   -f ${O2IBPATH}/include/rdma/ib_cm.h -a \
 			   -f ${O2IBPATH}/include/rdma/ib_verbs.h -a \
 			   -f ${O2IBPATH}/include/rdma/ib_fmr_pool.h \)], [
-			AS_IF([test \( -d ${O2IBPATH}/kernel_patches -a \
-				   -f ${O2IBPATH}/Makefile \)], [
-				AC_MSG_RESULT([no])
-				AC_MSG_ERROR([
-
-you appear to be trying to use the OFED distribution's source
-directory (${O2IBPATH}) rather than the "development/headers"
-directory which is likely in ${O2IBPATH%-*}
-])
-			])
 			o2ib_found=true
 			break
 		])
@@ -298,9 +321,8 @@ directory which is likely in ${O2IBPATH%-*}
 	if ! $o2ib_found; then
 		AC_MSG_RESULT([no])
 		case $ENABLEO2IB in
-			1) ;;
-			2) AC_MSG_ERROR([kernel OpenIB gen2 headers not present]) ;;
-			3) AC_MSG_ERROR([bad --with-o2ib path]) ;;
+			"yes") AC_MSG_ERROR([no OFED nor kernel OpenIB gen2 headers present]) ;;
+			"withpath") AC_MSG_ERROR([bad --with-o2ib path]) ;;
 			*) AC_MSG_ERROR([internal error]) ;;
 		esac
 	else
@@ -350,6 +372,7 @@ directory which is likely in ${O2IBPATH%-*}
 		O2IBLND=""
 		O2IBPATH=$(readlink --canonicalize $O2IBPATH)
 		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -I$O2IBPATH/include"
+		EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 		LB_CHECK_COMPILE([whether to enable OpenIB gen2 support],
 		openib_gen2_support, [
 			#ifdef HAVE_COMPAT_RDMA
@@ -380,15 +403,14 @@ directory which is likely in ${O2IBPATH%-*}
 			O2IBLND="o2iblnd"
 		],[
 			case $ENABLEO2IB in
-			1) ;;
-			2) AC_MSG_ERROR([can't compile with kernel OpenIB gen2 headers]) ;;
-			3) AC_MSG_ERROR([can't compile with OpenIB gen2 headers under $O2IBPATH]) ;;
+			"yes") AC_MSG_ERROR([can't compile with OpenIB gen2 headers]) ;;
+			"withpath") AC_MSG_ERROR([can't compile with OpenIB gen2 headers under $O2IBPATH]) ;;
 			*) AC_MSG_ERROR([internal error]) ;;
 			esac
 		])
 		# we know at this point that the found OFED source is good
 		O2IB_SYMVER=""
-		if test $ENABLEO2IB -eq 3 ; then
+		if test $ENABLEO2IB = "withpath" -o "x$OFED" = "xyes" ; then
 			# OFED default rpm not handle sles10 Modules.symvers name
 			for name in Module.symvers Modules.symvers; do
 				if test -f $O2IBPATH/$name; then
@@ -401,7 +423,7 @@ directory which is likely in ${O2IBPATH%-*}
 				EXTRA_SYMBOLS="$EXTRA_SYMBOLS $O2IBPATH/$O2IB_SYMVER"
 				AC_SUBST(EXTRA_SYMBOLS)
 			else
-				AC_MSG_ERROR([an external source tree was specified for o2iblnd however I could not find a $O2IBPATH/Module.symvers there])
+				AC_MSG_ERROR([an external source tree was, either specified or detected, for o2iblnd however I could not find a $O2IBPATH/Module.symvers there])
 			fi
 		fi
 
@@ -426,14 +448,19 @@ directory which is likely in ${O2IBPATH%-*}
 				EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_IS_KTHREAD"
 			fi
 		])
+		EXTRA_CHECK_INCLUDE=""
 	fi
 ])
 AC_SUBST(EXTRA_OFED_CONFIG)
 AC_SUBST(EXTRA_OFED_INCLUDE)
 AC_SUBST(O2IBLND)
+AC_SUBST(O2IBPATH)
+AC_SUBST(ENABLEO2IB)
 
-# In RHEL 6.2, rdma_create_id() takes the queue-pair type as a fourth argument
-AS_IF([test $ENABLEO2IB -ne 0], [
+AS_IF([test $ENABLEO2IB != "no"], [
+	EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
+
+	# In RHEL 6.2, rdma_create_id() takes the queue-pair type as a fourth argument
 	LB_CHECK_COMPILE([if 'rdma_create_id' wants four args],
 	rdma_create_id_4args, [
 		#ifdef HAVE_COMPAT_RDMA
@@ -452,18 +479,41 @@ AS_IF([test $ENABLEO2IB -ne 0], [
 		AC_DEFINE(HAVE_RDMA_CREATE_ID_4ARG, 1,
 			[rdma_create_id wants 4 args])
 	])
-])
-#
-# 4.2 introduced struct ib_cq_init_attr which is used
-# by ib_create_cq(). Note some OFED stacks only keep
-# their headers in sync with latest kernels but not
-# the functionality which means for infiniband testing
-# we need to always test functionality testings.
-#
-AS_IF([test $ENABLEO2IB != "no"], [
+
+	# 4.4 added network namespace parameter for rdma_create_id()
+	LB_CHECK_COMPILE([if 'rdma_create_id' wants five args],
+	rdma_create_id_5args, [
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/rdma_cm.h>
+	],[
+		rdma_create_id(NULL, NULL, NULL, 0, 0);
+	],[
+		AC_DEFINE(HAVE_RDMA_CREATE_ID_5ARG, 1,
+			[rdma_create_id wants 5 args])
+	])
+
+	# 4.2 introduced struct ib_cq_init_attr which is used
+	# by ib_create_cq(). Note some OFED stacks only keep
+	# their headers in sync with latest kernels but not
+	# the functionality which means for infiniband testing
+	# we need to always test functionality testings.
 	LB_CHECK_COMPILE([if 'struct ib_cq_init_attr' is used],
 	ib_cq_init_attr, [
 		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
 		#include <linux/compat-2.6.h>
 		#endif
 		#include <rdma/ib_verbs.h>
@@ -475,7 +525,138 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		AC_DEFINE(HAVE_IB_CQ_INIT_ATTR, 1,
 			[struct ib_cq_init_attr is used by ib_create_cq])
 	])
-])
+
+	# 4.3 removed ib_alloc_fast_reg_mr()
+	LB_CHECK_COMPILE([if 'ib_alloc_fast_reg_mr' exists],
+	ib_alloc_fast_reg_mr, [
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		ib_alloc_fast_reg_mr(NULL, 0);
+	],[
+		AC_DEFINE(HAVE_IB_ALLOC_FAST_REG_MR, 1,
+			[ib_alloc_fast_reg_mr is defined])
+	])
+
+	# In v4.4 Linux kernel,
+	# commit e622f2f4ad2142d2a613a57fb85f8cf737935ef5
+	# split up struct ib_send_wr so that all non-trivial verbs
+	# use their own structure which embedds struct ib_send_wr.
+	LB_CHECK_COMPILE([if 'struct ib_rdma_wr' is defined],
+	ib_rdma_wr, [
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		struct ib_rdma_wr *wr __attribute__ ((unused));
+
+		wr = rdma_wr(NULL);
+	],[
+		AC_DEFINE(HAVE_IB_RDMA_WR, 1,
+			[struct ib_rdma_wr is defined])
+	])
+
+	# new fast registration API introduced in 4.4
+	LB_CHECK_COMPILE([if 4arg 'ib_map_mr_sg' exists],
+	ib_map_mr_sg_4args, [
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		ib_map_mr_sg(NULL, NULL, 0, 0);
+	],[
+		AC_DEFINE(HAVE_IB_MAP_MR_SG, 1,
+			[ib_map_mr_sg exists])
+	])
+
+	# ib_map_mr_sg changes from 4 to 5 args (adding sg_offset_p)
+	# in kernel 4.7 (and RHEL 7.3)
+	LB_CHECK_COMPILE([if 5arg 'ib_map_mr_sg' exists],
+	ib_map_mr_sg_5args, [
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		ib_map_mr_sg(NULL, NULL, 0, NULL, 0);
+	],[
+		AC_DEFINE(HAVE_IB_MAP_MR_SG, 1,
+			[ib_map_mr_sg exists])
+		AC_DEFINE(HAVE_IB_MAP_MR_SG_5ARGS, 1,
+			[ib_map_mr_sg has 5 arguments])
+	])
+
+	# ib_query_device() removed in 4.5
+	LB_CHECK_COMPILE([if 'struct ib_device' has member 'attrs'],
+	ib_device.attrs, [
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		struct ib_device dev;
+		struct ib_device_attr dev_attr = {};
+		dev.attrs = dev_attr;
+	],[
+		AC_DEFINE(HAVE_IB_DEVICE_ATTRS, 1,
+			[struct ib_device.attrs is defined])
+	])
+
+	LB_CHECK_COMPILE([if function 'ib_inc_rkey' is defined],
+	ib_inc_rkey, [
+		#ifdef HAVE_COMPAT_RDMA
+		#undef PACKAGE_NAME
+		#undef PACKAGE_TARNAME
+		#undef PACKAGE_VERSION
+		#undef PACKAGE_STRING
+		#undef PACKAGE_BUGREPORT
+		#undef PACKAGE_URL
+		#include <linux/compat-2.6.h>
+		#endif
+		#include <rdma/ib_verbs.h>
+	],[
+		(void)ib_inc_rkey(0);
+	],[
+		AC_DEFINE(HAVE_IB_INC_RKEY, 1,
+			  [function ib_inc_rkey exist])
+	])
+
+	EXTRA_CHECK_INCLUDE=""
+]) # ENABLEO2IB != "no"
 ]) # LN_CONFIG_O2IB
 
 #
@@ -577,15 +758,6 @@ AC_SUBST(GNILND)
 AC_DEFUN([LN_CONFIG_SK_SLEEP], [
 LB_CHECK_COMPILE([if Linux kernel has 'sk_sleep'],
 sk_sleep, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <net/sock.h>
 ],[
 	sk_sleep(NULL);
@@ -598,22 +770,14 @@ sk_sleep, [
 #
 # LN_CONFIG_TCP_SENDPAGE
 #
-# 2.6.36 tcp_sendpage() first parameter is 'struct sock' instead of 'struct socket'.
+# 2.6.36 tcp_sendpage() first parameter is 'struct sock'
+# instead of 'struct socket'.
 #
 AC_DEFUN([LN_CONFIG_TCP_SENDPAGE], [
 tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'tcp_sendpage' first parameter is socket],
 tcp_sendpage_socket, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <linux/net.h>
 	#include <net/tcp.h>
 ],[
@@ -635,15 +799,6 @@ tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'sk_data_ready' takes only one argument],
 sk_data_ready, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <linux/net.h>
 	#include <net/sock.h>
 ],[
@@ -757,7 +912,7 @@ LN_CONFIG_DLC
 #
 # LN_CONDITIONALS
 #
-# AM_CONDITOINAL defines for lnet
+# AM_CONDITIONAL defines for lnet
 #
 AC_DEFUN([LN_CONDITIONALS], [
 AM_CONDITIONAL(BUILD_QSWLND,     test x$QSWLND = "xqswlnd")

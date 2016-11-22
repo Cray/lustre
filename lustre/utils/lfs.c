@@ -69,6 +69,7 @@
 #include <libcfs/libcfsutil.h>
 #include <lustre/lustreapi.h>
 #include <lustre_ver.h>
+#include <lustre_param.h>
 
 /* all functions */
 static int lfs_setstripe(int argc, char **argv);
@@ -142,7 +143,7 @@ static int lfs_mv(int argc, char **argv);
 static const char	*progname;
 static bool		 file_lease_supported = true;
 
-/* all avaialable commands */
+/* all available commands */
 command_t cmdlist[] = {
 	{"setstripe", lfs_setstripe, 0,
 	 "Create a new file with a specific striping pattern or\n"
@@ -615,9 +616,9 @@ static int lfs_migrate(char *name, __u64 migration_flags,
 	}
 
 	rc = llapi_file_get_stripe(name, lum);
-	/* failure can come from may case and some may be not real error
+	/* failure can happen for many reasons and some may be not real errors
 	 * (eg: no stripe)
-	 * in case of a real error, a later call will failed with a better
+	 * in case of a real error, a later call will fail with better
 	 * error management */
 	if (rc < 0)
 		buf_size = 1024 * 1024;
@@ -988,6 +989,43 @@ static int lfs_setstripe(int argc, char **argv)
 		fprintf(stderr, "error: %s: missing filename|dirname\n",
 			argv[0]);
 		return CMD_HELP;
+	}
+
+	if (pool_name_arg != NULL) {
+		char	*ptr;
+		int	rc;
+
+		ptr = strchr(pool_name_arg, '.');
+		if (ptr == NULL) {
+			ptr = pool_name_arg;
+		} else {
+			if ((ptr - pool_name_arg) == 0) {
+				fprintf(stderr, "error: %s: fsname is empty "
+					"in pool name '%s'\n",
+					argv[0], pool_name_arg);
+				return CMD_HELP;
+			}
+
+			++ptr;
+		}
+
+		rc = lustre_is_poolname_valid(ptr, 1, LOV_MAXPOOLNAME);
+		if (rc == -1) {
+			fprintf(stderr, "error: %s: poolname '%s' is "
+				"empty\n",
+				argv[0], pool_name_arg);
+			return CMD_HELP;
+		} else if (rc == -2) {
+			fprintf(stderr, "error: %s: pool name '%s' is too long "
+				"(max is %d characters)\n",
+				argv[0], pool_name_arg, LOV_MAXPOOLNAME);
+			return CMD_HELP;
+		} else if (rc > 0) {
+			fprintf(stderr, "error: %s: char '%c' not allowed in "
+				"pool name '%s'\n",
+				argv[0], rc, pool_name_arg);
+			return CMD_HELP;
+		}
 	}
 
 	/* get the stripe size */
@@ -4116,8 +4154,8 @@ static int lfs_hsm_request(int argc, char **argv, int action)
 		while ((rc = getline(&line, &len, fp)) != -1) {
 			struct hsm_user_item *hui;
 
-			/* If allocated buffer was too small, gets something
-			 * bigger */
+			/* If allocated buffer was too small, get something
+			 * larger */
 			if (nbfile_alloc <= hur->hur_request.hr_itemcount) {
 				ssize_t size;
 				nbfile_alloc = nbfile_alloc * 2 + 1;

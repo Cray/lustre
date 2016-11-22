@@ -196,6 +196,11 @@ struct obd_import {
 	struct list_head	*imp_replay_cursor;
 	/** @} */
 
+	/** List of not replied requests */
+	struct list_head	imp_unreplied_list;
+	/** Known maximal replied XID */
+	__u64			imp_known_replied_xid;
+
 	/** obd device for this import */
 	struct obd_device	*imp_obd;
 
@@ -312,8 +317,6 @@ struct obd_import {
 
         __u32                     imp_msg_magic;
         __u32                     imp_msghdr_flags;       /* adjusted based on server capability */
-
-        struct ptlrpc_request_pool *imp_rq_pool;          /* emergency request pool */
 
         struct imp_at             imp_at;                 /* adaptive timeout data */
         time_t                    imp_last_reply_time;    /* for health check */

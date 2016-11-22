@@ -1,11 +1,9 @@
 %define vendor_name lustre
-%define vendor_version 2.7
+%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define flavor cray_gem_c
 %define intranamespace_name %{vendor_name}-%{flavor}
-%define flavorless_name %{namespace}-%{vendor_name}
 %define branch trunk
-# use non-customized version so source doesn't need to be repackaged for custom versions.
-%define source_name %{flavorless_name}
+%define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
 %define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-source)
@@ -27,8 +25,8 @@ License: GPL
 Name: %{namespace}-%{intranamespace_name}
 Release: %release
 Summary: Lustre File System for CNL
-Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
-Source: %{source_name}.tar.gz
+Version: %{_version}_%{kernel_version}_%{kernel_release}
+Source: %{source_name}.tar.bz2
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
@@ -50,16 +48,17 @@ Userspace tools and files for Lustre networking on XT compute nodes.
 %prep
 # using source_name here results in too deep of a macro stack, so use
 # definition of source_name directly
-%incremental_setup -q -n %{flavorless_name}
+%incremental_setup -q -n %{source_name}
 
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 # LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
 %define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 
 export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
+export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -82,46 +81,34 @@ fi
 %{__make} %_smp_mflags
 
 %install
-# LUSTRE_VERS used in ko versioning.
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
-
 # don't use %makeinstall for compute node RPMS - it needlessly puts things into 
 #  /opt/cray/,.....
 
 make DESTDIR=${RPM_BUILD_ROOT} install 
 
-# Remove all the extras not needed for CNL
-for dir in %{_libdir} %{_mandir} %{_bindir} %{_includedir} %{_datadir}; do
-        find %{buildroot}$dir -type f | xargs rm -fv
-        rm -frv %{buildroot}$dir
-done
-
-for dir in init.d sysconfig ha.d; do
-      %{__rm} -fr %{buildroot}/etc/$dir
-done
-%{__rm} -f %{buildroot}/etc/lustre %{buildroot}/etc/ldev.conf
-%{__rm} -f %{buildroot}/etc/modprobe.d/ko2iblnd.conf
-%{__rm} -f %{buildroot}/lib/lustre/haconfig 
-%{__rm} -f %{buildroot}/lib/lustre/lc_common
-
-# all of _prefix/sbin but lctl
-find %{buildroot}%{_sbindir} -print > install_files
-find %{buildroot}%{_sbindir} -print | egrep -v '/lctl$' > install_files2
-find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' > install_files3
+# We only want lctl and mount.lustre from _sbindir
 find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' | xargs rm -fv
 
 %files 
 %defattr(-,root,root)
 /lib/modules/*
-/sbin/mount.lustre
-/sbin/lctl
+%{_sbindir}/mount.lustre
+%{_sbindir}/lctl
 %config /etc/udev/rules.d/99-lustre.rules
+%exclude %{_libdir}/*
+%exclude %{_mandir}/*
+%exclude %{_bindir}/*
+%exclude %{_includedir}/*
+%exclude %{_datadir}/*
+%exclude %{_sysconfdir}/lustre/perm.conf
+%exclude %{_sysconfdir}/lustre
+%exclude %{_sysconfdir}/ldev.conf
+%exclude %{_sysconfdir}/modprobe.d/ko2iblnd.conf
 
 %files lnet
 %defattr(-,root,root)
 /lib/modules/*/updates/kernel/net/lustre
-/sbin/lctl
+%{_sbindir}/lctl
 
 %clean
 %clean_build_root

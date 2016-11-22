@@ -297,7 +297,7 @@ static int ll_iterate(struct file *filp, struct dir_context *ctx)
 static int ll_readdir(struct file *filp, void *cookie, filldir_t filldir)
 #endif
 {
-	struct inode		*inode	= filp->f_dentry->d_inode;
+	struct inode		*inode	= filp->f_path.dentry->d_inode;
 	struct ll_file_data	*lfd	= LUSTRE_FPRIVATE(filp);
 	struct ll_sb_info	*sbi	= ll_i2sbi(inode);
 	int			hash64	= sbi->ll_flags & LL_SBI_64BIT_HASH;
@@ -330,11 +330,11 @@ static int ll_readdir(struct file *filp, void *cookie, filldir_t filldir)
 	if (unlikely(op_data->op_mea1 != NULL)) {
 		/* This is only needed for striped dir to fill ..,
 		 * see lmv_read_entry */
-		if (filp->f_dentry->d_parent != NULL &&
-		    filp->f_dentry->d_parent->d_inode != NULL) {
+		if (filp->f_path.dentry->d_parent != NULL &&
+		    filp->f_path.dentry->d_parent->d_inode != NULL) {
 			__u64 ibits = MDS_INODELOCK_UPDATE;
 			struct inode *parent =
-				filp->f_dentry->d_parent->d_inode;
+				filp->f_path.dentry->d_parent->d_inode;
 
 			if (ll_have_md_lock(parent, &ibits, LCK_MINMODE))
 				op_data->op_fid3 = *ll_inode2fid(parent);
@@ -421,6 +421,8 @@ static int ll_dir_setdirstripe(struct inode *parent, struct lmv_user_md *lump,
 	struct ptlrpc_request *request = NULL;
 	struct md_op_data *op_data;
 	struct ll_sb_info *sbi = ll_i2sbi(parent);
+	struct inode *inode = NULL;
+	struct dentry dentry;
 	int err;
 	ENTRY;
 
@@ -452,6 +454,19 @@ static int ll_dir_setdirstripe(struct inode *parent, struct lmv_user_md *lump,
 	ll_finish_md_op_data(op_data);
 	if (err)
 		GOTO(err_exit, err);
+
+	err = ll_prep_inode(&inode, request, parent->i_sb, NULL);
+	if (err)
+		GOTO(err_exit, err);
+
+	memset(&dentry, 0, sizeof(dentry));
+	dentry.d_inode = inode;
+
+	err = ll_init_security(&dentry, inode, parent);
+	iput(inode);
+	if (err)
+		GOTO(err_exit, err);
+
 err_exit:
 	ptlrpc_req_finished(request);
 	return err;
@@ -686,7 +701,7 @@ int ll_get_mdt_idx(struct inode *inode)
 /**
  * Generic handler to do any pre-copy work.
  *
- * It send a first hsm_progress (with extent length == 0) to coordinator as a
+ * It sends a first hsm_progress (with extent length == 0) to coordinator as a
  * first information for it that real work has started.
  *
  * Moreover, for a ARCHIVE request, it will sample the file data version and
@@ -741,7 +756,7 @@ static int ll_ioc_copy_start(struct super_block *sb, struct hsm_copy *copy)
 			GOTO(progress, rc);
 		}
 
-		/* Store it the hsm_copy for later copytool use.
+		/* Store in the hsm_copy for later copytool use.
 		 * Always modified even if no lsm. */
 		copy->hc_data_version = data_version;
 	}
@@ -824,7 +839,7 @@ static int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
 			GOTO(progress, rc);
 		}
 
-		/* Store it the hsm_copy for later copytool use.
+		/* Store in the hsm_copy for later copytool use.
 		 * Always modified even if no lsm. */
 		hpk.hpk_data_version = data_version;
 
@@ -1047,7 +1062,7 @@ ll_getname(const char __user *filename)
 
 static long ll_dir_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-        struct inode *inode = file->f_dentry->d_inode;
+	struct inode *inode = file->f_path.dentry->d_inode;
         struct ll_sb_info *sbi = ll_i2sbi(inode);
         struct obd_ioctl_data *data;
         int rc = 0;
@@ -1199,7 +1214,7 @@ lmv_out_free:
                                 RETURN(-EFAULT);
                 }
 
-                if (inode->i_sb->s_root == file->f_dentry)
+		if (inode->i_sb->s_root == file->f_path.dentry)
                         set_default = 1;
 
                 /* in v1 and v3 cases lumv1 points to data */
@@ -1242,9 +1257,6 @@ lmv_out_free:
 
 		/* Get default LMV EA */
 		if (lum.lum_magic == LMV_USER_MAGIC) {
-			if (rc != 0)
-				GOTO(finish_req, rc);
-
 			if (lmmsize > sizeof(*ulmv))
 				GOTO(finish_req, rc = -EINVAL);
 
@@ -1857,7 +1869,7 @@ static loff_t ll_dir_seek(struct file *file, loff_t offset, int origin)
         loff_t ret = -EINVAL;
         ENTRY;
 
-	mutex_lock(&inode->i_mutex);
+	inode_lock(inode);
         switch (origin) {
                 case SEEK_SET:
                         break;
@@ -1895,7 +1907,7 @@ static loff_t ll_dir_seek(struct file *file, loff_t offset, int origin)
         GOTO(out, ret);
 
 out:
-	mutex_unlock(&inode->i_mutex);
+	inode_unlock(inode);
         return ret;
 }
 

@@ -73,9 +73,7 @@ static enum hrtimer_restart nrs_tbf_timer_cb(struct hrtimer *timer)
 	struct ptlrpc_nrs   *nrs = head->th_res.res_policy->pol_nrs;
 	struct ptlrpc_service_part *svcpt = nrs->nrs_svcpt;
 
-	spin_lock(&nrs->nrs_lock);
 	nrs->nrs_throttling = 0;
-	spin_unlock(&nrs->nrs_lock);
 	wake_up(&svcpt->scp_waitq);
 
 	return HRTIMER_NORESTART;
@@ -118,7 +116,9 @@ nrs_tbf_cli_rule_put(struct nrs_tbf_client *cli)
 {
 	LASSERT(!list_empty(&cli->tc_linkage));
 	LASSERT(cli->tc_rule);
+	spin_lock(&cli->tc_rule->tr_rule_lock);
 	list_del_init(&cli->tc_linkage);
+	spin_unlock(&cli->tc_rule->tr_rule_lock);
 	nrs_tbf_rule_put(cli->tc_rule);
 	cli->tc_rule = NULL;
 }
@@ -148,7 +148,8 @@ nrs_tbf_cli_reset(struct nrs_tbf_head *head,
 		  struct nrs_tbf_rule *rule,
 		  struct nrs_tbf_client *cli)
 {
-	if (!list_empty(&cli->tc_linkage)) {
+	spin_lock(&cli->tc_rule_lock);
+	if (cli->tc_rule != NULL && !list_empty(&cli->tc_linkage)) {
 		LASSERT(rule != cli->tc_rule);
 		nrs_tbf_cli_rule_put(cli);
 	}
@@ -156,7 +157,10 @@ nrs_tbf_cli_reset(struct nrs_tbf_head *head,
 	LASSERT(list_empty(&cli->tc_linkage));
 	/* Rule's ref is added before called */
 	cli->tc_rule = rule;
+	spin_lock(&rule->tr_rule_lock);
 	list_add_tail(&cli->tc_linkage, &rule->tr_cli_list);
+	spin_unlock(&rule->tr_rule_lock);
+	spin_unlock(&cli->tc_rule_lock);
 	nrs_tbf_cli_reset_value(head, cli);
 }
 
@@ -254,6 +258,7 @@ nrs_tbf_cli_init(struct nrs_tbf_head *head,
 	head->th_ops->o_cli_init(cli, req);
 	INIT_LIST_HEAD(&cli->tc_list);
 	INIT_LIST_HEAD(&cli->tc_linkage);
+	spin_lock_init(&cli->tc_rule_lock);
 	atomic_set(&cli->tc_ref, 1);
 	rule = nrs_tbf_rule_match(head, cli);
 	nrs_tbf_cli_reset(head, rule, cli);
@@ -265,7 +270,9 @@ nrs_tbf_cli_fini(struct nrs_tbf_client *cli)
 	LASSERT(list_empty(&cli->tc_list));
 	LASSERT(!cli->tc_in_heap);
 	LASSERT(atomic_read(&cli->tc_ref) == 0);
+	spin_lock(&cli->tc_rule_lock);
 	nrs_tbf_cli_rule_put(cli);
+	spin_unlock(&cli->tc_rule_lock);
 	OBD_FREE_PTR(cli);
 }
 
@@ -294,6 +301,9 @@ nrs_tbf_rule_start(struct ptlrpc_nrs_policy *policy,
 	atomic_set(&rule->tr_ref, 1);
 	INIT_LIST_HEAD(&rule->tr_cli_list);
 	INIT_LIST_HEAD(&rule->tr_nids);
+	INIT_LIST_HEAD(&rule->tr_linkage);
+	spin_lock_init(&rule->tr_rule_lock);
+	rule->tr_head = head;
 
 	rc = head->th_ops->o_rule_init(policy, rule, start);
 	if (rc) {
@@ -311,7 +321,6 @@ nrs_tbf_rule_start(struct ptlrpc_nrs_policy *policy,
 		return -EEXIST;
 	}
 	list_add(&rule->tr_linkage, &head->th_list);
-	rule->tr_head = head;
 	spin_unlock(&head->th_rule_lock);
 	atomic_inc(&head->th_rule_sequence);
 	if (start->tc_rule_flags & NTRS_DEFAULT) {
@@ -822,9 +831,10 @@ static int nrs_tbf_jobid_rule_init(struct ptlrpc_nrs_policy *policy,
 static int
 nrs_tbf_jobid_rule_dump(struct nrs_tbf_rule *rule, struct seq_file *m)
 {
-	return seq_printf(m, "%s {%s} %llu, ref %d\n", rule->tr_name,
+	seq_printf(m, "%s {%s} %llu, ref %d\n", rule->tr_name,
 			  rule->tr_jobids_str, rule->tr_rpc_rate,
 			  atomic_read(&rule->tr_ref) - 1);
+	return 0;
 }
 
 static int
@@ -1027,9 +1037,10 @@ static int nrs_tbf_nid_rule_init(struct ptlrpc_nrs_policy *policy,
 static int
 nrs_tbf_nid_rule_dump(struct nrs_tbf_rule *rule, struct seq_file *m)
 {
-	return seq_printf(m, "%s {%s} %llu, ref %d\n", rule->tr_name,
+	seq_printf(m, "%s {%s} %llu, ref %d\n", rule->tr_name,
 			  rule->tr_nids_str, rule->tr_rpc_rate,
 			  atomic_read(&rule->tr_ref) - 1);
+	return 0;
 }
 
 static int
@@ -1183,9 +1194,7 @@ static void nrs_tbf_stop(struct ptlrpc_nrs_policy *policy)
 	LASSERT(cfs_binheap_is_empty(head->th_binheap));
 	cfs_binheap_destroy(head->th_binheap);
 	OBD_FREE_PTR(head);
-	spin_lock(&nrs->nrs_lock);
 	nrs->nrs_throttling = 0;
-	spin_unlock(&nrs->nrs_lock);
 	wake_up(&policy->pol_nrs->nrs_svcpt->scp_waitq);
 }
 
@@ -1428,9 +1437,7 @@ struct ptlrpc_nrs_request *nrs_tbf_req_get(struct ptlrpc_nrs_policy *policy,
 		} else {
 			ktime_t time;
 
-			spin_lock(&policy->pol_nrs->nrs_lock);
 			policy->pol_nrs->nrs_throttling = 1;
-			spin_unlock(&policy->pol_nrs->nrs_lock);
 			head->th_deadline = deadline;
 			time = ktime_set(0, 0);
 			time = ktime_add_ns(time, deadline);

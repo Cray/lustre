@@ -283,7 +283,8 @@ static int server_stop_mgs(struct super_block *sb)
 
 /* Since there's only one mgc per node, we have to change it's fs to get
    access to the right disk. */
-static int server_mgc_set_fs(struct obd_device *mgc, struct super_block *sb)
+static int server_mgc_set_fs(const struct lu_env *env,
+			     struct obd_device *mgc, struct super_block *sb)
 {
 	struct lustre_sb_info *lsi = s2lsi(sb);
 	int rc;
@@ -292,7 +293,7 @@ static int server_mgc_set_fs(struct obd_device *mgc, struct super_block *sb)
 	CDEBUG(D_MOUNT, "Set mgc disk for %s\n", lsi->lsi_lmd->lmd_dev);
 
 	/* cl_mgc_sem in mgc insures we sleep if the mgc_fs is busy */
-	rc = obd_set_info_async(NULL, mgc->obd_self_export,
+	rc = obd_set_info_async(env, mgc->obd_self_export,
 				sizeof(KEY_SET_FS), KEY_SET_FS,
 				sizeof(*sb), sb, NULL);
 	if (rc != 0)
@@ -301,14 +302,15 @@ static int server_mgc_set_fs(struct obd_device *mgc, struct super_block *sb)
 	RETURN(rc);
 }
 
-static int server_mgc_clear_fs(struct obd_device *mgc)
+static int server_mgc_clear_fs(const struct lu_env *env,
+			       struct obd_device *mgc)
 {
 	int rc;
 	ENTRY;
 
 	CDEBUG(D_MOUNT, "Unassign mgc disk\n");
 
-	rc = obd_set_info_async(NULL, mgc->obd_self_export,
+	rc = obd_set_info_async(env, mgc->obd_self_export,
 				sizeof(KEY_CLEAR_FS), KEY_CLEAR_FS,
 				0, NULL, NULL);
 	RETURN(rc);
@@ -378,7 +380,18 @@ EXPORT_SYMBOL(tgt_name2lwp_name);
 
 static struct list_head lwp_register_list =
 	LIST_HEAD_INIT(lwp_register_list);
-static DEFINE_MUTEX(lwp_register_list_lock);
+static DEFINE_SPINLOCK(lwp_register_list_lock);
+
+static void lustre_put_lwp_item(struct lwp_register_item *lri)
+{
+	if (atomic_dec_and_test(&lri->lri_ref)) {
+		LASSERT(list_empty(&lri->lri_list));
+
+		if (*lri->lri_exp != NULL)
+			class_export_put(*lri->lri_exp);
+		OBD_FREE_PTR(lri);
+	}
+}
 
 int lustre_register_lwp_item(const char *lwpname, struct obd_export **exp,
 			     register_lwp_cb cb_func, void *cb_data)
@@ -395,15 +408,12 @@ int lustre_register_lwp_item(const char *lwpname, struct obd_export **exp,
 	if (lri == NULL)
 		RETURN(-ENOMEM);
 
-	mutex_lock(&lwp_register_list_lock);
-
 	lwp = class_name2obd(lwpname);
 	if (lwp != NULL && lwp->obd_set_up == 1) {
 		struct obd_uuid *uuid;
 
 		OBD_ALLOC_PTR(uuid);
 		if (uuid == NULL) {
-			mutex_unlock(&lwp_register_list_lock);
 			OBD_FREE_PTR(lri);
 			RETURN(-ENOMEM);
 		}
@@ -417,31 +427,40 @@ int lustre_register_lwp_item(const char *lwpname, struct obd_export **exp,
 	lri->lri_cb_func = cb_func;
 	lri->lri_cb_data = cb_data;
 	INIT_LIST_HEAD(&lri->lri_list);
+	/*
+	 * Initialize the lri_ref at 2, one will be released before
+	 * current function returned via lustre_put_lwp_item(), the
+	 * other will be released in lustre_deregister_lwp_item().
+	 */
+	atomic_set(&lri->lri_ref, 2);
+
+	spin_lock(&lwp_register_list_lock);
 	list_add(&lri->lri_list, &lwp_register_list);
+	spin_unlock(&lwp_register_list_lock);
 
 	if (*exp != NULL && cb_func != NULL)
 		cb_func(cb_data);
+	lustre_put_lwp_item(lri);
 
-	mutex_unlock(&lwp_register_list_lock);
 	RETURN(0);
 }
 EXPORT_SYMBOL(lustre_register_lwp_item);
 
 void lustre_deregister_lwp_item(struct obd_export **exp)
 {
-	struct lwp_register_item *lri, *tmp;
+	struct lwp_register_item *lri;
 
-	mutex_lock(&lwp_register_list_lock);
-	list_for_each_entry_safe(lri, tmp, &lwp_register_list, lri_list) {
+	spin_lock(&lwp_register_list_lock);
+	list_for_each_entry(lri, &lwp_register_list, lri_list) {
 		if (exp == lri->lri_exp) {
-			if (*exp)
-				class_export_put(*exp);
-			list_del(&lri->lri_list);
-			OBD_FREE_PTR(lri);
-			break;
+			list_del_init(&lri->lri_list);
+			spin_unlock(&lwp_register_list_lock);
+
+			lustre_put_lwp_item(lri);
+			return;
 		}
 	}
-	mutex_unlock(&lwp_register_list_lock);
+	spin_unlock(&lwp_register_list_lock);
 }
 EXPORT_SYMBOL(lustre_deregister_lwp_item);
 
@@ -488,20 +507,32 @@ EXPORT_SYMBOL(lustre_find_lwp_by_index);
 
 void lustre_notify_lwp_list(struct obd_export *exp)
 {
-	struct lwp_register_item *lri, *tmp;
+	struct lwp_register_item *lri;
 	LASSERT(exp != NULL);
 
-	mutex_lock(&lwp_register_list_lock);
-	list_for_each_entry_safe(lri, tmp, &lwp_register_list, lri_list) {
+again:
+	spin_lock(&lwp_register_list_lock);
+	list_for_each_entry(lri, &lwp_register_list, lri_list) {
 		if (strcmp(exp->exp_obd->obd_name, lri->lri_name))
 			continue;
 		if (*lri->lri_exp != NULL)
 			continue;
 		*lri->lri_exp = class_export_get(exp);
+		atomic_inc(&lri->lri_ref);
+		spin_unlock(&lwp_register_list_lock);
+
 		if (lri->lri_cb_func != NULL)
 			lri->lri_cb_func(lri->lri_cb_data);
+		lustre_put_lwp_item(lri);
+
+		/* Others may have changed the list after we unlock, we have
+		 * to rescan the list from the beginning. Usually, the list
+		 * 'lwp_register_list' is very short, and there is 'guard'
+		 * lri::lri_exp that will prevent the callback to be done
+		 * repeatedly. So rescanning the list has no problem. */
+		goto again;
 	}
-	mutex_unlock(&lwp_register_list_lock);
+	spin_unlock(&lwp_register_list_lock);
 }
 EXPORT_SYMBOL(lustre_notify_lwp_list);
 
@@ -877,7 +908,7 @@ static int lustre_disconnect_lwp(struct super_block *sb)
 		/* end log first */
 		cfg->cfg_instance = sb;
 		rc = lustre_end_log(sb, logname, cfg);
-		if (rc != 0)
+		if (rc != 0 && rc != -ENOENT)
 			GOTO(out, rc);
 
 		lsi->lsi_lwp_started = 0;
@@ -986,8 +1017,8 @@ static int lustre_start_lwp(struct super_block *sb)
 	cfg->cfg_callback = client_lwp_config_process;
 	cfg->cfg_instance = sb;
 	rc = lustre_process_log(sb, logname, cfg);
-	if (rc == 0)
-		lsi->lsi_lwp_started = 1;
+	/* need to remove config llog from mgc */
+	lsi->lsi_lwp_started = 1;
 
 	GOTO(out, rc);
 
@@ -1142,7 +1173,8 @@ static int server_register_target(struct lustre_sb_info *lsi)
 	       mti->mti_flags);
 
 	/* if write_conf is true, the registration must succeed */
-	writeconf = !!(lsi->lsi_flags & (LDD_F_NEED_INDEX | LDD_F_UPDATE));
+	writeconf = !!(lsi->lsi_flags & (LDD_F_NEED_INDEX | LDD_F_UPDATE |
+					 LDD_F_WRITECONF));
 	mti->mti_flags |= LDD_F_OPC_REG;
 
 	/* Register the target */
@@ -1229,7 +1261,7 @@ static int server_start_targets(struct super_block *sb)
 	struct obd_device *obd;
 	struct lustre_sb_info *lsi = s2lsi(sb);
 	struct config_llog_instance cfg;
-	struct lu_env env;
+	struct lu_env mgc_env;
 	struct lu_device *dev;
 	int rc;
 	ENTRY;
@@ -1273,11 +1305,15 @@ static int server_start_targets(struct super_block *sb)
 		mutex_unlock(&server_start_lock);
 	}
 
+	rc = lu_env_init(&mgc_env, LCT_MG_THREAD);
+	if (rc != 0)
+		GOTO(out_stop_service, rc);
+
 	/* Set the mgc fs to our server disk.  This allows the MGC to
 	 * read and write configs locally, in case it can't talk to the MGS. */
-	rc = server_mgc_set_fs(lsi->lsi_mgc, sb);
+	rc = server_mgc_set_fs(&mgc_env, lsi->lsi_mgc, sb);
 	if (rc)
-		GOTO(out_stop_service, rc);
+		GOTO(out_env, rc);
 
 	/* Register with MGS */
 	rc = server_register_target(lsi);
@@ -1329,6 +1365,8 @@ static int server_start_targets(struct super_block *sb)
 	/* log has been fully processed, let clients connect */
 	dev = obd->obd_lu_dev;
 	if (dev && dev->ld_ops->ldo_prepare) {
+		struct lu_env env;
+
 		rc = lu_env_init(&env, dev->ld_type->ldt_ctx_tags);
 		if (rc == 0) {
 			struct lu_context  session_ctx;
@@ -1356,8 +1394,9 @@ static int server_start_targets(struct super_block *sb)
 
 out_mgc:
 	/* Release the mgc fs for others to use */
-	server_mgc_clear_fs(lsi->lsi_mgc);
-
+	server_mgc_clear_fs(&mgc_env, lsi->lsi_mgc);
+out_env:
+	lu_env_fini(&mgc_env);
 out_stop_service:
 	if (rc != 0)
 		server_stop_servers(lsi->lsi_flags);
@@ -1704,8 +1743,6 @@ static int osd_start(struct lustre_sb_info *lsi, unsigned long mflags)
 	rc = obd_connect(NULL, &lsi->lsi_osd_exp,
 			 obd, &obd->obd_uuid, NULL, NULL);
 
-	OBD_FAIL_TIMEOUT(OBD_FAIL_TGT_DELAY_CONNECT, 10);
-
 	if (rc) {
 		obd->obd_force = 1;
 		class_manual_cleanup(obd);
@@ -1738,9 +1775,14 @@ int server_fill_super(struct super_block *sb)
 	int rc;
 	ENTRY;
 
+	/* to simulate target mount race */
+	OBD_RACE(OBD_FAIL_TGT_MOUNT_RACE);
+
 	rc = lsi_prepare(lsi);
-	if (rc)
+	if (rc) {
+		lustre_put_lsi(sb);
 		RETURN(rc);
+	}
 
 	/* Start low level OSD */
 	rc = osd_start(lsi, sb->s_flags);

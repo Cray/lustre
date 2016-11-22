@@ -156,7 +156,7 @@ fail_peer (lnet_nid_t nid, int outgoing)
 }
 
 unsigned int
-lnet_iov_nob (unsigned int niov, struct iovec *iov)
+lnet_iov_nob(unsigned int niov, struct kvec *iov)
 {
         unsigned int nob = 0;
 
@@ -169,9 +169,9 @@ lnet_iov_nob (unsigned int niov, struct iovec *iov)
 EXPORT_SYMBOL(lnet_iov_nob);
 
 void
-lnet_copy_iov2iov (unsigned int ndiov, struct iovec *diov, unsigned int doffset,
-                   unsigned int nsiov, struct iovec *siov, unsigned int soffset,
-                   unsigned int nob)
+lnet_copy_iov2iov(unsigned int ndiov, struct kvec *diov, unsigned int doffset,
+		  unsigned int nsiov, struct kvec *siov, unsigned int soffset,
+		  unsigned int nob)
 {
         /* NB diov, siov are READ-ONLY */
         unsigned int  this_nob;
@@ -228,9 +228,9 @@ lnet_copy_iov2iov (unsigned int ndiov, struct iovec *diov, unsigned int doffset,
 EXPORT_SYMBOL(lnet_copy_iov2iov);
 
 int
-lnet_extract_iov (int dst_niov, struct iovec *dst,
-                  int src_niov, struct iovec *src,
-                  unsigned int offset, unsigned int len)
+lnet_extract_iov(int dst_niov, struct kvec *dst,
+		 int src_niov, struct kvec *src,
+		 unsigned int offset, unsigned int len)
 {
         /* Initialise 'dst' to the subset of 'src' starting at 'offset',
          * for exactly 'len' bytes, and return the number of entries.
@@ -276,7 +276,7 @@ EXPORT_SYMBOL(lnet_extract_iov);
 
 
 unsigned int
-lnet_kiov_nob (unsigned int niov, lnet_kiov_t *kiov)
+lnet_kiov_nob(unsigned int niov, lnet_kiov_t *kiov)
 {
         unsigned int  nob = 0;
 
@@ -289,9 +289,9 @@ lnet_kiov_nob (unsigned int niov, lnet_kiov_t *kiov)
 EXPORT_SYMBOL(lnet_kiov_nob);
 
 void
-lnet_copy_kiov2kiov (unsigned int ndiov, lnet_kiov_t *diov, unsigned int doffset,
-                     unsigned int nsiov, lnet_kiov_t *siov, unsigned int soffset,
-                     unsigned int nob)
+lnet_copy_kiov2kiov(unsigned int ndiov, lnet_kiov_t *diov, unsigned int doffset,
+		    unsigned int nsiov, lnet_kiov_t *siov, unsigned int soffset,
+		    unsigned int nob)
 {
 	/* NB diov, siov are READ-ONLY */
 	unsigned int    this_nob;
@@ -371,7 +371,7 @@ lnet_copy_kiov2kiov (unsigned int ndiov, lnet_kiov_t *diov, unsigned int doffset
 EXPORT_SYMBOL(lnet_copy_kiov2kiov);
 
 void
-lnet_copy_kiov2iov (unsigned int niov, struct iovec *iov, unsigned int iovoffset,
+lnet_copy_kiov2iov (unsigned int niov, struct kvec *iov, unsigned int iovoffset,
                     unsigned int nkiov, lnet_kiov_t *kiov, unsigned int kiovoffset,
                     unsigned int nob)
 {
@@ -441,9 +441,9 @@ lnet_copy_kiov2iov (unsigned int niov, struct iovec *iov, unsigned int iovoffset
 EXPORT_SYMBOL(lnet_copy_kiov2iov);
 
 void
-lnet_copy_iov2kiov (unsigned int nkiov, lnet_kiov_t *kiov, unsigned int kiovoffset,
-                    unsigned int niov, struct iovec *iov, unsigned int iovoffset,
-                    unsigned int nob)
+lnet_copy_iov2kiov(unsigned int nkiov, lnet_kiov_t *kiov, unsigned int kiovoffset,
+		   unsigned int niov, struct kvec *iov, unsigned int iovoffset,
+		   unsigned int nob)
 {
 	/* NB kiov, iov are READ-ONLY */
 	unsigned int    this_nob;
@@ -510,9 +510,9 @@ lnet_copy_iov2kiov (unsigned int nkiov, lnet_kiov_t *kiov, unsigned int kiovoffs
 EXPORT_SYMBOL(lnet_copy_iov2kiov);
 
 int
-lnet_extract_kiov (int dst_niov, lnet_kiov_t *dst,
-                   int src_niov, lnet_kiov_t *src,
-                   unsigned int offset, unsigned int len)
+lnet_extract_kiov(int dst_niov, lnet_kiov_t *dst,
+		  int src_niov, lnet_kiov_t *src,
+		  unsigned int offset, unsigned int len)
 {
         /* Initialise 'dst' to the subset of 'src' starting at 'offset',
          * for exactly 'len' bytes, and return the number of entries.
@@ -564,7 +564,7 @@ lnet_ni_recv(lnet_ni_t *ni, void *private, lnet_msg_t *msg, int delayed,
              unsigned int offset, unsigned int mlen, unsigned int rlen)
 {
 	unsigned int  niov = 0;
-	struct iovec *iov = NULL;
+	struct kvec *iov = NULL;
 	lnet_kiov_t  *kiov = NULL;
 	int           rc;
 
@@ -1441,6 +1441,7 @@ lnet_parse_put(lnet_ni_t *ni, lnet_msg_t *msg)
 	lnet_hdr_t		*hdr = &msg->msg_hdr;
 	struct lnet_match_info	info;
 	int			rc;
+	bool			ready_delay;
 
 	/* Convert put fields to host byte order */
 	hdr->msg.put.match_bits	= le64_to_cpu(hdr->msg.put.match_bits);
@@ -1456,6 +1457,7 @@ lnet_parse_put(lnet_ni_t *ni, lnet_msg_t *msg)
 	info.mi_mbits	= hdr->msg.put.match_bits;
 
 	msg->msg_rx_ready_delay = ni->ni_lnd->lnd_eager_recv == NULL;
+	ready_delay = msg->msg_rx_ready_delay;
 
  again:
 	rc = lnet_ptl_match_md(&info, msg);
@@ -1468,12 +1470,16 @@ lnet_parse_put(lnet_ni_t *ni, lnet_msg_t *msg)
                 return 0;
 
         case LNET_MATCHMD_NONE:
-		if (msg->msg_rx_delayed) /* attached on delayed list */
+		if (ready_delay)
+			/* no eager_recv or has already called it, should
+			 * have been attached on delayed list */
 			return 0;
 
 		rc = lnet_ni_eager_recv(ni, msg);
-		if (rc == 0)
+		if (rc == 0) {
+			ready_delay = true;
 			goto again;
+		}
 		/* fall through */
 
 	case LNET_MATCHMD_DROP:

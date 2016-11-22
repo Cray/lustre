@@ -74,29 +74,32 @@ build_test_filter
 mkdir -p $MOUNT2
 mount_client $MOUNT2
 
-test_1a() {
-	touch $DIR1/f1
-	[ -f $DIR2/f1 ] || error
-}
-run_test 1a "check create on 2 mtpt's =========================="
+test_1() {
+	touch $DIR1/$tfile
+	[ -f $DIR2/$tfile ] || {
+		error_noexit "Check create"
+		return
+	}
 
-test_1b() {
-	chmod 777 $DIR2/f1
-	$CHECKSTAT -t file -p 0777 $DIR1/f1 || error
-	chmod a-x $DIR2/f1
-}
-run_test 1b "check attribute updates on 2 mtpt's ==============="
+	chmod 777 $DIR2/$tfile
+	$CHECKSTAT -t file -p 0777 $DIR1/$tfile || {
+		error_noexit "Check attribute update"
+		return
+	}
 
-test_1c() {
-	$CHECKSTAT -t file -p 0666 $DIR1/f1 || error
-}
-run_test 1c "check after remount attribute updates on 2 mtpt's ="
+	chmod a-x $DIR2/$tfile
+	$CHECKSTAT -t file -p 0666 $DIR1/$tfile || {
+		error_noexit "Check attribute update after remount"
+		return
+	}
 
-test_1d() {
-	rm $DIR2/f1
-	$CHECKSTAT -a $DIR1/f1 || error
+	rm $DIR2/$tfile
+	$CHECKSTAT -a $DIR1/$tfile || {
+		error_noexit "Unlink on one mountpoint removes file on other"
+		return
+	}
 }
-run_test 1d "unlink on one mountpoint removes file on other ===="
+run_test 1 "Check attribute updates on 2 mtpt's"
 
 test_2a() {
 	touch $DIR1/f2a
@@ -292,7 +295,7 @@ test_13() {	# bug 2451 - directory coherency
 }
 run_test 13 "test directory page revocation ===================="
 
-test_14() {
+test_14aa() {
 	test_mkdir -p $DIR1/$tdir
 	cp -p /bin/ls $DIR1/$tdir/$tfile
 	multiop_bg_pause $DIR1/$tdir/$tfile Ow_c || return 1
@@ -302,9 +305,9 @@ test_14() {
 	kill -USR1 $MULTIPID
 	wait $MULTIPID || return 2
 }
-run_test 14 "execution of file open for write returns -ETXTBSY ="
+run_test 14aa "execution of file open for write returns -ETXTBSY ="
 
-test_14a() {
+test_14ab() {
 	test_mkdir -p $DIR1/d14
 	cp -p `which multiop` $DIR1/d14/multiop || error "cp failed"
         MULTIOP_PROG=$DIR1/d14/multiop multiop_bg_pause $TMP/test14.junk O_c || return 1
@@ -314,7 +317,7 @@ test_14a() {
         wait $MULTIOP_PID || return 3
         rm $TMP/test14.junk $DIR1/d14/multiop || error "removing multiop"
 }
-run_test 14a "open(RDWR) of executing file returns -ETXTBSY ===="
+run_test 14ab "open(RDWR) of executing file returns -ETXTBSY ===="
 
 test_14b() { # bug 3192, 7040
 	test_mkdir -p $DIR1/d14
@@ -386,13 +389,18 @@ test_16() {
 	local file2=$DIR2/$tfile
 
 	# to allocate grant because it may run out due to test_15.
-	lfs setstripe -c -1 $file1
+	$LFS setstripe -c -1 $file1
 	dd if=/dev/zero of=$file1 bs=$STRIPE_BYTES count=$OSTCOUNT oflag=sync
 	dd if=/dev/zero of=$file2 bs=$STRIPE_BYTES count=$OSTCOUNT oflag=sync
 	rm -f $file1
 
-	lfs setstripe -c -1 $file1 # b=10919
+	$LFS setstripe -c -1 $file1 # b=10919
 	fsx -c 50 -p $FSXP -N $FSXNUM -l $((SIZE * 256)) -S 0 $file1 $file2
+	rm -f $file1
+
+#	O_DIRECT reads and writes must be aligned to the device block size.
+	fsx -c 50 -p $FSXP -N $FSXNUM -l $((SIZE * 256)) -S 0 -Z -r 4096 \
+		-w 4096 $file1 $file2
 }
 run_test 16 "$FSXNUM iterations of dual-mount fsx"
 
@@ -978,6 +986,7 @@ cleanup_34() {
 }
 
 test_34() { #16129
+	remote_ost_nodsh && skip "remote OST with nodsh" && return
         local OPER
         local lock_in
         local lock_out
@@ -1255,6 +1264,8 @@ check_pdo_conflict() {
 # pdirop tests
 # test 40: check non-blocking operations
 test_40a() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	touch $DIR2
 #define OBD_FAIL_ONCE|OBD_FAIL_MDS_PDO_LOCK    0x145
 	do_facet $SINGLEMDS lctl set_param fail_loc=0x80000145
 	mkdir $DIR1/$tfile &
@@ -1274,15 +1285,17 @@ test_40a() {
 	rmdir $DIR2/$tfile-3
 	check_pdo_conflict $PID1 || error "unlink is blocked"
 
-	# all operations above shouldn't wait the first one
+	#  all operations above shouldn't wait the first one
 	check_pdo_conflict $PID1 || error "parallel operation is blocked"
 	wait $PID1
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 40a "pdirops: create vs others =============="
 
 test_40b() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	touch $DIR2
 #define OBD_FAIL_ONCE|OBD_FAIL_MDS_PDO_LOCK    0x145
 	do_facet $SINGLEMDS lctl set_param fail_loc=0x80000145
 	touch $DIR1/$tfile &
@@ -1306,12 +1319,14 @@ test_40b() {
 
         check_pdo_conflict $PID1 || error "parallel operation is blocked"
 	wait $PID1
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 40b "pdirops: open|create and others =============="
 
 test_40c() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	touch $DIR2
 	touch $DIR1/$tfile
 #define OBD_FAIL_ONCE|OBD_FAIL_MDS_PDO_LOCK    0x145
 	do_facet $SINGLEMDS lctl set_param fail_loc=0x80000145
@@ -1336,12 +1351,14 @@ test_40c() {
         # all operations above shouldn't wait the first one
 	check_pdo_conflict $PID1 || error "parallel operation is blocked"
 	wait $PID1
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 40c "pdirops: link and others =============="
 
 test_40d() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	touch $DIR2
 	touch $DIR1/$tfile
 #define OBD_FAIL_ONCE|OBD_FAIL_MDS_PDO_LOCK    0x145
 	do_facet $SINGLEMDS lctl set_param fail_loc=0x80000145
@@ -1371,6 +1388,8 @@ test_40d() {
 run_test 40d "pdirops: unlink and others =============="
 
 test_40e() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	touch $DIR2
 	touch $DIR1/$tfile
 #define OBD_FAIL_ONCE|OBD_FAIL_MDS_PDO_LOCK    0x145
 	do_facet $SINGLEMDS lctl set_param fail_loc=0x80000145
@@ -1393,7 +1412,7 @@ test_40e() {
        # all operations above shouldn't wait the first one
 	check_pdo_conflict $PID1 || error "parallel operation is blocked"
 	wait $PID1
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 40e "pdirops: rename and others =============="
@@ -1407,7 +1426,7 @@ test_41a() {
 	sleep 1
 	mkdir $DIR2/$tfile && error "mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; echo "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41a "pdirops: create vs mkdir =============="
@@ -1420,7 +1439,7 @@ test_41b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c && error "create must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41b "pdirops: create vs create =============="
@@ -1434,7 +1453,7 @@ test_41c() {
 	sleep 1
 	link $DIR2/$tfile-2 $DIR2/$tfile && error "link must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41c "pdirops: create vs link =============="
@@ -1447,7 +1466,7 @@ test_41d() {
 	sleep 1
 	rm $DIR2/$tfile || error "unlink must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41d "pdirops: create vs unlink =============="
@@ -1461,7 +1480,7 @@ test_41e() {
 	sleep 1
 	mv $DIR2/$tfile-2 $DIR2/$tfile || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41e "pdirops: create and rename (tgt) =============="
@@ -1474,7 +1493,7 @@ test_41f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-2 || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41f "pdirops: create and rename (src) =============="
@@ -1487,7 +1506,7 @@ test_41g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null || error "stat must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41g "pdirops: create vs getattr =============="
@@ -1500,7 +1519,7 @@ test_41h() {
 	sleep 1
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1; error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 41h "pdirops: create vs readdir =============="
@@ -1514,7 +1533,7 @@ test_42a() {
 	sleep 1
 	mkdir $DIR2/$tfile && error "mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42a "pdirops: mkdir vs mkdir =============="
@@ -1527,7 +1546,7 @@ test_42b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c && error "create must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42b "pdirops: mkdir vs create =============="
@@ -1541,7 +1560,7 @@ test_42c() {
 	sleep 1
 	link $DIR2/$tfile-2 $DIR2/$tfile && error "link must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42c "pdirops: mkdir vs link =============="
@@ -1554,7 +1573,7 @@ test_42d() {
 	sleep 1
 	rmdir $DIR2/$tfile || error "unlink must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42d "pdirops: mkdir vs unlink =============="
@@ -1568,7 +1587,7 @@ test_42e() {
 	sleep 1
 	mv -T $DIR2/$tfile-2 $DIR2/$tfile && error "rename must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42e "pdirops: mkdir and rename (tgt) =============="
@@ -1581,7 +1600,7 @@ test_42f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-2 || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42f "pdirops: mkdir and rename (src) =============="
@@ -1594,7 +1613,7 @@ test_42g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null || error "stat must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42g "pdirops: mkdir vs getattr =============="
@@ -1607,7 +1626,7 @@ test_42h() {
 	sleep 1
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1; error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 42h "pdirops: mkdir vs readdir =============="
@@ -1622,7 +1641,7 @@ test_43a() {
 	sleep 1
 	mkdir $DIR2/$tfile || error "mkdir must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43a "pdirops: unlink vs mkdir =============="
@@ -1636,7 +1655,7 @@ test_43b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c || error "create must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43b "pdirops: unlink vs create =============="
@@ -1651,7 +1670,7 @@ test_43c() {
 	sleep 1
 	link $DIR2/$tfile-2 $DIR2/$tfile || error "link must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43c "pdirops: unlink vs link =============="
@@ -1665,7 +1684,7 @@ test_43d() {
 	sleep 1
 	rm $DIR2/$tfile && error "unlink must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43d "pdirops: unlink vs unlink =============="
@@ -1680,7 +1699,7 @@ test_43e() {
 	sleep 1
 	mv -u $DIR2/$tfile-2 $DIR2/$tfile || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43e "pdirops: unlink and rename (tgt) =============="
@@ -1694,7 +1713,7 @@ test_43f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-2 && error "rename must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43f "pdirops: unlink and rename (src) =============="
@@ -1708,7 +1727,7 @@ test_43g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null && error "stat must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43g "pdirops: unlink vs getattr =============="
@@ -1722,7 +1741,7 @@ test_43h() {
 	sleep 1
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1; error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43h "pdirops: unlink vs readdir =============="
@@ -1738,7 +1757,7 @@ test_43i() {
 	$LFS mkdir -i 1 $DIR2/$tfile || error "remote mkdir must succeed"
 	check_pdo_conflict $PID1 &&
 		{ wait $PID1; error "remote mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 43i "pdirops: unlink vs remote mkdir"
@@ -1753,7 +1772,7 @@ test_44a() {
 	sleep 1
 	mkdir $DIR2/$tfile && error "mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44a "pdirops: rename tgt vs mkdir =============="
@@ -1767,7 +1786,7 @@ test_44b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c && error "create must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44b "pdirops: rename tgt vs create =============="
@@ -1782,7 +1801,7 @@ test_44c() {
 	sleep 1
 	link $DIR2/$tfile-3 $DIR2/$tfile && error "link must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44c "pdirops: rename tgt vs link =============="
@@ -1796,7 +1815,7 @@ test_44d() {
 	sleep 1
 	rm $DIR2/$tfile || error "unlink must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44d "pdirops: rename tgt vs unlink =============="
@@ -1812,7 +1831,7 @@ test_44e() {
 	sleep 1
 	mv $DIR2/$tfile-3 $DIR2/$tfile || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44e "pdirops: rename tgt and rename (tgt) =============="
@@ -1827,7 +1846,7 @@ test_44f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-3 || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44f "pdirops: rename tgt and rename (src) =============="
@@ -1841,7 +1860,7 @@ test_44g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null || error "stat must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44g "pdirops: rename tgt vs getattr =============="
@@ -1855,7 +1874,7 @@ test_44h() {
 	sleep 1
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1; error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44h "pdirops: rename tgt vs readdir =============="
@@ -1872,7 +1891,7 @@ test_44i() {
 	$LFS mkdir -i 1 $DIR2/$tfile && error "remote mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1;
 				error "remote mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 44i "pdirops: rename tgt vs remote mkdir"
@@ -1887,7 +1906,7 @@ test_45a() {
 	sleep 1
 	mkdir $DIR2/$tfile || error "mkdir must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45a "pdirops: rename src vs mkdir =============="
@@ -1901,7 +1920,7 @@ test_45b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c || error "create must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45b "pdirops: rename src vs create =============="
@@ -1916,7 +1935,7 @@ test_45c() {
 	sleep 1
 	link $DIR2/$tfile-3 $DIR2/$tfile || error "link must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45c "pdirops: rename src vs link =============="
@@ -1930,7 +1949,7 @@ test_45d() {
 	sleep 1
 	rm $DIR2/$tfile && error "unlink must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45d "pdirops: rename src vs unlink =============="
@@ -1945,7 +1964,7 @@ test_45e() {
 	sleep 1
 	mv $DIR2/$tfile-3 $DIR2/$tfile || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45e "pdirops: rename src and rename (tgt) =============="
@@ -1959,7 +1978,7 @@ test_45f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-3 && error "rename must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45f "pdirops: rename src and rename (src) =============="
@@ -1973,7 +1992,7 @@ test_45g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null && error "stat must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45g "pdirops: rename src vs getattr =============="
@@ -1987,7 +2006,7 @@ test_45h() {
 	sleep 1
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1; error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45h "pdirops: unlink vs readdir =============="
@@ -2003,7 +2022,7 @@ test_45i() {
 	$LFS mkdir -i 1 $DIR2/$tfile || error "create remote dir must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1;
 				error "create remote dir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 45i "pdirops: rename src vs remote mkdir"
@@ -2018,7 +2037,7 @@ test_46a() {
 	sleep 1
 	mkdir $DIR2/$tfile && error "mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46a "pdirops: link vs mkdir =============="
@@ -2032,7 +2051,7 @@ test_46b() {
 	sleep 1
 	$MULTIOP $DIR2/$tfile oO_CREAT:O_EXCL:c && error "create must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46b "pdirops: link vs create =============="
@@ -2046,7 +2065,7 @@ test_46c() {
 	sleep 1
 	link $DIR2/$tfile $DIR2/$tfile && error "link must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46c "pdirops: link vs link =============="
@@ -2060,7 +2079,7 @@ test_46d() {
 	sleep 1
 	rm $DIR2/$tfile || error "unlink must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46d "pdirops: link vs unlink =============="
@@ -2075,7 +2094,7 @@ test_46e() {
 	sleep 1
 	mv $DIR2/$tfile-3 $DIR2/$tfile || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46e "pdirops: link and rename (tgt) =============="
@@ -2090,7 +2109,7 @@ test_46f() {
 	sleep 1
 	mv $DIR2/$tfile $DIR2/$tfile-3 || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46f "pdirops: link and rename (src) =============="
@@ -2104,7 +2123,7 @@ test_46g() {
 	sleep 1
 	stat $DIR2/$tfile > /dev/null || error "stat must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1; error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46g "pdirops: link vs getattr =============="
@@ -2119,7 +2138,7 @@ test_46h() {
 	ls -lia $DIR2/ > /dev/null
 	check_pdo_conflict $PID1 && { wait $PID1;
 			error "readdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46h "pdirops: link vs readdir =============="
@@ -2135,7 +2154,7 @@ test_46i() {
 	$LFS mkdir -i 1 $DIR2/$tfile && error "remote mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1;
 				error "remote mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 46i "pdirops: link vs remote mkdir"
@@ -2150,7 +2169,7 @@ test_47a() {
 	sleep 1
 	mkdir $DIR2/$tfile && error "mkdir must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "mkdir isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47a "pdirops: remote mkdir vs mkdir"
@@ -2165,7 +2184,7 @@ test_47b() {
 	multiop $DIR2/$tfile oO_CREAT:O_EXCL:c && error "create must fail"
 	check_pdo_conflict $PID1 && { wait $PID1;
 					error "create isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47b "pdirops: remote mkdir vs create"
@@ -2180,7 +2199,7 @@ test_47c() {
 	sleep 1
 	link $DIR2/$tfile-2 $DIR2/$tfile && error "link must fail"
 	check_pdo_conflict $PID1 && { wait $PID1; error "link isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47c "pdirops: remote mkdir vs link"
@@ -2195,7 +2214,7 @@ test_47d() {
 	rmdir $DIR2/$tfile || error "unlink must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1;
 					error "unlink isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47d "pdirops: remote mkdir vs unlink"
@@ -2211,7 +2230,7 @@ test_47e() {
 	mv -T $DIR2/$tfile-2 $DIR2/$tfile && error "rename must fail"
 	check_pdo_conflict $PID1 && { wait $PID1;
 					error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47e "pdirops: remote mkdir and rename (tgt)"
@@ -2226,7 +2245,7 @@ test_47f() {
 	mv $DIR2/$tfile $DIR2/$tfile-2 || error "rename must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1;
 					error "rename isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47f "pdirops: remote mkdir and rename (src)"
@@ -2241,7 +2260,7 @@ test_47g() {
 	stat $DIR2/$tfile > /dev/null || error "stat must succeed"
 	check_pdo_conflict $PID1 && { wait $PID1;
 					error "getattr isn't blocked"; }
-	rm -r $DIR1/*
+	rm -rf $DIR/$tfile*
 	return 0
 }
 run_test 47g "pdirops: remote mkdir vs getattr"
@@ -2608,7 +2627,7 @@ test_70b() { # LU-2781
 }
 run_test 70b "remove files after calling rm_entry"
 
-test_71() {
+test_71a() {
 	local server_version=$(lustre_version_code $SINGLEMDS)
 
 	[[ $server_version -lt $(version_code 2.1.6) ]] &&
@@ -2617,7 +2636,8 @@ test_71() {
 	# Patch not applied to 2.2 and 2.3 branches
 	[[ $server_version -ge $(version_code 2.2.0) ]] &&
 	[[ $server_version -lt $(version_code 2.4.0) ]] &&
-		skip "Need MDS version at least 2.4.0" && return
+		skip "Need MDS version earlier than 2.2.0 or at least 2.4.0" &&
+			return
 
 	checkfiemap --test ||
 		{ skip "checkfiemap not runnable: $?" && return; }
@@ -2649,7 +2669,32 @@ test_71() {
 	echo $can2
 	[ $can3 -eq $can4 ] || error $((can2-can1)) "cancel RPC occured."
 }
-run_test 71 "correct file map just after write operation is finished"
+run_test 71a "correct file map just after write operation is finished"
+
+test_71b() {
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -lt $(version_code 2.1.6) ]] &&
+		skip "Need MDS version at least 2.1.6" && return
+
+	# Patch not applied to 2.2 and 2.3 branches
+	[[ $server_version -ge $(version_code 2.2.0) ]] &&
+	[[ $server_version -lt $(version_code 2.4.0) ]] &&
+		skip "Need MDS version earlier than 2.2.0 or at least 2.4.0" &&
+			return
+	[[ $OSTCOUNT -ge 2 ]] || { skip "need at least 2 osts"; return; }
+
+	checkfiemap --test ||
+		{ skip "error $?: checkfiemap failed" && return; }
+
+	$LFS setstripe -c -1 $DIR1 || error "setstripe failed"
+	dd if=/dev/urandom of=$DIR1/$tfile bs=40K count=1
+	[ "$(facet_fstype ost$(($($GETSTRIPE -i $DIR1/$tfile) + 1)))" = \
+		"zfs" ] &&
+		skip "ORI-366/LU-1941: FIEMAP unimplemented on ZFS" && return 0
+	checkfiemap $DIR1/$tfile 40960 || error "checkfiemap failed"
+}
+run_test 71b "check fiemap support for stripecount > 1"
 
 test_72() {
 	local p="$TMP/sanityN-$TESTNAME.parameters"
@@ -2808,6 +2853,320 @@ test_76() { #LU-946
 }
 run_test 76 "Verify open file for 2048 files"
 
+nrs_write_read() {
+	local n=16
+	local dir=$DIR/$tdir
+	local myRUNAS="$1"
+
+	mkdir $dir || error "mkdir $dir failed"
+	$LFS setstripe -c $OSTCOUNT $dir || error "setstripe to $dir failed"
+	chmod 777 $dir
+
+	do_nodes $CLIENTS $myRUNAS dd if=/dev/zero of="$dir/nrs_r_$HOSTNAME"\
+		bs=1M count=$n > /dev/null 2>&1
+
+	for ((i = 0; i < $n; i++)); do
+		do_nodes $CLIENTS $myRUNAS dd if=/dev/zero\
+			of="$dir/nrs_w_$HOSTNAME" bs=1M seek=$i count=1\
+			 > /dev/null 2>&1 &
+		local pids_w[$i]=$!
+	done
+	do_nodes $CLIENTS sync;
+	cancel_lru_locks osc
+
+	for ((i = 0; i < $n; i++)); do
+		do_nodes $CLIENTS $myRUNAS dd if="$dir/nrs_w_$HOSTNAME"\
+			of=/dev/zero bs=1M seek=$i count=1 > /dev/null 2>&1 &
+		local pids_r[$i]=$!
+	done
+	cancel_lru_locks osc
+
+	for ((i = 0; i < $n; i++)); do
+		wait ${pids_w[$i]}
+		wait ${pids_r[$i]}
+	done
+	rm -rf $dir || error "rm -rf $dir failed"
+}
+
+test_77a() { #LU-3266
+	do_facet $SINGLEMDS lctl set_param ost.OSS.*.nrs_policies="fifo"
+	nrs_write_read
+
+	return 0
+}
+run_test 77a "check FIFO NRS policy"
+
+
+test_77b() { #LU-3266
+	do_facet $SINGLEMDS lctl set_param ost.OSS.*.nrs_policies="crrn"
+	do_facet $SINGLEMDS lctl set_param ost.OSS.*.nrs_crrn_quantum=1
+
+	echo "policy: crr-n, crrn_quantum 1"
+	nrs_write_read
+
+	do_facet $SINGLEMDS lctl set_param ost.OSS.*.nrs_crrn_quantum=64
+
+	echo "policy: crr-n, crrn_quantum 64"
+	nrs_write_read
+
+	return 0
+}
+run_test 77b "check CRR-N NRS policy"
+
+orr_trr() {
+       local policy=$1
+
+       for i in $(seq 1 $OSTCOUNT)
+       do
+               do_facet ost"$i" lctl set_param \
+			ost.OSS.ost_io.nrs_policies=$policy
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.*.nrs_"$policy"_quantum=1
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.*.nrs_"$policy"_offset_type="physical"
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.*.nrs_"$policy"_supported="reads"
+	done
+
+	echo "policy: $policy, ${policy}_quantum 1, ${policy}_offset_type \
+				physical, ${policy}_supported reads"
+	nrs_write_read
+
+	for i in $(seq 1 $OSTCOUNT)
+	do
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.*.nrs_${policy}_supported="writes"
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.*.nrs_${policy}_quantum=64
+	done
+	echo "policy: $policy, ${policy}_quantum 64, \
+		${policy}_offset_type physical, ${policy}_supported writes"
+	nrs_write_read
+
+	for i in $(seq 1 $OSTCOUNT)
+	do
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.*.nrs_${policy}_supported="reads_and_writes"
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.*.nrs_${policy}_offset_type="logical"
+	done
+	echo "policy: $policy, ${policy}_quantum 64, \
+		${policy}_offset_type logical, ${policy}_supported reads_and_writes"
+	nrs_write_read
+
+	return 0
+}
+
+test_77c() { #LU-3266
+	orr_trr "orr"
+	return 0
+}
+run_test 77c "check ORR NRS policy"
+
+test_77d() { #LU-3266
+	orr_trr "trr"
+	return 0
+}
+run_test 77d "check TRR nrs policy"
+
+tbf_rule_operate()
+{
+	local facet=$1
+	shift 1
+
+	do_facet $facet lctl set_param \
+		ost.OSS.ost_io.nrs_tbf_rule="$@"
+	[ $? -ne 0 ] &&
+		error "failed to operate on TBF rules"
+}
+
+test_77e() {
+	for i in $(seq 1 $OSTCOUNT)
+	do
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.ost_io.nrs_policies="tbf\ nid"
+		[ $? -ne 0 ] &&
+			error "failed to set TBF policy"
+	done
+
+	# Only operate rules on ost1 since OSTs might run on the same OSS
+	# Add some rules
+	tbf_rule_operate ost1 "start\ localhost\ {0@lo}\ 1000"
+	local address=$(comma_list "$(host_nids_address $CLIENTS $NETTYPE)")
+	local client_nids=$(nids_list $address "\\")
+	tbf_rule_operate ost1 "start\ clients\ {$client_nids}\ 100"
+	tbf_rule_operate ost1 "start\ others\ {*.*.*.*@$NETTYPE}\ 50"
+	nrs_write_read
+
+	# Change the rules
+	tbf_rule_operate ost1 "change\ localhost\ 1001"
+	tbf_rule_operate ost1 "change\ clients\ 101"
+	tbf_rule_operate ost1 "change\ others\ 51"
+	nrs_write_read
+
+	# Stop the rules
+	tbf_rule_operate ost1 "stop\ localhost"
+	tbf_rule_operate ost1 "stop\ clients"
+	tbf_rule_operate ost1 "stop\ others"
+	nrs_write_read
+
+	# Cleanup the TBF policy
+	for i in $(seq 1 $OSTCOUNT)
+	do
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.ost_io.nrs_policies="fifo"
+		[ $? -ne 0 ] &&
+			error "failed to set policy back to fifo"
+	done
+	nrs_write_read
+	return 0
+}
+run_test 77e "check TBF NID nrs policy"
+
+test_77f() {
+	# Configure jobid_var
+	local saved_jobid_var=$($LCTL get_param -n jobid_var)
+	if [ $saved_jobid_var != procname_uid ]; then
+		set_conf_param_and_check client			\
+			"$LCTL get_param -n jobid_var"		\
+			"$FSNAME.sys.jobid_var" procname_uid
+	fi
+
+	for i in $(seq 1 $OSTCOUNT)
+	do
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.ost_io.nrs_policies="tbf\ jobid"
+		[ $? -ne 0 ] &&
+			error "failed to set TBF policy"
+	done
+
+	# Only operate rules on ost1 since OSTs might run on the same OSS
+	# Add some rules
+	tbf_rule_operate ost1 "start\ runas\ {iozone.$RUNAS_ID\ dd.$RUNAS_ID\ tiotest.$RUNAS_ID}\ 1000"
+	tbf_rule_operate ost1 "start\ iozone_runas\ {iozone.$RUNAS_ID}\ 100"
+	tbf_rule_operate ost1 "start\ dd_runas\ {dd.$RUNAS_ID}\ 50"
+	nrs_write_read "$RUNAS"
+
+	# Change the rules
+	tbf_rule_operate ost1 "change\ runas\ 1001"
+	tbf_rule_operate ost1 "change\ iozone_runas\ 101"
+	tbf_rule_operate ost1 "change\ dd_runas\ 51"
+	nrs_write_read "$RUNAS"
+
+	# Stop the rules
+	tbf_rule_operate ost1 "stop\ runas"
+	tbf_rule_operate ost1 "stop\ iozone_runas"
+	tbf_rule_operate ost1 "stop\ dd_runas"
+	nrs_write_read "$RUNAS"
+
+	# Cleanup the TBF policy
+	for i in $(seq 1 $OSTCOUNT)
+	do
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.ost_io.nrs_policies="fifo"
+		[ $? -ne 0 ] &&
+			error "failed to set policy back to fifo"
+	done
+	nrs_write_read "$RUNAS"
+
+	local current_jobid_var=$($LCTL get_param -n jobid_var)
+	if [ $saved_jobid_var != $current_jobid_var ]; then
+		set_conf_param_and_check client			\
+			"$LCTL get_param -n jobid_var"		\
+			"$FSNAME.sys.jobid_var" $saved_jobid_var
+	fi
+	return 0
+}
+run_test 77f "check TBF JobID nrs policy"
+
+test_77g() {
+	for i in $(seq 1 $OSTCOUNT)
+	do
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.ost_io.nrs_policies="tbf\ nid"
+		[ $? -ne 0 ] &&
+			error "failed to set TBF policy"
+	done
+
+	for i in $(seq 1 $OSTCOUNT)
+	do
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.ost_io.nrs_policies="tbf\ jobid"
+		[ $? -ne 0 ] &&
+			error "failed to set TBF policy"
+	done
+
+	# Add a rule that only valid for Jobid TBF. If direct change between
+	# TBF types is not supported, this operation will fail.
+	tbf_rule_operate ost1 "start\ dd_runas\ {dd.$RUNAS_ID}\ 50"
+
+	# Cleanup the TBF policy
+	for i in $(seq 1 $OSTCOUNT)
+	do
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.ost_io.nrs_policies="fifo"
+		[ $? -ne 0 ] &&
+			error "failed to set policy back to fifo"
+	done
+	return 0
+}
+run_test 77g "Change TBF type directly"
+
+test_78() { #LU-6673
+	local rc
+	for i in $(seq 1 $OSTCOUNT)
+	do
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.ost_io.nrs_policies="orr" &
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.*.nrs_orr_quantum=1
+		rc=$?
+		# Valid return codes are:
+		# 0: Tuning succeeded
+		# ENODEV: Policy is still stopped
+		# EAGAIN: Policy is being initialized
+		[ $rc -eq 0 -o $rc -eq 19 -o $rc -eq 11 ] ||
+			error "Expected set_param to return 0|ENODEV|EAGAIN"
+	done
+
+	# Cleanup the ORR policy
+	for i in $(seq 1 $OSTCOUNT)
+	do
+		do_facet ost"$i" lctl set_param \
+			ost.OSS.ost_io.nrs_policies="fifo"
+		[ $? -ne 0 ] &&
+			error "failed to set policy back to fifo"
+	done
+	return 0
+}
+run_test 78 "Enable policy and specify tunings right away"
+
+test_79() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	test_mkdir -p $DIR/$tdir
+
+	# Prevent interference from layout intent RPCs due to
+	# asynchronous writeback. These will be tested in 130c below.
+	do_nodes ${CLIENTS:-$HOSTNAME} sync
+
+	setfattr -n trusted.name1 -v value1 $DIR/$tdir ||
+		error "setfattr -n trusted.name1=value1 $DIR/$tdir failed"
+
+#define OBD_FAIL_MDS_INTENT_DELAY		0x160
+	local mdtidx=$($LFS getstripe -M $DIR/$tdir)
+	local facet=mds$((mdtidx + 1))
+	stat $DIR/$tdir
+	set_nodes_failloc $(facet_active_host $facet) 0x80000160
+	getfattr -n trusted.name1 $DIR/$tdir 2> /dev/null  &
+	local pid=$!
+	sleep 2
+
+	rm -rf $DIR2/$tdir
+	wait $pid
+	return 0
+}
+run_test 79 "xattr: intent error"
+
 test_80() {
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local MDTIDX=1
@@ -2879,6 +3238,9 @@ test_81() {
 run_test 81 "rename and stat under striped directory"
 
 test_82() {
+	[[ $(lustre_version_code $SINGLEMDS) -gt $(version_code 2.6.91) ]] ||
+		{ skip "Need MDS version at least 2.6.92"; return 0; }
+
 	# Client 1 creates a file.
 	multiop_bg_pause $DIR1/$tfile O_ac || error "multiop_bg_pause 1"
 	pid1=$!

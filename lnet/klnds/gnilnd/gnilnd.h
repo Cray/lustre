@@ -28,9 +28,6 @@
 #ifndef _GNILND_GNILND_H_
 #define _GNILND_GNILND_H_
 
-#ifdef HAVE_COMPAT_RDMA
-#include <linux/compat-2.6.h>
-#endif
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
@@ -878,7 +875,6 @@ typedef struct kgn_data {
 	atomic_t                kgn_rev_offset;       /* # of REV rdma w/misaligned offsets */
 	atomic_t                kgn_rev_length;       /* # of REV rdma have misaligned len */
 	atomic_t                kgn_rev_copy_buff;    /* # of REV rdma buffer copies */
-	struct socket          *kgn_sock;             /* for Apollo */
 	unsigned long           free_pages_limit;     /* # of free pages reserve from fma block allocations */
 	int                     kgn_enable_gl_mutex;  /* kgni api mtx enable */
 } kgn_data_t;
@@ -1001,6 +997,11 @@ static inline void kgnilnd_vfree(void *ptr, int size)
 	libcfs_kmem_dec(ptr, size);
 	vfree(ptr);
 }
+
+/* as of kernel version 4.2, set_mb is replaced with smp_store_mb */
+#ifndef set_mb
+#define set_mb smp_store_mb
+#endif
 
 /* Copied from DEBUG_REQ in Lustre - the dance is needed to save stack space */
 
@@ -1767,7 +1768,7 @@ int kgnilnd_eager_recv(lnet_ni_t *ni, void *private,
 			lnet_msg_t *lntmsg, void **new_private);
 int kgnilnd_recv(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg,
 		int delayed, unsigned int niov,
-		struct iovec *iov, lnet_kiov_t *kiov,
+		struct kvec *iov, lnet_kiov_t *kiov,
 		unsigned int offset, unsigned int mlen, unsigned int rlen);
 
 __u16 kgnilnd_cksum_kiov(unsigned int nkiov, lnet_kiov_t *kiov, unsigned int offset, unsigned int nob, int dump_blob);

@@ -19,10 +19,9 @@
 /*
  * Copyright (c) 2014, Intel Corporation.
  */
-#ifndef _PTLCTL_H_
-#define _PTLCTL_H_
+#ifndef _LNETCTL_H_
+#define _LNETCTL_H_
 
-#include <libcfs/libcfs.h>
 #include <lnet/types.h>
 
 /** \addtogroup lnet_fault_simulation
@@ -165,7 +164,6 @@ int jt_ptl_notify_router (int argc, char **argv);
 int jt_ptl_print_routes (int argc, char **argv);
 int jt_ptl_fail_nid (int argc, char **argv);
 int jt_ptl_testprotocompat(int argc, char **argv);
-int jt_ptl_memhog(int argc, char **argv);
 int jt_ptl_drop_add(int argc, char **argv);
 int jt_ptl_drop_del(int argc, char **argv);
 int jt_ptl_drop_reset(int argc, char **argv);
@@ -185,6 +183,5 @@ int jt_dbg_debug_file(int argc, char **argv);
 int jt_dbg_clear_debug_buf(int argc, char **argv);
 int jt_dbg_mark_debug_buf(int argc, char **argv);
 int jt_dbg_modules(int argc, char **argv);
-int jt_dbg_panic(int argc, char **argv);
 
 #endif

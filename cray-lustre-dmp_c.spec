@@ -1,12 +1,10 @@
 %define vendor_name lustre
-%define vendor_version 2.7
+%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define flavor default
 
 %define intranamespace_name %{vendor_name}-%{flavor}
-%define flavorless_name %{namespace}-%{vendor_name}
 
-# use non-customized version so source doesn't need to be repackaged for custom versions.
-%define source_name %{flavorless_name}
+%define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 %define branch trunk
 
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
@@ -23,8 +21,10 @@ BuildRequires: kernel-syms
 BuildRequires: pkgconfig
 BuildRequires: -post-build-checks
 BuildRequires: module-init-tools
-%if "%{?craynum}" == "0000" || 0%{?cle_major}%{?cle_update} >= 62
-# Only required for DEV (craynum == 0000) builds and CLE 6.0UP02 and later
+BuildRequires: libtool
+%if "%{?sle_version}" == "120000"
+# Only SLES 12 SP0 builds require this. Was needed for EDR IB support in eLogin
+# for 6.0UP02. Future versions will use in-kernel drivers.
 BuildRequires: ofed-devel
 %endif
 Group: System/Filesystems
@@ -32,9 +32,9 @@ License: GPL
 Name: %{namespace}-%{intranamespace_name}
 Release: %{release}
 Summary: Lustre File System for CLFS SLES-based Nodes
-Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
-Source0: %{source_name}.tar.gz
-Source1: %{flavorless_name}-switch-%{branch}.tar.gz
+Version: %{_version}_%{kernel_version}_%{kernel_release}
+Source0: %{source_name}.tar.bz2
+Source1: %{vendor_namespace}-%{vendor_name}-switch-%{_version}.tar.bz2
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
@@ -49,15 +49,16 @@ service nodes.
 %prep
 # using source_name here results in too deep of a macro stack, so use
 # definition of source_name directly
-%incremental_setup -q -n %{flavorless_name} -a 1
+%incremental_setup -q -n %{source_name} -a 1
 
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 # LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
 %define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
+export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -82,10 +83,6 @@ fi
 %{__make} %_smp_mflags
 
 %install
-# LUSTRE_VERS used in ko versioning.
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
-
 # don't use %makeinstall for Rhine RPMS - it needlessly puts things into 
 # /opt/cray/...
 
@@ -142,6 +139,7 @@ depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
 %files
 %defattr(-,root,root)
 %{_prefix}
+%exclude %{_sysconfdir}/lustre/perm.conf
 
 %clean
 %clean_build_root

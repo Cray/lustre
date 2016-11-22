@@ -273,8 +273,10 @@ static int lwp_init0(const struct lu_env *env, struct lwp_device *lwp,
 		RETURN(rc);
 	}
 
-	if (lprocfs_obd_setup(lwp->lpd_obd) == 0)
+	if (lprocfs_obd_setup(lwp->lpd_obd) == 0) {
+		sptlrpc_lprocfs_cliobd_attach(lwp->lpd_obd);
 		ptlrpc_lprocfs_register_obd(lwp->lpd_obd);
+	}
 
 	RETURN(0);
 }
@@ -371,11 +373,6 @@ static struct lu_device *lwp_device_fini(const struct lu_env *env,
 		class_disconnect(m->lpd_exp);
 
 	imp = m->lpd_obd->u.cli.cl_import;
-
-	if (imp->imp_rq_pool) {
-		ptlrpc_free_rq_pool(imp->imp_rq_pool);
-		imp->imp_rq_pool = NULL;
-	}
 
 	LASSERT(m->lpd_obd);
 	ptlrpc_lprocfs_unregister_obd(m->lpd_obd);
@@ -604,6 +601,23 @@ static int lwp_import_event(struct obd_device *obd, struct obd_import *imp,
 	return 0;
 }
 
+static int lwp_set_info_async(const struct lu_env *env,
+			      struct obd_export *exp,
+			      u32 keylen, void *key,
+			      u32 vallen, void *val,
+			      struct ptlrpc_request_set *set)
+{
+	ENTRY;
+
+	if (KEY_IS(KEY_SPTLRPC_CONF)) {
+		sptlrpc_conf_client_adapt(exp->exp_obd);
+		RETURN(0);
+	}
+
+	CERROR("Unknown key %s\n", (char *)key);
+	RETURN(-EINVAL);
+}
+
 struct obd_ops lwp_obd_device_ops = {
 	.o_owner	= THIS_MODULE,
 	.o_add_conn	= client_import_add_conn,
@@ -611,4 +625,5 @@ struct obd_ops lwp_obd_device_ops = {
 	.o_connect	= lwp_obd_connect,
 	.o_disconnect	= lwp_obd_disconnect,
 	.o_import_event	= lwp_import_event,
+	.o_set_info_async   = lwp_set_info_async,
 };

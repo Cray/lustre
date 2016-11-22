@@ -288,6 +288,14 @@ static struct thandle *osd_trans_create(const struct lu_env *env,
 	dmu_tx_t		*tx;
 	ENTRY;
 
+	if (dt->dd_rdonly) {
+		CERROR("%s: someone try to start transaction under "
+		       "readonly mode, should be disabled.\n",
+		       osd_name(osd_dt_dev(dt)));
+		dump_stack();
+		RETURN(ERR_PTR(-EROFS));
+	}
+
 	tx = dmu_tx_create(osd->od_os);
 	if (tx == NULL)
 		RETURN(ERR_PTR(-ENOMEM));
@@ -410,7 +418,8 @@ static int osd_objset_statfs(struct osd_device *osd, struct obd_statfs *osfs)
 	osfs->os_bavail = osfs->os_bfree; /* no extra root reservation */
 
 	/* Take replication (i.e. number of copies) into account */
-	osfs->os_bavail /= os->os_copies;
+	if (os->os_copies != 0)
+		osfs->os_bavail /= os->os_copies;
 
 	/*
 	 * Reserve some space so we don't run into ENOSPC due to grants not
@@ -545,10 +554,14 @@ static void osd_conf_get(const struct lu_env *env,
  */
 static int osd_sync(const struct lu_env *env, struct dt_device *d)
 {
-	struct osd_device  *osd = osd_dt_dev(d);
-	CDEBUG(D_CACHE, "syncing OSD %s\n", LUSTRE_OSD_ZFS_NAME);
-	txg_wait_synced(dmu_objset_pool(osd->od_os), 0ULL);
-	CDEBUG(D_CACHE, "synced OSD %s\n", LUSTRE_OSD_ZFS_NAME);
+	if (!d->dd_rdonly) {
+		struct osd_device  *osd = osd_dt_dev(d);
+
+		CDEBUG(D_CACHE, "syncing OSD %s\n", LUSTRE_OSD_ZFS_NAME);
+		txg_wait_synced(dmu_objset_pool(osd->od_os), 0ULL);
+		CDEBUG(D_CACHE, "synced OSD %s\n", LUSTRE_OSD_ZFS_NAME);
+	}
+
 	return 0;
 }
 
@@ -770,10 +783,13 @@ static int osd_objset_open(struct osd_device *o)
 	int		rc;
 	ENTRY;
 
-	rc = -dmu_objset_own(o->od_mntdev, DMU_OST_ZFS, B_FALSE, o, &o->od_os);
-	if (rc) {
+	rc = -dmu_objset_own(o->od_mntdev, DMU_OST_ZFS,
+			     o->od_dt_dev.dd_rdonly ? B_TRUE : B_FALSE,
+			     o, &o->od_os);
+	if (rc != 0) {
 		o->od_os = NULL;
-		goto out;
+
+		GOTO(out, rc);
 	}
 
 	/* Check ZFS version */
@@ -816,8 +832,10 @@ static int osd_objset_open(struct osd_device *o)
 	}
 
 out:
-	if (rc != 0 && o->od_os != NULL)
+	if (rc != 0 && o->od_os != NULL) {
 		dmu_objset_disown(o->od_os, o);
+		o->od_os = NULL;
+	}
 
 	RETURN(rc);
 }
@@ -826,6 +844,7 @@ static int osd_mount(const struct lu_env *env,
 		     struct osd_device *o, struct lustre_cfg *cfg)
 {
 	char			*mntdev = lustre_cfg_string(cfg, 1);
+	char			*str	= lustre_cfg_string(cfg, 2);
 	char			*svname = lustre_cfg_string(cfg, 4);
 	dmu_buf_t		*rootdb;
 	const char		*opts;
@@ -845,6 +864,18 @@ static int osd_mount(const struct lu_env *env,
 	rc = strlcpy(o->od_svname, svname, sizeof(o->od_svname));
 	if (rc >= sizeof(o->od_svname))
 		RETURN(-E2BIG);
+
+	str = strstr(str, ":");
+	if (str != NULL) {
+		unsigned long flags;
+
+		flags = simple_strtoul(str + 1, NULL, 0);
+		if (flags & LMD_FLG_DEV_RDONLY) {
+			o->od_dt_dev.dd_rdonly = 1;
+			LCONSOLE_WARN("%s: set dev_rdonly on this device\n",
+				      svname);
+		}
+	}
 
 	if (server_name_is_ost(o->od_svname))
 		o->od_is_ost = 1;
@@ -908,7 +939,7 @@ static int osd_mount(const struct lu_env *env,
 		o->od_posix_acl = 1;
 
 err:
-	if (rc) {
+	if (rc != 0 && o->od_os != NULL) {
 		dmu_objset_disown(o->od_os, o);
 		o->od_os = NULL;
 	}
@@ -931,8 +962,9 @@ static void osd_umount(const struct lu_env *env, struct osd_device *o)
 		       atomic_read(&o->od_zerocopy_pin));
 
 	if (o->od_os != NULL) {
-		/* force a txg sync to get all commit callbacks */
-		txg_wait_synced(dmu_objset_pool(o->od_os), 0ULL);
+		if (!o->od_dt_dev.dd_rdonly)
+			/* force a txg sync to get all commit callbacks */
+			txg_wait_synced(dmu_objset_pool(o->od_os), 0ULL);
 
 		/* close the object set */
 		dmu_objset_disown(o->od_os, o);
@@ -1032,8 +1064,11 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
 
 	if (o->od_os) {
 		osd_objset_unregister_callbacks(o);
-		osd_sync(env, lu2dt_dev(d));
-		txg_wait_callbacks(spa_get_dsl(dmu_objset_spa(o->od_os)));
+		if (!o->od_dt_dev.dd_rdonly) {
+			osd_sync(env, lu2dt_dev(d));
+			txg_wait_callbacks(
+					spa_get_dsl(dmu_objset_spa(o->od_os)));
+		}
 	}
 
 	rc = osd_procfs_fini(o);
@@ -1284,7 +1319,7 @@ CFS_MODULE_PARM(osd_oi_count, "i", int, 0444,
 		"Number of Object Index containers to be created, "
 		"it's only valid for new filesystem.");
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Object Storage Device ("LUSTRE_OSD_ZFS_NAME")");
 MODULE_LICENSE("GPL");
 

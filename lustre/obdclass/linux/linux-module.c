@@ -73,7 +73,6 @@
 #include <lprocfs_status.h>
 #include <lustre_ioctl.h>
 #include <lustre_ver.h>
-#include <lustre/lustre_build_version.h>
 
 int proc_version;
 
@@ -215,21 +214,23 @@ struct miscdevice obd_psdev = {
 #ifdef CONFIG_PROC_FS
 static int obd_proc_version_seq_show(struct seq_file *m, void *v)
 {
-	return seq_printf(m, "lustre: %s\nkernel: %s\nbuild:  %s\n",
-			  LUSTRE_VERSION_STRING, "patchless_client",
-			  BUILD_VERSION);
+	seq_printf(m, "lustre: %s\nkernel: %s\nbuild:  %s\n",
+		   LUSTRE_VERSION_STRING, "patchless_client",
+		   LUSTRE_VERSION_STRING);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(obd_proc_version);
 
 static int obd_proc_pinger_seq_show(struct seq_file *m, void *v)
 {
-	return seq_printf(m, "%s\n",
+	seq_printf(m, "%s\n",
 #ifdef ENABLE_PINGER
-			     "on"
+		   "on"
 #else
-			     "off"
+		   "off"
 #endif
-			 );
+		 );
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(obd_proc_pinger);
 
@@ -266,7 +267,7 @@ static int obd_proc_health_seq_show(struct seq_file *m, void *data)
 
 		if (obd_health_check(NULL, obd)) {
 			seq_printf(m, "device %s reported unhealthy\n",
-					obd->obd_name);
+				   obd->obd_name);
 			healthy = false;
 		}
 		class_decref(obd, __FUNCTION__, current);
@@ -275,7 +276,7 @@ static int obd_proc_health_seq_show(struct seq_file *m, void *data)
 	read_unlock(&obd_dev_lock);
 
 	if (healthy)
-		return seq_printf(m, "healthy\n");
+		seq_puts(m, "healthy\n");
 
 	seq_printf(m, "NOT HEALTHY\n");
 	return 0;
@@ -284,7 +285,9 @@ LPROC_SEQ_FOPS_RO(obd_proc_health);
 
 static int obd_proc_jobid_var_seq_show(struct seq_file *m, void *v)
 {
-	return seq_printf(m, "%s\n", obd_jobid_var);
+	if (strlen(obd_jobid_var) != 0)
+		seq_printf(m, "%s\n", obd_jobid_var);
+	return 0;
 }
 
 static ssize_t
@@ -308,6 +311,38 @@ obd_proc_jobid_var_seq_write(struct file *file, const char __user *buffer,
 }
 LPROC_SEQ_FOPS(obd_proc_jobid_var);
 
+static int obd_proc_jobid_name_seq_show(struct seq_file *m, void *v)
+{
+	if (strlen(obd_jobid_node) != 0)
+		seq_printf(m, "%s\n", obd_jobid_node);
+	return 0;
+}
+
+static ssize_t obd_proc_jobid_name_seq_write(struct file *file,
+					     const char __user *buffer,
+					     size_t count, loff_t *off)
+{
+	if (count == 0 || count > LUSTRE_JOBID_SIZE)
+		return -EINVAL;
+
+	/* clear previous value */
+	memset(obd_jobid_node, 0, LUSTRE_JOBID_SIZE);
+
+	if (copy_from_user(obd_jobid_node, buffer, count))
+		return -EFAULT;
+
+	/* Trim the trailing '\n' if any */
+	if (obd_jobid_node[count - 1] == '\n') {
+		/* Don't echo just a newline */
+		if (count == 1)
+			return -EINVAL;
+		obd_jobid_node[count - 1] = 0;
+	}
+
+	return count;
+}
+LPROC_SEQ_FOPS(obd_proc_jobid_name);
+
 /* Root for /proc/fs/lustre */
 struct proc_dir_entry *proc_lustre_root = NULL;
 EXPORT_SYMBOL(proc_lustre_root);
@@ -321,6 +356,8 @@ static struct lprocfs_vars lprocfs_base[] = {
 	  .fops	=	&obd_proc_health_fops	},
 	{ .name =	"jobid_var",
 	  .fops	=	&obd_proc_jobid_var_fops},
+	{ .name =	"jobid_name",
+	  .fops =	&obd_proc_jobid_name_fops},
 	{ NULL }
 };
 #else
@@ -369,10 +406,11 @@ static int obd_device_list_seq_show(struct seq_file *p, void *v)
         else
                 status = "--";
 
-        return seq_printf(p, "%3d %s %s %s %s %d\n",
-                          (int)index, status, obd->obd_type->typ_name,
-                          obd->obd_name, obd->obd_uuid.uuid,
-			  atomic_read(&obd->obd_refcount));
+	seq_printf(p, "%3d %s %s %s %s %d\n",
+		   (int)index, status, obd->obd_type->typ_name,
+		   obd->obd_name, obd->obd_uuid.uuid,
+		   atomic_read(&obd->obd_refcount));
+	return 0;
 }
 
 static const struct seq_operations obd_device_list_sops = {

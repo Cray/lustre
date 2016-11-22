@@ -55,23 +55,12 @@
 #include <linux/backing-dev.h>
 #include <linux/posix_acl_xattr.h>
 
-#define filp_size(f)					\
-	(i_size_read((f)->f_dentry->d_inode))
-#define filp_poff(f)					\
-	(&(f)->f_pos)
-
-#define filp_read(fp, buf, size, pos)			\
-	((fp)->f_op->read((fp), (buf), (size), pos))
-
-#define filp_write(fp, buf, size, pos)			\
-	((fp)->f_op->write((fp), (buf), (size), pos))
-
 #if defined(HAVE_FILE_FSYNC_4ARGS) || defined(HAVE_FILE_FSYNC_2ARGS)
 #define ll_vfs_fsync_range(fp, start, end, datasync) \
 	vfs_fsync_range(fp, start, end, datasync)
 #else
 #define ll_vfs_fsync_range(fp, start, end, datasync) \
-	vfs_fsync_range(fp, (fp)->f_dentry, start, end, datasync)
+	vfs_fsync_range(fp, (fp)->f_path.dentry, start, end, datasync)
 #endif
 
 #define flock_type(fl)			((fl)->fl_type)
@@ -83,16 +72,10 @@
 #define flock_end(fl)			((fl)->fl_end)
 #define flock_set_end(fl, end)		do { (fl)->fl_end = (end); } while (0)
 
-#define cfs_filp_close(f)                   filp_close(f, NULL)
-
-typedef struct file cfs_file_t;
-cfs_file_t *cfs_filp_open (const char *name, int flags, int mode, int *err);
-
-ssize_t cfs_user_read(cfs_file_t *filp, char *buf, size_t count,
-                      loff_t *offset);
-
 ssize_t filp_user_write(struct file *filp, const void *buf, size_t count,
 			loff_t *offset);
+ssize_t filp_user_read(struct file *filp, char *buf, size_t count,
+		       loff_t *offset);
 
 #ifndef IFSHIFT
 #define IFSHIFT			12

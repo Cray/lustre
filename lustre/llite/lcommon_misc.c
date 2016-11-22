@@ -133,7 +133,7 @@ int cl_get_grouplock(struct cl_object *obj, unsigned long gid, int nonblock,
         struct cl_lock         *lock;
         struct cl_lock_descr   *descr;
         __u32                   enqflags;
-        int                     refcheck;
+	__u16                   refcheck;
         int                     rc;
 
         env = cl_env_get(&refcheck);
@@ -172,13 +172,10 @@ int cl_get_grouplock(struct cl_object *obj, unsigned long gid, int nonblock,
 		return rc;
 	}
 
-        cg->cg_env  = cl_env_get(&refcheck);
+        cg->cg_env  = env;
         cg->cg_io   = io;
         cg->cg_lock = lock;
         cg->cg_gid  = gid;
-        LASSERT(cg->cg_env == env);
-
-        cl_env_unplant(env, &refcheck);
         return 0;
 }
 
@@ -187,13 +184,9 @@ void cl_put_grouplock(struct ccc_grouplock *cg)
 	struct lu_env  *env  = cg->cg_env;
 	struct cl_io   *io   = cg->cg_io;
 	struct cl_lock *lock = cg->cg_lock;
-	int             refcheck;
 
 	LASSERT(cg->cg_env);
 	LASSERT(cg->cg_gid);
-
-	cl_env_implant(env, &refcheck);
-	cl_env_put(env, &refcheck);
 
 	cl_lock_release(env, lock);
 	cl_io_fini(env, io);
@@ -236,7 +229,7 @@ int cl_lock_ahead(struct inode *inode, off_t start, off_t end,
 	struct cl_lock_descr	*descr = NULL;
 	enum cl_lock_mode	cl_mode;
 	int                     result;
-	int                     refcheck;
+	__u16                   refcheck;
 
 	ENTRY;
 

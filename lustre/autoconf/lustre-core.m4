@@ -289,6 +289,40 @@ Cannot enable gss keyring. See above for details.
 ]) # LC_CONFIG_GSS_KEYRING
 
 #
+# LC_HAVE_CRED_TGCRED
+#
+# rhel7 struct cred has no member tgcred
+#
+AC_DEFUN([LC_HAVE_CRED_TGCRED], [
+LB_CHECK_COMPILE([if 'struct cred' has member 'tgcred'],
+cred_tgcred, [
+	#include <linux/cred.h>
+],[
+	((struct cred *)0)->tgcred = NULL;
+],[
+	AC_DEFINE(HAVE_CRED_TGCRED, 1,
+		[struct cred has member tgcred])
+])
+]) # LC_HAVE_CRED_TGCRED
+
+#
+# LC_KEY_TYPE_INSTANTIATE_2ARGS
+#
+# rhel7 key_type->instantiate takes 2 args (struct key, struct key_preparsed_payload)
+#
+AC_DEFUN([LC_KEY_TYPE_INSTANTIATE_2ARGS], [
+LB_CHECK_COMPILE([if 'key_type->instantiate' has two args],
+key_type_instantiate_2args, [
+	#include <linux/key-type.h>
+],[
+	((struct key_type *)0)->instantiate(0, NULL);
+],[
+	AC_DEFINE(HAVE_KEY_TYPE_INSTANTIATE_2ARGS, 1,
+		[key_type->instantiate has two args])
+])
+]) # LC_KEY_TYPE_INSTANTIATE_2ARGS
+
+#
 # LC_CONFIG_SUNRPC
 #
 AC_DEFUN([LC_CONFIG_SUNRPC], [
@@ -316,6 +350,8 @@ AC_MSG_RESULT([$enable_gss])
 
 AS_IF([test "x$enable_gss" != xno], [
 	LC_CONFIG_GSS_KEYRING
+	LC_HAVE_CRED_TGCRED
+	LC_KEY_TYPE_INSTANTIATE_2ARGS
 	sunrpc_required=$enable_gss
 	LC_CONFIG_SUNRPC
 	sunrpc_required="no"
@@ -334,36 +370,39 @@ AS_IF([test "x$enable_gss" != xno], [
 	require_krb5="no"
 
 	AS_IF([test -n "$KRBDIR"], [
-		AC_CHECK_LIB([gssapi], [gss_export_lucid_sec_context], [
-			GSSAPI_LIBS="$GSSAPI_LDFLAGS -lgssapi"
-			gss_conf_test="success"
-		], [
-			AC_CHECK_LIB([gssglue], [gss_export_lucid_sec_context], [
-				GSSAPI_LIBS="$GSSAPI_LDFLAGS -lgssglue"
-				gss_conf_test="success"
-			], [
-				AS_IF([test "x$enable_gss" = xyes], [
-					AC_MSG_ERROR([
-
-libgssapi or libgssglue is not found, which is required by GSS.
-])
-				], [
-					AC_MSG_WARN([
-
-libgssapi or libgssglue is not found, which is required by GSS.
-])
-				])
-			])
-		])
-		AC_SUBST(GSSAPI_LIBS)
+		gss_conf_test="success"
+	], [
+		AC_MSG_WARN([not found!])
+		gss_conf_test="failure"
 	])
 
 	AS_IF([test "x$gss_conf_test" = xsuccess], [
 		AC_DEFINE([HAVE_GSS], [1], [Define this is if you enable gss])
 		enable_gss="yes"
+	], [
+		enable_gss="no"
 	])
 ])
 ]) # LC_CONFIG_GSS
+
+#
+# DSS (Differentiated Storage Services)
+#
+
+AC_DEFUN([LC_CONFIG_DSS],
+[AC_MSG_CHECKING([if kernel supports DSS])
+LB_LINUX_TRY_COMPILE([
+	#include <linux/dss_types.h>
+],[
+	int class = dss_tag_file_type(NULL);
+],[
+	AC_MSG_RESULT([yes])
+	AC_DEFINE(HAVE_DSS, 1,
+		  [kernel supports DSS.])
+],[
+	AC_MSG_RESULT([no])
+])
+])
 
 #
 # LC_INODE_PERMISION_2ARGS
@@ -819,20 +858,19 @@ lock_manager_ops_lm_xxx, [
 #
 # LC_INODE_DIO_WAIT
 #
-# 3.1 kills inode->i_alloc_sem, use i_dio_count and inode_dio_wait/
-#     inode_dio_done instead.
+# 3.1 kills inode->i_alloc_sem, use i_dio_count and inode_dio_wait
+#     instead.
 # see kernel commit bd5fe6c5eb9c548d7f07fe8f89a150bb6705e8e3
 #
 AC_DEFUN([LC_INODE_DIO_WAIT], [
-LB_CHECK_COMPILE([if 'inode->i_alloc_sem' is killed and use inode_dio_wait/done],
+LB_CHECK_COMPILE([if 'inode->i_alloc_sem' is killed and use inode_dio_wait],
 inode_dio_wait, [
 	#include <linux/fs.h>
 ],[
 	inode_dio_wait((struct inode *)0);
-	inode_dio_done((struct inode *)0);
 ],[
 	AC_DEFINE(HAVE_INODE_DIO_WAIT, 1,
-		[inode->i_alloc_sem is killed and use inode_dio_wait/done])
+		[inode->i_alloc_sem is killed and use inode_dio_wait])
 ])
 ]) # LC_INODE_DIO_WAIT
 
@@ -921,6 +959,33 @@ inode_i_nlink_protected, [
 		[inode->i_nlink is protected from direct modification])
 ])
 ]) # LC_HAVE_PROTECT_I_NLINK
+
+#
+# 2.6.39 security_inode_init_security takes a 'struct qstr' parameter
+#
+# 3.2 security_inode_init_security takes a callback to set xattrs
+#
+AC_DEFUN([LC_HAVE_SECURITY_IINITSEC], [
+LB_CHECK_COMPILE([if security_inode_init_security takes a callback],
+security_inode_init_security_callback, [
+	#include <linux/security.h>
+],[
+	security_inode_init_security(NULL, NULL, NULL, (const initxattrs)NULL, NULL);
+],[
+	AC_DEFINE(HAVE_SECURITY_IINITSEC_CALLBACK, 1,
+		  [security_inode_init_security takes a callback to set xattrs])
+],[
+	LB_CHECK_COMPILE([if security_inode_init_security takes a 'struct qstr' parameter],
+	security_inode_init_security_qstr, [
+		#include <linux/security.h>
+	],[
+		security_inode_init_security(NULL, NULL, (struct qstr *)NULL, NULL, NULL, NULL);
+	],[
+		AC_DEFINE(HAVE_SECURITY_IINITSEC_QSTR, 1,
+			  [security_inode_init_security takes a 'struct qstr' parameter])
+	])
+])
+]) # LC_HAVE_SECURITY_IINITSEC
 
 #
 # LC_HAVE_MIGRATE_HEADER
@@ -1230,14 +1295,14 @@ posix_acl_to_xattr_user_namespace, [
 # 3.8 struct file has new member f_inode
 #
 AC_DEFUN([LC_HAVE_FILE_F_INODE], [
-LB_CHECK_COMPILE([if 'struct file' has memeber 'f_inode'],
+LB_CHECK_COMPILE([if 'struct file' has member 'f_inode'],
 file_f_inode, [
 	#include <linux/fs.h>
 ],[
 	((struct file *)0)->f_inode = NULL;
 ],[
 	AC_DEFINE(HAVE_FILE_F_INODE, 1,
-		[struct file has memeber f_inode])
+		[struct file has member f_inode])
 ])
 ]) # LC_HAVE_FILE_F_INODE
 
@@ -1683,6 +1748,23 @@ file_function_iter, [
 ]) # LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
 
 #
+# LC_HAVE_LM_GRANT_2ARGS
+#
+# 3.17 removed unused argument from lm_grant
+#
+AC_DEFUN([LC_HAVE_LM_GRANT_2ARGS], [
+LB_CHECK_COMPILE([if 'lock_manager_operations.lm_grant' takes two args],
+lm_grant, [
+	#include <linux/fs.h>
+],[
+	((struct lock_manager_operations *)NULL)->lm_grant(NULL, 0);
+],[
+	AC_DEFINE(HAVE_LM_GRANT_2ARGS, 1,
+		[lock_manager_operations.lm_grant takes two args])
+])
+]) # LC_HAVE_LM_GRANT_2ARGS
+
+#
 # LC_HAVE_SMP_MB__BEFORE_ATOMIC
 #
 # smp_mb__before_clear_bit() was deprecated in kernel 3.16 and removed in
@@ -1701,34 +1783,22 @@ smp_mb__before_atomic, [
 ]) # LC_HAVE_SMP_MB__BEFORE_ATOMIC
 
 #
-# LC_NFS_FILLDIR_USE_CTX
+# LC_KEY_MATCH_DATA
 #
-# 3.18 kernel moved from void cookie to struct dir_context
+# 3.17	replaces key_type::match with match_preparse
+#	and has new struct key_match_data
 #
-AC_DEFUN([LC_NFS_FILLDIR_USE_CTX], [
-tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-Werror"
-LB_CHECK_COMPILE([if filldir_t uses struct dir_context],
-filldir_ctx, [
-        #include <linux/fs.h>
+AC_DEFUN([LC_KEY_MATCH_DATA], [
+LB_CHECK_COMPILE([if struct key_match field exist],
+key_match, [
+	#include <linux/key-type.h>
 ],[
-        int filldir(struct dir_context *ctx, const char* name,
-                    int i, loff_t off, u64 tmp, unsigned temp)
-        {
-                return 0;
-        }
-
-        struct dir_context ctx = {
-                .actor = filldir,
-        };
-
-        ctx.actor(NULL, "test", 0, (loff_t) 0, 0, 0);
+	struct key_match_data data;
 ],[
-        AC_DEFINE(HAVE_FILLDIR_USE_CTX, 1,
-                [filldir_t needs struct dir_context as argument])
+	AC_DEFINE(HAVE_KEY_MATCH_DATA, 1,
+		[struct key_match_data exist])
 ])
-EXTRA_KCFLAGS="$tmp_flags"
-]) # LC_NFS_FILLDIR_USE_CTX
+]) # LC_KEY_MATCH_DATA
 
 #
 # LC_PERCPU_COUNTER_INIT
@@ -1748,6 +1818,36 @@ percpu_counter_init, [
 		[percpu_counter_init uses GFP_* flag])
 ])
 ]) # LC_PERCPU_COUNTER_INIT
+
+#
+# LC_NFS_FILLDIR_USE_CTX
+#
+# 3.18 kernel moved from void cookie to struct dir_context
+#
+AC_DEFUN([LC_NFS_FILLDIR_USE_CTX], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if filldir_t uses struct dir_context],
+filldir_ctx, [
+	#include <linux/fs.h>
+],[
+	int filldir(struct dir_context *ctx, const char* name,
+		    int i, loff_t off, u64 tmp, unsigned temp)
+	{
+		return 0;
+	}
+
+	struct dir_context ctx = {
+		.actor = filldir,
+	};
+
+	ctx.actor(NULL, "test", 0, (loff_t) 0, 0, 0);
+],[
+	AC_DEFINE(HAVE_FILLDIR_USE_CTX, 1,
+		[filldir_t needs struct dir_context as argument])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_NFS_FILLDIR_USE_CTX
 
 #
 # LC_HAVE_DQUOT_QC_DQBLK
@@ -1774,6 +1874,62 @@ EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_DQUOT_QC_DQBLK
 
 #
+# LC_BACKING_DEV_INFO_REMOVAL
+#
+# 3.20 kernel removed backing_dev_info from address_space
+#
+AC_DEFUN([LC_BACKING_DEV_INFO_REMOVAL], [
+LB_CHECK_COMPILE([if struct address_space has backing_dev_info],
+backing_dev_info, [
+	#include <linux/fs.h>
+],[
+	struct address_space mapping;
+
+	mapping.backing_dev_info = NULL;
+],[
+	AC_DEFINE(HAVE_BACKING_DEV_INFO, 1, [backing_dev_info exist])
+])
+]) # LC_BACKING_DEV_INFO_REMOVAL
+
+#
+# LC_HAVE_BDI_CAP_MAP_COPY
+#
+# 3.20  removed mmap handling for backing devices since
+#	it breaks on non-MMU systems. See kernel commit
+#	b4caecd48005fbed3949dde6c1cb233142fd69e9
+#
+AC_DEFUN([LC_HAVE_BDI_CAP_MAP_COPY], [
+LB_CHECK_COMPILE([if have 'BDI_CAP_MAP_COPY'],
+bdi_cap_map_copy, [
+	#include <linux/backing-dev.h>
+],[
+	struct backing_dev_info info;
+
+	info.capabilities = BDI_CAP_MAP_COPY;
+],[
+	AC_DEFINE(HAVE_BDI_CAP_MAP_COPY, 1,
+		[BDI_CAP_MAP_COPY exist])
+])
+]) # LC_HAVE_BDI_CAP_MAP_COPY
+
+#
+# LC_CANCEL_DIRTY_PAGE
+#
+# 4.0.0 kernel removed cancel_dirty_page
+#
+AC_DEFUN([LC_CANCEL_DIRTY_PAGE], [
+LB_CHECK_COMPILE([if cancel_dirty_page still exist],
+cancel_dirty_page, [
+	#include <linux/mm.h>
+],[
+	cancel_dirty_page(NULL, PAGE_SIZE);
+],[
+	AC_DEFINE(HAVE_CANCEL_DIRTY_PAGE, 1,
+		[cancel_dirty_page is still available])
+])
+]) # LC_CANCEL_DIRTY_PAGE
+
+#
 # LC_IOV_ITER_RW
 #
 # 4.1 kernel has iov_iter_rw
@@ -1794,6 +1950,154 @@ iov_iter_rw, [
 ]) # LC_IOV_ITER_RW
 
 #
+# LC_HAVE_SYNC_READ_WRITE
+#
+# 4.1 new_sync_[read|write] no longer exported
+#
+AC_DEFUN([LC_HAVE_SYNC_READ_WRITE], [
+LB_CHECK_EXPORT([new_sync_read], [fs/read_write.c],
+	[AC_DEFINE(HAVE_SYNC_READ_WRITE, 1,
+			[new_sync_[read|write] is exported by the kernel])])
+]) # LC_HAVE_SYNC_READ_WRITE
+
+#
+# LC_NEW_CANCEL_DIRTY_PAGE
+#
+# 4.2 kernel has new cancel_dirty_page
+#
+AC_DEFUN([LC_NEW_CANCEL_DIRTY_PAGE], [
+LB_CHECK_COMPILE([if cancel_dirty_page with one argument exist],
+new_cancel_dirty_page, [
+	#include <linux/mm.h>
+],[
+	cancel_dirty_page(NULL);
+],[
+	AC_DEFINE(HAVE_NEW_CANCEL_DIRTY_PAGE, 1,
+		[cancel_dirty_page with one arguement is available])
+])
+]) # LC_NEW_CANCEL_DIRTY_PAGE
+
+#
+# LC_SYMLINK_OPS_USE_NAMEIDATA
+#
+# For the 4.2+ kernels the file system internal symlink api no
+# longer uses struct nameidata as a argument
+#
+AC_DEFUN([LC_SYMLINK_OPS_USE_NAMEIDATA], [
+LB_CHECK_COMPILE([if symlink inode operations have struct nameidata argument],
+symlink_use_nameidata, [
+	#include <linux/namei.h>
+	#include <linux/fs.h>
+],[
+	struct nameidata *nd = NULL;
+
+	((struct inode_operations *)0)->follow_link(NULL, nd);
+	((struct inode_operations *)0)->put_link(NULL, nd, NULL);
+],[
+	AC_DEFINE(HAVE_SYMLINK_OPS_USE_NAMEIDATA, 1,
+		[symlink inode operations need struct nameidata argument])
+])
+]) # LC_SYMLINK_OPS_USE_NAMEIDATA
+
+#
+# LC_BIO_ENDIO_USES_ONE_ARG
+#
+# 4.2 kernel bio_endio now only takes one argument
+#
+AC_DEFUN([LC_BIO_ENDIO_USES_ONE_ARG], [
+LB_CHECK_COMPILE([if 'bio_endio' with one argument exist],
+bio_endio, [
+	#include <linux/bio.h>
+],[
+	bio_endio(NULL);
+],[
+	AC_DEFINE(HAVE_BIO_ENDIO_USES_ONE_ARG, 1,
+		[bio_endio takes only one argument])
+])
+]) # LC_BIO_ENDIO_USES_ONE_ARG
+
+#
+# LC_HAVE_LOOP_CTL_GET_FREE
+#
+# 4.x kernel have moved userspace APIs to
+# the separate directory and all of them
+# support LOOP_CTL_GET_FREE
+#
+AC_DEFUN([LC_HAVE_LOOP_CTL_GET_FREE], [
+LB_CHECK_FILE([$LINUX/include/linux/loop.h], [
+	LB_CHECK_COMPILE([if have 'HAVE_LOOP_CTL_GET_FREE'],
+	LOOP_CTL_GET_FREE, [
+		#include <linux/loop.h>
+	],[
+		int i;
+
+		i = LOOP_CTL_GET_FREE;
+	],[
+		AC_DEFINE(HAVE_LOOP_CTL_GET_FREE, 1,
+			[LOOP_CTL_GET_FREE exist])
+	])
+],[
+	AC_DEFINE(HAVE_LOOP_CTL_GET_FREE, 1,
+		[kernel has LOOP_CTL_GET_FREE])
+])
+]) # LC_HAVE_LOOP_CTL_GET_FREE
+
+#
+# LC_HAVE_LOCKS_LOCK_FILE_WAIT
+#
+# 4.4 kernel have moved locks API users to
+# locks_lock_inode_wait()
+#
+AC_DEFUN([LC_HAVE_LOCKS_LOCK_FILE_WAIT], [
+LB_CHECK_COMPILE([if 'locks_lock_file_wait' exists],
+locks_lock_file_wait, [
+	#include <linux/fs.h>
+],[
+	locks_lock_file_wait(NULL, NULL);
+],[
+	AC_DEFINE(HAVE_LOCKS_LOCK_FILE_WAIT, 1,
+		[kernel has locks_lock_file_wait])
+])
+]) # LC_HAVE_LOCKS_LOCK_FILE_WAIT
+
+#
+# LC_HAVE_QC_MAKE_REQUEST_FN
+#
+# 4.4 request_queue.make_request_fn defined as function returns with blk_qc_t
+# see kernel commit dece16353ef47d8d33f5302bc158072a9d65e26f
+#
+AC_DEFUN([LC_HAVE_QC_MAKE_REQUEST_FN], [
+LB_CHECK_COMPILE([if 'request_queue.make_request_fn' returns blk_qc_t],
+make_request_fn_blk_qc_t, [
+	#include <linux/blkdev.h>
+],[
+	blk_qc_t ret;
+	make_request_fn *mrf;
+	ret = mrf(NULL, NULL);
+],[
+	AC_DEFINE(HAVE_QC_MAKE_REQUEST_FN, 1,
+		[request_queue.make_request_fn returns blk_qc_t])
+])
+]) # LC_HAVE_QC_MAKE_REQUEST_FN
+
+#
+# LC_HAVE_INODE_LOCK
+#
+# 4.5 introduced inode_lock
+#
+AC_DEFUN([LC_HAVE_INODE_LOCK], [
+LB_CHECK_COMPILE([if 'inode_lock' is defined],
+inode_lock, [
+	#include <linux/fs.h>
+],[
+	inode_lock(NULL);
+], [
+	AC_DEFINE(HAVE_INODE_LOCK, 1,
+		  [inode_lock is defined])
+])
+]) # LC_HAVE_INODE_LOCK
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -1812,6 +2116,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_CAPA_CRYPTO
 	LC_CONFIG_RMTCLIENT
 	LC_CONFIG_GSS
+	LC_CONFIG_DSS
 
 	# 2.6.32
 	LC_BLK_QUEUE_MAX_SEGMENTS
@@ -1846,6 +2151,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_FSTYPE_MOUNT
 	LC_IOP_TRUNCATE
 	LC_HAVE_INODE_OWNER_OR_CAPABLE
+	LC_HAVE_SECURITY_IINITSEC
 
 	# 3.0
 	LC_DIRTY_INODE_WITH_FLAG
@@ -1857,6 +2163,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_FILE_LLSEEK_SIZE
 	LC_INODE_PERMISION_2ARGS
 	LC_RADIX_EXCEPTION_ENTRY
+	LC_HAVE_LOOP_CTL_GET_FREE
 
 	# 3.2
 	LC_HAVE_VOID_MAKE_REQUEST_FN
@@ -1929,6 +2236,10 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
 	LC_HAVE_SMP_MB__BEFORE_ATOMIC
 
+	# 3.17
+	LC_HAVE_LM_GRANT_2ARGS
+	LC_KEY_MATCH_DATA
+
 	# 3.18
 	LC_PERCPU_COUNTER_INIT
 	LC_NFS_FILLDIR_USE_CTX
@@ -1936,8 +2247,28 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 3.19
 	LC_HAVE_DQUOT_QC_DQBLK
 
+	# 3.20
+	LC_BACKING_DEV_INFO_REMOVAL
+	LC_HAVE_BDI_CAP_MAP_COPY
+
+	# 4.0.0
+	LC_CANCEL_DIRTY_PAGE
+
 	# 4.1.0
 	LC_IOV_ITER_RW
+	LC_HAVE_SYNC_READ_WRITE
+
+	# 4.2
+	LC_NEW_CANCEL_DIRTY_PAGE
+	LC_BIO_ENDIO_USES_ONE_ARG
+	LC_SYMLINK_OPS_USE_NAMEIDATA
+
+	# 4.4
+	LC_HAVE_LOCKS_LOCK_FILE_WAIT
+	LC_HAVE_QC_MAKE_REQUEST_FN
+
+	# 4.5
+	LC_HAVE_INODE_LOCK
 
 	#
 	AS_IF([test "x$enable_server" != xno], [
@@ -2165,6 +2496,24 @@ No selinux package found, unable to build selinux enabled tools
 ])
 AC_SUBST(SELINUX)
 
+LDAP=""
+AC_CHECK_LIB([ldap],
+             [ldap_sasl_bind_s],
+             [AC_CHECK_HEADERS([ldap.h],
+                               [LDAP="-lldap"
+                                AC_DEFINE([HAVE_LDAP], 1,
+                                          [support alder32 checksum type])],
+                               [AC_MSG_WARN([No ldap-devel package found])])],
+             [AC_MSG_WARN([No ldap package found])]
+)
+AC_SUBST(LDAP)
+
+# l_getidenity_nss
+AC_ARG_ENABLE([getidentity_nss],
+      AC_HELP_STRING([--enable-getidentity-nss],
+                      [Compile l_getidentity_nss utility with NSS modules support]),
+      [],[enable_getidentity_nss=yes])
+
 # Super safe df
 AC_MSG_CHECKING([whether to report minimum OST free space])
 AC_ARG_ENABLE([mindf],
@@ -2234,6 +2583,8 @@ AM_CONDITIONAL(GSS_KEYRING, test x$enable_gss_keyring = xyes)
 AM_CONDITIONAL(GSS_PIPEFS, test x$enable_gss_pipefs = xyes)
 AM_CONDITIONAL(LIBPTHREAD, test x$enable_libpthread = xyes)
 AM_CONDITIONAL(LLITE_LLOOP, test x$enable_llite_lloop_module = xyes)
+AM_CONDITIONAL(LDAP_BUILD, test x$LDAP != x)
+AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
 ]) # LC_CONDITIONALS
 
 #
@@ -2250,7 +2601,6 @@ lustre/conf/Makefile
 lustre/contrib/Makefile
 lustre/doc/Makefile
 lustre/include/Makefile
-lustre/include/lustre_ver.h
 lustre/include/lustre/Makefile
 lustre/kernel_patches/targets/3.10-rhel7.target
 lustre/kernel_patches/targets/2.6-rhel6.7.target
@@ -2261,6 +2611,7 @@ lustre/kernel_patches/targets/2.6-sles11.target
 lustre/kernel_patches/targets/3.0-sles11.target
 lustre/kernel_patches/targets/3.0-sles11sp3.target
 lustre/kernel_patches/targets/3.0-sles11sp4.target
+lustre/kernel_patches/targets/3.12-sles12.target
 lustre/kernel_patches/targets/2.6-fc11.target
 lustre/kernel_patches/targets/2.6-fc12.target
 lustre/kernel_patches/targets/2.6-fc15.target
