@@ -2,7 +2,7 @@
 <configuration xmlns="http://svndownstream.us.cray.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <stream type="obs" xsi:type="obsStreamType">
         <project>
-            SCM_PROJECT:SCM_REPO:
+            cray-lustre:
             <extracted refer="full-branch"/>
         </project>
         <sources>
