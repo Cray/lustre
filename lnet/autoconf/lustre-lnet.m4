@@ -281,16 +281,6 @@ AS_IF([test $ENABLEO2IB -eq 0], [
 			   -f ${O2IBPATH}/include/rdma/ib_cm.h -a \
 			   -f ${O2IBPATH}/include/rdma/ib_verbs.h -a \
 			   -f ${O2IBPATH}/include/rdma/ib_fmr_pool.h \)], [
-			AS_IF([test \( -d ${O2IBPATH}/kernel_patches -a \
-				   -f ${O2IBPATH}/Makefile \)], [
-				AC_MSG_RESULT([no])
-				AC_MSG_ERROR([
-
-you appear to be trying to use the OFED distribution's source
-directory (${O2IBPATH}) rather than the "development/headers"
-directory which is likely in ${O2IBPATH%-*}
-])
-			])
 			o2ib_found=true
 			break
 		])
@@ -350,6 +340,7 @@ directory which is likely in ${O2IBPATH%-*}
 		O2IBLND=""
 		O2IBPATH=$(readlink --canonicalize $O2IBPATH)
 		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -I$O2IBPATH/include"
+		EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
 		LB_CHECK_COMPILE([whether to enable OpenIB gen2 support],
 		openib_gen2_support, [
 			#ifdef HAVE_COMPAT_RDMA
@@ -426,6 +417,7 @@ directory which is likely in ${O2IBPATH%-*}
 				EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -DCONFIG_COMPAT_IS_KTHREAD"
 			fi
 		])
+		EXTRA_CHECK_INCLUDE=""
 	fi
 ])
 AC_SUBST(EXTRA_OFED_CONFIG)
@@ -434,6 +426,8 @@ AC_SUBST(O2IBLND)
 
 # In RHEL 6.2, rdma_create_id() takes the queue-pair type as a fourth argument
 AS_IF([test $ENABLEO2IB -ne 0], [
+	EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
+
 	LB_CHECK_COMPILE([if 'rdma_create_id' wants four args],
 	rdma_create_id_4args, [
 		#ifdef HAVE_COMPAT_RDMA
@@ -452,15 +446,14 @@ AS_IF([test $ENABLEO2IB -ne 0], [
 		AC_DEFINE(HAVE_RDMA_CREATE_ID_4ARG, 1,
 			[rdma_create_id wants 4 args])
 	])
-])
-#
-# 4.2 introduced struct ib_cq_init_attr which is used
-# by ib_create_cq(). Note some OFED stacks only keep
-# their headers in sync with latest kernels but not
-# the functionality which means for infiniband testing
-# we need to always test functionality testings.
-#
-AS_IF([test $ENABLEO2IB != "no"], [
+
+	#
+	# 4.2 introduced struct ib_cq_init_attr which is used
+	# by ib_create_cq(). Note some OFED stacks only keep
+	# their headers in sync with latest kernels but not
+	# the functionality which means for infiniband testing
+	# we need to always test functionality testings.
+	#
 	LB_CHECK_COMPILE([if 'struct ib_cq_init_attr' is used],
 	ib_cq_init_attr, [
 		#ifdef HAVE_COMPAT_RDMA
@@ -475,6 +468,8 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		AC_DEFINE(HAVE_IB_CQ_INIT_ATTR, 1,
 			[struct ib_cq_init_attr is used by ib_create_cq])
 	])
+
+	EXTRA_CHECK_INCLUDE=""
 ])
 ]) # LN_CONFIG_O2IB
 
@@ -577,15 +572,6 @@ AC_SUBST(GNILND)
 AC_DEFUN([LN_CONFIG_SK_SLEEP], [
 LB_CHECK_COMPILE([if Linux kernel has 'sk_sleep'],
 sk_sleep, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <net/sock.h>
 ],[
 	sk_sleep(NULL);
@@ -605,15 +591,6 @@ tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'tcp_sendpage' first parameter is socket],
 tcp_sendpage_socket, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <linux/net.h>
 	#include <net/tcp.h>
 ],[
@@ -635,15 +612,6 @@ tmp_flags="$EXTRA_KCFLAGS"
 EXTRA_KCFLAGS="-Werror"
 LB_CHECK_COMPILE([if 'sk_data_ready' takes only one argument],
 sk_data_ready, [
-	#ifdef HAVE_COMPAT_RDMA
-	#undef PACKAGE_NAME
-	#undef PACKAGE_TARNAME
-	#undef PACKAGE_VERSION
-	#undef PACKAGE_STRING
-	#undef PACKAGE_BUGREPORT
-	#undef PACKAGE_URL
-	#include <linux/compat-2.6.h>
-	#endif
 	#include <linux/net.h>
 	#include <net/sock.h>
 ],[
