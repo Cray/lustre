@@ -650,8 +650,10 @@ static int ll_write_begin(struct file *file, struct address_space *mapping,
 	CDEBUG(D_VFSTRACE, "Writing %lu of %d to %d bytes\n", index, from, len);
 
 	lcc = ll_cl_find(file);
-	if (lcc == NULL)
+	if (lcc == NULL) {
+		io = NULL;
 		GOTO(out, result = -EIO);
+	}
 
 	env = lcc->lcc_env;
 	io  = lcc->lcc_io;
@@ -726,6 +728,8 @@ out:
 			lu_ref_del(&page->cp_reference, "cl_io", io);
 			cl_page_put(env, page);
 		}
+		if (io)
+			io->ci_result = result;
 	} else {
 		*pagep = vmpage;
 		*fsdata = lcc;
@@ -794,6 +798,8 @@ static int ll_write_end(struct file *file, struct address_space *mapping,
 	    file->f_flags & O_SYNC || IS_SYNC(file->f_path.dentry->d_inode))
 		result = vvp_io_write_commit(env, io);
 
+	if (result < 0)
+		io->ci_result = result;
 	RETURN(result >= 0 ? copied : result);
 }
 
