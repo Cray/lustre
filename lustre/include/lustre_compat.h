@@ -39,6 +39,7 @@
 
 #include <linux/fs_struct.h>
 #include <linux/namei.h>
+#include <linux/bio.h>
 
 #include <lustre_patchless_compat.h>
 
@@ -390,6 +391,10 @@ static inline void truncate_inode_pages_final(struct address_space *map)
 
 #ifndef SIZE_MAX
 #define SIZE_MAX	(~(size_t)0)
+#endif
+
+#ifndef bio_for_each_segment_all /* since kernel version 3.9 */
+#define bio_for_each_segment_all(bv, bio, it) bio_for_each_segment(bv, bio, it)
 #endif
 
 #endif /* _LUSTRE_COMPAT_H */
