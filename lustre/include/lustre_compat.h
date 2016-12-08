@@ -185,6 +185,7 @@ unsigned int ll_crypto_tfm_alg_min_keysize(struct crypto_blkcipher *tfm)
 #ifdef HAVE_BVEC_ITER
 #define bio_idx(bio)			(bio->bi_iter.bi_idx)
 #define bio_set_sector(bio, sector)	(bio->bi_iter.bi_sector = sector)
+#define bvl_to_page(bvl)		(bvl->bv_page)
 #else
 #define bio_idx(bio)			(bio->bi_idx)
 #define bio_set_sector(bio, sector)	(bio->bi_sector = sector)
