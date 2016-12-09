@@ -136,6 +136,9 @@ sed -i '1i%%define _prefix /' lustre.spec.in
 sed -i '1i%%define _includedir /usr/include' lustre.spec.in
 sed -i '/Requires: kernel = %{krequires}/d' lustre.spec.in
 sed -i '/Release.*/c\Release: %{release}' lustre.spec.in
+%if %{with service} || %{with compute} || %{with dal}
+sed -i 's/kernel_module_package /cray_kernel_module_package /g' lustre.spec.in
+%endif
 
 %{__sed} -e 's/@VERSION@/%{version}-%{release}/g' version.in > .version
 
@@ -182,12 +185,38 @@ sh autogen.sh
 %if %{with SLES11} 
 %{__cp} *x86_64.rpm /usr/src/packages/RPMS/x86_64/
 %{__cp} *src.rpm /usr/src/packages/SRPMS/
+
+%if %{with compute}
+%{__rm} -f /usr/src/packages/RPMS/x86_64/*ari_s*
+%endif
+%if %{with service}
+%{__rm} -f /usr/src/packages/RPMS/x86_64/*ari_c*
+%endif
+%if %{with xe}
+%{__rm} -f /usr/src/packages/RPMS/x86_64/*ari*
+%endif
 %endif
 
 
 %if %{with CENTOS65} || %{with CENTOS66} || %{with SLES12}
 %{__cp} *x86_64.rpm /home/abuild/rpmbuild/RPMS/x86_64/
 %{__cp} *src.rpm /home/abuild/rpmbuild/SRPMS
+
+%if %{with xc}
+%{__rm} -f /home/abuild/rpmbuild/RPMS/x86_64/*gem*
+%endif
+%if %{with xe}
+%{__rm} -f /home/abuild/rpmbuild/RPMS/x86_64/*ari*
+%endif
+%if %{with dal}
+%{__rm} -f /home/abuild/rpmbuild/RPMS/x86_64/*athena*
+%endif
+%if %{with compute}
+%{__rm} -f /home/abuild/rpmbuild/RPMS/x86_64/*ari_s*
+%endif
+%if %{with service}
+%{__rm} -f /home/abuild/rpmbuild/RPMS/x86_64/*ari_c*
+%endif
 %endif
 
 %install
