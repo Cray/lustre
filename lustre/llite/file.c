@@ -1213,8 +1213,15 @@ static bool file_is_noatime(const struct file *file)
 static void ll_io_init(struct cl_io *io, const struct file *file, int write)
 {
         struct inode *inode = file->f_dentry->d_inode;
+	struct ll_file_data *fd  = LUSTRE_FPRIVATE(file);
 
         io->u.ci_rw.crw_nonblock = file->f_flags & O_NONBLOCK;
+	/* nonblock & lock_no_expand cannot be set together.
+	 * Since O_NONBLOCK affects correctness and lock_no_expand does not,
+	 * we prioritize O_NONBLOCK.*/
+	if (!io->u.ci_rw.crw_nonblock)
+		io->ci_req_only = fd->ll_req_only;
+
 	if (write) {
 		io->u.ci_wr.wr_append = !!(file->f_flags & O_APPEND);
 		io->u.ci_wr.wr_sync = file->f_flags & O_SYNC ||
@@ -1276,7 +1283,6 @@ restart:
 #endif /* !HAVE_FILE_OPERATIONS_READ_WRITE_ITER */
 			vio->vui_iocb = args->u.normal.via_iocb;
 
-			io->ci_req_only = vio->vui_fd->ll_req_only;
 			/* Direct IO reads must also take range lock,
 			 * or multiple reads will try to work on the same pages
 			 * See LU-6227 for details. */
