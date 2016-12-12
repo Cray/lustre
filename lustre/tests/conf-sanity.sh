@@ -6213,6 +6213,14 @@ test_116() {
 }
 run_test 116 "Correctly handle errors in osp_precreate_cleanup_orphans"
 
+test_117() {
+	stopall
+	start_mgsmds || error "MGS MDS Start failed"
+	fail mgs
+	stop_mds || error "Stopping MDSes failed"
+}
+run_test 117 "fail mgs"
+
 #
 # set number of permanent parameters
 #
