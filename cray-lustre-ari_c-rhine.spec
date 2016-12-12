@@ -41,6 +41,11 @@ License: GPL
 Requires: module-init-tools
 Summary: Lustre networking for Aries Compute Nodes running CLE Rhine
 
+%package -n cray-lustre-cray_ari_c-%{vendor_version}-devel
+Summary: The lnet development package
+License: GPL
+Group: Development/Libraries/C and C++
+
 # override OBS _prefix to allow us to munge things 
 %{expand:%%global OBS_prefix %{_prefix}}
 %define _prefix    /
@@ -50,6 +55,10 @@ Userspace tools and files for the Lustre file system on XT compute nodes.
 
 %description lnet
 Userspace tools and files for Lustre networking on XT compute nodes.
+
+%description -n cray-lustre-cray_ari_c-%{vendor_version}-devel
+Development files for building against Lustre library.
+Includes headers, dynamic, and static libraries.
 
 %prep
 # using source_name here results in too deep of a macro stack, so use
@@ -73,10 +82,10 @@ fi
 syms="$(pkg-config --variable=symversdir cray-gni)/%{flavor}/Module.symvers"
 syms="$syms $(pkg-config --variable=symversdir cray-krca)/%{flavor}/Module.symvers"
 
-export GNICPPFLAGS=`pkg-config --cflags cray-gni cray-gni-headers cray-krca lsb-cray-hss`
+export GNICPPFLAGS=$(pkg-config --cflags cray-gni cray-gni-headers cray-krca lsb-cray-hss)
 
-HSS_FLAGS=`pkg-config --cflags lsb-cray-hss`
-CFLAGS="%{optflags} -Werror -fno-stack-protector $HSS_FLAGS"
+HSS_FLAGS=$(pkg-config --cflags lsb-cray-hss)
+export CFLAGS="%{optflags} -Werror -fno-stack-protector $HSS_FLAGS"
 
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
         %configure --disable-checksum \
@@ -84,7 +93,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --disable-server \
            --with-o2ib=no \
            --enable-gni \
-           --with-symvers="$syms" \
+           --with-extra-symbols="$syms" \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-obd-buffer-size=16384
 fi
@@ -99,6 +108,9 @@ export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
 #  /opt/cray/,.....
 
 make DESTDIR=${RPM_BUILD_ROOT} install 
+%{__install} -D -m 0644 ${PWD}/Module.symvers %{buildroot}/opt/cray/%{name}/%{version}/symvers/%{flavor}/Module.symvers
+# Install this just so we could verify the version matches the _s version
+%{__install} -D -m 0644 config.h %{buildroot}/usr/%{_includedir}/lustre/%{flavor}/config.h
 
 for dir in init.d sysconfig ha.d; do
     %{__rm} -fr %{buildroot}/etc/$dir
@@ -143,6 +155,13 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 %defattr(-,root,root)
 /lib/modules/*/updates/kernel/net/lustre
 /sbin/lctl
+
+%files -n cray-lustre-cray_ari_c-%{vendor_version}-devel
+%defattr(-,root,root)
+/opt/cray/%{name}/%{version}/symvers/%{flavor}
+/usr/%{_includedir}/lustre/%{flavor}/config.h
+%exclude %{_includedir}
+%exclude %{_sysconfdir}
 
 %post
 
