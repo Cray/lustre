@@ -58,7 +58,6 @@
 #include <limits.h>
 #include <lnet/nidstr.h>
 #include <lustre/lustre_idl.h>
-#include <libcfs/util/string.h>
 
 #if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 10, 53, 0)
 /*
