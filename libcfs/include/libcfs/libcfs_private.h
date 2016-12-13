@@ -634,6 +634,7 @@ enum {
         MXLND     = 12,
         GNILND    = 13,
 	GNIIPLND  = 14,
+	PTL4LND   = 15,
 };
 
 extern struct cfs_psdev_ops libcfs_psdev_ops;
