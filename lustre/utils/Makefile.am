@@ -27,7 +27,7 @@ endif
 rootsbin_PROGRAMS = mount.lustre
 bin_SCRIPTS   = llstat llobdstat plot-llstat
 bin_PROGRAMS  = lfs
-sbin_PROGRAMS = lctl l_getidentity llverfs lustre_rsync ltrack_stats
+sbin_PROGRAMS = lctl l_getidentity llverfs lustre_rsync ltrack_stats lshowmount
 
 if TESTS
 bin_PROGRAMS  += req_layout
@@ -71,6 +71,9 @@ lustre_rsync_DEPENDENCIES := $(LIBPTLCTL) liblustreapi.a
 ll_recover_lost_found_objs_SOURCES = ll_recover_lost_found_objs.c
 ll_recover_lost_found_objs_LDADD := $(LIBPTLCTL)
 ll_recover_lost_found_objs_DEPENDENCIES := $(LIBPTLCTL)
+
+lshowmount_SOURCES = lshowmount.c nidlist.c nidlist.h
+lshowmount_LDADD :=  liblustreapi.a
 
 if EXT2FS_DEVEL
 EXT2FSLIB = -lext2fs

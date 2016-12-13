@@ -57,7 +57,7 @@ MANFILES = lustre.7 lfs.1 mount.lustre.8 lctl.8 lnetctl.8 \
 	ll_decode_filter_fid.8 llapi_path2parent.3 llapi_fd2parent.3 \
 	lfs-ladvise.1 llapi_ladvise.3
 
-SERVER_MANFILES = mkfs.lustre.8 tunefs.lustre.8
+SERVER_MANFILES = mkfs.lustre.8 tunefs.lustre.8 lshowmount.8
 
 if SERVER
 MANFILES += $(SERVER_MANFILES)
