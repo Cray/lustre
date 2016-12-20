@@ -185,11 +185,15 @@ uid_t current_fsuid(void);
 gid_t current_fsgid(void);
 
 #ifndef HAVE_STRLCPY /* not in glibc for RHEL 5.x, remove when obsolete */
-size_t strlcpy(char *tgt, const char *src, size_t tgt_len);
+size_t ll_strlcpy(char *tgt, const char *src, size_t tgt_len);
+/* We must not export the strlcpy symbol from liblustre, hence this weirdness */
+#define strlcpy(a, b, c) ll_strlcpy(a, b, c)
 #endif
 
 #ifndef HAVE_STRLCAT /* not in glibc for RHEL 5.x, remove when obsolete */
-size_t strlcat(char *tgt, const char *src, size_t tgt_len);
+size_t ll_strlcat(char *tgt, const char *src, size_t tgt_len);
+/* We must not export the strlcat symbol from liblustre, hence this weirdness */
+#define strlcat(a, b, c) ll_strlcat(a,b,c)
 #endif
 
 #define LIBCFS_REALLOC(ptr, size) realloc(ptr, size)

@@ -269,8 +269,12 @@ static void test14(void)
 	ASSERTF(rc == -EBADF, "llapi_fswap_layouts failed: %s",
 		strerror(-rc));
 
+	/* rc can be either -EINVAL or -ENOTTY, depending on both OS version
+	 * (CentOS 6 vs 7/SLES12) and whether we run from a shell or use the 
+	 * Lustre test suite.  Both are fine. */
 	rc = llapi_fswap_layouts(0, 0, 0, 0, 0);
-	ASSERTF(rc == -EINVAL, "llapi_fswap_layouts failed: %s",
+	ASSERTF(rc == -EINVAL || rc == -ENOTTY,
+		"llapi_fswap_layouts failed: %s",
 		strerror(-rc));
 
 	rc = llapi_fswap_layouts(456789076, 234567895, 0, 0, 0);

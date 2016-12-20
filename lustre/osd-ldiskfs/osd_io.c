@@ -179,7 +179,7 @@ static void dio_complete_routine(struct bio *bio, int error)
 
 	/* the check is outside of the cycle for performance reason -bzzz */
 	if (!test_bit(__REQ_WRITE, &bio->bi_rw)) {
-		bio_for_each_segment(bvl, bio, iter) {
+		bio_for_each_segment_all(bvl, bio, iter) {
 			if (likely(error == 0))
 				SetPageUptodate(bvl_to_page(bvl));
 			LASSERT(PageLocked(bvl_to_page(bvl)));
@@ -1246,16 +1246,20 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
                 thandle->th_local = 1;
         }
 
-        if (likely(rc == 0)) {
-                if (isize > i_size_read(inode)) {
-                        i_size_write(inode, isize);
-                        LDISKFS_I(inode)->i_disksize = isize;
+	if (likely(rc == 0)) {
+		spin_lock(&inode->i_lock);
+		if (isize > i_size_read(inode)) {
+			i_size_write(inode, isize);
+			LDISKFS_I(inode)->i_disksize = isize;
+			spin_unlock(&inode->i_lock);
 			ll_dirty_inode(inode, I_DIRTY_DATASYNC);
-                }
+		} else {
+			spin_unlock(&inode->i_lock);
+		}
 
-                rc = osd_do_bio(osd, inode, iobuf);
-                /* we don't do stats here as in read path because
-                 * write is async: we'll do this in osd_put_bufs() */
+		rc = osd_do_bio(osd, inode, iobuf);
+		/* we don't do stats here as in read path because
+		 * write is async: we'll do this in osd_put_bufs() */
 	} else {
 		osd_fini_iobuf(osd, iobuf);
 	}
@@ -1283,7 +1287,8 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
         struct osd_device *osd = osd_obj2dev(osd_dt_obj(dt));
         struct timeval start, end;
         unsigned long timediff;
-	int rc = 0, i, m = 0, cache = 0, cache_hits = 0, cache_misses = 0;
+	int rc = 0, i, cache = 0, cache_hits = 0, cache_misses = 0;
+	loff_t isize;
 
         LASSERT(inode);
 
@@ -1291,26 +1296,25 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
 	if (unlikely(rc != 0))
 		RETURN(rc);
 
+	isize = i_size_read(inode);
+
 	if (osd->od_read_cache)
 		cache = 1;
-	if (i_size_read(inode) > osd->od_readcache_max_filesize)
+	if (isize > osd->od_readcache_max_filesize)
 		cache = 0;
 
 	do_gettimeofday(&start);
 	for (i = 0; i < npages; i++) {
 
-		if (i_size_read(inode) <= lnb[i].lnb_file_offset)
+		if (isize <= lnb[i].lnb_file_offset)
 			/* If there's no more data, abort early.
 			 * lnb->lnb_rc == 0, so it's easy to detect later. */
 			break;
 
-		if (i_size_read(inode) <
-		    lnb[i].lnb_file_offset + lnb[i].lnb_len - 1)
-			lnb[i].lnb_rc = i_size_read(inode) -
-				lnb[i].lnb_file_offset;
+		if (isize < lnb[i].lnb_file_offset + lnb[i].lnb_len - 1)
+			lnb[i].lnb_rc = isize - lnb[i].lnb_file_offset;
 		else
 			lnb[i].lnb_rc = lnb[i].lnb_len;
-		m += lnb[i].lnb_len;
 
 		if (PageUptodate(lnb[i].lnb_page)) {
 			cache_hits++;
@@ -1603,12 +1607,14 @@ static int osd_ldiskfs_writelink(struct inode *inode, char *buffer, int buflen)
 	/* LU-2634: clear the extent format for fast symlink */
 	ldiskfs_clear_inode_flag(inode, LDISKFS_INODE_EXTENTS);
 
-        memcpy((char *)&LDISKFS_I(inode)->i_data, (char *)buffer, buflen);
-        LDISKFS_I(inode)->i_disksize = buflen;
-        i_size_write(inode, buflen);
+	memcpy((char *)&LDISKFS_I(inode)->i_data, (char *)buffer, buflen);
+	spin_lock(&inode->i_lock);
+	LDISKFS_I(inode)->i_disksize = buflen;
+	i_size_write(inode, buflen);
+	spin_unlock(&inode->i_lock);
 	ll_dirty_inode(inode, I_DIRTY_DATASYNC);
 
-        return 0;
+	return 0;
 }
 
 int osd_ldiskfs_write_record(struct inode *inode, void *buf, int bufsize,
@@ -1679,8 +1685,8 @@ int osd_ldiskfs_write_record(struct inode *inode, void *buf, int bufsize,
 
 	if (write_NUL)
 		--new_size;
-        /* correct in-core and on-disk sizes */
-        if (new_size > i_size_read(inode)) {
+	/* correct in-core and on-disk sizes */
+	if (new_size > i_size_read(inode)) {
 		spin_lock(&inode->i_lock);
 		if (new_size > i_size_read(inode))
 			i_size_write(inode, new_size);
@@ -1795,7 +1801,9 @@ static int osd_punch(const struct lu_env *env, struct dt_object *dt,
 
 	tid = oh->ot_handle->h_transaction->t_tid;
 
+	spin_lock(&inode->i_lock);
 	i_size_write(inode, start);
+	spin_unlock(&inode->i_lock);
 	ll_truncate_pagecache(inode, start);
 #ifdef HAVE_INODEOPS_TRUNCATE
 	if (inode->i_op->truncate) {
