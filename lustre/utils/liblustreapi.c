@@ -3773,8 +3773,16 @@ int llapi_poll_quotacheck(char *mnt, struct if_quotacheck *qchk)
 
 int llapi_quotactl(char *mnt, struct if_quotactl *qctl)
 {
-        DIR *root;
-        int rc;
+	char fsname[PATH_MAX + 1];
+	DIR *root;
+	int rc;
+
+	rc = llapi_search_fsname(mnt, fsname);
+	if (rc) {
+		llapi_err_noerrno(LLAPI_MSG_ERROR,
+				  "'%s' isn't on Lustre filesystem", mnt);
+		return rc;
+	}
 
         root = opendir(mnt);
         if (!root) {
