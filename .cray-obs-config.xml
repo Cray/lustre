@@ -3,33 +3,9 @@
     <stream type="obs" xsi:type="obsStreamType">
         <project>
             cray-lustre:
-            <extracted refer="version-path"/>
+            <extracted refer="full-branch"/>
         </project>
         <sources>
-            <environment>
-                <variable>
-                    VENDOR_VERSION
-                </variable>
-                <name>
-                    _vendor_version
-                </name>
-            </environment>
-            <environment>
-                <variable>
-                    CRAY_INCREMENTAL
-                </variable>
-                <name>
-                    _incremental
-                </name>
-            </environment>
-            <environment>
-                <variable>
-                    USER
-                </variable>
-                <name>
-                    _build_user
-                </name>
-            </environment>
             <environment>
                 <variable>
                     RELEASE_EXTRA
@@ -40,12 +16,11 @@
             </environment>
             <gitcmd>
                 <command>
-                    branch
+                    branch | sed -e 's/(HEAD detached at //' -e 's/)//'
                 </command>
                 <name>
                     _branch
                 </name>
-                <extract group="3" name="version-path" pattern="\*\s((.*/)|)(.*$)"/>
                 <extract group="1" name="full-branch" pattern="\*\s+(.*$)"/>
             </gitcmd>
             <gitcmd>
@@ -64,6 +39,23 @@
                 <name>
                     _url
                 </name>
+            </gitcmd>
+            <gitcmd>
+                <command>
+                    describe --first-parent --tags --long --dirty=_$USER | sed -e 's/-/./g'
+                </command>
+                <name>
+                    _tag
+                </name>
+            </gitcmd>
+            <gitcmd>
+                <command>
+                    describe --first-parent --tags --long | sed -e 's/-/./' -e 's/-g.*//'
+                </command>
+                <name>
+                    _version
+                </name>
+                <extract group="1" name="version" pattern="(.*)"/>
             </gitcmd>
             <file>
                 <name>
@@ -124,6 +116,11 @@
             <file>
                 <name>
                     cray-lustre-gem_s.spec
+                </name>
+            </file>
+            <file>
+                <name>
+                    cray-lustre.spec
                 </name>
             </file>
             <file>
@@ -191,9 +188,10 @@
                   devel/cray-lustre.conf
                 </name>
             </file>
-            <tarfile compression="gz">
+            <tarfile compression="bz2">
                 <name>
-                    cray-lustre
+                    cray-lustre-
+                    <extracted refer="version"/>
                 </name>
                 <exclusion pattern=".*\.spec$"/>
                 <exclusion pattern="^Makefile\.obs$"/>
@@ -202,38 +200,38 @@
                         .
                     </name>
                     <arcname>
-                        cray-lustre
+                        cray-lustre-
+                        <extracted refer="version"/>
                     </arcname>
                 </tarinfo>
             </tarfile>
-            <tarfile compression="gz">
+            <tarfile compression="bz2">
                 <name>
                     cray-lnet-devel-
-                    <extracted refer="branch"/>
+                    <extracted refer="version"/>
                 </name>
-                <exclusion pattern=".*\.spec$"/>
-                <exclusion pattern="^Makefile\.obs$"/>
-                <tarinfo recursive="true">
+                <tarinfo>
                     <name>
                         devel
                     </name>
                     <arcname>
                         cray-lnet-devel-
-                        <extracted refer="branch"/>
+                        <extracted refer="version"/>
                     </arcname>
                 </tarinfo>
             </tarfile>
-            <tarfile compression="gz">
+            <tarfile compression="bz2">
                 <name>
                     cray-lustre-switch-
-                    <extracted refer="branch"/>
+                    <extracted refer="version"/>
                 </name>
-                <tarinfo recursive="true">
+                <tarinfo>
                     <name>
                         switch
                     </name>
                     <arcname>
-                        switch
+                        cray-lustre-switch-
+                        <extracted refer="version"/>
                     </arcname>
                 </tarinfo>
             </tarfile>

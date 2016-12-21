@@ -50,6 +50,7 @@
 #include <lu_object.h>
 #include <lustre_param.h>
 #include <lustre_fid.h>
+#include <lustre_barrier.h>
 
 #include "mdd_internal.h"
 
@@ -122,6 +123,10 @@ static int mdd_init0(const struct lu_env *env, struct mdd_device *mdd,
 	int rc = -EINVAL;
 	const char *dev;
 	ENTRY;
+
+	/* LU-8040 Set defaults here, before values configs */
+	mdd->mdd_cl.mc_flags = 0; /* off by default */
+	mdd->mdd_cl.mc_mask = CHANGELOG_DEFMASK;
 
 	dev = lustre_cfg_string(lcfg, 0);
 	if (dev == NULL)
@@ -374,8 +379,6 @@ static int mdd_changelog_init(const struct lu_env *env, struct mdd_device *mdd)
 	mdd->mdd_cl.mc_index = 0;
 	spin_lock_init(&mdd->mdd_cl.mc_lock);
 	mdd->mdd_cl.mc_starttime = cfs_time_current_64();
-	mdd->mdd_cl.mc_flags = 0; /* off by default */
-	mdd->mdd_cl.mc_mask = CHANGELOG_DEFMASK;
 	spin_lock_init(&mdd->mdd_cl.mc_user_lock);
 	mdd->mdd_cl.mc_lastuser = 0;
 
@@ -866,7 +869,7 @@ static int mdd_hsm_actions_llog_fini(const struct lu_env *env,
 static void mdd_device_shutdown(const struct lu_env *env, struct mdd_device *m,
 				struct lustre_cfg *cfg)
 {
-	mdd_generic_thread_stop(&m->mdd_orph_cleanup_thread);
+	barrier_deregister(m->mdd_bottom);
 	lfsck_degister(env, m->mdd_bottom);
 	mdd_hsm_actions_llog_fini(env, m);
 	mdd_changelog_fini(env, m);
@@ -907,7 +910,11 @@ static int mdd_process_config(const struct lu_env *env,
                         GOTO(out, rc);
 		dt_conf_get(env, dt, &m->mdd_dt_conf);
                 break;
-        case LCFG_CLEANUP:
+	case LCFG_PRE_CLEANUP:
+		rc = next->ld_ops->ldo_process_config(env, next, cfg);
+		mdd_generic_thread_stop(&m->mdd_orph_cleanup_thread);
+		break;
+	case LCFG_CLEANUP:
 		rc = next->ld_ops->ldo_process_config(env, next, cfg);
 		lu_dev_del_linkage(d->ld_site, d);
 		mdd_device_shutdown(env, m, cfg);
@@ -932,7 +939,8 @@ static int mdd_recovery_complete(const struct lu_env *env,
 	next = &mdd->mdd_child->dd_lu_dev;
 
         /* XXX: orphans handling. */
-        mdd_orphan_cleanup(env, mdd);
+	if (!mdd->mdd_bottom->dd_rdonly)
+		mdd_orphan_cleanup(env, mdd);
         rc = next->ld_ops->ldo_recovery_complete(env, next);
 
         RETURN(rc);
@@ -1057,7 +1065,18 @@ static int mdd_prepare(const struct lu_env *env,
 		       mdd2obd_dev(mdd)->obd_name, rc);
 		GOTO(out_hsm, rc);
 	}
+
+	rc = barrier_register(mdd->mdd_bottom, mdd->mdd_child);
+	if (rc != 0) {
+		CERROR("%s: failed to register to barrier: rc = %d\n",
+		       mdd2obd_dev(mdd)->obd_name, rc);
+		GOTO(out_lfsck, rc);
+	}
+
 	RETURN(0);
+
+out_lfsck:
+	lfsck_degister(env, mdd->mdd_bottom);
 out_hsm:
 	mdd_hsm_actions_llog_fini(env, mdd);
 out_changelog:
@@ -1541,63 +1560,70 @@ static int mdd_changelog_clear(const struct lu_env *env,
  * \param karg - ioctl data, in kernel space
  */
 static int mdd_iocontrol(const struct lu_env *env, struct md_device *m,
-                         unsigned int cmd, int len, void *karg)
+			 unsigned int cmd, int len, void *karg)
 {
-        struct mdd_device *mdd;
-        struct obd_ioctl_data *data = karg;
-        int rc;
-        ENTRY;
+	struct mdd_device *mdd = lu2mdd_dev(&m->md_lu_dev);
+	struct obd_ioctl_data *data = karg;
+	int rc = 0;
+	ENTRY;
 
-        mdd = lu2mdd_dev(&m->md_lu_dev);
-
-	/* Doesn't use obd_ioctl_data */
 	switch (cmd) {
-	case OBD_IOC_CHANGELOG_CLEAR: {
-		struct changelog_setinfo *cs = karg;
-		rc = mdd_changelog_clear(env, mdd, cs->cs_id,
-					 cs->cs_recno);
-		RETURN(rc);
+	case OBD_IOC_GET_MNTOPT: {
+		mntopt_t *mntopts = (mntopt_t *)karg;
+		*mntopts = mdd->mdd_dt_conf.ddp_mntopts;
+		RETURN(0);
 	}
-        case OBD_IOC_GET_MNTOPT: {
-                mntopt_t *mntopts = (mntopt_t *)karg;
-                *mntopts = mdd->mdd_dt_conf.ddp_mntopts;
-                RETURN(0);
-        }
-	case OBD_IOC_START_LFSCK: {
+	case OBD_IOC_START_LFSCK:
 		rc = lfsck_start(env, mdd->mdd_bottom,
 				 (struct lfsck_start_param *)karg);
 		RETURN(rc);
-	}
-	case OBD_IOC_STOP_LFSCK: {
+	case OBD_IOC_STOP_LFSCK:
 		rc = lfsck_stop(env, mdd->mdd_bottom,
 				(struct lfsck_stop *)karg);
 		RETURN(rc);
+	case OBD_IOC_CHANGELOG_REG:
+	case OBD_IOC_CHANGELOG_DEREG:
+		if (len != sizeof(*data)) {
+			CERROR("Bad ioctl size %d\n", len);
+
+			RETURN(-EINVAL);
+		}
+
+		if (data->ioc_version != OBD_IOCTL_VERSION) {
+			CERROR("Bad magic %x != %x\n", data->ioc_version,
+			       OBD_IOCTL_VERSION);
+
+			RETURN(-EINVAL);
+		}
+		/* fall through */
+	case OBD_IOC_CHANGELOG_CLEAR:
+		if (unlikely(!barrier_entry(mdd->mdd_bottom)))
+			RETURN(-EINPROGRESS);
+
+		break;
+	default:
+		RETURN(-ENOTTY);
 	}
-        }
 
-        /* Below ioctls use obd_ioctl_data */
-        if (len != sizeof(*data)) {
-                CERROR("Bad ioctl size %d\n", len);
-                RETURN(-EINVAL);
-        }
-        if (data->ioc_version != OBD_IOCTL_VERSION) {
-                CERROR("Bad magic %x != %x\n", data->ioc_version,
-                       OBD_IOCTL_VERSION);
-                RETURN(-EINVAL);
-        }
-
-        switch (cmd) {
-        case OBD_IOC_CHANGELOG_REG:
-                rc = mdd_changelog_user_register(env, mdd, &data->ioc_u32_1);
-                break;
-        case OBD_IOC_CHANGELOG_DEREG:
+	switch (cmd) {
+	case OBD_IOC_CHANGELOG_REG:
+		rc = mdd_changelog_user_register(env, mdd, &data->ioc_u32_1);
+		break;
+	case OBD_IOC_CHANGELOG_DEREG:
 		rc = mdd_changelog_user_purge(env, mdd, data->ioc_u32_1);
 		break;
-        default:
-                rc = -ENOTTY;
-        }
+	case OBD_IOC_CHANGELOG_CLEAR: {
+		struct changelog_setinfo *cs = karg;
 
-        RETURN (rc);
+		rc = mdd_changelog_clear(env, mdd, cs->cs_id,
+					 cs->cs_recno);
+		break;
+	}
+	}
+
+	barrier_exit(mdd->mdd_bottom);
+
+	RETURN(rc);
 }
 
 /* type constructor/destructor: mdd_type_init, mdd_type_fini */
@@ -1709,7 +1735,7 @@ static void __exit mdd_mod_exit(void)
 	lu_kmem_fini(mdd_caches);
 }
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Meta-data Device Prototype ("LUSTRE_MDD_NAME")");
 MODULE_LICENSE("GPL");
 

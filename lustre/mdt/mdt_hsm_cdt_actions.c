@@ -37,7 +37,6 @@
 #define DEBUG_SUBSYSTEM S_MDS
 
 #include <obd_support.h>
-#include <lustre_net.h>
 #include <lustre_export.h>
 #include <obd.h>
 #include <lprocfs_status.h>
@@ -157,11 +156,12 @@ int mdt_agent_record_add(const struct lu_env *env,
 	/* in case of cancel request, the cookie is already set to the
 	 * value of the request cookie to be cancelled
 	 * so we do not change it */
-	if (hai->hai_action != HSMA_CANCEL) {
+	if (hai->hai_action == HSMA_CANCEL) {
+		larr->arr_hai.hai_cookie = hai->hai_cookie;
+	} else {
 		cdt->cdt_last_cookie++;
-		hai->hai_cookie = cdt->cdt_last_cookie;
+		larr->arr_hai.hai_cookie = cdt->cdt_last_cookie;
 	}
-	larr->arr_hai.hai_cookie = hai->hai_cookie;
 	rc = llog_cat_add(env, lctxt->loc_handle, &larr->arr_hdr, NULL);
 	if (rc > 0)
 		rc = 0;
@@ -181,10 +181,9 @@ free:
  */
 struct data_update_cb {
 	struct mdt_device	*mdt;
-	__u64			*cookies;
-	int			 cookies_count;
-	int			 cookies_done;
-	enum agent_req_status	 status;
+	struct hsm_record_update *updates;
+	unsigned int		 updates_count;
+	unsigned int		 updates_done;
 	cfs_time_t		 change_time;
 };
 
@@ -205,42 +204,44 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
 	struct llog_agent_req_rec	*larr;
 	struct data_update_cb		*ducb;
 	int				 rc, i;
-	int				 found;
 	ENTRY;
 
 	larr = (struct llog_agent_req_rec *)hdr;
 	ducb = data;
-	found = 0;
 
 	/* check if all done */
-	if (ducb->cookies_count == ducb->cookies_done)
+	if (ducb->updates_count == ducb->updates_done)
 		RETURN(LLOG_PROC_BREAK);
 
 	/* if record is in final state, never change */
-	/* if record is a cancel request, it cannot be canceled
-	 * this is to manage the following case:
-	 * when a request is canceled, we have 2 records with the
-	 * the same cookie : the one to cancel and the cancel request
-	 * the 1st has to be set to ARS_CANCELED and the 2nd to ARS_SUCCEED
-	 */
-	if (agent_req_in_final_state(larr->arr_status) ||
-	    (larr->arr_hai.hai_action == HSMA_CANCEL &&
-	     ducb->status == ARS_CANCELED))
+	if (agent_req_in_final_state(larr->arr_status))
 		RETURN(0);
 
 	rc = 0;
-	for (i = 0 ; i < ducb->cookies_count ; i++) {
-		CDEBUG(D_HSM, "%s: search "LPX64", found "LPX64"\n",
-		       mdt_obd_name(ducb->mdt), ducb->cookies[i],
-		       larr->arr_hai.hai_cookie);
-		if (larr->arr_hai.hai_cookie == ducb->cookies[i]) {
+	for (i = 0 ; i < ducb->updates_count ; i++) {
+		struct hsm_record_update *update = &ducb->updates[i];
 
-			larr->arr_status = ducb->status;
+		CDEBUG(D_HSM, "%s: search %#llx, found %#llx\n",
+		       mdt_obd_name(ducb->mdt), update->cookie,
+		       larr->arr_hai.hai_cookie);
+		if (larr->arr_hai.hai_cookie == update->cookie) {
+
+			/* If record is a cancel request, it cannot be
+			 * canceled. This is to manage the following
+			 * case: when a request is canceled, we have 2
+			 * records with the the same cookie: the one
+			 * to cancel and the cancel request the 1st
+			 * has to be set to ARS_CANCELED and the 2nd
+			 * to ARS_SUCCEED
+			 */
+			if (larr->arr_hai.hai_action == HSMA_CANCEL &&
+			    update->status == ARS_CANCELED)
+				RETURN(0);
+
+			larr->arr_status = update->status;
 			larr->arr_req_change = ducb->change_time;
-			rc = mdt_agent_llog_update_rec(env, ducb->mdt, llh,
-						       larr);
-			ducb->cookies_done++;
-			found = 1;
+			rc = llog_write(env, llh, hdr, hdr->lrh_index);
+			ducb->updates_done++;
 			break;
 		}
 	}
@@ -248,9 +249,6 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
 	if (rc < 0)
 		CERROR("%s: mdt_agent_llog_update_rec() failed, rc = %d\n",
 		       mdt_obd_name(ducb->mdt), rc);
-
-	if (found == 1)
-		RETURN(LLOG_DEL_RECORD);
 
 	RETURN(rc);
 }
@@ -266,56 +264,25 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
  * \retval -ve failure
  */
 int mdt_agent_record_update(const struct lu_env *env, struct mdt_device *mdt,
-			    __u64 *cookies, int cookies_count,
-			    enum agent_req_status status)
+			    struct hsm_record_update *updates,
+			    unsigned int updates_count)
 {
 	struct data_update_cb	 ducb;
 	int			 rc;
 	ENTRY;
 
 	ducb.mdt = mdt;
-	ducb.cookies = cookies;
-	ducb.cookies_count = cookies_count;
-	ducb.cookies_done = 0;
-	ducb.status = status;
+	ducb.updates = updates;
+	ducb.updates_count = updates_count;
+	ducb.updates_done = 0;
 	ducb.change_time = cfs_time_current_sec();
 
 	rc = cdt_llog_process(env, mdt, mdt_agent_record_update_cb, &ducb);
 	if (rc < 0)
 		CERROR("%s: cdt_llog_process() failed, rc=%d, cannot update "
-		       "status to %s for %d cookies, done %d\n",
+		       "status for %u cookies, done %u\n",
 		       mdt_obd_name(mdt), rc,
-		       agent_req_status2name(status),
-		       cookies_count, ducb.cookies_done);
-	RETURN(rc);
-}
-
-/**
- * update a llog record
- *  cdt_llog_lock must be hold
- * \param env [IN] environment
- * \param mdt [IN] mdt device
- * \param llh [IN] llog handle, must be a catalog handle
- * \param larr [IN] record
- * \retval 0 success
- * \retval -ve failure
- */
-int mdt_agent_llog_update_rec(const struct lu_env *env,
-			      struct mdt_device *mdt, struct llog_handle *llh,
-			      struct llog_agent_req_rec *larr)
-{
-	struct llog_rec_hdr	 saved_hdr;
-	int			 rc;
-	ENTRY;
-
-	/* saved old record info */
-	saved_hdr = larr->arr_hdr;
-	/* add new record with updated values */
-	larr->arr_hdr.lrh_id = 0;
-	larr->arr_hdr.lrh_index = 0;
-	rc = llog_cat_add(env, llh->u.phd.phd_cat_handle, &larr->arr_hdr,
-			  NULL);
-	larr->arr_hdr = saved_hdr;
+		       updates_count, ducb.updates_done);
 	RETURN(rc);
 }
 
@@ -398,7 +365,7 @@ static int hsm_actions_show_cb(const struct lu_env *env,
 	struct llog_agent_req_rec    *larr = (struct llog_agent_req_rec *)hdr;
 	struct seq_file		     *s = data;
 	struct agent_action_iterator *aai;
-	int			      rc, sz;
+	int			      sz;
 	size_t			      count;
 	char			      buf[12];
 	ENTRY;
@@ -417,35 +384,29 @@ static int hsm_actions_show_cb(const struct lu_env *env,
 
 	count = s->count;
 	sz = larr->arr_hai.hai_len - sizeof(larr->arr_hai);
-	rc = seq_printf(s, "lrh=[type=%X len=%d idx=%d/%d] fid="DFID
-			" dfid="DFID
-			" compound/cookie="LPX64"/"LPX64
-			" action=%s archive#=%d flags="LPX64
-			" extent="LPX64"-"LPX64
-			" gid="LPX64" datalen=%d status=%s"
-			" data=[%s]\n",
-			hdr->lrh_type, hdr->lrh_len,
-			llh->lgh_hdr->llh_cat_idx, hdr->lrh_index,
-			PFID(&larr->arr_hai.hai_fid),
-			PFID(&larr->arr_hai.hai_dfid),
-			larr->arr_compound_id, larr->arr_hai.hai_cookie,
-			hsm_copytool_action2name(larr->arr_hai.hai_action),
-			larr->arr_archive_id,
-			larr->arr_flags,
-			larr->arr_hai.hai_extent.offset,
-			larr->arr_hai.hai_extent.length,
-			larr->arr_hai.hai_gid, sz,
-			agent_req_status2name(larr->arr_status),
-			hai_dump_data_field(&larr->arr_hai, buf, sizeof(buf)));
-	if (rc == 0) {
-		aai->aai_cat_index = llh->lgh_hdr->llh_cat_idx;
-		aai->aai_index = hdr->lrh_index;
-	} else {
-		if (s->count == s->size && count > 0) /* rewind the buffer */
-			s->count = count;
-		rc = LLOG_PROC_BREAK;
-	}
-	RETURN(rc);
+	seq_printf(s, "lrh=[type=%X len=%d idx=%d/%d] fid="DFID
+		   " dfid="DFID" compound/cookie="LPX64"/"LPX64
+		   " action=%s archive#=%d flags="LPX64
+		   " extent="LPX64"-"LPX64
+		   " gid="LPX64" datalen=%d status=%s data=[%s]\n",
+		   hdr->lrh_type, hdr->lrh_len,
+		   llh->lgh_hdr->llh_cat_idx, hdr->lrh_index,
+		   PFID(&larr->arr_hai.hai_fid),
+		   PFID(&larr->arr_hai.hai_dfid),
+		   larr->arr_compound_id, larr->arr_hai.hai_cookie,
+		   hsm_copytool_action2name(larr->arr_hai.hai_action),
+		   larr->arr_archive_id,
+		   larr->arr_flags,
+		   larr->arr_hai.hai_extent.offset,
+		   larr->arr_hai.hai_extent.length,
+		   larr->arr_hai.hai_gid, sz,
+		   agent_req_status2name(larr->arr_status),
+		   hai_dump_data_field(&larr->arr_hai, buf, sizeof(buf)));
+
+	aai->aai_cat_index = llh->lgh_hdr->llh_cat_idx;
+	aai->aai_index = hdr->lrh_index;
+
+	RETURN(0);
 }
 
 /**
@@ -549,7 +510,7 @@ out:
 
 /**
  * lprocfs_release_hsm_actions() is called at end of /proc access.
- * It frees allocated ressources and calls cleanup lprocfs methods.
+ * It frees allocated resources and calls cleanup lprocfs methods.
  */
 static int lprocfs_release_hsm_actions(struct inode *inode, struct file *file)
 {
@@ -572,4 +533,3 @@ const struct file_operations mdt_hsm_actions_fops = {
 	.llseek		= seq_lseek,
 	.release	= lprocfs_release_hsm_actions,
 };
-

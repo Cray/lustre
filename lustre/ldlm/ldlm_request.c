@@ -123,10 +123,12 @@ int ldlm_expired_completion_wait(void *data)
 			   cfs_time_sub(cfs_time_current_sec(),
 					lock->l_last_activity));
                 if (cfs_time_after(cfs_time_current(), next_dump)) {
-                        last_dump = next_dump;
-                        next_dump = cfs_time_shift(300);
-                        ldlm_namespace_dump(D_DLMTRACE,
-                                            ldlm_lock_to_ns(lock));
+			last_dump = next_dump;
+			next_dump = cfs_time_shift(30);
+
+			lock_res(lock->l_resource);
+			ldlm_resource_dump(D_DLMTRACE, lock->l_resource);
+			unlock_res(lock->l_resource);
                         if (last_dump == 0)
                                 libcfs_debug_dumplog();
                 }
@@ -709,6 +711,11 @@ int ldlm_cli_enqueue_fini(struct obd_export *exp, struct ptlrpc_request *req,
         }
 
         if (!is_replay) {
+		if (lock->l_resource->lr_type == LDLM_FLOCK &&
+		    lock->l_req_mode != LCK_NL)
+			OBD_FAIL_TIMEOUT(OBD_FAIL_LLITE_FLOCK_BL_GRANT_RACE,
+					 10);
+
                 rc = ldlm_lock_enqueue(ns, &lock, NULL, flags);
                 if (lock->l_completion_ast != NULL) {
                         int err = lock->l_completion_ast(lock, *flags, NULL);
@@ -876,6 +883,15 @@ struct ptlrpc_request *ldlm_enqueue_pack(struct obd_export *exp, int lvb_len)
 }
 EXPORT_SYMBOL(ldlm_enqueue_pack);
 
+static void ldlm_lock_enqueueing(struct ldlm_lock *lock)
+{
+	struct ldlm_resource *res = lock->l_resource;
+
+	lock_res(res);
+	ldlm_resource_add_lock(res, &res->lr_enqueueing, lock);
+	unlock_res(res);
+}
+
 /**
  * Client-side lock enqueue.
  *
@@ -937,6 +953,8 @@ int ldlm_cli_enqueue(struct obd_export *exp, struct ptlrpc_request **reqp,
 
 			lock->l_req_extent = policy->l_extent;
 		}
+		if (einfo->ei_type == LDLM_FLOCK)
+			ldlm_lock_enqueueing(lock);
 		LDLM_DEBUG(lock, "client-side enqueue START, flags "LPX64"\n",
 			   *flags);
 	}
@@ -948,74 +966,61 @@ int ldlm_cli_enqueue(struct obd_export *exp, struct ptlrpc_request **reqp,
 				    LDLM_FL_NO_EXPANSION));
         lock->l_last_activity = cfs_time_current_sec();
 
-        /* lock not sent to server yet */
+	/* lock not sent to server yet */
+	if (reqp == NULL || *reqp == NULL) {
+		req = ldlm_enqueue_pack(exp, lvb_len);
+		if (IS_ERR(req)) {
+			failed_lock_cleanup(ns, lock, einfo->ei_mode);
+			LDLM_LOCK_RELEASE(lock);
+			RETURN(PTR_ERR(req));
+		}
 
-        if (reqp == NULL || *reqp == NULL) {
-                req = ptlrpc_request_alloc_pack(class_exp2cliimp(exp),
-                                                &RQF_LDLM_ENQUEUE,
-                                                LUSTRE_DLM_VERSION,
-                                                LDLM_ENQUEUE);
-                if (req == NULL) {
-                        failed_lock_cleanup(ns, lock, einfo->ei_mode);
-                        LDLM_LOCK_RELEASE(lock);
-                        RETURN(-ENOMEM);
-                }
-                req_passed_in = 0;
-                if (reqp)
-                        *reqp = req;
-        } else {
-                int len;
+		req_passed_in = 0;
+		if (reqp)
+			*reqp = req;
+	} else {
+		int len;
 
-                req = *reqp;
-                len = req_capsule_get_size(&req->rq_pill, &RMF_DLM_REQ,
-                                           RCL_CLIENT);
-                LASSERTF(len >= sizeof(*body), "buflen[%d] = %d, not %d\n",
-                         DLM_LOCKREQ_OFF, len, (int)sizeof(*body));
-        }
+		req = *reqp;
+		len = req_capsule_get_size(&req->rq_pill, &RMF_DLM_REQ,
+					   RCL_CLIENT);
+		LASSERTF(len >= sizeof(*body), "buflen[%d] = %d, not %d\n",
+			 DLM_LOCKREQ_OFF, len, (int)sizeof(*body));
+	}
 
-        /* Dump lock data into the request buffer */
-        body = req_capsule_client_get(&req->rq_pill, &RMF_DLM_REQ);
-        ldlm_lock2desc(lock, &body->lock_desc);
+	/* Dump lock data into the request buffer */
+	body = req_capsule_client_get(&req->rq_pill, &RMF_DLM_REQ);
+	ldlm_lock2desc(lock, &body->lock_desc);
 	body->lock_flags = ldlm_flags_to_wire(*flags);
-        body->lock_handle[0] = *lockh;
+	body->lock_handle[0] = *lockh;
 
-        /* Continue as normal. */
-        if (!req_passed_in) {
-		if (lvb_len > 0)
-			req_capsule_extend(&req->rq_pill,
-					   &RQF_LDLM_ENQUEUE_LVB);
-		req_capsule_set_size(&req->rq_pill, &RMF_DLM_LVB, RCL_SERVER,
-				     lvb_len);
-		ptlrpc_request_set_replen(req);
-        }
+	if (async) {
+		LASSERT(reqp != NULL);
+		RETURN(0);
+	}
 
-        if (async) {
-                LASSERT(reqp != NULL);
-                RETURN(0);
-        }
+	LDLM_DEBUG(lock, "sending request");
 
-        LDLM_DEBUG(lock, "sending request");
+	rc = ptlrpc_queue_wait(req);
 
-        rc = ptlrpc_queue_wait(req);
+	err = ldlm_cli_enqueue_fini(exp, req, einfo->ei_type, policy ? 1 : 0,
+				    einfo->ei_mode, flags, lvb, lvb_len,
+				    lockh, rc);
 
-        err = ldlm_cli_enqueue_fini(exp, req, einfo->ei_type, policy ? 1 : 0,
-                                    einfo->ei_mode, flags, lvb, lvb_len,
-                                    lockh, rc);
+	/* If ldlm_cli_enqueue_fini did not find the lock, we need to free
+	 * one reference that we took */
+	if (err == -ENOLCK)
+		LDLM_LOCK_RELEASE(lock);
+	else
+		rc = err;
 
-        /* If ldlm_cli_enqueue_fini did not find the lock, we need to free
-         * one reference that we took */
-        if (err == -ENOLCK)
-                LDLM_LOCK_RELEASE(lock);
-        else
-                rc = err;
+	if (!req_passed_in && req != NULL) {
+		ptlrpc_req_finished(req);
+		if (reqp)
+			*reqp = NULL;
+	}
 
-        if (!req_passed_in && req != NULL) {
-                ptlrpc_req_finished(req);
-                if (reqp)
-                        *reqp = NULL;
-        }
-
-        RETURN(rc);
+	RETURN(rc);
 }
 EXPORT_SYMBOL(ldlm_cli_enqueue);
 
@@ -1364,18 +1369,29 @@ int ldlm_cli_cancel(struct lustre_handle *lockh,
 	struct list_head cancels = LIST_HEAD_INIT(cancels);
 	ENTRY;
 
-        /* concurrent cancels on the same handle can happen */
-        lock = ldlm_handle2lock_long(lockh, LDLM_FL_CANCELING);
+        lock = ldlm_handle2lock_long(lockh, 0);
 	if (lock == NULL) {
 		LDLM_DEBUG_NOLOCK("lock is already being destroyed");
 		RETURN(0);
 	}
+
+	lock_res_and_lock(lock);
+	/* Lock is being canceled and the caller doesn't want to wait */
+	if (ldlm_is_canceling(lock) && (cancel_flags & LCF_ASYNC)) {
+		unlock_res_and_lock(lock);
+		LDLM_LOCK_RELEASE(lock);
+		RETURN(0);
+	}
+
+	ldlm_set_canceling(lock);
+	unlock_res_and_lock(lock);
 
 	rc = ldlm_cli_cancel_local(lock);
 	if (rc == LDLM_FL_LOCAL_ONLY || cancel_flags & LCF_LOCAL) {
 		LDLM_LOCK_RELEASE(lock);
 		RETURN(0);
 	}
+
 	/* Even if the lock is marked as LDLM_FL_BL_AST, this is a LDLM_CANCEL
 	 * RPC which goes to canceld portal, so we can cancel other LRU locks
 	 * here and send them all as one LDLM_CANCEL RPC. */
@@ -1506,6 +1522,12 @@ static ldlm_policy_res_t ldlm_cancel_lrur_policy(struct ldlm_namespace *ns,
 	if (count && added >= count)
 		return LDLM_POLICY_KEEP_LOCK;
 
+	/* Despite of the LV, It doesn't make sense to keep the lock which
+	 * is unused for ns_max_age time. */
+	if (cfs_time_after(cfs_time_current(),
+			   cfs_time_add(lock->l_last_used, ns->ns_max_age)))
+		return LDLM_POLICY_CANCEL_LOCK;
+
 	slv = ldlm_pool_get_slv(pl);
 	lvf = ldlm_pool_get_lvf(pl);
 	la = cfs_duration_sec(cfs_time_sub(cur,
@@ -1517,8 +1539,8 @@ static ldlm_policy_res_t ldlm_cancel_lrur_policy(struct ldlm_namespace *ns,
 
 	/* Stop when SLV is not yet come from server or lv is smaller than
 	 * it is and lru capacity has not been exceeded. */
-	if ((slv == 0 || lv < slv) && 
- 	    (ldlm_max_lru_size == 0 || ns->ns_nr_unused < ldlm_max_lru_size))
+	if ((slv == 0 || lv < slv) &&
+	    (ldlm_max_lru_size == 0 || ns->ns_nr_unused < ldlm_max_lru_size))
 		return LDLM_POLICY_KEEP_LOCK;
 
 	return LDLM_POLICY_CANCEL_LOCK;
@@ -1581,7 +1603,7 @@ static ldlm_policy_res_t ldlm_cancel_aged_policy(struct ldlm_namespace *ns,
 	return LDLM_POLICY_CANCEL_LOCK;
 }
 
-static ldlm_policy_res_t 
+static ldlm_policy_res_t
 ldlm_cancel_aged_no_wait_policy(struct ldlm_namespace *ns,
 				struct ldlm_lock *lock,
 				int unused, int added, int count)
@@ -1689,8 +1711,8 @@ static int ldlm_prepare_lru_list(struct ldlm_namespace *ns,
 	ldlm_cancel_lru_policy_t pf;
 	struct ldlm_lock *lock, *next;
 	int added = 0, unused, remained;
-	int no_wait = flags & (LDLM_CANCEL_NO_WAIT | 
-			       LDLM_CANCEL_LRUR_NO_WAIT | 
+	int no_wait = flags & (LDLM_CANCEL_NO_WAIT |
+			       LDLM_CANCEL_LRUR_NO_WAIT |
 			       LDLM_CANCEL_AGED_NO_WAIT);
 	ENTRY;
 
@@ -2061,11 +2083,11 @@ int ldlm_cli_cancel_unused(struct ldlm_namespace *ns,
                 RETURN(ldlm_cli_cancel_unused_resource(ns, res_id, NULL,
                                                        LCK_MINMODE, flags,
                                                        opaque));
-        } else {
-                cfs_hash_for_each_nolock(ns->ns_rs_hash,
-                                         ldlm_cli_hash_cancel_unused, &arg);
-                RETURN(ELDLM_OK);
-        }
+	} else {
+		cfs_hash_for_each_nolock(ns->ns_rs_hash,
+					 ldlm_cli_hash_cancel_unused, &arg, 0);
+		RETURN(ELDLM_OK);
+	}
 }
 EXPORT_SYMBOL(ldlm_cli_cancel_unused);
 
@@ -2137,8 +2159,8 @@ void ldlm_namespace_foreach(struct ldlm_namespace *ns,
 {
 	struct iter_helper_data helper = { .iter = iter, .closure = closure };
 
-        cfs_hash_for_each_nolock(ns->ns_rs_hash,
-                                 ldlm_res_iter_helper, &helper);
+	cfs_hash_for_each_nolock(ns->ns_rs_hash,
+				 ldlm_res_iter_helper, &helper, 0);
 
 }
 EXPORT_SYMBOL(ldlm_namespace_foreach);

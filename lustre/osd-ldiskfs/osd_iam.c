@@ -1736,7 +1736,12 @@ got:
 	return bh;
 
 newblock:
-	bh = osd_ldiskfs_append(h, inode, b, e);
+	bh = osd_ldiskfs_append(h, inode, b);
+	if (IS_ERR(bh)) {
+		*e = PTR_ERR(bh);
+		bh = NULL;
+	}
+
 	return bh;
 
 fail:
@@ -1810,12 +1815,12 @@ static int iam_new_leaf(handle_t *handle, struct iam_leaf *leaf)
 				iam_unlock_htree(path->ip_container, lh);
                         do_corr(schedule());
                         err = iam_txn_dirty(handle, path, new_leaf);
-                        brelse(new_leaf);
                         if (err == 0)
                                 err = ldiskfs_mark_inode_dirty(handle, obj);
                         do_corr(schedule());
                 } else
                         err = -ENOMEM;
+		brelse(new_leaf);
         }
         assert_inv(iam_leaf_check(leaf));
         assert_inv(iam_leaf_check(&iam_leaf_path(leaf)->ip_leaf));

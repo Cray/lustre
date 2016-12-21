@@ -103,16 +103,7 @@ lnet_dyn_configure(struct libcfs_ioctl_hdr *hdr)
 
 	LNET_MUTEX_LOCK(&lnet_config_mutex);
 	if (the_lnet.ln_niinit_self)
-		rc = lnet_dyn_add_ni(LNET_PID_LUSTRE,
-				     conf->cfg_config_u.cfg_net.net_intf,
-				     conf->cfg_config_u.cfg_net.
-					net_peer_timeout,
-				     conf->cfg_config_u.cfg_net.
-					net_peer_tx_credits,
-				     conf->cfg_config_u.cfg_net.
-					net_peer_rtr_credits,
-				     conf->cfg_config_u.cfg_net.
-					net_max_tx_credits);
+		rc = lnet_dyn_add_ni(LNET_PID_LUSTRE, conf);
 	else
 		rc = -EINVAL;
 	LNET_MUTEX_UNLOCK(&lnet_config_mutex);
@@ -210,8 +201,9 @@ lnet_module_exit(void)
 	lnet_fini();
 }
 
-MODULE_AUTHOR("Peter J. Braam <braam@clusterfs.com>");
-MODULE_DESCRIPTION("Portals v3.1");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
+MODULE_DESCRIPTION("LNet v3.1");
+MODULE_VERSION("1.0.0");
 MODULE_LICENSE("GPL");
 
 cfs_module(lnet, "1.0.0", lnet_module_init, lnet_module_exit);

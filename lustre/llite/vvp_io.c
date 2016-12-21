@@ -238,6 +238,7 @@ static int vvp_io_one_lock_index(const struct lu_env *env, struct cl_io *io,
 	if (vio->vui_fd && (vio->vui_fd->fd_flags & LL_FILE_GROUP_LOCKED)) {
 		descr->cld_mode = CLM_GROUP;
 		descr->cld_gid  = vio->vui_fd->fd_grouplock.cg_gid;
+		enqflags |= CEF_LOCK_MATCH;
 	} else {
 		descr->cld_mode  = mode;
 	}
@@ -289,7 +290,7 @@ static int vvp_io_fault_iter_init(const struct lu_env *env,
 	struct vvp_io *vio   = cl2vvp_io(env, ios);
 	struct inode  *inode = vvp_object_inode(ios->cis_obj);
 
-	LASSERT(inode == vio->vui_fd->fd_file->f_dentry->d_inode);
+	LASSERT(inode == vio->vui_fd->fd_file->f_path.dentry->d_inode);
 	vio->u.fault.ft_mtime = LTIME_S(inode->i_mtime);
 
 	return 0;
@@ -432,7 +433,8 @@ static int vvp_mmap_locks(const struct lu_env *env,
 
                 down_read(&mm->mmap_sem);
                 while((vma = our_vma(mm, addr, count)) != NULL) {
-                        struct inode *inode = vma->vm_file->f_dentry->d_inode;
+			struct dentry *de = vma->vm_file->f_path.dentry;
+			struct inode *inode = de->d_inode;
                         int flags = CEF_MUST;
 
 			if (ll_file_nolock(vma->vm_file)) {
@@ -733,10 +735,10 @@ static int vvp_io_setattr_start(const struct lu_env *env,
 
 	if (cl_io_is_trunc(io)) {
 		down_write(&lli->lli_trunc_sem);
-		mutex_lock(&inode->i_mutex);
+		inode_lock(inode);
 		inode_dio_wait(inode);
 	} else {
-		mutex_lock(&inode->i_mutex);
+		inode_lock(inode);
 	}
 
 	return vvp_io_setattr_time(env, ios);
@@ -754,10 +756,10 @@ static void vvp_io_setattr_end(const struct lu_env *env,
 		 * because osc has already notified to destroy osc_extents. */
 		vvp_do_vmtruncate(inode, io->u.ci_setattr.sa_attr.lvb_size);
 		inode_dio_write_done(inode);
-		mutex_unlock(&inode->i_mutex);
+		inode_unlock(inode);
 		up_write(&lli->lli_trunc_sem);
 	} else {
-		mutex_unlock(&inode->i_mutex);
+		inode_unlock(inode);
 	}
 }
 
@@ -1106,7 +1108,7 @@ static int vvp_io_write_start(const struct lu_env *env,
 			RETURN(-EINVAL);
 
 		if (lock_node)
-			mutex_lock(&inode->i_mutex);
+			inode_lock(inode);
 
 #ifdef HAVE_FILE_OPERATIONS_READ_WRITE_ITER
 		result = __generic_file_write_iter(vio->vui_iocb, vio->vui_iter);
@@ -1117,7 +1119,7 @@ static int vvp_io_write_start(const struct lu_env *env,
 						  &vio->vui_iocb->ki_pos);
 #endif
 		if (lock_node)
-			mutex_unlock(&inode->i_mutex);
+			inode_unlock(inode);
 
 		if (result > 0 || result == -EIOCBQUEUED) {
 			ssize_t err;

@@ -139,7 +139,7 @@ int llog_is_empty(const struct lu_env *env, struct llog_ctxt *ctxt,
 int llog_backup(const struct lu_env *env, struct obd_device *obd,
 		struct llog_ctxt *ctxt, struct llog_ctxt *bak_ctxt,
 		char *name, char *backup);
-
+__u64 llog_size(const struct lu_env *env, struct llog_handle *llh);
 /* llog_process flags */
 #define LLOG_FLAG_NODEAMON 0x0001
 
@@ -186,10 +186,12 @@ int llog_cat_cancel_records(const struct lu_env *env,
 			    struct llog_handle *cathandle, int count,
 			    struct llog_cookie *cookies);
 int llog_cat_process_or_fork(const struct lu_env *env,
-			     struct llog_handle *cat_llh, llog_cb_t cb,
-			     void *data, int startcat, int startidx, bool fork);
+			     struct llog_handle *cat_llh, llog_cb_t cat_cb,
+			     llog_cb_t cb, void *data, int startcat,
+			     int startidx, bool fork);
 int llog_cat_process(const struct lu_env *env, struct llog_handle *cat_llh,
 		     llog_cb_t cb, void *data, int startcat, int startidx);
+__u64 llog_cat_size(const struct lu_env *env, struct llog_handle *cat_llh);
 int llog_cat_reverse_process(const struct lu_env *env,
 			     struct llog_handle *cat_llh, llog_cb_t cb,
 			     void *data);
@@ -298,6 +300,10 @@ struct llog_handle {
 	struct llog_logid	 lgh_id; /* id of this log */
 	struct llog_log_hdr	*lgh_hdr;
 	struct dt_object	*lgh_obj;
+	/* For a Catalog, is the last/newest used index for a plain slot.
+	 * Used in conjunction with llh_cat_idx to handle Catalog wrap-around
+	 * case, after it will have reached LLOG_HDR_BITMAP_SIZE, llh_cat_idx
+	 * will become its upper limit */
 	int			 lgh_last_idx;
 	int			 lgh_cur_idx; /* used during llog_process */
 	__u64			 lgh_cur_offset; /* used during llog_process */
@@ -519,6 +525,11 @@ static inline int llog_connect(struct llog_ctxt *ctxt,
 	RETURN(rc);
 }
 
+static inline int llog_is_full(struct llog_handle *llh)
+{
+	return llh->lgh_last_idx >= LLOG_BITMAP_SIZE(llh->lgh_hdr) - 1;
+}
+
 struct llog_cfg_rec {
 	struct llog_rec_hdr	lcr_hdr;
 	struct lustre_cfg	lcr_cfg;
@@ -542,6 +553,9 @@ int llog_create(const struct lu_env *env, struct llog_handle *handle,
 int llog_trans_destroy(const struct lu_env *env, struct llog_handle *handle,
 		       struct thandle *th);
 int llog_destroy(const struct lu_env *env, struct llog_handle *handle);
+int llog_declare_destroy(const struct lu_env *env,
+				struct llog_handle *handle,
+				struct thandle *th);
 int llog_declare_write_rec(const struct lu_env *env,
 			   struct llog_handle *handle,
 			   struct llog_rec_hdr *rec, int idx,

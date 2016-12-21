@@ -638,16 +638,10 @@ static void echo_thread_key_fini(const struct lu_context *ctx,
         OBD_SLAB_FREE_PTR(info, echo_thread_kmem);
 }
 
-static void echo_thread_key_exit(const struct lu_context *ctx,
-                         struct lu_context_key *key, void *data)
-{
-}
-
 static struct lu_context_key echo_thread_key = {
         .lct_tags = LCT_CL_THREAD,
         .lct_init = echo_thread_key_init,
         .lct_fini = echo_thread_key_fini,
-        .lct_exit = echo_thread_key_exit
 };
 
 static void *echo_session_key_init(const struct lu_context *ctx,
@@ -668,16 +662,10 @@ static void echo_session_key_fini(const struct lu_context *ctx,
         OBD_SLAB_FREE_PTR(session, echo_session_kmem);
 }
 
-static void echo_session_key_exit(const struct lu_context *ctx,
-                                 struct lu_context_key *key, void *data)
-{
-}
-
 static struct lu_context_key echo_session_key = {
         .lct_tags = LCT_SESSION,
         .lct_init = echo_session_key_init,
         .lct_fini = echo_session_key_fini,
-        .lct_exit = echo_session_key_exit
 };
 
 LU_TYPE_INIT_FINI(echo, &echo_thread_key, &echo_session_key);
@@ -995,14 +983,17 @@ static int echo_device_init(const struct lu_env *env, struct lu_device *d,
 }
 
 static struct lu_device *echo_device_fini(const struct lu_env *env,
-                                          struct lu_device *d)
+					  struct lu_device *d)
 {
-        struct echo_device *ed = cl2echo_dev(lu2cl_dev(d));
-        struct lu_device *next = ed->ed_next;
+	struct echo_device *ed = cl2echo_dev(lu2cl_dev(d));
+	struct lu_device *next = ed->ed_next;
+	ENTRY;
 
-        while (next && !ed->ed_next_ismd)
-                next = next->ld_type->ldt_ops->ldto_device_fini(env, next);
-        return NULL;
+	obd_zombie_barrier();
+
+	while (next && !ed->ed_next_ismd)
+		next = next->ld_type->ldt_ops->ldto_device_fini(env, next);
+	RETURN(NULL);
 }
 
 static void echo_lock_release(const struct lu_env *env,
@@ -1115,7 +1106,7 @@ cl_echo_object_find(struct echo_device *d, const struct ost_id *oi)
 	struct cl_object *obj;
 	struct lov_oinfo *oinfo = NULL;
 	struct lu_fid *fid;
-	int refcheck;
+	__u16  refcheck;
 	int rc;
 	ENTRY;
 
@@ -1175,7 +1166,7 @@ static int cl_echo_object_put(struct echo_object *eco)
 {
         struct lu_env *env;
         struct cl_object *obj = echo_obj2cl(eco);
-        int refcheck;
+	__u16  refcheck;
         ENTRY;
 
         env = cl_env_get(&refcheck);
@@ -1295,9 +1286,9 @@ static int cl_echo_object_brw(struct echo_object *eco, int rw, u64 offset,
         struct cl_page          *clp;
         struct lustre_handle    lh = { 0 };
         int page_size = cl_page_size(obj);
-        int refcheck;
         int rc;
         int i;
+	__u16 refcheck;
         ENTRY;
 
         LASSERT((offset & ~CFS_PAGE_MASK) == 0);
@@ -2060,7 +2051,7 @@ static int echo_md_handler(struct echo_device *ed, int command,
 	struct echo_thread_info *info;
         struct lu_device      *ld = ed->ed_next;
         struct lu_env         *env;
-        int                    refcheck;
+	__u16                  refcheck;
         struct lu_object      *parent;
         char                  *name = NULL;
         int                    namelen = data->ioc_plen2;
@@ -2416,20 +2407,20 @@ static int echo_client_prep_commit(const struct lu_env *env,
 	struct niobuf_local	*lnb;
 	struct niobuf_remote	 rnb;
 	u64			 off;
-	u64			 npages, tot_pages;
+	u64			 npages, tot_pages, apc;
 	int i, ret = 0, brw_flags = 0;
 
-        ENTRY;
+	ENTRY;
 
 	if (count <= 0 || (count & ~PAGE_CACHE_MASK) != 0)
 		RETURN(-EINVAL);
 
-	npages = batch >> PAGE_CACHE_SHIFT;
+	apc = npages = batch >> PAGE_CACHE_SHIFT;
 	tot_pages = count >> PAGE_CACHE_SHIFT;
 
-	OBD_ALLOC(lnb, npages * sizeof(struct niobuf_local));
+	OBD_ALLOC(lnb, apc * sizeof(struct niobuf_local));
 	if (lnb == NULL)
-		GOTO(out, ret = -ENOMEM);
+		RETURN(-ENOMEM);
 
 	if (rw == OBD_BRW_WRITE && async)
 		brw_flags |= OBD_BRW_ASYNC;
@@ -2486,7 +2477,7 @@ static int echo_client_prep_commit(const struct lu_env *env,
 		ret = obd_commitrw(env, rw, exp, oa, 1, &ioo,
 				   &rnb, npages, lnb, oti, ret);
 		if (ret != 0)
-			GOTO(out, ret);
+			break;
 
 		/* Reset oti otherwise it would confuse ldiskfs. */
 		memset(oti, 0, sizeof(*oti));
@@ -2497,8 +2488,8 @@ static int echo_client_prep_commit(const struct lu_env *env,
 	}
 
 out:
-	if (lnb)
-		OBD_FREE(lnb, npages * sizeof(struct niobuf_local));
+	OBD_FREE(lnb, apc * sizeof(struct niobuf_local));
+
 	RETURN(ret);
 }
 
@@ -2656,7 +2647,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 	}
         case OBD_IOC_ECHO_ALLOC_SEQ: {
                 struct lu_env   *cl_env;
-                int              refcheck;
+		__u16            refcheck;
                 __u64            seq;
                 int              max_count;
 
@@ -2982,7 +2973,7 @@ static void /*__exit*/ obdecho_exit(void)
 # endif
 }
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Testing Echo OBD driver");
 MODULE_LICENSE("GPL");
 

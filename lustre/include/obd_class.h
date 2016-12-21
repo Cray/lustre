@@ -110,18 +110,34 @@ void obd_zombie_barrier(void);
 void obd_exports_barrier(struct obd_device *obd);
 int kuc_len(int payload_len);
 struct kuc_hdr * kuc_ptr(void *p);
-int kuc_ispayload(void *p);
 void *kuc_alloc(int payload_len, int transport, int type);
 void kuc_free(void *p, int payload_len);
 int obd_get_request_slot(struct client_obd *cli);
 void obd_put_request_slot(struct client_obd *cli);
 __u32 obd_get_max_rpcs_in_flight(struct client_obd *cli);
 int obd_set_max_rpcs_in_flight(struct client_obd *cli, __u32 max);
+__u16 obd_get_max_mod_rpcs_in_flight(struct client_obd *cli);
+int obd_set_max_mod_rpcs_in_flight(struct client_obd *cli, __u16 max);
+int obd_mod_rpc_stats_seq_show(struct client_obd *cli, struct seq_file *seq);
+
+__u16 obd_get_mod_rpc_slot(struct client_obd *cli, __u32 opc,
+			   struct lookup_intent *it);
+void obd_put_mod_rpc_slot(struct client_obd *cli, __u32 opc,
+			  struct lookup_intent *it, __u16 tag);
 
 struct llog_handle;
 struct llog_rec_hdr;
 typedef int (*llog_cb_t)(const struct lu_env *, struct llog_handle *,
 			 struct llog_rec_hdr *, void *);
+
+extern atomic_t         obd_stale_export_num;
+extern struct list_head obd_stale_exports;
+extern spinlock_t       obd_stale_export_lock;
+
+struct obd_export *obd_stale_export_get(void);
+void obd_stale_export_put(struct obd_export *exp);
+void obd_stale_export_adjust(struct obd_export *exp);
+
 /* obd_config.c */
 struct lustre_cfg *lustre_cfg_rename(struct lustre_cfg *cfg,
 				     const char *new_name);
@@ -170,28 +186,44 @@ enum {
 	CONFIG_T_SPTLRPC = 1,
 	CONFIG_T_RECOVER = 2,
 	CONFIG_T_PARAMS  = 3,
-	CONFIG_T_MAX     = 4
+	CONFIG_T_BARRIER = 4,
+	CONFIG_T_MAX     = 5
 };
 
-#define PARAMS_FILENAME	"params"
-#define LCTL_UPCALL	"lctl"
+#define PARAMS_FILENAME 	"params"
+#define BARRIER_FILENAME	"barrier"
+#define LCTL_UPCALL		"lctl"
+
+static inline bool logname_is_barrier(const char *logname)
+{
+	char *ptr;
+
+	/* logname for barrier is "fsname.barrier" */
+	ptr = strstr(logname, BARRIER_FILENAME);
+	if (ptr != NULL && (ptr - logname) >= 2 &&
+	    *(ptr - 1) == '.' && *(ptr + 7) == '\0')
+		return true;
+
+	return false;
+}
 
 /* list of active configuration logs  */
 struct config_llog_data {
-        struct ldlm_res_id          cld_resid;
-        struct config_llog_instance cld_cfg;
+	struct ldlm_res_id	    cld_resid;
+	struct config_llog_instance cld_cfg;
 	struct list_head	    cld_list_chain;
 	atomic_t		    cld_refcount;
 	struct config_llog_data    *cld_sptlrpc;/* depended sptlrpc log */
 	struct config_llog_data	   *cld_params;	/* common parameters log */
 	struct config_llog_data    *cld_recover;/* imperative recover log */
-        struct obd_export          *cld_mgcexp;
+	struct config_llog_data    *cld_barrier;/* barrier log (for MDT only) */
+	struct obd_export	   *cld_mgcexp;
 	struct mutex		    cld_lock;
-        int                         cld_type;
-        unsigned int                cld_stopping:1, /* we were told to stop
-                                                     * watching */
-                                    cld_lostlock:1; /* lock not requeued */
-        char                        cld_logname[0];
+	int			    cld_type;
+	unsigned int		    cld_stopping:1, /* we were told to stop
+						     * watching */
+				    cld_lostlock:1; /* lock not requeued */
+	char			    cld_logname[0];
 };
 
 struct lustre_profile {
@@ -651,10 +683,6 @@ static inline void obd_cleanup_client_import(struct obd_device *obd)
                 CDEBUG(D_CONFIG, "%s: client import never connected\n",
                        obd->obd_name);
                 ptlrpc_invalidate_import(imp);
-                if (imp->imp_rq_pool) {
-                        ptlrpc_free_rq_pool(imp->imp_rq_pool);
-                        imp->imp_rq_pool = NULL;
-                }
                 client_destroy_import(imp);
                 obd->u.cli.cl_import = NULL;
         }
@@ -1487,7 +1515,6 @@ static inline int md_done_writing(struct obd_export *exp,
 static inline int md_enqueue(struct obd_export *exp,
 			     struct ldlm_enqueue_info *einfo,
 			     const union ldlm_policy_data *policy,
-			     struct lookup_intent *it,
 			     struct md_op_data *op_data,
 			     struct lustre_handle *lockh,
 			     __u64 extra_lock_flags)
@@ -1496,9 +1523,25 @@ static inline int md_enqueue(struct obd_export *exp,
 	ENTRY;
 	EXP_CHECK_MD_OP(exp, enqueue);
 	EXP_MD_COUNTER_INCREMENT(exp, enqueue);
-	rc = MDP(exp->exp_obd, enqueue)(exp, einfo, policy, it, op_data, lockh,
+	rc = MDP(exp->exp_obd, enqueue)(exp, einfo, policy, op_data, lockh,
 					extra_lock_flags);
         RETURN(rc);
+}
+
+static inline int md_enqueue_async(struct obd_export *exp,
+				   struct ldlm_enqueue_info *einfo,
+				   obd_enqueue_update_f upcall,
+				   struct md_op_data *op_data,
+				   void *lmm,
+				   int extra_lock_flags)
+{
+	int rc;
+	ENTRY;
+	EXP_CHECK_MD_OP(exp, enqueue_async);
+	EXP_MD_COUNTER_INCREMENT(exp, enqueue_async);
+	rc = MDP(exp->exp_obd, enqueue_async)(exp, einfo, upcall, op_data,
+					      lmm, extra_lock_flags);
+	RETURN(rc);
 }
 
 static inline int md_getattr_name(struct obd_export *exp,
@@ -1837,7 +1880,8 @@ struct lwp_register_item {
 	struct obd_export **lri_exp;
 	register_lwp_cb	    lri_cb_func;
 	void		   *lri_cb_data;
-	struct list_head	    lri_list;
+	struct list_head    lri_list;
+	atomic_t	    lri_ref;
 	char		    lri_name[MTI_NAME_MAXLEN];
 };
 
@@ -1875,6 +1919,9 @@ int class_del_uuid (const char *uuid);
 int class_check_uuid(struct obd_uuid *uuid, __u64 nid);
 void class_init_uuidlist(void);
 void class_exit_uuidlist(void);
+
+/* class_obd.c */
+extern char obd_jobid_node[];
 
 /* prng.c */
 #define ll_generate_random_uuid(uuid_out) cfs_get_random_bytes(uuid_out, sizeof(class_uuid_t))

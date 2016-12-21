@@ -1064,11 +1064,11 @@ int get_root_path(int want, char *fsname, int *outfd, char *path, int index)
         int rc = -ENODEV;
 
         /* get the mount point */
-        fp = setmntent(MOUNTED, "r");
+        fp = setmntent(PROC_MOUNTS, "r");
         if (fp == NULL) {
                 rc = -EIO;
                 llapi_error(LLAPI_MSG_ERROR, rc,
-                            "setmntent(%s) failed", MOUNTED);
+                            "setmntent(%s) failed", PROC_MOUNTS);
                 return rc;
         }
         while (1) {
@@ -1616,17 +1616,13 @@ static DIR *opendir_parent(char *path)
 
 static int cb_get_dirstripe(char *path, DIR *d, struct find_param *param)
 {
-	struct lmv_user_md *lmv = (struct lmv_user_md *)param->fp_lmv_md;
-	int ret = 0;
-
-	lmv->lum_stripe_count = param->fp_lmv_stripe_count;
+	param->fp_lmv_md->lum_stripe_count = param->fp_lmv_stripe_count;
 	if (param->fp_get_default_lmv)
-		lmv->lum_magic = LMV_USER_MAGIC;
+		param->fp_lmv_md->lum_magic = LMV_USER_MAGIC;
 	else
-		lmv->lum_magic = LMV_MAGIC_V1;
-	ret = ioctl(dirfd(d), LL_IOC_LMV_GETSTRIPE, lmv);
+		param->fp_lmv_md->lum_magic = LMV_MAGIC_V1;
 
-	return ret;
+	return ioctl(dirfd(d), LL_IOC_LMV_GETSTRIPE, param->fp_lmv_md);
 }
 
 static int get_lmd_info(char *path, DIR *parent, DIR *dir,
@@ -1878,7 +1874,7 @@ enum tgt_type {
 /*
  * If uuidp is NULL, return the number of available obd uuids.
  * If uuidp is non-NULL, then it will return the uuids of the obds. If
- * there are more OSTs then allocated to uuidp, then an error is returned with
+ * there are more OSTs than allocated to uuidp, then an error is returned with
  * the ost_count set to number of available obd uuids.
  */
 static int llapi_get_target_uuids(int fd, struct obd_uuid *uuidp,
@@ -2994,49 +2990,43 @@ static int cb_find_init(char *path, DIR *parent, DIR **dirp,
 	if (decision == 0) {
 		ret = get_lmd_info(path, parent, dir, param->fp_lmd,
 				   param->fp_lum_size);
-                if (ret == 0) {
-                        if (dir) {
+		if (ret == 0 && param->fp_mdt_uuid != NULL) {
+			if (dir != NULL) {
 				ret = llapi_file_fget_mdtidx(dirfd(dir),
-						&param->fp_file_mdt_index);
-                        } else {
-                                int fd;
-                                lstat_t tmp_st;
-
-                                ret = lstat_f(path, &tmp_st);
-                                if (ret) {
-                                        ret = -errno;
-                                        llapi_error(LLAPI_MSG_ERROR, ret,
-                                                    "error: %s: lstat failed"
-                                                    "for %s", __func__, path);
-                                        return ret;
-                                }
-                                if (S_ISREG(tmp_st.st_mode)) {
-                                        fd = open(path, O_RDONLY);
-                                        if (fd > 0) {
-                                                ret = llapi_file_fget_mdtidx(fd,
 						     &param->fp_file_mdt_index);
-                                                close(fd);
-                                        } else {
-                                                ret = fd;
-                                        }
-                                } else {
-                                        /* For special inode, it assumes to
-                                         * reside on the same MDT with the
-                                         * parent */
-                                        fd = dirfd(parent);
+			} else if (S_ISREG(st->st_mode)) {
+				int fd;
+
+				/* FIXME: we could get the MDT index from the
+				 * file's FID in lmd->lmd_lmm.lmm_oi without
+				 * opening the file, once we are sure that
+				 * LFSCK2 (2.6) has fixed up pre-2.0 LOV EAs.
+				 * That would still be an ioctl() to map the
+				 * FID to the MDT, but not an open RPC. */
+				fd = open(path, O_RDONLY);
+				if (fd > 0) {
 					ret = llapi_file_fget_mdtidx(fd,
 						     &param->fp_file_mdt_index);
-                                }
-                        }
-                }
-                if (ret) {
-                        if (ret == -ENOTTY)
-                                lustre_fs = 0;
-                        if (ret == -ENOENT)
-                                goto decided;
-                        return ret;
-                }
-        }
+					close(fd);
+				} else {
+					ret = -errno;
+				}
+			} else {
+				/* For a special file, we assume it resides on
+				 * the same MDT as the parent directory. */
+				ret = llapi_file_fget_mdtidx(dirfd(parent),
+						     &param->fp_file_mdt_index);
+			}
+		}
+		if (ret != 0) {
+			if (ret == -ENOTTY)
+				lustre_fs = 0;
+			if (ret == -ENOENT)
+				goto decided;
+
+			return ret;
+		}
+	}
 
 	if (param->fp_type && !checked_type) {
 		if ((st->st_mode & S_IFMT) == param->fp_type) {
@@ -3362,64 +3352,58 @@ int llapi_file_fget_mdtidx(int fd, int *mdtidx)
 static int cb_get_mdt_index(char *path, DIR *parent, DIR **dirp, void *data,
 			    struct dirent64 *de)
 {
-        struct find_param *param = (struct find_param *)data;
+	struct find_param *param = (struct find_param *)data;
 	DIR *d = dirp == NULL ? NULL : *dirp;
-        int ret = 0;
-        int mdtidx;
+	int ret;
+	int mdtidx;
 
-        LASSERT(parent != NULL || d != NULL);
+	LASSERT(parent != NULL || d != NULL);
 
-        if (d) {
-                ret = llapi_file_fget_mdtidx(dirfd(d), &mdtidx);
-        } else if (parent) {
-                int fd;
+	if (d != NULL) {
+		ret = llapi_file_fget_mdtidx(dirfd(d), &mdtidx);
+	} else /* if (parent) */ {
+		int fd;
 
-                fd = open(path, O_RDONLY);
-                if (fd > 0) {
-                        ret = llapi_file_fget_mdtidx(fd, &mdtidx);
-                        close(fd);
-                } else {
-                        ret = -errno;
-                }
-        }
+		fd = open(path, O_RDONLY | O_NOCTTY);
+		if (fd > 0) {
+			ret = llapi_file_fget_mdtidx(fd, &mdtidx);
+			close(fd);
+		} else {
+			ret = -errno;
+		}
+	}
 
-        if (ret) {
-                if (ret == -ENODATA) {
+	if (ret != 0) {
+		if (ret == -ENODATA) {
 			if (!param->fp_obd_uuid)
-                                llapi_printf(LLAPI_MSG_NORMAL,
-                                             "%s has no stripe info\n", path);
-                        goto out;
-                } else if (ret == -ENOENT) {
-                        llapi_error(LLAPI_MSG_WARN, ret,
-                                    "warning: %s: %s does not exist",
-                                    __func__, path);
-                        goto out;
-                } else if (ret == -ENOTTY) {
-                        llapi_error(LLAPI_MSG_ERROR, ret,
-                                    "%s: '%s' not on a Lustre fs?",
-                                    __func__, path);
-                } else {
-                        llapi_error(LLAPI_MSG_ERROR, ret,
-                                    "error: %s: LL_IOC_GET_MDTIDX failed for %s",
-                                    __func__, path);
-                }
-                return ret;
-        }
+				llapi_printf(LLAPI_MSG_NORMAL,
+					     "'%s' has no stripe info\n", path);
+			goto out;
+		} else if (ret == -ENOENT) {
+			llapi_error(LLAPI_MSG_WARN, ret,
+				    "warning: %s: '%s' does not exist",
+				    __func__, path);
+			goto out;
+		} else if (ret == -ENOTTY) {
+			llapi_error(LLAPI_MSG_ERROR, ret,
+				    "%s: '%s' not on a Lustre fs",
+				    __func__, path);
+		} else {
+			llapi_error(LLAPI_MSG_ERROR, ret,
+				    "error: %s: '%s' failed get_mdtidx",
+				    __func__, path);
+		}
+		return ret;
+	}
 
-	/* The 'LASSERT(parent != NULL || d != NULL);' guarantees
-	 * that either 'd' or 'parent' is not null.
-	 * So in all cases llapi_file_fget_mdtidx() is called,
-	 * thus initializing 'mdtidx'. */
 	if (param->fp_quiet || !(param->fp_verbose & VERBOSE_DETAIL))
-		/* coverity[uninit_use_in_call] */
-                llapi_printf(LLAPI_MSG_NORMAL, "%d\n", mdtidx);
-        else
-		/* coverity[uninit_use_in_call] */
-                llapi_printf(LLAPI_MSG_NORMAL, "%s\nmdt_index:\t%d\n",
-                             path, mdtidx);
+		llapi_printf(LLAPI_MSG_NORMAL, "%d\n", mdtidx);
+	else
+		llapi_printf(LLAPI_MSG_NORMAL, "%s\nmdt_index:\t%d\n",
+			     path, mdtidx);
 
 out:
-	/* Do not get down anymore? */
+	/* Do not go down anymore? */
 	if (param->fp_depth == param->fp_max_depth)
 		return 1;
 
@@ -3824,317 +3808,6 @@ int llapi_quotachown(char *path, int flag)
 	param.fp_quiet = 1;
 
         return param_callback(path, cb_quotachown, NULL, &param);
-}
-
-#include <pwd.h>
-#include <grp.h>
-#include <mntent.h>
-#include <sys/wait.h>
-#include <errno.h>
-#include <ctype.h>
-
-static int rmtacl_notify(int ops)
-{
-        FILE *fp;
-        struct mntent *mnt;
-	int found = 0, fd = 0, rc = 0;
-
-        fp = setmntent(MOUNTED, "r");
-        if (fp == NULL) {
-                rc = -errno;
-                llapi_error(LLAPI_MSG_ERROR, rc,
-                            "error setmntent(%s)", MOUNTED);
-                return rc;
-        }
-
-        while (1) {
-                mnt = getmntent(fp);
-                if (!mnt)
-                        break;
-
-		if (!llapi_is_lustre_mnt(mnt))
-                        continue;
-
-                fd = open(mnt->mnt_dir, O_RDONLY | O_DIRECTORY);
-                if (fd < 0) {
-                        rc = -errno;
-                        llapi_error(LLAPI_MSG_ERROR, rc,
-				    "Can't open '%s'", mnt->mnt_dir);
-			goto out;
-                }
-
-                rc = ioctl(fd, LL_IOC_RMTACL, ops);
-		close(fd);
-                if (rc < 0) {
-                        rc = -errno;
-			llapi_error(LLAPI_MSG_ERROR, rc,
-				    "ioctl RMTACL on '%s' err %d",
-				    mnt->mnt_dir, rc);
-			goto out;
-                }
-
-                found++;
-        }
-
-out:
-        endmntent(fp);
-	return ((rc != 0) ? rc : found);
-}
-
-static char *next_token(char *p, int div)
-{
-        if (p == NULL)
-                return NULL;
-
-        if (div)
-                while (*p && *p != ':' && !isspace(*p))
-                        p++;
-        else
-                while (*p == ':' || isspace(*p))
-                        p++;
-
-        return *p ? p : NULL;
-}
-
-static int rmtacl_name2id(char *name, int is_user)
-{
-        if (is_user) {
-                struct passwd *pw;
-
-                pw = getpwnam(name);
-                if (pw == NULL)
-                        return INVALID_ID;
-                else
-                        return (int)(pw->pw_uid);
-        } else {
-                struct group *gr;
-
-                gr = getgrnam(name);
-                if (gr == NULL)
-                        return INVALID_ID;
-                else
-                        return (int)(gr->gr_gid);
-        }
-}
-
-static int isodigit(int c)
-{
-        return (c >= '0' && c <= '7') ? 1 : 0;
-}
-
-/*
- * Whether the name is just digits string (uid/gid) already or not.
- * Return value:
- * 1: str is id
- * 0: str is not id
- */
-static int str_is_id(char *str)
-{
-        if (str == NULL)
-                return 0;
-
-        if (*str == '0') {
-                str++;
-                if (*str == 'x' || *str == 'X') { /* for Hex. */
-                        if (!isxdigit(*(++str)))
-                                return 0;
-
-                        while (isxdigit(*(++str)));
-                } else if (isodigit(*str)) { /* for Oct. */
-                        while (isodigit(*(++str)));
-                }
-        } else if (isdigit(*str)) { /* for Dec. */
-                while (isdigit(*(++str)));
-        }
-
-        return (*str == 0) ? 1 : 0;
-}
-
-typedef struct {
-        char *name;
-        int   length;
-        int   is_user;
-        int   next_token;
-} rmtacl_name_t;
-
-#define RMTACL_OPTNAME(name) name, sizeof(name) - 1
-
-static rmtacl_name_t rmtacl_namelist[] = {
-        { RMTACL_OPTNAME("user:"),            1,      0 },
-        { RMTACL_OPTNAME("group:"),           0,      0 },
-        { RMTACL_OPTNAME("default:user:"),    1,      0 },
-        { RMTACL_OPTNAME("default:group:"),   0,      0 },
-        /* for --tabular option */
-        { RMTACL_OPTNAME("user"),             1,      1 },
-        { RMTACL_OPTNAME("group"),            0,      1 },
-        { 0 }
-};
-
-static int rgetfacl_output(char *str)
-{
-        char *start = NULL, *end = NULL;
-        int is_user = 0, n, id;
-        char c;
-        rmtacl_name_t *rn;
-
-        if (str == NULL)
-                return -1;
-
-        for (rn = rmtacl_namelist; rn->name; rn++) {
-                if(strncmp(str, rn->name, rn->length) == 0) {
-                        if (!rn->next_token)
-                                start = str + rn->length;
-                        else
-                                start = next_token(str + rn->length, 0);
-                        is_user = rn->is_user;
-                        break;
-                }
-        }
-
-        end = next_token(start, 1);
-        if (end == NULL || start == end) {
-                n = printf("%s", str);
-                return n;
-        }
-
-        c = *end;
-        *end = 0;
-        id = rmtacl_name2id(start, is_user);
-        if (id == INVALID_ID) {
-                if (str_is_id(start)) {
-                        *end = c;
-                        n = printf("%s", str);
-                } else
-                        return -1;
-        } else if ((id == NOBODY_UID && is_user) ||
-                   (id == NOBODY_GID && !is_user)) {
-                *end = c;
-                n = printf("%s", str);
-        } else {
-                *end = c;
-                *start = 0;
-                n = printf("%s%d%s", str, id, end);
-        }
-        return n;
-}
-
-static int child_status(int status)
-{
-        return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
-}
-
-static int do_rmtacl(int argc, char *argv[], int ops, int (output_func)(char *))
-{
-        pid_t pid = 0;
-        int fd[2], status, rc;
-        FILE *fp;
-        char buf[PIPE_BUF];
-
-        if (output_func) {
-                if (pipe(fd) < 0) {
-                        rc = -errno;
-			llapi_error(LLAPI_MSG_ERROR, rc, "Can't create pipe");
-                        return rc;
-                }
-
-                pid = fork();
-                if (pid < 0) {
-                        rc = -errno;
-			llapi_error(LLAPI_MSG_ERROR, rc, "Can't fork");
-                        close(fd[0]);
-                        close(fd[1]);
-                        return rc;
-                } else if (!pid) {
-                        /* child process redirects its output. */
-                        close(fd[0]);
-                        close(1);
-                        if (dup2(fd[1], 1) < 0) {
-                                rc = -errno;
-                                llapi_error(LLAPI_MSG_ERROR, rc,
-					    "Can't dup2 %d", fd[1]);
-                                close(fd[1]);
-                                return rc;
-                        }
-                } else {
-                        close(fd[1]);
-                }
-        }
-
-        if (!pid) {
-                status = rmtacl_notify(ops);
-                if (status < 0)
-                        return -errno;
-
-                exit(execvp(argv[0], argv));
-        }
-
-        /* the following is parent process */
-        fp = fdopen(fd[0], "r");
-        if (fp == NULL) {
-                rc = -errno;
-		llapi_error(LLAPI_MSG_ERROR, rc, "fdopen %d failed", fd[0]);
-                kill(pid, SIGKILL);
-                close(fd[0]);
-                return rc;
-        }
-
-        while (fgets(buf, PIPE_BUF, fp) != NULL) {
-                if (output_func(buf) < 0)
-                        fprintf(stderr, "WARNING: unexpected error!\n[%s]\n",
-                                buf);
-        }
-        fclose(fp);
-        close(fd[0]);
-
-        if (waitpid(pid, &status, 0) < 0) {
-                rc = -errno;
-		llapi_error(LLAPI_MSG_ERROR, rc, "waitpid %d failed", pid);
-                return rc;
-        }
-
-        return child_status(status);
-}
-
-int llapi_lsetfacl(int argc, char *argv[])
-{
-        return do_rmtacl(argc, argv, RMT_LSETFACL, NULL);
-}
-
-int llapi_lgetfacl(int argc, char *argv[])
-{
-        return do_rmtacl(argc, argv, RMT_LGETFACL, NULL);
-}
-
-int llapi_rsetfacl(int argc, char *argv[])
-{
-        return do_rmtacl(argc, argv, RMT_RSETFACL, NULL);
-}
-
-int llapi_rgetfacl(int argc, char *argv[])
-{
-        return do_rmtacl(argc, argv, RMT_RGETFACL, rgetfacl_output);
-}
-
-int llapi_cp(int argc, char *argv[])
-{
-        int rc;
-
-        rc = rmtacl_notify(RMT_RSETFACL);
-        if (rc < 0)
-                return rc;
-
-        exit(execvp(argv[0], argv));
-}
-
-int llapi_ls(int argc, char *argv[])
-{
-        int rc;
-
-        rc = rmtacl_notify(RMT_LGETFACL);
-        if (rc < 0)
-                return rc;
-
-        exit(execvp(argv[0], argv));
 }
 
 /* Print mdtname 'name' into 'buf' using 'format'.  Add -MDT0000 if needed.

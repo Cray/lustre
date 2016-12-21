@@ -265,7 +265,8 @@ int ldiskfs_write_ldd(struct mkfs_opts *mop)
 		dev = mop->mo_loopdev;
 
 	ret = mount(dev, mntpt, MT_STR(&mop->mo_ldd), 0,
-		    mop->mo_ldd.ldd_mount_opts);
+		(mop->mo_mountopts == NULL) ?
+		"errors=remount-ro" : mop->mo_mountopts);
 	if (ret) {
 		fprintf(stderr, "%s: Unable to mount %s: %s\n",
 			progname, dev, strerror(errno));
@@ -618,7 +619,8 @@ static int enable_default_ext4_features(struct mkfs_opts *mop, char *anchor,
 
 		append_unique(anchor, ",", "flex_bg", NULL, maxbuflen);
 
-		if (IS_OST(&mop->mo_ldd)) {
+		if (IS_OST(&mop->mo_ldd) &&
+		    strstr(mop->mo_mkfsopts, "-G") == NULL) {
 			snprintf(tmp_buf, sizeof(tmp_buf), " -G %u",
 				 (1 << 20) / L_BLOCK_SIZE);
 			strscat(anchor, tmp_buf, maxbuflen);
@@ -867,7 +869,8 @@ int ldiskfs_make_lustre(struct mkfs_opts *mop)
 		 * descriptor blocks, but leave one block for the superblock.
 		 * Only useful for filesystems with < 2^32 blocks due to resize
 		 * limitations. */
-		if (IS_OST(&mop->mo_ldd) && mop->mo_device_kb > 100 * 1024 &&
+		if (strstr(mop->mo_mkfsopts, "meta_bg") == NULL &&
+		    IS_OST(&mop->mo_ldd) && mop->mo_device_kb > 100 * 1024 &&
 		    mop->mo_device_kb * 1024 / L_BLOCK_SIZE <= 0xffffffffULL) {
 			unsigned group_blocks = L_BLOCK_SIZE * 8;
 			unsigned desc_per_block = L_BLOCK_SIZE / 32;
@@ -881,9 +884,16 @@ int ldiskfs_make_lustre(struct mkfs_opts *mop)
 		}
 
 		/* Avoid zeroing out the full journal - speeds up mkfs */
-		if (is_e2fsprogs_feature_supp("-E lazy_journal_init") == 0)
+		if (is_e2fsprogs_feature_supp("-E lazy_journal_init") == 0) {
 			append_unique(start, ext_opts ? "," : " -E ",
 				      "lazy_journal_init", NULL, maxbuflen);
+			ext_opts = 1;
+		}
+		if (is_e2fsprogs_feature_supp("-E lazy_itable_init=0") == 0) {
+			append_unique(start, ext_opts ? "," : "-E",
+				      "lazy_itable_init=0", NULL, maxbuflen);
+			ext_opts = 1;
+		}
 		/* end handle -E mkfs options */
 
 		/* Allow reformat of full devices (as opposed to

@@ -47,12 +47,11 @@
 static int osc_active_seq_show(struct seq_file *m, void *v)
 {
 	struct obd_device *dev = m->private;
-	int rc;
 
 	LPROCFS_CLIMP_CHECK(dev);
-	rc = seq_printf(m, "%d\n", !dev->u.cli.cl_import->imp_deactive);
+	seq_printf(m, "%d\n", !dev->u.cli.cl_import->imp_deactive);
 	LPROCFS_CLIMP_EXIT(dev);
-	return rc;
+	return 0;
 }
 
 static ssize_t osc_active_seq_write(struct file *file,
@@ -82,12 +81,11 @@ static int osc_max_rpcs_in_flight_seq_show(struct seq_file *m, void *v)
 {
 	struct obd_device *dev = m->private;
 	struct client_obd *cli = &dev->u.cli;
-	int rc;
 
 	spin_lock(&cli->cl_loi_list_lock);
-	rc = seq_printf(m, "%u\n", cli->cl_max_rpcs_in_flight);
+	seq_printf(m, "%u\n", cli->cl_max_rpcs_in_flight);
 	spin_unlock(&cli->cl_loi_list_lock);
-	return rc;
+	return 0;
 }
 
 static ssize_t osc_max_rpcs_in_flight_seq_write(struct file *file,
@@ -96,8 +94,8 @@ static ssize_t osc_max_rpcs_in_flight_seq_write(struct file *file,
 {
 	struct obd_device *dev = ((struct seq_file *)file->private_data)->private;
         struct client_obd *cli = &dev->u.cli;
-        struct ptlrpc_request_pool *pool = cli->cl_import->imp_rq_pool;
         int val, rc;
+	int adding, added, req_count;
 
         rc = lprocfs_write_helper(buffer, count, &val);
         if (rc)
@@ -107,8 +105,20 @@ static ssize_t osc_max_rpcs_in_flight_seq_write(struct file *file,
                 return -ERANGE;
 
         LPROCFS_CLIMP_CHECK(dev);
-        if (pool && val > cli->cl_max_rpcs_in_flight)
-                pool->prp_populate(pool, val-cli->cl_max_rpcs_in_flight);
+
+	adding = val - cli->cl_max_rpcs_in_flight;
+	req_count = atomic_read(&osc_pool_req_count);
+	if (adding > 0 && req_count < osc_reqpool_maxreqcount) {
+		/*
+		 * There might be some race which will cause over-limit
+		 * allocation, but it is fine.
+		 */
+		if (req_count + adding > osc_reqpool_maxreqcount)
+			adding = osc_reqpool_maxreqcount - req_count;
+
+		added = osc_rq_pool->prp_populate(osc_rq_pool, adding);
+		atomic_add(added, &osc_pool_req_count);
+	}
 
 	spin_lock(&cli->cl_loi_list_lock);
 	cli->cl_max_rpcs_in_flight = val;
@@ -149,7 +159,7 @@ static ssize_t osc_max_dirty_mb_seq_write(struct file *file,
 		return rc;
 
 	if (pages_number <= 0 ||
-	    pages_number > OSC_MAX_DIRTY_MB_MAX << (20 - PAGE_CACHE_SHIFT) ||
+	    pages_number >= OSC_MAX_DIRTY_MB_MAX << (20 - PAGE_CACHE_SHIFT) ||
 	    pages_number > totalram_pages / 4) /* 1/4 of RAM */
 		return -ERANGE;
 
@@ -167,16 +177,15 @@ static int osc_cached_mb_seq_show(struct seq_file *m, void *v)
 	struct obd_device *dev = m->private;
 	struct client_obd *cli = &dev->u.cli;
 	int shift = 20 - PAGE_CACHE_SHIFT;
-	int rc;
 
-	rc = seq_printf(m,
-		      "used_mb: %ld\n"
-		      "busy_cnt: %ld\n",
-		      (atomic_long_read(&cli->cl_lru_in_list) +
-			atomic_long_read(&cli->cl_lru_busy)) >> shift,
-		      atomic_long_read(&cli->cl_lru_busy));
+	seq_printf(m,
+		   "used_mb: %ld\n"
+		   "busy_cnt: %ld\n",
+		   (atomic_long_read(&cli->cl_lru_in_list) +
+		    atomic_long_read(&cli->cl_lru_busy)) >> shift,
+		   atomic_long_read(&cli->cl_lru_busy));
 
-	return rc;
+	return 0;
 }
 
 /* shrink the number of caching pages to a specific number */
@@ -217,7 +226,7 @@ osc_cached_mb_seq_write(struct file *file, const char __user *buffer,
 	rc = atomic_long_read(&cli->cl_lru_in_list) - pages_number;
 	if (rc > 0) {
 		struct lu_env *env;
-		int refcheck;
+		__u16 refcheck;
 
 		env = cl_env_get(&refcheck);
 		if (!IS_ERR(env)) {
@@ -234,12 +243,11 @@ static int osc_cur_dirty_bytes_seq_show(struct seq_file *m, void *v)
 {
 	struct obd_device *dev = m->private;
 	struct client_obd *cli = &dev->u.cli;
-	int rc;
 
 	spin_lock(&cli->cl_loi_list_lock);
-	rc = seq_printf(m, "%lu\n", cli->cl_dirty_pages << PAGE_CACHE_SHIFT);
+	seq_printf(m, "%lu\n", cli->cl_dirty_pages << PAGE_CACHE_SHIFT);
 	spin_unlock(&cli->cl_loi_list_lock);
-	return rc;
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osc_cur_dirty_bytes);
 
@@ -247,12 +255,11 @@ static int osc_cur_grant_bytes_seq_show(struct seq_file *m, void *v)
 {
 	struct obd_device *dev = m->private;
 	struct client_obd *cli = &dev->u.cli;
-	int rc;
 
 	spin_lock(&cli->cl_loi_list_lock);
-	rc = seq_printf(m, "%lu\n", cli->cl_avail_grant);
+	seq_printf(m, "%lu\n", cli->cl_avail_grant);
 	spin_unlock(&cli->cl_loi_list_lock);
-	return rc;
+	return 0;
 }
 
 static ssize_t osc_cur_grant_bytes_seq_write(struct file *file,
@@ -294,12 +301,11 @@ static int osc_cur_lost_grant_bytes_seq_show(struct seq_file *m, void *v)
 {
 	struct obd_device *dev = m->private;
 	struct client_obd *cli = &dev->u.cli;
-	int rc;
 
 	spin_lock(&cli->cl_loi_list_lock);
-	rc = seq_printf(m, "%lu\n", cli->cl_lost_grant);
+	seq_printf(m, "%lu\n", cli->cl_lost_grant);
 	spin_unlock(&cli->cl_loi_list_lock);
-	return rc;
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osc_cur_lost_grant_bytes);
 
@@ -309,8 +315,9 @@ static int osc_grant_shrink_interval_seq_show(struct seq_file *m, void *v)
 
 	if (obd == NULL)
 		return 0;
-	return seq_printf(m, "%d\n",
-			  obd->u.cli.cl_grant_shrink_interval);
+	seq_printf(m, "%d\n",
+		   obd->u.cli.cl_grant_shrink_interval);
+	return 0;
 }
 
 static ssize_t osc_grant_shrink_interval_seq_write(struct file *file,
@@ -343,8 +350,8 @@ static int osc_checksum_seq_show(struct seq_file *m, void *v)
 	if (obd == NULL)
 		return 0;
 
-	return seq_printf(m, "%d\n",
-			  obd->u.cli.cl_checksum ? 1 : 0);
+	seq_printf(m, "%d\n", obd->u.cli.cl_checksum ? 1 : 0);
+	return 0;
 }
 
 static ssize_t osc_checksum_seq_write(struct file *file,
@@ -425,7 +432,8 @@ static int osc_resend_count_seq_show(struct seq_file *m, void *v)
 {
 	struct obd_device *obd = m->private;
 
-	return seq_printf(m, "%u\n", atomic_read(&obd->u.cli.cl_resends));
+	seq_printf(m, "%u\n", atomic_read(&obd->u.cli.cl_resends));
+	return 0;
 }
 
 static ssize_t osc_resend_count_seq_write(struct file *file,
@@ -453,7 +461,8 @@ static int osc_contention_seconds_seq_show(struct seq_file *m, void *v)
 	struct obd_device *obd = m->private;
 	struct osc_device *od  = obd2osc_dev(obd);
 
-	return seq_printf(m, "%u\n", od->od_contention_time);
+	seq_printf(m, "%u\n", od->od_contention_time);
+	return 0;
 }
 
 static ssize_t osc_contention_seconds_seq_write(struct file *file,
@@ -472,7 +481,8 @@ static int osc_lockless_truncate_seq_show(struct seq_file *m, void *v)
 	struct obd_device *obd = m->private;
 	struct osc_device *od  = obd2osc_dev(obd);
 
-	return seq_printf(m, "%u\n", od->od_lockless_truncate);
+	seq_printf(m, "%u\n", od->od_lockless_truncate);
+	return 0;
 }
 
 static ssize_t osc_lockless_truncate_seq_write(struct file *file,
@@ -490,8 +500,9 @@ LPROC_SEQ_FOPS(osc_lockless_truncate);
 static int osc_destroys_in_flight_seq_show(struct seq_file *m, void *v)
 {
 	struct obd_device *obd = m->private;
-	return seq_printf(m, "%u\n",
-			  atomic_read(&obd->u.cli.cl_destroy_in_flight));
+	seq_printf(m, "%u\n",
+		   atomic_read(&obd->u.cli.cl_destroy_in_flight));
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osc_destroys_in_flight);
 
@@ -548,9 +559,10 @@ static int osc_unstable_stats_seq_show(struct seq_file *m, void *v)
 	pages = atomic_long_read(&cli->cl_unstable_count);
 	mb    = (pages * PAGE_CACHE_SIZE) >> 20;
 
-	return seq_printf(m, "unstable_pages: %20ld\n"
-			  "unstable_mb:              %10d\n",
-			pages, mb);
+	seq_printf(m, "unstable_pages: %20ld\n"
+		   "unstable_mb:              %10d\n",
+		   pages, mb);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osc_unstable_stats);
 
@@ -702,11 +714,11 @@ static int osc_rpc_stats_seq_show(struct seq_file *seq, void *v)
                 unsigned long w = cli->cl_write_rpc_hist.oh_buckets[i];
                 read_cum += r;
                 write_cum += w;
-                seq_printf(seq, "%d:\t\t%10lu %3lu %3lu   | %10lu %3lu %3lu\n",
-                                 i, r, pct(r, read_tot),
-                                 pct(read_cum, read_tot), w,
-                                 pct(w, write_tot),
-                                 pct(write_cum, write_tot));
+		seq_printf(seq, "%d:\t\t%10lu %3lu %3lu   | %10lu %3lu %3lu\n",
+			   i, r, pct(r, read_tot),
+			   pct(read_cum, read_tot), w,
+			   pct(w, write_tot),
+			   pct(write_cum, write_tot));
                 if (read_cum == read_tot && write_cum == write_tot)
                         break;
         }

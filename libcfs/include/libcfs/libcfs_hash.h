@@ -743,7 +743,7 @@ void *cfs_hash_lookup(cfs_hash_t *hs, const void *key);
 void cfs_hash_for_each(cfs_hash_t *hs, cfs_hash_for_each_cb_t, void *data);
 void cfs_hash_for_each_safe(cfs_hash_t *hs, cfs_hash_for_each_cb_t, void *data);
 int  cfs_hash_for_each_nolock(cfs_hash_t *hs, cfs_hash_for_each_cb_t,
-				void *data);
+				void *data, int start);
 int  cfs_hash_for_each_empty(cfs_hash_t *hs, cfs_hash_for_each_cb_t,
 				void *data);
 void cfs_hash_for_each_key(cfs_hash_t *hs, const void *key,
@@ -831,8 +831,8 @@ static inline void __cfs_hash_set_theta(cfs_hash_t *hs, int min, int max)
 
 /* Generic debug formatting routines mainly for proc handler */
 struct seq_file;
-int cfs_hash_debug_header(struct seq_file *m);
-int cfs_hash_debug_str(cfs_hash_t *hs, struct seq_file *m);
+void cfs_hash_debug_header(struct seq_file *m);
+void cfs_hash_debug_str(cfs_hash_t *hs, struct seq_file *m);
 
 /*
  * Generic djb2 hash algorithm for character arrays.
@@ -884,6 +884,10 @@ cfs_hash_u64_hash(const __u64 key, unsigned mask)
              (bd)->bd_offset < CFS_HASH_BKT_NHLIST(hs) &&       \
              (hlist = cfs_hash_bd_hhead(hs, bd)) != NULL;       \
              (bd)->bd_offset++)
+
+#ifdef HAVE_HLIST_ADD_AFTER
+#define hlist_add_behind(hnode, tail)	hlist_add_after(tail, hnode)
+#endif /* HAVE_HLIST_ADD_AFTER */
 
 /* !__LIBCFS__HASH_H__ */
 #endif

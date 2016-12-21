@@ -97,6 +97,9 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define HASH_NID_STATS_BKT_BITS 5
 #define HASH_NID_STATS_CUR_BITS 7
 #define HASH_NID_STATS_MAX_BITS 12
+#define HASH_GEN_BKT_BITS 5
+#define HASH_GEN_CUR_BITS 7
+#define HASH_GEN_MAX_BITS 12
 #define HASH_LQE_BKT_BITS 5
 #define HASH_LQE_CUR_BITS 7
 #define HASH_LQE_MAX_BITS 12
@@ -265,6 +268,11 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_MDS_RENAME4             0x156
 #define OBD_FAIL_MDS_LDLM_REPLY_NET	 0x157
 #define OBD_FAIL_MDS_LLOG_CREATE_FAILED2 0x15b
+#define OBD_FAIL_MDS_FLD_LOOKUP			0x15c
+#define OBD_FAIL_MDS_INTENT_DELAY		0x160
+#define OBD_FAIL_MDS_XATTR_REP			0x161
+#define OBD_FAIL_MDS_TRACK_OVERFLOW	 0x162
+#define OBD_FAIL_MDS_LOV_CREATE_RACE	 0x163
 
 /* layout lock */
 #define OBD_FAIL_MDS_NO_LL_GETATTR	 0x170
@@ -289,6 +297,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_OSD_LMA_INCOMPAT			0x194
 #define OBD_FAIL_OSD_COMPAT_INVALID_ENTRY		0x195
 #define OBD_FAIL_OSD_COMPAT_NO_ENTRY			0x196
+#define OBD_FAIL_OSD_OST_EA_FID_SET			0x197
 
 #define OBD_FAIL_OST                     0x200
 #define OBD_FAIL_OST_CONNECT_NET         0x201
@@ -313,7 +322,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_OST_BRW_PAUSE_BULK      0x214
 #define OBD_FAIL_OST_ENOSPC              0x215
 #define OBD_FAIL_OST_EROFS               0x216
-#define OBD_FAIL_OST_ENOENT              0x217
+#define OBD_FAIL_SRV_ENOENT              0x217
 #define OBD_FAIL_OST_QUOTACHECK_NET      0x218
 #define OBD_FAIL_OST_QUOTACTL_NET        0x219
 #define OBD_FAIL_OST_CHECKSUM_RECEIVE    0x21a
@@ -368,17 +377,18 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_LDLM_AGL_NOLOCK         0x31b
 #define OBD_FAIL_LDLM_OST_LVB		 0x31c
 #define OBD_FAIL_LDLM_ENQUEUE_HANG	 0x31d
+#define OBD_FAIL_LDLM_BL_EVICT           0x31e
 #define OBD_FAIL_LDLM_PAUSE_CANCEL2      0x31f
 #define OBD_FAIL_LDLM_CP_CB_WAIT2        0x320
 #define OBD_FAIL_LDLM_CP_CB_WAIT3        0x321
 #define OBD_FAIL_LDLM_CP_CB_WAIT4        0x322
 #define OBD_FAIL_LDLM_CP_CB_WAIT5        0x323
-
 #define OBD_FAIL_LDLM_SRV_BL_AST	 0x324
 #define OBD_FAIL_LDLM_SRV_CP_AST	 0x325
 #define OBD_FAIL_LDLM_SRV_GL_AST	 0x326
+#define OBD_FAIL_LDLM_WATERMARK_LOW	 0x327
+#define OBD_FAIL_LDLM_WATERMARK_HIGH	 0x328
 #define OBD_FAIL_LDLM_PAUSE_CANCEL_LOCAL 0x329
-
 #define OBD_FAIL_LDLM_GRANT_CHECK        0x32a
 
 /* LOCKLESS IO */
@@ -403,8 +413,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_OSC_CP_ENQ_RACE         0x410
 #define OBD_FAIL_OSC_NO_GRANT            0x411
 #define OBD_FAIL_OSC_DELAY_SETTIME	 0x412
-
-#define OBD_FAIL_OSC_DELAY_IO            0x414
+#define OBD_FAIL_OSC_DELAY_IO            0x413
 
 #define OBD_FAIL_PTLRPC                  0x500
 #define OBD_FAIL_PTLRPC_ACK              0x501
@@ -443,6 +452,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_OBD_IDX_READ_NET        0x607
 #define OBD_FAIL_OBD_IDX_READ_BREAK	 0x608
 #define OBD_FAIL_OBD_NO_LRU		 0x609
+#define OBD_FAIL_OBD_ZOMBIE_SLEEP	 0x650
 
 #define OBD_FAIL_TGT_REPLY_NET           0x700
 #define OBD_FAIL_TGT_CONN_RACE           0x701
@@ -460,6 +470,8 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_TGT_DELAY_CONDITIONAL	 0x713
 #define OBD_FAIL_TGT_REPLAY_DELAY2       0x714
 #define OBD_FAIL_TGT_REPLAY_RECONNECT	 0x715
+#define OBD_FAIL_TGT_MOUNT_RACE		 0x716
+#define OBD_FAIL_TGT_CLIENT_DEL          0x718
 
 #define OBD_FAIL_MDC_REVALIDATE_PAUSE    0x800
 #define OBD_FAIL_MDC_ENQUEUE_PAUSE       0x801
@@ -483,6 +495,8 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_MGS_TARGET_DEL_NET	 0x90b
 #define OBD_FAIL_MGS_CONFIG_READ_NET	 0x90c
 #define OBD_FAIL_MGS_LDLM_REPLY_NET	 0x90d
+#define OBD_FAIL_MGC_FAIL_NET		 0x90e
+#define OBD_FAIL_MGC_FS_CLEANUP_RACE	 0x90f
 
 #define OBD_FAIL_QUOTA_DQACQ_NET			0xA01
 #define OBD_FAIL_QUOTA_EDQUOT            0xA02
@@ -519,6 +533,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_LLOG_CATINFO_NET                   0x1309
 #define OBD_FAIL_MDS_SYNC_CAPA_SL                   0x1310
 #define OBD_FAIL_SEQ_ALLOC                          0x1311
+#define OBD_FAIL_CAT_RECORDS			    0x1312
 
 #define OBD_FAIL_LLITE                              0x1400
 #define OBD_FAIL_LLITE_FAULT_TRUNC_RACE             0x1401
@@ -529,6 +544,8 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_MAKE_LOVEA_HOLE		    0x1406
 #define OBD_FAIL_LLITE_LOST_LAYOUT		    0x1407
 #define OBD_FAIL_GETATTR_DELAY			    0x1409
+#define OBD_FAIL_LLITE_FLOCK_UNLOCK_RACE            0x140a
+#define OBD_FAIL_LLITE_FLOCK_BL_GRANT_RACE	    0x140b
 #define OBD_FAIL_LLITE_IMUTEX_SEC		    0x140c
 #define OBD_FAIL_LLITE_IMUTEX_NOSEC		    0x140d
 
@@ -624,6 +641,13 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_DT_DECLARE_DELETE		0x2016
 #define OBD_FAIL_DT_DELETE			0x2017
 #define OBD_FAIL_DT_LOOKUP			0x2018
+
+/* barrier */
+#define OBD_FAIL_MGS_BARRIER_READ_NET		0x2100
+#define OBD_FAIL_MGS_BARRIER_NOTIFY_NET		0x2101
+
+#define OBD_FAIL_BARRIER_DELAY			0x2102
+#define OBD_FAIL_BARRIER_FAILURE		0x2103
 
 /* Assign references to moved code to reduce code changes */
 #define OBD_FAIL_PRECHECK(id)                   CFS_FAIL_PRECHECK(id)
@@ -750,8 +774,8 @@ static inline void obd_pages_sub(int order)
 #define __OBD_MALLOC_VERBOSE(ptr, cptab, cpt, size, flags)		      \
 do {									      \
 	(ptr) = (cptab) == NULL ?					      \
-		kmalloc(size, flags | __GFP_ZERO) :			      \
-		cfs_cpt_malloc(cptab, cpt, size, flags | __GFP_ZERO);	      \
+		kmalloc(size, (flags) | __GFP_ZERO) :			      \
+		cfs_cpt_malloc(cptab, cpt, size, (flags) | __GFP_ZERO);	      \
         if (likely((ptr) != NULL &&                                           \
                    (!HAS_FAIL_ALLOC_FLAG || obd_alloc_fail_rate == 0 ||       \
                     !obd_alloc_fail(ptr, #ptr, "km", size,                    \
@@ -869,10 +893,10 @@ do {									      \
 
 #define __OBD_SLAB_ALLOC_VERBOSE(ptr, slab, cptab, cpt, size, type)	      \
 do {									      \
-	LASSERT(ergo((type) != GFP_ATOMIC, !in_interrupt()));	      \
+	LASSERT(ergo((type) != GFP_ATOMIC, !in_interrupt()));		      \
 	(ptr) = (cptab) == NULL ?					      \
-		kmem_cache_alloc(slab, type | __GFP_ZERO) :		      \
-		cfs_mem_cache_cpt_alloc(slab, cptab, cpt, type | __GFP_ZERO); \
+		kmem_cache_alloc(slab, (type) | __GFP_ZERO) :		      \
+		cfs_mem_cache_cpt_alloc(slab, cptab, cpt, (type) | __GFP_ZERO); \
         if (likely((ptr) != NULL &&                                           \
                    (!HAS_FAIL_ALLOC_FLAG || obd_alloc_fail_rate == 0 ||       \
                     !obd_alloc_fail(ptr, #ptr, "slab-", size,                 \

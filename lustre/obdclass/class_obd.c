@@ -42,7 +42,7 @@
 #include <lnet/lnetctl.h>
 #include <lustre_debug.h>
 #include <lprocfs_status.h>
-#include <lustre/lustre_build_version.h>
+#include <lustre_ver.h>
 #include <libcfs/list.h>
 #include <cl_object.h>
 #ifdef HAVE_SERVER_SUPPORT
@@ -123,6 +123,8 @@ struct lprocfs_stats *obd_memory = NULL;
 EXPORT_SYMBOL(obd_memory);
 #endif
 
+char obd_jobid_node[LUSTRE_JOBID_SIZE + 1];
+
 /* Get jobid of current process by reading the environment variable
  * stored in between the "env_start" & "env_end" of task struct.
  *
@@ -146,6 +148,12 @@ int lustre_get_jobid(char *jobid)
 	if (strcmp(obd_jobid_var, JOBSTATS_DISABLE) == 0)
 		GOTO(out, rc = 0);
 	
+
+	/* Whole node dedicated to single job */
+	if (strcmp(obd_jobid_var, JOBSTATS_NODELOCAL) == 0) {
+		memcpy(jobid, obd_jobid_node, LUSTRE_JOBID_SIZE);
+		RETURN(0);
+	}
 
 	/* Use process name + fsuid as jobid */
 	if (strcmp(obd_jobid_var, JOBSTATS_PROCNAME_UID) == 0) {
@@ -288,24 +296,24 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
                 GOTO(out, err);
         }
 
-        case OBD_GET_VERSION:
-                if (!data->ioc_inlbuf1) {
-                        CERROR("No buffer passed in ioctl\n");
-                        GOTO(out, err = -EINVAL);
-                }
+	case OBD_GET_VERSION:
+		if (!data->ioc_inlbuf1) {
+			CERROR("No buffer passed in ioctl\n");
+			GOTO(out, err = -EINVAL);
+		}
 
-                if (strlen(BUILD_VERSION) + 1 > data->ioc_inllen1) {
-                        CERROR("ioctl buffer too small to hold version\n");
-                        GOTO(out, err = -EINVAL);
-                }
+		if (strlen(LUSTRE_VERSION_STRING) + 1 > data->ioc_inllen1) {
+			CERROR("ioctl buffer too small to hold version\n");
+			GOTO(out, err = -EINVAL);
+		}
 
-                memcpy(data->ioc_bulk, BUILD_VERSION,
-                       strlen(BUILD_VERSION) + 1);
+		memcpy(data->ioc_bulk, LUSTRE_VERSION_STRING,
+		       strlen(LUSTRE_VERSION_STRING) + 1);
 
 		err = obd_ioctl_popdata((void __user *)arg, data, len);
-                if (err)
-                        err = -EFAULT;
-                GOTO(out, err);
+		if (err)
+			err = -EFAULT;
+		GOTO(out, err);
 
         case OBD_IOC_NAME2DEV: {
                 /* Resolve a device name.  This does not change the
@@ -374,7 +382,11 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
                         GOTO(out, err = -EINVAL);
                 }
 
-                obd = class_num2obd(index);
+		read_lock(&obd_dev_lock);
+		obd = class_num2obd(index);
+		if (obd)
+			class_incref(obd, __FUNCTION__, current);
+		read_unlock(&obd_dev_lock);
                 if (!obd)
                         GOTO(out, err = -ENOENT);
 
@@ -403,9 +415,17 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
                         GOTO(out, err = -EINVAL);
                 if (strnlen(data->ioc_inlbuf4, MAX_OBD_NAME) >= MAX_OBD_NAME)
                         GOTO(out, err = -EINVAL);
-                obd = class_name2obd(data->ioc_inlbuf4);
-        } else if (data->ioc_dev < class_devno_max()) {
-                obd = class_num2obd(data->ioc_dev);
+		read_lock(&obd_dev_lock);
+		obd = class_name2obd(data->ioc_inlbuf4);
+		if (obd)
+			class_incref(obd, __FUNCTION__, current);
+		read_unlock(&obd_dev_lock);
+	} else if (data->ioc_dev < class_devno_max()) {
+		read_lock(&obd_dev_lock);
+		obd = class_num2obd(data->ioc_dev);
+		if (obd)
+			class_incref(obd, __FUNCTION__, current);
+		read_unlock(&obd_dev_lock);
         } else {
                 CERROR("OBD ioctl: No device\n");
                 GOTO(out, err = -EINVAL);
@@ -447,6 +467,8 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
         }
 
  out:
+	if (obd)
+		class_decref(obd, __FUNCTION__, current);
         if (buf)
                 obd_ioctl_freedata(buf, len);
         RETURN(err);
@@ -532,7 +554,11 @@ static int __init init_obdclass(void)
         for (i = CAPA_SITE_CLIENT; i < CAPA_SITE_MAX; i++)
 		INIT_LIST_HEAD(&capa_list[i]);
 
-	LCONSOLE_INFO("Lustre: Build Version: "BUILD_VERSION"\n");
+	spin_lock_init(&obd_stale_export_lock);
+	INIT_LIST_HEAD(&obd_stale_exports);
+	atomic_set(&obd_stale_export_num, 0);
+
+	LCONSOLE_INFO("Lustre: Build Version: "LUSTRE_VERSION_STRING"\n");
 
 	spin_lock_init(&obd_types_lock);
 	obd_zombie_impexp_init();
@@ -687,6 +713,7 @@ static void cleanup_obdclass(void)
         class_handle_cleanup();
         class_exit_uuidlist();
         obd_zombie_impexp_stop();
+	LASSERT(list_empty(&obd_stale_exports));
 
         memory_leaked = obd_memory_sum();
         pages_leaked = obd_pages_sum();
@@ -705,8 +732,9 @@ static void cleanup_obdclass(void)
         EXIT;
 }
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
-MODULE_DESCRIPTION("Lustre Class Driver Build Version: " BUILD_VERSION);
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
+MODULE_DESCRIPTION("Lustre Class Driver");
+MODULE_VERSION(LUSTRE_VERSION_STRING);
 MODULE_LICENSE("GPL");
 
 cfs_module(obdclass, LUSTRE_VERSION_STRING, init_obdclass, cleanup_obdclass);

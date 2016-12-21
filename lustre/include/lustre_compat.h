@@ -39,6 +39,7 @@
 
 #include <linux/fs_struct.h>
 #include <linux/namei.h>
+#include <linux/bio.h>
 
 #include <lustre_patchless_compat.h>
 
@@ -123,13 +124,9 @@ static inline void ll_set_fs_pwd(struct fs_struct *fs, struct vfsmount *mnt,
 #ifdef HAVE_INODE_DIO_WAIT
 /* inode_dio_wait(i) use as-is for write lock */
 # define inode_dio_write_done(i)	do {} while (0) /* for write unlock */
-# define inode_dio_read(i)		atomic_inc(&(i)->i_dio_count)
-/* inode_dio_done(i) use as-is for read unlock */
 #else
 # define inode_dio_wait(i)		down_write(&(i)->i_alloc_sem)
 # define inode_dio_write_done(i)	up_write(&(i)->i_alloc_sem)
-# define inode_dio_read(i)		down_read(&(i)->i_alloc_sem)
-# define inode_dio_done(i)		up_read(&(i)->i_alloc_sem)
 #endif
 
 #ifndef FS_HAS_FIEMAP
@@ -285,6 +282,7 @@ unsigned int ll_crypto_tfm_alg_min_keysize(struct crypto_blkcipher *tfm)
 
 #ifndef HAVE_LM_XXX_LOCK_MANAGER_OPS
 # define lm_compare_owner	fl_compare_owner
+# define lm_grant		fl_grant
 #endif
 
 /*
@@ -302,12 +300,17 @@ static inline int ll_namei_to_lookup_intent_flag(int flag)
 	return flag;
 }
 
-#ifdef HAVE_VOID_MAKE_REQUEST_FN
-# define ll_mrf_ret void
-# define LL_MRF_RETURN(rc)
+#ifdef HAVE_QC_MAKE_REQUEST_FN
+# define ll_mrf_ret blk_qc_t
+# define LL_MRF_RETURN(rc) RETURN(BLK_QC_T_NONE)
 #else
-# define ll_mrf_ret int
-# define LL_MRF_RETURN(rc) RETURN(rc)
+# ifdef HAVE_VOID_MAKE_REQUEST_FN
+#  define ll_mrf_ret void
+#  define LL_MRF_RETURN(rc)
+# else
+#  define ll_mrf_ret int
+#  define LL_MRF_RETURN(rc) RETURN(rc)
+# endif
 #endif
 
 #include <linux/fs.h>
@@ -369,6 +372,12 @@ static inline struct dentry *d_make_root(struct inode *root)
 #define ll_vfs_unlink(a, b) vfs_unlink(a, b)
 #endif
 
+#ifndef HAVE_INODE_LOCK
+# define inode_lock(inode) mutex_lock(&(inode)->i_mutex)
+# define inode_unlock(inode) mutex_unlock(&(inode)->i_mutex)
+# define inode_trylock(inode) mutex_trylock(&(inode)->i_mutex)
+#endif
+
 #ifndef HAVE_RADIX_EXCEPTION_ENTRY
 static inline int radix_tree_exceptional_entry(void *arg)
 {
@@ -390,6 +399,31 @@ static inline void truncate_inode_pages_final(struct address_space *map)
 
 #ifndef SIZE_MAX
 #define SIZE_MAX	(~(size_t)0)
+#endif
+
+#ifdef HAVE_SECURITY_IINITSEC_CALLBACK
+# define ll_security_inode_init_security(inode, dir, name, value, len, \
+					 initxattrs, dentry)	       \
+	 security_inode_init_security(inode, dir, &((dentry)->d_name), \
+				      initxattrs, dentry)
+#elif defined HAVE_SECURITY_IINITSEC_QSTR
+# define ll_security_inode_init_security(inode, dir, name, value, len, \
+					 initxattrs, dentry)	       \
+	 security_inode_init_security(inode, dir, &((dentry)->d_name), \
+				      name, value, len)
+#else /* !HAVE_SECURITY_IINITSEC_CALLBACK && !HAVE_SECURITY_IINITSEC_QSTR */
+# define ll_security_inode_init_security(inode, dir, name, value, len, \
+					 initxattrs, dentry)	       \
+	 security_inode_init_security(inode, dir, name, value, len)
+#endif
+
+#ifndef bio_for_each_segment_all /* since kernel version 3.9 */
+#ifdef HAVE_BVEC_ITER
+#define bio_for_each_segment_all(bv, bio, it) \
+	for (it = 0, bv = (bio)->bi_io_vec; it < (bio)->bi_vcnt; it++, bv++)
+#else
+#define bio_for_each_segment_all(bv, bio, it) bio_for_each_segment(bv, bio, it)
+#endif
 #endif
 
 #endif /* _LUSTRE_COMPAT_H */

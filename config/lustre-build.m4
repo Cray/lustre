@@ -1,3 +1,17 @@
+#
+# LB_SET_RPMSUBNAME
+#
+# Allow the rpm name to be appended to
+#
+AC_DEFUN([LB_SET_RPMSUBNAME], [
+AC_ARG_WITH(rpmsubname,
+AC_HELP_STRING([--with-rpmsubname],
+        [Use the specified rpm subname (default is '')]),
+        [rpmsubname=-${withval}],
+        [rpmsubname=''])
+AC_SUBST([rpmsubname])
+]) # LB_SET_RPMSUBNAME
+
 # LB_SET_PKGCONFIG_DIR
 #
 # Allow the pkg-config directory to be set
@@ -11,16 +25,6 @@ AC_HELP_STRING([--with-pkgconfigdir],
 AC_SUBST([pkgconfigdir])
 AC_CONFIG_FILES([module])
 ]) # LB_SET_PKGCONFIG_DIR
-
-#
-# LB_CHECK_VERSION
-#
-# Verify that LUSTRE_VERSION was defined properly
-#
-AC_DEFUN([LB_CHECK_VERSION], [
-AS_IF([test "LUSTRE_VERSION" = "LUSTRE""_VERSION"],
-	[AC_MSG_ERROR([This script was not built with a version number.])])
-]) # LB_CHECK_VERSION
 
 #
 # LB_CANONICAL_SYSTEM
@@ -37,89 +41,28 @@ AC_SUBST(lb_target_os)
 ]) # LB_CANONICAL_SYSTEM
 
 #
-# LB_DOWNSTREAM_RELEASE
+# LB_DOWNSTREAM_VERSION
+#
+AC_DEFUN([LB_DOWNSTREAM_VERSION],
+[AC_ARG_WITH([downstream-version],
+	AC_HELP_STRING([--with-downstream-version=string],
+		       [set additional string at RPM Release: string (default is nothing)]),
+	[DOWNSTREAM_VERSION=$with_downstream_version],
+	[])
+])
+
+#
+# LB_DOWNSTREAM_RELEASE (DEPRECATED)
 #
 AC_DEFUN([LB_DOWNSTREAM_RELEASE],
-[AC_ARG_WITH([downstream-release],
-	AC_HELP_STRING([--with-downstream-release=string],
-		[set a string in the BUILD_VERSION and RPM Release: (default is nothing)]),
-	[DOWNSTREAM_RELEASE=$with_downstream_release],
-	[ # if not specified, see if it's in the META file
-	AS_IF([test -f META],
-		[DOWNSTREAM_RELEASE=$(sed -ne '/^LOCAL_VERSION =/s/.*= *//p' META)])
-	])
-AC_SUBST(DOWNSTREAM_RELEASE)
-]) # LB_DOWNSTREAM_RELEASE
-
-#
-# LB_BUILDID
-#
-# Check if the source is a GA release and if not, set a "BUILDID"
-#
-# Currently there are at least two ways/modes of/for doing this.  One
-# is if we are in a valid git repository, the other is if we are in a
-# non-git source tree of some form.  Building the latter from the former
-# will be handled here.
-AC_DEFUN([LB_BUILDID], [
-AC_CACHE_CHECK([for buildid], [lb_cv_buildid], [
-lb_cv_buildid=""
-AS_IF([git branch >/dev/null 2>&1], [
-	ffw=0
-	hash=""
-	ver=$(git describe --match v[[0-9]]_*_[[0-9]]* --tags)
-	if [[[ $ver = *-*-* ]]]; then
-		hash=${ver##*-}
-		ffw=${ver#*-}
-		ffw=${ffw%-*}
-		ver=${ver%%-*}
-	fi
-	# it's tempting to use [[ $ver =~ ^v([0-9]+_)+([0-9]+|RC[0-9]+)$ ]]
-	# here but the portability of the regex on the right is dismal
-	# (thanx suse)
-	if echo "$ver" | egrep -q "^v([[0-9]]+_)+([[0-9]]+|RC[[0-9]]+)$"; then
-		ver=$(echo $ver | sed -e 's/^v\(.*\)/\1/' \
-				      -e 's/_RC[[0-9]].*$//' -e 's/_/./g')
-	fi
-
-	# a "lustre fix" value of .0 should be truncated
-	if [[[ $ver = *.*.*.0 ]]]; then
-		ver=${ver%.0}
-	fi
-	# ditto for a "lustre fix" value of _0
-	if [[[ $ver = v*_*_*_0 ]]]; then
-		ver=${ver%_0}
-	fi
-	if [[[ $ver = v*_*_* ]]]; then
-		ver=${ver#v}
-		ver=${ver//_/.}
-	fi
-
-	if test "$ver" != "$VERSION"; then
-		AC_MSG_WARN([most recent tag found: $ver does not match current version $VERSION.])
-	fi
-
-	if test "$ffw" != "0"; then
-		lb_cv_buildid="$hash"
-	fi
-], [test -f META], [
-	lb_cv_buildid=$(sed -ne '/^BUILDID =/s/.*= *//p' META)
-])
-])
-AS_IF([test -z "$lb_cv_buildid"], [
-	AC_MSG_WARN([
-
-FIXME: I don't know how to deal with source trees outside of git that
-don't have a META file. Not setting a buildid.
-])
-])
-BUILDID=$lb_cv_buildid
-AC_SUBST(BUILDID)
-]) # LB_BUILDID
+[AC_ARG_WITH([downstream-release],,
+	AC_MSG_ERROR([--downstream-release was deprecated.  Please read Documentation/versioning.txt.])
+)]) # LB_DOWNSTREAM_RELEASE
 
 #
 # LB_CHECK_FILE
 #
-# Check for file existance even when cross compiling
+# Check for file existence even when cross compiling
 # $1 - file to check
 # $2 - do 'yes'
 # $3 - do 'no'
@@ -266,7 +209,6 @@ AC_ARG_ENABLE([utils],
 		[disable building of Lustre utility programs]),
 	[], [enable_utils="yes"])
 AC_MSG_RESULT([$enable_utils])
-AS_IF([test "x$enable_utils" = xyes], [LB_CONFIG_INIT_SCRIPTS])
 ]) # LB_CONFIG_UTILS
 
 #
@@ -322,26 +264,6 @@ AS_IF([test "x$enable_doc" = xyes],
 	[ENABLE_DOC=1], [ENABLE_DOC=0])
 AC_SUBST(ENABLE_DOC)
 ]) # LB_CONFIG_DOCS
-
-#
-# LB_CONFIG_INIT_SCRIPTS
-#
-# our init scripts only work on red hat linux
-#
-AC_DEFUN([LB_CONFIG_INIT_SCRIPTS], [
-ENABLE_INIT_SCRIPTS=0
-AS_IF([test x$enable_utils = xyes], [
-	AC_CACHE_CHECK([whether to install init scripts], [lb_cv_enable_init_scripts], [
-	# our scripts only work on red hat systems
-	AS_IF([test -f /etc/centos-release],
-		[lb_cv_enable_init_scripts="yes"],
-		[lb_cv_enable_init_scripts="no"])
-	])
-	AS_IF([test "x$lb_cv_enable_init_scripts" = xyes],
-		[ENABLE_INIT_SCRIPTS=1])
-])
-AC_SUBST(ENABLE_INIT_SCRIPTS)
-])
 
 #
 # LB_CONFIG_HEADERS
@@ -436,10 +358,11 @@ AM_CONDITIONAL([MODULES], [test x$enable_modules = xyes])
 AM_CONDITIONAL([UTILS], [test x$enable_utils = xyes])
 AM_CONDITIONAL([TESTS], [test x$enable_tests = xyes])
 AM_CONDITIONAL([DOC], [test x$ENABLE_DOC = x1])
-AM_CONDITIONAL([INIT_SCRIPTS], [test x$ENABLE_INIT_SCRIPTS = x1])
 AM_CONDITIONAL([LINUX], [test x$lb_target_os = xlinux])
 AM_CONDITIONAL([USES_DPKG], [test x$uses_dpkg = xyes])
 AM_CONDITIONAL([USE_QUILT], [test x$use_quilt = xyes])
+AM_CONDITIONAL([RHEL], [test x$RHEL_KERNEL = xyes])
+AM_CONDITIONAL([SUSE], [test x$SUSE_KERNEL = xyes])
 
 # Sanity check for PCLMULQDQ instruction availability
 # PCLMULQDQ instruction is a new instruction available beginning with
@@ -535,7 +458,7 @@ AS_IF([test x$enable_server = xyes],
 #
 # The purpose of this function is to assemble command line options
 # for the rpmbuild command based on the options passed to the configure
-# script, and also upon the descisions that configure makes based on
+# script, and also upon the decisions that configure makes based on
 # the tests that it runs.
 # These strings can be passed to rpmbuild on the command line
 # in the Make targets named "rpms" and "srpm".
@@ -546,6 +469,9 @@ CONFIGURE_ARGS=
 eval set -- $ac_configure_args
 for arg; do
 	case $arg in
+		--*dir=* ) ;;
+		-C | --cache-file=* ) ;;
+		--prefix=* | --*-prefix=* ) ;;
 		--enable-dist ) ;;
 		--with-release=* ) ;;
 		--with-kmp-moddir=* ) ;;
@@ -556,6 +482,7 @@ for arg; do
 		--enable-tests | --disable-tests ) ;;
 		--enable-utils | --disable-utils ) ;;
 		--enable-iokit | --disable-iokit ) ;;
+		--enable-dlc | --disable-dlc ) ;;
 		* ) CONFIGURE_ARGS="$CONFIGURE_ARGS '$arg'" ;;
 	esac
 done
@@ -612,11 +539,9 @@ if test x$enable_zfs = xyes ; then
 fi
 if test x$enable_iokit != xyes ; then
 	RPMBINARGS="$RPMBINARGS --without lustre_iokit"
-	RPMSRCARGS="$RPMSRCARGS --without lustre_iokit"
 fi
-if test x$BUILD_DLC != xyes ; then
-	RPMBINARGS="$RPMBINARGS --without lnet_dlc"
-	RPMSRCARGS="$RPMSRCARGS --without lnet_dlc"
+if test x$USE_DLC = xyes ; then
+	RPMBINARGS="$RPMBINARGS --with lnet_dlc"
 fi
 
 RPMBUILD_BINARY_ARGS=$RPMBINARGS
@@ -633,13 +558,14 @@ AC_DEFUN([LB_CONFIGURE], [
 AC_MSG_NOTICE([Lustre base checks
 ==============================================================================])
 LB_SET_PKGCONFIG_DIR
+LB_SET_RPMSUBNAME
 LB_CANONICAL_SYSTEM
 
 LB_CONFIG_DIST
 
+LB_DOWNSTREAM_VERSION
 LB_DOWNSTREAM_RELEASE
 LB_USES_DPKG
-LB_BUILDID
 
 LB_LIBCFS_DIR
 

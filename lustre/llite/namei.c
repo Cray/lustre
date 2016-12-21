@@ -193,13 +193,18 @@ int ll_md_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *desc,
 		}
 		break;
 	case LDLM_CB_CANCELING: {
-		struct inode *inode = ll_inode_from_resource_lock(lock);
+		struct inode *inode;
 		__u64 bits = lock->l_policy_data.l_inodebits.bits;
+
+		/* Nothing to do for non-granted locks */
+		if (lock->l_req_mode != lock->l_granted_mode)
+			break;
 
 		/* Inode is set to lock->l_resource->lr_lvb_inode
 		 * for mdc - bug 24555 */
 		LASSERT(lock->l_ast_data == NULL);
 
+		inode = ll_inode_from_resource_lock(lock);
 		if (inode == NULL)
 			break;
 
@@ -269,6 +274,10 @@ int ll_md_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *desc,
 			struct ll_inode_info *lli = ll_i2info(inode);
 
 			spin_lock(&lli->lli_lock);
+			LTIME_S(inode->i_mtime) = 0;
+			LTIME_S(inode->i_atime) = 0;
+			LTIME_S(inode->i_ctime) = 0;
+
 			lli->lli_flags &= ~LLIF_MDS_SIZE_LOCK;
 			spin_unlock(&lli->lli_lock);
 		}
@@ -373,7 +382,8 @@ static struct dentry *ll_find_alias(struct inode *inode, struct dentry *dentry)
 		LASSERT(alias != dentry);
 
 		spin_lock(&alias->d_lock);
-		if (alias->d_flags & DCACHE_DISCONNECTED)
+		if ((alias->d_flags & DCACHE_DISCONNECTED) &&
+		    S_ISDIR(inode->i_mode))
 			/* LASSERT(last_discon == NULL); LU-405, bz 20055 */
 			discon_alias = alias;
 		else if (alias->d_parent == dentry->d_parent             &&
@@ -884,6 +894,11 @@ static int ll_create_it(struct inode *dir, struct dentry *dentry,
 		RETURN(PTR_ERR(inode));
 
 	d_instantiate(dentry, inode);
+
+	rc = ll_init_security(dentry, inode, dir);
+	if (rc)
+		RETURN(rc);
+
 	RETURN(0);
 }
 
@@ -975,6 +990,10 @@ again:
 		GOTO(err_exit, err);
 
 	d_instantiate(dchild, inode);
+
+	err = ll_init_security(dchild, inode, dir);
+	if (err)
+		GOTO(err_exit, err);
 
         EXIT;
 err_exit:

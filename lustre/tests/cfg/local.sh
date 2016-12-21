@@ -48,6 +48,7 @@ OST_INDEX_LIST=${OST_INDEX_LIST:-}
 # OSTDEV1="/dev/sda"
 # on specific hosts with
 # ost1_HOST="uml2"
+# ost1_JRN="/dev/sdb1"
 #
 # For ZFS, ost devices can be specified via either or both of the following:
 # OSTZFSDEV1="${FSNAME}-ost1/ost1"
@@ -138,7 +139,7 @@ POWER_UP=${POWER_UP:-"powerman --on"}
 SLOW=${SLOW:-no}
 FAIL_ON_ERROR=${FAIL_ON_ERROR:-true}
 
-MPIRUN=$(which mpirun 2>/dev/null) || true
+MPIRUN=${MPIRUN:-$(which mpirun 2>/dev/null || true)}
 MPI_USER=${MPI_USER:-mpiuser}
 SHARED_DIR_LOGS=${SHARED_DIR_LOGS:-""}
 MACHINEFILE_OPTION=${MACHINEFILE_OPTION:-"-machinefile"}

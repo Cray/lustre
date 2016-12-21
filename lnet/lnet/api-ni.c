@@ -35,9 +35,8 @@
  */
 
 #define DEBUG_SUBSYSTEM S_LNET
-#include <lnet/lib-lnet.h>
-#include <lnet/lib-dlc.h>
 #include <linux/log2.h>
+#include <lnet/lib-lnet.h>
 
 #define D_LNI D_CONSOLE
 
@@ -65,18 +64,19 @@ static int lnet_ping(lnet_process_id_t id, int timeout_ms,
 
 static int lnet_read_file(const char *name, char *config, size_t size)
 {
-        cfs_file_t      *filp;
+        struct file    *filp;
         int             rc;
         loff_t          pos = 0;
 
-        filp = cfs_filp_open(name, O_RDONLY, 0600, &rc);
-        if (!filp) {
+        filp = filp_open(name, O_RDONLY, 0600);
+        if (IS_ERR(filp)) {
+                rc = PTR_ERR(filp);
                 CERROR("Can't open file %s: rc %d\n", name, rc);
                 return rc;
         }
 
-        rc = cfs_user_read(filp, config, size, &pos);
-        cfs_filp_close(filp);
+        rc = filp_user_read(filp, config, size, &pos);
+        filp_close(filp, NULL);
         if (rc < 0)
                 CERROR("Can't read file %s: rc %d\n", name, rc);
 
@@ -108,34 +108,29 @@ static char *lnet_read_file_mem(const char *name, size_t max_size)
 
 #define CFS_CONF_FILE_SIZE      (1024 * 1024)
 /* Caller should free memory */
+
 static char *
-lnet_get_routes(void)
+lnet_get_routes(int *should_free)
 {
+        char            *config = ERR_PTR(-ENOENT);
+
+        *should_free = 0;
         if (*routes == '/') {
                 /* Read routes config file to memory */
-                return lnet_read_file_mem(routes, CFS_CONF_FILE_SIZE);
+                config = lnet_read_file_mem(routes, CFS_CONF_FILE_SIZE);
+                if (!IS_ERR(config))
+                        *should_free = 1;
+                return config;
         } else {
                 return routes;
         }
 }
 
-void
-lnet_put_routes(char *rbuf)
-{
-        if (rbuf != NULL && rbuf != routes)
-                vfree(rbuf);
-}
-
 static char *
 lnet_get_networks(void)
 {
-	char   *nets;
-	char   *config = NULL;
+	char   *nets, *config;
 	int     rc;
-
-        if (*networks == 0 && *ip2nets == 0)
-                /* default to "tcp" when nothing specified */
-                return "tcp";
 
 	if (*networks != 0 && *ip2nets != 0) {
 		LCONSOLE_ERROR_MSG(0x101, "Please specify EITHER 'networks' or "
@@ -143,25 +138,24 @@ lnet_get_networks(void)
 		return NULL;
 	}
 
+	if (*ip2nets == '/') {
+		config = lnet_read_file_mem(ip2nets, CFS_CONF_FILE_SIZE);
+		if (!IS_ERR(config)) {
+			rc = lnet_parse_ip2nets(&nets, config);
+			vfree(config);
+			return (rc == 0) ? nets : NULL;
+		} else {
+			return NULL;
+		}
+	} else if (*ip2nets != 0) {
+		rc = lnet_parse_ip2nets(&nets, ip2nets);
+		return (rc == 0) ? nets : NULL;
+	}
+
 	if (*networks != 0)
 		return networks;
 
-        LASSERT(*ip2nets != 0);
-
-        if (*ip2nets == '/') {
-                /* read config from file in ip2nets */
-                config = lnet_read_file_mem(ip2nets, CFS_CONF_FILE_SIZE);
-                if (IS_ERR(config))
-                        return NULL;
-        } else if (*ip2nets != 0) {
-                config = ip2nets;
-        }
-
-        rc = lnet_parse_ip2nets(&nets, config);
-        if (config != ip2nets)
-                vfree(config);
-
-        return (rc == 0) ? nets : NULL;
+	return "tcp";
 }
 
 static void
@@ -1290,9 +1284,9 @@ lnet_shutdown_lndni(struct lnet_ni *ni)
 }
 
 static int
-lnet_startup_lndni(struct lnet_ni *ni, __s32 peer_timeout,
-		   __s32 peer_cr, __s32 peer_buf_cr, __s32 credits)
+lnet_startup_lndni(struct lnet_ni *ni, struct lnet_ioctl_config_data *conf)
 {
+	struct lnet_ioctl_config_lnd_tunables *lnd_tunables = NULL;
 	int			rc = -EINVAL;
 	int			lnd_type;
 	lnd_t			*lnd;
@@ -1357,6 +1351,38 @@ lnet_startup_lndni(struct lnet_ni *ni, __s32 peer_timeout,
 
 	ni->ni_lnd = lnd;
 
+	if (conf && conf->cfg_hdr.ioc_len > sizeof(*conf))
+		lnd_tunables = (struct lnet_ioctl_config_lnd_tunables *)conf->cfg_bulk;
+
+	if (lnd_tunables != NULL) {
+		LIBCFS_ALLOC(ni->ni_lnd_tunables,
+			     sizeof(*ni->ni_lnd_tunables));
+		if (ni->ni_lnd_tunables == NULL) {
+			LNET_MUTEX_UNLOCK(&the_lnet.ln_lnd_mutex);
+			rc = -ENOMEM;
+			goto failed0;
+		}
+		memcpy(ni->ni_lnd_tunables, lnd_tunables,
+		       sizeof(*ni->ni_lnd_tunables));
+	}
+
+	/* If given some LND tunable parameters, parse those now to
+	 * override the values in the NI structure. */
+	if (conf) {
+		if (conf->cfg_config_u.cfg_net.net_peer_rtr_credits >= 0)
+			ni->ni_peerrtrcredits =
+				conf->cfg_config_u.cfg_net.net_peer_rtr_credits;
+		if (conf->cfg_config_u.cfg_net.net_peer_timeout >= 0)
+			ni->ni_peertimeout =
+				conf->cfg_config_u.cfg_net.net_peer_timeout;
+		if (conf->cfg_config_u.cfg_net.net_peer_tx_credits >= 0)
+			ni->ni_peertxcredits =
+				conf->cfg_config_u.cfg_net.net_peer_tx_credits;
+		if (conf->cfg_config_u.cfg_net.net_max_tx_credits >= 0)
+			ni->ni_maxtxcredits =
+				conf->cfg_config_u.cfg_net.net_max_tx_credits;
+	}
+
 	rc = (lnd->lnd_startup)(ni);
 
 	LNET_MUTEX_UNLOCK(&the_lnet.ln_lnd_mutex);
@@ -1369,23 +1395,6 @@ lnet_startup_lndni(struct lnet_ni *ni, __s32 peer_timeout,
 		lnet_net_unlock(LNET_LOCK_EX);
 		goto failed0;
 	}
-
-	/* If given some LND tunable parameters, parse those now to
-	 * override the values in the NI structure. */
-	if (peer_buf_cr >= 0)
-		ni->ni_peerrtrcredits = peer_buf_cr;
-	if (peer_timeout >= 0)
-		ni->ni_peertimeout = peer_timeout;
-	/*
-	 * TODO
-	 * Note: For now, don't allow the user to change
-	 * peertxcredits as this number is used in the
-	 * IB LND to control queue depth.
-	 * if (peer_cr != -1)
-	 *	ni->ni_peertxcredits = peer_cr;
-	 */
-	if (credits >= 0)
-		ni->ni_maxtxcredits = credits;
 
 	LASSERT(ni->ni_peertimeout <= 0 || lnd->lnd_query != NULL);
 
@@ -1446,7 +1455,7 @@ lnet_startup_lndnis(struct list_head *nilist)
 	while (!list_empty(nilist)) {
 		ni = list_entry(nilist->next, lnet_ni_t, ni_list);
 		list_del(&ni->ni_list);
-		rc = lnet_startup_lndni(ni, -1, -1, -1, -1);
+		rc = lnet_startup_lndni(ni, NULL);
 
 		if (rc < 0)
 			goto failed;
@@ -1560,12 +1569,12 @@ int
 LNetNIInit(lnet_pid_t requested_pid)
 {
 	int			im_a_router = 0;
-	int			rc;
+	int			rc, should_free;
 	int			ni_count;
 	lnet_ping_info_t	*pinfo;
 	lnet_handle_md_t	md_handle;
 	struct list_head	net_head;
-	char			*routes_cfg;
+	char        *routes_cfg;
 
 	INIT_LIST_HEAD(&net_head);
 
@@ -1611,16 +1620,17 @@ LNetNIInit(lnet_pid_t requested_pid)
 	}
 
 	if (!the_lnet.ln_nis_from_mod_params) {
-		routes_cfg = lnet_get_routes();
+		routes_cfg = lnet_get_routes(&should_free);
 		if (IS_ERR(routes_cfg)) {
 			rc = PTR_ERR(routes_cfg);
 			goto failed1;
 		}
 
 		rc = lnet_parse_routes(routes_cfg, &im_a_router);
-		lnet_put_routes(routes_cfg);
+		if (should_free == 1)
+			vfree(routes_cfg);
 		if (rc != 0)
-			goto failed2;
+			goto failed1;
 
 		rc = lnet_check_routes();
 		if (rc != 0)
@@ -1733,17 +1743,18 @@ EXPORT_SYMBOL(LNetNIFini);
  * \param[out] net_config	Network configuration
  */
 static void
-lnet_fill_ni_info(struct lnet_ni *ni, __u32 *cpt_count, __u64 *nid,
-		  int *peer_timeout, int *peer_tx_credits,
-		  int *peer_rtr_credits, int *max_tx_credits,
-		  struct lnet_ioctl_net_config *net_config)
+lnet_fill_ni_info(struct lnet_ni *ni, struct lnet_ioctl_config_data *config)
 {
+	struct lnet_ioctl_net_config *net_config;
+	struct lnet_ioctl_config_lnd_tunables *lnd_cfg = NULL;
+	size_t min_size, tunable_size = 0;
 	int i;
 
-	if (ni == NULL)
+	if (!ni || !config)
 		return;
 
-	if (net_config == NULL)
+	net_config = (struct lnet_ioctl_net_config *) config->cfg_bulk;
+	if (!net_config)
 		return;
 
 	CLASSERT(ARRAY_SIZE(ni->ni_interfaces) ==
@@ -1759,11 +1770,11 @@ lnet_fill_ni_info(struct lnet_ni *ni, __u32 *cpt_count, __u64 *nid,
 		}
 	}
 
-	*nid = ni->ni_nid;
-	*peer_timeout = ni->ni_peertimeout;
-	*peer_tx_credits = ni->ni_peertxcredits;
-	*peer_rtr_credits = ni->ni_peerrtrcredits;
-	*max_tx_credits = ni->ni_maxtxcredits;
+	config->cfg_nid = ni->ni_nid;
+	config->cfg_config_u.cfg_net.net_peer_timeout = ni->ni_peertimeout;
+	config->cfg_config_u.cfg_net.net_max_tx_credits = ni->ni_maxtxcredits;
+	config->cfg_config_u.cfg_net.net_peer_tx_credits = ni->ni_peertxcredits;
+	config->cfg_config_u.cfg_net.net_peer_rtr_credits = ni->ni_peerrtrcredits;
 
 	net_config->ni_status = ni->ni_status->ns_status;
 
@@ -1773,19 +1784,44 @@ lnet_fill_ni_info(struct lnet_ni *ni, __u32 *cpt_count, __u64 *nid,
 	     i++)
 		net_config->ni_cpts[i] = ni->ni_cpts[i];
 
-	*cpt_count = ni->ni_ncpts;
+	config->cfg_ncpts = ni->ni_ncpts;
+
+	/*
+	 * See if user land tools sent in a newer and larger version
+	 * of struct lnet_tunables than what the kernel uses.
+	 */
+	min_size = sizeof(*config) + sizeof(*net_config);
+
+	if (config->cfg_hdr.ioc_len > min_size)
+		tunable_size = config->cfg_hdr.ioc_len - min_size;
+
+	/* Don't copy to much data to user space */
+	min_size = min(tunable_size, sizeof(*ni->ni_lnd_tunables));
+	lnd_cfg = (struct lnet_ioctl_config_lnd_tunables *)net_config->cfg_bulk;
+
+	if (ni->ni_lnd_tunables && lnd_cfg && min_size) {
+		memcpy(lnd_cfg, ni->ni_lnd_tunables, min_size);
+		config->cfg_config_u.cfg_net.net_interface_count = 1;
+
+		/* Tell user land that kernel side has less data */
+		if (tunable_size > sizeof(*ni->ni_lnd_tunables)) {
+			min_size = tunable_size - sizeof(ni->ni_lnd_tunables);
+			config->cfg_hdr.ioc_len -= min_size;
+		}
+	}
 }
 
-int
-lnet_get_net_config(int idx, __u32 *cpt_count, __u64 *nid, int *peer_timeout,
-		    int *peer_tx_credits, int *peer_rtr_credits,
-		    int *max_tx_credits,
-		    struct lnet_ioctl_net_config *net_config)
+static int
+lnet_get_net_config(struct lnet_ioctl_config_data *config)
 {
-	struct lnet_ni		*ni;
-	struct list_head	*tmp;
-	int			cpt;
-	int			rc = -ENOENT;
+	struct lnet_ni *ni;
+	struct list_head *tmp;
+	int idx = config->cfg_count;
+	int rc = -ENOENT;
+	int cpt;
+
+	if (unlikely(!config->cfg_bulk))
+		return -EINVAL;
 
 	cpt = lnet_net_lock_current();
 
@@ -1794,9 +1830,7 @@ lnet_get_net_config(int idx, __u32 *cpt_count, __u64 *nid, int *peer_timeout,
 		if (idx-- == 0) {
 			rc = 0;
 			lnet_ni_lock(ni);
-			lnet_fill_ni_info(ni, cpt_count, nid, peer_timeout,
-					  peer_tx_credits, peer_rtr_credits,
-					  max_tx_credits, net_config);
+			lnet_fill_ni_info(ni, config);
 			lnet_ni_unlock(ni);
 			break;
 		}
@@ -1807,10 +1841,9 @@ lnet_get_net_config(int idx, __u32 *cpt_count, __u64 *nid, int *peer_timeout,
 }
 
 int
-lnet_dyn_add_ni(lnet_pid_t requested_pid, char *nets,
-		__s32 peer_timeout, __s32 peer_cr, __s32 peer_buf_cr,
-		__s32 credits)
+lnet_dyn_add_ni(lnet_pid_t requested_pid, struct lnet_ioctl_config_data *conf)
 {
+	char			*nets = conf->cfg_config_u.cfg_net.net_intf;
 	lnet_ping_info_t	*pinfo;
 	lnet_handle_md_t	md_handle;
 	struct lnet_ni		*ni;
@@ -1853,8 +1886,7 @@ lnet_dyn_add_ni(lnet_pid_t requested_pid, char *nets,
 
 	list_del_init(&ni->ni_list);
 
-	rc = lnet_startup_lndni(ni, peer_timeout, peer_cr,
-				peer_buf_cr, credits);
+	rc = lnet_startup_lndni(ni, conf);
 	if (rc != 0)
 		goto failed1;
 
@@ -2011,31 +2043,14 @@ LNetCtl(unsigned int cmd, void *arg)
 					rtr_priority);
 
 	case IOC_LIBCFS_GET_NET: {
-		struct lnet_ioctl_net_config *net_config;
-		size_t total = sizeof(*config) + sizeof(*net_config);
-
+		size_t total = sizeof(*config) +
+			       sizeof(struct lnet_ioctl_net_config);
 		config = arg;
 
 		if (config->cfg_hdr.ioc_len < total)
 			return -EINVAL;
 
-		net_config = (struct lnet_ioctl_net_config *)
-			config->cfg_bulk;
-		if (config == NULL || net_config == NULL)
-			return -1;
-
-		return lnet_get_net_config(config->cfg_count,
-					   &config->cfg_ncpts,
-					   &config->cfg_nid,
-					   &config->cfg_config_u.
-						cfg_net.net_peer_timeout,
-					   &config->cfg_config_u.cfg_net.
-						net_peer_tx_credits,
-					   &config->cfg_config_u.cfg_net.
-						net_peer_rtr_credits,
-					   &config->cfg_config_u.cfg_net.
-						net_max_tx_credits,
-					   net_config);
+		return lnet_get_net_config(config);
 	}
 
 	case IOC_LIBCFS_GET_LNET_STATS:
@@ -2408,6 +2423,7 @@ lnet_ping(lnet_process_id_t id, int timeout_ms, lnet_process_id_t __user *ids,
 
 	rc = -EFAULT;                           /* If I SEGV... */
 
+	memset(&tmpid, 0, sizeof(tmpid));
 	for (i = 0; i < n_ids; i++) {
 		tmpid.pid = info->pi_pid;
 		tmpid.nid = info->pi_ni[i].ns_nid;

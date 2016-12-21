@@ -172,9 +172,19 @@ signaled() {
 
 mpi_run () {
     local mpirun="$MPIRUN $MPIRUN_OPTIONS"
-    local command="$mpirun $@"
+    local options=$1
+    shift
+    local cmd=$@
     local mpilog=$TMP/mpi.log
     local rc
+
+    if [ "$MPILIB" = "openmpi" ]; then
+	generate_machine_file $NODES_TO_USE $MACHINEFILE ||
+		error "can not generate machinefile"
+	options="${MACHINEFILE_OPTION} ${MACHINEFILE} $options"
+    fi
+
+    command="$mpirun $options $cmd"
 
     if [ -n "$MPI_USER" -a "$MPI_USER" != root -a -n "$mpirun" ]; then
         echo "+ chmod 0777 $MOUNT"
@@ -194,11 +204,16 @@ mpi_run () {
 }
 
 nids_list () {
-   local list
-   for i in ${1//,/ }; do
-       list="$list $i@$NETTYPE"
-   done
-   echo $list
+	local list
+	local escape="$2"
+	for i in ${1//,/ }; do
+		if [ "$list" = "" ]; then
+			list="$i@$NETTYPE"
+		else
+			list="$list$escape $i@$NETTYPE"
+		fi
+	done
+	echo $list
 }
 
 # FIXME: all setup/cleanup can be done without rpc.sh
@@ -209,10 +224,10 @@ lst_end_session () {
     export LST_SESSION=`$LST show_session 2>/dev/null | awk -F " " '{print $5}'`
     [ "$LST_SESSION" == "" ] && return
 
+    $LST stop b
     if $verbose; then
         $LST show_error c s
     fi
-    $LST stop b
     $LST end_session
 }
 
@@ -276,13 +291,15 @@ print_opts () {
         var=$i
         echo "${var}=${!var}"
     done
-    [ -e $MACHINEFILE ] && cat $MACHINEFILE
+    [ -e "$MACHINEFILE" ] && cat $MACHINEFILE
 }
 
 run_compilebench() {
 	# Space estimation:
 	# compile dir kernel-0	~1GB
 	# required space	~1GB * cbench_IDIRS
+
+	local dir=${1:-$DIR}
 
     cbench_DIR=${cbench_DIR:-""}
     cbench_IDIRS=${cbench_IDIRS:-2}
@@ -296,7 +313,7 @@ run_compilebench() {
     [ -e $cbench_DIR/compilebench ] || \
         { skip_env "No compilebench build" && return; }
 
-	local space=$(df -P $DIR | tail -n 1 | awk '{ print $4 }')
+	local space=$(df -P $dir | tail -n 1 | awk '{ print $4 }')
 	if [[ $space -le $((1024 * 1024 * cbench_IDIRS)) ]]; then
 		cbench_IDIRS=$((space / 1024 / 1024))
 		[[ $cbench_IDIRS -eq 0 ]] &&
@@ -310,7 +327,7 @@ run_compilebench() {
     # t-f _base needs to be modifyed to set properly tdir
     # for new "test_foo" functions names
     # local testdir=$DIR/$tdir
-    local testdir=$DIR/d0.compilebench
+    local testdir=$dir/d0.compilebench
     mkdir -p $testdir
 
     local savePWD=$PWD
@@ -330,12 +347,13 @@ run_compilebench() {
 }
 
 run_metabench() {
-
+	local dir=${1:-$DIR}
     METABENCH=${METABENCH:-$(which metabench 2> /dev/null || true)}
     mbench_NFILES=${mbench_NFILES:-30400}
     # threads per client
     mbench_THREADS=${mbench_THREADS:-4}
 	mbench_OPTIONS=${mbench_OPTIONS:-}
+	mbench_CLEANUP=${mbench_CLEANUP:-true}
 
     [ x$METABENCH = x ] &&
         { skip_env "metabench not found" && return; }
@@ -345,7 +363,7 @@ run_metabench() {
 
     print_opts METABENCH clients mbench_NFILES mbench_THREADS
 
-    local testdir=$DIR/d0.metabench
+	local testdir=$dir/d0.metabench
     mkdir -p $testdir
     # mpi_run uses mpiuser
     chmod 0777 $testdir
@@ -353,7 +371,7 @@ run_metabench() {
     # -C             Run the file creation tests.
     # -S             Run the file stat tests.
     # -c nfile       Number of files to be used in each test.
-    # -k             Cleanup.  Remove the test directories.
+    # -k          => dont cleanup files when finished.
 	local cmd="$METABENCH -w $testdir -c $mbench_NFILES -C -S -k $mbench_OPTIONS"
     echo "+ $cmd"
 
@@ -363,15 +381,19 @@ run_metabench() {
 			-n $((num_clients * mbench_THREADS)) \
 			-p $SRUN_PARTITION -- $cmd
 	else
-		mpi_run ${MACHINEFILE_OPTION} ${MACHINEFILE} \
-			-np $((num_clients * $mbench_THREADS)) $cmd
+		mpi_run "-np $((num_clients * $mbench_THREADS))" $cmd
 	fi
 
     local rc=$?
     if [ $rc != 0 ] ; then
         error "metabench failed! $rc"
     fi
-    rm -rf $testdir
+
+	if $mbench_CLEANUP; then
+		rm -rf $testdir
+	else
+		mv $dir/d0.metabench $dir/_xxx.$(date +%s).d0.metabench
+	fi
 }
 
 run_simul() {
@@ -411,8 +433,7 @@ run_simul() {
 			-n $((num_clients * simul_THREADS)) -p $SRUN_PARTITION \
 			-- $cmd
 	else
-		mpi_run ${MACHINEFILE_OPTION} ${MACHINEFILE} \
-			-np $((num_clients * simul_THREADS)) $cmd
+		mpi_run "-np $((num_clients * simul_THREADS))" $cmd
 	fi
 
     local rc=$?
@@ -431,13 +452,9 @@ run_mdtest() {
     # We devide the files by number of core
     mdtest_nFiles=$((mdtest_nFiles/mdtest_THREADS/num_clients))
     mdtest_iteration=${mdtest_iteration:-1}
+	local mdtest_custom_params=${mdtest_custom_params:-""}
 
     local type=${1:-"ssf"}
-
-    if [ "$NFSCLIENT" ]; then
-        skip "skipped for NFSCLIENT mode"
-        return
-    fi
 
     [ x$MDTEST = x ] &&
         { skip_env "mdtest not found" && return; }
@@ -447,7 +464,8 @@ run_mdtest() {
 
     print_opts MDTEST mdtest_iteration mdtest_THREADS mdtest_nFiles
 
-    local testdir=$DIR/d0.mdtest
+	local dir=${2:-$DIR}
+	local testdir=$dir/d0.mdtest
     mkdir -p $testdir
     # mpi_run uses mpiuser
     chmod 0777 $testdir
@@ -457,7 +475,7 @@ run_mdtest() {
     # -n # : number of file/dir to create/stat/remove
     # -u   : each process create/stat/remove individually
 
-    local cmd="$MDTEST -d $testdir -i $mdtest_iteration -n $mdtest_nFiles"
+    local cmd="$MDTEST -d $testdir -i $mdtest_iteration -n $mdtest_nFiles $mdtest_custom_params"
     [ $type = "fpp" ] && cmd="$cmd -u"
 
 	echo "+ $cmd"
@@ -467,8 +485,7 @@ run_mdtest() {
 			-n $((num_clients * mdtest_THREADS)) \
 			-p $SRUN_PARTITION -- $cmd
 	else
-		mpi_run ${MACHINEFILE_OPTION} ${MACHINEFILE} \
-			-np $((num_clients * mdtest_THREADS)) $cmd
+		mpi_run "-np $((num_clients * mdtest_THREADS))" $cmd
 	fi
 
     local rc=$?
@@ -479,7 +496,7 @@ run_mdtest() {
 }
 
 run_connectathon() {
-
+	local dir=${1:-$DIR}
     cnt_DIR=${cnt_DIR:-""}
     cnt_NRUN=${cnt_NRUN:-10}
 
@@ -491,7 +508,7 @@ run_connectathon() {
     [ -e $cnt_DIR/runtests ] || \
         { skip_env "No connectathon runtests found" && return; }
 
-    local testdir=$DIR/d0.connectathon
+	local testdir=$dir/d0.connectathon
     mkdir -p $testdir
 
     local savePWD=$PWD
@@ -537,39 +554,53 @@ run_connectathon() {
 }
 
 run_ior() {
-    local type=${1:="ssf"}
-
-    IOR=${IOR:-$(which IOR 2> /dev/null || true)}
-    # threads per client
-    ior_THREADS=${ior_THREADS:-2}
-    ior_iteration=${ior_iteration:-1}
-    ior_blockSize=${ior_blockSize:-6}	# GB
-    ior_xferSize=${ior_xferSize:-2m}
-    ior_type=${ior_type:-POSIX}
-    ior_DURATION=${ior_DURATION:-30}	# minutes
-
-    [ x$IOR = x ] &&
+	local type=${1:-"ssf"}
+	local dir=${2:-$DIR}
+	local testdir=$dir/d0.ior.$type
+	IOR=${IOR:-$(which IOR 2> /dev/null || true)}
+	# threads per client
+	ior_THREADS=${ior_THREADS:-2}
+	ior_iteration=${ior_iteration:-1}
+	ior_blockSize=${ior_blockSize:-6}
+	ior_blockUnit=${ior_blockUnit:-m}   # k,K, m, M, g or G
+	ior_xferSize=${ior_xferSize:-1m}
+	ior_type=${ior_type:-POSIX}
+	ior_DURATION=${ior_DURATION:-30}	# minutes
+	local multiplier=1
+	case ${ior_blockUnit} in
+		[gG])
+			multiplier=$((1024 * 1024 * 1024))
+			;;
+		[mM])
+			multiplier=$((1024 * 1024))
+			;;
+		[kK])
+			multiplier=1024
+			;;
+		*)	error "Incorrect block unit should be one of [kKmMgG]"
+			;;
+	esac
+	[ x$IOR = x ] &&
         { skip_env "IOR not found" && return; }
 
-    local space=$(df -P $DIR | tail -n 1 | awk '{ print $4 }')
-    local total_threads=$(( num_clients * ior_THREADS ))
-    echo "+ $ior_blockSize * 1024 * 1024 * $total_threads "
-    if [ $((space / 2)) -le \
-        $(( ior_blockSize * 1024 * 1024 * total_threads)) ]; then
-        echo "+ $space * 9/10 / 1024 / 1024 / $num_clients / $ior_THREADS"
-        ior_blockSize=$(( space /2 /1024 /1024 / num_clients / ior_THREADS ))
-        [ $ior_blockSize = 0 ] && \
-            skip_env "Need free space more than $((2 * total_threads))GB: \
-                $((total_threads *1024 *1024*2)), have $space" && return
+	# calculate the space in bytes
+	local space=$(df -B 1 -P $dir | tail -n 1 | awk '{ print $4 }')
+	local total_threads=$((num_clients * ior_THREADS))
+	echo "+ $ior_blockSize * $multiplier * $total_threads "
+	if [ $((space / 2)) -le \
+	     $((ior_blockSize * multiplier * total_threads)) ]; then
+		ior_blockSize=$((space / 2 / multiplier / total_threads))
+		[ $ior_blockSize -eq 0 ] && \
+	 	skip_env "Need free space more than $((2 * total_threads)) \
+			  ${ior_blockUnit}: have $((space / multiplier))" &&
+			  return
 
-        local reduced_size="$num_clients x $ior_THREADS x $ior_blockSize"
-        echo "free space=$space, Need: $reduced_size GB"
-        echo "(blockSize reduced to $ior_blockSize Gb)"
-    fi
+	  	echo "(reduced blockSize to $ior_blockSize \
+		      ${ior_blockUnit} bytes)"
+    	fi
 
     print_opts IOR ior_THREADS ior_DURATION MACHINEFILE
 
-    local testdir=$DIR/d0.ior.$type
     mkdir -p $testdir
     # mpi_run uses mpiuser
     chmod 0777 $testdir
@@ -592,8 +623,9 @@ run_ior() {
     # -T    maxTimeDuration -- max time in minutes to run tests"
     # -k    keepFile -- keep testFile(s) on program exit
 
-    local cmd="$IOR -a $ior_type -b ${ior_blockSize}g -o $testdir/iorData \
-         -t $ior_xferSize -v -C -w -r -W -i $ior_iteration -T $ior_DURATION -k"
+    local cmd="$IOR -a $ior_type -b ${ior_blockSize}${ior_blockUnit} \
+		-o $testdir/iorData -t $ior_xferSize -v -C -w -r -W \
+		-i $ior_iteration -T $ior_DURATION -k"
     [ $type = "fpp" ] && cmd="$cmd -F"
 
 	echo "+ $cmd"
@@ -603,8 +635,7 @@ run_ior() {
 			-n $((num_clients * ior_THREADS)) -p $SRUN_PARTITION \
 			-- $cmd
 	else
-		mpi_run ${MACHINEFILE_OPTION} ${MACHINEFILE} \
-			-np $((num_clients * $ior_THREADS)) $cmd
+		mpi_run "-np $((num_clients * $ior_THREADS))" $cmd
 	fi
 
     local rc=$?
@@ -657,8 +688,7 @@ run_mib() {
 			-n $((num_clients * mib_THREADS)) -p $SRUN_PARTITION \
 			-- $cmd
 	else
-		mpi_run ${MACHINEFILE_OPTION} ${MACHINEFILE} \
-			-np $((num_clients * mib_THREADS)) $cmd
+		mpi_run "-np $((num_clients * mib_THREADS))" $cmd
 	fi
 
     local rc=$?
@@ -699,8 +729,7 @@ run_cascading_rw() {
     local cmd="$CASC_RW -g -d $testdir -n $casc_REP"
 
 	echo "+ $cmd"
-	mpi_run ${MACHINEFILE_OPTION} ${MACHINEFILE} \
-		-np $((num_clients * $casc_THREADS)) $cmd
+	mpi_run "-np $((num_clients * $casc_THREADS))" $cmd
 
     local rc=$?
     if [ $rc != 0 ] ; then
@@ -741,8 +770,7 @@ run_write_append_truncate() {
     local cmd="write_append_truncate -n $write_REP $file"
 
 	echo "+ $cmd"
-	mpi_run ${MACHINEFILE_OPTION} ${MACHINEFILE} \
-		-np $((num_clients * $write_THREADS)) $cmd
+	mpi_run "-np $((num_clients * $write_THREADS))" $cmd
 
     local rc=$?
     if [ $rc != 0 ] ; then
@@ -781,8 +809,7 @@ run_write_disjoint() {
     local cmd="$WRITE_DISJOINT -f $testdir/file -n $wdisjoint_REP"
 
 	echo "+ $cmd"
-	mpi_run ${MACHINEFILE_OPTION} ${MACHINEFILE} \
-		-np $((num_clients * $wdisjoint_THREADS)) $cmd
+	mpi_run "-np $((num_clients * $wdisjoint_THREADS))" $cmd
 
     local rc=$?
     if [ $rc != 0 ] ; then
@@ -823,8 +850,7 @@ run_parallel_grouplock() {
 		local cmd="$PARALLEL_GROUPLOCK -g -v -d $testdir $subtest"
 		echo "+ $cmd"
 
-		mpi_run ${MACHINEFILE_OPTION} ${MACHINEFILE} \
-			-np $parallel_grouplock_MINTASKS $cmd
+		mpi_run "-np $parallel_grouplock_MINTASKS" $cmd
 		local rc=$?
 		if [ $rc != 0 ] ; then
 			error_noexit "parallel_grouplock subtests $subtest " \
@@ -879,7 +905,7 @@ run_statahead () {
     # cleanup only $statahead_NUMFILES number of files
     # ignore the other files created by someone else
     [ -d $testdir ] &&
-        mdsrate_cleanup $((num_clients * 32)) $MACHINEFILE \
+        mdsrate_cleanup $((num_clients * 32)) \
             $statahead_NUMFILES $testdir 'f%%d' --ignore
 
     mkdir -p $testdir
@@ -900,8 +926,7 @@ run_statahead () {
     local cmd="$cmd1 $cmd2"
     echo "+ $cmd"
 
-	mpi_run ${MACHINEFILE_OPTION} ${MACHINEFILE} \
-		-np $((num_clients * 32)) $cmd
+	mpi_run "-np $((num_clients * 32))" $cmd
 
     local rc=$?
     if [ $rc != 0 ] ; then
@@ -924,7 +949,7 @@ run_statahead () {
 
     do_rpc_nodes $clients do_ls $mntpt_root $num_mntpts $dir
 
-    mdsrate_cleanup $((num_clients * 32)) $MACHINEFILE \
+    mdsrate_cleanup $((num_clients * 32)) \
         $num_files $testdir 'f%%d' --ignore
 
     # use rm instead of rmdir because of
@@ -932,4 +957,22 @@ run_statahead () {
     # or by previous run where is num_files prev > num_files current
     rm -rf $testdir
     cleanup_statahead $clients $mntpt_root $num_mntpts
+}
+
+ior_mdtest_parallel() {
+	local rc1=0
+	local rc2=0
+	local type=$1
+
+	run_ior $type &
+	local pids=$!
+
+	run_mdtest $type || rc2=$?
+	[[ $rc2 -ne 0 ]] && echo "mdtest failed with error $rc2"
+
+	wait $pids || rc1=$?
+	[[ $rc1 -ne 0 ]] && echo "ior failed with error $rc1"
+
+	[[ $rc1 -ne 0 || $rc2 -ne 0 ]] && return 1
+	return 0
 }

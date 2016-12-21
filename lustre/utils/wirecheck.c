@@ -354,7 +354,9 @@ check_ptlrpc_body(void)
 	CHECK_MEMBER(ptlrpc_body, pb_opc);
 	CHECK_MEMBER(ptlrpc_body, pb_status);
 	CHECK_MEMBER(ptlrpc_body, pb_last_xid);
-	CHECK_MEMBER(ptlrpc_body, pb_last_seen);
+	CHECK_MEMBER(ptlrpc_body, pb_tag);
+	CHECK_MEMBER(ptlrpc_body, pb_padding0);
+	CHECK_MEMBER(ptlrpc_body, pb_padding1);
 	CHECK_MEMBER(ptlrpc_body, pb_last_committed);
 	CHECK_MEMBER(ptlrpc_body, pb_transno);
 	CHECK_MEMBER(ptlrpc_body, pb_flags);
@@ -376,7 +378,9 @@ check_ptlrpc_body(void)
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_opc);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_status);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_last_xid);
-	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_last_seen);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_tag);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_padding0);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_padding1);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_last_committed);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_transno);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_flags);
@@ -455,6 +459,8 @@ check_obd_connect_data(void)
 	CHECK_MEMBER(obd_connect_data, ocd_max_easize);
 	CHECK_MEMBER(obd_connect_data, ocd_instance);
 	CHECK_MEMBER(obd_connect_data, ocd_maxbytes);
+	CHECK_MEMBER(obd_connect_data, ocd_maxmodrpcs);
+	CHECK_MEMBER(obd_connect_data, padding0);
 	CHECK_MEMBER(obd_connect_data, padding1);
 	CHECK_MEMBER(obd_connect_data, padding2);
 	CHECK_MEMBER(obd_connect_data, padding3);
@@ -484,7 +490,7 @@ check_obd_connect_data(void)
 	CHECK_DEFINE_64X(OBD_CONNECT_TRUNCLOCK);
 	CHECK_DEFINE_64X(OBD_CONNECT_TRANSNO);
 	CHECK_DEFINE_64X(OBD_CONNECT_IBITS);
-	CHECK_DEFINE_64X(OBD_CONNECT_JOIN);
+	CHECK_DEFINE_64X(OBD_CONNECT_BARRIER);
 	CHECK_DEFINE_64X(OBD_CONNECT_ATTRFID);
 	CHECK_DEFINE_64X(OBD_CONNECT_NODEVOH);
 	CHECK_DEFINE_64X(OBD_CONNECT_RMT_CLIENT);
@@ -526,6 +532,7 @@ check_obd_connect_data(void)
 	CHECK_DEFINE_64X(OBD_CONNECT_OPEN_BY_FID);
 	CHECK_DEFINE_64X(OBD_CONNECT_LFSCK);
 	CHECK_DEFINE_64X(OBD_CONNECT_UNLINK_CLOSE);
+	CHECK_DEFINE_64X(OBD_CONNECT_MULTIMODRPCS);
 	CHECK_DEFINE_64X(OBD_CONNECT_DIR_STRIPE);
 	CHECK_DEFINE_64X(OBD_CONNECT_LOCK_AHEAD);
 
@@ -605,16 +612,11 @@ check_obdo(void)
 	CHECK_DEFINE_64X(OBD_MD_FLXATTRLS);
 	CHECK_DEFINE_64X(OBD_MD_FLXATTRRM);
 	CHECK_DEFINE_64X(OBD_MD_FLACL);
-	CHECK_DEFINE_64X(OBD_MD_FLRMTPERM);
 	CHECK_DEFINE_64X(OBD_MD_FLMDSCAPA);
 	CHECK_DEFINE_64X(OBD_MD_FLOSSCAPA);
 	CHECK_DEFINE_64X(OBD_MD_FLCKSPLIT);
 	CHECK_DEFINE_64X(OBD_MD_FLCROSSREF);
 	CHECK_DEFINE_64X(OBD_MD_FLGETATTRLOCK);
-	CHECK_DEFINE_64X(OBD_MD_FLRMTLSETFACL);
-	CHECK_DEFINE_64X(OBD_MD_FLRMTLGETFACL);
-	CHECK_DEFINE_64X(OBD_MD_FLRMTRSETFACL);
-	CHECK_DEFINE_64X(OBD_MD_FLRMTRGETFACL);
 	CHECK_DEFINE_64X(OBD_MD_FLDATAVERSION);
 
 	CHECK_CVALUE_X(OBD_FL_INLINEDATA);
@@ -982,25 +984,6 @@ check_mdt_ioepoch(void)
 	CHECK_MEMBER(mdt_ioepoch, ioepoch);
 	CHECK_MEMBER(mdt_ioepoch, flags);
 	CHECK_MEMBER(mdt_ioepoch, padding);
-}
-
-static void
-check_mdt_remote_perm(void)
-{
-	BLANK_LINE();
-	CHECK_STRUCT(mdt_remote_perm);
-	CHECK_MEMBER(mdt_remote_perm, rp_uid);
-	CHECK_MEMBER(mdt_remote_perm, rp_gid);
-	CHECK_MEMBER(mdt_remote_perm, rp_fsuid);
-	CHECK_MEMBER(mdt_remote_perm, rp_fsgid);
-	CHECK_MEMBER(mdt_remote_perm, rp_access_perm);
-	CHECK_MEMBER(mdt_remote_perm, rp_padding);
-
-	CHECK_VALUE_X(CFS_SETUID_PERM);
-	CHECK_VALUE_X(CFS_SETGID_PERM);
-	CHECK_VALUE_X(CFS_SETGRP_PERM);
-	CHECK_VALUE_X(CFS_RMTACL_PERM);
-	CHECK_VALUE_X(CFS_RMTOWN_PERM);
 }
 
 static void
@@ -2172,6 +2155,36 @@ static void check_lfsck_reply(void)
 	CHECK_MEMBER(lfsck_reply, lr_padding_2);
 }
 
+static void check_barrier_request(void)
+{
+	BLANK_LINE();
+	CHECK_STRUCT(barrier_request);
+	CHECK_MEMBER(barrier_request, br_name);
+	CHECK_MEMBER(barrier_request, br_event);
+	CHECK_MEMBER(barrier_request, br_gen);
+	CHECK_MEMBER(barrier_request, br_index);
+	CHECK_MEMBER(barrier_request, br_padding_1);
+	CHECK_MEMBER(barrier_request, br_padding_2);
+
+	CHECK_VALUE(BNE_READ);
+	CHECK_VALUE(BNE_FREEZE_DONE_P1);
+	CHECK_VALUE(BNE_FREEZE_DONE_P2);
+	CHECK_VALUE(BNE_FREEZE_FAILED);
+	CHECK_VALUE(BNE_THAW_DONE);
+	CHECK_VALUE(BNE_EXPIRED);
+}
+
+static void check_barrier_reply(void)
+{
+	BLANK_LINE();
+	CHECK_STRUCT(barrier_reply);
+	CHECK_MEMBER(barrier_reply, br_status);
+	CHECK_MEMBER(barrier_reply, br_gen);
+	CHECK_MEMBER(barrier_reply, br_timeout);
+	CHECK_MEMBER(barrier_reply, br_padding_1);
+	CHECK_MEMBER(barrier_reply, br_padding_2);
+}
+
 static void system_string(char *cmdline, char *str, int len)
 {
 	int   fds[2];
@@ -2443,6 +2456,9 @@ main(int argc, char **argv)
 	CHECK_VALUE(MGS_TARGET_REG);
 	CHECK_VALUE(MGS_TARGET_DEL);
 	CHECK_VALUE(MGS_SET_INFO);
+	CHECK_VALUE(MGS_CONFIG_READ);
+	CHECK_VALUE(MGS_BARRIER_READ);
+	CHECK_VALUE(MGS_BARRIER_NOTIFY);
 	CHECK_VALUE(MGS_LAST_OPC);
 
 	CHECK_VALUE(SEC_CTX_INIT);
@@ -2493,7 +2509,6 @@ main(int argc, char **argv)
 	check_ll_fid();
 	check_mdt_body();
 	check_mdt_ioepoch();
-	check_mdt_remote_perm();
 	check_mdt_rec_setattr();
 	check_mdt_rec_create();
 	check_mdt_rec_link();
@@ -2573,6 +2588,9 @@ main(int argc, char **argv)
 
 	check_lfsck_request();
 	check_lfsck_reply();
+
+	check_barrier_request();
+	check_barrier_reply();
 
 	printf("}\n\n");
 

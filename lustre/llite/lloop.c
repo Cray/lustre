@@ -187,17 +187,13 @@ static int do_bio_lustrebacked(struct lloop_device *lo, struct bio *head)
 {
         const struct lu_env  *env   = lo->lo_env;
         struct cl_io         *io    = &lo->lo_io;
-        struct inode         *inode = lo->lo_backing_file->f_dentry->d_inode;
+	struct dentry	     *de    = lo->lo_backing_file->f_path.dentry;
+	struct inode         *inode = de->d_inode;
         struct cl_object     *obj = ll_i2info(inode)->lli_clob;
         pgoff_t               offset;
         int                   ret;
-#ifdef HAVE_BVEC_ITER
-	struct bvec_iter      iter;
-	struct bio_vec        bvec;
-#else
 	int		      iter;
 	struct bio_vec	     *bvec;
-#endif
         int                   rw;
 	size_t		      page_count = 0;
         struct bio           *bio;
@@ -224,17 +220,10 @@ static int do_bio_lustrebacked(struct lloop_device *lo, struct bio *head)
 
 #ifdef HAVE_BVEC_ITER
 		offset = (pgoff_t)(bio->bi_iter.bi_sector << 9) + lo->lo_offset;
-		bio_for_each_segment(bvec, bio, iter) {
-			BUG_ON(bvec.bv_offset != 0);
-			BUG_ON(bvec.bv_len != PAGE_CACHE_SIZE);
-
-			pages[page_count] = bvec.bv_page;
-			offsets[page_count] = offset;
-			page_count++;
-			offset += bvec.bv_len;
 #else
 		offset = (pgoff_t)(bio->bi_sector << 9) + lo->lo_offset;
-		bio_for_each_segment(bvec, bio, iter) {
+#endif
+		bio_for_each_segment_all(bvec, bio, iter) {
 			BUG_ON(bvec->bv_offset != 0);
 			BUG_ON(bvec->bv_len != PAGE_CACHE_SIZE);
 
@@ -242,7 +231,6 @@ static int do_bio_lustrebacked(struct lloop_device *lo, struct bio *head)
 			offsets[page_count] = offset;
 			page_count++;
 			offset += bvec->bv_len;
-#endif
 		}
 		LASSERT(page_count <= LLOOP_MAX_SEGMENTS);
 	}
@@ -275,9 +263,9 @@ static int do_bio_lustrebacked(struct lloop_device *lo, struct bio *head)
 	 *    be asked to write less pages once, this purely depends on
 	 *    implementation. Anyway, we should be careful to avoid deadlocking.
 	 */
-	mutex_lock(&inode->i_mutex);
+	inode_lock(inode);
 	bytes = ll_direct_rw_pages(env, io, rw, inode, pvec);
-	mutex_unlock(&inode->i_mutex);
+	inode_unlock(inode);
 	cl_io_fini(env, io);
 	return (bytes == pvec->ldp_size) ? 0 : (int)bytes;
 }
@@ -412,14 +400,21 @@ static void loop_unplug(struct request_queue *q)
 
 static inline void loop_handle_bio(struct lloop_device *lo, struct bio *bio)
 {
-        int ret;
-        ret = do_bio_lustrebacked(lo, bio);
-        while (bio) {
-                struct bio *tmp = bio->bi_next;
-                bio->bi_next = NULL;
+	int ret;
+
+	ret  = do_bio_lustrebacked(lo, bio);
+	while (bio) {
+		struct bio *tmp = bio->bi_next;
+
+		bio->bi_next = NULL;
+#ifdef HAVE_BIO_ENDIO_USES_ONE_ARG
+		bio->bi_error = ret;
+		bio_endio(bio);
+#else
 		bio_endio(bio, ret);
-                bio = tmp;
-        }
+#endif
+		bio = tmp;
+	}
 }
 
 static inline int loop_active(struct lloop_device *lo)
@@ -441,7 +436,7 @@ static int loop_thread(void *data)
         unsigned long total_count = 0;
 
         struct lu_env *env;
-        int refcheck;
+	__u16 refcheck;
         int ret = 0;
 
         set_user_nice(current, -20);
@@ -651,9 +646,8 @@ lo_release(struct gendisk *disk, fmode_t mode)
 static int lo_ioctl(struct block_device *bdev, fmode_t mode,
                     unsigned int cmd, unsigned long arg)
 {
-        struct lloop_device *lo = bdev->bd_disk->private_data;
-        struct inode *inode = NULL;
-        int err = 0;
+	struct lloop_device *lo = bdev->bd_disk->private_data;
+	int err = 0;
 
 	mutex_lock(&lloop_mutex);
         switch (cmd) {
@@ -664,16 +658,16 @@ static int lo_ioctl(struct block_device *bdev, fmode_t mode,
                 break;
         }
 
-        case LL_IOC_LLOOP_INFO: {
-                struct lu_fid fid;
+	case LL_IOC_LLOOP_INFO: {
+		struct inode *inode;
+		struct lu_fid fid;
 
 		if (lo->lo_backing_file == NULL) {
 			err = -ENOENT;
 			break;
 		}
-                if (inode == NULL)
-                        inode = lo->lo_backing_file->f_dentry->d_inode;
-                if (lo->lo_state == LLOOP_BOUND)
+		inode = lo->lo_backing_file->f_path.dentry->d_inode;
+		if (inode != NULL && lo->lo_state == LLOOP_BOUND)
                         fid = ll_i2info(inode)->lli_fid;
                 else
                         fid_zero(&fid);
@@ -725,10 +719,11 @@ static enum llioc_iter lloop_ioctl(struct inode *unused, struct file *file,
         CWARN("Enter llop_ioctl\n");
 
 	mutex_lock(&lloop_mutex);
-        switch (cmd) {
-        case LL_IOC_LLOOP_ATTACH: {
-                struct lloop_device *lo_free = NULL;
-                int i;
+	switch (cmd) {
+	case LL_IOC_LLOOP_ATTACH: {
+		struct inode *inode = file->f_path.dentry->d_inode;
+		struct lloop_device *lo_free = NULL;
+		int i;
 
                 for (i = 0; i < max_loop; i++, lo = NULL) {
                         lo = &loop_dev[i];
@@ -737,12 +732,12 @@ static enum llioc_iter lloop_ioctl(struct inode *unused, struct file *file,
                                         lo_free = lo;
                                 continue;
                         }
-                        if (lo->lo_backing_file->f_dentry->d_inode ==
-                            file->f_dentry->d_inode)
-                                break;
-                }
-                if (lo || !lo_free)
-                        GOTO(out, err = -EBUSY);
+			if (lo->lo_backing_file->f_path.dentry->d_inode ==
+			    inode)
+				break;
+		}
+		if (lo || !lo_free)
+			GOTO(out, err = -EBUSY);
 
                 lo = lo_free;
                 dev = MKDEV(lloop_major, lo->lo_number);
@@ -905,6 +900,6 @@ module_init(lloop_init);
 module_exit(lloop_exit);
 
 CFS_MODULE_PARM(max_loop, "i", int, 0444, "maximum of lloop_device");
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre virtual block device");
 MODULE_LICENSE("GPL");

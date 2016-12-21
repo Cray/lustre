@@ -411,7 +411,7 @@ test_1() {
 	trap cleanup_quota_test EXIT
 
 	# enable ost quota
-	set_ost_qtype "ug" || "enable ost quota failed"
+	set_ost_qtype "ug" || error "enable ost quota failed"
 
 	# test for user
 	log "User quota (block hardlimit:$LIMIT MB)"
@@ -496,7 +496,7 @@ test_2() {
 	trap cleanup_quota_test EXIT
 
 	# enable mdt quota
-	set_mdt_qtype "ug" || "enable mdt quota failed"
+	set_mdt_qtype "ug" || error "enable mdt quota failed"
 
 	# test for user
 	log "User quota (inode hardlimit:$LIMIT files)"
@@ -678,7 +678,8 @@ run_test 3 "Block soft limit (start timer, timer goes off, stop timer)"
 test_file_soft() {
 	local TESTFILE=$1
 	local LIMIT=$2
-	local TIMER=$(($3 * 3 / 2))
+	local grace=$3
+	local TIMER=$(($grace * 3 / 2))
 
 	setup_quota_test
 	trap cleanup_quota_test EXIT
@@ -686,13 +687,19 @@ test_file_soft() {
 	echo "Create files to exceed soft limit"
 	$RUNAS createmany -m ${TESTFILE}_ $((LIMIT + 1)) ||
 		quota_error a $TSTUSR "create failure, but expect success"
-	sync; sleep 1; sync
+	local trigger_time=$(date +%s)
+
+	sync_all_data || true
+
+	local cur_time=$(date +%s)
+	[ $(($cur_time - $trigger_time)) -ge $grace ] &&
+		error "Passed grace time $grace, $trigger_time, $cur_time"
 
 	echo "Create file before timer goes off"
 	$RUNAS touch ${TESTFILE}_before ||
 		quota_error a $TSTUSR "failed create before timer expired," \
-			"but expect success"
-	sync; sleep 1; sync
+			"but expect success. $trigger_time, $cur_time"
+	sync_all_data || true
 
 	echo "Sleep $TIMER seconds ..."
 	sleep $TIMER
@@ -707,11 +714,11 @@ test_file_soft() {
 	# hasn't been decreased from the pending write, if we acquire quota
 	# in this window, we'll acquire more than we needed.
 	$RUNAS touch ${TESTFILE}_after_1 ${TESTFILE}_after_2 || true
-	sync; sleep 1; sync
+	sync_all_data || true
 	$RUNAS touch ${TESTFILE}_after_3 &&
 		quota_error a $TSTUSR "create after timer expired," \
 			"but expect EDQUOT"
-	sync; sleep 1; sync
+	sync_all_data || true
 
 	$SHOW_QUOTA_USER
 	$SHOW_QUOTA_GROUP
@@ -726,7 +733,7 @@ test_file_soft() {
 	$RUNAS touch ${TESTFILE}_xxx ||
 		quota_error a $TSTUSR "touch after timer stop failure," \
 			"but expect success"
-	sync; sleep 1; sync
+	sync_all_data || true
 
 	# cleanup
 	cleanup_quota_test
@@ -1123,7 +1130,7 @@ test_7c() {
 
 	# wait longer than usual to make sure the reintegration
 	# is triggered by quota wb thread.
-	wait_ost_reint "ug" 200 || error "reintegration failed"
+	wait_ost_reint "ug" 240 || error "reintegration failed"
 
 	# hardlimit should have been fetched by slave during global
 	# reintegration, write will exceed quota
@@ -1221,7 +1228,7 @@ test_7e() {
 	$RUNAS createmany -m $TESTFILE $((ilimit + 1)) &&
 		quota_error u $TSTUSR "create succeeded, expect EDQUOT"
 
-	$RUNAS unlinkmany $TESTFILE $ilimit || "unlink files failed"
+	$RUNAS unlinkmany $TESTFILE $ilimit || error "unlink files failed"
 	wait_delete_completed
 	sync_all_data || true
 
@@ -1241,8 +1248,8 @@ test_7e() {
 	$RUNAS createmany -m $TESTFILE $((ilimit + 1)) ||
 		quota_error -u $TSTUSR "create failed, expect success"
 
-	$RUNAS unlinkmany $TESTFILE $((ilimit + 1)) || "unlink failed"
-	rmdir $DIR/${tdir}-1 || "unlink remote dir failed"
+	$RUNAS unlinkmany $TESTFILE $((ilimit + 1)) || error "unlink failed"
+	rmdir $DIR/${tdir}-1 || error "unlink remote dir failed"
 
 	cleanup_quota_test
 	resetquota -u $TSTUSR
@@ -1355,7 +1362,7 @@ test_10() {
 		error "set limit for root group successfully, expect failure"
 
 	# root user can overrun quota
-	set_ost_qtype "ug" || "enable ost quota failed"
+	set_ost_qtype "ug" || error "enable ost quota failed"
 
 	$LFS setquota -u $TSTUSR -b 0 -B 2M -i 0 -I 0 $DIR ||
 		error "set quota failed"
@@ -1377,7 +1384,7 @@ test_11() {
 	setup_quota_test
 	trap cleanup_quota_test EXIT
 
-	set_mdt_qtype "ug" || "enable mdt quota failed"
+	set_mdt_qtype "ug" || error "enable mdt quota failed"
 	$LFS setquota -u $TSTUSR -b 0 -B 0 -i 0 -I 1 $DIR ||
 		error "set quota failed"
 
@@ -1407,7 +1414,7 @@ test_12a() {
 	setup_quota_test
 	trap cleanup_quota_test EXIT
 
-	set_ost_qtype "u" || "enable ost quota failed"
+	set_ost_qtype "u" || error "enable ost quota failed"
 	quota_show_check b u $TSTUSR
 
 	$LFS setquota -u $TSTUSR -b 0 -B "$blimit"M -i 0 -I 0 $DIR ||
@@ -1453,7 +1460,7 @@ test_12b() {
 	$LFS mkdir -i 1 $DIR/${tdir}-1 || error "create remote dir failed"
 	chmod 0777 $DIR/${tdir}-1
 
-	set_mdt_qtype "u" || "enable mdt quota failed"
+	set_mdt_qtype "u" || error "enable mdt quota failed"
 	quota_show_check f u $TSTUSR
 
 	$LFS setquota -u $TSTUSR -b 0 -B 0 -i 0 -I $ilimit $DIR ||
@@ -1493,7 +1500,7 @@ test_13(){
 	setup_quota_test
 	trap cleanup_quota_test EXIT
 
-	set_ost_qtype "u" || "enable ost quota failed"
+	set_ost_qtype "u" || error "enable ost quota failed"
 	quota_show_check b u $TSTUSR
 
 	$LFS setquota -u $TSTUSR -b 0 -B 10M -i 0 -I 0 $DIR ||
@@ -2356,6 +2363,9 @@ run_test 36 "Migrate old admin files into new global indexes"
 # chown/chgrp to the file created with MDS_OPEN_DELAY_CREATE
 # LU-5006
 test_37() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.6.93) ] &&
+		skip "Old server doesn't have LU-5006 fix." && return
+
 	setup_quota_test
 	trap cleanup_quota_test EXIT
 

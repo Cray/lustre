@@ -44,7 +44,7 @@
 
 int lprocfs_evict_client_open(struct inode *inode, struct file *f)
 {
-	struct obd_device *obd = PDE_DATA(f->f_dentry->d_inode);
+	struct obd_device *obd = PDE_DATA(f->f_path.dentry->d_inode);
 
 	atomic_inc(&obd->obd_evict_inprogress);
 	return 0;
@@ -52,7 +52,7 @@ int lprocfs_evict_client_open(struct inode *inode, struct file *f)
 
 int lprocfs_evict_client_release(struct inode *inode, struct file *f)
 {
-	struct obd_device *obd = PDE_DATA(f->f_dentry->d_inode);
+	struct obd_device *obd = PDE_DATA(f->f_path.dentry->d_inode);
 
 	atomic_dec(&obd->obd_evict_inprogress);
 	wake_up(&obd->obd_evict_inprogress_waitq);
@@ -109,7 +109,8 @@ int lprocfs_num_exports_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = data;
 
 	LASSERT(obd != NULL);
-	return seq_printf(m, "%u\n", obd->obd_num_exports);
+	seq_printf(m, "%u\n", obd->obd_num_exports);
+	return 0;
 }
 EXPORT_SYMBOL(lprocfs_num_exports_seq_show);
 
@@ -158,7 +159,8 @@ int lprocfs_exp_nid_seq_show(struct seq_file *m, void *data)
 {
 	struct obd_export *exp = m->private;
 	LASSERT(exp != NULL);
-	return seq_printf(m, "%s\n", obd_export_nid2str(exp));
+	seq_printf(m, "%s\n", obd_export_nid2str(exp));
+	return 0;
 }
 
 static int lprocfs_exp_print_uuid_seq(cfs_hash_t *hs, cfs_hash_bd_t *bd,
@@ -232,10 +234,40 @@ static int lprocfs_exp_hash_seq_show(struct seq_file *m, void *data)
 }
 LPROC_SEQ_FOPS_RO(lprocfs_exp_hash);
 
+int lprocfs_exp_print_replydata_seq(struct cfs_hash *hs, struct cfs_hash_bd *bd,
+				    struct hlist_node *hnode, void *cb_data)
+
+{
+	struct obd_export *exp = cfs_hash_object(hs, hnode);
+	struct seq_file *m = cb_data;
+	struct tg_export_data *ted = &exp->exp_target_data;
+
+	seq_printf(m, "reply_cnt: %d\n"
+		      "reply_max: %d\n"
+		      "reply_released_by_xid: %d\n"
+		      "reply_released_by_tag: %d\n\n",
+		   ted->ted_reply_cnt,
+		   ted->ted_reply_max,
+		   ted->ted_release_xid,
+		   ted->ted_release_tag);
+	return 0;
+}
+
+int lprocfs_exp_replydata_seq_show(struct seq_file *m, void *data)
+{
+	struct nid_stat *stats = m->private;
+	struct obd_device *obd = stats->nid_obd;
+
+	cfs_hash_for_each_key(obd->obd_nid_hash, &stats->nid,
+				lprocfs_exp_print_replydata_seq, m);
+	return 0;
+}
+LPROC_SEQ_FOPS_RO(lprocfs_exp_replydata);
+
 int lprocfs_nid_stats_clear_seq_show(struct seq_file *m, void *data)
 {
-	return seq_printf(m, "%s\n", "Write into this file to clear all nid "
-			  "stats and stale nid entries");
+	seq_puts(m, "Write into this file to clear all nid stats and stale nid entries\n");
+	return 0;
 }
 EXPORT_SYMBOL(lprocfs_nid_stats_clear_seq_show);
 
@@ -382,6 +414,15 @@ int lprocfs_exp_setup(struct obd_export *exp, lnet_nid_t *nid)
 		GOTO(destroy_new_ns, rc);
 	}
 
+	entry = lprocfs_add_simple(new_stat->nid_proc, "reply_data", new_stat,
+				   &lprocfs_exp_replydata_fops);
+	if (IS_ERR(entry)) {
+		rc = PTR_ERR(entry);
+		CWARN("%s: Error adding the reply_data file: rc = %d\n",
+		      obd->obd_name, rc);
+		GOTO(destroy_new_ns, rc);
+	}
+
 	spin_lock(&exp->exp_lock);
 	exp->exp_nid_stats = new_stat;
 	spin_unlock(&exp->exp_lock);
@@ -523,16 +564,15 @@ EXPORT_SYMBOL(lprocfs_free_obd_stats);
 int lprocfs_hash_seq_show(struct seq_file *m, void *data)
 {
 	struct obd_device *obd = m->private;
-	int c = 0;
 
 	if (obd == NULL)
 		return 0;
 
-	c += cfs_hash_debug_header(m);
-	c += cfs_hash_debug_str(obd->obd_uuid_hash, m);
-	c += cfs_hash_debug_str(obd->obd_nid_hash, m);
-	c += cfs_hash_debug_str(obd->obd_nid_stats_hash, m);
-	return c;
+	cfs_hash_debug_header(m);
+	cfs_hash_debug_str(obd->obd_uuid_hash, m);
+	cfs_hash_debug_str(obd->obd_nid_hash, m);
+	cfs_hash_debug_str(obd->obd_nid_stats_hash, m);
+	return 0;
 }
 EXPORT_SYMBOL(lprocfs_hash_seq_show);
 
@@ -553,7 +593,9 @@ int lprocfs_recovery_status_seq_show(struct seq_file *m, void *data)
 		seq_printf(m, "COMPLETE\n");
 		seq_printf(m, "recovery_start: %lu\n", obd->obd_recovery_start);
 		seq_printf(m, "recovery_duration: %lu\n",
-			   obd->obd_recovery_end - obd->obd_recovery_start);
+			   obd->obd_recovery_end ?
+			   obd->obd_recovery_end - obd->obd_recovery_start :
+			   cfs_time_current_sec() - obd->obd_recovery_start);
 		/* Number of clients that have completed recovery */
 		seq_printf(m, "completed_clients: %d/%d\n",
 			   obd->obd_max_recoverable_clients -
@@ -606,7 +648,8 @@ int lprocfs_ir_factor_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 
 	LASSERT(obd != NULL);
-	return seq_printf(m, "%d\n", obd->obd_recovery_ir_factor);
+	seq_printf(m, "%d\n", obd->obd_recovery_ir_factor);
+	return 0;
 }
 EXPORT_SYMBOL(lprocfs_ir_factor_seq_show);
 
@@ -636,7 +679,8 @@ int lprocfs_recovery_time_soft_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 
 	LASSERT(obd != NULL);
-	return seq_printf(m, "%d\n", obd->obd_recovery_timeout);
+	seq_printf(m, "%d\n", obd->obd_recovery_timeout);
+	return 0;
 }
 EXPORT_SYMBOL(lprocfs_recovery_time_soft_seq_show);
 
@@ -663,7 +707,8 @@ int lprocfs_recovery_time_hard_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 
 	LASSERT(obd != NULL);
-	return seq_printf(m, "%u\n", obd->obd_recovery_time_hard);
+	seq_printf(m, "%u\n", obd->obd_recovery_time_hard);
+	return 0;
 }
 EXPORT_SYMBOL(lprocfs_recovery_time_hard_seq_show);
 
@@ -692,7 +737,8 @@ int lprocfs_target_instance_seq_show(struct seq_file *m, void *data)
 
 	LASSERT(obd != NULL);
 	LASSERT(target->obt_magic == OBT_MAGIC);
-	return seq_printf(m, "%u\n", obd->u.obt.obt_instance);
+	seq_printf(m, "%u\n", obd->u.obt.obt_instance);
+	return 0;
 }
 EXPORT_SYMBOL(lprocfs_target_instance_seq_show);
 
