@@ -383,7 +383,7 @@ int lustre_start_mgc(struct super_block *sb)
 			if (rc == 0)
 				++i;
                         /* Stop at the first failover nid */
-			if (*ptr == ':' || *ptr == ',')
+                        if (*ptr == ':')
                                 break;
                 }
         }
@@ -411,7 +411,7 @@ int lustre_start_mgc(struct super_block *sb)
 
         /* Add any failover MGS nids */
         i = 1;
-	while (ptr && ((*ptr == ':' || *ptr == ',' ||
+	while (ptr && ((*ptr == ':' ||
 	       class_find_param(ptr, PARAM_MGSNODE, &ptr) == 0))) {
 		/* New failover node */
 		sprintf(niduuid, "%s_%x", mgcname, i);
@@ -421,7 +421,7 @@ int lustre_start_mgc(struct super_block *sb)
 				     niduuid, NULL, NULL, NULL);
 			if (rc == 0)
 				++j;
-			if (*ptr == ':' || *ptr == ',')
+			if (*ptr == ':')
 				break;
 		}
 		if (j > 0) {
