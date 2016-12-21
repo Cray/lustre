@@ -4068,7 +4068,7 @@ static int mdt_stack_init(const struct lu_env *env, struct mdt_device *mdt,
 
 	lcfg = lustre_cfg_new(LCFG_ATTACH, bufs);
 	if (lcfg == NULL)
-		GOTO(free_bufs, rc = -ENOMEM);
+		GOTO(put_profile, rc = -ENOMEM);
 
 	rc = class_attach(lcfg);
 	if (rc)
@@ -4128,6 +4128,8 @@ class_detach:
 		class_detach(obd, lcfg);
 lcfg_cleanup:
 	lustre_cfg_free(lcfg);
+put_profile:
+	class_put_profile(lprof);
 free_bufs:
 	OBD_FREE_PTR(bufs);
 cleanup_mem:
@@ -4198,7 +4200,7 @@ static int mdt_quota_init(const struct lu_env *env, struct mdt_device *mdt,
 
 	lcfg = lustre_cfg_new(LCFG_ATTACH, bufs);
 	if (lcfg == NULL)
-		GOTO(cleanup_mem, rc = -ENOMEM);
+		GOTO(put_profile, rc = -ENOMEM);
 
 	rc = class_attach(lcfg);
 	if (rc)
@@ -4260,6 +4262,8 @@ class_detach:
 		class_detach(obd, lcfg);
 lcfg_cleanup:
 	lustre_cfg_free(lcfg);
+put_profile:
+	class_put_profile(lprof);
 cleanup_mem:
 	if (bufs)
 		OBD_FREE_PTR(bufs);
