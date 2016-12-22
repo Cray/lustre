@@ -888,11 +888,6 @@ static int mdt_getattr_internal(struct mdt_thread_info *info,
 	if (OBD_FAIL_CHECK(OBD_FAIL_MDS_GETATTR_PACK))
 		RETURN(err_serious(-ENOMEM));
 
-	if (OBD_FAIL_PRECHECK(OBD_FAIL_MDS_GETATTR_NET)) {
-		/* Don`t let early reply prolong wait for client */
-		req->rq_deadline += obd_timeout;
-		OBD_FAIL_TIMEOUT(OBD_FAIL_MDS_GETATTR_NET, obd_timeout);
-	}
 	repbody = req_capsule_server_get(pill, &RMF_MDT_BODY);
 
 	ma->ma_valid = 0;
@@ -2739,6 +2734,8 @@ void mdt_save_lock(struct mdt_thread_info *info, struct lustre_handle *h,
  * \param o mdt object
  * \param lh mdt lock handle referencing regular and PDO locks
  * \param decref force immediate lock releasing
+ *
+ * XXX o is not used and may be NULL, see hsm_cdt_request_completed().
  */
 void mdt_object_unlock(struct mdt_thread_info *info, struct mdt_object *o,
                        struct mdt_lock_handle *lh, int decref)

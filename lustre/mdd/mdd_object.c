@@ -65,13 +65,26 @@ static int mdd_xattr_get(const struct lu_env *env,
 int mdd_la_get(const struct lu_env *env, struct mdd_object *obj,
                struct lu_attr *la, struct lustre_capa *capa)
 {
-        if (mdd_object_exists(obj) == 0) {
-                CERROR("%s: object "DFID" not found: rc = -2\n",
-                       mdd_obj_dev_name(obj), PFID(mdd_object_fid(obj)));
-                return -ENOENT;
-        }
+	int rc;
 
-        return mdo_attr_get(env, obj, la, capa);
+	if (mdd_object_exists(obj) == 0) {
+		CERROR("%s: object "DFID" not found: rc = -2\n",
+		       mdd_obj_dev_name(obj), PFID(mdd_object_fid(obj)));
+		return -ENOENT;
+	}
+
+	rc = mdo_attr_get(env, obj, la, capa);
+	if (unlikely(rc != 0)) {
+		if (rc == -ENOENT)
+			obj->mod_flags |= DEAD_OBJ;
+		return rc;
+	}
+
+	if (la->la_valid & LA_FLAGS &&
+	    la->la_flags & LUSTRE_ORPHAN_FL)
+		obj->mod_flags |= ORPHAN_OBJ | DEAD_OBJ;
+
+	return 0;
 }
 
 struct mdd_thread_info *mdd_env_info(const struct lu_env *env)
@@ -651,11 +664,13 @@ int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
 			     struct mdd_object *mdd_obj, struct thandle *handle)
 {
 	const struct lu_ucred		*uc = lu_ucred(env);
-	const struct lu_fid		*tfid;
 	struct llog_changelog_rec	*rec;
 	struct lu_buf			*buf;
 	int				 reclen;
 	int				 rc;
+
+	LASSERT(mdd_obj != NULL);
+	LASSERT(handle != NULL);
 
         /* Not recording */
         if (!(mdd->mdd_cl.mc_flags & CLM_ON))
@@ -663,10 +678,8 @@ int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
         if ((mdd->mdd_cl.mc_mask & (1 << type)) == 0)
                 RETURN(0);
 
-        LASSERT(mdd_obj != NULL);
-        LASSERT(handle != NULL);
-
-	tfid = mdo2fid(mdd_obj);
+	if (mdd_is_volatile_obj(mdd_obj))
+		RETURN(0);
 
         if ((type >= CL_MTIME) && (type <= CL_ATIME) &&
             cfs_time_before_64(mdd->mdd_cl.mc_starttime, mdd_obj->mod_cltime)) {
@@ -688,7 +701,7 @@ int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
 
 	rec->cr.cr_flags = flags;
 	rec->cr.cr_type = (__u32)type;
-	rec->cr.cr_tfid = *tfid;
+	rec->cr.cr_tfid = *mdo2fid(mdd_obj);
 	rec->cr.cr_namelen = 0;
 	mdd_obj->mod_cltime = cfs_time_current_64();
 
