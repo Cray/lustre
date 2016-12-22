@@ -10267,13 +10267,6 @@ test_156() {
         log "cache hits:: before: $BEFORE, after: $AFTER"
     fi
 
-test_253()
-{
-	test_mkdir -p $DIR/$tdir
-	lock_ahead_test -d $DIR/$tdir || error "A lock ahead test failed"
-}
-run_test 253 "various lock ahead tests"
-
     log "Turn off read and write cache"
     set_cache read off
     set_cache writethrough off
@@ -13176,6 +13169,13 @@ test_251() {
 }
 run_test 251 "Handling short read and write correctly"
 
+test_253()
+{
+	test_mkdir -p $DIR/$tdir
+	lock_ahead_test -d $DIR/$tdir || error "A lock ahead test failed"
+}
+run_test 253 "various lock ahead tests"
+
 test_257() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	mount_client $MOUNT2 || error "mount failed"
@@ -13226,6 +13226,9 @@ run_test 258a
 test_258b() {
 #define OBD_FAIL_IMUTEX_NOSEC 0x141d
 	$LCTL set_param fail_loc=0x141d
+	touch $DIR/$tfile
+	chmod a+rwx $DIR
+	chmod a+rw $DIR/$tfile
 	$RUNAS dd if=/dev/zero of=$DIR/$tfile bs=4k count=1 oflag=append
 	RC=$?
 	if [ $RC -ne 0 ]; then

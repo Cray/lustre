@@ -862,13 +862,19 @@ static enum interval_iter ldlm_kms_shift_cb(struct interval_node *n,
 		RETURN(INTERVAL_ITER_STOP);
 	}
 
-	/* Since interval_iterate_reverse starts with the highest lock and
-	 * works down, we only need to check if we should update the kms, then
-	 * stop walking this tree. */
 	if (lock->l_policy_data.l_extent.end + 1 > arg->kms)
 		arg->kms = lock->l_policy_data.l_extent.end + 1;
 
-	RETURN(INTERVAL_ITER_STOP);
+	/* Since interval_iterate_reverse starts with the highest lock and
+	 * works down, for PW locks, we only need to check if we should update
+	 * the kms, then stop walking the tree.  PR locks are not exclusive, so
+	 * the highest start does not imply the highest end and we must
+	 * continue. (Only one group lock is allowed per resource, so this is
+	 * irrelevant for group locks.)*/
+	if (lock->l_granted_mode == LCK_PW)
+		RETURN(INTERVAL_ITER_STOP);
+	else
+		RETURN(INTERVAL_ITER_CONT);
 }
 
 /* When a lock is cancelled by a client, the KMS may undergo change if this
@@ -900,6 +906,11 @@ __u64 ldlm_extent_shift_kms(struct ldlm_lock *lock, __u64 old_kms)
 	 * than the current one. */
 	for (idx = 0; idx < LCK_MODE_NUM; idx++) {
 		tree = &res->lr_itree[idx];
+
+		/* If our already known kms is >= than the highest 'end' in
+		 * this tree, we don't need to check this tree at all. */
+		if (!tree->lit_root || args.kms >= tree->lit_root->in_max_high)
+			continue;
 
 		interval_iterate_reverse(tree->lit_root, ldlm_kms_shift_cb,
 					 &args);
