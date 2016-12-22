@@ -42,7 +42,7 @@
             </gitcmd>
             <gitcmd>
                 <command>
-                    describe --first-parent --tags --long --dirty=_$USER | sed -e 's/-/./g'
+                    describe --first-parent --tags --dirty=_$USER | sed -e 's/-/./g'
                 </command>
                 <name>
                     _tag
@@ -50,7 +50,7 @@
             </gitcmd>
             <gitcmd>
                 <command>
-                    describe --first-parent --tags --long | sed -e 's/-/./' -e 's/-g.*//'
+                    describe --first-parent --tags | sed -e 's/-/./' -e 's/-g.*//'
                 </command>
                 <name>
                     _version
