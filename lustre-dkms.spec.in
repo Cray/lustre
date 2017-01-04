@@ -104,10 +104,6 @@ EOF
 
 chmod 755 lustre-dkms_post-add.sh
 
-sed -i 's/BUILDID[[:print:]]*/BUILDID = %{buildid}/' META
-sed -i 's/PRISTINE[[:print:]]*/PRISTINE = 1/' META
-cp META ldiskfs/META
-
 %install
 if [ "$RPM_BUILD_ROOT" != "/" ]; then
     rm -rf $RPM_BUILD_ROOT

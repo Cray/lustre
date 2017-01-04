@@ -42,7 +42,7 @@
 #include <lnet/lnetctl.h>
 #include <lustre_debug.h>
 #include <lprocfs_status.h>
-#include <lustre/lustre_build_version.h>
+#include <lustre_ver.h>
 #include <libcfs/list.h>
 #include <cl_object.h>
 #ifdef HAVE_SERVER_SUPPORT
@@ -288,24 +288,24 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
                 GOTO(out, err);
         }
 
-        case OBD_GET_VERSION:
-                if (!data->ioc_inlbuf1) {
-                        CERROR("No buffer passed in ioctl\n");
-                        GOTO(out, err = -EINVAL);
-                }
+	case OBD_GET_VERSION:
+		if (!data->ioc_inlbuf1) {
+			CERROR("No buffer passed in ioctl\n");
+			GOTO(out, err = -EINVAL);
+		}
 
-                if (strlen(BUILD_VERSION) + 1 > data->ioc_inllen1) {
-                        CERROR("ioctl buffer too small to hold version\n");
-                        GOTO(out, err = -EINVAL);
-                }
+		if (strlen(LUSTRE_VERSION_STRING) + 1 > data->ioc_inllen1) {
+			CERROR("ioctl buffer too small to hold version\n");
+			GOTO(out, err = -EINVAL);
+		}
 
-                memcpy(data->ioc_bulk, BUILD_VERSION,
-                       strlen(BUILD_VERSION) + 1);
+		memcpy(data->ioc_bulk, LUSTRE_VERSION_STRING,
+		       strlen(LUSTRE_VERSION_STRING) + 1);
 
 		err = obd_ioctl_popdata((void __user *)arg, data, len);
-                if (err)
-                        err = -EFAULT;
-                GOTO(out, err);
+		if (err)
+			err = -EFAULT;
+		GOTO(out, err);
 
         case OBD_IOC_NAME2DEV: {
                 /* Resolve a device name.  This does not change the
@@ -532,7 +532,7 @@ static int __init init_obdclass(void)
         for (i = CAPA_SITE_CLIENT; i < CAPA_SITE_MAX; i++)
 		INIT_LIST_HEAD(&capa_list[i]);
 
-        LCONSOLE_INFO("Lustre: Build Version: "BUILD_VERSION"\n");
+	LCONSOLE_INFO("Lustre: Build Version: "LUSTRE_VERSION_STRING"\n");
 
 	spin_lock_init(&obd_types_lock);
         obd_zombie_impexp_init();
@@ -705,8 +705,9 @@ static void cleanup_obdclass(void)
         EXIT;
 }
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
-MODULE_DESCRIPTION("Lustre Class Driver Build Version: " BUILD_VERSION);
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
+MODULE_DESCRIPTION("Lustre Class Driver");
+MODULE_VERSION(LUSTRE_VERSION_STRING);
 MODULE_LICENSE("GPL");
 
 cfs_module(obdclass, LUSTRE_VERSION_STRING, init_obdclass, cleanup_obdclass);
