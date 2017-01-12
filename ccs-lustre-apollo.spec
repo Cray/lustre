@@ -74,7 +74,7 @@ gni_symvers=`pkg-config --variable=symversdir cray-gni`/default/Module.symvers
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ]; then
         %configure --disable-checksum \
            --enable-gni \
-		   --with-symvers=$gni_symvers \
+		   --with-extra-symbols="$gni_symvers" \
 		   --disable-server \
            --with-o2ib=$O2IBPATH \
            --with-linux-obj=%{ksrc} \
