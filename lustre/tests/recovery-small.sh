@@ -23,6 +23,10 @@ require_dsh_mds || exit 0
 # bug number for skipped test:	      LU-2194 LU-2547
 	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 19b     24a 24b"
 
+[[ $MDSCOUNT -le 1 ]] ||
+# bug number for skipped test:	      LU-7710
+	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 130a 130b 130c"
+
 build_test_filter
 
 # Allow us to override the setup if we already have a mounted system by
@@ -2321,6 +2325,10 @@ test_130_base() {
 
 test_130a() {
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	local server_version=$(lustre_version_code $SINGLEMDS)
+	[[ $server_version -ge $(version_code 2.7.65) ]] ||
+		{ skip "Need server version newer than 2.7.64"; return 0; }
+
 	test_130_base
 
 	wait $T130_PID && error "stat should fail"
@@ -2330,6 +2338,10 @@ run_test 130a "enqueue resend on not existing file"
 
 test_130b() {
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	local server_version=$(lustre_version_code $SINGLEMDS)
+	[[ $server_version -ge $(version_code 2.7.65) ]] ||
+		{ skip "Need server version newer than 2.7.64"; return 0; }
+
 	test_130_base
 	# let the reply to be dropped
 	sleep 10
