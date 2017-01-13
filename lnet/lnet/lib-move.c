@@ -594,7 +594,7 @@ lnet_ni_recv(lnet_ni_t *ni, void *private, lnet_msg_t *msg, int delayed,
         rc = (ni->ni_lnd->lnd_recv)(ni, private, msg, delayed,
                                     niov, iov, kiov, offset, mlen, rlen);
         if (rc < 0)
-                lnet_finalize(ni, msg, rc);
+                lnet_finalize(msg, rc);
 }
 
 static void
@@ -649,7 +649,7 @@ lnet_ni_send(lnet_ni_t *ni, lnet_msg_t *msg)
 
 	rc = (ni->ni_lnd->lnd_send)(ni, priv, msg);
 	if (rc < 0)
-		lnet_finalize(ni, msg, rc);
+		lnet_finalize(msg, rc);
 }
 
 static int
@@ -809,7 +809,7 @@ lnet_post_send_locked(lnet_msg_t *msg, int do_send)
 		CNETERR("Dropping message for %s: peer not alive\n",
 			libcfs_id2str(msg->msg_target));
 		if (do_send)
-			lnet_finalize(ni, msg, -EHOSTUNREACH);
+			lnet_finalize(msg, -EHOSTUNREACH);
 
 		lnet_net_lock(cpt);
 		return -EHOSTUNREACH;
@@ -823,7 +823,7 @@ lnet_post_send_locked(lnet_msg_t *msg, int do_send)
 			"called on the MD/ME.\n",
 			libcfs_id2str(msg->msg_target));
 		if (do_send)
-			lnet_finalize(ni, msg, -ECANCELED);
+			lnet_finalize(msg, -ECANCELED);
 
 		lnet_net_lock(cpt);
 		return -ECANCELED;
@@ -1056,7 +1056,7 @@ lnet_drop_routed_msgs_locked(struct list_head *list, int cpt)
 		lnet_ni_recv(msg->msg_rxpeer->lp_ni, msg->msg_private, NULL,
 			     0, 0, 0, msg->msg_hdr.payload_length);
 		list_del_init(&msg->msg_list);
-		lnet_finalize(NULL, msg, -ECANCELED);
+		lnet_finalize(msg, -ECANCELED);
 	}
 
 	lnet_net_lock(cpt);
@@ -1553,7 +1553,7 @@ lnet_parse_get(lnet_ni_t *ni, lnet_msg_t *msg, int rdma_get)
 		       libcfs_nid2str(ni->ni_nid),
 		       libcfs_id2str(info.mi_id), rc);
 
-		lnet_finalize(ni, msg, rc);
+		lnet_finalize(msg, rc);
 	}
 
 	return 0;
@@ -2045,7 +2045,7 @@ lnet_parse(lnet_ni_t *ni, lnet_hdr_t *hdr, lnet_nid_t from_nid,
 
  free_drop:
 	LASSERT(msg->msg_md == NULL);
-	lnet_finalize(ni, msg, rc);
+	lnet_finalize(msg, rc);
 
  drop:
 	lnet_drop_message(ni, cpt, private, payload_length);
@@ -2091,7 +2091,7 @@ lnet_drop_delayed_msg_list(struct list_head *head, char *reason)
 		 * but we still should give error code so lnet_msg_decommit()
 		 * can skip counters operations and other checks.
 		 */
-		lnet_finalize(msg->msg_rxpeer->lp_ni, msg, -ENOENT);
+		lnet_finalize(msg, -ENOENT);
 	}
 }
 
@@ -2248,7 +2248,7 @@ LNetPut(lnet_nid_t self, lnet_handle_md_t mdh, lnet_ack_req_t ack,
         if (rc != 0) {
                 CNETERR( "Error sending PUT to %s: %d\n",
                        libcfs_id2str(target), rc);
-                lnet_finalize (NULL, msg, rc);
+                lnet_finalize (msg, rc);
         }
 
         /* completion will be signalled by an event */
@@ -2440,7 +2440,7 @@ LNetGet(lnet_nid_t self, lnet_handle_md_t mdh,
 	if (rc < 0) {
 		CNETERR("Error sending GET to %s: %d\n",
 			libcfs_id2str(target), rc);
-		lnet_finalize(NULL, msg, rc);
+		lnet_finalize(msg, rc);
 	}
 
         /* completion will be signalled by an event */
