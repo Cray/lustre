@@ -274,12 +274,9 @@ int ll_md_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *desc,
 			struct ll_inode_info *lli = ll_i2info(inode);
 
 			spin_lock(&lli->lli_lock);
-			LTIME_S(inode->i_mtime) = 0;
-			LTIME_S(inode->i_atime) = 0;
-			LTIME_S(inode->i_ctime) = 0;
-
 			lli->lli_flags &= ~LLIF_MDS_SIZE_LOCK;
 			spin_unlock(&lli->lli_lock);
+			lli->lli_update_atime = 1;
 		}
 
 		if ((bits & MDS_INODELOCK_UPDATE) && S_ISDIR(inode->i_mode)) {
