@@ -551,9 +551,8 @@ load_modules_local() {
 
 	load_module ../libcfs/libcfs/libcfs
 
-    [ "$PTLDEBUG" ] && lctl set_param debug="$PTLDEBUG"
-    [ "$SUBSYSTEM" ] && lctl set_param subsystem_debug="${SUBSYSTEM# }"
-    load_module ../lnet/lnet/lnet
+	set_default_debug
+	load_module ../lnet/lnet/lnet
 	case $NETTYPE in
 	o2ib)
 		LNETLND="o2iblnd/ko2iblnd"
