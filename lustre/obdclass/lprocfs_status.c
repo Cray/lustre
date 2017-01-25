@@ -657,6 +657,7 @@ static const char *obd_connect_names[] = {
 	"unlink_close",
 	"multi_mod_rpcs",
 	"dir_stripe",
+	"bulk_mbits",
 	"unknown",
 	NULL
 };
