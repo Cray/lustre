@@ -1,6 +1,5 @@
 %define vendor_name lustre
-%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; e
-+lse echo "UNKNOWN"; fi)
+%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define flavor cray_ari_c
 %define intranamespace_name %{vendor_name}-%{flavor}_rhine
 %define branch trunk
