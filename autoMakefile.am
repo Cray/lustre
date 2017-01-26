@@ -71,7 +71,7 @@ if LINUX
 all-am: modules
 
 modules: undef.h ldiskfs-sources
-	$(MAKE) CC="$(CC)" $(CROSS_VARS) -C $(LINUX_OBJ)	     \
+	$(MAKE) CC="$(CC)" -C $(LINUX_OBJ) \
 	-f $(PWD)/build/Makefile LUSTRE_LINUX_CONFIG=$(LINUX_CONFIG) \
 	LINUXINCLUDE='-I$$(srctree)/arch/$$(SRCARCH)/include -Iarch/$$(SRCARCH)/include/generated -Iinclude $$(if $$(KBUILD_SRC),-Iinclude2 -I$$(srctree)/include) -I$$(srctree)/arch/$$(SRCARCH)/include/uapi -Iarch/$$(SRCARCH)/include/generated/uapi -I$$(srctree)/include/uapi -Iinclude/generated/uapi -include $(CONFIG_INCLUDE)' \
 	$(MODULE_TARGET)=$(PWD) -o tmp_include_depends -o scripts -o \
@@ -93,13 +93,14 @@ dist-hook: undef.h
 EXTRA_DIST = @PACKAGE_TARNAME@.spec	\
 	build/Makefile 			\
 	build/Rules.in			\
-	build/gen_filelist.sh		\
 	config.h.in			\
-	undef.h				\
 	lustre-dkms_pre-build.sh	\
 	lustre-dkms_post-build.sh	\
 	LUSTRE-VERSION-GEN		\
-	LUSTRE-VERSION-FILE
+	LUSTRE-VERSION-FILE		\
+	undef.h
+
+EXTRA_DIST += rpm
 
 rpm-local:
 	@(if test -z "$(RPMBUILD)"; then \
@@ -166,6 +167,7 @@ srpm: @PACKAGE_TARNAME@.spec dist Makefile
 	rpmbuilddir=`mktemp -t -d rpmbuild-@PACKAGE@-$$USER-XXXXXXXX`; \
 	$(MAKE) $(AM_MAKEFLAGS) \
 		rpmbuilddir="$$rpmbuilddir" rpm-local || exit 1; \
+	cp $(top_srcdir)/rpm/* $(top_srcdir); \
 	$(RPMBUILD) \
 		--define "_tmppath $$rpmbuilddir/TMP" \
 		--define "_topdir $$rpmbuilddir" \
