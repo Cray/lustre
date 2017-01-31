@@ -165,9 +165,13 @@ CFLAGS="%{optflags} -Werror"
 CFLAGS="%{optflags} -Werror -fno-stack-protector"
 %endif
 
+syms="$(pkg-config --variable=symversdir cray-gni)/%{flavor}/Module.symvers"
+syms="$syms $(pkg-config --variable=symversdir cray-krca)/%{flavor}/Module.symvers"
+
 %if %{without compute}
 if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
     O2IBPATH=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}
+    syms="$syms /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}/Modules.symvers"
 elif [ -d /usr/src/ofed/%{_target_cpu}/%{flavor} ]; then
     O2IBPATH=/usr/src/ofed/%{_target_cpu}/%{flavor}
 else
@@ -179,7 +183,7 @@ O2IBPATH=no
 
 
 sh autogen.sh
-%configure --includedir=/usr/include --with-rpmsubname=%{node_type} --with-o2ib=${O2IBPATH} %{config_args}
+%configure --includedir=/usr/include --with-rpmsubname=%{node_type} --with-extra-symbols="$syms" --with-o2ib=${O2IBPATH} %{config_args}
 %{__make} %_smp_mflags rpms 
 
 %if %{with SLES11} 
