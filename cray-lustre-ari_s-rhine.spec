@@ -1,10 +1,8 @@
 %define vendor_name lustre
-%define vendor_version 2.7.1.14
+%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define flavor cray_ari_s
 %define intranamespace_name %{vendor_name}-%{flavor}_rhine
-%define flavorless_name %{namespace}-%{vendor_name}
-# use non-customized version so source doesn't need to be repackaged for custom versions.
-%define source_name %{flavorless_name}
+%define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 %define branch trunk
 %define pc_files cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc cray-lustre-ptlctl-devel.pc
 
@@ -39,9 +37,9 @@ Name: %{namespace}-%{intranamespace_name}
 Release: %{release}
 Requires: module-init-tools
 Summary: Lustre File System for Aries Service Nodes running CLE Rhine
-Version: %{vendor_version}_%{kernel_version}_%{kernel_release}
-Source0: %{source_name}.tar.gz
-Source1: %{flavorless_name}-switch-%{branch}.tar.gz
+Version: %{_version}_%{kernel_version}_%{kernel_release}
+Source0: %{source_name}.tar.bz2
+Source1: %{vendor_namespace}-%{vendor_name}-switch-%{_version}.tar.bz2
 Source99: cray-lustre-rpmlintrc
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
@@ -59,21 +57,23 @@ service nodes running the CLE Rhine release.
 %description lnet
 Userspace tools and files for Lustre networking on XT SIO nodes.
 
-%package -n cray-lustre-cray_ari_s-devel
+%package -n cray-lustre-cray_ari_s-%{vendor_version}-devel
 Group: Development/Libraries
 License: GPL
 Summary: Cray Lustre Header files
+Provides: cray-lnet-%{vendor_version}-devel
 
-%description -n cray-lustre-cray_ari_s-devel
+%description -n cray-lustre-cray_ari_s-%{vendor_version}-devel
 Development files for building against Lustre library.
 Includes headers, dynamic, and static libraries.
 
 %prep
 # using source_name here results in too deep of a macro stack, so use
 # definition of source_name directly
-%incremental_setup -q -n %{flavorless_name} -a 1
+%incremental_setup -q -n %{source_name} -a 1
 
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 # LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
@@ -82,7 +82,7 @@ Includes headers, dynamic, and static libraries.
 %{__sed} -e 's/@VERSION@/%{version}-%{release}/g' version.in > .version
 
 export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
+export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -92,7 +92,7 @@ fi
 syms="$(pkg-config --variable=symversdir cray-gni)/%{flavor}/Module.symvers"
 syms="$syms $(pkg-config --variable=symversdir cray-krca)/%{flavor}/Module.symvers"
 
-export GNICPPFLAGS=`pkg-config --cflags cray-gni cray-gni-headers cray-krca lsb-cray-hss`
+export GNICPPFLAGS=$(pkg-config --cflags cray-gni cray-gni-headers cray-krca lsb-cray-hss)
 if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
     O2IBPATH=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}
     syms="$syms /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}/Modules.symvers"
@@ -102,7 +102,7 @@ else
     O2IBPATH=no
 fi
 
-HSS_FLAGS=`pkg-config --cflags lsb-cray-hss`
+HSS_FLAGS=$(pkg-config --cflags lsb-cray-hss)
 CFLAGS="%{optflags} -Werror -fno-stack-protector $HSS_FLAGS"
 
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
@@ -111,20 +111,39 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --disable-server \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-o2ib=${O2IBPATH} \
-           --with-symvers="$syms" \
+           --with-extra-symbols="$syms" \
            --with-obd-buffer-size=16384
 fi
 %{__make} %_smp_mflags
 
-%install
-# LUSTRE_VERS used in ko versioning.
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
+pushd devel
+%CRAYconfigure -- --with-module=%{_release_modulefile} --libdir=/opt/cray/%{name}/%{version}
+%{__make}
+popd
 
+
+%install
 # don't use %makeinstall for Rhine RPMS - it needlessly puts things into 
 # /opt/cray/...
 
-make DESTDIR=${RPM_BUILD_ROOT} install 
+make DESTDIR=${RPM_BUILD_ROOT} install
+%{__install} -D -m 0644 ${PWD}/Module.symvers %{buildroot}/opt/cray/%{name}/%{version}/symvers/%{flavor}/Module.symvers
+%{__install} -D -m 0644 ${PWD}/devel/cray-lnet-devel.pc %{buildroot}/usr/%{_pkgconfigdir}/cray-lnet.pc
+%{__install} -D -m 0644 config.h %{buildroot}/%{_includedir}/lustre/%{flavor}/config.h
+%{__install} -D -m 0644 config.h %{buildroot}/%{_includedir}/lustre/config.h
+
+# This is a not so pleasent *HACK* but rather than change the lustre build we list
+# out the required header files for the lnet devel package.
+for header in api.h lib-dlc.h lib-lnet.h lib-types.h lnetctl.h lnet.h lnetst.h nidstr.h socklnd.h types.h
+do
+    %{__install} -D -m 0644 lnet/include/lnet/${header} %{buildroot}/%{_includedir}/lnet/${header}
+done
+for header in libcfs.h list.h curproc.h bitmap.h byteorder.h err.h libcfs_debug.h libcfs_private.h libcfs_cpu.h libcfs_ioctl.h \
+		       libcfs_prim.h libcfs_time.h libcfs_string.h libcfs_kernelcomm.h libcfs_workitem.h libcfs_hash.h libcfs_heap.h libcfs_fail.h \
+                       linux/kp30.h linux/libcfs.h linux/linux-fs.h linux/linux-lock.h linux/linux-mem.h linux/linux-prim.h linux/linux-time.h linux/linux-cpu.h linux/linux-crypto.h
+do
+    %{__install} -D -m 0644 libcfs/include/libcfs/${header} %{buildroot}/%{_includedir}/libcfs/${header}
+done
 
 pushd %{buildroot}
 
@@ -179,6 +198,10 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 %exclude %dir %{_mandir}
 %exclude %dir %{_sbindir}
 %exclude %dir %{_datadir}
+%exclude /opt/cray/%{name}/%{version}/symvers/%{flavor}
+%exclude %dir /opt/cray/%{name}
+%exclude /usr/lib64/pkgconfig/cray-lnet.pc
+%exclude %dir /usr/lib64/pkgconfig
 
 %files lnet
 %defattr(-,root,root)
@@ -194,10 +217,10 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 %{_sbindir}/lst
 %{_sbindir}/routerstat
 
-%files -n cray-lustre-cray_ari_s-devel
+%files -n cray-lustre-cray_ari_s-%{vendor_version}-devel
 %defattr(-,root,root)
-%dir /usr/include/lustre
-/usr/include/lustre/*.h
+/opt/cray/%{name}/%{version}/symvers/%{flavor}
+%{_includedir}/*
 /usr/lib64/*
 
 %post

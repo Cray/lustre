@@ -1,11 +1,9 @@
 %define vendor_name lustre
-%define vendor_version 2.7.1.14
+%define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define flavor default
 
 %define intranamespace_name %{vendor_name}-%{flavor}
-%define flavorless_name %{namespace}-%{vendor_name}
-# use non-customized version so source doesn't need to be repackaged for custom versions.
-%define source_name %{flavorless_name}
+%define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 %define branch trunk
 
 %define clean_build_root %{nil}
@@ -25,8 +23,8 @@ License: GPLv2
 Name: %{namespace}-%{intranamespace_name}
 Release: %release
 Summary: Lustre File System for CLFS CentOS Nodes
-Version: %{vendor_version}_%{local_kernel_version}_%{kernel_release}
-Source: %{source_name}.tar.gz
+Version: %{_version}_%{local_kernel_version}_%{kernel_release}
+Source: %{source_name}.tar.bz2
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 Provides: liblustreapi.so()(64bit)
@@ -41,16 +39,17 @@ Userspace tools and files for the Lustre file system on Apollo CentOS nodes.
 %prep
 # using source_name here results in too deep of a macro stack, so use
 # definition of source_name directly
-%incremental_setup -q -n %{flavorless_name}
+%incremental_setup -q -n %{source_name}
 
 %build
+echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 # LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
 %define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 
 export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
+export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -76,10 +75,6 @@ fi
 %{__make} %_smp_mflags
 
 %install
-# LUSTRE_VERS used in ko versioning.
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{vendor_version}-${LUSTRE_VERS}
-
 # don't use %makeinstall for CentOS RPMS - it needlessly puts things into 
 #  /opt/cray/,.....
 
