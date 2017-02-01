@@ -45,13 +45,12 @@ Userspace tools and files for the Lustre file system on Baker CentOS nodes.
 
 %build
 echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
-# LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
-%define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
+%define lustre_version %{_version}-%{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -79,6 +78,9 @@ fi
 %{__make} %_smp_mflags
 
 %install
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
+
 # don't use %makeinstall for CentOS RPMS - it needlessly puts things into 
 #  /opt/cray/,.....
 

@@ -76,15 +76,14 @@ Includes headers, dynamic, and static libraries.
 
 %build
 echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
-# LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
-%define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
+%define lustre_version %{_version}-%{branch}-%{release}-%{build_user}-%{version_path}-%{date}
+
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
 
 %{__sed} -e 's/@VERSION@/%{version}-%{release}/g' version.in > .version
-
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -125,6 +124,9 @@ popd
 
 
 %install
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
+
 # don't use %makeinstall for Rhine RPMS - it needlessly puts things into 
 # /opt/cray/...
 
