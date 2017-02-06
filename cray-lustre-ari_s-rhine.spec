@@ -100,7 +100,7 @@ if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
 elif [ -d /usr/src/ofed/%{_target_cpu}/%{flavor} ]; then
     O2IBPATH=/usr/src/ofed/%{_target_cpu}/%{flavor}
 else
-    O2IBPATH=no
+    O2IBPATH=yes
 fi
 
 HSS_FLAGS=$(pkg-config --cflags lsb-cray-hss)
