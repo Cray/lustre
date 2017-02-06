@@ -66,14 +66,28 @@ pushd %{pkgsrcbase}
 %{__make} %_smp_mflags
 
 %install
-install -D -m 0644 config.h %{buildroot}/%{_includedir}/config.h
-for header in `find lnet/include lustre/include libcfs/include -name \*.h`
-do
-	install -D -m 0644 ${header} %{buildroot}/%{_includedir}/${header}
-done
+%{__install} -D -m 0644 config.h %{buildroot}/%{_includedir}/lustre/config.h
 install -D -m 0644  %{pkgsrcbase}/%{pkgbase}-devel.pc %{buildroot}/%{_pkgconfigdir}/%{pkgbase}.pc
 install -D -m 0644  %{pkgsrcbase}/module %{buildroot}/%{_release_modulefile}
 install -D -m 0644  %{pkgsrcbase}/.version %{buildroot}/%{_release_prefix}/etc/.version
+
+for header in api.h lib-dlc.h lib-lnet.h lib-types.h lnetctl.h lnet.h lnetst.h \
+              nidstr.h socklnd.h types.h
+do
+    %{__install} -D -m 0644 lnet/include/lnet/${header} \
+                            %{buildroot}/%{_includedir}/lnet/${header}
+done
+for header in libcfs.h list.h curproc.h bitmap.h byteorder.h err.h \
+              libcfs_debug.h libcfs_private.h libcfs_cpu.h libcfs_ioctl.h \
+              libcfs_prim.h libcfs_time.h libcfs_string.h libcfs_kernelcomm.h \
+              libcfs_workitem.h libcfs_hash.h libcfs_heap.h libcfs_fail.h \
+              linux/kp30.h linux/libcfs.h linux/linux-fs.h linux/linux-lock.h \
+              linux/linux-mem.h linux/linux-prim.h linux/linux-time.h \
+              linux/linux-cpu.h linux/linux-crypto.h
+do
+    %{__install} -D -m 0644 libcfs/include/libcfs/${header} \
+                            %{buildroot}/%{_includedir}/libcfs/${header}
+done
 
 %files
 %defattr(-,root,root)
