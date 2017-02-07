@@ -2077,6 +2077,24 @@ cache_head_has_hlist, [
 ]) # LC_HAVE_CACHE_HEAD_HLIST
 
 #
+# LC_HAVE_POSIX_ACL_VALID_USER_NS
+#
+# 4.8 posix_acl_valid takes struct user_namespace
+#
+AC_DEFUN([LC_HAVE_POSIX_ACL_VALID_USER_NS], [
+LB_CHECK_COMPILE([if 'posix_acl_valid' takes 'struct user_namespace'],
+posix_acl_valid, [
+	#include <linux/fs.h>
+	#include <linux/posix_acl.h>
+],[
+	posix_acl_valid((struct user_namespace*)NULL, (const struct posix_acl*)NULL);
+],[
+	AC_DEFINE(HAVE_POSIX_ACL_VALID_USER_NS, 1,
+		[posix_acl_valid takes struct user_namespace])
+])
+]) # LC_HAVE_POSIX_ACL_VALID_USER_NS
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -2243,6 +2261,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_LOCKS_LOCK_FILE_WAIT
 	LC_HAVE_QC_MAKE_REQUEST_FN
 	LC_HAVE_KEY_PAYLOAD_DATA_ARRAY
+
+	# 4.8
+	LC_HAVE_POSIX_ACL_VALID_USER_NS
 
 	#
 	AS_IF([test "x$enable_server" != xno], [
