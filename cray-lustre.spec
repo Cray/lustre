@@ -165,8 +165,10 @@ CFLAGS="%{optflags} -Werror"
 CFLAGS="%{optflags} -Werror -fno-stack-protector"
 %endif
 
+%if %{with compute} || %{with service}
 syms="$(pkg-config --variable=symversdir cray-gni)/%{flavor}/Module.symvers"
 syms="$syms $(pkg-config --variable=symversdir cray-krca)/%{flavor}/Module.symvers"
+%endif
 
 %if %{without compute}
 if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
