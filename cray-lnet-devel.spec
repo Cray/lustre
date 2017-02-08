@@ -77,7 +77,7 @@ do
     %{__install} -D -m 0644 lnet/include/lnet/${header} \
                             %{buildroot}/%{_includedir}/lnet/${header}
 done
-for header in libcfs.h list.h curproc.h bitmap.h byteorder.h err.h \
+for header in libcfs.h list.h curproc.h bitmap.h byteorder.h err.h types.h \
               libcfs_debug.h libcfs_private.h libcfs_cpu.h libcfs_ioctl.h \
               libcfs_prim.h libcfs_time.h libcfs_string.h libcfs_kernelcomm.h \
               libcfs_workitem.h libcfs_hash.h libcfs_heap.h libcfs_fail.h \
