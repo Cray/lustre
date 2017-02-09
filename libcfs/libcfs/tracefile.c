@@ -689,7 +689,6 @@ int cfs_tracefile_dump_all_pages(char *filename)
 
 	/* ok, for now, just write the pages.  in the future we'll be building
 	 * iobufs with the pages and calling generic_direct_IO */
-	MMSPACE_OPEN;
 	list_for_each_entry_safe(tage, tmp, &pc.pc_pages, linkage) {
 
 		__LASSERT_TAGE_INVARIANT(tage);
