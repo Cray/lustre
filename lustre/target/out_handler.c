@@ -475,23 +475,19 @@ static int out_xattr_get(struct tgt_session_info *tsi)
 	dt_read_lock(env, obj, MOR_TGT_CHILD);
 	rc = dt_xattr_get(env, obj, lbuf, name, NULL);
 	dt_read_unlock(env, obj);
-	if (rc < 0) {
+	if (rc <= 0) {
 		lbuf->lb_len = 0;
-		GOTO(out, rc);
+		if (unlikely(!rc))
+			rc = -ENODATA;
+	} else {
+		lbuf->lb_len = rc;
+		rc = 0;
 	}
-	if (rc == 0) {
-		lbuf->lb_len = 0;
-		GOTO(out, rc = -ENOENT);
-	}
-	lbuf->lb_len = rc;
-	rc = 0;
+
 	CDEBUG(D_INFO, "%s: "DFID" get xattr %s len %d\n",
 	       tgt_name(tsi->tsi_tgt), PFID(lu_object_fid(&obj->do_lu)),
 	       name, (int)lbuf->lb_len);
 
-	GOTO(out, rc);
-
-out:
 	object_update_result_insert(reply, lbuf->lb_buf, lbuf->lb_len, idx, rc);
 	RETURN(rc);
 }
