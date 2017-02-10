@@ -44,6 +44,7 @@
 #include <lustre_ha.h>
 #include <lustre_import.h>
 #include <lustre_req_layout.h>
+#include <linux/pagevec.h>
 
 #include "ptlrpc_internal.h"
 
@@ -203,8 +204,19 @@ void __ptlrpc_free_bulk(struct ptlrpc_bulk_desc *desc, int unpin)
 		class_import_put(desc->bd_import);
 
 	if (unpin) {
-		for (i = 0; i < desc->bd_iov_count ; i++)
-			page_cache_release(desc->bd_iov[i].kiov_page);
+		struct pagevec pvec;
+		pagevec_init(&pvec,0);
+		for (i = 0; i < desc->bd_iov_count ; i++) {
+			struct page *kiov_page = desc->bd_iov[i].kiov_page;
+			/* Release pagevec only when full */
+			if (pagevec_add(&pvec, kiov_page) == 0) {
+				pagevec_release(&pvec);
+				pagevec_reinit(&pvec);
+			}
+		}
+		/* Make sure we release trailing partial pagevec
+		 * (pagevec_release checks count) */
+		pagevec_release(&pvec);
 	}
 
 	OBD_FREE(desc, offsetof(struct ptlrpc_bulk_desc,
