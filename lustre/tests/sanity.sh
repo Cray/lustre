@@ -8716,6 +8716,9 @@ set_dir_limits () {
 }
 
 test_129() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.5.56) ]] ||
+		{ skip "Need MDS version with at least 2.5.56"; return 0; }
+
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	if [ "$(facet_fstype $SINGLEMDS)" != ldiskfs ]; then
 		skip "Only applicable to ldiskfs-based MDTs"
