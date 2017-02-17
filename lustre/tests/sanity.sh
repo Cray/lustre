@@ -12906,6 +12906,9 @@ test_230a() {
 run_test 230a "Create remote directory and files under the remote directory"
 
 test_230b() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.6.57) ]] ||
+		{ skip "Need MDS version with at least 2.6.57"; return 0; }
+
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local MDTIDX=1
