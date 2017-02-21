@@ -502,7 +502,8 @@ static int osd_lma_self_repair(struct osd_thread_info *info,
 	return rc;
 }
 
-static int osd_check_lma(const struct lu_env *env, struct osd_object *obj)
+static int osd_check_lma(const struct lu_env *env, struct osd_object *obj,
+			 struct lu_fid **fidp)
 {
 	struct osd_thread_info	*info	= osd_oti_get(env);
 	struct osd_device	*osd	= osd_obj2dev(obj);
@@ -551,8 +552,6 @@ static int osd_check_lma(const struct lu_env *env, struct osd_object *obj)
 	}
 
 	if (fid != NULL && unlikely(!lu_fid_eq(rfid, fid))) {
-		__u32 level = D_LFSCK;
-
 		if (fid_is_idif(rfid) && fid_is_idif(fid)) {
 			struct ost_id	*oi   = &info->oti_ostid;
 			struct lu_fid	*fid1 = &info->oti_fid3;
@@ -578,11 +577,7 @@ static int osd_check_lma(const struct lu_env *env, struct osd_object *obj)
 
 
 		rc = -EREMCHG;
-		if (!thread_is_running(&osd->od_scrub.os_thread))
-			level |= D_CONSOLE;
-
-		CDEBUG(level, "%s: FID "DFID" != self_fid "DFID"\n",
-		       osd_name(osd), PFID(rfid), PFID(fid));
+		*fidp = fid;
 	}
 
 	RETURN(rc);
@@ -600,6 +595,7 @@ static int osd_fid_lookup(const struct lu_env *env, struct osd_object *obj,
 	struct inode	       *inode;
 	struct osd_scrub       *scrub;
 	struct scrub_file      *sf;
+	struct lu_fid	       *tfid;
 	int			result;
 	int			saved  = 0;
 	bool			cached  = true;
@@ -727,7 +723,8 @@ trigger:
 	obj->oo_inode = inode;
 	LASSERT(obj->oo_inode->i_sb == osd_sb(dev));
 
-	result = osd_check_lma(env, obj);
+	tfid = NULL;
+	result = osd_check_lma(env, obj, &tfid);
 	if (result != 0) {
 		if (result == -ENODATA) {
 			if (cached) {
@@ -779,6 +776,18 @@ trigger:
 			/* The current OI mapping is from the OI file,
 			 * since the inode has been found via
 			 * osd_iget_check(), no need recheck OI. */
+		}
+
+		if (tfid) {
+			__u32 level = D_LFSCK;
+
+			if (!thread_is_running(&scrub->os_thread))
+				level |= D_CONSOLE;
+
+			CDEBUG(level, "%s: FID "DFID" != self_fid "DFID"\n",
+			       osd_name(dev),
+			       PFID(lu_object_fid(&obj->oo_dt.do_lu)),
+			       PFID(tfid));
 		}
 
 		goto trigger;
