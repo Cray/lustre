@@ -116,6 +116,8 @@
 
 #define LDD_F_MASK          0xFFFF
 
+#define XATTR_TARGET_RENAME	"trusted.rename_tgt"
+
 enum ldd_mount_type {
 	LDD_MT_EXT3 = 0,
 	LDD_MT_LDISKFS,

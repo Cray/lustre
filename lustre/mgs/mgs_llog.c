@@ -123,7 +123,7 @@ int class_dentry_readdir(const struct lu_env *env, struct mgs_device *mgs,
 		}
 
 		memcpy(de->mde_name, key, key_sz);
-		de->mde_name[key_sz] = 0;
+		de->mde_name[key_sz] = '\0';
 
 		list_add(&de->mde_list, log_list);
 
@@ -4149,7 +4149,6 @@ static int mgs_lcfg_fork_handler(const struct lu_env *env,
 			       tgt_namelen - o_namelen);
 		n_marker->cm_tgtname[tgt_namelen + diff] = '\0';
 		lustre_cfg_bufs_set(n_bufs, 1, n_marker, sizeof(*n_marker));
-		n_buf += cfs_size_round(sizeof(*n_marker));
 		break;
 	}
 	case LCFG_PARAM:
@@ -4194,7 +4193,6 @@ static int mgs_lcfg_fork_handler(const struct lu_env *env,
 		memcpy(n_buf + n_namelen, o_buf + o_namelen,
 		       o_buflen - o_namelen);
 		lustre_cfg_bufs_set(n_bufs, 3, n_buf, o_buflen + diff);
-		n_buf += cfs_size_round(o_buflen + diff);
 		break;
 	}
 	case LCFG_SETUP: {
@@ -4246,7 +4244,6 @@ static int mgs_lcfg_fork_handler(const struct lu_env *env,
 					       uuid_len - o_namelen);
 				n_uuid[uuid_len + diff] = '\0';
 				lustre_cfg_bufs_set(n_bufs, 1, n_buf, o_buflen);
-				n_buf += cfs_size_round(o_buflen);
 				break;
 			} /* else case go through */
 		} /* else case go through */
@@ -4341,6 +4338,8 @@ static int mgs_lcfg_fork_one(const struct lu_env *env, struct mgs_device *mgs,
 	rc = llog_init_handle(env, old_llh, LLOG_F_IS_PLAIN, NULL);
 	if (rc != 0)
 		GOTO(out, rc);
+
+	new_llh->lgh_hdr->llh_tgtuuid = old_llh->lgh_hdr->llh_tgtuuid;
 
 	OBD_ALLOC(mlfd, PAGE_CACHE_SIZE);
 	if (mlfd == NULL)
@@ -4437,6 +4436,142 @@ int mgs_lcfg_erase(const struct lu_env *env, struct mgs_device *mgs,
 	ENTRY;
 
 	rc = mgs_erase_logs(env, mgs, fsname);
+
+	RETURN(rc);
+}
+
+static int mgs_xattr_del(const struct lu_env *env, struct dt_object *obj)
+{
+	struct dt_device *dev;
+	struct thandle *th = NULL;
+	int rc = 0;
+
+	ENTRY;
+
+	dev = container_of0(obj->do_lu.lo_dev, struct dt_device, dd_lu_dev);
+	th = dt_trans_create(env, dev);
+	if (IS_ERR(th))
+		RETURN(PTR_ERR(th));
+
+	rc = dt_declare_xattr_del(env, obj, XATTR_TARGET_RENAME, th);
+	if (rc != 0)
+		GOTO(stop, rc);
+
+	rc = dt_trans_start_local(env, dev, th);
+	if (rc != 0)
+		GOTO(stop, rc);
+
+	dt_write_lock(env, obj, 0);
+	rc = dt_xattr_del(env, obj, XATTR_TARGET_RENAME, th, BYPASS_CAPA);
+
+	GOTO(unlock, rc);
+
+unlock:
+	dt_write_unlock(env, obj);
+
+stop:
+	dt_trans_stop(env, dev, th);
+
+	return rc;
+}
+
+int mgs_lcfg_rename(const struct lu_env *env, struct mgs_device *mgs)
+{
+	struct list_head log_list;
+	struct mgs_direntry *dirent, *n;
+	char fsname[16];
+	struct lu_buf buf = {
+		.lb_buf = fsname,
+		.lb_len = sizeof(fsname)
+	};
+	int rc = 0;
+
+	ENTRY;
+
+	rc = class_dentry_readdir(env, mgs, &log_list, NULL);
+	if (rc)
+		RETURN(rc);
+
+	if (list_empty(&log_list))
+		RETURN(0);
+
+	list_for_each_entry_safe(dirent, n, &log_list, mde_list) {
+		struct dt_object *o = NULL;
+		char oldname[16];
+		char *ptr;
+		int len;
+
+		list_del_init(&dirent->mde_list);
+		ptr = strrchr(dirent->mde_name, '-');
+		if (ptr == NULL)
+			goto next;
+
+		len = ptr - dirent->mde_name;
+		if (unlikely(len >= sizeof(oldname))) {
+			CDEBUG(D_MGS, "Skip invalid configuration file %s\n",
+			       dirent->mde_name);
+			goto next;
+		}
+
+		o = local_file_find(env, mgs->mgs_los, mgs->mgs_configs_dir,
+				    dirent->mde_name);
+		if (IS_ERR(o)) {
+			rc = PTR_ERR(o);
+			CDEBUG(D_MGS, "Fail to locate file %s: rc = %d\n",
+			       dirent->mde_name, rc);
+			goto next;
+		}
+
+		rc = dt_xattr_get(env, o, &buf, XATTR_TARGET_RENAME,
+				  BYPASS_CAPA);
+		if (rc < 0) {
+			if (rc == -ENODATA)
+				rc = 0;
+			else
+				CDEBUG(D_MGS,
+				       "Fail to get EA for %s: rc = %d\n",
+				       dirent->mde_name, rc);
+			goto next;
+		}
+
+		if (unlikely(rc == len &&
+			     memcmp(fsname, dirent->mde_name, len) == 0)) {
+			/* The new fsname is the same as the old one. */
+			rc = mgs_xattr_del(env, o);
+			goto next;
+		}
+
+		memcpy(oldname, dirent->mde_name, len);
+		oldname[len] = '\0';
+		fsname[rc] = '\0';
+		rc = mgs_lcfg_fork_one(env, mgs, dirent, oldname, fsname);
+		if (rc != 0 && rc != -EEXIST) {
+			CDEBUG(D_MGS, "Fail to fork %s: rc = %d\n",
+			       dirent->mde_name, rc);
+			goto next;
+		}
+
+		rc = mgs_erase_log(env, mgs, dirent->mde_name);
+		if (rc) {
+			CDEBUG(D_MGS, "Fail to erase old %s: rc = %d\n",
+			       dirent->mde_name, rc);
+			/* keep it there if failed to remove it. */
+			rc = 0;
+		}
+
+next:
+		if (o != NULL && !IS_ERR(o))
+			lu_object_put(env, &o->do_lu);
+
+		mgs_direntry_free(dirent);
+		if (rc != 0)
+			break;
+	}
+
+	list_for_each_entry_safe(dirent, n, &log_list, mde_list) {
+		list_del_init(&dirent->mde_list);
+		mgs_direntry_free(dirent);
+	}
 
 	RETURN(rc);
 }
