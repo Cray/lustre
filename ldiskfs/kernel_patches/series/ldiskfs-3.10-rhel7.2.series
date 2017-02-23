@@ -22,3 +22,4 @@ rhel7.2/ext4-release-bh-in-makeinxdir.patch
 rhel7.2/ext4-dont-check-in-ro.patch
 rhel7.2/ext4-dont-check-before-replay.patch
 rhel7.2/ext4-preread-gd.patch
+rhel7.2/ext4-remove-i_data_sem-from-xattr.patch
