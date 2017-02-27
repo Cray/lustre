@@ -240,17 +240,25 @@ static inline int obd_ioctl_pack(struct obd_ioctl_data *data, char **pbuf,
 	memcpy(*pbuf, data, sizeof(*data));
 
 	ptr = overlay->ioc_bulk;
-	if (data->ioc_inlbuf1 != NULL)
+	if (data->ioc_inlbuf1 != NULL) {
+		overlay->ioc_inlbuf1 = ptr;
 		LOGL(data->ioc_inlbuf1, data->ioc_inllen1, ptr);
+	}
 
-	if (data->ioc_inlbuf2 != NULL)
+	if (data->ioc_inlbuf2 != NULL) {
+		overlay->ioc_inlbuf2 = ptr;
 		LOGL(data->ioc_inlbuf2, data->ioc_inllen2, ptr);
+	}
 
-	if (data->ioc_inlbuf3 != NULL)
+	if (data->ioc_inlbuf3 != NULL) {
+		overlay->ioc_inlbuf3 = ptr;
 		LOGL(data->ioc_inlbuf3, data->ioc_inllen3, ptr);
+	}
 
-	if (data->ioc_inlbuf4 != NULL)
+	if (data->ioc_inlbuf4 != NULL) {
+		overlay->ioc_inlbuf4 = ptr;
 		LOGL(data->ioc_inlbuf4, data->ioc_inllen4, ptr);
+	}
 
 	if (obd_ioctl_is_invalid(overlay)) {
 		fprintf(stderr, "invalid ioctl data: ioc_len = %u, "
@@ -383,12 +391,15 @@ obd_ioctl_unpack(struct obd_ioctl_data *data, char *pbuf, int max_len)
 #define OBD_IOC_LLOG_CHECK	_IOWR('f', 195, OBD_IOC_DATA_TYPE)
 /*	OBD_IOC_LLOG_CATINFO	_IOWR('f', 196, OBD_IOC_DATA_TYPE) */
 #define OBD_IOC_NODEMAP		_IOWR('f', 197, OBD_IOC_DATA_TYPE)
+#define OBD_IOC_CLEAR_CONFIGS   _IOWR('f', 198, OBD_IOC_DATA_TYPE)
 
 /*	ECHO_IOC_GET_STRIPE	_IOWR('f', 200, OBD_IOC_DATA_TYPE) */
 /*	ECHO_IOC_SET_STRIPE	_IOWR('f', 201, OBD_IOC_DATA_TYPE) */
 /*	ECHO_IOC_ENQUEUE	_IOWR('f', 202, OBD_IOC_DATA_TYPE) */
 /*	ECHO_IOC_CANCEL		_IOWR('f', 203, OBD_IOC_DATA_TYPE) */
 
+#define OBD_IOC_LCFG_FORK	_IOWR('f', 208, OBD_IOC_DATA_TYPE)
+#define OBD_IOC_LCFG_ERASE	_IOWR('f', 209, OBD_IOC_DATA_TYPE)
 #define OBD_IOC_GET_OBJ_VERSION	_IOR ('f', 210, OBD_IOC_DATA_TYPE)
 
 /*	lustre/lustre_user.h	212-217 */
@@ -399,6 +410,8 @@ obd_ioctl_unpack(struct obd_ioctl_data *data, char *pbuf, int max_len)
 #define OBD_IOC_STOP_LFSCK	_IOW ('f', 231, OBD_IOC_DATA_TYPE)
 /*	lustre/lustre_user.h	240-249 */
 /*	LIBCFS_IOC_DEBUG_MASK	250 */
+
+#define OBD_IOC_BARRIER		_IOWR('f', 261, OBD_IOC_DATA_TYPE)
 
 #define IOC_OSC_SET_ACTIVE	_IOWR('h', 21, void *)
 

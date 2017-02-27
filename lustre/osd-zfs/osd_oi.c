@@ -94,6 +94,7 @@ static const struct named_oid oids[] = {
 	{ OFD_HEALTH_CHECK_OID,		HEALTH_CHECK },
 	{ ACCT_USER_OID,		"acct_usr_inode" },
 	{ ACCT_GROUP_OID,		"acct_grp_inode" },
+	{ REPLY_DATA_OID,		REPLY_DATA },
 	{ 0,				NULL }
 };
 
@@ -127,10 +128,9 @@ osd_oi_lookup(const struct lu_env *env, struct osd_device *o,
 	if (rc >= sizeof(oi->oi_name))
 		return -E2BIG;
 
-	rc = 0;
 	oi->oi_zapid = zde->zde_dnode;
 
-	return rc;
+	return 0;
 }
 
 /**
@@ -150,6 +150,9 @@ osd_oi_create(const struct lu_env *env, struct osd_device *o,
 	rc = -zap_lookup(o->od_os, parent, name, 8, 1, (void *)zde);
 	if (rc == 0)
 		return -EEXIST;
+
+	if (o->od_dt_dev.dd_rdonly)
+		return -EROFS;
 
 	/* create fid-to-dnode index */
 	tx = dmu_tx_create(o->od_os);
@@ -466,7 +469,7 @@ int osd_fid_lookup(const struct lu_env *env, struct osd_device *dev,
 	int			rc = 0;
 	ENTRY;
 
-	if (OBD_FAIL_CHECK(OBD_FAIL_OST_ENOENT))
+	if (OBD_FAIL_CHECK(OBD_FAIL_SRV_ENOENT))
 		RETURN(-ENOENT);
 
 	if (unlikely(fid_is_acct(fid))) {
@@ -504,6 +507,8 @@ osd_oi_remove_table(const struct lu_env *env, struct osd_device *o, int key)
 
 	oi = o->od_oi_table[key];
 	if (oi) {
+		if (oi->oi_db)
+			sa_buf_rele(oi->oi_db, osd_obj_tag);
 		OBD_FREE_PTR(oi);
 		o->od_oi_table[key] = NULL;
 	}
@@ -533,6 +538,7 @@ osd_oi_add_table(const struct lu_env *env, struct osd_device *o,
 	}
 
 	o->od_oi_table[key] = oi;
+	__osd_obj2dbuf(env, o->od_os, oi->oi_zapid, &oi->oi_db);
 
 	return 0;
 }
@@ -623,12 +629,17 @@ static void osd_ost_seq_init(const struct lu_env *env, struct osd_device *osd)
 	INIT_LIST_HEAD(&osl->osl_seq_list);
 	rwlock_init(&osl->osl_seq_list_lock);
 	sema_init(&osl->osl_seq_init_sem, 1);
+	osd->od_seq_init = 1;
 }
 
 static void osd_ost_seq_fini(const struct lu_env *env, struct osd_device *osd)
 {
 	struct osd_seq_list	*osl = &osd->od_seq_list;
 	struct osd_seq		*osd_seq, *tmp;
+	ENTRY;
+
+	if (!osd->od_seq_init)
+		RETURN_EXIT;
 
 	write_lock(&osl->osl_seq_list_lock);
 	list_for_each_entry_safe(osd_seq, tmp, &osl->osl_seq_list,
@@ -640,7 +651,7 @@ static void osd_ost_seq_fini(const struct lu_env *env, struct osd_device *osd)
 	}
 	write_unlock(&osl->osl_seq_list_lock);
 
-	return;
+	EXIT;
 }
 
 /**
@@ -717,6 +728,9 @@ int osd_convert_root_to_new_seq(const struct lu_env *env,
 	/* already right one? */
 	if (fid_seq(&lze->lzd_fid) == FID_SEQ_ROOT)
 		return 0;
+
+	if (o->od_dt_dev.dd_rdonly)
+		return -EROFS;
 
 	tx = dmu_tx_create(o->od_os);
 	if (tx == NULL)

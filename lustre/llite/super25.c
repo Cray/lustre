@@ -136,7 +136,7 @@ static int __init init_lustre_lite(void)
 
 	ll_rmtperm_hash_cachep = kmem_cache_create("ll_rmtperm_hash_cache",
 						   REMOTE_PERM_HASHSIZE *
-						   sizeof(struct list_head),
+						   sizeof(struct hlist_head),
 						   0, 0, NULL);
 	if (ll_rmtperm_hash_cachep == NULL)
 		GOTO(out_cache, rc = -ENOMEM);
@@ -231,7 +231,7 @@ static void __exit exit_lustre_lite(void)
 	kmem_cache_destroy(ll_file_data_slab);
 }
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Lite Client File System");
 MODULE_LICENSE("GPL");
 

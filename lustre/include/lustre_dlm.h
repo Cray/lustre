@@ -63,7 +63,7 @@ struct obd_device;
 #define OBD_LDLM_DEVICENAME  "ldlm"
 
 #define LDLM_DEFAULT_LRU_SIZE (100 * num_online_cpus())
-#define LDLM_DEFAULT_MAX_ALIVE (cfs_time_seconds(36000))
+#define LDLM_DEFAULT_MAX_ALIVE (cfs_time_seconds(3900)) /* 65 min */
 #define LDLM_CTIME_AGE_LIMIT (10)
 #define LDLM_DEFAULT_PARALLEL_AST_LIMIT 1024
 
@@ -322,6 +322,10 @@ struct ldlm_ns_bucket {
 	 * fact the network or overall system load is at fault
 	 */
 	struct adaptive_timeout     nsb_at_estimate;
+	/**
+	 * Which res in the bucket should we start with the reclaim.
+	 */
+	int			    nsb_reclaim_start;
 };
 
 enum {
@@ -507,6 +511,11 @@ struct ldlm_namespace {
 	 * recalculation of LDLM pool statistics should be skipped.
 	 */
 	unsigned		ns_stopping:1;
+
+	/**
+	 * Which bucket should we start with the lock reclaim.
+	 */
+	int			ns_reclaim_start;
 };
 
 /**
@@ -622,7 +631,7 @@ struct ldlm_flock {
         __u64 owner;
         __u64 blocking_owner;
         struct obd_export *blocking_export;
-	atomic_t blocking_refs;
+        atomic_t blocking_refs;
         __u32 pid;
 };
 
@@ -933,6 +942,7 @@ struct ldlm_resource {
 	 * List of locks that could not be granted due to conflicts and
 	 * that are waiting for conflicts to go away */
 	struct list_head	lr_waiting;
+	struct list_head	lr_enqueueing;
 	/** @} */
 
 	/* XXX No longer needed? Remove ASAP */
@@ -1089,6 +1099,23 @@ struct ldlm_enqueue_info {
 	unsigned int ei_enq_slave:1; /* whether enqueue slave stripes */
 };
 
+#define FA_FL_CANCEL_RQST	1
+#define FA_FL_CANCELED		2
+
+struct ldlm_flock_info {
+	struct file *fa_file;
+	struct file_lock *fa_fl; /* original file_lock */
+	struct file_lock fa_flc; /* lock copy */
+	int fa_flags;
+	int fa_mode;
+#ifdef HAVE_LM_GRANT_2ARGS
+	int (*fa_notify)(struct file_lock *, int);
+#else
+	int (*fa_notify)(struct file_lock *, struct file_lock *, int);
+#endif
+	int fa_err;
+};
+
 #define ei_res_id	ei_cb_gl
 
 extern struct obd_ops ldlm_obd_ops;
@@ -1183,9 +1210,24 @@ int ldlm_replay_locks(struct obd_import *imp);
 
 /* ldlm_flock.c */
 int ldlm_flock_completion_ast(struct ldlm_lock *lock, __u64 flags, void *data);
+struct ldlm_flock_info*
+ldlm_flock_completion_ast_async(struct ldlm_lock *lock, __u64 flags,
+				void *data);
 
 /* ldlm_extent.c */
+struct prolong_args {
+	struct obd_export	*export;
+	struct ldlm_res_id	resid;
+	struct ldlm_extent	extent;
+	ldlm_mode_t		mode;
+	int			timeout;
+	int			locks_cnt;
+	int			blocks_cnt;
+};
+
 __u64 ldlm_extent_shift_kms(struct ldlm_lock *lock, __u64 old_kms);
+void ldlm_lock_prolong_one(struct ldlm_lock *lock, struct prolong_args *arg);
+void ldlm_resource_prolong(struct prolong_args *arg);
 
 struct ldlm_callback_suite {
         ldlm_completion_callback lcs_completion;
@@ -1377,6 +1419,10 @@ ldlm_namespace_new(struct obd_device *obd, char *name,
                    ldlm_side_t client, ldlm_appetite_t apt,
                    ldlm_ns_type_t ns_type);
 int ldlm_namespace_cleanup(struct ldlm_namespace *ns, __u64 flags);
+void ldlm_namespace_free_prior(struct ldlm_namespace *ns,
+			       struct obd_import *imp,
+			       int force);
+void ldlm_namespace_free_post(struct ldlm_namespace *ns);
 void ldlm_namespace_free(struct ldlm_namespace *ns,
                          struct obd_import *imp, int force);
 void ldlm_namespace_register(struct ldlm_namespace *ns, ldlm_side_t client);

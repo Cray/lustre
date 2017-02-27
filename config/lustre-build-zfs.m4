@@ -385,6 +385,8 @@ your distribution.
 	])
 
 	AS_IF([test "x$enable_zfs" = xyes], [
+		EXTRA_OFED_INCLUDE_save="$EXTRA_OFED_INCLUDE"
+		EXTRA_OFED_INCLUDE=
 		LB_CHECK_COMPILE([if zfs defines dsl_pool_config_enter/exit],
 		dsl_pool_config_enter, [
 			#include <sys/dsl_pool.h>
@@ -428,6 +430,7 @@ your distribution.
 			AC_DEFINE(HAVE_SPA_MAXBLOCKSIZE, 1,
 				[Have spa_maxblocksize in ZFS])
 		])
+		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE_save"
 	])
 
 	AM_CONDITIONAL(ZFS_ENABLED, [test "x$enable_zfs" = xyes])

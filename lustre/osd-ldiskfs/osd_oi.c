@@ -338,13 +338,66 @@ osd_oi_table_open(struct osd_thread_info *info, struct osd_device *osd,
 	RETURN(count);
 }
 
-int osd_oi_init(struct osd_thread_info *info, struct osd_device *osd)
+static int osd_remove_oi_one(struct dentry *parent, const char *name,
+			     int namelen)
+{
+	struct dentry *child;
+	int rc;
+
+	child = ll_lookup_one_len(name, parent, namelen);
+	if (IS_ERR(child)) {
+		rc = PTR_ERR(child);
+	} else {
+		rc = ll_vfs_unlink(parent->d_inode, child);
+		dput(child);
+	}
+
+	return rc == -ENOENT ? 0 : rc;
+}
+
+static int osd_remove_ois(struct osd_thread_info *info, struct osd_device *osd)
+{
+	char name[16];
+	int namelen;
+	int rc;
+	int i;
+
+	for (i = 0; i < osd->od_scrub.os_file.sf_oi_count; i++) {
+		namelen = snprintf(name, sizeof(name), "%s.%d",
+				   OSD_OI_NAME_BASE, i);
+		rc = osd_remove_oi_one(osd_sb(osd)->s_root, name, namelen);
+		if (rc != 0) {
+			CERROR("%.16s: fail to remove the stale OI file %s: "
+			       "rc = %d\n",
+			       LDISKFS_SB(osd_sb(osd))->s_es->s_volume_name,
+			       name, rc);
+			return rc;
+		}
+	}
+
+	namelen = snprintf(name, sizeof(name), "%s", OSD_OI_NAME_BASE);
+	rc = osd_remove_oi_one(osd_sb(osd)->s_root, name, namelen);
+	if (rc != 0)
+		CERROR("%.16s: fail to remove the stale OI file %s: rc = %d\n",
+		       LDISKFS_SB(osd_sb(osd))->s_es->s_volume_name, name, rc);
+
+	return rc;
+}
+
+int osd_oi_init(struct osd_thread_info *info, struct osd_device *osd,
+		bool restored)
 {
 	struct osd_scrub  *scrub = &osd->od_scrub;
 	struct scrub_file *sf = &scrub->os_file;
 	struct osd_oi    **oi;
 	int		   rc;
 	ENTRY;
+
+	if (restored) {
+		rc = osd_remove_ois(info, osd);
+		if (rc != 0)
+			return rc;
+	}
 
 	OBD_ALLOC(oi, sizeof(*oi) * OSD_OI_FID_NR_MAX);
 	if (oi == NULL)
@@ -644,7 +697,7 @@ int osd_oi_insert(struct osd_thread_info *info, struct osd_device *osd,
 			return rc;
 
 		if (unlikely(osd_id_eq(id, oi_id)))
-			return 0;
+			return 1;
 
 		/* Check whether the mapping for oi_id is valid or not. */
 		inode = osd_iget(info, osd, oi_id);
@@ -653,6 +706,13 @@ int osd_oi_insert(struct osd_thread_info *info, struct osd_device *osd,
 			if (rc == -ENOENT || rc == -ESTALE)
 				goto update;
 			return rc;
+		}
+
+		/* The EA inode should NOT be in OI, old OI scrub may added
+		 * such OI mapping by wrong, replace it. */
+		if (unlikely(osd_is_ea_inode(inode))) {
+			iput(inode);
+			goto update;
 		}
 
 		rc = osd_get_lma(info, inode, &info->oti_obj_dentry, lma);

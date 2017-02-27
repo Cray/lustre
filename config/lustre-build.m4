@@ -1,3 +1,17 @@
+#
+# LB_SET_RPMSUBNAME
+#
+# Allow the rpm name to be appended to
+#
+AC_DEFUN([LB_SET_RPMSUBNAME], [
+AC_ARG_WITH(rpmsubname,
+AC_HELP_STRING([--with-rpmsubname],
+        [Use the specified rpm subname (default is '')]),
+        [rpmsubname=-${withval}],
+        [rpmsubname=''])
+AC_SUBST([rpmsubname])
+]) # LB_SET_RPMSUBNAME
+
 # LB_SET_PKGCONFIG_DIR
 #
 # Allow the pkg-config directory to be set
@@ -27,6 +41,16 @@ AC_SUBST(lb_target_os)
 ]) # LB_CANONICAL_SYSTEM
 
 #
+# LB_DOWNSTREAM_VERSION
+#
+AC_DEFUN([LB_DOWNSTREAM_VERSION],
+[AC_ARG_WITH([downstream-version],
+	AC_HELP_STRING([--with-downstream-version=string],
+		       [set additional string at RPM Release: string (default is nothing)]),
+	[DOWNSTREAM_VERSION=$with_downstream_version],
+	[])
+])
+
 #
 # LB_DOWNSTREAM_RELEASE (DEPRECATED)
 #
@@ -38,7 +62,7 @@ AC_DEFUN([LB_DOWNSTREAM_RELEASE],
 #
 # LB_CHECK_FILE
 #
-# Check for file existance even when cross compiling
+# Check for file existence even when cross compiling
 # $1 - file to check
 # $2 - do 'yes'
 # $3 - do 'no'
@@ -185,7 +209,6 @@ AC_ARG_ENABLE([utils],
 		[disable building of Lustre utility programs]),
 	[], [enable_utils="yes"])
 AC_MSG_RESULT([$enable_utils])
-AS_IF([test "x$enable_utils" = xyes], [LB_CONFIG_INIT_SCRIPTS])
 ]) # LB_CONFIG_UTILS
 
 #
@@ -243,26 +266,6 @@ AC_SUBST(ENABLE_DOC)
 ]) # LB_CONFIG_DOCS
 
 #
-# LB_CONFIG_INIT_SCRIPTS
-#
-# our init scripts only work on red hat linux
-#
-AC_DEFUN([LB_CONFIG_INIT_SCRIPTS], [
-ENABLE_INIT_SCRIPTS=0
-AS_IF([test x$enable_utils = xyes], [
-	AC_CACHE_CHECK([whether to install init scripts], [lb_cv_enable_init_scripts], [
-	# our scripts only work on red hat systems
-	AS_IF([test -f /etc/centos-release],
-		[lb_cv_enable_init_scripts="yes"],
-		[lb_cv_enable_init_scripts="no"])
-	])
-	AS_IF([test "x$lb_cv_enable_init_scripts" = xyes],
-		[ENABLE_INIT_SCRIPTS=1])
-])
-AC_SUBST(ENABLE_INIT_SCRIPTS)
-])
-
-#
 # LB_CONFIG_HEADERS
 #
 # add -include config.h
@@ -293,11 +296,11 @@ AC_DEFUN([LB_PATH_DEFAULTS], [
 # directories for binaries
 AC_PREFIX_DEFAULT([/usr])
 
-sysconfdir='$(CROSS_PATH)/etc'
+sysconfdir='/etc'
 AC_SUBST(sysconfdir)
 
 # Directories for documentation and demos.
-docdir='$(datadir)/doc/$(PACKAGE)'
+docdir='${datadir}/doc/$(PACKAGE)'
 AC_SUBST(docdir)
 
 LIBCFS_PATH_DEFAULTS
@@ -355,10 +358,11 @@ AM_CONDITIONAL([MODULES], [test x$enable_modules = xyes])
 AM_CONDITIONAL([UTILS], [test x$enable_utils = xyes])
 AM_CONDITIONAL([TESTS], [test x$enable_tests = xyes])
 AM_CONDITIONAL([DOC], [test x$ENABLE_DOC = x1])
-AM_CONDITIONAL([INIT_SCRIPTS], [test x$ENABLE_INIT_SCRIPTS = x1])
 AM_CONDITIONAL([LINUX], [test x$lb_target_os = xlinux])
 AM_CONDITIONAL([USES_DPKG], [test x$uses_dpkg = xyes])
 AM_CONDITIONAL([USE_QUILT], [test x$use_quilt = xyes])
+AM_CONDITIONAL([RHEL], [test x$RHEL_KERNEL = xyes])
+AM_CONDITIONAL([SUSE], [test x$SUSE_KERNEL = xyes])
 
 # Sanity check for PCLMULQDQ instruction availability
 # PCLMULQDQ instruction is a new instruction available beginning with
@@ -454,7 +458,7 @@ AS_IF([test x$enable_server = xyes],
 #
 # The purpose of this function is to assemble command line options
 # for the rpmbuild command based on the options passed to the configure
-# script, and also upon the descisions that configure makes based on
+# script, and also upon the decisions that configure makes based on
 # the tests that it runs.
 # These strings can be passed to rpmbuild on the command line
 # in the Make targets named "rpms" and "srpm".
@@ -465,6 +469,9 @@ CONFIGURE_ARGS=
 eval set -- $ac_configure_args
 for arg; do
 	case $arg in
+		--*dir=* ) ;;
+		-C | --cache-file=* ) ;;
+		--prefix=* | --*-prefix=* ) ;;
 		--enable-dist ) ;;
 		--with-release=* ) ;;
 		--with-kmp-moddir=* ) ;;
@@ -475,6 +482,7 @@ for arg; do
 		--enable-tests | --disable-tests ) ;;
 		--enable-utils | --disable-utils ) ;;
 		--enable-iokit | --disable-iokit ) ;;
+		--enable-dlc | --disable-dlc ) ;;
 		* ) CONFIGURE_ARGS="$CONFIGURE_ARGS '$arg'" ;;
 	esac
 done
@@ -485,27 +493,6 @@ if test -n "$LINUX" ; then
 	RPMBINARGS="$RPMBINARGS --define \"kdir $LINUX\""
 	if test -n "$LINUX_OBJ" -a "$LINUX_OBJ" != x"$LINUX" ; then
 		RPMBINARGS="$RPMBINARGS --define \"kobjdir $LINUX_OBJ\""
-	fi
-fi
-if test -n "$KMP_MODDIR" ; then
-	RPMBINARGS="$RPMBINARGS --define \"kmoddir $KMP_MODDIR\""
-fi
-if test -n "$CROSS_PATH" ; then
-	if test x$enable_server = xyes ; then
-		echo -e "\n"
-		"*** Don't support cross compilation for the Intel(R) Xeon Phi(TM) card.\n"
-		exit 1
-	fi
-	CROSS_SUFFIX="-mic"
-	RPMBINARGS="$RPMBINARGS --define \"post_script build/gen_filelist.sh\""
-	RPMBINARGS="$RPMBINARGS --define \"cross_path $CROSS_PATH\""
-	RPMBINARGS="$RPMBINARGS --define \"rootdir %{cross_path}\""
-	RPMBINARGS="$RPMBINARGS --define \"_prefix %{cross_path}/usr\""
-	RPMBINARGS="$RPMBINARGS --define \"_mandir %{_prefix}/share/man\""
-	RPMBINARGS="$RPMBINARGS --define \"_sysconfdir %{cross_path}/etc\""
-	RPMBINARGS="$RPMBINARGS --define \"make_args $CROSS_VARS\""
-	if test x$CC_TARGET_ARCH = x"x86_64-k1om-linux" ; then
-		RPMBINARGS="$RPMBINARGS --define \"cross_requires intel-mic-gpl\""
 	fi
 fi
 if test x$enable_modules != xyes ; then
@@ -519,9 +506,6 @@ if test x$enable_utils != xyes ; then
 fi
 if test x$enable_server != xyes ; then
 	RPMBINARGS="$RPMBINARGS --without servers"
-	if test -n "$CROSS_SUFFIX" ; then
-		RPMBINARGS="$RPMBINARGS --define \"lustre_name lustre-client$CROSS_SUFFIX\""
-	fi
 fi
 if test x$enable_ldiskfs != xyes ; then
 	RPMBINARGS="$RPMBINARGS --without ldiskfs"
@@ -531,11 +515,9 @@ if test x$enable_zfs = xyes ; then
 fi
 if test x$enable_iokit != xyes ; then
 	RPMBINARGS="$RPMBINARGS --without lustre_iokit"
-	RPMSRCARGS="$RPMSRCARGS --without lustre_iokit"
 fi
-if test x$BUILD_DLC != xyes ; then
-	RPMBINARGS="$RPMBINARGS --without lnet_dlc"
-	RPMSRCARGS="$RPMSRCARGS --without lnet_dlc"
+if test x$USE_DLC = xyes ; then
+	RPMBINARGS="$RPMBINARGS --with lnet_dlc"
 fi
 
 RPMBUILD_BINARY_ARGS=$RPMBINARGS
@@ -552,10 +534,12 @@ AC_DEFUN([LB_CONFIGURE], [
 AC_MSG_NOTICE([Lustre base checks
 ==============================================================================])
 LB_SET_PKGCONFIG_DIR
+LB_SET_RPMSUBNAME
 LB_CANONICAL_SYSTEM
 
 LB_CONFIG_DIST
 
+LB_DOWNSTREAM_VERSION
 LB_DOWNSTREAM_RELEASE
 LB_USES_DPKG
 

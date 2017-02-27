@@ -1236,6 +1236,7 @@ static int osp_precreate_ready_condition(const struct lu_env *env,
 	if (d->opd_pre_status != 0 &&
 	    d->opd_pre_status != -EAGAIN &&
 	    d->opd_pre_status != -ENODEV &&
+	    d->opd_pre_status != -ENOTCONN &&
 	    d->opd_pre_status != -ENOSPC) {
 		/* DEBUG LU-3230 */
 		if (d->opd_pre_status != -EIO)
@@ -1479,6 +1480,13 @@ int osp_object_truncate(const struct lu_env *env, struct dt_object *dt,
 	 * XXX: decide how do we do here with resend
 	 * if we don't resend, then client may see wrong file size
 	 * if we do resend, then MDS thread can get stuck for quite long
+	 * and if we don't resend, then client will also get -EWOULDBLOCK !!
+	 * (see LU-7975 and sanity/test_27F use cases)
+	 * but let's decide not to resend/delay this truncate request to OST
+	 * and allow Client to decide to resend, in a less agressive way from
+	 * after_reply(), by returning -EINPROGRESS instead of
+	 * -EAGAIN/-EWOULDBLOCK upon return from ptlrpc_queue_wait() at the
+	 * end of this routine
 	 */
 	req->rq_no_resend = req->rq_no_delay = 1;
 
@@ -1506,8 +1514,23 @@ int osp_object_truncate(const struct lu_env *env, struct dt_object *dt,
 	ptlrpc_request_set_replen(req);
 
 	rc = ptlrpc_queue_wait(req);
-	if (rc)
-		CERROR("can't punch object: %d\n", rc);
+	if (rc) {
+		/* -EWOULDBLOCK/-EAGAIN means OST is unreachable at the moment
+		 * since we have decided not to resend/delay, but this could
+		 * lead to wrong size to be seen at Client side and even process
+		 * trying to open to exit/fail if not itself handling -EAGAIN.
+		 * So it should be better to return -EINPROGRESS instead and
+		 * leave the decision to resend at Client side in after_reply()
+		 */
+		if (rc == -EWOULDBLOCK) {
+			rc = -EINPROGRESS;
+			CDEBUG(D_HA, "returning -EINPROGRESS instead of "
+			       "-EWOULDBLOCK/-EAGAIN to allow Client to "
+			       "resend\n");
+		} else {
+			CERROR("can't punch object: %d\n", rc);
+		}
+	}
 out:
 	ptlrpc_req_finished(req);
 	if (oa)
@@ -1564,6 +1587,9 @@ int osp_init_precreate(struct osp_device *d)
 	       (unsigned long long)d->opd_statfs_fresh_till);
 	cfs_timer_init(&d->opd_statfs_timer, osp_statfs_timer_cb, d);
 
+	if (d->opd_storage->dd_rdonly)
+		RETURN(0);
+
 	/*
 	 * start thread handling precreation and statfs updates
 	 */
@@ -1574,6 +1600,7 @@ int osp_init_precreate(struct osp_device *d)
 		RETURN(PTR_ERR(task));
 	}
 
+	d->opd_precreate_init = 1;
 	l_wait_event(d->opd_pre_thread.t_ctl_waitq,
 		     osp_precreate_running(d) || osp_precreate_stopped(d),
 		     &lwi);
@@ -1592,8 +1619,6 @@ int osp_init_precreate(struct osp_device *d)
  */
 void osp_precreate_fini(struct osp_device *d)
 {
-	struct ptlrpc_thread *thread;
-
 	ENTRY;
 
 	cfs_timer_disarm(&d->opd_statfs_timer);
@@ -1601,12 +1626,13 @@ void osp_precreate_fini(struct osp_device *d)
 	if (d->opd_pre == NULL)
 		RETURN_EXIT;
 
-	thread = &d->opd_pre_thread;
+	if (d->opd_precreate_init) {
+		struct ptlrpc_thread *thread = &d->opd_pre_thread;
 
-	thread->t_flags = SVC_STOPPING;
-	wake_up(&d->opd_pre_waitq);
-
-	wait_event(thread->t_ctl_waitq, thread->t_flags & SVC_STOPPED);
+		thread->t_flags = SVC_STOPPING;
+		wake_up(&d->opd_pre_waitq);
+		wait_event(thread->t_ctl_waitq, thread_is_stopped(thread));
+	}
 
 	OBD_FREE_PTR(d->opd_pre);
 	d->opd_pre = NULL;

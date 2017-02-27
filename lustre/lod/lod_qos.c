@@ -120,7 +120,7 @@ int qos_add_tgt(struct lod_device *lod, struct lod_tgt_desc *ost_desc)
 	   points to the list head, and we add to the end. */
 	list_add_tail(&oss->lqo_oss_list, &temposs->lqo_oss_list);
 
-	lod->lod_qos.lq_dirty = 1;
+	set_bit(LQ_DIRTY, &lod->lod_qos.lq_flags);
 	lod->lod_qos.lq_rr.lqr_dirty = 1;
 
 out:
@@ -160,7 +160,7 @@ int qos_del_tgt(struct lod_device *lod, struct lod_tgt_desc *ost_desc)
 		OBD_FREE_PTR(oss);
 	}
 
-	lod->lod_qos.lq_dirty = 1;
+	set_bit(LQ_DIRTY, &lod->lod_qos.lq_flags);
 	lod->lod_qos.lq_rr.lqr_dirty = 1;
 out:
 	up_write(&lod->lod_qos.lq_rw_sem);
@@ -212,7 +212,7 @@ static int lod_statfs_and_check(const struct lu_env *env, struct lod_device *d,
 			ost->ltd_active = 0;
 			LASSERT(d->lod_desc.ld_active_tgt_count > 0);
 			d->lod_desc.ld_active_tgt_count--;
-			d->lod_qos.lq_dirty = 1;
+			set_bit(LQ_DIRTY, &d->lod_qos.lq_flags);
 			d->lod_qos.lq_rr.lqr_dirty = 1;
 			CDEBUG(D_CONFIG, "%s: turns inactive\n",
 			       ost->ltd_exp->exp_obd->obd_name);
@@ -227,7 +227,7 @@ static int lod_statfs_and_check(const struct lu_env *env, struct lod_device *d,
 		if (ost->ltd_active == 0) {
 			ost->ltd_active = 1;
 			d->lod_desc.ld_active_tgt_count++;
-			d->lod_qos.lq_dirty = 1;
+			set_bit(LQ_DIRTY, &d->lod_qos.lq_flags);
 			d->lod_qos.lq_rr.lqr_dirty = 1;
 			CDEBUG(D_CONFIG, "%s: turns active\n",
 			       ost->ltd_exp->exp_obd->obd_name);
@@ -276,7 +276,7 @@ static void lod_qos_statfs_update(const struct lu_env *env,
 			continue;
 		if (OST_TGT(lod,idx)->ltd_statfs.os_bavail != avail)
 			/* recalculate weigths */
-			lod->lod_qos.lq_dirty = 1;
+			set_bit(LQ_DIRTY, &lod->lod_qos.lq_flags);
 	}
 	obd->obd_osfs_age = cfs_time_current_64();
 
@@ -311,7 +311,7 @@ static int lod_qos_calc_ppo(struct lod_device *lod)
 	time_t		    now, age;
 	ENTRY;
 
-	if (!lod->lod_qos.lq_dirty)
+	if (!test_bit(LQ_DIRTY, &lod->lod_qos.lq_flags))
 		GOTO(out, rc = 0);
 
 	num_active = lod->lod_desc.ld_active_tgt_count - 1;
@@ -355,7 +355,7 @@ static int lod_qos_calc_ppo(struct lod_device *lod)
 			(temp * prio_wide) >> 8;
 
 		age = (now - OST_TGT(lod,i)->ltd_qos.ltq_used) >> 3;
-		if (lod->lod_qos.lq_reset ||
+		if (test_bit(LQ_RESET, &lod->lod_qos.lq_flags) ||
 		    age > 32 * lod->lod_desc.ld_qos_maxage)
 			OST_TGT(lod,i)->ltd_qos.ltq_penalty = 0;
 		else if (age > lod->lod_desc.ld_qos_maxage)
@@ -380,7 +380,7 @@ static int lod_qos_calc_ppo(struct lod_device *lod)
 		oss->lqo_penalty_per_obj = (temp * prio_wide) >> 8;
 
 		age = (now - oss->lqo_used) >> 3;
-		if (lod->lod_qos.lq_reset ||
+		if (test_bit(LQ_RESET, &lod->lod_qos.lq_flags) ||
 		    age > 32 * lod->lod_desc.ld_qos_maxage)
 			oss->lqo_penalty = 0;
 		else if (age > lod->lod_desc.ld_qos_maxage)
@@ -388,22 +388,22 @@ static int lod_qos_calc_ppo(struct lod_device *lod)
 			oss->lqo_penalty >>= age / lod->lod_desc.ld_qos_maxage;
 	}
 
-	lod->lod_qos.lq_dirty = 0;
-	lod->lod_qos.lq_reset = 0;
+	clear_bit(LQ_DIRTY, &lod->lod_qos.lq_flags);
+	clear_bit(LQ_RESET, &lod->lod_qos.lq_flags);
 
 	/* If each ost has almost same free space,
 	 * do rr allocation for better creation performance */
-	lod->lod_qos.lq_same_space = 0;
+	clear_bit(LQ_SAME_SPACE, &lod->lod_qos.lq_flags);
 	if ((ba_max * (256 - lod->lod_qos.lq_threshold_rr)) >> 8 < ba_min) {
-		lod->lod_qos.lq_same_space = 1;
+		set_bit(LQ_SAME_SPACE, &lod->lod_qos.lq_flags);
 		/* Reset weights for the next time we enter qos mode */
-		lod->lod_qos.lq_reset = 1;
+		set_bit(LQ_RESET, &lod->lod_qos.lq_flags);
 	}
 	rc = 0;
 
 out:
 #ifndef FORCE_QOS
-	if (!rc && lod->lod_qos.lq_same_space)
+	if (!rc && test_bit(LQ_SAME_SPACE, &lod->lod_qos.lq_flags))
 		RETURN(-EAGAIN);
 #endif
 	RETURN(rc);
@@ -524,6 +524,13 @@ static int lod_qos_used(struct lod_device *lod, struct ost_pool *osts,
 
 	RETURN(0);
 }
+
+void lod_qos_rr_init(struct lod_qos_rr *lqr)
+{
+	spin_lock_init(&lqr->lqr_alloc);
+	lqr->lqr_dirty = 1;
+}
+
 
 #define LOV_QOS_EMPTY ((__u32)-1)
 
@@ -825,6 +832,75 @@ static int lod_qos_is_ost_used(const struct lu_env *env, int ost, __u32 stripes)
 	return 0;
 }
 
+static int lod_check_and_reserve_ost(const struct lu_env *env,
+				     struct lod_device *m,
+				     struct obd_statfs *sfs, __u32 ost_idx,
+				     __u32 speed, __u32 *s_idx,
+				     struct dt_object **stripe,
+				     struct thandle *th)
+{
+	struct dt_object   *o;
+	__u32 stripe_idx = *s_idx;
+	int rc;
+
+	rc = lod_statfs_and_check(env, m, ost_idx, sfs);
+	if (rc) {
+		/* this OSP doesn't feel well */
+		goto out_return;
+	}
+
+	/*
+	 * skip full devices
+	 */
+	if (lod_qos_dev_is_full(sfs)) {
+		QOS_DEBUG("#%d is full\n", ost_idx);
+		goto out_return;
+	}
+
+	/*
+	 * We expect number of precreated objects in f_ffree at
+	 * the first iteration, skip OSPs with no objects ready
+	 */
+	if (sfs->os_fprecreated == 0 && speed == 0) {
+		QOS_DEBUG("#%d: precreation is empty\n", ost_idx);
+		goto out_return;
+	}
+
+	/*
+	 * try to use another OSP if this one is degraded
+	 */
+	if (sfs->os_state & OS_STATE_DEGRADED && speed < 2) {
+		QOS_DEBUG("#%d: degraded\n", ost_idx);
+		goto out_return;
+	}
+
+	/*
+	 * do not put >1 objects on a single OST
+	 */
+	if (lod_qos_is_ost_used(env, ost_idx, stripe_idx))
+		goto out_return;
+
+	o = lod_qos_declare_object_on(env, m, ost_idx, th);
+	if (IS_ERR(o)) {
+		CDEBUG(D_OTHER, "can't declare new object on #%u: %d\n",
+		       ost_idx, (int) PTR_ERR(o));
+		rc = PTR_ERR(o);
+		goto out_return;
+	}
+
+	/*
+	 * We've successfully declared (reserved) an object
+	 */
+	lod_qos_ost_in_use(env, stripe_idx, ost_idx);
+	stripe[stripe_idx] = o;
+	OBD_FAIL_TIMEOUT(OBD_FAIL_MDS_LOV_CREATE_RACE, 2);
+	stripe_idx++;
+	*s_idx = stripe_idx;
+
+out_return:
+	return rc;
+}
+
 /**
  * Allocate a striping using round-robin algorithm.
  *
@@ -858,7 +934,6 @@ static int lod_alloc_rr(const struct lu_env *env, struct lod_object *lo,
 	struct pool_desc  *pool = NULL;
 	struct ost_pool   *osts;
 	struct lod_qos_rr *lqr;
-	struct dt_object  *o;
 	unsigned int	   i, array_idx;
 	int		   rc;
 	__u32		   ost_start_idx_temp;
@@ -889,6 +964,8 @@ static int lod_alloc_rr(const struct lu_env *env, struct lod_object *lo,
 	if (rc)
 		GOTO(out, rc);
 
+	down_read(&m->lod_qos.lq_rw_sem);
+	spin_lock(&lqr->lqr_alloc);
 	if (--lqr->lqr_start_count <= 0) {
 		lqr->lqr_start_idx = cfs_rand() % osts->op_count;
 		lqr->lqr_start_count =
@@ -903,22 +980,19 @@ static int lod_alloc_rr(const struct lu_env *env, struct lod_object *lo,
 		if (stripe_cnt > 1 && (osts->op_count % stripe_cnt) != 1)
 			++lqr->lqr_offset_idx;
 	}
-	down_read(&m->lod_qos.lq_rw_sem);
 	ost_start_idx_temp = lqr->lqr_start_idx;
 
 repeat_find:
-	array_idx = (lqr->lqr_start_idx + lqr->lqr_offset_idx) %
-			osts->op_count;
 
 	QOS_DEBUG("pool '%s' want %d startidx %d startcnt %d offset %d "
-		  "active %d count %d arrayidx %d\n",
+		  "active %d count %d\n",
 		  lo->ldo_pool ? lo->ldo_pool : "",
 		  stripe_cnt, lqr->lqr_start_idx, lqr->lqr_start_count,
-		  lqr->lqr_offset_idx, osts->op_count, osts->op_count,
-		  array_idx);
+		  lqr->lqr_offset_idx, osts->op_count, osts->op_count);
 
-	for (i = 0; i < osts->op_count && stripe_idx < lo->ldo_stripenr;
-	     i++, array_idx = (array_idx + 1) % osts->op_count) {
+	for (i = 0; i < osts->op_count && stripe_idx < lo->ldo_stripenr; i++) {
+		array_idx = (lqr->lqr_start_idx + lqr->lqr_offset_idx) %
+				osts->op_count;
 		++lqr->lqr_start_idx;
 		ost_idx = lqr->lqr_pool.op_array[array_idx];
 
@@ -935,58 +1009,10 @@ repeat_find:
 		if (OBD_FAIL_CHECK(OBD_FAIL_MDS_OSC_PRECREATE) && ost_idx == 0)
 			continue;
 
-		rc = lod_statfs_and_check(env, m, ost_idx, sfs);
-		if (rc) {
-			/* this OSP doesn't feel well */
-			continue;
-		}
-
-		/*
-		 * skip full devices
-		 */
-		if (lod_qos_dev_is_full(sfs)) {
-			QOS_DEBUG("#%d is full\n", ost_idx);
-			continue;
-		}
-
-		/*
-		 * We expect number of precreated objects in f_ffree at
-		 * the first iteration, skip OSPs with no objects ready
-		 */
-		if (sfs->os_fprecreated == 0 && speed == 0) {
-			QOS_DEBUG("#%d: precreation is empty\n", ost_idx);
-			continue;
-		}
-
-		/*
-		 * try to use another OSP if this one is degraded
-		 */
-		if (sfs->os_state & OS_STATE_DEGRADED && speed < 2) {
-			QOS_DEBUG("#%d: degraded\n", ost_idx);
-			continue;
-		}
-
-		/*
-		 * do not put >1 objects on a single OST
-		 */
-		if (speed && lod_qos_is_ost_used(env, ost_idx, stripe_idx))
-			continue;
-
-		o = lod_qos_declare_object_on(env, m, ost_idx, th);
-		if (IS_ERR(o)) {
-			CDEBUG(D_OTHER, "can't declare new object on #%u: %d\n",
-			       ost_idx, (int) PTR_ERR(o));
-			rc = PTR_ERR(o);
-			continue;
-		}
-
-		/*
-		 * We've successfully declared (reserved) an object
-		 */
-		lod_qos_ost_in_use(env, stripe_idx, ost_idx);
-		stripe[stripe_idx] = o;
-		stripe_idx++;
-
+		spin_unlock(&lqr->lqr_alloc);
+		rc = lod_check_and_reserve_ost(env, m, sfs, ost_idx, speed,
+					       &stripe_idx, stripe, th);
+		spin_lock(&lqr->lqr_alloc);
 	}
 	if ((speed < 2) && (stripe_idx < stripe_cnt_min)) {
 		/* Try again, allowing slower OSCs */
@@ -995,6 +1021,7 @@ repeat_find:
 		goto repeat_find;
 	}
 
+	spin_unlock(&lqr->lqr_alloc);
 	up_read(&m->lod_qos.lq_rw_sem);
 
 	if (stripe_idx) {
@@ -1120,12 +1147,12 @@ static int lod_alloc_ost_list(const struct lu_env *env,
 /**
  * Allocate a striping on a predefined set of OSTs.
  *
- * Allocates new striping starting from OST provided lo->ldo_def_stripe_offset.
+ * Allocates new layout starting from OST index in lo->ldo_def_stripe_offset.
  * Full OSTs are not considered. The exact order of OSTs is not important and
  * varies depending on OST status. The allocation procedure prefers the targets
  * with precreated objects ready. The number of stripes needed and stripe
- * offset are taken from the object. If that number can not be met, then the
- * function returns a failure and then it's the caller's responsibility to
+ * offset are taken from the object. If that number cannot be met, then the
+ * function returns an error and then it's the caller's responsibility to
  * release the stripes allocated. All the internal structures are protected,
  * but no concurrent allocation is allowed on the same objects.
  *
@@ -1136,9 +1163,10 @@ static int lod_alloc_ost_list(const struct lu_env *env,
  * \param[in] th	transaction handle
  *
  * \retval 0		on success
- * \retval -E2BIG	if no enough OSTs are found
+ * \retval -ENOSPC	if no OST objects are available at all
+ * \retval -EFBIG	if not enough OST objects are found
  * \retval -EINVAL	requested offset is invalid
- * \retval negative	negated errno on error
+ * \retval negative	errno on failure
  */
 static int lod_alloc_specific(const struct lu_env *env, struct lod_object *lo,
 			      struct dt_object **stripe, int flags,
@@ -1252,13 +1280,11 @@ repeat_find:
 	/* If we were passed specific striping params, then a failure to
 	 * meet those requirements is an error, since we can't reallocate
 	 * that memory (it might be part of a larger array or something).
-	 *
-	 * We can only get here if lsm_stripe_count was originally > 1.
 	 */
 	CERROR("can't lstripe objid "DFID": have %d want %u\n",
 	       PFID(lu_object_fid(lod2lu_obj(lo))), stripe_num,
 	       lo->ldo_stripenr);
-	rc = -EFBIG;
+	rc = stripe_num == 0 ? -ENOSPC : -EFBIG;
 out:
 	if (pool != NULL) {
 		up_read(&pool_tgt_rw_sem(pool));
@@ -1290,7 +1316,8 @@ static inline int lod_qos_is_usable(struct lod_device *lod)
 #endif
 
 	/* Detect -EAGAIN early, before expensive lock is taken. */
-	if (!lod->lod_qos.lq_dirty && lod->lod_qos.lq_same_space)
+	if (!test_bit(LQ_DIRTY, &lod->lod_qos.lq_flags) &&
+	     test_bit(LQ_SAME_SPACE, &lod->lod_qos.lq_flags))
 		return 0;
 
 	if (lod->lod_desc.ld_active_tgt_count < 2)
@@ -1305,19 +1332,21 @@ static inline int lod_qos_is_usable(struct lod_device *lod)
  * The function allocates OST objects to create a striping. The algorithm
  * used is based on weights (currently only using the free space), and it's
  * trying to ensure the space is used evenly by OSTs and OSSs. The striping
- * configuration (# of stripes, offset,
- * pool) is taken from the object and is prepared by the caller.
+ * configuration (# of stripes, offset, pool) is taken from the object and
+ * is prepared by the caller.
+ *
  * If LOV_USES_DEFAULT_STRIPE is not passed and prepared configuration can't
- * be met due to too few OSTs, then allocation fails. If the flag is
- * passed and less than 75% of the requested number of stripes can be
- * allocated, then allocation fails.
- * No concurrent allocation is allowed on the object and this must be
- * ensured by the caller. All the internal structures are protected by the
- * function.
- * The algorithm has two steps: find available OSTs and calucate their weights,
- * then select the OSTs the weights used as the probability. An OST with a
- * higher weight is proportionately more likely to be selected than one with
- * a lower weight.
+ * be met due to too few OSTs, then allocation fails. If the flag is passed
+ * fewer than 3/4 of the requested number of stripes can be allocated, then
+ * allocation fails.
+ *
+ * No concurrent allocation is allowed on the object and this must be ensured
+ * by the caller. All the internal structures are protected by the function.
+ *
+ * The algorithm has two steps: find available OSTs and calculate their
+ * weights, then select the OSTs with their weights used as the probability.
+ * An OST with a higher weight is proportionately more likely to be selected
+ * than one with a lower weight.
  *
  * \param[in] env	execution environment for this thread
  * \param[in] lo	LOD object
@@ -1326,9 +1355,9 @@ static inline int lod_qos_is_usable(struct lod_device *lod)
  * \param[in] th	transaction handle
  *
  * \retval 0		on success
- * \retval -E2BIG	if no enough OSTs are found
- * \retval -EINVAL	requested offset is invalid
- * \retval negative	negated errno on error
+ * \retval -EAGAIN	not enough OSTs are found for specified stripe count
+ * \retval -EINVAL	requested OST index is invalid
+ * \retval negative	errno on failure
  */
 static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
 			 struct dt_object **stripe, int flags,
@@ -1402,6 +1431,9 @@ static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
 		if (lod_qos_dev_is_full(sfs))
 			continue;
 
+		if (sfs->os_state & OS_STATE_DEGRADED)
+			continue;
+
 		/* Fail Check before osc_precreate() is called
 		   so we can only 'fail' single OSC. */
 		if (OBD_FAIL_CHECK(OBD_FAIL_MDS_OSC_PRECREATE) &&
@@ -1458,8 +1490,8 @@ static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
 			rand = 0;
 		}
 
-		/* On average, this will hit larger-weighted osts more often.
-		   0-weight osts will always get used last (only when rand=0) */
+		/* On average, this will hit larger-weighted OSTs more often.
+		 * 0-weight OSTs will always get used last (only when rand=0) */
 		for (i = 0; i < osts->op_count; i++) {
 			__u32 idx = osts->op_array[i];
 
@@ -1523,8 +1555,8 @@ static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
 		}
 
 		/* makes sense to rebalance next time */
-		m->lod_qos.lq_dirty = 1;
-		m->lod_qos.lq_same_space = 0;
+		set_bit(LQ_DIRTY, &m->lod_qos.lq_flags);
+		clear_bit(LQ_SAME_SPACE, &m->lod_qos.lq_flags);
 
 		rc = -EAGAIN;
 	}

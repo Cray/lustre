@@ -65,13 +65,26 @@ static int mdd_xattr_get(const struct lu_env *env,
 int mdd_la_get(const struct lu_env *env, struct mdd_object *obj,
                struct lu_attr *la, struct lustre_capa *capa)
 {
-        if (mdd_object_exists(obj) == 0) {
-                CERROR("%s: object "DFID" not found: rc = -2\n",
-                       mdd_obj_dev_name(obj), PFID(mdd_object_fid(obj)));
-                return -ENOENT;
-        }
+	int rc;
 
-        return mdo_attr_get(env, obj, la, capa);
+	if (mdd_object_exists(obj) == 0) {
+		CERROR("%s: object "DFID" not found: rc = -2\n",
+		       mdd_obj_dev_name(obj), PFID(mdd_object_fid(obj)));
+		return -ENOENT;
+	}
+
+	rc = mdo_attr_get(env, obj, la, capa);
+	if (unlikely(rc != 0)) {
+		if (rc == -ENOENT)
+			obj->mod_flags |= DEAD_OBJ;
+		return rc;
+	}
+
+	if (la->la_valid & LA_FLAGS &&
+	    la->la_flags & LUSTRE_ORPHAN_FL)
+		obj->mod_flags |= ORPHAN_OBJ | DEAD_OBJ;
+
+	return 0;
 }
 
 struct mdd_thread_info *mdd_env_info(const struct lu_env *env)
@@ -651,11 +664,13 @@ int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
 			     struct mdd_object *mdd_obj, struct thandle *handle)
 {
 	const struct lu_ucred		*uc = lu_ucred(env);
-	const struct lu_fid		*tfid;
 	struct llog_changelog_rec	*rec;
 	struct lu_buf			*buf;
 	int				 reclen;
 	int				 rc;
+
+	LASSERT(mdd_obj != NULL);
+	LASSERT(handle != NULL);
 
         /* Not recording */
         if (!(mdd->mdd_cl.mc_flags & CLM_ON))
@@ -663,10 +678,8 @@ int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
         if ((mdd->mdd_cl.mc_mask & (1 << type)) == 0)
                 RETURN(0);
 
-        LASSERT(mdd_obj != NULL);
-        LASSERT(handle != NULL);
-
-	tfid = mdo2fid(mdd_obj);
+	if (mdd_is_volatile_obj(mdd_obj))
+		RETURN(0);
 
         if ((type >= CL_MTIME) && (type <= CL_ATIME) &&
             cfs_time_before_64(mdd->mdd_cl.mc_starttime, mdd_obj->mod_cltime)) {
@@ -688,7 +701,7 @@ int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
 
 	rec->cr.cr_flags = flags;
 	rec->cr.cr_type = (__u32)type;
-	rec->cr.cr_tfid = *tfid;
+	rec->cr.cr_tfid = *mdo2fid(mdd_obj);
 	rec->cr.cr_namelen = 0;
 	mdd_obj->mod_cltime = cfs_time_current_64();
 
@@ -863,15 +876,20 @@ int mdd_attr_set(const struct lu_env *env, struct md_object *obj,
 	if (rc)
 		RETURN(rc);
 
-        /* setattr on "close" only change atime, or do nothing */
-	if (la->la_valid == LA_ATIME && la_copy->la_valid == 0)
-                RETURN(0);
+	/* no need to setattr anymore */
+	if (la_copy->la_valid == 0) {
+		CDEBUG(D_INODE, "%s: no valid attribute on "DFID", previous"
+		       "valid is "LPX64"\n", mdd2obd_dev(mdd)->obd_name,
+		       PFID(mdo2fid(mdd_obj)), la->la_valid);
+
+		RETURN(0);
+	}
 
         handle = mdd_trans_create(env, mdd);
         if (IS_ERR(handle))
                 RETURN(PTR_ERR(handle));
 
-	rc = mdd_declare_attr_set(env, mdd, mdd_obj, la, handle);
+	rc = mdd_declare_attr_set(env, mdd, mdd_obj, la_copy, handle);
         if (rc)
                 GOTO(stop, rc);
 
@@ -894,7 +912,8 @@ int mdd_attr_set(const struct lu_env *env, struct md_object *obj,
 	mdd_write_unlock(env, mdd_obj);
 
 	if (rc == 0)
-		rc = mdd_attr_set_changelog(env, obj, handle, la->la_valid);
+		rc = mdd_attr_set_changelog(env, obj, handle,
+					    la_copy->la_valid);
 
 	GOTO(stop, rc);
 
@@ -905,7 +924,8 @@ stop:
 
 static int mdd_xattr_sanity_check(const struct lu_env *env,
 				  struct mdd_object *obj,
-				  const struct lu_attr *attr)
+				  const struct lu_attr *attr,
+				  const char *name)
 {
 	struct lu_ucred *uc     = lu_ucred_assert(env);
 	ENTRY;
@@ -913,8 +933,19 @@ static int mdd_xattr_sanity_check(const struct lu_env *env,
 	if (attr->la_flags & (LUSTRE_IMMUTABLE_FL | LUSTRE_APPEND_FL))
 		RETURN(-EPERM);
 
-	if ((uc->uc_fsuid != attr->la_uid) && !md_capable(uc, CFS_CAP_FOWNER))
-		RETURN(-EPERM);
+	if (strncmp(XATTR_USER_PREFIX, name,
+		    sizeof(XATTR_USER_PREFIX) - 1) == 0) {
+		/* For sticky directories, only the owner and privileged user
+		 * can write attributes. */
+		if (S_ISDIR(attr->la_mode) && (attr->la_mode & S_ISVTX) &&
+		    (uc->uc_fsuid != attr->la_uid) &&
+		    !md_capable(uc, CFS_CAP_FOWNER))
+			RETURN(-EPERM);
+	} else {
+		if ((uc->uc_fsuid != attr->la_uid) &&
+		    !md_capable(uc, CFS_CAP_FOWNER))
+			RETURN(-EPERM);
+	}
 
 	RETURN(0);
 }
@@ -1037,7 +1068,7 @@ static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
 	if (rc)
 		RETURN(rc);
 
-	rc = mdd_xattr_sanity_check(env, mdd_obj, attr);
+	rc = mdd_xattr_sanity_check(env, mdd_obj, attr, name);
 	if (rc)
 		RETURN(rc);
 
@@ -1049,6 +1080,8 @@ static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
 		 * ACL. */
 		acl = posix_acl_from_xattr(&init_user_ns, buf->lb_buf,
 					   buf->lb_len);
+		if (IS_ERR(acl))
+			RETURN(PTR_ERR(acl));
 		if (acl == NULL) {
 			rc = mdd_xattr_del(env, obj, name);
 			RETURN(rc);
@@ -1145,7 +1178,7 @@ static int mdd_xattr_del(const struct lu_env *env, struct md_object *obj,
 	if (rc)
 		RETURN(rc);
 
-	rc = mdd_xattr_sanity_check(env, mdd_obj, attr);
+	rc = mdd_xattr_sanity_check(env, mdd_obj, attr, name);
 	if (rc)
 		RETURN(rc);
 
@@ -1272,13 +1305,15 @@ static int mdd_xattr_hsm_replace(const struct lu_env *env,
  *  the rules are:
  *  - only normal FIDs or non-system IGIFs
  *  - same type of objects
- *  - same owner/group (so quotas are still valid)
+ *  - same owner/group (so quotas are still valid) unless this is from HSM
+ *    release.
  */
 static int mdd_layout_swap_allowed(const struct lu_env *env,
 				   struct mdd_object *o1,
 				   const struct lu_attr *attr1,
 				   struct mdd_object *o2,
-				   const struct lu_attr *attr2)
+				   const struct lu_attr *attr2,
+				   __u64 flags)
 {
 	const struct lu_fid	*fid1, *fid2;
 	ENTRY;
@@ -1301,6 +1336,9 @@ static int mdd_layout_swap_allowed(const struct lu_env *env,
 			RETURN(-EISDIR);
 		RETURN(-EBADF);
 	}
+
+	if (flags & SWAP_LAYOUTS_MDS_HSM)
+		RETURN(0);
 
 	if ((attr1->la_uid != attr2->la_uid) ||
 	    (attr1->la_gid != attr2->la_gid))
@@ -1355,7 +1393,7 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 		RETURN(rc);
 
 	/* check if layout swapping is allowed */
-	rc = mdd_layout_swap_allowed(env, fst_o, fst_la, snd_o, snd_la);
+	rc = mdd_layout_swap_allowed(env, fst_o, fst_la, snd_o, snd_la, flags);
 	if (rc != 0)
 		RETURN(rc);
 
@@ -1732,9 +1770,10 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
         struct mdd_device *mdd = mdo2mdd(obj);
         struct thandle    *handle = NULL;
 	int rc, is_orphan = 0;
-        ENTRY;
+	bool blocked = false;
+	ENTRY;
 
-        if (ma->ma_valid & MA_FLAGS && ma->ma_attr_flags & MDS_KEEP_ORPHAN) {
+	if (ma->ma_valid & MA_FLAGS && ma->ma_attr_flags & MDS_KEEP_ORPHAN) {
 		mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
 		mdd_obj->mod_count--;
 		mdd_write_unlock(env, mdd_obj);
@@ -1753,24 +1792,43 @@ static int mdd_close(const struct lu_env *env, struct md_object *obj,
 
 again:
 	if (is_orphan) {
-                handle = mdd_trans_create(env, mdo2mdd(obj));
-                if (IS_ERR(handle))
-                        RETURN(PTR_ERR(handle));
+		/* mdd_trans_create() maybe failed because of barrier_entry(),
+		 * under such case, the orphan MDT-object will be left in the
+		 * orphan list, and when the MDT remount next time, the unused
+		 * orphans will be destroyed automatically.
+		 *
+		 * One exception: the former mdd_finish_unlink may failed to
+		 * add the orphan MDT-object to the orphan list, then if the
+		 * mdd_trans_create() failed because of barrier_entry(), the
+		 * MDT-object will become real orphan that is neither in the
+		 * namespace nor in the orphan list. Such bad case should be
+		 * very rare and will be handled by e2fsck/lfsck. */
+		handle = mdd_trans_create(env, mdo2mdd(obj));
+		if (IS_ERR(handle)) {
+			rc = PTR_ERR(handle);
+			if (rc != -EINPROGRESS)
+				GOTO(stop, rc);
 
-                rc = mdd_declare_close(env, mdd_obj, ma, handle);
-                if (rc)
-                        GOTO(stop, rc);
+			handle = NULL;
+			blocked = true;
+			goto cont;
+		}
+
+		rc = mdd_declare_close(env, mdd_obj, ma, handle);
+		if (rc)
+			GOTO(stop, rc);
 
 		rc = mdd_declare_changelog_store(env, mdd, NULL, NULL, handle);
 		if (rc)
 			GOTO(stop, rc);
 
-                rc = mdd_trans_start(env, mdo2mdd(obj), handle);
-                if (rc)
-                        GOTO(stop, rc);
-        }
+		rc = mdd_trans_start(env, mdo2mdd(obj), handle);
+		if (rc)
+			GOTO(stop, rc);
+	}
 
-        mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
+cont:
+	mdd_write_lock(env, mdd_obj, MOR_TGT_CHILD);
 	rc = mdd_la_get(env, mdd_obj, &ma->ma_attr,
 			mdd_object_capa(env, mdd_obj));
 	if (rc != 0) {
@@ -1784,14 +1842,14 @@ again:
 		    ((mdd_obj->mod_flags & (ORPHAN_OBJ | DEAD_OBJ)) != 0 ||
 		     ma->ma_attr.la_nlink == 0);
 
-	if (is_orphan && handle == NULL) {
+	if (is_orphan && handle == NULL && !blocked) {
 		mdd_write_unlock(env, mdd_obj);
 		goto again;
 	}
 
 	mdd_obj->mod_count--; /*release open count */
 
-	if (!is_orphan)
+	if (!is_orphan || blocked)
 		GOTO(out, rc = 0);
 
 	/* Orphan object */
@@ -1829,7 +1887,7 @@ again:
 out:
         mdd_write_unlock(env, mdd_obj);
 
-        if (rc == 0 &&
+        if (rc == 0 && !blocked &&
             (mode & (FMODE_WRITE | MDS_OPEN_APPEND | MDS_OPEN_TRUNC)) &&
             !(ma->ma_valid & MA_FLAGS && ma->ma_attr_flags & MDS_RECOV_OPEN)) {
                 if (handle == NULL) {

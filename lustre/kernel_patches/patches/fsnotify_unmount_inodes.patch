@@ -1,0 +1,29 @@
+diff --git a/fs/notify/inode_mark.c b/fs/notify/inode_mark.c
+index 3165d85..89c5662 100644
+--- a/fs/notify/inode_mark.c
++++ b/fs/notify/inode_mark.c
+@@ -398,7 +398,7 @@ void fsnotify_unmount_inodes(struct list_head *list)
+ 		/* In case the dropping of a reference would nuke next_i. */
+ 		if ((&next_i->i_sb_list != list) &&
+ 		    atomic_read(&next_i->i_count) &&
+-		    !(next_i->i_state & (I_CLEAR | I_FREEING | I_WILL_FREE))) {
++		    !(next_i->i_state & (I_CLEAR | I_FREEING | I_WILL_FREE | I_NEW))) {
+ 			__iget(next_i);
+ 			need_iput = next_i;
+ 		}
+diff --git a/fs/notify/inotify/inotify.c b/fs/notify/inotify/inotify.c
+index 441ef13..3073e05 100644
+--- a/fs/notify/inotify/inotify.c
++++ b/fs/notify/inotify/inotify.c
+@@ -404,7 +404,7 @@ void inotify_unmount_inodes(struct list_head *list)
+ 		if ((&next_i->i_sb_list != list) &&
+ 				atomic_read(&next_i->i_count) &&
+ 				!(next_i->i_state & (I_CLEAR | I_FREEING |
+-					I_WILL_FREE))) {
++					I_WILL_FREE | I_NEW))) {
+ 			__iget(next_i);
+ 			need_iput = next_i;
+ 		}
+-- 
+2.3.5
+
