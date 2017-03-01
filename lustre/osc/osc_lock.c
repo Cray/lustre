@@ -44,6 +44,7 @@
 #include <libcfs/libcfs.h>
 /* fid_build_reg_res_name() */
 #include <lustre_fid.h>
+#include <cl_object.h>
 
 #include "osc_cl_internal.h"
 
@@ -716,7 +717,12 @@ unsigned long osc_ldlm_weigh_ast(struct ldlm_lock *dlmlock)
 		RETURN(1);
 
 	LASSERT(dlmlock->l_resource->lr_type == LDLM_EXTENT);
+	lock_res_and_lock(dlmlock);
 	obj = dlmlock->l_ast_data;
+	if (obj)
+		cl_object_get(osc2cl(obj), -1);
+	unlock_res_and_lock(dlmlock);
+
 	if (obj == NULL)
 		GOTO(out, weight = 1);
 
@@ -738,6 +744,9 @@ unsigned long osc_ldlm_weigh_ast(struct ldlm_lock *dlmlock)
 	EXIT;
 
 out:
+	if (obj) 
+		cl_object_put(env, osc2cl(obj), -1);
+
 	cl_env_nested_put(&nest, env);
 	return weight;
 }
