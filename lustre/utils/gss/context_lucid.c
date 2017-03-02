@@ -60,13 +60,6 @@ typedef uint64_t OM_uint64;
 #include "write_bytes.h"
 #include "context.h"
 
-extern OM_uint32 gss_export_lucid_sec_context(OM_uint32 *min_stat,
-					      gss_ctx_id_t *ctx,
-					      OM_uint32 version,
-					      void **kctx);
-extern OM_uint32 gss_free_lucid_sec_context(OM_uint32 *min_stat,
-					    gss_ctx_id_t ctx,
-					    void *kctx);
 
 static int
 write_lucid_keyblock(char **p, char *end, gss_krb5_lucid_key_t *key)
@@ -263,7 +256,6 @@ derive_key_lucid(const gss_krb5_lucid_key_t *in, gss_krb5_lucid_key_t *out,
 	krb5_error_code code;
 	unsigned char constant_data[K5CLENGTH];
 	krb5_data datain;
-	int keylength __attribute__ ((unused));
 #ifdef HAVE_KRB5
 	void *enc;
 #endif
@@ -276,6 +268,8 @@ derive_key_lucid(const gss_krb5_lucid_key_t *in, gss_krb5_lucid_key_t *out,
 #endif
 #if HAVE_KRB5INT_DERIVE_KEY
 	krb5_key key_in, key_out;
+#else
+	int keylength;
 #endif
 
 	/*
@@ -287,19 +281,25 @@ derive_key_lucid(const gss_krb5_lucid_key_t *in, gss_krb5_lucid_key_t *out,
 #ifdef HAVE_KRB5
 	case ENCTYPE_DES3_CBC_RAW:
 #endif
+#ifndef HAVE_KRB5INT_DERIVE_KEY
 		keylength = 24;
+#endif
 #ifdef HAVE_KRB5
 		enc = &krb5int_enc_des3;
 #endif
 		break;
 	case ENCTYPE_AES128_CTS_HMAC_SHA1_96:
+#ifndef HAVE_KRB5INT_DERIVE_KEY
 		keylength = 16;
+#endif
 #ifdef HAVE_KRB5
 		enc = &krb5int_enc_aes128;
 #endif
 		break;
 	case ENCTYPE_AES256_CTS_HMAC_SHA1_96:
+#ifndef HAVE_KRB5INT_DERIVE_KEY
 		keylength = 32;
+#endif
 #ifdef HAVE_KRB5
 		enc = &krb5int_enc_aes256;
 #endif
@@ -594,10 +594,10 @@ serialize_krb5_ctx(gss_ctx_id_t ctx, gss_buffer_desc *buf)
 	int retcode = 0;
 
 	printerr(3, "lucid version!\n");
-	maj_stat = gss_export_lucid_sec_context(&min_stat, &ctx,
+	maj_stat = gss_krb5_export_lucid_sec_context(&min_stat, &ctx,
 						1, &return_ctx);
 	if (maj_stat != GSS_S_COMPLETE) {
-		pgsserr("gss_export_lucid_sec_context",
+		pgsserr("gss_krb5_export_lucid_sec_context",
 			maj_stat, min_stat, &krb5oid);
 		goto out_err;
 	}
@@ -630,9 +630,9 @@ serialize_krb5_ctx(gss_ctx_id_t ctx, gss_buffer_desc *buf)
 	else
 		retcode = prepare_krb5_rfc4121_buffer(lctx, buf);
 
-	maj_stat = gss_free_lucid_sec_context(&min_stat, ctx, return_ctx);
+	maj_stat = gss_krb5_free_lucid_sec_context(&min_stat, return_ctx);
 	if (maj_stat != GSS_S_COMPLETE) {
-		pgsserr("gss_export_lucid_sec_context",
+		pgsserr("gss_krb5_export_lucid_sec_context",
 			maj_stat, min_stat, &krb5oid);
 		printerr(0, "WARN: failed to free lucid sec context\n");
 	}

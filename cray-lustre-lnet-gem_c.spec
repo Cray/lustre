@@ -46,18 +46,18 @@ Userspace tools and files for Lustre networking on XT compute nodes.
 
 %build
 echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
-# LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
-%define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
+%define lustre_version %{_version}-%{branch}-%{release}-%{build_user}-%{version_path}-%{date}
+
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
 
 # only keep lnet related directories
 sed -i '/^SUBDIRS/,/config contrib/d' autoMakefile.am
 sed -i '1iSUBDIRS := . @LIBCFS_SUBDIR@ lnet \nDIST_SUBDIRS := @LIBCFS_SUBDIR@ lnet' autoMakefile.am 
 
 [ -f Makefile.in ] && sed -i '/lustre/d' Makefile.in 
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
     chmod +x autogen.sh
@@ -93,6 +93,9 @@ pushd ./lustre/utils
 popd
 
 %install
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
+
 # don't use %makeinstall for compute node RPMS - it needlessly puts things into 
 #  /opt/cray/,.....
 

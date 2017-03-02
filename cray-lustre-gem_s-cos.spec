@@ -45,13 +45,12 @@ Userspace tools and files for the Lustre file system on Baker CentOS nodes.
 
 %build
 echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
-# LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
-%define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
+%define lustre_version %{_version}-%{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -79,15 +78,13 @@ fi
 %{__make} %_smp_mflags
 
 %install
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
+
 # don't use %makeinstall for CentOS RPMS - it needlessly puts things into 
 #  /opt/cray/,.....
 
 make DESTDIR=${RPM_BUILD_ROOT} install 
-
-for dir in var man/man5 etc/init.d etc/sysconfig etc/ha.d; do
-    %{__rm} -fr %{buildroot}/$dir
-done
-%{__rm} -f %{buildroot}/etc/lustre %{buildroot}/etc/ldev.conf
 
 # set l_getidentity to the default location
 %{__mkdir_p} %{buildroot}/usr/sbin
@@ -96,6 +93,13 @@ done
 %files 
 %defattr(-,root,root)
 %{_prefix}
+%exclude %{_sysconfdir}/lustre/perm.conf
+%exclude %{_sysconfdir}/lustre
+%exclude %{_sysconfdir}/init.d
+%exclude %{_sysconfdir}/sysconfig
+%exclude %{_sysconfdir}/ha.d
+%exclude %{_sysconfdir}/ldev.conf
+%exclude %{_mandir}/man5
 
 %clean
 %clean_build_root

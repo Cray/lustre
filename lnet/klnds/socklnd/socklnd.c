@@ -1045,8 +1045,6 @@ ksocknal_create_conn(lnet_ni_t *ni, ksock_route_t *route,
                 goto failed_0;
         }
 
-        memset (conn, 0, sizeof (*conn));
-
         conn->ksnc_peer = NULL;
         conn->ksnc_route = NULL;
         conn->ksnc_sock = sock;
@@ -1497,9 +1495,9 @@ ksocknal_peer_failed (ksock_peer_t *peer)
         int        notify = 0;
         cfs_time_t last_alive = 0;
 
-        /* There has been a connection failure or comms error; but I'll only
-         * tell LNET I think the peer is dead if it's to another kernel and
-         * there are no connections or connection attempts in existance. */
+	/* There has been a connection failure or comms error; but I'll only
+	 * tell LNET I think the peer is dead if it's to another kernel and
+	 * there are no connections or connection attempts in existence. */
 
 	read_lock(&ksocknal_data.ksnd_global_lock);
 
@@ -2899,7 +2897,7 @@ ksocknal_module_init (void)
         return 0;
 }
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Kernel TCP Socket LND v3.0.0");
 MODULE_LICENSE("GPL");
 

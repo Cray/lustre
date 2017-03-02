@@ -384,8 +384,23 @@ static int tgt_handle_request0(struct tgt_session_info *tsi,
 {
 	int	 serious = 0;
 	int	 rc;
+	__u32    opc = lustre_msg_get_opc(req->rq_reqmsg);
 
 	ENTRY;
+
+
+	/* When dealing with sec context requests, no export is associated yet,
+	 * because these requests are sent before *_CONNECT requests.
+	 * A NULL req->rq_export means the normal *_common_slice handlers will
+	 * not be called, because there is no reference to the target.
+	 * So deal with them by hand and jump directly to target_send_reply().
+	 */
+	switch (opc) {
+	case SEC_CTX_INIT:
+	case SEC_CTX_INIT_CONT:
+	case SEC_CTX_FINI:
+		GOTO(out, rc = 0);
+	}
 
 	/*
 	 * Checking for various OBD_FAIL_$PREF_$OPC_NET codes. _Do_ not try
@@ -454,6 +469,7 @@ static int tgt_handle_request0(struct tgt_session_info *tsi,
 	if (likely(rc == 0 && req->rq_export))
 		target_committed_to_req(req);
 
+out:
 	target_send_reply(req, rc, tsi->tsi_reply_fail_id);
 	RETURN(0);
 }
@@ -521,11 +537,11 @@ static int tgt_handle_recovery(struct ptlrpc_request *req, int reply_fail_id)
 
 	/* sanity check: if the xid matches, the request must be marked as a
 	 * resent or replayed */
-	if (req_xid_is_last(req)) {
+	if (req_can_reconstruct(req, NULL)) {
 		if (!(lustre_msg_get_flags(req->rq_reqmsg) &
 		      (MSG_RESENT | MSG_REPLAY))) {
 			DEBUG_REQ(D_WARNING, req, "rq_xid "LPU64" matches "
-				  "last_xid, expected REPLAY or RESENT flag "
+				  "saved xid, expected REPLAY or RESENT flag "
 				  "(%x)", req->rq_xid,
 				  lustre_msg_get_flags(req->rq_reqmsg));
 			req->rq_status = -ENOTCONN;
@@ -590,6 +606,52 @@ static struct tgt_handler *tgt_handler_find_check(struct ptlrpc_request *req)
 	RETURN(h);
 }
 
+static int process_req_last_xid(struct ptlrpc_request *req)
+{
+	__u64	last_xid;
+	ENTRY;
+
+	/* check request's xid is consistent with export's last_xid */
+	last_xid = lustre_msg_get_last_xid(req->rq_reqmsg);
+	if (last_xid > req->rq_export->exp_last_xid)
+		req->rq_export->exp_last_xid = last_xid;
+
+	if (req->rq_xid == 0 ||
+	    (req->rq_xid <= req->rq_export->exp_last_xid)) {
+		DEBUG_REQ(D_ERROR, req, "Unexpected xid %llx vs. "
+			  "last_xid %llx\n", req->rq_xid,
+			  req->rq_export->exp_last_xid);
+		/* Some request is allowed to be sent during replay,
+		 * such as OUT update requests, FLD requests, so it
+		 * is possible that replay requests has smaller XID
+		 * than the exp_last_xid.
+		 *
+		 * Some non-replay requests may have smaller XID as
+		 * well:
+		 *
+		 * - Client send a no_resend RPC, like statfs;
+		 * - The RPC timedout (or some other error) on client,
+		 *   then it's removed from the unreplied list;
+		 * - Client send some other request to bump the
+		 *   exp_last_xid on server;
+		 * - The former RPC got chance to be processed;
+		 */
+		if (!(lustre_msg_get_flags(req->rq_reqmsg) & MSG_REPLAY))
+			RETURN(-EPROTO);
+	}
+
+	/* try to release in-memory reply data */
+	if (tgt_is_multimodrpcs_client(req->rq_export)) {
+		tgt_handle_received_xid(req->rq_export,
+				lustre_msg_get_last_xid(req->rq_reqmsg));
+		if (!(lustre_msg_get_flags(req->rq_reqmsg) &
+		      (MSG_RESENT | MSG_REPLAY)))
+			tgt_handle_tag(req->rq_export,
+				       lustre_msg_get_tag(req->rq_reqmsg));
+	}
+	RETURN(0);
+}
+
 int tgt_request_handle(struct ptlrpc_request *req)
 {
 	struct tgt_session_info	*tsi = tgt_ses_info(req->rq_svc_thread->t_env);
@@ -599,8 +661,9 @@ int tgt_request_handle(struct ptlrpc_request *req)
 	struct lu_target	*tgt;
 	int			 request_fail_id = 0;
 	__u32			 opc = lustre_msg_get_opc(msg);
+	struct obd_device	*obd;
 	int			 rc;
-
+	bool			 is_connect = false;
 	ENTRY;
 
 	/* Refill the context, to make sure all thread keys are allocated */
@@ -614,6 +677,7 @@ int tgt_request_handle(struct ptlrpc_request *req)
 	 * target, otherwise that should be connect operation */
 	if (opc == MDS_CONNECT || opc == OST_CONNECT ||
 	    opc == MGS_CONNECT) {
+		is_connect = true;
 		req_capsule_set(&req->rq_pill, &RQF_CONNECT);
 		rc = target_handle_connect(req);
 		if (rc != 0) {
@@ -627,6 +691,14 @@ int tgt_request_handle(struct ptlrpc_request *req)
 	}
 
 	if (unlikely(!class_connected_export(req->rq_export))) {
+		if (opc == SEC_CTX_INIT || opc == SEC_CTX_INIT_CONT ||
+		    opc == SEC_CTX_FINI) {
+			/* sec context initialization has to be handled
+			 * by hand in tgt_handle_request0() */
+			tsi->tsi_reply_fail_id = OBD_FAIL_SEC_CTX_INIT_NET;
+			h = NULL;
+			GOTO(handle_recov, rc = 0);
+		}
 		CDEBUG(D_HA, "operation %d on unconnected OST from %s\n",
 		       opc, libcfs_id2str(req->rq_peer));
 		req->rq_status = -ENOTCONN;
@@ -641,6 +713,24 @@ int tgt_request_handle(struct ptlrpc_request *req)
 	else
 		tsi->tsi_jobid = NULL;
 
+	/* Skip last_xid processing for the recovery thread, otherwise, the
+	 * last_xid on same request could be processed twice: first time when
+	 * processing the incoming request, second time when the request is
+	 * being processed by recovery thread. */
+	obd = class_exp2obd(req->rq_export);
+	if (is_connect) {
+		/* reset the exp_last_xid on each connection. */
+		req->rq_export->exp_last_xid = 0;
+	} else if (obd->obd_recovery_data.trd_processing_task !=
+		   current_pid()) {
+		rc = process_req_last_xid(req);
+		if (rc) {
+			req->rq_status = rc;
+			rc = ptlrpc_error(req);
+			GOTO(out, rc);
+		}
+	}
+
 	request_fail_id = tgt->lut_request_fail_id;
 	tsi->tsi_reply_fail_id = tgt->lut_reply_fail_id;
 
@@ -650,6 +740,9 @@ int tgt_request_handle(struct ptlrpc_request *req)
 		rc = ptlrpc_error(req);
 		GOTO(out, rc);
 	}
+
+	LASSERTF(h->th_opc == opc, "opcode mismatch %d != %d\n",
+		 h->th_opc, opc);
 
 	if (CFS_FAIL_CHECK_ORSET(request_fail_id, CFS_FAIL_ONCE))
 		GOTO(out, rc = 0);
@@ -664,10 +757,9 @@ int tgt_request_handle(struct ptlrpc_request *req)
 		GOTO(out, rc);
 	}
 
+handle_recov:
 	rc = tgt_handle_recovery(req, tsi->tsi_reply_fail_id);
 	if (likely(rc == 1)) {
-		LASSERTF(h->th_opc == opc, "opcode mismatch %d != %d\n",
-			 h->th_opc, opc);
 		rc = tgt_handle_request0(tsi, h, req);
 		if (rc)
 			GOTO(out, rc);
@@ -880,6 +972,16 @@ int tgt_connect_check_sptlrpc(struct ptlrpc_request *req, struct obd_export *exp
 		spin_lock(&exp->exp_lock);
 		exp->exp_sp_peer = req->rq_sp_from;
 		exp->exp_flvr = flvr;
+
+		/* when on mgs, if no restriction is set, or if client
+		 * is loopback, allow any flavor */
+		if ((strcmp(exp->exp_obd->obd_type->typ_name,
+			   LUSTRE_MGS_NAME) == 0) &&
+		     (exp->exp_flvr.sf_rpc == SPTLRPC_FLVR_NULL ||
+		      LNET_NETTYP(LNET_NIDNET(exp->exp_connection->c_peer.nid))
+		      == LOLND))
+			exp->exp_flvr.sf_rpc = SPTLRPC_FLVR_ANY;
+
 		if (exp->exp_flvr.sf_rpc != SPTLRPC_FLVR_ANY &&
 		    exp->exp_flvr.sf_rpc != req->rq_flvr.sf_rpc) {
 			CERROR("%s: unauthorized rpc flavor %x from %s, "
@@ -2130,3 +2232,44 @@ out:
 	RETURN(rc);
 }
 EXPORT_SYMBOL(tgt_brw_write);
+
+/* Check if request can be reconstructed from saved reply data
+ * A copy of the reply data is returned in @trd if the pointer is not NULL
+ */
+bool req_can_reconstruct(struct ptlrpc_request *req,
+			 struct tg_reply_data *trd)
+{
+	struct tg_export_data *ted = &req->rq_export->exp_target_data;
+	struct lsd_client_data *lcd = ted->ted_lcd;
+	bool found;
+
+	if (tgt_is_multimodrpcs_client(req->rq_export))
+		return tgt_lookup_reply(req, trd);
+
+	mutex_lock(&ted->ted_lcd_lock);
+	found = req->rq_xid == lcd->lcd_last_xid ||
+		req->rq_xid == lcd->lcd_last_close_xid;
+
+	if (found && trd != NULL) {
+		if (lustre_msg_get_opc(req->rq_reqmsg) == MDS_CLOSE) {
+			trd->trd_reply.lrd_xid = lcd->lcd_last_close_xid;
+			trd->trd_reply.lrd_transno =
+						lcd->lcd_last_close_transno;
+			trd->trd_reply.lrd_result = lcd->lcd_last_close_result;
+		} else {
+			trd->trd_reply.lrd_xid = lcd->lcd_last_xid;
+			trd->trd_reply.lrd_transno = lcd->lcd_last_transno;
+			trd->trd_reply.lrd_result = lcd->lcd_last_result;
+			trd->trd_reply.lrd_data = lcd->lcd_last_data;
+			trd->trd_pre_versions[0] = lcd->lcd_pre_versions[0];
+			trd->trd_pre_versions[1] = lcd->lcd_pre_versions[1];
+			trd->trd_pre_versions[2] = lcd->lcd_pre_versions[2];
+			trd->trd_pre_versions[3] = lcd->lcd_pre_versions[3];
+		}
+	}
+	mutex_unlock(&ted->ted_lcd_lock);
+
+	return found;
+}
+EXPORT_SYMBOL(req_can_reconstruct);
+

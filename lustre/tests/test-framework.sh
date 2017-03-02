@@ -6,7 +6,6 @@ set -e
 #set -x
 
 export LANG=en_US
-export EJOURNAL=${EJOURNAL:-""}
 export REFORMAT=${REFORMAT:-""}
 export WRITECONF=${WRITECONF:-""}
 export VERBOSE=${VERBOSE:-false}
@@ -24,6 +23,11 @@ export LOAD_LLOOP=${LOAD_LLOOP:-false}
 
 #export PDSH="pdsh -S -Rssh -w"
 export MOUNT_CMD=${MOUNT_CMD:-"mount -t lustre"}
+export UMOUNT=${UMOUNT:-"umount -d"}
+# sles12 umount has a issue with -d option
+[ -e /etc/SuSE-release ] && grep -w VERSION /etc/SuSE-release | grep -wq 12 && {
+	export UMOUNT="umount"
+}
 
 # function used by scripts run on remote nodes
 LUSTRE=${LUSTRE:-$(cd $(dirname $0)/..; echo $PWD)}
@@ -50,6 +54,16 @@ fi
 [ -z "$MODPROBECONF" -a -f /etc/modprobe.conf ] &&
     MODPROBECONF=/etc/modprobe.conf
 
+sanitize_parameters() {
+	for i in DIR DIR1 DIR2 MOUNT MOUNT1 MOUNT2
+	do
+		local path=${!i}
+		if [ -d "$path" ]; then
+			eval export $i=$(echo $path | sed -r 's/\/+$//g')
+		fi
+	done
+}
+
 assert_DIR () {
     local failed=""
     [[ $DIR/ = $MOUNT/* ]] || \
@@ -71,6 +85,7 @@ usage() {
 
 print_summary () {
     trap 0
+	[ -z "$DEFAULT_SUITES"] && return 0
     [ "$TESTSUITE" == "lfsck" ] && return 0
     [ -n "$ONLY" ] && echo "WARNING: ONLY is set to $(echo $ONLY)"
     local details
@@ -129,6 +144,8 @@ init_test_env() {
 	export TEST_FAILED=false
 	export FAIL_ON_SKIP_ENV=${FAIL_ON_SKIP_ENV:-false}
 	export RPC_MODE=${RPC_MODE:-false}
+	export DO_CLEANUP=${DO_CLEANUP:-true}
+	export KEEP_ZPOOL=${KEEP_ZPOOL:-false}
 
     export MKE2FS=$MKE2FS
     if [ -z "$MKE2FS" ]; then
@@ -229,6 +246,7 @@ init_test_env() {
     # Ubuntu, at least, has a truncate command in /usr/bin
     # so fully path our truncate command.
     export TRUNCATE=${TRUNCATE:-$LUSTRE/tests/truncate}
+	export FSX=${FSX:-$LUSTRE/tests/fsx}
     export MDSRATE=${MDSRATE:-"$LUSTRE/tests/mpi/mdsrate"}
     [ ! -f "$MDSRATE" ] && export MDSRATE=$(which mdsrate 2> /dev/null)
     if ! echo $PATH | grep -q $LUSTRE/tests/racer; then
@@ -267,6 +285,9 @@ init_test_env() {
     export LFS_MIGRATE=${LFS_MIGRATE:-$LUSTRE/scripts/lfs_migrate}
     [ ! -f "$LFS_MIGRATE" ] &&
         export LFS_MIGRATE=$(which lfs_migrate 2> /dev/null)
+    export LR_READER=${LR_READER:-"$LUSTRE/utils/lr_reader"}
+    [ ! -f "$LR_READER" ] && export LR_READER=$(which lr_reader 2> /dev/null)
+    [ -z "$LR_READER" ] && export LR_READER="/usr/sbin/lr_reader"
     export NAME=${NAME:-local}
     export LGSSD=${LGSSD:-"$LUSTRE/utils/gss/lgssd"}
     [ "$GSS_PIPEFS" = "true" ] && [ ! -f "$LGSSD" ] && \
@@ -338,6 +359,8 @@ init_test_env() {
 	if ! $RPC_MODE; then
 		rm -f $TMP/*active
 	fi
+
+	export TF_FAIL=${TF_FAIL:-$TMP/tf.fail}
 }
 
 check_cpt_number() {
@@ -354,18 +377,57 @@ check_cpt_number() {
 	fi
 }
 
+# Return a numeric version code based on a version string.  The version
+# code is useful for comparison two version strings to see which is newer.
 version_code() {
-    # split arguments like "1.8.6-wc3" into "1", "8", "6", "wc3"
-    eval set -- $(tr "[:punct:]" " " <<< $*)
+	# split arguments like "1.8.6-wc3" into "1", "8", "6", "wc3"
+	eval set -- $(tr "[:punct:]" " " <<< $*)
 
-    echo -n "$((($1 << 16) | ($2 << 8) | $3))"
+	echo -n "$((($1 << 16) | ($2 << 8) | $3))"
 }
 
 export LINUX_VERSION=$(uname -r | sed -e "s/\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/")
 export LINUX_VERSION_CODE=$(version_code ${LINUX_VERSION//\./ })
 
+# Report the Lustre build version string (e.g. 1.8.7.3 or 2.4.1).
+#
+# usage: lustre_build_version
+#
+# All Lustre versions support "lctl get_param" to report the version of the
+# code running in the kernel (what our tests are interested in), but it
+# doesn't work without modules loaded.  If that fails, use "lctl version"
+# instead, which is easy to parse and works without the kernel modules,
+# but was only added in 2.6.50.  If that also fails, fall back to calling
+# "lctl lustre_build_version" which prints either (or both) the userspace
+# and kernel build versions, but is deprecated and should eventually be
+# removed.
+#
+# output: prints version string to stdout in dotted-decimal format
+lustre_build_version() {
+	local facet=${1:-client}
+
+	# lustre: 2.6.52
+	# kernel: patchless_client
+	# build: v2_6_92_0-gadb3ee4-2.6.32-431.29.2.el6_lustre.x86_64
+	local VER=$(do_facet $facet $LCTL get_param -n version 2> /dev/null |
+		    awk '/lustre: / { print $2 }')
+	# lctl 2.6.50
+	[ -z "$VER" ] && VER=$(do_facet $facet $LCTL --version 2>/dev/null |
+			       awk '{ print $2 }')
+	# Lustre version: 2.5.3-gfcfd782-CHANGED-2.6.32.26-175.fc12.x86_64
+	# lctl   version: 2.5.3-gfcfd782-CHANGED-2.6.32.26-175.fc12.x86_64
+	[ -z "$VER" ] && VER=$(do_facet $facet $LCTL lustre_build_version |
+			       awk '/version:/ { print $3; exit; }')
+	sed -e 's/^v//' -e 's/-.*//' -e 's/_/./g' <<<$VER
+}
+
+# Report the Lustre numeric build version code for the supplied facet.
+lustre_version_code() {
+	version_code $(lustre_build_version $1)
+}
+
 module_loaded () {
-   /sbin/lsmod | grep -q "^\<$1\>"
+	/sbin/lsmod | grep -q "^\<$1\>"
 }
 
 # Load a module on the system where this is running.
@@ -381,12 +443,12 @@ load_module() {
     EXT=".ko"
     module=$1
     shift
-    BASE=`basename $module $EXT`
+    BASE=$(basename $module $EXT)
 
     module_loaded ${BASE} && return
 
-    # If no module arguments were passed, get them from $MODOPTS_<MODULE>, else from
-    # modprobe.conf
+    # If no module arguments were passed, get them from $MODOPTS_<MODULE>,
+    # else from modprobe.conf
     if [ $# -eq 0 ]; then
         # $MODOPTS_<MODULE>; we could use associative arrays, but that's not in
         # Bash until 4.x, so we resort to eval.
@@ -492,6 +554,13 @@ load_modules_local() {
     [ "$PTLDEBUG" ] && lctl set_param debug="$PTLDEBUG"
     [ "$SUBSYSTEM" ] && lctl set_param subsystem_debug="${SUBSYSTEM# }"
     load_module ../lnet/lnet/lnet
+	case $NETTYPE in
+	o2ib)
+		LNETLND="o2iblnd/ko2iblnd"
+		;;
+	*)
+		;;
+	esac
     LNETLND=${LNETLND:-"socklnd/ksocklnd"}
     load_module ../lnet/klnds/$LNETLND
     load_module obdclass/obdclass
@@ -509,6 +578,7 @@ load_modules_local() {
         SYMLIST=/proc/kallsyms
         grep -q crc16 $SYMLIST || { modprobe crc16 2>/dev/null || true; }
         grep -q -w jbd $SYMLIST || { modprobe jbd 2>/dev/null || true; }
+	grep -q -w mbcache $SYMLIST || { modprobe mbcache 2>/dev/null || true; }
         grep -q -w jbd2 $SYMLIST || { modprobe jbd2 2>/dev/null || true; }
 		load_module lfsck/lfsck
 		[ "$LQUOTA" != "no" ] && load_module quota/lquota $LQUOTAOPTS
@@ -542,7 +612,7 @@ load_modules_local() {
 	# 'mount' doesn't look in $PATH, just sbin
 	local mount_lustre=$LUSTRE/utils/mount.lustre
 	if [ -f $mount_lustre ]; then
-		local sbin_mount=/sbin/mount.lustre
+		local sbin_mount=$(readlink -f /sbin)/mount.lustre
 		if grep -qw "$sbin_mount" /proc/mounts; then
 			cmp -s $mount_lustre $sbin_mount || umount $sbin_mount
 		fi
@@ -606,7 +676,7 @@ unload_modules() {
 		fi
 	fi
 
-	local sbin_mount=/sbin/mount.lustre
+	local sbin_mount=$(readlink -f /sbin)/mount.lustre
 	if grep -qe "$sbin_mount " /proc/mounts; then
 		umount $sbin_mount || true
 		[ -s $sbin_mount ] && ! grep -q "STUB MARK" $sbin_mount ||
@@ -762,7 +832,7 @@ facet_type() {
 facet_number() {
 	local facet=$1
 
-	if [ $facet == mgs ]; then
+	if [ $facet == mgs ] || [ $facet == client ]; then
 		return 1
 	fi
 
@@ -947,6 +1017,17 @@ zpool_name() {
 }
 
 #
+#
+# Get ZFS local fsname.
+#
+zfs_local_fsname() {
+	local facet=$1
+	local lfsname=$(basename $(facet_device $facet))
+
+	echo -n $lfsname
+}
+
+#
 # Create ZFS storage pool.
 #
 create_zpool() {
@@ -1025,6 +1106,20 @@ import_zpool() {
 		do_facet $facet "$ZPOOL list -H $poolname >/dev/null 2>&1 ||
 			$ZPOOL import -f $opts $poolname"
 	fi
+}
+
+#
+# Reimport ZFS storage pool with new name
+#
+reimport_zpool() {
+	local facet=$1
+	local newpool=$2
+	local opts="-o cachefile=none"
+	local poolname=$(zpool_name $facet)
+
+	opts+=" -d $(dirname $(facet_vdevice $facet))"
+	do_facet $facet "$ZPOOL export $poolname;
+			 $ZPOOL import $opts $poolname $newpool"
 }
 
 #
@@ -1188,17 +1283,41 @@ mount_facet() {
 		                   ${!dev} $mntpt"
 		RC=${PIPESTATUS[0]}
 	fi
+
 	if [ $RC -ne 0 ]; then
 		echo "Start of ${!dev} on ${facet} failed ${RC}"
-    else
-        set_default_debug_facet $facet
+		return $RC
+	fi
 
-		label=$(devicelabel ${facet} ${!dev})
-        [ -z "$label" ] && echo no label for ${!dev} && exit 1
-        eval export ${facet}_svc=${label}
-        echo Started ${label}
-    fi
-    return $RC
+	set_default_debug_facet $facet
+
+	if [[ $opts =~ .*nosvc.* ]]; then
+		echo "Start ${!dev} without service"
+	else
+		local fstype=$(facet_fstype $facet)
+
+		case $fstype in
+		ldiskfs)
+			wait_update_facet ${facet} "$E2LABEL ${!dev} \
+				2>/dev/null | grep -E ':[a-zA-Z]{3}[0-9]{4}'" \
+				"" || error "${!dev} failed to initialize!";;
+		zfs)
+			wait_update_facet ${facet} "$ZFS get -H -o value \
+				lustre:svname ${!dev} 2>/dev/null | \
+				grep -E ':[a-zA-Z]{3}[0-9]{4}'" "" ||
+				error "${!dev} failed to initialize!";;
+
+		*)
+			error "unknown fstype!";;
+		esac
+	fi
+
+	label=$(devicelabel ${facet} ${!dev})
+	[ -z "$label" ] && echo no label for ${!dev} && exit 1
+	eval export ${facet}_svc=${label}
+	echo Started ${label}
+
+	return $RC
 }
 
 # start facet device options
@@ -1240,10 +1359,10 @@ stop() {
     [ -z $HOST ] && echo stop: no host for $facet && return 0
 
     local mntpt=$(facet_mntpt $facet)
-    running=$(do_facet ${facet} "grep -c $mntpt' ' /proc/mounts") || true
+	running=$(do_facet ${facet} "grep -c $mntpt' ' /proc/mounts || true")
     if [ ${running} -ne 0 ]; then
         echo "Stopping $mntpt (opts:$@) on $HOST"
-        do_facet ${facet} umount -d $@ $mntpt
+	do_facet ${facet} $UMOUNT $@ $mntpt
     fi
 
 	# umount should block, but we should wait for unrelated obd's
@@ -1252,7 +1371,7 @@ stop() {
 
 	if [[ $(facet_fstype $facet) == zfs ]]; then
 		# export ZFS storage pool
-		export_zpool $facet
+		[ "$KEEP_ZPOOL" = "true" ] || export_zpool $facet
 	fi
 }
 
@@ -2021,14 +2140,13 @@ wait_update () {
 	local RESULT
 	local PREV_RESULT
 	local WAIT=0
-	local sleep=1
 	local print=10
 
 	PREV_RESULT=$(do_node $node "$TEST")
 	while [ true ]; do
 		RESULT=$(do_node $node "$TEST")
 		if [[ "$RESULT" == "$FINAL" ]]; then
-			[[ -z "$RESULT" || $WAIT -le $sleep ]] ||
+			[[ -z "$RESULT" || $WAIT -le 1 ]] ||
 				echo "Updated after ${WAIT}s: wanted '$FINAL'"\
 				     "got '$RESULT'"
 			return 0
@@ -2041,8 +2159,9 @@ wait_update () {
 		[[ $WAIT -ge $MAX ]] && break
 		[[ $((WAIT % print)) -eq 0 ]] &&
 			echo "Waiting $((MAX - WAIT)) secs for update"
-		WAIT=$((WAIT + sleep))
-		sleep $sleep
+		WAIT=$((WAIT + 1))
+		$verbose && echo "$(date): waited $WAIT secs for update"
+		sleep 1
 	done
 	echo "Update not seen after ${MAX}s: wanted '$FINAL' got '$RESULT'"
 	return 3
@@ -2270,7 +2389,7 @@ wait_exit_ST () {
     local running
     # conf-sanity 31 takes a long time cleanup
     while [ $WAIT -lt 300 ]; do
-        running=$(do_facet ${facet} "lsmod | grep lnet > /dev/null && lctl dl | grep ' ST '") || true
+        running=$(do_facet ${facet} "lsmod | grep lnet > /dev/null && lctl dl | grep ' ST ' || true")
         [ -z "${running}" ] && return 0
         echo "waited $WAIT for${running}"
         [ $INTERVAL -lt 64 ] && INTERVAL=$((INTERVAL + INTERVAL))
@@ -2732,30 +2851,63 @@ facet_failover_host() {
 	fi
 }
 
+detect_active() {
+	local facet=$1
+	[ "$CLIENTONLY" ] && echo $facet && return
+
+	local failover=$(facet_failover_host $facet)
+
+	# failover is not associated with all facet types:
+	# "AGT" facet type (remote HSM agents) does not
+	# have a failover.
+	[[ -z "$failover" ]] && echo $facet && return
+
+	local host=$(facet_host $facet)
+	local dev=$(facet_device $facet)
+
+	# ${facet}_svc can not be used here because of
+	# facet_active() is called before this var initialized
+	local svc=$(do_node $host $E2LABEL ${dev})
+
+	# active facet is ${facet}failover if device is mounted on failover
+	# on other cases active facet is $facet
+	[[ $dev = $(do_node $failover \
+			lctl get_param -n *.$svc.mntdev 2>/dev/null) ]] &&
+		echo ${facet}failover && return
+
+	echo $facet
+}
+
+init_active() {
+	local facet=$1
+
+	local active=$(detect_active $facet)
+	echo "${facet}active=$active" > $TMP/${facet}active
+}
+
 facet_active() {
-    local facet=$1
-    local activevar=${facet}active
+	local facet=$1
+	local activevar=${facet}active
 
-    if [ -f $TMP/${facet}active ] ; then
-        source $TMP/${facet}active
-    fi
+	# file is missing (nothing to store) if fail() is not
+	# executed during this test session yet;
+	# file content:
+	#      ost1active=ost1failover
+	#      ost1active=ost1
+	# let's detect active facet based on current lustre state
+	if [ ! -f $TMP/${facet}active ] ; then
+		init_active $facet
+	fi
+	source $TMP/${facet}active
 
-    active=${!activevar}
-    if [ -z "$active" ] ; then
-        echo -n ${facet}
-    else
-        echo -n ${active}
-    fi
+	# is ${facet}active set somewhere else?
+	active=${!activevar}
+	[[ -z "$active" ]] && exit 1
+	echo -n ${active}
 }
 
 facet_active_host() {
-    local facet=$1
-    local active=`facet_active $facet`
-    if [ "$facet" == client ]; then
-        echo $HOSTNAME
-    else
-        echo `facet_host $active`
-    fi
+	facet_host $(facet_active $1)
 }
 
 # Get the passive failover partner host of facet.
@@ -2882,9 +3034,21 @@ get_env_vars() {
 		fi
 	done
 
+	for var in VERBOSE; do
+		if [ -n "${!var}" ]; then
+			echo -n " $var=${!var}"
+		fi
+	done
+
 	if [ -n "$FSTYPE" ]; then
 		echo -n " FSTYPE=$FSTYPE"
 	fi
+
+	for var in LNETLND NETTYPE; do
+		if [ -n "${!var}" ]; then
+			echo -n " $var=${!var}"
+		fi
+	done
 }
 
 do_nodes() {
@@ -2937,11 +3101,11 @@ do_nodes() {
 #
 # usage: do_facet $facet command [arg ...]
 do_facet() {
-    local facet=$1
-    shift
-    local HOST=`facet_active_host $facet`
-    [ -z $HOST ] && echo No host defined for facet ${facet} && exit 1
-    do_node $HOST "$@"
+	local facet=$1
+	shift
+	local HOST=$(facet_active_host $facet)
+	[ -z $HOST ] && echo "No host defined for facet ${facet}" && exit 1
+	do_node $HOST "$@"
 }
 
 # Function: do_facet_random_file $FACET $FILE $SIZE
@@ -3158,7 +3322,7 @@ unmount_ldiskfs() {
 	local dev=$(facet_device $facet)
 	local mnt=$(facet_mntpt $facet)
 
-	do_facet $facet umount -d $mnt
+	do_facet $facet $UMOUNT $mnt
 }
 
 var_name() {
@@ -3223,13 +3387,6 @@ unmount_fstype() {
 ## MountConf setup
 
 stopall() {
-    # make sure we are using the primary server, so test-framework will
-    # be able to clean up properly.
-    activemds=`facet_active mds1`
-    if [ $activemds != "mds1" ]; then
-        fail mds1
-    fi
-
     local clients=$CLIENTS
     [ -z $clients ] && clients=$(hostname)
 
@@ -3269,6 +3426,7 @@ cleanup_echo_devs () {
 
 cleanupall() {
     nfs_client_mode && return
+	cifs_client_mode && return
 
     stopall $*
     cleanup_echo_devs
@@ -3337,9 +3495,11 @@ mkfs_opts() {
 				fs_mkfs_opts+="-O large_xattr"
 			fi
 
-			fs_mkfs_opts+=${MDSJOURNALSIZE:+" -J size=$MDSJOURNALSIZE"}
-			if [ ! -z $EJOURNAL ]; then
-				fs_mkfs_opts+=${MDSJOURNALSIZE:+" device=$EJOURNAL"}
+			var=${facet}_JRN
+			if [ -n "${!var}" ]; then
+				fs_mkfs_opts+=" -J device=${!var}"
+			else
+				fs_mkfs_opts+=${MDSJOURNALSIZE:+" -J size=$MDSJOURNALSIZE"}
 			fi
 			fs_mkfs_opts+=${MDSISIZE:+" -i $MDSISIZE"}
 		fi
@@ -3350,7 +3510,12 @@ mkfs_opts() {
 		opts+=${OSSCAPA:+" --param=ost.capa=$OSSCAPA"}
 
 		if [ $fstype == ldiskfs ]; then
-			fs_mkfs_opts+=${OSTJOURNALSIZE:+" -J size=$OSTJOURNALSIZE"}
+			var=${facet}_JRN
+			if [ -n "${!var}" ]; then
+				fs_mkfs_opts+=" -J device=${!var}"
+			else
+				fs_mkfs_opts+=${OSTJOURNALSIZE:+" -J size=$OSTJOURNALSIZE"}
+			fi
 		fi
 	fi
 
@@ -3395,39 +3560,63 @@ check_ost_indices() {
 	done
 }
 
-formatall() {
+format_mgs() {
 	local quiet
 
 	if ! $VERBOSE; then
 		quiet=yes
 	fi
+	echo "Format mgs: $(mgsdevname)"
+	reformat_external_journal mgs
+	add mgs $(mkfs_opts mgs $(mgsdevname)) --reformat \
+		$(mgsdevname) $(mgsvdevname) ${quiet:+>/dev/null} || exit 10
+}
 
+format_mdt() {
+	local num=$1
+	local quiet
+
+	if ! $VERBOSE; then
+		quiet=yes
+	fi
+	echo "Format mds$num: $(mdsdevname $num)"
+	reformat_external_journal mds$num
+	add mds$num $(mkfs_opts mds$num $(mdsdevname ${num})) \
+		--reformat $(mdsdevname $num) $(mdsvdevname $num) \
+		${quiet:+>/dev/null} || exit 10
+}
+
+format_ost() {
+	local num=$1
+
+	if ! $VERBOSE; then
+		quiet=yes
+	fi
+	echo "Format ost$num: $(ostdevname $num)"
+	reformat_external_journal ost$num
+	add ost$num $(mkfs_opts ost$num $(ostdevname ${num})) \
+		--reformat $(ostdevname $num) $(ostvdevname ${num}) \
+		${quiet:+>/dev/null} || exit 10
+}
+
+formatall() {
 	stopall
 	# We need ldiskfs here, may as well load them all
 	load_modules
 	[ "$CLIENTONLY" ] && return
 	echo Formatting mgs, mds, osts
 	if ! combined_mgs_mds ; then
-		echo "Format mgs: $(mgsdevname)"
-		add mgs $(mkfs_opts mgs $(mgsdevname)) --reformat \
-			$(mgsdevname) $(mgsvdevname) ${quiet:+>/dev/null} ||
-			exit 10
+		format_mgs
 	fi
 
 	for num in $(seq $MDSCOUNT); do
-		echo "Format mds$num: $(mdsdevname $num)"
-		add mds$num $(mkfs_opts mds$num $(mdsdevname ${num})) \
-			--reformat $(mdsdevname $num) $(mdsvdevname $num) \
-			${quiet:+>/dev/null} || exit 10
+		format_mdt $num
 	done
 
 	export OST_INDICES=($(hostlist_expand "$OST_INDEX_LIST"))
 	check_ost_indices
 	for num in $(seq $OSTCOUNT); do
-		echo "Format ost$num: $(ostdevname $num)"
-		add ost$num $(mkfs_opts ost$num $(ostdevname ${num})) \
-			--reformat $(ostdevname $num) $(ostvdevname ${num}) \
-			${quiet:+>/dev/null} || exit 10
+		format_ost $num
 	done
 }
 
@@ -3504,14 +3693,17 @@ writeconf_all () {
 }
 
 setupall() {
+    local arg1=$1
+
     nfs_client_mode && return
+	cifs_client_mode && return
 
     sanity_mount_check ||
         error "environments are insane!"
 
     load_modules
 
-    if [ -z "$CLIENTONLY" ]; then
+    if [[ -z "$CLIENTONLY" && -z "$NOSETUP" ]]; then
         echo Setup mgs, mdt, osts
         echo $WRITECONF | grep -q "writeconf" && \
             writeconf_all
@@ -3557,6 +3749,11 @@ setupall() {
     fi
 
     [ "$DAEMONFILE" ] && $LCTL debug_daemon start $DAEMONFILE $DAEMONSIZE
+
+    if [ ! -z $arg1 ]; then
+        [ "$arg1" = "server_only" ] && return
+    fi
+
     mount_client $MOUNT
     [ -n "$CLIENTS" ] && zconf_mount_clients $CLIENTS $MOUNT
     clients_up
@@ -3711,7 +3908,7 @@ set_conf_param_and_check() {
 	do_facet mgs "$LCTL conf_param $PARAM='$FINAL'" ||
 		error "conf_param $PARAM failed"
 
-	wait_update $(facet_host $myfacet) "$TEST" "$FINAL" ||
+	wait_update_facet $myfacet "$TEST" "$FINAL" ||
 		error "check $PARAM failed!"
 }
 
@@ -3770,6 +3967,11 @@ nfs_client_mode () {
     return 1
 }
 
+cifs_client_mode () {
+	[ x$CIFSCLIENT = xyes ] &&
+		echo "CIFSCLIENT=$CIFSCLIENT mode: setup, cleanup, check config skipped"
+}
+
 check_config_client () {
     local mntpt=$1
 
@@ -3817,6 +4019,7 @@ check_config_clients () {
 	local mntpt=$1
 
 	nfs_client_mode && return
+	cifs_client_mode && return
 
 	do_rpc_nodes "$clients" check_config_client $mntpt
 
@@ -3862,11 +4065,13 @@ is_empty_fs() {
 }
 
 check_and_setup_lustre() {
-    nfs_client_mode && return
+	sanitize_parameters
+	nfs_client_mode && return
+	cifs_client_mode && return
 
-    local MOUNTED=$(mounted_lustre_filesystems)
+	local MOUNTED=$(mounted_lustre_filesystems)
 
-    local do_check=true
+	local do_check=true
     # 1.
     # both MOUNT and MOUNT2 are not mounted
     if ! is_mounted $MOUNT && ! is_mounted $MOUNT2; then
@@ -4221,8 +4426,12 @@ check_and_cleanup_lustre() {
     fi
 
 	if is_mounted $MOUNT; then
-		[ -n "$DIR" ] && rm -rf $DIR/[Rdfs][0-9]* ||
-			error "remove sub-test dirs failed"
+		if $DO_CLEANUP; then
+			[ -n "$DIR" ] && rm -rf $DIR/[Rdfs][0-9]* ||
+				error "remove sub-test dirs failed"
+		else
+			echo "skip cleanup"
+		fi
 		[ "$ENABLE_QUOTA" ] && restore_quota || true
 	fi
 
@@ -4545,7 +4754,8 @@ clear_failloc() {
 }
 
 set_nodes_failloc () {
-	do_nodes $(comma_list $1)  lctl set_param fail_val=0 fail_loc=$2
+	local fv=${3:-0}
+	do_nodes $(comma_list $1)  lctl set_param fail_val=$fv fail_loc=$2
 }
 
 cancel_lru_locks() {
@@ -4615,13 +4825,21 @@ pgcache_empty() {
 }
 
 debugsave() {
-    DEBUGSAVE="$(lctl get_param -n debug)"
+	DEBUGSAVE="$(lctl get_param -n debug)"
+	DEBUGSAVE_SERVER=$(do_facet $SINGLEMDS "$LCTL get_param -n debug")
 }
 
 debugrestore() {
-    [ -n "$DEBUGSAVE" ] && \
-        do_nodes $(comma_list $(nodes_list)) "$LCTL set_param debug=\\\"${DEBUGSAVE}\\\";"
-    DEBUGSAVE=""
+	[ -n "$DEBUGSAVE" ] &&
+		do_nodes $CLIENTS "$LCTL set_param debug=\\\"${DEBUGSAVE}\\\""||
+		true
+	DEBUGSAVE=""
+
+	[ -n "DEBUGSAVE_SERVER" ] &&
+		do_nodes $(comma_list $(all_server_nodes)) \
+			 "$LCTL set_param debug=\\\"${DEBUGSAVE_SERVER}\\\"" ||
+			 true
+	DEBUGSAVE_SERVER=""
 }
 
 debug_size_save() {
@@ -4651,21 +4869,18 @@ stop_full_debug_logging() {
 }
 
 # prints bash call stack
-print_stack_trace() {
+log_trace_dump() {
+	local skip=${1:-1}
 	echo "  Trace dump:"
-	for (( i=1; i < ${#BASH_LINENO[*]} ; i++ )) ; do
-		local s=${BASH_SOURCE[$i]}
-		local l=${BASH_LINENO[$i-1]}
-		local f=${FUNCNAME[$i]}
-		echo "  = $s:$l:$f()"
+	for (( i=$skip; i < ${#BASH_LINENO[*]} ; i++ )) ; do
+		local src=${BASH_SOURCE[$i]}
+		local lineno=${BASH_LINENO[$i-1]}
+		local funcname=${FUNCNAME[$i]}
+		echo "  = $src:$lineno:$funcname()"
 	done
 }
 
-##################################
-# Test interface
-##################################
-
-error_noexit() {
+report_error() {
 	local TYPE=${TYPE:-"FAIL"}
 
 	local dump=true
@@ -4675,10 +4890,8 @@ error_noexit() {
 		dump=false
 	fi
 
-
 	log " ${TESTSUITE} ${TESTNAME}: @@@@@@ ${TYPE}: $@ "
-	print_stack_trace >&2
-
+	log_trace_dump 2
 	mkdir -p $LOGDIR
 	# We need to dump the logs on all nodes
 	if $dump; then
@@ -4697,6 +4910,17 @@ error_noexit() {
 			echo "$@" > $LOGDIR/err
 		fi
 	fi
+
+	# cleanup the env for failed tests
+	reset_fail_loc
+}
+
+##################################
+# Test interface
+##################################
+
+error_noexit() {
+	report_error "$@"
 }
 
 exit_status () {
@@ -4708,12 +4932,13 @@ exit_status () {
 }
 
 error() {
-	error_noexit "$@"
+	report_error "$@"
 	exit 1
 }
 
 error_exit() {
-	error "$@"
+	report_error "$@"
+	exit 1
 }
 
 # use only if we are ignoring failures for this test, bugno required.
@@ -4723,11 +4948,11 @@ error_exit() {
 error_ignore() {
 	local TYPE="IGNORE ($1)"
 	shift
-	error_noexit "$@"
+	report_error "$@"
 }
 
 error_and_remount() {
-	error_noexit "$@"
+	report_error "$@"
 	remount_client $MOUNT
 	exit 1
 }
@@ -4863,8 +5088,8 @@ run_test() {
 }
 
 log() {
-	echo "$*" >&2
-    module_loaded lnet || load_modules
+    echo "$*"
+	load_module ../libcfs/libcfs/libcfs
 
     local MSG="$*"
     # Get rid of '
@@ -4917,10 +5142,10 @@ check_mds() {
 }
 
 reset_fail_loc () {
-    echo -n "Resetting fail_loc on all nodes..."
-    do_nodes $(comma_list $(nodes_list)) "lctl set_param -n fail_loc=0 \
-	    fail_val=0 2>/dev/null || true"
-    echo done.
+	echo -n "Resetting fail_loc on all nodes..."
+	do_nodes $(comma_list $(nodes_list)) "lctl set_param -n fail_loc=0 \
+	    fail_val=0 2>/dev/null" || true
+	echo done.
 }
 
 
@@ -4937,6 +5162,18 @@ banner() {
     msg=$(printf '%s%.*s'  "$msg"  $((${#EQUALS} - ${#msg})) $EQUALS )
     # always include at least == after the message
     log "$msg== $(date +"%H:%M:%S (%s)")"
+}
+
+check_dmesg_for_errors() {
+	local res
+	local errors="VFS: Busy inodes after unmount of\|\
+ldiskfs_check_descriptors: Checksum for group 0 failed\|\
+group descriptors corrupted"
+
+	res=$(do_nodes $(comma_list $(nodes_list)) "dmesg" | grep "$errors")
+	[ -z "$res" ] && return 0
+	echo "Kernel error detected: $res"
+	return 1
 }
 
 #
@@ -4960,6 +5197,7 @@ run_one() {
 	reset_fail_loc
 	check_grant ${testnum} || error "check_grant $testnum failed with $?"
 	check_catastrophe || error "LBUG/LASSERT detected"
+	check_dmesg_for_errors || error "Error in dmesg detected"
 	if [ "$PARALLEL" != "yes" ]; then
 		ps auxww | grep -v grep | grep -q multiop &&
 					error "multiop still running"
@@ -5195,6 +5433,7 @@ require_dsh_ost()
 
 remote_mgs_nodsh()
 {
+	[ "$CLIENTONLY" ] && return 0 || true
     local MGS 
     MGS=$(facet_host mgs)
     remote_node $MGS && [ "$PDSH" = "no_dsh" -o -z "$PDSH" -o -z "$ost_HOST" ]
@@ -5398,6 +5637,9 @@ mixed_mdt_devs () {
 generate_machine_file() {
     local nodes=${1//,/ }
     local machinefile=$2
+
+    [[ -z $(echo $machinefile | tr -d " ") ]] && return 0
+
     rm -f $machinefile
     for node in $nodes; do
         echo $node >>$machinefile || \
@@ -5415,13 +5657,14 @@ get_stripe () {
 
 setstripe_nfsserver () {
 	local dir=$1
+	shift
 
-	local nfsserver=$(awk '"'$dir'" ~ $2 && $3 ~ "nfs" && $2 != "/" \
-		{ print $1 }' /proc/mounts | cut -f 1 -d : | head -n1)
+	local -a nfsexport=($(awk '"'$dir'" ~ $2 && $3 ~ "nfs" && $2 != "/" \
+		{ print $1 }' /proc/mounts | tr : ' ' | head -n1))
 
-	[ -z $nfsserver ] && echo "$dir is not nfs mounted" && return 1
+	[[ -z $nfsexport ]] && echo "$dir is not nfs mounted" && return 1
 
-	do_nodev $nfsserver lfs setstripe "$@"
+	do_nodev ${nfsexport[0]} lfs setstripe ${nfsexport[1]} "$@"
 }
 
 # Check and add a test group.
@@ -5670,10 +5913,10 @@ exit \\\$rc"
 }
 
 mdsrate_cleanup () {
-	if [ -d $4 ]; then
-		mpi_run ${MACHINEFILE_OPTION} $2 -np $1 ${MDSRATE} --unlink \
-			--nfiles $3 --dir $4 --filefmt $5 $6
-		rmdir $4
+	if [ -d $3 ]; then
+		mpi_run "-np $1" ${MDSRATE} --unlink \
+			--nfiles $2 --dir $3 --filefmt $4 $5
+		rmdir $3
 	fi
 }
 
@@ -5701,17 +5944,7 @@ convert_facet2label() {
 }
 
 get_clientosc_proc_path() {
-    echo "${1}-osc-*"
-}
-
-get_lustre_version () {
-    local facet=${1:-"$SINGLEMDS"}    
-    do_facet $facet $LCTL get_param -n version | awk '/^lustre:/ {print $2}'
-}
-
-lustre_version_code() {
-    local facet=${1:-"$SINGLEMDS"}
-    version_code $(get_lustre_version $1)
+	echo "${1}-osc-*"
 }
 
 # If the 2.0 MDS was mounted on 1.8 device, then the OSC and LOV names
@@ -6005,19 +6238,21 @@ create_pool() {
 }
 
 add_pool_to_list () {
-    local fsname=${1%%.*}
-    local poolname=${1##$fsname.}
+	local fsname=${1%%.*}
+	local poolname=${1##$fsname.}
 
-    local listvar=${fsname}_CREATED_POOLS
-    eval export ${listvar}=$(expand_list ${!listvar} $poolname)
+	local listvar=${fsname}_CREATED_POOLS
+	local temp=${listvar}=$(expand_list ${!listvar} $poolname)
+	eval export $temp
 }
 
 remove_pool_from_list () {
-    local fsname=${1%%.*}
-    local poolname=${1##$fsname.}
+	local fsname=${1%%.*}
+	local poolname=${1##$fsname.}
 
-    local listvar=${fsname}_CREATED_POOLS
-    eval export ${listvar}=$(exclude_items_from_list ${!listvar} $poolname)
+	local listvar=${fsname}_CREATED_POOLS
+	local temp=${listvar}=$(exclude_items_from_list ${!listvar} $poolname)
+	eval export $temp
 }
 
 destroy_pool_int() {
@@ -6424,6 +6659,8 @@ restore_to_default_flavor()
 
 set_flavor_all()
 {
+    #skipping call in CLIENTONLY mode make this mode work.
+    [ $CLIENTONLY ] && return;
     local flavor=${1:-null}
 
     echo "setting all flavor to $flavor"
@@ -6780,12 +7017,14 @@ generate_string() {
 
 reformat_external_journal() {
 	local facet=$1
+	local var
 
-	if [ ! -z ${EJOURNAL} ]; then
+	var=${facet}_JRN
+	if [ -n "${!var}" ]; then
 		local rcmd="do_facet $facet"
 
-		echo "reformat external journal on $facet:${EJOURNAL}"
-		${rcmd} mke2fs -O journal_dev ${EJOURNAL} || return 1
+		echo "reformat external journal on $facet:${!var}"
+		${rcmd} mke2fs -O journal_dev ${!var} || return 1
 	fi
 }
 
@@ -6825,14 +7064,10 @@ mds_backup_restore() {
 	echo "backup data"
 	${rcmd} tar zcf $metadata -C $mntpt/ . > /dev/null 2>&1 || return 3
 	# step 6: umount
-	${rcmd} umount -d $mntpt || return 4
-	# step 7: reformat external journal if needed
-	reformat_external_journal $facet || return 5
+	${rcmd} $UMOUNT $mntpt || return 4
 	# step 8: reformat dev
 	echo "reformat new device"
-	add $facet $(mkfs_opts $facet ${devname}) --backfstype ldiskfs \
-		--reformat ${devname} $(mdsvdevname $(facet_number $facet)) \
-		> /dev/null || exit 6
+	format_mdt $(facet_number $facet)
 	# step 9: mount dev
 	${rcmd} mount -t ldiskfs $opts $devname $mntpt || return 7
 	# step 10: restore metadata
@@ -6845,7 +7080,7 @@ mds_backup_restore() {
 	echo "remove recovery logs"
 	${rcmd} rm -fv $mntpt/OBJECTS/* $mntpt/CATALOGS
 	# step 13: umount dev
-	${rcmd} umount -d $mntpt || return 10
+	${rcmd} $UMOUNT $mntpt || return 10
 	# step 14: cleanup tmp backup
 	${rcmd} rm -f $metaea $metadata
 	# step 15: reset device label - it's not virgin on
@@ -6885,7 +7120,7 @@ mds_remove_ois() {
 		done
 	fi
 	# step 4: umount
-	${rcmd} umount -d $mntpt || return 2
+	${rcmd} $UMOUNT $mntpt || return 2
 	# OI files will be recreated when mounted as lustre next time.
 }
 
@@ -7006,7 +7241,7 @@ pool_add() {
 
 	create_pool $FSNAME.$pool ||
 		{ error_noexit "No pool created, result code $?"; return 1; }
-	[ $($LFS pool_list $FSNAME | grep -c $pool) -eq 1 ] ||
+	[ $($LFS pool_list $FSNAME | grep -c "$FSNAME.${pool}\$") -eq 1 ] ||
 		{ error_noexit "$pool not in lfs pool_list"; return 2; }
 }
 
@@ -7280,4 +7515,36 @@ check_start_ost_idx() {
 	[[ $start_ost_idx = $expected ]] ||
 		error "OST index of the first stripe on $file is" \
 		      "$start_ost_idx, should be $expected"
+}
+
+# check that clients oscs was evicted after BEFORE
+check_clients_evicted() {
+	local BEFORE=$1
+	shift
+	local oscs=${@}
+	local rc=0
+
+	for osc in $oscs
+	do
+		((rc++))
+		echo "Check state for $osc"
+		evicted=`do_facet client $LCTL get_param osc.$osc.state |\
+			tail -n 3 | awk -F"[ [,]" '/EVICTED ]$/ \
+			{ if (mx < $5) {mx = $5;} } END { print mx }'`
+		if [ $? -eq 0 ] && [[ $evicted -gt $BEFORE ]]; then
+			echo "$osc is evicted at $evicted"
+			((rc--))
+		fi
+	done
+
+        [ $rc -eq 0 ] || error "client not evicted from OST"
+}
+
+killall_process () {
+	local clients=${1:-$(hostname)}
+	local name=$2
+	local signal=$3
+	local rc=0
+
+	do_nodes $clients "killall $signal $name"
 }

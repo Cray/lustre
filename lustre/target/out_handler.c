@@ -1626,6 +1626,9 @@ int out_handle(struct tgt_session_info *tsi)
 			if (out_check_resent(env, dt, dt_obj, req,
 					     out_reconstruct, reply, i))
 				GOTO(next, rc = 0);
+
+			if (dt->dd_rdonly)
+				GOTO(next, rc = -EROFS);
 		}
 
 		/* start transaction for modification RPC only */

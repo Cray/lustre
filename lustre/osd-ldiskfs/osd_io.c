@@ -57,6 +57,10 @@
 
 #include "osd_internal.h"
 
+#ifdef HAVE_DSS
+#include <linux/dss_types.h>
+#endif
+
 /* ext_depth() */
 #include <ldiskfs/ldiskfs_extents.h>
 
@@ -355,6 +359,9 @@ static int osd_do_bio(struct osd_device *osd, struct inode *inode,
 			bio->bi_rw = (iobuf->dr_rw == 0) ? READ : WRITE;
 			bio->bi_end_io = dio_complete_routine;
 			bio->bi_private = iobuf;
+#ifdef HAVE_DSS
+			dss_bio_tag_file_size(inode, bio);
+#endif
 
 			rc = bio_add_page(bio, page,
 					  blocksize * nblocks, page_offset);
@@ -1046,29 +1053,57 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
         RETURN(rc);
 }
 
-/* Check if a block is allocated or not */
-static int osd_is_mapped(struct inode *inode, u64 offset)
+struct osd_fextent {
+	sector_t	start;
+	sector_t	end;
+	unsigned int	mapped:1;
+};
+
+static int osd_is_mapped(struct dt_object *dt, __u64 offset,
+			 struct osd_fextent *cached_extent)
 {
-	sector_t (*fs_bmap)(struct address_space *, sector_t);
+	struct inode *inode = osd_dt_obj(dt)->oo_inode;
+	sector_t block = offset >> inode->i_blkbits;
+	sector_t start;
+	struct fiemap_extent_info fei = { 0 };
+	struct fiemap_extent fe = { 0 };
+	mm_segment_t saved_fs;
+	int rc;
 
-	fs_bmap = inode->i_mapping->a_ops->bmap;
-
-	/* We can't know if we are overwriting or not */
-	if (unlikely(fs_bmap == NULL))
-		return 0;
+	if (block >= cached_extent->start && block < cached_extent->end)
+		return cached_extent->mapped;
 
 	if (i_size_read(inode) == 0)
 		return 0;
 
 	/* Beyond EOF, must not be mapped */
-	if (((i_size_read(inode) - 1) >> inode->i_blkbits) <
-	    (offset >> inode->i_blkbits))
+	if (((i_size_read(inode) - 1) >> inode->i_blkbits) < block)
 		return 0;
 
-	if (fs_bmap(inode->i_mapping, offset >> inode->i_blkbits) == 0)
+	fei.fi_extents_max = 1;
+	fei.fi_extents_start = &fe;
+
+	saved_fs = get_fs();
+	set_fs(get_ds());
+	rc = inode->i_op->fiemap(inode, &fei, offset, FIEMAP_MAX_OFFSET-offset);
+	set_fs(saved_fs);
+	if (rc != 0)
 		return 0;
 
-	return 1;
+	start = fe.fe_logical >> inode->i_blkbits;
+
+	if (start > block) {
+		cached_extent->start = block;
+		cached_extent->end = start;
+		cached_extent->mapped = 0;
+	} else {
+		cached_extent->start = start;
+		cached_extent->end = (fe.fe_logical + fe.fe_length) >>
+				      inode->i_blkbits;
+		cached_extent->mapped = 1;
+	}
+
+	return cached_extent->mapped;
 }
 
 static int osd_declare_write_commit(const struct lu_env *env,
@@ -1087,6 +1122,7 @@ static int osd_declare_write_commit(const struct lu_env *env,
 	int			 flags = 0;
 	bool			 ignore_quota = false;
 	long long		 quota_space = 0;
+	struct osd_fextent	 extent = { 0 };
 	ENTRY;
 
         LASSERT(handle != NULL);
@@ -1101,7 +1137,7 @@ static int osd_declare_write_commit(const struct lu_env *env,
 		    lnb[i - 1].lnb_file_offset + lnb[i - 1].lnb_len)
 			extents++;
 
-		if (!osd_is_mapped(inode, lnb[i].lnb_file_offset))
+		if (!osd_is_mapped(dt, lnb[i].lnb_file_offset, &extent))
 			quota_space += PAGE_CACHE_SIZE;
 
 		/* ignore quota for the whole request if any page is from
@@ -1190,6 +1226,7 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
         struct osd_device  *osd = osd_obj2dev(osd_dt_obj(dt));
         loff_t isize;
         int rc = 0, i;
+	struct osd_fextent extent = { 0 };
 
         LASSERT(inode);
 
@@ -1202,7 +1239,7 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
 
         for (i = 0; i < npages; i++) {
 		if (lnb[i].lnb_rc == -ENOSPC &&
-		    osd_is_mapped(inode, lnb[i].lnb_file_offset)) {
+		    osd_is_mapped(dt, lnb[i].lnb_file_offset, &extent)) {
 			/* Allow the write to proceed if overwriting an
 			 * existing block */
 			lnb[i].lnb_rc = 0;
@@ -1464,11 +1501,9 @@ static inline int osd_extents_enabled(struct super_block *sb,
 	return 0;
 }
 
-static inline int osd_calc_bkmap_credits(struct super_block *sb,
-					 struct inode *inode,
-					 const loff_t size,
-					 const loff_t pos,
-					 const int blocks)
+int osd_calc_bkmap_credits(struct super_block *sb, struct inode *inode,
+			   const loff_t size, const loff_t pos,
+			   const int blocks)
 {
 	int credits, bits, bs, i;
 
@@ -1796,6 +1831,9 @@ static int osd_punch(const struct lu_env *env, struct dt_object *dt,
 	LASSERT(th);
 	oh = container_of(th, struct osd_thandle, ot_super);
 	LASSERT(oh->ot_handle->h_transaction != NULL);
+
+	if (i_size_read(inode) == start)
+		RETURN(0);
 
 	osd_trans_exec_op(env, th, OSD_OT_PUNCH);
 

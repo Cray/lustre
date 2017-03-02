@@ -225,10 +225,7 @@ enum local_oid {
 	LFSCK_BOOKMARK_OID	= 17UL,
 	OTABLE_IT_OID		= 18UL,
 	OSD_LPF_OID		= 19UL,
-	/* These two definitions are obsolete
-	 * OFD_GROUP0_LAST_OID     = 20UL,
-	 * OFD_GROUP4K_LAST_OID    = 20UL+4096,
-	 */
+	REPLY_DATA_OID		= 21UL,
 	OFD_LAST_GROUP_OID	= 4117UL,
 	LLOG_CATALOGS_OID	= 4118UL,
 	MGS_CONFIGS_OID		= 4119UL,
@@ -413,7 +410,7 @@ struct lu_server_seq {
         /* LUSTRE_SEQ_SERVER or LUSTRE_SEQ_CONTROLLER */
         enum lu_mgr_type       lss_type;
 
-        /* Client interafce to request controller */
+	/* Client interface to request controller */
         struct lu_client_seq   *lss_cli;
 
         /* Mutex for protecting allocation */

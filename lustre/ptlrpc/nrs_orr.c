@@ -154,6 +154,10 @@ static int nrs_orr_key_fill(struct nrs_orr_data *orrd,
 		return 0;
 	}
 
+	/* Bounce unconnected requests to the default policy. */
+	if (req->rq_export == NULL)
+		return -ENOTCONN;
+
 	if (nrq->nr_u.orr.or_orr_set || nrq->nr_u.orr.or_trr_set)
 		memset(&nrq->nr_u.orr.or_key, 0, sizeof(nrq->nr_u.orr.or_key));
 
@@ -688,10 +692,8 @@ static int nrs_orr_start(struct ptlrpc_nrs_policy *policy, char *arg)
 	RETURN(rc);
 
 failed:
-	if (orrd->od_cache) {
+	if (orrd->od_cache)
 		kmem_cache_destroy(orrd->od_cache);
-		LASSERTF(rc == 0, "Could not destroy od_cache slab\n");
-	}
 	if (orrd->od_binheap != NULL)
 		cfs_binheap_destroy(orrd->od_binheap);
 

@@ -65,13 +65,12 @@ Includes headers, dynamic, and static libraries.
 
 %build
 echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
-# LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
-%define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
+%define lustre_version %{_version}-%{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -100,7 +99,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --disable-server \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-o2ib=${O2IBPATH} \
-           --with-symvers="$syms" \
+           --with-extra-symbols="$syms" \
            --with-obd-buffer-size=16384
 fi
 %{__make} %_smp_mflags
@@ -117,6 +116,9 @@ pushd switch
 popd
 
 %install
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
+
 %makeinstall
 
 #
@@ -220,6 +222,7 @@ popd
 %dir /opt/cray/lustre-cray_ari_s/%{version}-%{release}/lib64
 %dir /opt/cray/lustre-cray_ari_s/%{version}-%{release}/lib64/pkgconfig/
 /opt/cray/lustre-cray_ari_s/%{version}-%{release}/lib64/pkgconfig/*.pc
+%exclude %{_sysconfdir}/lustre/perm.conf
 
 %files lnet -f switch.directories.lnet
 %defattr(-,root,root)

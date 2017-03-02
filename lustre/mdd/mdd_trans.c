@@ -45,12 +45,20 @@
 #include <obd_class.h>
 #include <lprocfs_status.h>
 #include <lustre_mds.h>
+#include <lustre_barrier.h>
 
 #include "mdd_internal.h"
 
 struct thandle *mdd_trans_create(const struct lu_env *env,
                                  struct mdd_device *mdd)
 {
+	/* If blocked by the write barrier, then return "-EINPROGRESS"
+	 * to the caller. Usually, such error will be forwarded to the
+	 * client, and the expected behaviour is to re-try such modify
+	 * RPC some time later until the barrier is thawed or expired. */
+	if (unlikely(!barrier_entry(mdd->mdd_bottom)))
+		return ERR_PTR(-EINPROGRESS);
+
         return mdd_child_ops(mdd)->dt_trans_create(env, mdd->mdd_child);
 }
 
@@ -63,6 +71,11 @@ int mdd_trans_start(const struct lu_env *env, struct mdd_device *mdd,
 int mdd_trans_stop(const struct lu_env *env, struct mdd_device *mdd,
 		   int result, struct thandle *handle)
 {
+	int rc;
+
 	handle->th_result = result;
-	return mdd_child_ops(mdd)->dt_trans_stop(env, mdd->mdd_child, handle);
+	rc = mdd_child_ops(mdd)->dt_trans_stop(env, mdd->mdd_child, handle);
+	barrier_exit(mdd->mdd_bottom);
+
+	return rc;
 }

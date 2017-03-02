@@ -44,13 +44,6 @@ Userspace tools and files for the Lustre file system on Apollo CentOS nodes.
 
 %build
 echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
-# LUSTRE_VERS used in ko versioning.
-%define version_path %(basename %url)
-%define date %(date +%%F-%%R)
-%define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
-
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -81,11 +74,6 @@ fi
 
 make DESTDIR=${RPM_BUILD_ROOT} install 
 
-for dir in var man/man5 etc/init.d etc/sysconfig etc/ha.d; do
-    %{__rm} -fr %{buildroot}/$dir
-done
-%{__rm} -f %{buildroot}/etc/lustre %{buildroot}/etc/ldev.conf
-
 %{__install} -D Module.symvers ${RPM_BUILD_ROOT}/%{_libdir}/symvers/Module.symvers
 
 %post
@@ -115,6 +103,11 @@ done
 %exclude %dir %{_sbindir}
 %{_datadir}
 %exclude %dir %{_datadir} 
+%exclude /etc/lustre/perm.conf
+%exclude /etc/init.d
+%exclude /etc/sysconfig
+%exclude /etc/ha.d
+%exclude /etc/ldev.conf
 
 %clean
 %clean_build_root

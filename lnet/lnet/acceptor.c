@@ -36,6 +36,7 @@
 
 #define DEBUG_SUBSYSTEM S_LNET
 
+#include <linux/completion.h>
 #include <net/sock.h>
 #include <lnet/lib-lnet.h>
 
@@ -256,8 +257,6 @@ lnet_accept(struct socket *sock, __u32 magic)
 
                 if (magic == le32_to_cpu(LNET_PROTO_TCP_MAGIC))
                         str = "'old' socknal/tcpnal";
-                else if (lnet_accept_magic(magic, LNET_PROTO_RA_MAGIC))
-                        str = "'old' ranal";
                 else
                         str = "unrecognised";
 

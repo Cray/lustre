@@ -223,6 +223,9 @@ static int nidtbl_update_version(const struct lu_env *env,
 	int		  rc;
         ENTRY;
 
+	if (mgs->mgs_bottom->dd_rdonly)
+		RETURN(0);
+
 	LASSERT(mutex_is_locked(&tbl->mn_lock));
 
 	fsdb = local_file_find_or_create(env, mgs->mgs_los, mgs->mgs_nidtbl_dir,
@@ -417,18 +420,15 @@ void mgs_ir_notify_complete(struct fs_db *fsdb)
 
 static int mgs_ir_notify(void *arg)
 {
-        struct fs_db      *fsdb   = arg;
-        struct ldlm_res_id resid;
+	struct fs_db      *fsdb   = arg;
+	struct ldlm_res_id resid;
+	char name[sizeof(fsdb->fsdb_name) + 16];
 
-        char name[sizeof(fsdb->fsdb_name) + 20];
+	LASSERTF(sizeof(name) < 40, "name is too large to be in stack.\n");
 
-        LASSERTF(sizeof(name) < 32, "name is too large to be in stack.\n");
-        sprintf(name, "mgs_%s_notify", fsdb->fsdb_name);
-
+	sprintf(name, "mgs_%s_notify", fsdb->fsdb_name);
 	complete(&fsdb->fsdb_notify_comp);
-
-        set_user_nice(current, -2);
-
+	set_user_nice(current, -2);
 	mgc_fsname2resid(fsdb->fsdb_name, &resid, CONFIG_T_RECOVER);
 	while (1) {
 		struct l_wait_info   lwi = { 0 };
@@ -464,14 +464,9 @@ int mgs_ir_init_fs(const struct lu_env *env, struct mgs_device *mgs,
 			    mgs->mgs_start_time + ir_timeout))
 		fsdb->fsdb_ir_state = IR_STARTUP;
 	fsdb->fsdb_nonir_clients = 0;
-	INIT_LIST_HEAD(&fsdb->fsdb_clients);
 
 	/* start notify thread */
 	fsdb->fsdb_mgs = mgs;
-	atomic_set(&fsdb->fsdb_notify_phase, 0);
-	init_waitqueue_head(&fsdb->fsdb_notify_waitq);
-	init_completion(&fsdb->fsdb_notify_comp);
-
 	task = kthread_run(mgs_ir_notify, fsdb,
 			       "mgs_%s_notify", fsdb->fsdb_name);
 	if (!IS_ERR(task))

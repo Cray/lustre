@@ -52,6 +52,7 @@
 static cfs_hash_ops_t uuid_hash_ops;
 static cfs_hash_ops_t nid_hash_ops;
 static cfs_hash_ops_t nid_stat_hash_ops;
+static cfs_hash_ops_t gen_hash_ops;
 
 /*********** string parsing utils *********/
 
@@ -478,6 +479,7 @@ int class_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
         obd->obd_uuid_hash = NULL;
         obd->obd_nid_hash = NULL;
         obd->obd_nid_stats_hash = NULL;
+	obd->obd_gen_hash = NULL;
 	spin_unlock(&obd->obd_dev_lock);
 
         /* create an uuid-export lustre hash */
@@ -512,6 +514,17 @@ int class_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
                                                   &nid_stat_hash_ops, CFS_HASH_DEFAULT);
         if (!obd->obd_nid_stats_hash)
                 GOTO(err_hash, err = -ENOMEM);
+
+	/* create a client_generation-export lustre hash */
+	obd->obd_gen_hash = cfs_hash_create("UUID_HASH",
+					    HASH_GEN_CUR_BITS,
+					    HASH_GEN_MAX_BITS,
+					    HASH_GEN_BKT_BITS, 0,
+					    CFS_HASH_MIN_THETA,
+					    CFS_HASH_MAX_THETA,
+					    &gen_hash_ops, CFS_HASH_DEFAULT);
+	if (!obd->obd_gen_hash)
+		GOTO(err_hash, err = -ENOMEM);
 
         exp = class_new_export(obd, &obd->obd_uuid);
         if (IS_ERR(exp))
@@ -554,6 +567,10 @@ err_hash:
                 cfs_hash_putref(obd->obd_nid_stats_hash);
                 obd->obd_nid_stats_hash = NULL;
         }
+	if (obd->obd_gen_hash) {
+		cfs_hash_putref(obd->obd_gen_hash);
+		obd->obd_gen_hash = NULL;
+	}
         obd->obd_starting = 0;
         CERROR("setup %s failed (%d)\n", obd->obd_name, err);
         return err;
@@ -585,6 +602,7 @@ int class_detach(struct obd_device *obd, struct lustre_cfg *lcfg)
                obd->obd_name, obd->obd_uuid.uuid);
 
         class_decref(obd, "attach", obd);
+	obd_zombie_barrier();
         RETURN(0);
 }
 EXPORT_SYMBOL(class_detach);
@@ -681,6 +699,12 @@ int class_cleanup(struct obd_device *obd, struct lustre_cfg *lcfg)
                 cfs_hash_putref(obd->obd_nid_stats_hash);
                 obd->obd_nid_stats_hash = NULL;
         }
+
+	/* destroy a client_generation-export hash body */
+	if (obd->obd_gen_hash) {
+		cfs_hash_putref(obd->obd_gen_hash);
+		obd->obd_gen_hash = NULL;
+	}
 
         class_decref(obd, "setup", obd);
         obd->obd_set_up = 0;
@@ -813,18 +837,23 @@ static int class_del_conn(struct obd_device *obd, struct lustre_cfg *lcfg)
 
 static struct list_head lustre_profile_list =
 	LIST_HEAD_INIT(lustre_profile_list);
+static DEFINE_SPINLOCK(lustre_profile_list_lock);
 
 struct lustre_profile *class_get_profile(const char * prof)
 {
-        struct lustre_profile *lprof;
+	struct lustre_profile *lprof;
 
-        ENTRY;
+	ENTRY;
+	spin_lock(&lustre_profile_list_lock);
 	list_for_each_entry(lprof, &lustre_profile_list, lp_list) {
-                if (!strcmp(lprof->lp_profile, prof)) {
-                        RETURN(lprof);
-                }
-        }
-        RETURN(NULL);
+		if (!strcmp(lprof->lp_profile, prof)) {
+			lprof->lp_refs++;
+			spin_unlock(&lustre_profile_list_lock);
+			RETURN(lprof);
+		}
+	}
+	spin_unlock(&lustre_profile_list_lock);
+	RETURN(NULL);
 }
 EXPORT_SYMBOL(class_get_profile);
 
@@ -866,7 +895,12 @@ static int class_add_profile(int proflen, char *prof, int osclen, char *osc,
                 memcpy(lprof->lp_md, mdc, mdclen);
         }
 
+	spin_lock(&lustre_profile_list_lock);
+	lprof->lp_refs = 1;
+	lprof->lp_list_deleted = false;
+
 	list_add(&lprof->lp_list, &lustre_profile_list);
+	spin_unlock(&lustre_profile_list_lock);
         RETURN(err);
 
 out:
@@ -882,39 +916,68 @@ out:
 
 void class_del_profile(const char *prof)
 {
-        struct lustre_profile *lprof;
-        ENTRY;
+	struct lustre_profile *lprof;
+	ENTRY;
 
-        CDEBUG(D_CONFIG, "Del profile %s\n", prof);
+	CDEBUG(D_CONFIG, "Del profile %s\n", prof);
 
-        lprof = class_get_profile(prof);
-        if (lprof) {
+	lprof = class_get_profile(prof);
+	if (lprof) {
+		spin_lock(&lustre_profile_list_lock);
+		/* because get profile increments the ref counter */
+		lprof->lp_refs--;
 		list_del(&lprof->lp_list);
-                OBD_FREE(lprof->lp_profile, strlen(lprof->lp_profile) + 1);
-                OBD_FREE(lprof->lp_dt, strlen(lprof->lp_dt) + 1);
-                if (lprof->lp_md)
-                        OBD_FREE(lprof->lp_md, strlen(lprof->lp_md) + 1);
-                OBD_FREE(lprof, sizeof *lprof);
-        }
-        EXIT;
+		lprof->lp_list_deleted = true;
+		spin_unlock(&lustre_profile_list_lock);
+
+		class_put_profile(lprof);
+	}
+	EXIT;
 }
 EXPORT_SYMBOL(class_del_profile);
+
+void class_put_profile(struct lustre_profile *lprof)
+{
+	spin_lock(&lustre_profile_list_lock);
+	if ((--lprof->lp_refs) > 0) {
+		LASSERT(lprof->lp_refs > 0);
+		spin_unlock(&lustre_profile_list_lock);
+		return;
+	}
+	spin_unlock(&lustre_profile_list_lock);
+
+	/* confirm not a negative number */
+	LASSERT(lprof->lp_refs == 0);
+
+	/* At least one class_del_profile/profiles must be called
+	 * on the target profile or lustre_profile_list will corrupt */
+	LASSERT(lprof->lp_list_deleted);
+	OBD_FREE(lprof->lp_profile, strlen(lprof->lp_profile) + 1);
+	OBD_FREE(lprof->lp_dt, strlen(lprof->lp_dt) + 1);
+	if (lprof->lp_md != NULL)
+		OBD_FREE(lprof->lp_md, strlen(lprof->lp_md) + 1);
+	OBD_FREE(lprof, sizeof(*lprof));
+}
+EXPORT_SYMBOL(class_put_profile);
 
 /* COMPAT_146 */
 void class_del_profiles(void)
 {
-        struct lustre_profile *lprof, *n;
-        ENTRY;
+	struct lustre_profile *lprof, *n;
+	ENTRY;
 
+	spin_lock(&lustre_profile_list_lock);
 	list_for_each_entry_safe(lprof, n, &lustre_profile_list, lp_list) {
 		list_del(&lprof->lp_list);
-                OBD_FREE(lprof->lp_profile, strlen(lprof->lp_profile) + 1);
-                OBD_FREE(lprof->lp_dt, strlen(lprof->lp_dt) + 1);
-                if (lprof->lp_md)
-                        OBD_FREE(lprof->lp_md, strlen(lprof->lp_md) + 1);
-                OBD_FREE(lprof, sizeof *lprof);
-        }
-        EXIT;
+		lprof->lp_list_deleted = true;
+		spin_unlock(&lustre_profile_list_lock);
+
+		class_put_profile(lprof);
+
+		spin_lock(&lustre_profile_list_lock);
+	}
+	spin_unlock(&lustre_profile_list_lock);
+	EXIT;
 }
 EXPORT_SYMBOL(class_del_profiles);
 
@@ -2098,4 +2161,74 @@ static cfs_hash_ops_t nid_stat_hash_ops = {
         .hs_object      = nidstats_object,
         .hs_get         = nidstats_get,
         .hs_put_locked  = nidstats_put_locked,
+};
+
+
+/*
+ * client_generation<->export hash operations
+ */
+
+static unsigned
+gen_hash(struct cfs_hash *hs, const void *key, unsigned mask)
+{
+	return cfs_hash_djb2_hash(key, sizeof(__u32), mask);
+}
+
+static void *
+gen_key(struct hlist_node *hnode)
+{
+	struct obd_export *exp;
+
+	exp = hlist_entry(hnode, struct obd_export, exp_gen_hash);
+
+	RETURN(&exp->exp_target_data.ted_lcd->lcd_generation);
+}
+
+/*
+ * NOTE: It is impossible to find an export that is in failed
+ *       state with this function
+ */
+static int
+gen_kepcmp(const void *key, struct hlist_node *hnode)
+{
+	struct obd_export *exp;
+
+	LASSERT(key);
+	exp = hlist_entry(hnode, struct obd_export, exp_gen_hash);
+
+	RETURN(exp->exp_target_data.ted_lcd->lcd_generation == *(__u32 *)key &&
+	       !exp->exp_failed);
+}
+
+static void *
+gen_export_object(struct hlist_node *hnode)
+{
+	return hlist_entry(hnode, struct obd_export, exp_gen_hash);
+}
+
+static void
+gen_export_get(struct cfs_hash *hs, struct hlist_node *hnode)
+{
+	struct obd_export *exp;
+
+	exp = hlist_entry(hnode, struct obd_export, exp_gen_hash);
+	class_export_get(exp);
+}
+
+static void
+gen_export_put_locked(struct cfs_hash *hs, struct hlist_node *hnode)
+{
+	struct obd_export *exp;
+
+	exp = hlist_entry(hnode, struct obd_export, exp_gen_hash);
+	class_export_put(exp);
+}
+
+static struct cfs_hash_ops gen_hash_ops = {
+	.hs_hash        = gen_hash,
+	.hs_key         = gen_key,
+	.hs_keycmp      = gen_kepcmp,
+	.hs_object      = gen_export_object,
+	.hs_get         = gen_export_get,
+	.hs_put_locked  = gen_export_put_locked,
 };
