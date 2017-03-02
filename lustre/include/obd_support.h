@@ -206,8 +206,8 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_MDS_CONNECT_PACK        0x118
 #define OBD_FAIL_MDS_REINT_NET_REP       0x119
 #define OBD_FAIL_MDS_DISCONNECT_NET      0x11a
-#define OBD_FAIL_MDS_GETSTATUS_NET       0x11b
-#define OBD_FAIL_MDS_GETSTATUS_PACK      0x11c
+#define OBD_FAIL_MDS_GET_ROOT_NET	 0x11b
+#define OBD_FAIL_MDS_GET_ROOT_PACK	 0x11c
 #define OBD_FAIL_MDS_STATFS_PACK         0x11d
 #define OBD_FAIL_MDS_STATFS_NET          0x11e
 #define OBD_FAIL_MDS_GETATTR_NAME_NET    0x11f
@@ -644,11 +644,11 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_DT_LOOKUP			0x2018
 
 /* barrier */
-#define OBD_FAIL_MGS_BARRIER_READ_NET		0x2100
-#define OBD_FAIL_MGS_BARRIER_NOTIFY_NET		0x2101
+#define OBD_FAIL_MGS_BARRIER_READ_NET		0x2200
+#define OBD_FAIL_MGS_BARRIER_NOTIFY_NET		0x2201
 
-#define OBD_FAIL_BARRIER_DELAY			0x2102
-#define OBD_FAIL_BARRIER_FAILURE		0x2103
+#define OBD_FAIL_BARRIER_DELAY			0x2202
+#define OBD_FAIL_BARRIER_FAILURE		0x2203
 
 /* Assign references to moved code to reduce code changes */
 #define OBD_FAIL_PRECHECK(id)                   CFS_FAIL_PRECHECK(id)
