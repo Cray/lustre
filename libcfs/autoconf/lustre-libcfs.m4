@@ -381,6 +381,27 @@ get_user_pages_6arg, [
 ]) # LIBCFS_GET_USER_PAGES_6ARG
 
 #
+# LIBCFS_STACKTRACE_OPS
+#
+# Kernel version 4.8 commit c8fe4609827aedc9c4b45de80e7cdc8ccfa8541b
+# removed both struct stacktrace_ops and dump_trace() function
+#
+AC_DEFUN([LIBCFS_STACKTRACE_OPS], [
+LB_CHECK_COMPILE([if 'struct stacktrace_ops' exists],
+stacktrace_ops, [
+	struct task_struct;
+	struct pt_regs;
+	#include <asm/stacktrace.h>
+],[
+	struct stacktrace_ops ops;
+	ops.stack = NULL;
+],[
+	AC_DEFINE(HAVE_STACKTRACE_OPS, 1,
+		[struct stacktrace_ops exists])
+])
+]) # LIBCFS_STACKTRACE_OPS
+
+#
 # Kernel version 4.9 commit 768ae309a96103ed02eb1e111e838c87854d8b51
 # mm: replace get_user_pages() write/force parameters with gup_flags
 #
@@ -443,6 +464,8 @@ LIBCFS_HAVE_TOPOLOGY_SIBLING_CPUMASK
 LIBCFS_FPU_API
 # 4.6
 LIBCFS_GET_USER_PAGES_6ARG
+# 4.8
+LIBCFS_STACKTRACE_OPS
 # 4.9
 LIBCFS_GET_USER_PAGES_GUP_FLAGS
 ]) # LIBCFS_PROG_LINUX
