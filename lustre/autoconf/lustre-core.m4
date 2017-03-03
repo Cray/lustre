@@ -2148,6 +2148,28 @@ inode_lock, [
 ]) # LC_HAVE_INODE_LOCK
 
 #
+# LC_DIRECTIO_2ARGS
+#
+# Kernel version 4.7 commit c8b8e32d700fe943a935e435ae251364d016c497
+# direct-io: eliminate the offset argument to ->direct_IO
+#
+AC_DEFUN([LC_DIRECTIO_2ARGS], [
+LB_CHECK_COMPILE([if '->direct_IO()' taken 2 arguments],
+direct_io_2args, [
+	#include <linux/fs.h>
+],[
+	struct address_space_operations ops;
+	struct iov_iter *iter = NULL;
+	struct kiocb *iocb = NULL;
+	int rc;
+	rc = ops.direct_IO(iocb, iter);
+],[
+	AC_DEFINE(HAVE_DIRECTIO_2ARGS, 1,
+		[direct_IO need 2 arguments])
+])
+]) # LC_DIRECTIO_2ARGS
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -2324,6 +2346,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 4.5
 	LC_HAVE_INODE_LOCK
+
+	# 4.7
+	LC_DIRECTIO_2ARGS
 
 	#
 	AS_IF([test "x$enable_server" != xno], [
