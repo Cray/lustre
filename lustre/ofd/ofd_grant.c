@@ -86,9 +86,7 @@ static inline u64 ofd_grant_inflate(struct ofd_device *ofd, u64 val)
 		 * is thus inflated. We already significantly overestimate
 		 * overhead, no need to add the extent tax in this case */
 		return val << (ofd->ofd_blockbits - COMPAT_BSIZE_SHIFT);
-	/* client can deal with the block size, but does not support per-extent
-	 * grant accounting, inflate grant by 100% for such clients */
-	return val << 1;
+	return val;
 }
 
 /* Companion of ofd_grant_inflate() */
@@ -96,7 +94,7 @@ static inline u64 ofd_grant_deflate(struct ofd_device *ofd, u64 val)
 {
 	if (ofd->ofd_blockbits > COMPAT_BSIZE_SHIFT)
 		return val >> (ofd->ofd_blockbits - COMPAT_BSIZE_SHIFT);
-	return val >> 1;
+	return val;
 }
 
 /* Grant chunk is used as a unit for grant allocation. It should be inflated
@@ -116,8 +114,8 @@ static inline u64 ofd_grant_chunk(struct obd_export *exp,
 
 	if ((data == NULL && !ofd_grant_param_supp(exp)) ||
 	    (data != NULL && !OCD_HAS_FLAG(data, GRANT_PARAM)))
-		/* Try to grant enough space to send a full-size RPC */
-		return ofd_grant_inflate(ofd, chunk);
+		/* Try to grant enough space to send a 2 full-size RPCs */
+		return ofd_grant_inflate(ofd, chunk) << 1;
 
 	/* Try to return enough to send two full-size RPCs
 	 * = 2 * (BRW_size + #extents_in_BRW * grant_tax) */
