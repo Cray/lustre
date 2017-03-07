@@ -14102,6 +14102,8 @@ test_300d() {
 run_test 300d "check default stripe under striped directory"
 
 test_300e() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.55) ] &&
+		skip "Need MDS version at least 2.7.55" && return
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local stripe_count
@@ -14149,6 +14151,8 @@ test_300e() {
 run_test 300e "check rename under striped directory"
 
 test_300f() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.55) ] &&
+		skip "Need MDS version at least 2.7.55" && return
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local stripe_count
@@ -14238,6 +14242,8 @@ test_300_check_default_striped_dir()
 }
 
 test_300g() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.55) ] &&
+		skip "Need MDS version at least 2.7.55" && return
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local dir
 	local stripe_count
@@ -14269,6 +14275,8 @@ test_300g() {
 run_test 300g "check default striped directory for normal directory"
 
 test_300h() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.55) ] &&
+		skip "Need MDS version at least 2.7.55" && return
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local dir
 	local stripe_count
@@ -14297,6 +14305,8 @@ test_300h() {
 run_test 300h "check default striped directory for striped directory"
 
 test_300i() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.55) ] &&
+		skip "Need MDS version at least 2.7.55" && return
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local stripe_count
