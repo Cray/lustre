@@ -1658,11 +1658,11 @@ enum cl_enq_flags {
 	/*
 	 * tell the DLM layer to lock only the requested range
 	 */
-	CEF_REQ_ONLY    = 0x00000080,
+	CEF_REQ_ONLY    = 0x00000100,
 	/**
 	 * mask of enq_flags.
 	 */
-	CEF_MASK         = 0x000000ff,
+	CEF_MASK         = 0x000001ff,
 };
 
 /**
