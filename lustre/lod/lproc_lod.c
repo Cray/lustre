@@ -65,8 +65,9 @@ static int lod_stripesize_seq_show(struct seq_file *m, void *v)
 
 	LASSERT(dev != NULL);
 	lod  = lu2lod_dev(dev->obd_lu_dev);
-	return seq_printf(m, LPU64"\n",
-			lod->lod_desc.ld_default_stripe_size);
+	seq_printf(m, LPU64"\n",
+		   lod->lod_desc.ld_default_stripe_size);
+	return 0;
 }
 
 /**
@@ -120,8 +121,9 @@ static int lod_stripeoffset_seq_show(struct seq_file *m, void *v)
 
 	LASSERT(dev != NULL);
 	lod  = lu2lod_dev(dev->obd_lu_dev);
-	return seq_printf(m, LPU64"\n",
-			lod->lod_desc.ld_default_stripe_offset);
+	seq_printf(m, LPU64"\n",
+		   lod->lod_desc.ld_default_stripe_offset);
+	return 0;
 }
 
 /**
@@ -175,7 +177,8 @@ static int lod_stripetype_seq_show(struct seq_file *m, void *v)
 
 	LASSERT(dev != NULL);
 	lod  = lu2lod_dev(dev->obd_lu_dev);
-	return seq_printf(m, "%u\n", lod->lod_desc.ld_pattern);
+	seq_printf(m, "%u\n", lod->lod_desc.ld_pattern);
+	return 0;
 }
 
 /**
@@ -227,8 +230,9 @@ static int lod_stripecount_seq_show(struct seq_file *m, void *v)
 
 	LASSERT(dev != NULL);
 	lod  = lu2lod_dev(dev->obd_lu_dev);
-	return seq_printf(m, "%d\n",
-			(__s16)(lod->lod_desc.ld_default_stripe_count + 1) - 1);
+	seq_printf(m, "%d\n",
+		   (__s16)(lod->lod_desc.ld_default_stripe_count + 1) - 1);
+	return 0;
 }
 
 /**
@@ -280,7 +284,8 @@ static int lod_numobd_seq_show(struct seq_file *m, void *v)
 
 	LASSERT(dev != NULL);
 	lod  = lu2lod_dev(dev->obd_lu_dev);
-	return seq_printf(m, "%u\n", lod->lod_desc.ld_tgt_count);
+	seq_printf(m, "%u\n", lod->lod_desc.ld_tgt_count);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(lod_numobd);
 
@@ -300,7 +305,8 @@ static int lod_activeobd_seq_show(struct seq_file *m, void *v)
 
 	LASSERT(dev != NULL);
 	lod  = lu2lod_dev(dev->obd_lu_dev);
-	return seq_printf(m, "%u\n", lod->lod_desc.ld_active_tgt_count);
+	seq_printf(m, "%u\n", lod->lod_desc.ld_active_tgt_count);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(lod_activeobd);
 
@@ -320,7 +326,8 @@ static int lod_desc_uuid_seq_show(struct seq_file *m, void *v)
 
 	LASSERT(dev != NULL);
 	lod  = lu2lod_dev(dev->obd_lu_dev);
-	return seq_printf(m, "%s\n", lod->lod_desc.ld_uuid.uuid);
+	seq_printf(m, "%s\n", lod->lod_desc.ld_uuid.uuid);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(lod_desc_uuid);
 
@@ -344,8 +351,9 @@ static int lod_qos_priofree_seq_show(struct seq_file *m, void *v)
 	struct lod_device *lod = lu2lod_dev(dev->obd_lu_dev);
 
 	LASSERT(lod != NULL);
-	return seq_printf(m, "%d%%\n",
-			(lod->lod_qos.lq_prio_free * 100 + 255) >> 8);
+	seq_printf(m, "%d%%\n",
+		   (lod->lod_qos.lq_prio_free * 100 + 255) >> 8);
+	return 0;
 }
 
 /**
@@ -383,8 +391,8 @@ lod_qos_priofree_seq_write(struct file *file, const char __user *buffer,
 	if (val > 100)
 		return -EINVAL;
 	lod->lod_qos.lq_prio_free = (val << 8) / 100;
-	lod->lod_qos.lq_dirty = 1;
-	lod->lod_qos.lq_reset = 1;
+	set_bit(LQ_DIRTY, &lod->lod_qos.lq_flags);
+	set_bit(LQ_RESET, &lod->lod_qos.lq_flags);
 	return count;
 }
 LPROC_SEQ_FOPS(lod_qos_priofree);
@@ -405,8 +413,9 @@ static int lod_qos_thresholdrr_seq_show(struct seq_file *m, void *v)
 
 	LASSERT(dev != NULL);
 	lod = lu2lod_dev(dev->obd_lu_dev);
-	return seq_printf(m, "%d%%\n",
-			(lod->lod_qos.lq_threshold_rr * 100 + 255) >> 8);
+	seq_printf(m, "%d%%\n",
+		   (lod->lod_qos.lq_threshold_rr * 100 + 255) >> 8);
+	return 0;
 }
 
 /**
@@ -446,7 +455,7 @@ lod_qos_thresholdrr_seq_write(struct file *file, const char *buffer,
 		return -EINVAL;
 
 	lod->lod_qos.lq_threshold_rr = (val << 8) / 100;
-	lod->lod_qos.lq_dirty = 1;
+	set_bit(LQ_DIRTY, &lod->lod_qos.lq_flags);
 	return count;
 }
 LPROC_SEQ_FOPS(lod_qos_thresholdrr);
@@ -468,7 +477,8 @@ static int lod_qos_maxage_seq_show(struct seq_file *m, void *v)
 
 	LASSERT(dev != NULL);
 	lod = lu2lod_dev(dev->obd_lu_dev);
-	return seq_printf(m, "%u Sec\n", lod->lod_desc.ld_qos_maxage);
+	seq_printf(m, "%u Sec\n", lod->lod_desc.ld_qos_maxage);
+	return 0;
 }
 
 /**
@@ -612,9 +622,10 @@ static int lod_osts_seq_show(struct seq_file *p, void *v)
 	} else if (rc)
 		return rc;
 
-	return seq_printf(p, "%d: %s %sACTIVE\n", idx,
-			  obd_uuid2str(&ost_desc->ltd_uuid),
-			  active ? "" : "IN");
+	seq_printf(p, "%d: %s %sACTIVE\n", idx,
+		   obd_uuid2str(&ost_desc->ltd_uuid),
+		   active ? "" : "IN");
+	return 0;
 }
 
 static const struct seq_operations lod_osts_sops = {
@@ -664,7 +675,8 @@ static int lod_lmv_failout_seq_show(struct seq_file *m, void *v)
 	LASSERT(dev != NULL);
 	lod = lu2lod_dev(dev->obd_lu_dev);
 
-	return seq_printf(m, "%d\n", lod->lod_lmv_failout ? 1 : 0);
+	seq_printf(m, "%d\n", lod->lod_lmv_failout ? 1 : 0);
+	return 0;
 }
 
 /**

@@ -171,7 +171,7 @@ static int ofd_inconsistency_verification_main(void *args)
 
 	OBD_ALLOC_PTR(lr);
 	if (unlikely(lr == NULL))
-		GOTO(out, rc = -ENOMEM);
+		GOTO(out_unlocked, rc = -ENOMEM);
 
 	lr->lr_event = LE_PAIRS_VERIFY;
 	lr->lr_active = LFSCK_TYPE_LAYOUT;
@@ -222,6 +222,8 @@ static int ofd_inconsistency_verification_main(void *args)
 
 	GOTO(out, rc = 0);
 
+out_unlocked:
+	spin_lock(&ofd->ofd_inconsistency_lock);
 out:
 	thread_set_flags(thread, SVC_STOPPED);
 	wake_up_all(&thread->t_ctl_waitq);
@@ -440,6 +442,7 @@ static int ofd_preprw_read(const struct lu_env *env, struct obd_export *exp,
 			   struct niobuf_remote *rnb, int *nr_local,
 			   struct niobuf_local *lnb, char *jobid)
 {
+	struct ofd_thread_info	*info = ofd_info(env);
 	struct ofd_object	*fo;
 	int			 i, j, rc, tot_bytes = 0;
 
@@ -485,6 +488,7 @@ static int ofd_preprw_read(const struct lu_env *env, struct obd_export *exp,
 	if (unlikely(rc))
 		GOTO(buf_put, rc);
 
+	info->fti_obj = fo;
 	ofd_counter_incr(exp, LPROC_OFD_STATS_READ, jobid, tot_bytes);
 	RETURN(0);
 
@@ -526,6 +530,7 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 			    struct niobuf_remote *rnb, int *nr_local,
 			    struct niobuf_local *lnb, char *jobid)
 {
+	struct ofd_thread_info	*info = ofd_info(env);
 	struct ofd_object	*fo;
 	int			 i, j, k, rc = 0, tot_bytes = 0;
 
@@ -646,6 +651,7 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 	if (unlikely(rc != 0))
 		GOTO(err, rc);
 
+	info->fti_obj = fo;
 	ofd_counter_incr(exp, LPROC_OFD_STATS_WRITE, jobid, tot_bytes);
 	RETURN(0);
 err:
@@ -654,6 +660,7 @@ err:
 	ofd_object_put(env, fo);
 	/* ofd_grant_prepare_write() was called, so we must commit */
 	ofd_grant_commit(env, exp, rc);
+	ofd_object_put(env, fo);
 out:
 	/* let's still process incoming grant information packed in the oa,
 	 * but without enforcing grant since we won't proceed with the write.
@@ -715,7 +722,7 @@ int ofd_preprw(const struct lu_env *env, int cmd, struct obd_export *exp,
 
 	LASSERT(oa != NULL);
 
-	if (OBD_FAIL_CHECK(OBD_FAIL_OST_ENOENT)) {
+	if (OBD_FAIL_CHECK(OBD_FAIL_SRV_ENOENT)) {
 		struct ofd_seq		*oseq;
 
 		oseq = ofd_seq_load(env, ofd, ostid_seq(&oa->o_oi));
@@ -787,22 +794,19 @@ ofd_commitrw_read(const struct lu_env *env, struct ofd_device *ofd,
 		  const struct lu_fid *fid, int objcount, int niocount,
 		  struct niobuf_local *lnb)
 {
-	struct ofd_object *fo;
+	struct ofd_thread_info	*info = ofd_info(env);
+	struct ofd_object *fo = info->fti_obj;
 
 	ENTRY;
 
 	LASSERT(niocount > 0);
 
-	fo = ofd_object_find(env, ofd, fid);
-	if (IS_ERR(fo))
-		RETURN(PTR_ERR(fo));
 	LASSERT(fo != NULL);
 	LASSERT(ofd_object_exists(fo));
 	dt_bufs_put(env, ofd_object_child(fo), lnb, niocount);
 
 	ofd_read_unlock(env, fo);
-	ofd_object_put(env, fo);
-	/* second put is pair to object_get in ofd_preprw_read */
+	/* put is pair to object_get in ofd_preprw_read */
 	ofd_object_put(env, fo);
 
 	RETURN(0);
@@ -1026,7 +1030,7 @@ ofd_commitrw_write(const struct lu_env *env, struct obd_export *exp,
 		   int niocount, struct niobuf_local *lnb, int old_rc)
 {
 	struct ofd_thread_info	*info = ofd_info(env);
-	struct ofd_object	*fo;
+	struct ofd_object	*fo = info->fti_obj;
 	struct dt_object	*o;
 	struct thandle		*th;
 	int			 rc = 0;
@@ -1040,7 +1044,6 @@ ofd_commitrw_write(const struct lu_env *env, struct obd_export *exp,
 
 	LASSERT(objcount == 1);
 
-	fo = ofd_object_find(env, ofd, fid);
 	LASSERT(fo != NULL);
 	LASSERT(ofd_object_exists(fo));
 
@@ -1122,6 +1125,7 @@ out_stop:
 		cb_registered = true;
 	}
 
+	CFS_FAIL_TIMEOUT(OBD_FAIL_TGT_CLIENT_DEL, 10);
 	ofd_trans_stop(env, ofd, th, rc);
 	if (rc == -ENOSPC && retries++ < 3) {
 		CDEBUG(D_INODE, "retry after force commit, retries:%d\n",
@@ -1139,9 +1143,9 @@ out_stop:
 out:
 	dt_bufs_put(env, o, lnb, niocount);
 	ofd_read_unlock(env, fo);
+	/* put is pair to object_get in ofd_preprw_write */
 	ofd_object_put(env, fo);
-	/* second put is pair to object_get in ofd_preprw_write */
-	ofd_object_put(env, fo);
+	info->fti_obj = NULL;
 	ofd_grant_commit(env, info->fti_exp, old_rc);
 	RETURN(rc);
 }

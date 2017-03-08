@@ -75,7 +75,7 @@ int cl_lock_ahead(struct inode *inode, off_t start, off_t end,
 		  lock_mode_user mode, __u32 flags);
 
 int cl_io_get(struct inode *inode, struct lu_env **envout,
-	      struct cl_io **ioout, int *refcheck);
+	      struct cl_io **ioout, __u16 *refcheck);
 
 /**
  * Locking policy for setattr.
@@ -300,6 +300,7 @@ struct vvp_page {
 	struct cl_page_slice vpg_cl;
 	unsigned	vpg_defer_uptodate:1,
 			vpg_ra_used:1,
+			vpg_ra_updated:1,
 			vpg_write_queued:1;
 	/**
 	 * Non-empty iff this page is already counted in

@@ -19,6 +19,16 @@ init_logging
 
 require_dsh_mds || exit 0
 
+load_modules
+
+if ! check_versions; then
+	skip "It is NOT necessary to test lfsck under interoperation mode"
+	exit 0
+fi
+
+[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.3.60) ]] &&
+	skip "Need MDS version at least 2.3.60" && exit 0
+
 LTIME=${LTIME:-120}
 
 SAVED_MDSSIZE=${MDSSIZE}
@@ -34,10 +44,6 @@ OSTSIZE=100000
 # build up a clean test environment.
 formatall
 setupall
-
-[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.3.60) ]] &&
-	skip "Need MDS version at least 2.3.60" && check_and_cleanup_lustre &&
-	exit 0
 
 [[ $(lustre_version_code $SINGLEMDS) -le $(version_code 2.4.90) ]] &&
 	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 2c"
@@ -2207,7 +2213,7 @@ test_18e() {
 	echo "Trigger layout LFSCK on all devices to find out orphan OST-object"
 	$START_LAYOUT -r -o -c || error "(2) Fail to start LFSCK for layout!"
 
-	wait_update_facet mds1 "$LCTL get_param -n \
+	wait_update --verbose $(facet_active_host mds1) "$LCTL get_param -n \
 		mdd.$(facet_svc mds1).lfsck_layout |
 		awk '/^status/ { print \\\$2 }'" "scanning-phase2" $LTIME ||
 		error "(3) MDS1 is not the expected 'scanning-phase2'"
@@ -3006,15 +3012,48 @@ test_23b() {
 
 	check_mount_and_prep
 
+	[[ -d $MOUNT/.lustre/lost+found/MDT0000 ]] || {
+		# Trigger LFSCK firstly, that will generate the
+		# .lustre/lost+found/MDTxxxx in advance to avoid
+		# reusing the local object for the dangling name
+		# entry. LU-7429
+		$START_NAMESPACE -r ||
+			error "(0) Fail to start LFSCK for namespace"
+
+		wait_update_facet $SINGLEMDS "$LCTL get_param -n \
+			mdd.${MDT_DEV}.lfsck_namespace |
+			awk '/^status/ { print \\\$2 }'" "completed" 32 || {
+			$SHOW_NAMESPACE
+			error "(0.1) unexpected status"
+             }
+	}
+
 	$LFS mkdir -i 0 $DIR/$tdir/d0 || error "(1) Fail to mkdir d0 on MDT0"
+	$LFS path2fid $DIR/$tdir/d0
+
 	echo "dummy" > $DIR/$tdir/d0/f0 || error "(2) Fail to touch on MDT0"
+	$LFS path2fid $DIR/$tdir/d0/f0
+
 	echo "dead" > $DIR/$tdir/d0/f1 || error "(3) Fail to touch on MDT0"
+	$LFS path2fid $DIR/$tdir/d0/f1
+
+	local OID=$($LFS path2fid $DIR/$tdir/d0/f1 | awk -F':' '{print $2}')
+	OID=$(printf %d $OID)
+
+	if [ $OID -eq 1 ]; then
+		# To guarantee that the f0 and f1 are in the same FID seq
+		rm -f $DIR/$tdir/d0/f0 ||
+			error "(3.1) Fail to unlink $DIR/$tdir/d0/f0"
+		echo "dummy" > $DIR/$tdir/d0/f0 ||
+			error "(3.2) Fail to touch on MDT0"
+		$LFS path2fid $DIR/$tdir/d0/f0
+	fi
 
 	echo "Inject failure stub on MDT0 to simulate dangling name entry"
 	#define OBD_FAIL_LFSCK_DANGLING3	0x1621
-	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x1621
+	do_facet $SINGLEMDS $LCTL set_param fail_val=$OID fail_loc=0x1621
 	ln $DIR/$tdir/d0/f0 $DIR/$tdir/d0/foo || error "(4) Fail to hard link"
-	do_facet $SINGLEMDS $LCTL set_param fail_loc=0
+	do_facet $SINGLEMDS $LCTL set_param fail_val=0 fail_loc=0
 
 	rm -f $DIR/$tdir/d0/f1 || error "(5) Fail to unlink $DIR/$tdir/d0/f1"
 
@@ -3063,17 +3102,52 @@ test_23c() {
 	echo "LFSCK cannot replace it."
 	echo "#####"
 
+	start_full_debug_logging
+
 	check_mount_and_prep
 
+	[[ -d $MOUNT/.lustre/lost+found/MDT0000 ]] || {
+		# Trigger LFSCK firstly, that will generate the
+		# .lustre/lost+found/MDTxxxx in advance to avoid
+		# reusing the local object for the dangling name
+		# entry. LU-7429
+		$START_NAMESPACE -r ||
+			error "(0) Fail to start LFSCK for namespace"
+
+		wait_update_facet $SINGLEMDS "$LCTL get_param -n \
+			mdd.${MDT_DEV}.lfsck_namespace |
+			awk '/^status/ { print \\\$2 }'" "completed" 32 || {
+			$SHOW_NAMESPACE
+			error "(0.1) unexpected status"
+             }
+	}
+
 	$LFS mkdir -i 0 $DIR/$tdir/d0 || error "(1) Fail to mkdir d0 on MDT0"
+	$LFS path2fid $DIR/$tdir/d0
+
 	echo "dummy" > $DIR/$tdir/d0/f0 || error "(2) Fail to touch on MDT0"
+	$LFS path2fid $DIR/$tdir/d0/f0
+
 	echo "dead" > $DIR/$tdir/d0/f1 || error "(3) Fail to touch on MDT0"
+	$LFS path2fid $DIR/$tdir/d0/f1
+
+	local OID=$($LFS path2fid $DIR/$tdir/d0/f1 | awk -F':' '{print $2}')
+	OID=$(printf %d $OID)
+
+	if [ $OID -eq 1 ]; then
+		# To guarantee that the f0 and f1 are in the same FID seq
+		rm -f $DIR/$tdir/d0/f0 ||
+			error "(3.1) Fail to unlink $DIR/$tdir/d0/f0"
+		echo "dummy" > $DIR/$tdir/d0/f0 ||
+			error "(3.2) Fail to touch on MDT0"
+		$LFS path2fid $DIR/$tdir/d0/f0
+	fi
 
 	echo "Inject failure stub on MDT0 to simulate dangling name entry"
 	#define OBD_FAIL_LFSCK_DANGLING3	0x1621
-	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x1621
+	do_facet $SINGLEMDS $LCTL set_param fail_val=$OID fail_loc=0x1621
 	ln $DIR/$tdir/d0/f0 $DIR/$tdir/d0/foo || error "(4) Fail to hard link"
-	do_facet $SINGLEMDS $LCTL set_param fail_loc=0
+	do_facet $SINGLEMDS $LCTL set_param fail_val=0 fail_loc=0
 
 	rm -f $DIR/$tdir/d0/f1 || error "(5) Fail to unlink $DIR/$tdir/d0/f1"
 
@@ -3089,7 +3163,7 @@ test_23c() {
 		error "(7) Fail to start LFSCK for namespace"
 
 	wait_update_facet client "stat $DIR/$tdir/d0/foo |
-		awk '/Size/ { print \\\$2 }'" "0" 32 || {
+		awk '/Size/ { print \\\$2 }'" "0" $LTIME || {
 		stat $DIR/$tdir/guard
 		$SHOW_NAMESPACE
 		error "(8) unexpected size"
@@ -3105,6 +3179,8 @@ test_23c() {
 		$SHOW_NAMESPACE
 		error "(10) unexpected status"
 	}
+
+	stop_full_debug_logging
 
 	local repaired=$($SHOW_NAMESPACE |
 			 awk '/^dangling_repaired/ { print $2 }')

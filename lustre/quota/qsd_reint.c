@@ -628,6 +628,9 @@ int qsd_start_reint_thread(struct qsd_qtype_info *qqi)
 	char			*name;
 	ENTRY;
 
+	if (qsd->qsd_dev->dd_rdonly)
+		RETURN(-EROFS);
+
 	/* don't bother to do reintegration when quota isn't enabled */
 	if (!qsd_type_enabled(qsd, qqi->qqi_qtype))
 		RETURN(0);

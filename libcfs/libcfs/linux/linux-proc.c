@@ -327,6 +327,26 @@ proc_fail_loc(struct ctl_table *table, int write, void __user *buffer,
 	return rc;
 }
 
+static int
+proc_trigger_watchdog(struct ctl_table *table, int write,
+		      void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	if (write) {
+		struct lc_watchdog *lcw;
+
+		lcw = lc_watchdog_add(10, NULL, NULL);
+		if (lcw == NULL)
+			return -ENOMEM;
+		lc_watchdog_touch(lcw, 10);
+		schedule_timeout_and_set_state(TASK_UNINTERRUPTIBLE,
+					       cfs_time_seconds(20));
+		lc_watchdog_disable(lcw);
+
+		lc_watchdog_delete(lcw);
+	}
+	return *lenp;
+}
+
 static int __proc_cpt_table(void *data, int write,
 			    loff_t pos, void __user *buffer, int nob)
 {
@@ -348,8 +368,8 @@ static int __proc_cpt_table(void *data, int write,
 		if (rc >= 0)
 			break;
 
-		LIBCFS_FREE(buf, len);
 		if (rc == -EFBIG) {
+			LIBCFS_FREE(buf, len);
 			len <<= 1;
 			continue;
 		}
@@ -554,6 +574,15 @@ static struct ctl_table lnet_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec,
 	},
+	{
+		INIT_CTL_NAME
+		.procname = "trigger_watchdog",
+		.data     = NULL,
+		.maxlen   = 0,
+		.mode     = 0200,
+		.proc_handler = &proc_trigger_watchdog
+	},
+
 	{ 0 }
 };
 

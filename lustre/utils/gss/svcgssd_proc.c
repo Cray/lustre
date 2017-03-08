@@ -38,6 +38,7 @@
 #include <sys/param.h>
 #include <sys/stat.h>
 
+#include <inttypes.h>
 #include <pwd.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -271,15 +272,15 @@ print_hexl(int pri, unsigned char *cp, int length)
 	printerr(pri, "\n");
 
 	for (i = 0; i < length; i += 0x10) {
-		printerr(pri, "  %04x: ", (u_int)i);
+		printerr(pri, "  %04x: ", (unsigned int)i);
 		jm = length - i;
 		jm = jm > 16 ? 16 : jm;
 
 		for (j = 0; j < jm; j++) {
 			if ((j % 2) == 1)
-				printerr(pri,"%02x ", (u_int)cp[i+j]);
+				printerr(pri, "%02x ", (unsigned int)cp[i+j]);
 			else
-				printerr(pri,"%02x", (u_int)cp[i+j]);
+				printerr(pri, "%02x", (unsigned int)cp[i+j]);
 		}
 		for (; j < 16; j++) {
 			if ((j % 2) == 1)
@@ -401,9 +402,8 @@ get_ids(gss_name_t client_name, gss_OID mech, struct svc_cred *cred,
 				cred->cr_uid = 0;
 				cred->cr_usr_mds = 1;
 			} else if (!strcmp(sname, GSSD_SERVICE_OSS)) {
-				printerr(0, "ERROR: MDS doesn't accept "
-					 "user "GSSD_SERVICE_OSS"\n");
-				break;
+				cred->cr_uid = 0;
+				cred->cr_usr_oss = 1;
 			} else {
 				pw = getpwnam(sname);
 				if (pw != NULL) {
@@ -438,8 +438,9 @@ get_ids(gss_name_t client_name, gss_OID mech, struct svc_cred *cred,
 		} else if (!strcmp(sname, GSSD_SERVICE_MDS)) {
 			cred->cr_uid = 0;
 			cred->cr_usr_mds = 1;
-		} else {
-			printerr(0, "ERROR: svc %d doesn't accept user %s"
+		}
+		if (cred->cr_uid == -1) {
+			printerr(0, "ERROR: svc %d doesn't accept user %s "
 				 "from %016llx\n", lustre_svc, sname, nid);
 			break;
 		}

@@ -710,8 +710,8 @@ static int mdt_reint_setattr(struct mdt_thread_info *info,
 		repbody->mbo_ioepoch = mo->mot_ioepoch;
 
                 mdt_object_get(info->mti_env, mo);
-                mdt_mfd_set_mode(mfd, MDS_FMODE_TRUNC);
                 mfd->mfd_object = mo;
+		mdt_mfd_set_mode(mfd, MDS_FMODE_TRUNC);
                 mfd->mfd_xid = req->rq_xid;
 
 		spin_lock(&med->med_open_lock);

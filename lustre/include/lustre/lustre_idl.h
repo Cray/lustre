@@ -338,8 +338,10 @@ enum lma_incompat {
 	LMAI_REMOTE_PARENT	= 0x00000004, /* the parent of the object
 						 is on the remote MDT */
 	LMAI_STRIPED		= 0x00000008, /* striped directory inode */
+	LMAI_ORPHAN		= 0x00000010, /* inode is orphan */
+	LMA_INCOMPAT_SUPP	= (LMAI_AGENT | LMAI_REMOTE_PARENT | \
+				   LMAI_STRIPED | LMAI_ORPHAN)
 };
-#define LMA_INCOMPAT_SUPP	(LMAI_AGENT | LMAI_REMOTE_PARENT | LMAI_STRIPED)
 
 extern void lustre_lma_swab(struct lustre_mdt_attrs *lma);
 extern void lustre_lma_init(struct lustre_mdt_attrs *lma,
@@ -1000,22 +1002,24 @@ enum lu_dirent_attrs {
 	LUDA_TYPE		= 0x0002,
 	LUDA_64BITHASH		= 0x0004,
 
-	/* The following attrs are used for MDT interanl only,
+	/* The following attrs are used for MDT internal only,
 	 * not visible to client */
 
-	/* Verify the dirent consistency */
-	LUDA_VERIFY		= 0x8000,
-	/* Only check but not repair the dirent inconsistency */
-	LUDA_VERIFY_DRYRUN	= 0x4000,
-	/* The dirent has been repaired, or to be repaired (dryrun). */
-	LUDA_REPAIR		= 0x2000,
-	/* The system is upgraded, has beed or to be repaired (dryrun). */
-	LUDA_UPGRADE		= 0x1000,
+	/* Something in the record is unknown, to be verified in further. */
+	LUDA_UNKNOWN		= 0x0400,
 	/* Ignore this record, go to next directly. */
 	LUDA_IGNORE		= 0x0800,
+	/* The system is upgraded, has beed or to be repaired (dryrun). */
+	LUDA_UPGRADE		= 0x1000,
+	/* The dirent has been repaired, or to be repaired (dryrun). */
+	LUDA_REPAIR		= 0x2000,
+	/* Only check but not repair the dirent inconsistency */
+	LUDA_VERIFY_DRYRUN	= 0x4000,
+	/* Verify the dirent consistency */
+	LUDA_VERIFY		= 0x8000,
 };
 
-#define LU_DIRENT_ATTRS_MASK	0xf800
+#define LU_DIRENT_ATTRS_MASK	0xff00
 
 /**
  * Layout of readdir pages, as transmitted on wire.
@@ -1189,8 +1193,10 @@ struct ptlrpc_body_v3 {
 	__u32 pb_version;
 	__u32 pb_opc;
 	__u32 pb_status;
-	__u64 pb_last_xid;
-	__u64 pb_last_seen;
+	__u64 pb_last_xid; /* highest replied XID without lower unreplied XID */
+	__u16 pb_tag;      /* virtual slot idx for multiple modifying RPCs */
+	__u16 pb_padding0;
+	__u32 pb_padding1;
 	__u64 pb_last_committed;
 	__u64 pb_transno;
 	__u32 pb_flags;
@@ -1202,8 +1208,11 @@ struct ptlrpc_body_v3 {
 	__u64 pb_slv;
 	/* VBR: pre-versions */
 	__u64 pb_pre_versions[PTLRPC_NUM_VERSIONS];
+	__u64 pb_mbits;	/**< match bits for bulk request */
 	/* padding for future needs */
-	__u64 pb_padding[4];
+	__u64 pb_padding64_0;
+	__u64 pb_padding64_1;
+	__u64 pb_padding64_2;
 	char  pb_jobid[LUSTRE_JOBID_SIZE];
 };
 #define ptlrpc_body     ptlrpc_body_v3
@@ -1214,8 +1223,10 @@ struct ptlrpc_body_v2 {
         __u32 pb_version;
         __u32 pb_opc;
         __u32 pb_status;
-        __u64 pb_last_xid;
-        __u64 pb_last_seen;
+	__u64 pb_last_xid; /* highest replied XID without lower unreplied XID */
+	__u16 pb_tag;      /* virtual slot idx for multiple modifying RPCs */
+	__u16 pb_padding0;
+	__u32 pb_padding1;
         __u64 pb_last_committed;
         __u64 pb_transno;
         __u32 pb_flags;
@@ -1228,8 +1239,11 @@ struct ptlrpc_body_v2 {
         __u64 pb_slv;
         /* VBR: pre-versions */
         __u64 pb_pre_versions[PTLRPC_NUM_VERSIONS];
+	__u64 pb_mbits;	/**< unused in V2 */
         /* padding for future needs */
-        __u64 pb_padding[4];
+	__u64 pb_padding64_0;
+	__u64 pb_padding64_1;
+	__u64 pb_padding64_2;
 };
 
 extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
@@ -1303,11 +1317,7 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 #define OBD_CONNECT_TRUNCLOCK           0x400ULL /*locks on server for punch */
 #define OBD_CONNECT_TRANSNO             0x800ULL /*replay sends init transno */
 #define OBD_CONNECT_IBITS              0x1000ULL /*support for inodebits locks*/
-#define OBD_CONNECT_JOIN               0x2000ULL /*files can be concatenated.
-                                                  *We do not support JOIN FILE
-                                                  *anymore, reserve this flags
-                                                  *just for preventing such bit
-                                                  *to be reused.*/
+#define OBD_CONNECT_BARRIER	       0x2000ULL /* write barrier */
 #define OBD_CONNECT_ATTRFID            0x4000ULL /*Server can GetAttr By Fid*/
 #define OBD_CONNECT_NODEVOH            0x8000ULL /*No open hndl on specl nodes*/
 #define OBD_CONNECT_RMT_CLIENT        0x10000ULL /*Remote client */
@@ -1355,9 +1365,13 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 						       name in request */
 #define OBD_CONNECT_LFSCK      0x40000000000000ULL/* support online LFSCK */
 #define OBD_CONNECT_UNLINK_CLOSE 0x100000000000000ULL/* close file in unlink */
+#define OBD_CONNECT_MULTIMODRPCS 0x200000000000000ULL /* support multiple modify
+							 RPCs in parallel */
 #define OBD_CONNECT_DIR_STRIPE	 0x400000000000000ULL /* striped DNE dir */
 #define OBD_CONNECT_LOCK_AHEAD   0x1000000000000000ULL /* lock ahead */
 
+/** bulk matchbits is sent within ptlrpc_body */
+#define OBD_CONNECT_BULK_MBITS	 0x2000000000000000ULL
 /* XXX README XXX:
  * Please DO NOT add flag values here before first ensuring that this same
  * flag value is not in use on some other branch.  Please clear any such
@@ -1402,7 +1416,9 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 				OBD_CONNECT_PINGLESS | OBD_CONNECT_MAX_EASIZE |\
 				OBD_CONNECT_FLOCK_DEAD | \
 				OBD_CONNECT_DISP_STRIPE | OBD_CONNECT_LFSCK | \
-				OBD_CONNECT_OPEN_BY_FID)
+				OBD_CONNECT_OPEN_BY_FID | \
+				OBD_CONNECT_MULTIMODRPCS | \
+				OBD_CONNECT_BULK_MBITS)
 
 #define OST_CONNECT_SUPPORTED  (OBD_CONNECT_SRVLOCK | OBD_CONNECT_GRANT | \
                                 OBD_CONNECT_REQPORTAL | OBD_CONNECT_VERSION | \
@@ -1421,11 +1437,13 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 				OBD_CONNECT_LIGHTWEIGHT | OBD_CONNECT_LVB_TYPE|\
 				OBD_CONNECT_LAYOUTLOCK | OBD_CONNECT_FID | \
 				OBD_CONNECT_PINGLESS | OBD_CONNECT_LFSCK | \
-				OBD_CONNECT_LOCK_AHEAD)
+				OBD_CONNECT_LOCK_AHEAD | \
+				OBD_CONNECT_BULK_MBITS)
 #define ECHO_CONNECT_SUPPORTED (0)
 #define MGS_CONNECT_SUPPORTED  (OBD_CONNECT_VERSION | OBD_CONNECT_AT | \
 				OBD_CONNECT_FULL20 | OBD_CONNECT_IMP_RECOV | \
-				OBD_CONNECT_MNE_SWAB | OBD_CONNECT_PINGLESS)
+				OBD_CONNECT_MNE_SWAB | OBD_CONNECT_PINGLESS | \
+				OBD_CONNECT_BARRIER | OBD_CONNECT_BULK_MBITS)
 
 /* Features required for this version of the client to work with server */
 #define CLIENT_CONNECT_MDT_REQD (OBD_CONNECT_IBITS | OBD_CONNECT_FID | \
@@ -1435,25 +1453,6 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
  *
  * If we eventually have separate connect data for different types, which we
  * almost certainly will, then perhaps we stick a union in here. */
-struct obd_connect_data_v1 {
-	__u64 ocd_connect_flags; /* OBD_CONNECT_* per above */
-	__u32 ocd_version;	 /* lustre release version number */
-	__u32 ocd_grant;	 /* initial cache grant amount (bytes) */
-	__u32 ocd_index;	 /* LOV index to connect to */
-	__u32 ocd_brw_size;	 /* Maximum BRW size in bytes, must be 2^n */
-        __u64 ocd_ibits_known;   /* inode bits this client understands */
-        __u8  ocd_blocksize;     /* log2 of the backend filesystem blocksize */
-        __u8  ocd_inodespace;    /* log2 of the per-inode space consumption */
-        __u16 ocd_grant_extent;  /* per-extent grant overhead, in 1K blocks */
-        __u32 ocd_unused;        /* also fix lustre_swab_connect */
-        __u64 ocd_transno;       /* first transno from client to be replayed */
-        __u32 ocd_group;         /* MDS group on OST */
-        __u32 ocd_cksum_types;   /* supported checksum algorithms */
-        __u32 ocd_max_easize;    /* How big LOV EA can be on MDS */
-        __u32 ocd_instance;      /* also fix lustre_swab_connect */
-        __u64 ocd_maxbytes;      /* Maximum stripe size in bytes */
-};
-
 struct obd_connect_data {
 	__u64 ocd_connect_flags; /* OBD_CONNECT_* per above */
 	__u32 ocd_version;	 /* lustre release version number */
@@ -1475,7 +1474,9 @@ struct obd_connect_data {
          * if the corresponding flag in ocd_connect_flags is set. Accessing
          * any field after ocd_maxbytes on the receiver without a valid flag
          * may result in out-of-bound memory access and kernel oops. */
-        __u64 padding1;          /* added 2.1.0. also fix lustre_swab_connect */
+	__u16 ocd_maxmodrpcs;    /* Maximum modify RPCs in parallel */
+	__u16 padding0;          /* added 2.1.0. also fix lustre_swab_connect */
+	__u32 padding1;          /* added 2.1.0. also fix lustre_swab_connect */
         __u64 padding2;          /* added 2.1.0. also fix lustre_swab_connect */
         __u64 padding3;          /* added 2.1.0. also fix lustre_swab_connect */
         __u64 padding4;          /* added 2.1.0. also fix lustre_swab_connect */
@@ -2282,13 +2283,43 @@ enum md_op_flags {
 
 #define LUSTRE_BFLAG_UNCOMMITTED_WRITES   0x1
 
-/* these should be identical to their EXT4_*_FL counterparts, they are
- * redefined here only to avoid dragging in fs/ext4/ext4.h */
-#define LUSTRE_SYNC_FL         0x00000008 /* Synchronous updates */
-#define LUSTRE_IMMUTABLE_FL    0x00000010 /* Immutable file */
-#define LUSTRE_APPEND_FL       0x00000020 /* writes to file may only append */
-#define LUSTRE_NOATIME_FL      0x00000080 /* do not update atime */
-#define LUSTRE_DIRSYNC_FL      0x00010000 /* dirsync behaviour (dir only) */
+enum {
+	/* these should be identical to their EXT4_*_FL counterparts, they are
+	 * redefined here only to avoid dragging in fs/ext4/ext4.h */
+	LUSTRE_SYNC_FL = 0x00000008, /* Synchronous updates */
+	LUSTRE_IMMUTABLE_FL = 0x00000010, /* Immutable file */
+	LUSTRE_APPEND_FL = 0x00000020, /* writes to file may only append */
+	LUSTRE_NODUMP_FL = 0x00000040, /* do not dump file */
+	LUSTRE_NOATIME_FL = 0x00000080, /* do not update atime */
+	LUSTRE_INDEX_FL = 0x00001000, /* hash-indexed directory */
+	LUSTRE_DIRSYNC_FL = 0x00010000, /* dirsync behaviour (dir only) */
+	LUSTRE_TOPDIR_FL = 0x00020000, /* Top of directory hierarchies*/
+	LUSTRE_DIRECTIO_FL = 0x00100000, /* Use direct i/o */
+	LUSTRE_INLINE_DATA_FL = 0x10000000, /* Inode has inline data. */
+
+	/* These flags will not be identical to any EXT4_*_FL counterparts,
+	 * and only reserved for lustre purpose. Note: these flags might
+	 * be conflict with some of EXT4 flags, so
+	 * 1. these conflict flags needs to be removed when the flag is
+	 * wired by la_flags see osd_attr_get().
+	 * 2. If these flags needs to be stored into inode, they will be
+	 * stored in LMA. see LMAI_XXXX */
+	LUSTRE_ORPHAN_FL = 0x00002000,
+
+	LUSTRE_LMA_FL_MASKS = LUSTRE_ORPHAN_FL,
+};
+
+/* LUSTRE_LMA_FL_MASKS defines which flags will be stored in LMA */
+
+static inline int lma_to_lustre_flags(__u32 lma_flags)
+{
+	return (lma_flags & LMAI_ORPHAN) ? LUSTRE_ORPHAN_FL : 0;
+}
+
+static inline int lustre_to_lma_flags(__u32 la_flags)
+{
+	return (la_flags & LUSTRE_ORPHAN_FL) ? LMAI_ORPHAN : 0;
+}
 
 #ifdef __KERNEL__
 /* Convert wire LUSTRE_*_FL to corresponding client local VFS S_* values
@@ -2778,7 +2809,14 @@ struct lmv_mds_md_v1 {
 #define LMV_HASH_TYPE_MASK 0x0000ffff
 
 #define LMV_HASH_FLAG_MIGRATION	0x80000000
+
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 10, 53, 0)
+/* Since lustre 2.8, this flag will not be needed, instead this DEAD
+ * and orphan flags will be stored in LMA (see LMAI_ORPHAN)
+ * Keep this flag just for LFSCK, because it still might meet such
+ * flag when it checks the old FS */
 #define LMV_HASH_FLAG_DEAD	0x40000000
+#endif
 #define LMV_HASH_FLAG_BAD_TYPE	0x20000000
 
 /* The striped directory has ever lost its master LMV EA, then LFSCK
@@ -3115,7 +3153,9 @@ typedef enum {
         MGS_TARGET_DEL,
         MGS_SET_INFO,
         MGS_CONFIG_READ,
-        MGS_LAST_OPC
+	MGS_BARRIER_READ,
+	MGS_BARRIER_NOTIFY,
+	MGS_LAST_OPC
 } mgs_cmd_t;
 #define MGS_FIRST_OPC MGS_CONNECT
 
@@ -3480,8 +3520,10 @@ struct llog_log_hdr {
         __u32                   llh_bitmap_offset;
         __u32                   llh_size;
         __u32                   llh_flags;
+	/* for a catalog the first/oldest and still in-use plain slot is just
+	 * next to it. It will serve as the upper limit after Catalog has
+	 * wrapped around */
         __u32                   llh_cat_idx;
-        /* for a catalog the first plain slot is next to it */
         struct obd_uuid         llh_tgtuuid;
         __u32                   llh_reserved[LLOG_HEADER_SIZE/sizeof(__u32) - 23];
         __u32                   llh_bitmap[LLOG_BITMAP_BYTES/sizeof(__u32)];
@@ -3491,6 +3533,8 @@ struct llog_log_hdr {
 #define LLOG_BITMAP_SIZE(llh)  (__u32)((llh->llh_hdr.lrh_len -		\
 					llh->llh_bitmap_offset -	\
 					sizeof(llh->llh_tail)) * 8)
+#define LLOG_HDR_BITMAP(llh)    (__u32 *)((char *)(llh) +               \
+					  (llh)->llh_bitmap_offset)
 
 /** log cookies are used to reference a specific log file and a record therein */
 struct llog_cookie {
@@ -3635,6 +3679,34 @@ enum lfsck_event_flags {
 	LEF_SET_LMV_ALL		= 0x00000008,
 	LEF_RECHECK_NAME_HASH	= 0x00000010,
 };
+
+enum barrier_notify_events {
+	BNE_READ		= 1,
+	BNE_FREEZE_DONE_P1	= 2,
+	BNE_FREEZE_DONE_P2	= 3,
+	BNE_FREEZE_FAILED	= 4,
+	BNE_THAW_DONE		= 5,
+	BNE_EXPIRED		= 6,
+};
+
+struct barrier_request {
+	char	br_name[MTI_NAME_MAXLEN];
+	__u32	br_event;
+	__u32	br_gen;
+	__s32	br_index;
+	__u32	br_padding_1;
+	__u64	br_padding_2;
+};
+extern void lustre_swab_barrier_request(struct barrier_request *br);
+
+struct barrier_reply {
+	__u32	br_status;
+	__u32	br_gen;
+	__u32	br_timeout;
+	__u32	br_padding_1;
+	__u64	br_padding_2;
+};
+extern void lustre_swab_barrier_reply(struct barrier_reply *br);
 
 static inline void lustre_set_wire_obdo(const struct obd_connect_data *ocd,
 					struct obdo *wobdo,

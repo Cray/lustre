@@ -65,9 +65,32 @@ static int llog_cat_new_log(const struct lu_env *env,
 {
 	struct llog_thread_info	*lgi = llog_info(env);
 	struct llog_logid_rec	*rec = &lgi->lgi_logid;
-	int			 rc;
+	struct llog_log_hdr	*llh = cathandle->lgh_hdr;
+	int			 rc, index;
 
 	ENTRY;
+
+	index = (cathandle->lgh_last_idx + 1) %
+		(OBD_FAIL_PRECHECK(OBD_FAIL_CAT_RECORDS) ? (cfs_fail_val + 1) :
+						LLOG_BITMAP_SIZE(llh));
+
+	/* check that new llog index will not overlap with the first one.
+	 * - llh_cat_idx is the index just before the first/oldest still in-use
+	 *	index in catalog
+	 * - lgh_last_idx is the last/newest used index in catalog
+	 *
+	 * When catalog is not wrapped yet then lgh_last_idx is always larger
+	 * than llh_cat_idx. After the wrap around lgh_last_idx re-starts
+	 * from 0 and llh_cat_idx becomes the upper limit for it
+	 *
+	 * Check if catalog has already wrapped around or not by comparing
+	 * last_idx and cat_idx */
+	if ((index == llh->llh_cat_idx + 1 && llh->llh_count > 1) ||
+	    (index == 0 && llh->llh_cat_idx == 0)) {
+		CWARN("%s: there are no more free slots in catalog\n",
+		      loghandle->lgh_ctxt->loc_obd->obd_name);
+		RETURN(-ENOSPC);
+	}
 
 	if (OBD_FAIL_CHECK(OBD_FAIL_MDS_LLOG_CREATE_FAILED))
 		RETURN(-ENOSPC);
@@ -100,7 +123,7 @@ static int llog_cat_new_log(const struct lu_env *env,
 	if (rc < 0)
 		GOTO(out_destroy, rc);
 
-	CDEBUG(D_OTHER, "new recovery log "DOSTID":%x for index %u of catalog"
+	CDEBUG(D_OTHER, "new plain log "DOSTID":%x for index %u of catalog"
 	       DOSTID"\n", POSTID(&loghandle->lgh_id.lgl_oi),
 	       loghandle->lgh_id.lgl_ogen, rec->lid_hdr.lrh_index,
 	       POSTID(&cathandle->lgh_id.lgl_oi));
@@ -113,6 +136,9 @@ out_destroy:
 	 * we want to destroy it in this transaction, otherwise the object
 	 * becomes an orphan */
 	loghandle->lgh_hdr->llh_flags &= ~LLOG_F_ZAP_WHEN_EMPTY;
+	/* this is to mimic full log, so another llog_cat_current_log()
+	 * can skip it and ask for another onet */
+	loghandle->lgh_last_idx = LLOG_BITMAP_SIZE(loghandle->lgh_hdr) + 1;
 	llog_trans_destroy(env, loghandle, th);
 	RETURN(rc);
 }
@@ -265,8 +291,7 @@ static struct llog_handle *llog_cat_current_log(struct llog_handle *cathandle,
 
 		down_write_nested(&loghandle->lgh_lock, LLOGH_LOG);
 		llh = loghandle->lgh_hdr;
-		if (llh == NULL ||
-		    loghandle->lgh_last_idx < LLOG_BITMAP_SIZE(llh) - 1) {
+		if (llh == NULL || !llog_is_full(loghandle)) {
 			up_read(&cathandle->lgh_lock);
                         RETURN(loghandle);
                 } else {
@@ -286,12 +311,12 @@ static struct llog_handle *llog_cat_current_log(struct llog_handle *cathandle,
 		down_write_nested(&loghandle->lgh_lock, LLOGH_LOG);
 		llh = loghandle->lgh_hdr;
 		LASSERT(llh);
-                if (loghandle->lgh_last_idx < LLOG_BITMAP_SIZE(llh) - 1) {
+		if (!llog_is_full(loghandle)) {
 			up_write(&cathandle->lgh_lock);
-                        RETURN(loghandle);
-                } else {
+			RETURN(loghandle);
+		} else {
 			up_write(&loghandle->lgh_lock);
-                }
+		}
         }
 
 next:
@@ -340,17 +365,21 @@ retry:
 	}
 	/* now let's try to add the record */
 	rc = llog_write_rec(env, loghandle, rec, reccookie, LLOG_NEXT_IDX, th);
-	if (rc < 0)
+	if (rc < 0) {
 		CDEBUG_LIMIT(rc == -ENOSPC ? D_HA : D_ERROR,
 			     "llog_write_rec %d: lh=%p\n", rc, loghandle);
+		/* -ENOSPC is returned if no empty records left
+		 * and when it's lack of space on the stogage.
+		 * there is no point to try again if it's the second
+		 * case. many callers (like llog test) expect ENOSPC,
+		 * so we preserve this error code, but look for the
+		 * actual cause here */
+		if (rc == -ENOSPC && llog_is_full(loghandle))
+			rc = -ENOBUFS;
+	}
 	up_write(&loghandle->lgh_lock);
 
-
-	/*
-	 * ENOSPC can be returned if the plain llog is full
-	 * ENOENT can be returned if another thread failed to created the llog
-	 */
-	if (rc == -ENOSPC || rc == -ENOENT) {
+	if (rc == -ENOBUFS) {
 		if (retried++ == 0)
 			GOTO(retry, rc);
 		CERROR("%s: error on 2nd llog: rc = %d\n",
@@ -409,6 +438,10 @@ int llog_cat_declare_add_rec(const struct lu_env *env,
 					 th);
 		if (rc)
 			GOTO(out, rc);
+		rc = llog_declare_destroy(env, cathandle->u.chd.chd_current_log,
+					  th);
+		if (rc)
+			GOTO(out, rc);
 		llog_declare_write_rec(env, cathandle, &lirec->lid_hdr, -1, th);
 	}
 	/* declare records in the llogs */
@@ -421,6 +454,11 @@ int llog_cat_declare_add_rec(const struct lu_env *env,
 	if (next) {
 		if (!llog_exist(next)) {
 			rc = llog_declare_create(env, next, th);
+			if (rc)
+				GOTO(out, rc);
+			rc = llog_declare_destroy(env, next, th);
+			if (rc)
+				GOTO(out, rc);
 			llog_declare_write_rec(env, cathandle, &lirec->lid_hdr,
 					       -1, th);
 		}
@@ -601,7 +639,7 @@ out:
 }
 
 int llog_cat_process_or_fork(const struct lu_env *env,
-			     struct llog_handle *cat_llh,
+			     struct llog_handle *cat_llh, llog_cb_t cat_cb,
 			     llog_cb_t cb, void *data, int startcat,
 			     int startidx, bool fork)
 {
@@ -616,7 +654,8 @@ int llog_cat_process_or_fork(const struct lu_env *env,
         d.lpd_startcat = startcat;
         d.lpd_startidx = startidx;
 
-        if (llh->llh_cat_idx > cat_llh->lgh_last_idx) {
+	if (llh->llh_cat_idx >= cat_llh->lgh_last_idx &&
+	    llh->llh_count > 1) {
                 struct llog_process_cat_data cd;
 
                 CWARN("catlog "DOSTID" crosses index zero\n",
@@ -624,17 +663,17 @@ int llog_cat_process_or_fork(const struct lu_env *env,
 
                 cd.lpcd_first_idx = llh->llh_cat_idx;
                 cd.lpcd_last_idx = 0;
-		rc = llog_process_or_fork(env, cat_llh, llog_cat_process_cb,
+		rc = llog_process_or_fork(env, cat_llh, cat_cb,
 					  &d, &cd, fork);
 		if (rc != 0)
 			RETURN(rc);
 
 		cd.lpcd_first_idx = 0;
 		cd.lpcd_last_idx = cat_llh->lgh_last_idx;
-		rc = llog_process_or_fork(env, cat_llh, llog_cat_process_cb,
+		rc = llog_process_or_fork(env, cat_llh, cat_cb,
 					  &d, &cd, fork);
         } else {
-		rc = llog_process_or_fork(env, cat_llh, llog_cat_process_cb,
+		rc = llog_process_or_fork(env, cat_llh, cat_cb,
 					  &d, NULL, fork);
         }
 
@@ -644,10 +683,61 @@ int llog_cat_process_or_fork(const struct lu_env *env,
 int llog_cat_process(const struct lu_env *env, struct llog_handle *cat_llh,
 		     llog_cb_t cb, void *data, int startcat, int startidx)
 {
-	return llog_cat_process_or_fork(env, cat_llh, cb, data, startcat,
-					startidx, false);
+	return llog_cat_process_or_fork(env, cat_llh, llog_cat_process_cb,
+					cb, data, startcat, startidx, false);
 }
 EXPORT_SYMBOL(llog_cat_process);
+
+static int llog_cat_size_cb(const struct lu_env *env,
+			     struct llog_handle *cat_llh,
+			     struct llog_rec_hdr *rec, void *data)
+{
+	struct llog_process_data *d = data;
+	struct llog_logid_rec *lir = (struct llog_logid_rec *)rec;
+	struct llog_handle *llh;
+	int rc;
+	__u64 *cum_size = d->lpd_data;
+	__u64 size;
+
+	ENTRY;
+	if (rec->lrh_type != LLOG_LOGID_MAGIC) {
+		CERROR("%s: invalid record in catalog, rc = %d\n",
+		       cat_llh->lgh_ctxt->loc_obd->obd_name, -EINVAL);
+		RETURN(-EINVAL);
+	}
+	CDEBUG(D_HA, "processing log "DOSTID":%x at index %u of catalog "
+	       DOSTID"\n", POSTID(&lir->lid_id.lgl_oi), lir->lid_id.lgl_ogen,
+	       rec->lrh_index, POSTID(&cat_llh->lgh_id.lgl_oi));
+
+	rc = llog_cat_id2handle(env, cat_llh, &llh, &lir->lid_id);
+	if (rc) {
+		CWARN("%s: cannot find handle for llog "DOSTID": rc = %d\n",
+		      cat_llh->lgh_ctxt->loc_obd->obd_name,
+		      POSTID(&lir->lid_id.lgl_oi), rc);
+		RETURN(0);
+	}
+	size = llog_size(env, llh);
+	*cum_size += size;
+
+	CDEBUG(D_INFO, "Add llog entry "DOSTID" size "LPU64"\n",
+	       POSTID(&llh->lgh_id.lgl_oi), size);
+
+	llog_handle_put(llh);
+
+	RETURN(0);
+
+}
+
+__u64 llog_cat_size(const struct lu_env *env, struct llog_handle *cat_llh)
+{
+	__u64 size = llog_size(env, cat_llh);
+
+	llog_cat_process_or_fork(env, cat_llh, llog_cat_size_cb,
+				 NULL, &size, 0, 0, false);
+
+	return size;
+}
+EXPORT_SYMBOL(llog_cat_size);
 
 static int llog_cat_reverse_process_cb(const struct lu_env *env,
 				       struct llog_handle *cat_llh,
@@ -724,7 +814,8 @@ int llog_cat_reverse_process(const struct lu_env *env,
         d.lpd_data = data;
         d.lpd_cb = cb;
 
-	if (llh->llh_cat_idx > cat_llh->lgh_last_idx) {
+	if (llh->llh_cat_idx >= cat_llh->lgh_last_idx &&
+	    llh->llh_count > 1) {
 		CWARN("catalog "DOSTID" crosses index zero\n",
 		      POSTID(&cat_llh->lgh_id.lgl_oi));
 
@@ -751,33 +842,41 @@ int llog_cat_reverse_process(const struct lu_env *env,
 }
 EXPORT_SYMBOL(llog_cat_reverse_process);
 
-static int llog_cat_set_first_idx(struct llog_handle *cathandle, int index)
+static int llog_cat_set_first_idx(struct llog_handle *cathandle, int idx)
 {
-        struct llog_log_hdr *llh = cathandle->lgh_hdr;
-        int i, bitmap_size, idx;
-        ENTRY;
+	struct llog_log_hdr *llh = cathandle->lgh_hdr;
+	int bitmap_size;
 
-        bitmap_size = LLOG_BITMAP_SIZE(llh);
-        if (llh->llh_cat_idx == (index - 1)) {
-                idx = llh->llh_cat_idx + 1;
-                llh->llh_cat_idx = idx;
-                if (idx == cathandle->lgh_last_idx)
-                        goto out;
-                for (i = (index + 1) % bitmap_size;
-                     i != cathandle->lgh_last_idx;
-                     i = (i + 1) % bitmap_size) {
-                        if (!ext2_test_bit(i, llh->llh_bitmap)) {
-                                idx = llh->llh_cat_idx + 1;
-                                llh->llh_cat_idx = idx;
-                        } else if (i == 0) {
-                                llh->llh_cat_idx = 0;
-                        } else {
-                                break;
-                        }
-                }
-out:
-		CDEBUG(D_RPCTRACE, "set catlog "DOSTID" first idx %u\n",
-		       POSTID(&cathandle->lgh_id.lgl_oi), llh->llh_cat_idx);
+	ENTRY;
+
+	bitmap_size = LLOG_BITMAP_SIZE(llh);
+	/*
+	 * The llh_cat_idx equals to the first used index minus 1
+	 * so if we canceled the first index then llh_cat_idx
+	 * must be renewed.
+	 */
+	if (llh->llh_cat_idx == (idx - 1)) {
+		llh->llh_cat_idx = idx;
+
+		while (idx != cathandle->lgh_last_idx) {
+			idx = (idx + 1) % bitmap_size;
+			if (!ext2_test_bit(idx, LLOG_HDR_BITMAP(llh))) {
+				/* update llh_cat_idx for each unset bit,
+				 * expecting the next one is set */
+				llh->llh_cat_idx = idx;
+			} else if (idx == 0) {
+				/* skip header bit */
+				llh->llh_cat_idx = 0;
+				continue;
+			} else {
+				/* the first index is found */
+				break;
+			}
+		}
+
+		CDEBUG(D_RPCTRACE, "Set catlog "DOSTID" first idx %u,"
+		       " (last_idx %u)\n", POSTID(&cathandle->lgh_id.lgl_oi),
+		       llh->llh_cat_idx, cathandle->lgh_last_idx);
 	}
 
 	RETURN(0);

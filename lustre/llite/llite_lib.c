@@ -102,6 +102,7 @@ static struct ll_sb_info *ll_init_sbi(void)
 	sbi->ll_ra_info.ra_max_pages = sbi->ll_ra_info.ra_max_pages_per_file;
 	sbi->ll_ra_info.ra_max_read_ahead_whole_pages =
 					   SBI_DEFAULT_READAHEAD_WHOLE_MAX;
+	sbi->ll_ra_info.ra_increase_step = ONE_MB_BRW_SIZE >> PAGE_CACHE_SHIFT;
 	INIT_LIST_HEAD(&sbi->ll_conn_chain);
 	INIT_LIST_HEAD(&sbi->ll_orphan_dentry_list);
 
@@ -136,6 +137,7 @@ static struct ll_sb_info *ll_init_sbi(void)
 	atomic_set(&sbi->ll_sa_running, 0);
 	atomic_set(&sbi->ll_agl_total, 0);
 	sbi->ll_flags |= LL_SBI_AGL_ENABLED;
+	sbi->ll_flags |= LL_SBI_FAST_READ;
 
 	/* root squash */
 	sbi->ll_squash.rsi_uid = 0;
@@ -227,7 +229,8 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 				  OBD_CONNECT_MAX_EASIZE |
 				  OBD_CONNECT_FLOCK_DEAD |
 				  OBD_CONNECT_DISP_STRIPE | OBD_CONNECT_LFSCK |
-				  OBD_CONNECT_OPEN_BY_FID;
+				  OBD_CONNECT_OPEN_BY_FID |
+				  OBD_CONNECT_BULK_MBITS;
 
         if (sbi->ll_flags & LL_SBI_SOM_PREVIEW)
                 data->ocd_connect_flags |= OBD_CONNECT_SOM;
@@ -441,8 +444,11 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 				  OBD_CONNECT_JOBSTATS | OBD_CONNECT_LVB_TYPE |
 				  OBD_CONNECT_LAYOUTLOCK |
 				  OBD_CONNECT_PINGLESS | OBD_CONNECT_LFSCK |
-				  OBD_CONNECT_LOCK_AHEAD;
+				  OBD_CONNECT_LOCK_AHEAD |
+				  OBD_CONNECT_BULK_MBITS;
 
+	if (sb->s_flags & MS_RDONLY)
+		data->ocd_connect_flags |= OBD_CONNECT_RDONLY;
         if (sbi->ll_flags & LL_SBI_SOM_PREVIEW)
                 data->ocd_connect_flags |= OBD_CONNECT_SOM;
 
@@ -598,11 +604,21 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
         err = obd_set_info_async(NULL, sbi->ll_dt_exp, sizeof(KEY_CHECKSUM),
                                  KEY_CHECKSUM, sizeof(checksum), &checksum,
                                  NULL);
-        cl_sb_init(sb);
+	if (err) {
+		CERROR("%s: Set checksum failed: rc = %d\n",
+		       sbi->ll_dt_exp->exp_obd->obd_name, err);
+		GOTO(out_root, err);
+	}
+	cl_sb_init(sb);
 
 	err = obd_set_info_async(NULL, sbi->ll_dt_exp, sizeof(KEY_CACHE_SET),
 				 KEY_CACHE_SET, sizeof(*sbi->ll_cache),
 				 sbi->ll_cache, NULL);
+	if (err) {
+		CERROR("%s: Set cache_set failed: rc = %d\n",
+		       sbi->ll_dt_exp->exp_obd->obd_name, err);
+		GOTO(out_root, err);
+	}
 
 	sb->s_root = d_make_root(root);
 	if (sb->s_root == NULL) {
@@ -905,6 +921,18 @@ static int ll_options(char *options, int *flags)
                         *flags &= ~tmp;
                         goto next;
                 }
+		tmp = ll_set_opt("context", s1, 1);
+		if (tmp)
+			goto next;
+		tmp = ll_set_opt("fscontext", s1, 1);
+		if (tmp)
+			goto next;
+		tmp = ll_set_opt("defcontext", s1, 1);
+		if (tmp)
+			goto next;
+		tmp = ll_set_opt("rootcontext", s1, 1);
+		if (tmp)
+			goto next;
 		tmp = ll_set_opt("remote_client", s1, LL_SBI_RMT_CLIENT);
 		if (tmp) {
 			*flags |= tmp;
@@ -1067,19 +1095,18 @@ int ll_fill_super(struct super_block *sb, struct vfsmount *mnt)
 
         CDEBUG(D_VFSTRACE, "VFS Op: sb %p\n", sb);
 
-        OBD_ALLOC_PTR(cfg);
-        if (cfg == NULL)
-                RETURN(-ENOMEM);
-
 	try_module_get(THIS_MODULE);
+
+        OBD_ALLOC_PTR(cfg);
+	if (cfg == NULL) {
+		ll_put_super(sb);
+		RETURN(-ENOMEM);
+	}
 
 	/* client additional sb info */
 	lsi->lsi_llsbi = sbi = ll_init_sbi();
-	if (!sbi) {
-		module_put(THIS_MODULE);
-		OBD_FREE_PTR(cfg);
-		RETURN(-ENOMEM);
-	}
+	if (!sbi)
+		GOTO(out_free, err = -ENOMEM);
 
         err = ll_options(lsi->lsi_lmd->lmd_opts, &sbi->ll_flags);
         if (err)
@@ -1089,7 +1116,11 @@ int ll_fill_super(struct super_block *sb, struct vfsmount *mnt)
 	if (err)
 		GOTO(out_free, err);
 	lsi->lsi_flags |= LSI_BDI_INITIALIZED;
+#ifdef HAVE_BDI_CAP_MAP_COPY
 	lsi->lsi_bdi.capabilities = BDI_CAP_MAP_COPY;
+#else
+	lsi->lsi_bdi.capabilities = 0;
+#endif
 	err = ll_bdi_register(&lsi->lsi_bdi);
 	if (err)
 		GOTO(out_free, err);
@@ -1136,17 +1167,19 @@ int ll_fill_super(struct super_block *sb, struct vfsmount *mnt)
         err = client_common_fill_super(sb, md, dt, mnt);
 
 out_free:
-        if (md)
-                OBD_FREE(md, strlen(lprof->lp_md) + instlen + 2);
-        if (dt)
-                OBD_FREE(dt, strlen(lprof->lp_dt) + instlen + 2);
-        if (err)
-                ll_put_super(sb);
-        else if (sbi->ll_flags & LL_SBI_VERBOSE)
-                LCONSOLE_WARN("Mounted %s\n", profilenm);
+	if (md)
+		OBD_FREE(md, strlen(lprof->lp_md) + instlen + 2);
+	if (dt)
+		OBD_FREE(dt, strlen(lprof->lp_dt) + instlen + 2);
+	if (lprof != NULL)
+		class_put_profile(lprof);
+	if (err)
+		ll_put_super(sb);
+	else if (sbi->ll_flags & LL_SBI_VERBOSE)
+		LCONSOLE_WARN("Mounted %s\n", profilenm);
 
-        OBD_FREE_PTR(cfg);
-        RETURN(err);
+	OBD_FREE_PTR(cfg);
+	RETURN(err);
 } /* ll_fill_super */
 
 void ll_put_super(struct super_block *sb)
@@ -1301,9 +1334,11 @@ static struct inode *ll_iget_anon_dir(struct super_block *sb,
 		LTIME_S(inode->i_ctime) = 0;
 		inode->i_rdev = 0;
 
+#ifdef HAVE_BACKING_DEV_INFO
 		/* initializing backing dev info. */
 		inode->i_mapping->backing_dev_info =
 						&s2lsi(inode->i_sb)->lsi_bdi;
+#endif
 		inode->i_op = &ll_dir_inode_operations;
 		inode->i_fop = &ll_dir_operations;
 		lli->lli_fid = *fid;
@@ -1731,7 +1766,7 @@ int ll_setattr_raw(struct dentry *dentry, struct iattr *attr, bool hsm_import)
 	if (!S_ISDIR(inode->i_mode)) {
 		if (attr->ia_valid & ATTR_SIZE)
 			inode_dio_write_done(inode);
-		mutex_unlock(&inode->i_mutex);
+		inode_unlock(inode);
 	}
 
 	/* truncate on a released file must failed with -ENODATA,
@@ -1813,7 +1848,7 @@ out:
 		ll_finish_md_op_data(op_data);
 	}
 	if (!S_ISDIR(inode->i_mode)) {
-		mutex_lock(&inode->i_mutex);
+		inode_lock(inode);
 		if ((attr->ia_valid & ATTR_SIZE) && !hsm_import)
 			inode_dio_wait(inode);
 		/* Once we've got the i_mutex, it's safe to set the S_NOSEC
@@ -2137,6 +2172,8 @@ int ll_update_inode(struct inode *inode, struct lustre_md *md)
 	if (body->mbo_valid & OBD_MD_TSTATE) {
 		if (body->mbo_t_state & MS_RESTORE)
 			lli->lli_flags |= LLIF_FILE_RESTORING;
+		else
+			lli->lli_flags &= ~LLIF_FILE_RESTORING;
 	}
 
 	return 0;
@@ -2168,10 +2205,10 @@ int ll_read_inode2(struct inode *inode, void *opaque)
 
         /* OIDEBUG(inode); */
 
-        /* initializing backing dev info. */
-        inode->i_mapping->backing_dev_info = &s2lsi(inode->i_sb)->lsi_bdi;
-
-
+#ifdef HAVE_BACKING_DEV_INFO
+	/* initializing backing dev info. */
+	inode->i_mapping->backing_dev_info = &s2lsi(inode->i_sb)->lsi_bdi;
+#endif
         if (S_ISREG(inode->i_mode)) {
                 struct ll_sb_info *sbi = ll_i2sbi(inode);
                 inode->i_op = &ll_file_inode_operations;
@@ -2439,7 +2476,11 @@ int ll_prep_inode(struct inode **inode, struct ptlrpc_request *req,
                  * At this point server returns to client's same fid as client
                  * generated for creating. So using ->fid1 is okay here.
                  */
-		LASSERT(fid_is_sane(&md.body->mbo_fid1));
+		if (!fid_is_sane(&md.body->mbo_fid1)) {
+			CERROR("Fid is insane "DFID"\n",
+				PFID(&md.body->mbo_fid1));
+			GOTO(out, rc = -EINVAL);
+		}
 
 		*inode = ll_iget(sb, cl_fid_build_ino(&md.body->mbo_fid1,
 					     sbi->ll_flags & LL_SBI_32BIT_API),
@@ -2482,6 +2523,9 @@ int ll_prep_inode(struct inode **inode, struct ptlrpc_request *req,
 			conf.coc_lock = lock;
 			conf.u.coc_md = &md;
 			(void)ll_layout_conf(*inode, &conf);
+		} else {
+			ll_i2info(*inode)->lli_has_smd =
+				lsm_has_objects(md.lsm);
 		}
 		LDLM_LOCK_PUT(lock);
 	}
@@ -2905,8 +2949,8 @@ static int ll_linkea_decode(struct linkea_data *ldata, unsigned int linkno,
  */
 int ll_getparent(struct file *file, struct getparent __user *arg)
 {
-	struct dentry		*dentry = file->f_dentry;
-	struct inode		*inode = file->f_dentry->d_inode;
+	struct dentry		*dentry = file->f_path.dentry;
+	struct inode		*inode = dentry->d_inode;
 	struct linkea_data	*ldata;
 	struct lu_buf		 buf = LU_BUF_NULL;
 	struct lu_name		 ln;

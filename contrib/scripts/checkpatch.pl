@@ -446,6 +446,9 @@ my %dep_functions = (
 	'strcat',			'strncat',
 	'tempnam',			'mkstemp',
 	'OBD_FREE_LARGE',		'OBD_FREE',
+	'f_dentry',			'f_path.dentry',
+	'= seq_printf',			'seq_printf',
+	'return seq_printf',		'seq_printf',
 );
 
 my @rawlines = ();

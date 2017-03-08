@@ -39,7 +39,7 @@ MGS_MOUNT_OPTS=${MGS_MOUNT_OPTS:-}
 
 OSTCOUNT=${OSTCOUNT:-2}
 OSTDEVBASE=${OSTDEVBASE:-$TMP/${FSNAME}-ost}
-OSTSIZE=${OSTSIZE:-200000}
+OSTSIZE=${OSTSIZE:-400000}
 OSTOPT=${OSTOPT:-}
 OST_FS_MKFS_OPTS=${OST_FS_MKFS_OPTS:-}
 OST_MOUNT_OPTS=${OST_MOUNT_OPTS:-}
@@ -48,6 +48,7 @@ OST_INDEX_LIST=${OST_INDEX_LIST:-}
 # OSTDEV1="/dev/sda"
 # on specific hosts with
 # ost1_HOST="uml2"
+# ost1_JRN="/dev/sdb1"
 #
 # For ZFS, ost devices can be specified via either or both of the following:
 # OSTZFSDEV1="${FSNAME}-ost1/ost1"
@@ -112,6 +113,7 @@ LQUOTAOPTS=${LQUOTAOPTS:-"hash_lqs_cur_bits=3"}
 MOUNT=${MOUNT:-/mnt/${FSNAME}}
 MOUNT1=${MOUNT1:-$MOUNT}
 MOUNT2=${MOUNT2:-${MOUNT}2}
+MOUNT3=${MOUNT3:-${MOUNT}3}
 # Comma-separated option list used as "mount [...] -o $MOUNT_OPTS [...]"
 MOUNT_OPTS=${MOUNT_OPTS:-"user_xattr,flock"}
 # Mount flags (e.g. "-n") used as "mount [...] $MOUNT_FLAGS [...]"
@@ -119,6 +121,7 @@ MOUNT_FLAGS=${MOUNT_FLAGS:-""}
 DIR=${DIR:-$MOUNT}
 DIR1=${DIR:-$MOUNT1}
 DIR2=${DIR2:-$MOUNT2}
+DIR3=${DIR3:-$MOUNT3}
 
 if [ $UID -ne 0 ]; then
         log "running as non-root uid $UID"
@@ -138,7 +141,7 @@ POWER_UP=${POWER_UP:-"powerman --on"}
 SLOW=${SLOW:-no}
 FAIL_ON_ERROR=${FAIL_ON_ERROR:-true}
 
-MPIRUN=$(which mpirun 2>/dev/null) || true
+MPIRUN=${MPIRUN:-$(which mpirun 2>/dev/null || true)}
 MPI_USER=${MPI_USER:-mpiuser}
 SHARED_DIR_LOGS=${SHARED_DIR_LOGS:-""}
 MACHINEFILE_OPTION=${MACHINEFILE_OPTION:-"-machinefile"}

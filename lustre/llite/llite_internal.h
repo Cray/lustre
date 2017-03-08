@@ -302,6 +302,10 @@ int ll_xattr_cache_get(struct inode *inode,
 			size_t size,
 			__u64 valid);
 
+int ll_init_security(struct dentry *dentry,
+			    struct inode *inode,
+			    struct inode *dir);
+
 /*
  * Locking to guarantee consistency of non-atomic updates to long long i_size,
  * consistency between file size and KMS.
@@ -348,6 +352,7 @@ struct ll_ra_info {
 	unsigned long	ra_max_pages;
 	unsigned long	ra_max_pages_per_file;
 	unsigned long	ra_max_read_ahead_whole_pages;
+	unsigned int	ra_increase_step;
 };
 
 /* ra_io_arg will be filled in the beginning of ll_readahead with
@@ -426,6 +431,7 @@ enum stats_track_type {
 #define LL_SBI_USER_FID2PATH  0x40000 /* allow fid2path by unprivileged users */
 #define LL_SBI_XATTR_CACHE    0x80000 /* support for xattr cache */
 #define LL_SBI_NOROOTSQUASH  0x100000 /* do not apply root squash */
+#define LL_SBI_FAST_READ     0x200000 /* fast read support */
 
 #define LL_SBI_FLAGS { 	\
 	"nolck",	\
@@ -449,6 +455,7 @@ enum stats_track_type {
 	"user_fid2path",\
 	"xattr_cache",	\
 	"norootsquash",	\
+	"fast_read",	\
 }
 
 #define RCE_HASHES      32
@@ -674,8 +681,6 @@ struct ll_file_data {
 
 struct lov_stripe_md;
 
-extern spinlock_t inode_lock;
-
 extern struct proc_dir_entry *proc_lustre_fs_root;
 
 static inline struct inode *ll_info2i(struct ll_inode_info *lli)
@@ -726,6 +731,8 @@ enum {
 	LPROC_LL_OPEN,
 	LPROC_LL_RELEASE,
 	LPROC_LL_MAP,
+	LPROC_LL_FAULT,
+	LPROC_LL_MKWRITE,
 	LPROC_LL_LLSEEK,
 	LPROC_LL_FSYNC,
 	LPROC_LL_READDIR,
@@ -799,9 +806,13 @@ int ll_writepages(struct address_space *, struct writeback_control *wbc);
 int ll_readpage(struct file *file, struct page *page);
 void ll_readahead_init(struct inode *inode, struct ll_readahead_state *ras);
 int vvp_io_write_commit(const struct lu_env *env, struct cl_io *io);
+
+enum lcc_type;
+void ll_cl_add(struct file *file, const struct lu_env *env, struct cl_io *io,
+	       enum lcc_type type);
 struct ll_cl_context *ll_cl_find(struct file *file);
-void ll_cl_add(struct file *file, const struct lu_env *env, struct cl_io *io);
 void ll_cl_remove(struct file *file, const struct lu_env *env);
+struct ll_cl_context *ll_cl_find(struct file *file);
 
 #ifndef MS_HAS_NEW_AOPS
 extern const struct address_space_operations ll_aops;
@@ -997,12 +1008,18 @@ struct vvp_io_args {
         } u;
 };
 
+enum lcc_type {
+	LCC_RW = 1,
+	LCC_MMAP
+};
+
 struct ll_cl_context {
 	struct list_head	 lcc_list;
 	void			*lcc_cookie;
 	const struct lu_env	*lcc_env;
 	struct cl_io		*lcc_io;
 	struct cl_page		*lcc_page;
+	enum lcc_type		 lcc_type;
 };
 
 struct vvp_thread_info {
@@ -1164,6 +1181,10 @@ extern struct lu_device_type vvp_device_type;
 int cl_sb_init(struct super_block *sb);
 int cl_sb_fini(struct super_block *sb);
 
+enum ras_update_flags {
+	LL_RAS_HIT  = 0x1,
+	LL_RAS_MMAP = 0x2
+};
 void ll_ra_count_put(struct ll_sb_info *sbi, unsigned long len);
 void ll_ra_stats_inc(struct inode *inode, enum ra_stat which);
 
@@ -1379,7 +1400,7 @@ extern ssize_t ll_direct_rw_pages(const struct lu_env *env, struct cl_io *io,
 static inline int ll_file_nolock(const struct file *file)
 {
         struct ll_file_data *fd = LUSTRE_FPRIVATE(file);
-        struct inode *inode = file->f_dentry->d_inode;
+	struct inode *inode = file->f_path.dentry->d_inode;
 
         LASSERT(fd != NULL);
         return ((fd->fd_flags & LL_FILE_IGNORE_LOCK) ||
@@ -1544,5 +1565,10 @@ static inline void inode_has_no_xattr(struct inode *inode)
 	return;
 }
 #endif
+
+static inline bool ll_sbi_has_fast_read(struct ll_sb_info *sbi)
+{
+	return !!(sbi->ll_flags & LL_SBI_FAST_READ);
+}
 
 #endif /* LLITE_INTERNAL_H */

@@ -24,8 +24,10 @@
  *   Amir Shehata <amir.shehata@intel.com>
  */
 
-#ifndef LIB_LUSTRE_CONFIG_API_H
-#define LIB_LUSTRE_CONFIG_API_H
+#ifndef LIB_LNET_CONFIG_API_H
+#define LIB_LNET_CONFIG_API_H
+
+#include <lnet/lnet.h>
 
 #define LUSTRE_CFG_RC_NO_ERR			 0
 #define LUSTRE_CFG_RC_BAD_PARAM			-1
@@ -120,11 +122,13 @@ int lustre_lnet_show_route(char *nw, char *gw,
  *   credits - network interface credits
  *   smp - cpu affinity
  *   seq_no - sequence number of the request
+ *   lnd_tunables - lnet specific tunable parameters
  *   err_rc - [OUT] struct cYAML tree describing the error. Freed by caller
  */
 int lustre_lnet_config_net(char *net, char *intf, char *ip2net,
 			   int peer_to, int peer_cr, int peer_buf_cr,
 			   int credits, char *smp, int seq_no,
+			   struct lnet_ioctl_config_lnd_tunables *lnd_tunables,
 			   struct cYAML **err_rc);
 
 /*
@@ -246,4 +250,4 @@ int lustre_yaml_del(char *f, struct cYAML **err_rc);
 int lustre_yaml_show(char *f, struct cYAML **show_rc,
 		     struct cYAML **err_rc);
 
-#endif /* LIB_LUSTRE_CONFIG_API_H */
+#endif /* LIB_LNET_CONFIG_API_H */
