@@ -204,7 +204,6 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 %exclude %dir %{_mandir}
 %exclude %dir %{_sbindir}
 %exclude %dir %{_datadir}
-%exclude %{_sysconfdir}/lustre/perm.conf
 %exclude /opt/cray/%{name}/%{version}/symvers/%{flavor}
 %exclude %dir /opt/cray/%{name}
 %exclude /usr/lib64/pkgconfig/cray-lnet.pc

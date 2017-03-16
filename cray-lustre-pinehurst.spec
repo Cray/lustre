@@ -108,7 +108,6 @@ done
 %exclude %dir %{_sbindir}
 %{_datadir}
 %exclude %dir %{_datadir} 
-%exclude %{_sysconfdir}/lustre/lustre/perm.conf
 
 %clean
 %clean_build_root

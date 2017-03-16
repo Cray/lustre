@@ -103,7 +103,6 @@ done
 %{_pkgconfigdir}
 %{_release_modulefile}
 %{_sysconfdir}
-%exclude %{_sysconfdir}/lustre/perm.conf
 
 %post
 /usr/sbin/update-alternatives --install %{_default_prefix} %{pkgbase} %{_release_prefix} %{release_priority}

@@ -115,10 +115,8 @@ done
 %{_prefix}/libexec/*
 %{_prefix}/include/*
 %{_prefix}/etc/*
-%exclude %{_sysconfdir}/lustre/perm.conf
 %else
 %{_prefix}
-%exclude %{_sysconfdir}/lustre/perm.conf
 %endif
 
 %clean
