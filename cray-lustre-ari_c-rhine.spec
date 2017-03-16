@@ -22,7 +22,6 @@ BuildRequires: pkgconfig
 BuildRequires: udev
 BuildConflicts: post-build-checks
 BuildRequires: libtool
-BuildRequires: python-docutils
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}

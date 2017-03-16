@@ -29,7 +29,6 @@ BuildRequires: ofed-devel
 BuildRequires: sles-release
 BuildRequires: -post-build-checks
 BuildRequires: libtool
-BuildRequires: python-docutils
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}-lnet

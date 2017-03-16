@@ -21,7 +21,6 @@ BuildRequires: lsb-cray-hss-devel
 BuildRequires: module-init-tools
 BuildRequires: pkgconfig
 BuildRequires: libtool
-BuildRequires: python-docutils
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}-lnet

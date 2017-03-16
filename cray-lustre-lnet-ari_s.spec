@@ -26,7 +26,6 @@ BuildRequires: ofed-devel
 BuildRequires: sles-release
 BuildRequires: -post-build-checks
 BuildRequires: libtool
-BuildRequires: python-docutils
 Requires: cray-lustre-utils >= %{branch}-1.0000.18191.0
 Group: System/Filesystems
 License: GPL
