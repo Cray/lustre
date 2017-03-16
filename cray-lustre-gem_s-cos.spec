@@ -57,6 +57,13 @@ if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
 fi
 
 export GNICPPFLAGS=`pkg-config --cflags cray-gni cray-gni-headers cray-krca`
+if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
+    O2IBPATH=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}
+elif [ -d /usr/src/ofed/%{_target_cpu}/%{flavor} ]; then
+    O2IBPATH=/usr/src/ofed/%{_target_cpu}/%{flavor}
+else
+    O2IBPATH=no
+fi
 
 CFLAGS="%{optflags} -Werror -fno-stack-protector"
 
@@ -64,7 +71,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
         %configure --disable-checksum \
            --enable-cray-xt3 \
            --enable-gni \
-           --with-o2ib=no \
+           --with-o2ib=$O2IBPATH \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-obd-buffer-size=16384
 fi
