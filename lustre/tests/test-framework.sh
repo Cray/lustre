@@ -1966,55 +1966,59 @@ start_client_loads () {
 
 # only for remote client
 check_client_load () {
-    local client=$1
-    local var=$(node_var_name $client)_load
-    local TESTLOAD=run_${!var}.sh
+	local client=$1
+	local var=$(node_var_name $client)_load
+	local testload=run_${!var}.sh
 
-    ps auxww | grep -v grep | grep $client | grep -q "$TESTLOAD" || return 1
+	ps -C $testload | grep $client || return 1
 
-    # bug 18914: try to connect several times not only when
-    # check ps, but  while check_catastrophe also
-    local tries=3
-    local RC=254
-    while [ $RC = 254 -a $tries -gt 0 ]; do
-        let tries=$tries-1
-        # assume success
-        RC=0
-        if ! check_catastrophe $client; then
-            RC=${PIPESTATUS[0]}
-            if [ $RC -eq 254 ]; then
-                # FIXME: not sure how long we shuold sleep here
-                sleep 10
-                continue
-            fi
-            echo "check catastrophe failed: RC=$RC "
-            return $RC
-        fi
-    done
-    # We can continue try to connect if RC=254
-    # Just print the warning about this
-    if [ $RC = 254 ]; then
-        echo "got a return status of $RC from do_node while checking catastrophe on $client"
-    fi
+	# bug 18914: try to connect several times not only when
+	# check ps, but  while check_node_health also
 
-    # see if the load is still on the client
-    tries=3
-    RC=254
-    while [ $RC = 254 -a $tries -gt 0 ]; do
-        let tries=$tries-1
-        # assume success
-        RC=0
-        if ! do_node $client "ps auxwww | grep -v grep | grep -q $TESTLOAD"; then
-            RC=${PIPESTATUS[0]}
-            sleep 30
-        fi
-    done
-    if [ $RC = 254 ]; then
-        echo "got a return status of $RC from do_node while checking (catastrophe and 'ps') the client load on $client"
-        # see if we can diagnose a bit why this is
-    fi
+	local tries=3
+	local RC=254
+	while [ $RC = 254 -a $tries -gt 0 ]; do
+		let tries=$tries-1
+		# assume success
+		RC=0
+		if ! check_node_health $client; then
+			RC=${PIPESTATUS[0]}
+			if [ $RC -eq 254 ]; then
+				# FIXME: not sure how long we shuold sleep here
+				sleep 10
+				continue
+			fi
+			echo "check node health failed: RC=$RC "
+			return $RC
+		fi
+	done
+	# We can continue try to connect if RC=254
+	# Just print the warning about this
+	if [ $RC = 254 ]; then
+		echo "got a return status of $RC from do_node while checking " \
+		"node health on $client"
+	fi
 
-    return $RC
+	# see if the load is still on the client
+	tries=3
+	RC=254
+	while [ $RC = 254 -a $tries -gt 0 ]; do
+		let tries=$tries-1
+		# assume success
+		RC=0
+		if ! do_node $client \
+			"ps auxwww | grep -v grep | grep -q $testload"; then
+			RC=${PIPESTATUS[0]}
+			sleep 30
+		fi
+	done
+	if [ $RC = 254 ]; then
+		echo "got a return status of $RC from do_node while checking " \
+		"(node health and 'ps') the client load on $client"
+		# see if we can diagnose a bit why this is
+	fi
+
+	return $RC
 }
 check_client_loads () {
    local clients=${1//,/ }
@@ -3337,7 +3341,7 @@ facet_mntpt () {
 mount_ldiskfs() {
 	local facet=$1
 	local dev=$(facet_device $facet)
-	local mnt=$(facet_mntpt $facet)
+	local mnt=${2:-$(facet_mntpt $facet)}
 	local opts
 
 	if ! do_facet $facet test -b $dev; then
@@ -3349,7 +3353,7 @@ mount_ldiskfs() {
 unmount_ldiskfs() {
 	local facet=$1
 	local dev=$(facet_device $facet)
-	local mnt=$(facet_mntpt $facet)
+	local mnt=${2:-$(facet_mntpt $facet)}
 
 	do_facet $facet $UMOUNT $mnt
 }
@@ -3361,7 +3365,7 @@ var_name() {
 mount_zfs() {
 	local facet=$1
 	local ds=$(facet_device $facet)
-	local mnt=$(facet_mntpt $facet)
+	local mnt=${2:-$(facet_mntpt $facet)}
 	local canmnt
 	local mntpt
 
@@ -3384,7 +3388,7 @@ mount_zfs() {
 unmount_zfs() {
 	local facet=$1
 	local ds=$(facet_device $facet)
-	local mnt=$(facet_mntpt $facet)
+	local mnt=${2:-$(facet_mntpt $facet)}
 	local var_mntpt=mz_$(var_name ${facet}_$ds)_mountpoint
 	local var_canmnt=mz_$(var_name ${facet}_$ds)_canmount
 	local mntpt=${!var_mntpt}
@@ -3400,16 +3404,18 @@ unmount_zfs() {
 
 mount_fstype() {
 	local facet=$1
+	local mnt=$2
 	local fstype=$(facet_fstype $facet)
 
-	mount_$fstype $facet
+	mount_$fstype $facet $mnt
 }
 
 unmount_fstype() {
 	local facet=$1
+	local mnt=$2
 	local fstype=$(facet_fstype $facet)
 
-	unmount_$fstype $facet
+	unmount_$fstype $facet $mnt
 }
 
 ########
@@ -5225,7 +5231,7 @@ run_one() {
 	cd $SAVE_PWD
 	reset_fail_loc
 	check_grant ${testnum} || error "check_grant $testnum failed with $?"
-	check_catastrophe || error "LBUG/LASSERT detected"
+	check_node_health
 	check_dmesg_for_errors || error "Error in dmesg detected"
 	if [ "$PARALLEL" != "yes" ]; then
 		ps auxww | grep -v grep | grep -q multiop &&
@@ -5929,16 +5935,21 @@ restore_lustre_params() {
 	done
 }
 
-check_catastrophe() {
+check_node_health() {
 	local nodes=${1:-$(comma_list $(nodes_list))}
 
-	do_nodes $nodes "rc=0;
-val=\\\$($LCTL get_param -n catastrophe 2>&1);
-if [[ \\\$? -eq 0 && \\\$val -ne 0 ]]; then
-	echo \\\$(hostname -s): \\\$val;
-	rc=\\\$val;
-fi;
-exit \\\$rc"
+	for node in ${nodes//,/ }; do
+		check_network "$node" 5
+		if [ $? -eq 0 ]; then
+			do_node $node "rc=0;
+			val=\\\$($LCTL get_param -n catastrophe 2>&1);
+			if [[ \\\$? -eq 0 && \\\$val -ne 0 ]]; then
+				echo \\\$(hostname -s): \\\$val;
+				rc=\\\$val;
+			fi;
+			exit \\\$rc" || error "$node:LBUG/LASSERT detected"
+		fi
+	done
 }
 
 mdsrate_cleanup () {

@@ -45,6 +45,7 @@
 #include <linux/types.h>
 #include <linux/version.h>
 #include <linux/mm.h>
+#include <linux/security.h>
 
 #include <lustre_ioctl.h>
 #include <lustre_ha.h>
@@ -169,6 +170,12 @@ static void ll_free_sbi(struct super_block *sb)
 	EXIT;
 }
 
+static inline int obd_connect_has_secctx(struct obd_connect_data *data)
+{
+	return data->ocd_connect_flags & OBD_CONNECT_FLAGS2 &&
+	       data->ocd_connect_flags2 & OBD_CONNECT2_FILE_SECCTX;
+}
+
 static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
                                     struct vfsmount *mnt)
 {
@@ -232,7 +239,10 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 				  OBD_CONNECT_DISP_STRIPE | OBD_CONNECT_LFSCK |
 				  OBD_CONNECT_OPEN_BY_FID |
 				  OBD_CONNECT_BULK_MBITS |
-				  OBD_CONNECT_SUBTREE;
+				  OBD_CONNECT_SUBTREE |
+				  OBD_CONNECT_FLAGS2;
+
+	data->ocd_connect_flags2 = 0;
 
         if (sbi->ll_flags & LL_SBI_SOM_PREVIEW)
                 data->ocd_connect_flags |= OBD_CONNECT_SOM;
@@ -283,6 +293,10 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
         data->ocd_connect_flags |= OBD_CONNECT_REAL;
         if (sbi->ll_flags & LL_SBI_RMT_CLIENT)
                 data->ocd_connect_flags |= OBD_CONNECT_RMT_CLIENT_FORCE;
+
+#ifdef HAVE_SECURITY_DENTRY_INIT_SECURITY
+	data->ocd_connect_flags2 |= OBD_CONNECT2_FILE_SECCTX;
+#endif /* HAVE_SECURITY_DENTRY_INIT_SECURITY */
 
 #if defined(CONFIG_CRAY_COMPUTE)
 	/* LELUS-138, see details above */
@@ -336,7 +350,7 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 
 		OBD_ALLOC_WAIT(buf, PAGE_CACHE_SIZE);
 		obd_connect_flags2str(buf, PAGE_CACHE_SIZE,
-				      valid ^ CLIENT_CONNECT_MDT_REQD, ",");
+				      valid ^ CLIENT_CONNECT_MDT_REQD, 0, ",");
 		LCONSOLE_ERROR_MSG(0x170, "Server %s does not support "
 				   "feature(s) needed for correct operation "
 				   "of this client (%s). Please upgrade "
@@ -356,12 +370,13 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 	}
 
 	LASSERT(osfs->os_bsize);
-        sb->s_blocksize = osfs->os_bsize;
-        sb->s_blocksize_bits = log2(osfs->os_bsize);
-        sb->s_magic = LL_SUPER_MAGIC;
-        sb->s_maxbytes = MAX_LFS_FILESIZE;
-        sbi->ll_namelen = osfs->os_namelen;
-        sbi->ll_max_rw_chunk = LL_DEFAULT_MAX_RW_CHUNK;
+	sb->s_blocksize = osfs->os_bsize;
+	sb->s_blocksize_bits = log2(osfs->os_bsize);
+	sb->s_magic = LL_SUPER_MAGIC;
+	sb->s_maxbytes = MAX_LFS_FILESIZE;
+	sbi->ll_namelen = osfs->os_namelen;
+	sbi->ll_mnt.mnt = current->fs->root.mnt;
+	sbi->ll_max_rw_chunk = LL_DEFAULT_MAX_RW_CHUNK;
 
         if ((sbi->ll_flags & LL_SBI_USER_XATTR) &&
             !(data->ocd_connect_flags & OBD_CONNECT_XATTR)) {
@@ -417,6 +432,9 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 	if (data->ocd_connect_flags & OBD_CONNECT_LAYOUTLOCK)
 		sbi->ll_flags |= LL_SBI_LAYOUT_LOCK;
 
+	if (obd_connect_has_secctx(data))
+		sbi->ll_flags |= LL_SBI_FILE_SECCTX;
+
 	if (data->ocd_ibits_known & MDS_INODELOCK_XATTR) {
 		if (!(data->ocd_connect_flags & OBD_CONNECT_MAX_EASIZE)) {
 			LCONSOLE_INFO("%s: disabling xattr cache due to "
@@ -454,31 +472,33 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
         if (sbi->ll_flags & LL_SBI_SOM_PREVIEW)
                 data->ocd_connect_flags |= OBD_CONNECT_SOM;
 
-        if (!OBD_FAIL_CHECK(OBD_FAIL_OSC_CONNECT_CKSUM)) {
-                /* OBD_CONNECT_CKSUM should always be set, even if checksums are
-                 * disabled by default, because it can still be enabled on the
-                 * fly via /proc. As a consequence, we still need to come to an
-                 * agreement on the supported algorithms at connect time */
-                data->ocd_connect_flags |= OBD_CONNECT_CKSUM;
+	data->ocd_connect_flags2 = 0;
+
+	if (!OBD_FAIL_CHECK(OBD_FAIL_OSC_CONNECT_CKSUM)) {
+		/* OBD_CONNECT_CKSUM should always be set, even if checksums are
+		 * disabled by default, because it can still be enabled on the
+		 * fly via /proc. As a consequence, we still need to come to an
+		 * agreement on the supported algorithms at connect time */
+		data->ocd_connect_flags |= OBD_CONNECT_CKSUM;
 
 		if (OBD_FAIL_CHECK(OBD_FAIL_OSC_CKSUM_ADLER_ONLY))
 			data->ocd_cksum_types = OBD_CKSUM_ADLER;
 		else
 			data->ocd_cksum_types = cksum_types_supported_client();
-        }
+	}
 
 #ifdef HAVE_LRU_RESIZE_SUPPORT
-        data->ocd_connect_flags |= OBD_CONNECT_LRU_RESIZE;
+	data->ocd_connect_flags |= OBD_CONNECT_LRU_RESIZE;
 #endif
-        if (sbi->ll_flags & LL_SBI_RMT_CLIENT)
-                data->ocd_connect_flags |= OBD_CONNECT_RMT_CLIENT_FORCE;
+	if (sbi->ll_flags & LL_SBI_RMT_CLIENT)
+		data->ocd_connect_flags |= OBD_CONNECT_RMT_CLIENT_FORCE;
 
         CDEBUG(D_RPCTRACE, "ocd_connect_flags: "LPX64" ocd_version: %d "
                "ocd_grant: %d\n", data->ocd_connect_flags,
                data->ocd_version, data->ocd_grant);
 
-        obd->obd_upcall.onu_owner = &sbi->ll_lco;
-        obd->obd_upcall.onu_upcall = cl_ocd_update;
+	obd->obd_upcall.onu_owner = &sbi->ll_lco;
+	obd->obd_upcall.onu_upcall = cl_ocd_update;
 
 	data->ocd_brw_size = DT_MAX_BRW_SIZE;
 
@@ -529,7 +549,7 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 
 	sb->s_op = &lustre_super_operations;
 #if THREAD_SIZE >= 8192 /*b=17630*/
-        sb->s_export_op = &lustre_export_operations;
+	sb->s_export_op = &lustre_export_operations;
 #endif
 
 	/* make root inode
@@ -568,27 +588,27 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 		GOTO(out_lock_cn_cb, err);
 	}
 
-        LASSERT(fid_is_sane(&sbi->ll_root_fid));
+	LASSERT(fid_is_sane(&sbi->ll_root_fid));
 	root = ll_iget(sb, cl_fid_build_ino(&sbi->ll_root_fid,
 					    sbi->ll_flags & LL_SBI_32BIT_API),
 		       &lmd);
-        md_free_lustre_md(sbi->ll_md_exp, &lmd);
-        ptlrpc_req_finished(request);
+	md_free_lustre_md(sbi->ll_md_exp, &lmd);
+	ptlrpc_req_finished(request);
 
 	if (IS_ERR(root)) {
 		if (lmd.lsm)
 			obd_free_memmd(sbi->ll_dt_exp, &lmd.lsm);
 #ifdef CONFIG_FS_POSIX_ACL
-                if (lmd.posix_acl) {
-                        posix_acl_release(lmd.posix_acl);
-                        lmd.posix_acl = NULL;
-                }
+		if (lmd.posix_acl) {
+			posix_acl_release(lmd.posix_acl);
+			lmd.posix_acl = NULL;
+		}
 #endif
-                err = IS_ERR(root) ? PTR_ERR(root) : -EBADF;
-                root = NULL;
-                CERROR("lustre_lite: bad iget4 for root\n");
-                GOTO(out_root, err);
-        }
+		err = IS_ERR(root) ? PTR_ERR(root) : -EBADF;
+		root = NULL;
+		CERROR("lustre_lite: bad iget4 for root\n");
+		GOTO(out_root, err);
+	}
 
         err = ll_close_thread_start(&sbi->ll_lcq);
         if (err) {
@@ -597,16 +617,16 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
         }
 
 #ifdef CONFIG_FS_POSIX_ACL
-        if (sbi->ll_flags & LL_SBI_RMT_CLIENT) {
-                rct_init(&sbi->ll_rct);
-                et_init(&sbi->ll_et);
-        }
+	if (sbi->ll_flags & LL_SBI_RMT_CLIENT) {
+		rct_init(&sbi->ll_rct);
+		et_init(&sbi->ll_et);
+	}
 #endif
 
-        checksum = sbi->ll_flags & LL_SBI_CHECKSUM;
-        err = obd_set_info_async(NULL, sbi->ll_dt_exp, sizeof(KEY_CHECKSUM),
-                                 KEY_CHECKSUM, sizeof(checksum), &checksum,
-                                 NULL);
+	checksum = sbi->ll_flags & LL_SBI_CHECKSUM;
+	err = obd_set_info_async(NULL, sbi->ll_dt_exp, sizeof(KEY_CHECKSUM),
+				 KEY_CHECKSUM, sizeof(checksum), &checksum,
+				 NULL);
 	if (err) {
 		CERROR("%s: Set checksum failed: rc = %d\n",
 		       sbi->ll_dt_exp->exp_obd->obd_name, err);
@@ -633,21 +653,21 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 	sb->s_root->d_op = &ll_d_ops;
 #endif
 
-        sbi->ll_sdev_orig = sb->s_dev;
+	sbi->ll_sdev_orig = sb->s_dev;
 
-        /* We set sb->s_dev equal on all lustre clients in order to support
-         * NFS export clustering.  NFSD requires that the FSID be the same
-         * on all clients. */
-        /* s_dev is also used in lt_compare() to compare two fs, but that is
-         * only a node-local comparison. */
-        uuid = obd_get_uuid(sbi->ll_md_exp);
+	/* We set sb->s_dev equal on all lustre clients in order to support
+	 * NFS export clustering.  NFSD requires that the FSID be the same
+	 * on all clients. */
+	/* s_dev is also used in lt_compare() to compare two fs, but that is
+	 * only a node-local comparison. */
+	uuid = obd_get_uuid(sbi->ll_md_exp);
 	if (uuid != NULL)
 		sb->s_dev = get_uuid2int(uuid->uuid, strlen(uuid->uuid));
 
-        if (data != NULL)
-                OBD_FREE_PTR(data);
-        if (osfs != NULL)
-                OBD_FREE_PTR(osfs);
+	if (data != NULL)
+		OBD_FREE_PTR(data);
+	if (osfs != NULL)
+		OBD_FREE_PTR(osfs);
 	if (proc_lustre_fs_root != NULL) {
 		err = lprocfs_register_mountpoint(proc_lustre_fs_root, sb,
 						  dt, md);
@@ -658,26 +678,26 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 		}
 	}
 
-        RETURN(err);
+	RETURN(err);
 out_root:
-        if (root)
-                iput(root);
+	if (root)
+		iput(root);
 out_lock_cn_cb:
 	obd_fid_fini(sbi->ll_dt_exp->exp_obd);
 out_dt:
-        obd_disconnect(sbi->ll_dt_exp);
-        sbi->ll_dt_exp = NULL;
+	obd_disconnect(sbi->ll_dt_exp);
+	sbi->ll_dt_exp = NULL;
 out_md_fid:
 	obd_fid_fini(sbi->ll_md_exp->exp_obd);
 out_md:
-        obd_disconnect(sbi->ll_md_exp);
-        sbi->ll_md_exp = NULL;
+	obd_disconnect(sbi->ll_md_exp);
+	sbi->ll_md_exp = NULL;
 out:
-        if (data != NULL)
-                OBD_FREE_PTR(data);
-        if (osfs != NULL)
-                OBD_FREE_PTR(osfs);
-        return err;
+	if (data != NULL)
+		OBD_FREE_PTR(data);
+	if (osfs != NULL)
+		OBD_FREE_PTR(osfs);
+	return err;
 }
 
 int ll_get_max_mdsize(struct ll_sb_info *sbi, int *lmmsize)
@@ -2379,6 +2399,8 @@ void ll_umount_begin(struct super_block *sb)
 	struct ll_sb_info *sbi = ll_s2sbi(sb);
 	struct obd_device *obd;
 	struct obd_ioctl_data *ioc_data;
+	struct l_wait_info lwi;
+	wait_queue_head_t waitq;
 	ENTRY;
 
 	CDEBUG(D_VFSTRACE, "VFS Op: superblock %p count %d active %d\n", sb,
@@ -2414,10 +2436,14 @@ void ll_umount_begin(struct super_block *sb)
 	}
 
 	/* Really, we'd like to wait until there are no requests outstanding,
-	 * and then continue.  For now, we just invalidate the requests,
-	 * schedule() and sleep one second if needed, and hope.
+	 * and then continue.  For now, we just periodically checking for vfs
+	 * to decrement mnt_cnt and hope to finish it within 10sec.
 	 */
-	schedule();
+	init_waitqueue_head(&waitq);
+	lwi = LWI_TIMEOUT_INTERVAL(cfs_time_seconds(10),
+				   cfs_time_seconds(1), NULL, NULL);
+	l_wait_event(waitq, may_umount(sbi->ll_mnt.mnt), &lwi);
+
 	EXIT;
 }
 
@@ -2692,6 +2718,8 @@ void ll_finish_md_op_data(struct md_op_data *op_data)
 {
         capa_put(op_data->op_capa1);
         capa_put(op_data->op_capa2);
+	security_release_secctx(op_data->op_file_secctx,
+				op_data->op_file_secctx_size);
         OBD_FREE_PTR(op_data);
 }
 
