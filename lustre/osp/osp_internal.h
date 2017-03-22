@@ -173,6 +173,8 @@ struct osp_device {
 	__u64				 opd_syn_last_committed_id;
 	/* last processed (taken from llog) id */
 	__u64				 opd_syn_last_processed_id;
+	/* last processed catalog index */
+	int				 opd_sync_last_catalog_idx;
 	struct osp_id_tracker		*opd_syn_tracker;
 	struct list_head		 opd_syn_ontrack;
 	/* stop processing new requests until barrier=0 */
