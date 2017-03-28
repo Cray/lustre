@@ -61,7 +61,7 @@ enum req_location {
 };
 
 /* Maximal number of fields (buffers) in a request message. */
-#define REQ_MAX_FIELD_NR  9
+#define REQ_MAX_FIELD_NR 10
 
 struct req_capsule {
         struct ptlrpc_request   *rc_req;
@@ -155,7 +155,7 @@ extern struct req_format RQF_FLD_READ;
 extern struct req_format RQF_MDS_CONNECT;
 extern struct req_format RQF_MDS_DISCONNECT;
 extern struct req_format RQF_MDS_STATFS;
-extern struct req_format RQF_MDS_GETSTATUS;
+extern struct req_format RQF_MDS_GET_ROOT;
 extern struct req_format RQF_MDS_SYNC;
 extern struct req_format RQF_MDS_GETXATTR;
 extern struct req_format RQF_MDS_GETATTR;
@@ -271,6 +271,8 @@ extern struct req_msg_field RMF_GETINFO_VALLEN;
 extern struct req_msg_field RMF_GETINFO_KEY;
 extern struct req_msg_field RMF_IDX_INFO;
 extern struct req_msg_field RMF_CLOSE_DATA;
+extern struct req_msg_field RMF_FILE_SECCTX_NAME;
+extern struct req_msg_field RMF_FILE_SECCTX;
 
 /*
  * connection handle received in MDS_CONNECT request.

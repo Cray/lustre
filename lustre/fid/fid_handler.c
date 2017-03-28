@@ -331,6 +331,7 @@ static int seq_server_handle(struct lu_site *site,
 {
 	int rc;
 	struct seq_server_site *ss_site;
+	struct dt_device *dev;
 	ENTRY;
 
 	ss_site = lu_site2seq(site);
@@ -342,6 +343,11 @@ static int seq_server_handle(struct lu_site *site,
 			       "initialized\n");
 			RETURN(-EINVAL);
 		}
+
+		dev = lu2dt_dev(ss_site->ss_server_seq->lss_obj->do_lu.lo_dev);
+		if (dev->dd_rdonly)
+			RETURN(-EROFS);
+
 		rc = seq_server_alloc_meta(ss_site->ss_server_seq, out, env);
 		break;
 	case SEQ_ALLOC_SUPER:
@@ -350,6 +356,11 @@ static int seq_server_handle(struct lu_site *site,
 			       "initialized\n");
 			RETURN(-EINVAL);
 		}
+
+		dev = lu2dt_dev(ss_site->ss_server_seq->lss_obj->do_lu.lo_dev);
+		if (dev->dd_rdonly)
+			RETURN(-EROFS);
+
 		rc = seq_server_alloc_super(ss_site->ss_control_seq, out, env);
 		break;
 	default:

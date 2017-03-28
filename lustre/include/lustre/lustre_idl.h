@@ -1368,10 +1368,16 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 #define OBD_CONNECT_MULTIMODRPCS 0x200000000000000ULL /* support multiple modify
 							 RPCs in parallel */
 #define OBD_CONNECT_DIR_STRIPE	 0x400000000000000ULL /* striped DNE dir */
-#define OBD_CONNECT_LOCK_AHEAD   0x1000000000000000ULL /* lock ahead */
 
+#define OBD_CONNECT_SUBTREE	 0x800000000000000ULL /* fileset mount */
+#define OBD_CONNECT_LOCK_AHEAD	 0x1000000000000000ULL /* lock ahead */
 /** bulk matchbits is sent within ptlrpc_body */
 #define OBD_CONNECT_BULK_MBITS	 0x2000000000000000ULL
+#define OBD_CONNECT_OBDOPACK	 0x4000000000000000ULL /* compact OUT obdo */
+#define OBD_CONNECT_FLAGS2	 0x8000000000000000ULL /* second flags word */
+/* ocd_connect_flags2 flags */
+#define OBD_CONNECT2_FILE_SECCTX	0x1ULL /* set file security context at create */
+
 /* XXX README XXX:
  * Please DO NOT add flag values here before first ensuring that this same
  * flag value is not in use on some other branch.  Please clear any such
@@ -1418,7 +1424,10 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 				OBD_CONNECT_DISP_STRIPE | OBD_CONNECT_LFSCK | \
 				OBD_CONNECT_OPEN_BY_FID | \
 				OBD_CONNECT_MULTIMODRPCS | \
-				OBD_CONNECT_BULK_MBITS)
+				OBD_CONNECT_BULK_MBITS | OBD_CONNECT_SUBTREE | \
+				OBD_CONNECT_FLAGS2)
+
+#define MDT_CONNECT_SUPPORTED2 OBD_CONNECT2_FILE_SECCTX
 
 #define OST_CONNECT_SUPPORTED  (OBD_CONNECT_SRVLOCK | OBD_CONNECT_GRANT | \
                                 OBD_CONNECT_REQPORTAL | OBD_CONNECT_VERSION | \
@@ -1439,11 +1448,18 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 				OBD_CONNECT_PINGLESS | OBD_CONNECT_LFSCK | \
 				OBD_CONNECT_LOCK_AHEAD | \
 				OBD_CONNECT_BULK_MBITS)
-#define ECHO_CONNECT_SUPPORTED (0)
+
+#define OST_CONNECT_SUPPORTED2 0
+
+#define ECHO_CONNECT_SUPPORTED 0
+#define ECHO_CONNECT_SUPPORTED2 0
+
 #define MGS_CONNECT_SUPPORTED  (OBD_CONNECT_VERSION | OBD_CONNECT_AT | \
 				OBD_CONNECT_FULL20 | OBD_CONNECT_IMP_RECOV | \
 				OBD_CONNECT_MNE_SWAB | OBD_CONNECT_PINGLESS | \
 				OBD_CONNECT_BARRIER | OBD_CONNECT_BULK_MBITS)
+
+#define MGS_CONNECT_SUPPORTED2 0
 
 /* Features required for this version of the client to work with server */
 #define CLIENT_CONNECT_MDT_REQD (OBD_CONNECT_IBITS | OBD_CONNECT_FID | \
@@ -1477,7 +1493,7 @@ struct obd_connect_data {
 	__u16 ocd_maxmodrpcs;    /* Maximum modify RPCs in parallel */
 	__u16 padding0;          /* added 2.1.0. also fix lustre_swab_connect */
 	__u32 padding1;          /* added 2.1.0. also fix lustre_swab_connect */
-        __u64 padding2;          /* added 2.1.0. also fix lustre_swab_connect */
+	__u64 ocd_connect_flags2;
         __u64 padding3;          /* added 2.1.0. also fix lustre_swab_connect */
         __u64 padding4;          /* added 2.1.0. also fix lustre_swab_connect */
         __u64 padding5;          /* added 2.1.0. also fix lustre_swab_connect */
@@ -1727,10 +1743,6 @@ static inline void lmm_oi_cpu_to_le(struct ost_id *dst_oi,
 #define XATTR_NAME_HSM		"trusted.hsm"
 #define XATTR_NAME_LFSCK_BITMAP "trusted.lfsck_bitmap"
 #define XATTR_NAME_DUMMY	"trusted.dummy"
-
-#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 8, 53, 0)
-# define XATTR_NAME_LFSCK_NAMESPACE_OLD "trusted.lfsck_namespace"
-#endif
 
 #define XATTR_NAME_LFSCK_NAMESPACE "trusted.lfsck_ns"
 #define XATTR_NAME_MAX_LEN	32 /* increase this, if there is longer name. */
@@ -2150,7 +2162,7 @@ typedef enum {
 	MDS_READPAGE		= 37,
 	MDS_CONNECT		= 38,
 	MDS_DISCONNECT		= 39,
-	MDS_GETSTATUS		= 40,
+	MDS_GET_ROOT		= 40,
 	MDS_STATFS		= 41,
 	MDS_PIN			= 42, /* obsolete, never used in a release */
 	MDS_UNPIN		= 43, /* obsolete, never used in a release */
@@ -4005,11 +4017,14 @@ struct link_ea_entry {
 
 /** fid2path request/reply structure */
 struct getinfo_fid2path {
-        struct lu_fid   gf_fid;
-        __u64           gf_recno;
-        __u32           gf_linkno;
-        __u32           gf_pathlen;
-        char            gf_path[0];
+	struct lu_fid	gf_fid;
+	__u64		gf_recno;
+	__u32		gf_linkno;
+	__u32		gf_pathlen;
+	union {
+		char		gf_path[0];
+		struct lu_fid	gf_root_fid[0];
+	} gf_u;
 } __attribute__((packed));
 
 void lustre_swab_fid2path (struct getinfo_fid2path *gf);

@@ -829,8 +829,10 @@ int mdd_changelog_ns_store(const struct lu_env *env,
 
 	rc = mdd_changelog_store(env, mdd, rec, handle);
 	if (rc < 0) {
-		CERROR("changelog failed: rc=%d, op%d %s c"DFID" p"DFID"\n",
-			rc, type, tname->ln_name, PFID(sfid), PFID(tpfid));
+		CERROR("%s: cannot store changelog record: type = %d, "
+		       "name = '%s', t = "DFID", p = "DFID": rc = %d\n",
+		       mdd2obd_dev(mdd)->obd_name, type, tname->ln_name,
+		       PFID(&rec->cr.cr_tfid), PFID(&rec->cr.cr_pfid), rc);
 		return -EFAULT;
 	}
 
@@ -1796,24 +1798,15 @@ out_free:
 static int mdd_declare_object_initialize(const struct lu_env *env,
 					 struct mdd_object *parent,
 					 struct mdd_object *child,
-					 struct lu_attr *attr,
+					 const struct lu_attr *attr,
 					 struct thandle *handle)
 {
 	int rc;
 	ENTRY;
 
-	/*
-	 * inode mode has been set in creation time, and it's based on umask,
-	 * la_mode and acl, don't set here again! (which will go wrong
-	 * because below function doesn't consider umask).
-	 * I'd suggest set all object attributes in creation time, see above.
-	 */
 	LASSERT(attr->la_valid & (LA_MODE | LA_TYPE));
-	attr->la_valid &= ~(LA_MODE | LA_TYPE);
-	rc = mdo_declare_attr_set(env, child, attr, handle);
-	attr->la_valid |= LA_MODE | LA_TYPE;
-	if (rc != 0 || !S_ISDIR(attr->la_mode))
-		RETURN(rc);
+	if (!S_ISDIR(attr->la_mode))
+		RETURN(0);
 
 	rc = mdo_declare_index_insert(env, child, mdo2fid(child), S_IFDIR,
 				      dot, handle);
@@ -1962,6 +1955,7 @@ static int mdd_declare_object_create(const struct lu_env *env,
 				     struct lu_buf *acl_buf,
 				     struct dt_allocation_hint *hint)
 {
+	const struct lu_buf *buf;
 	int rc;
 
 	rc = mdd_declare_object_create_internal(env, p, c, attr, handle, spec,
@@ -1997,8 +1991,6 @@ static int mdd_declare_object_create(const struct lu_env *env,
 	/* replay case, create LOV EA from client data */
 	if (spec->no_create ||
 	    (spec->sp_cr_flags & MDS_OPEN_HAS_EA && S_ISREG(attr->la_mode))) {
-		const struct lu_buf *buf;
-
 		buf = mdd_buf_get_const(env, spec->u.sp_ea.eadata,
 					spec->u.sp_ea.eadatalen);
 		rc = mdo_declare_xattr_set(env, c, buf, XATTR_NAME_LOV, 0,
@@ -2018,6 +2010,16 @@ static int mdd_declare_object_create(const struct lu_env *env,
                 if (rc)
                         GOTO(out, rc);
         }
+
+	if (spec->sp_cr_file_secctx_name != NULL) {
+		buf = mdd_buf_get_const(env, spec->sp_cr_file_secctx,
+					spec->sp_cr_file_secctx_size);
+		rc = mdo_declare_xattr_set(env, c, buf,
+					   spec->sp_cr_file_secctx_name, 0,
+					   handle);
+		if (rc < 0)
+			GOTO(out, rc);
+	}
 out:
 	return rc;
 }
@@ -2135,6 +2137,7 @@ static int mdd_object_create(const struct lu_env *env, struct mdd_object *pobj,
 			     struct dt_allocation_hint *hint,
 			     struct thandle *handle)
 {
+	const struct lu_buf    *buf;
 	int			rc;
 
 	mdd_write_lock(env, son, MOR_TGT_CHILD);
@@ -2170,8 +2173,6 @@ static int mdd_object_create(const struct lu_env *env, struct mdd_object *pobj,
 	if (spec->no_create ||
 	    (S_ISREG(attr->la_mode) && spec->sp_cr_flags & MDS_OPEN_HAS_EA) ||
 	    S_ISDIR(attr->la_mode)) {
-		const struct lu_buf *buf;
-
 		buf = mdd_buf_get_const(env, spec->u.sp_ea.eadata,
 					spec->u.sp_ea.eadatalen);
 		rc = mdo_xattr_set(env, son, buf,
@@ -2220,6 +2221,15 @@ static int mdd_object_create(const struct lu_env *env, struct mdd_object *pobj,
 			rc = 0;
 		else
 			GOTO(err_initlized, rc = -EFAULT);
+	}
+
+	if (spec->sp_cr_file_secctx_name != NULL) {
+		buf = mdd_buf_get_const(env, spec->sp_cr_file_secctx,
+					spec->sp_cr_file_secctx_size);
+		rc = mdo_xattr_set(env, son, buf, spec->sp_cr_file_secctx_name,
+				   0, handle, BYPASS_CAPA);
+		if (rc < 0)
+			GOTO(err_initlized, rc);
 	}
 
 err_initlized:

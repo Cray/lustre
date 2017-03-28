@@ -101,7 +101,8 @@ char *obd_export_nid2str(struct obd_export *exp);
 
 int obd_export_evict_by_nid(struct obd_device *obd, const char *nid);
 int obd_export_evict_by_uuid(struct obd_device *obd, const char *uuid);
-int obd_connect_flags2str(char *page, int count, __u64 flags, char *sep);
+int obd_connect_flags2str(char *page, int count, __u64 flags, __u64 flags2,
+			  const char *sep);
 
 int obd_zombie_impexp_init(void);
 void obd_zombie_impexp_stop(void);
@@ -1440,16 +1441,16 @@ static inline int obd_register_observer(struct obd_device *obd,
 }
 
 /* metadata helpers */
-static inline int md_getstatus(struct obd_export *exp,
-                               struct lu_fid *fid, struct obd_capa **pc)
+static inline int md_get_root(struct obd_export *exp, const char *fileset,
+			      struct lu_fid *fid, struct obd_capa **pc)
 {
-        int rc;
-        ENTRY;
+	int rc;
+	ENTRY;
 
-        EXP_CHECK_MD_OP(exp, getstatus);
-        EXP_MD_COUNTER_INCREMENT(exp, getstatus);
-        rc = MDP(exp->exp_obd, getstatus)(exp, fid, pc);
-        RETURN(rc);
+	EXP_CHECK_MD_OP(exp, getstatus);
+	EXP_MD_COUNTER_INCREMENT(exp, getstatus);
+	rc = MDP(exp->exp_obd, getstatus)(exp, fileset, fid, pc);
+	RETURN(rc);
 }
 
 static inline int md_getattr(struct obd_export *exp, struct md_op_data *op_data,
