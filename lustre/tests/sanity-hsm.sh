@@ -1484,9 +1484,8 @@ test_12q() {
 	$LFS hsm_release $f || error "could not release file"
 	check_hsm_flags $f "0x0000000d"
 
-	search_and_kill_copytool
-	sleep 5
-	search_copytools && error "Copytool should have stopped"
+	kill_copytools
+	wait_copytools || error "copytool failed to stop"
 
 	cat $f > /dev/null &
 
