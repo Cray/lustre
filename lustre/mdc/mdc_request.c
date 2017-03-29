@@ -1018,7 +1018,7 @@ restart_bulk:
 	desc = ptlrpc_prep_bulk_imp(req, npages, 1, BULK_PUT_SINK,
 				    MDS_BULK_PORTAL);
 	if (desc == NULL) {
-		ptlrpc_request_free(req);
+		ptlrpc_req_finished(req);
 		RETURN(-ENOMEM);
 	}
 

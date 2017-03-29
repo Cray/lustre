@@ -1830,10 +1830,8 @@ static int osp_it_fetch(const struct lu_env *env, struct osp_it *it)
 
 	desc = ptlrpc_prep_bulk_imp(req, npages, 1, BULK_PUT_SINK,
 				    MDS_BULK_PORTAL);
-	if (desc == NULL) {
-		ptlrpc_request_free(req);
-		RETURN(-ENOMEM);
-	}
+	if (desc == NULL)
+		GOTO(out, rc = -ENOMEM);
 
 	for (i = 0; i < npages; i++)
 		ptlrpc_prep_bulk_page_pin(desc, pages[i], 0, PAGE_CACHE_SIZE);
