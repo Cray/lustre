@@ -162,6 +162,7 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 %exclude %{_sysconfdir}
 
 %post
+%{__ln_s} -f /sbin/lctl /usr/sbin
 
 DEPMOD_OPTS=""
 if [ -f /boot/System.map-%{cray_kernel_version} ]; then
@@ -187,6 +188,10 @@ if [ -f /boot/System.map-%{cray_kernel_version} ]; then
 fi
 
 depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
+
+%preun
+%{__rm} -f /usr/sbin/lctl
+
 
 %postun lnet
 

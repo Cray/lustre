@@ -135,5 +135,11 @@ depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
 %{_prefix}
 %exclude %{_sysconfdir}/lustre/perm.conf
 
+%post
+%{__ln_s} -f /sbin/lctl /usr/sbin
+
+%preun
+%{__rm} -f /usr/sbin/lctl
+
 %clean
 %clean_build_root
