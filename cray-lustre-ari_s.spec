@@ -245,7 +245,7 @@ popd
 /usr/lib64/*
 
 %post
-%{__ln_s} %{_sbindir}/ko2iblnd-probe /usr/sbin
+%{__ln_s} -f %{_sbindir}/ko2iblnd-probe /usr/sbin
 
 for f in %{pc_files}
 do
