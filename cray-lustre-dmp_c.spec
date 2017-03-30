@@ -120,7 +120,7 @@ done
 %{__install} -D -m 0644 module %{buildroot}/%{_release_modulefile}
 
 %post
-%{__ln_s} %{_sbindir}/ko2iblnd-probe /usr/sbin
+%{__ln_s} -f %{_sbindir}/ko2iblnd-probe /usr/sbin
 
 DEPMOD_OPTS=""
 if [ -f /boot/System.map-%{cray_kernel_version} ]; then
