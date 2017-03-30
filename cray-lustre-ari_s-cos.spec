@@ -121,5 +121,12 @@ done
 %{_prefix}
 %endif
 
+%post
+%{__ln_s} -f /sbin/lctl /usr/sbin
+
+%preun
+%{__rm} -f /usr/sbin/lctl
+
+
 %clean
 %clean_build_root

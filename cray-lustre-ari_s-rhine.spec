@@ -237,6 +237,7 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 
 %post
 %{__ln_s} -f %{_sbindir}/ko2iblnd-probe /usr/sbin
+%{__ln_s} -f %{_prefix}/sbin/lctl /usr/sbin
 
 /sbin/ldconfig
 
@@ -248,6 +249,7 @@ fi
 depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
 
 %preun
+%{__rm} -f /usr/sbin/lctl
 %{__rm} -f /usr/sbin/ko2iblnd-probe
 
 %postun

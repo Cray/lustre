@@ -136,5 +136,11 @@ depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
 %defattr(-,root,root)
 %{_prefix}
 
+%post
+%{__ln_s} -f /sbin/lctl /usr/sbin
+
+%preun
+%{__rm} -f /usr/sbin/lctl
+
 %clean
 %clean_build_root

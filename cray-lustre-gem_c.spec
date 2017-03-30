@@ -124,5 +124,11 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 /lib/modules/*/updates/kernel/net/lustre
 /sbin/lctl
 
+%post
+%{__ln_s} -f /sbin/lctl /usr/sbin
+
+%preun
+%{__rm} -f /usr/sbin/lctl
+
 %clean
 %clean_build_root
