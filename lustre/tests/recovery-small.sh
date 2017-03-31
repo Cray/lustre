@@ -261,6 +261,7 @@ test_10d() {
 	local rec2len=5
 	$MULTIOP $TMP/$tfile oO_CREAT:O_WRONLY:T0z${rec1len}w${rec2len}c
 
+	remount_client $MOUNT
 	mount_client $MOUNT2
 
 	$LFS setstripe -i 0 -c 1 $DIR1/$tfile
@@ -279,8 +280,9 @@ test_10d() {
 
 	client_reconnect
 
-	cmp $DIR1/$tfile $DIR2/$tfile || error "file contents differ"
-	cmp $DIR1/$tfile $TMP/$tfile || error "wrong content found"
+	cancel_lru_locks osc
+	cmp -l $DIR1/$tfile $DIR2/$tfile || error "file contents differ"
+	cmp -l $DIR1/$tfile $TMP/$tfile || error "wrong content found"
 
 	evict=$(do_facet client $LCTL get_param osc.$FSNAME-OST0000*.state | \
 		tr -d '\-\[\] ' | \
@@ -295,6 +297,45 @@ test_10d() {
 	umount_client $MOUNT2
 }
 run_test 10d "test failed blocking ast"
+
+test_10e()
+{
+	[[ $(lustre_version_code ost1) -le $(version_code 2.8.58) ]] &&
+		skip "Need OST version at least 2.8.59" && return 0
+	[ $CLIENTCOUNT -lt 2 ] && skip "need two clients" && return 0
+	[ $(facet_host client) == $(facet_host ost1) ] &&
+		skip "need ost1 and client on different nodes" && return 0
+	local -a clients=(${CLIENTS//,/ })
+	local client1=${clients[0]}
+	local client2=${clients[1]}
+
+	$LFS setstripe -c 1 -i 0 $DIR/$tfile-1 $DIR/$tfile-2
+	$MULTIOP $DIR/$tfile-1 Ow1048576c
+
+#define OBD_FAIL_LDLM_BL_CALLBACK_NET                   0x305
+	$LCTL set_param fail_loc=0x80000305
+
+#define OBD_FAIL_LDLM_ENQUEUE_OLD_EXPORT 0x30e
+	do_facet ost1 "$LCTL set_param fail_loc=0x1000030e"
+	# hit OBD_FAIL_LDLM_ENQUEUE_OLD_EXPORT twice:
+	# 1. to return ENOTCONN from ldlm_handle_enqueue0
+	# 2. to pause reconnect handling between resend and setting
+	# import to LUSTRE_IMP_FULL state
+	do_facet ost1 "$LCTL set_param fail_val=3"
+
+	# client1 fails ro respond to bl ast
+	do_node $client2 "$MULTIOP $DIR/$tfile-1 Ow1048576c" &
+	MULTIPID=$!
+
+	# ost1 returns error on enqueue, which causes client1 to reconnect
+	do_node $client1 "$MULTIOP $DIR/$tfile-2 Ow1048576c" ||
+		error "multiop failed"
+	wait $MULTIPID
+
+	do_facet ost1 "$LCTL set_param fail_loc=0"
+	do_facet ost1 "$LCTL set_param fail_val=0"
+}
+run_test 10e "re-send BL AST vs reconnect race 2"
 
 #bug 2460
 # wake up a thread waiting for completion after eviction
@@ -531,10 +572,10 @@ test_18c() {
     do_facet ost1 lctl set_param fail_loc=0x80000225
     # force reconnect
     sleep 1
-    df $MOUNT > /dev/null 2>&1
+    $LFS df $MOUNT > /dev/null 2>&1
     sleep 2
     # my understanding is that there should be nothing in the page
-    # cache after the client reconnects?     
+    # cache after the client reconnects?
     rc=0
     pgcache_empty || rc=2
     rm -f $f $TMP/$tfile
@@ -1510,6 +1551,11 @@ check_target_ir_state()
         local recovery_proc=obdfilter.${!name}.recovery_status
         local st
 
+	while : ; do
+		st=$(do_facet $target "$LCTL get_param -n $recovery_proc |
+			awk '/status:/{ print \\\$2}'")
+		[ x$st = xRECOVERING ] || break
+	done
         st=$(do_facet $target "lctl get_param -n $recovery_proc |
                                awk '/IR:/{ print \\\$2}'")
 	[ $st != ON -o $st != OFF -o $st != ENABLED -o $st != DISABLED ] ||

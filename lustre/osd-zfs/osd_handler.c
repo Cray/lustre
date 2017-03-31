@@ -912,10 +912,6 @@ static int osd_mount(const struct lu_env *env,
 	if (rc)
 		GOTO(err, rc);
 
-	rc = osd_convert_root_to_new_seq(env, o);
-	if (rc)
-		GOTO(err, rc);
-
 	/* Use our own ZAP for inode accounting by default, this can be changed
 	 * via procfs to estimate the inode usage from the block usage */
 	o->od_quota_iused_est = 0;
@@ -1006,12 +1002,18 @@ static struct lu_device *osd_device_alloc(const struct lu_env *env,
 					  struct lu_device_type *type,
 					  struct lustre_cfg *cfg)
 {
-	struct osd_device *dev;
-	int		   rc;
+	struct osd_device	*dev;
+	struct osd_seq_list	*osl;
+	int			rc;
 
 	OBD_ALLOC_PTR(dev);
 	if (dev == NULL)
 		return ERR_PTR(-ENOMEM);
+
+	osl = &dev->od_seq_list;
+	INIT_LIST_HEAD(&osl->osl_seq_list);
+	rwlock_init(&osl->osl_seq_list_lock);
+	sema_init(&osl->osl_seq_init_sem, 1);
 
 	rc = dt_device_init(&dev->od_dt_dev, type);
 	if (rc == 0) {

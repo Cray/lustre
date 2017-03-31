@@ -269,11 +269,95 @@ static void mdt_lock_pdo_mode(struct mdt_thread_info *info, struct mdt_object *o
         EXIT;
 }
 
-static int mdt_getstatus(struct tgt_session_info *tsi)
+static int mdt_lookup_fileset(struct mdt_thread_info *info, const char *fileset,
+			      struct lu_fid *fid)
+{
+	struct mdt_device *mdt = info->mti_mdt;
+	struct lu_name *lname = &info->mti_name;
+	char *name = NULL;
+	struct mdt_object *parent;
+	u32 mode;
+	int rc = 0;
+
+	LASSERT(!info->mti_cross_ref);
+
+	OBD_ALLOC(name, NAME_MAX + 1);
+	if (name == NULL)
+		return -ENOMEM;
+	lname->ln_name = name;
+
+	/*
+	 * We may want to allow this to mount a completely separate
+	 * fileset from the MDT in the future, but keeping it to
+	 * ROOT/ only for now avoid potential security issues.
+	 */
+	*fid = mdt->mdt_md_root_fid;
+
+	while (rc == 0 && fileset != NULL && *fileset != '\0') {
+		const char *s1 = fileset;
+		const char *s2;
+
+		while (*++s1 == '/')
+			;
+		s2 = s1;
+		while (*s2 != '/' && *s2 != '\0')
+			s2++;
+
+		if (s2 == s1)
+			break;
+
+		fileset = s2;
+
+		lname->ln_namelen = s2 - s1;
+		if (lname->ln_namelen > NAME_MAX) {
+			rc = -EINVAL;
+			break;
+		}
+
+		/* reject .. as a path component */
+		if (lname->ln_namelen == 2 &&
+		    strncmp(s1, "..", 2) == 0) {
+			rc = -EINVAL;
+			break;
+		}
+
+		strncpy(name, s1, lname->ln_namelen);
+		name[lname->ln_namelen] = '\0';
+
+		parent = mdt_object_find(info->mti_env, mdt, fid);
+		if (IS_ERR(parent)) {
+			rc = PTR_ERR(parent);
+			break;
+		}
+		/* Only got the fid of this obj by name */
+		fid_zero(fid);
+		rc = mdo_lookup(info->mti_env, mdt_object_child(parent), lname,
+				fid, &info->mti_spec);
+		mdt_object_put(info->mti_env, parent);
+	}
+	if (!rc) {
+		parent = mdt_object_find(info->mti_env, mdt, fid);
+		if (IS_ERR(parent))
+			rc = PTR_ERR(parent);
+		else {
+			mode = lu_object_attr(&parent->mot_obj);
+			mdt_object_put(info->mti_env, parent);
+			if (!S_ISDIR(mode))
+				rc = -ENOTDIR;
+		}
+	}
+
+	OBD_FREE(name, NAME_MAX + 1);
+
+	return rc;
+}
+
+static int mdt_get_root(struct tgt_session_info *tsi)
 {
 	struct mdt_thread_info	*info = tsi2mdt_info(tsi);
 	struct mdt_device	*mdt = info->mti_mdt;
 	struct mdt_body		*repbody;
+	char			*fileset;
 	int			 rc;
 
 	ENTRY;
@@ -282,11 +366,21 @@ static int mdt_getstatus(struct tgt_session_info *tsi)
 	if (rc)
 		GOTO(out, rc = err_serious(rc));
 
-	if (OBD_FAIL_CHECK(OBD_FAIL_MDS_GETSTATUS_PACK))
+	if (OBD_FAIL_CHECK(OBD_FAIL_MDS_GET_ROOT_PACK))
 		GOTO(out, rc = err_serious(-ENOMEM));
 
 	repbody = req_capsule_server_get(info->mti_pill, &RMF_MDT_BODY);
-	repbody->mbo_fid1 = mdt->mdt_md_root_fid;
+	if (req_capsule_get_size(info->mti_pill, &RMF_NAME, RCL_CLIENT) > 0) {
+		fileset = req_capsule_client_get(info->mti_pill, &RMF_NAME);
+		if (fileset == NULL)
+			GOTO(out, rc = err_serious(-EFAULT));
+
+		rc = mdt_lookup_fileset(info, fileset, &repbody->mbo_fid1);
+		if (rc < 0)
+			GOTO(out, rc = err_serious(rc));
+	} else {
+		repbody->mbo_fid1 = mdt->mdt_md_root_fid;
+	}
 	repbody->mbo_valid |= OBD_MD_FLID;
 
 	if (tsi->tsi_tgt->lut_mds_capa &&
@@ -1775,6 +1869,9 @@ static int mdt_set_info(struct tgt_session_info *tsi)
 
 		rc = mdt_iocontrol(OBD_IOC_CHANGELOG_CLEAR, req->rq_export,
 				   vallen, val, NULL);
+	} else if (KEY_IS(KEY_EVICT_BY_NID)) {
+		if (vallen > 0)
+			obd_export_evict_by_nid(req->rq_export->exp_obd, val);
 	} else {
 		RETURN(-EINVAL);
 	}
@@ -3599,6 +3696,9 @@ static int mdt_intent_opc(long itopc, struct mdt_thread_info *info,
 		if (qmt == NULL)
 			RETURN(-EOPNOTSUPP);
 
+		if (mdt_rdonly(req->rq_export))
+			RETURN(-EROFS);
+
 		(*lockp)->l_lvb_type = LVB_T_LQUOTA;
 		/* pass the request to quota master */
 		rc = qmt_hdls.qmth_intent_policy(info->mti_env, qmt,
@@ -4368,7 +4468,7 @@ TGT_RPC_HANDLER(MDS_FIRST_OPC,
 		HABEO_REFERO,		MDS_SET_INFO,	mdt_set_info,
 		&RQF_OBD_SET_INFO, LUSTRE_MDS_VERSION),
 TGT_MDT_HDL(0,				MDS_GET_INFO,	mdt_get_info),
-TGT_MDT_HDL(0		| HABEO_REFERO,	MDS_GETSTATUS,	mdt_getstatus),
+TGT_MDT_HDL(0		| HABEO_REFERO,	MDS_GET_ROOT,	mdt_get_root),
 TGT_MDT_HDL(HABEO_CORPUS,		MDS_GETATTR,	mdt_getattr),
 TGT_MDT_HDL(HABEO_CORPUS| HABEO_REFERO,	MDS_GETATTR_NAME,
 							mdt_getattr_name),
@@ -4573,6 +4673,7 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
 
         m->mdt_som_conf = 0;
 
+	m->mdt_opts.mo_evict_tgt_nids = 1;
         m->mdt_opts.mo_cos = MDT_COS_DEFAULT;
 
 	lmi = server_get_mount(dev);
@@ -5038,6 +5139,10 @@ static int mdt_obd_set_info_async(const struct lu_env *env,
  * connect flags from the obd_connect_data::ocd_connect_flags field of the
  * reply. \see mdt_connect().
  *
+ * Before 2.7.50 clients will send a struct obd_connect_data_v1 rather than a
+ * full struct obd_connect_data. So care must be taken when accessing fields
+ * that are not present in struct obd_connect_data_v1. See LU-16.
+ *
  * \param exp   the obd_export associated with this client/target pair
  * \param mdt   the target device for the connection
  * \param data  stores data for this connect request
@@ -5053,6 +5158,10 @@ static int mdt_connect_internal(struct obd_export *exp,
 	LASSERT(data != NULL);
 
 	data->ocd_connect_flags &= MDT_CONNECT_SUPPORTED;
+
+	if (data->ocd_connect_flags & OBD_CONNECT_FLAGS2)
+		data->ocd_connect_flags2 &= MDT_CONNECT_SUPPORTED2;
+
 	data->ocd_ibits_known &= MDS_INODELOCK_FULL;
 
 	if (!(data->ocd_connect_flags & OBD_CONNECT_MDS_MDS) &&
@@ -5265,12 +5374,12 @@ static int mdt_obd_disconnect(struct obd_export *exp)
         LASSERT(exp);
         class_export_get(exp);
 
-	nodemap_del_member(exp);
 	rc = server_disconnect_export(exp);
 	if (rc != 0)
 		CDEBUG(D_IOCTL, "server disconnect error: rc = %d\n", rc);
 
 	rc = mdt_export_cleanup(exp);
+	nodemap_del_member(exp);
 	class_export_put(exp);
 	RETURN(rc);
 }
@@ -5317,6 +5426,10 @@ static int mdt_obd_connect(const struct lu_env *env,
 	lexp = class_conn2export(&conn);
 	LASSERT(lexp != NULL);
 
+	rc = nodemap_add_member(*client_nid, lexp);
+	if (rc != 0 && rc != -EEXIST)
+		GOTO(out, rc);
+
 	rc = mdt_connect_internal(lexp, mdt, data);
 	if (rc == 0) {
 		struct lsd_client_data *lcd = lexp->exp_target_data.ted_lcd;
@@ -5324,13 +5437,8 @@ static int mdt_obd_connect(const struct lu_env *env,
 		LASSERT(lcd);
 		memcpy(lcd->lcd_uuid, cluuid, sizeof lcd->lcd_uuid);
 		rc = tgt_client_new(env, lexp);
-		if (rc == 0) {
-			rc = nodemap_add_member(*client_nid, lexp);
-			if (rc != 0 && rc != -EEXIST)
-				goto out;
-
+		if (rc == 0)
 			mdt_export_stats_init(obd, lexp, localdata);
-		}
 
 		/* For phase I, sync for cross-ref operation. */
 		spin_lock(&lexp->exp_lock);
@@ -5340,6 +5448,7 @@ static int mdt_obd_connect(const struct lu_env *env,
 out:
 	if (rc != 0) {
 		class_disconnect(lexp);
+		nodemap_del_member(lexp);
 		*exp = NULL;
 	} else {
 		*exp = lexp;
@@ -5361,12 +5470,15 @@ static int mdt_obd_reconnect(const struct lu_env *env,
 	if (exp == NULL || obd == NULL || cluuid == NULL)
 		RETURN(-EINVAL);
 
+	rc = nodemap_add_member(*client_nid, exp);
+	if (rc != 0 && rc != -EEXIST)
+		RETURN(rc);
+
 	rc = mdt_connect_internal(exp, mdt_dev(obd->obd_lu_dev), data);
-	if (rc == 0) {
-		rc = nodemap_add_member(*client_nid, exp);
-		if (rc == 0 || rc == -EEXIST)
-			mdt_export_stats_init(obd, exp, localdata);
-	}
+	if (rc == 0)
+		mdt_export_stats_init(obd, exp, localdata);
+	else
+		nodemap_del_member(exp);
 
 	RETURN(rc);
 }
@@ -5470,6 +5582,7 @@ int mdt_links_read(struct mdt_thread_info *info, struct mdt_object *mdt_obj,
  * \param[in]     info  Per-thread common data shared by MDT level handlers.
  * \param[in]     obj   Object to do path lookup of
  * \param[in,out] fp    User-provided struct to store path information
+ * \param[in]     root_fid Root FID of current path should reach
  *
  * \retval 0 Lookup successful, path information stored in fp
  * \retval -EAGAIN Lookup failed, usually because object is being moved
@@ -5477,7 +5590,8 @@ int mdt_links_read(struct mdt_thread_info *info, struct mdt_object *mdt_obj,
  */
 static int mdt_path_current(struct mdt_thread_info *info,
 			    struct mdt_object *obj,
-			    struct getinfo_fid2path *fp)
+			    struct getinfo_fid2path *fp,
+			    struct lu_fid *root_fid)
 {
 	struct mdt_device	*mdt = info->mti_mdt;
 	struct mdt_object	*mdt_obj;
@@ -5500,15 +5614,19 @@ static int mdt_path_current(struct mdt_thread_info *info,
 		RETURN(-ENOMEM);
 
 	ldata.ld_buf = buf;
-	ptr = fp->gf_path + fp->gf_pathlen - 1;
+	ptr = fp->gf_u.gf_path + fp->gf_pathlen - 1;
 	*ptr = 0;
 	--ptr;
 	*tmpfid = fp->gf_fid = *mdt_object_fid(obj);
 
 	/* root FID only exists on MDT0, and fid2path should also ends at MDT0,
 	 * so checking root_fid can only happen on MDT0. */
-	while (!lu_fid_eq(&mdt->mdt_md_root_fid, &fp->gf_fid)) {
+	while (!lu_fid_eq(root_fid, &fp->gf_fid)) {
 		struct lu_buf		lmv_buf;
+
+		if (!lu_fid_eq(root_fid, &mdt->mdt_md_root_fid) &&
+		    lu_fid_eq(&mdt->mdt_md_root_fid, &fp->gf_fid))
+			GOTO(out, rc = -ENOENT);
 
 		if (lu_fid_eq(mdt_object_fid(obj), tmpfid)) {
 			mdt_obj = obj;
@@ -5575,7 +5693,7 @@ static int mdt_path_current(struct mdt_thread_info *info,
 
 		/* Pack the name in the end of the buffer */
 		ptr -= tmpname->ln_namelen;
-		if (ptr - 1 <= fp->gf_path)
+		if (ptr - 1 <= fp->gf_u.gf_path)
 			GOTO(out, rc = -EOVERFLOW);
 		strncpy(ptr, tmpname->ln_name, tmpname->ln_namelen);
 		*(--ptr) = '/';
@@ -5590,7 +5708,8 @@ static int mdt_path_current(struct mdt_thread_info *info,
 
 remote_out:
 	ptr++; /* skip leading / */
-	memmove(fp->gf_path, ptr, fp->gf_path + fp->gf_pathlen - ptr);
+	memmove(fp->gf_u.gf_path, ptr,
+		fp->gf_u.gf_path + fp->gf_pathlen - ptr);
 
 out:
 	RETURN(rc);
@@ -5612,7 +5731,7 @@ out:
  * \retval negative errno if there was a problem
  */
 static int mdt_path(struct mdt_thread_info *info, struct mdt_object *obj,
-		    struct getinfo_fid2path *fp)
+		    struct getinfo_fid2path *fp, struct lu_fid *root_fid)
 {
 	struct mdt_device	*mdt = info->mti_mdt;
 	int			tries = 3;
@@ -5622,14 +5741,17 @@ static int mdt_path(struct mdt_thread_info *info, struct mdt_object *obj,
 	if (fp->gf_pathlen < 3)
 		RETURN(-EOVERFLOW);
 
-	if (lu_fid_eq(&mdt->mdt_md_root_fid, mdt_object_fid(obj))) {
-		fp->gf_path[0] = '\0';
+	if (root_fid == NULL)
+		root_fid = &mdt->mdt_md_root_fid;
+
+	if (lu_fid_eq(root_fid, mdt_object_fid(obj))) {
+		fp->gf_u.gf_path[0] = '\0';
 		RETURN(0);
 	}
 
 	/* Retry multiple times in case file is being moved */
 	while (tries-- && rc == -EAGAIN)
-		rc = mdt_path_current(info, obj, fp);
+		rc = mdt_path_current(info, obj, fp, root_fid);
 
 	RETURN(rc);
 }
@@ -5651,6 +5773,7 @@ static int mdt_path(struct mdt_thread_info *info, struct mdt_object *obj,
  * \retval negative errno if there was a problem
  */
 static int mdt_fid2path(struct mdt_thread_info *info,
+			struct lu_fid *root_fid,
 			struct getinfo_fid2path *fp)
 {
 	struct mdt_device *mdt = info->mti_mdt;
@@ -5693,20 +5816,22 @@ static int mdt_fid2path(struct mdt_thread_info *info,
 		RETURN(rc);
 	}
 
-	rc = mdt_path(info, obj, fp);
+	rc = mdt_path(info, obj, fp, root_fid);
 
 	CDEBUG(D_INFO, "fid "DFID", path %s recno "LPX64" linkno %u\n",
-	       PFID(&fp->gf_fid), fp->gf_path, fp->gf_recno, fp->gf_linkno);
+	       PFID(&fp->gf_fid), fp->gf_u.gf_path,
+	       fp->gf_recno, fp->gf_linkno);
 
 	mdt_object_put(info->mti_env, obj);
 
 	RETURN(rc);
 }
 
-static int mdt_rpc_fid2path(struct mdt_thread_info *info, void *key,
+static int mdt_rpc_fid2path(struct mdt_thread_info *info, void *key, int keylen,
 			    void *val, int vallen)
 {
 	struct getinfo_fid2path *fpout, *fpin;
+	struct lu_fid *root_fid = NULL;
 	int rc = 0;
 
 	fpin = key + cfs_size_round(sizeof(KEY_FID2PATH));
@@ -5719,7 +5844,18 @@ static int mdt_rpc_fid2path(struct mdt_thread_info *info, void *key,
 	if (fpout->gf_pathlen != vallen - sizeof(*fpin))
 		RETURN(-EINVAL);
 
-	rc = mdt_fid2path(info, fpout);
+	if (keylen >= cfs_size_round(sizeof(KEY_FID2PATH)) + sizeof(*fpin) +
+		      sizeof(struct lu_fid)) {
+		/* client sent its root FID, which is normally fileset FID */
+		root_fid = fpin->gf_u.gf_root_fid;
+		if (ptlrpc_req_need_swab(info->mti_pill->rc_req))
+			lustre_swab_lu_fid(root_fid);
+
+		if (root_fid != NULL && !fid_is_sane(root_fid))
+			RETURN(-EINVAL);
+	}
+
+	rc = mdt_fid2path(info, root_fid, fpout);
 	RETURN(rc);
 }
 
@@ -5764,7 +5900,7 @@ int mdt_get_info(struct tgt_session_info *tsi)
 	if (KEY_IS(KEY_FID2PATH)) {
 		struct mdt_thread_info	*info = tsi2mdt_info(tsi);
 
-		rc = mdt_rpc_fid2path(info, key, valout, *vallen);
+		rc = mdt_rpc_fid2path(info, key, keylen, valout, *vallen);
 		mdt_thread_info_fini(info);
 	} else {
 		rc = -EINVAL;

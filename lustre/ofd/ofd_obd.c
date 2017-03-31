@@ -122,6 +122,10 @@ out:
  * connect flags from the obd_connect_data::ocd_connect_flags field of the
  * reply. \see tgt_connect().
  *
+ * Before 2.7.50 clients will send a struct obd_connect_data_v1 rather than a
+ * full struct obd_connect_data. So care must be taken when accessing fields
+ * that are not present in struct obd_connect_data_v1. See LU-16.
+ *
  * \param[in] env		execution environment
  * \param[in] exp		the obd_export associated with this
  *				client/target pair
@@ -164,6 +168,10 @@ static int ofd_parse_connect_data(const struct lu_env *env,
 	fed->fed_group = data->ocd_group;
 
 	data->ocd_connect_flags &= OST_CONNECT_SUPPORTED;
+
+	if (data->ocd_connect_flags & OBD_CONNECT_FLAGS2)
+		data->ocd_connect_flags2 &= OST_CONNECT_SUPPORTED2;
+
 	data->ocd_version = LUSTRE_VERSION_CODE;
 
 	/* Kindly make sure the SKIP_ORPHAN flag is from MDS. */
@@ -172,6 +180,26 @@ static int ofd_parse_connect_data(const struct lu_env *env,
 		       exp->exp_obd->obd_name, data->ocd_group);
 	else if (data->ocd_connect_flags & OBD_CONNECT_SKIP_ORPHAN)
 		RETURN(-EPROTO);
+
+	/* Determine optimal brw size before calculating grant */
+	if (OBD_FAIL_CHECK(OBD_FAIL_OST_BRW_SIZE)) {
+		data->ocd_brw_size = 65536;
+	} else if (OCD_HAS_FLAG(data, BRW_SIZE)) {
+		if (data->ocd_brw_size > ofd->ofd_brw_size)
+			data->ocd_brw_size = ofd->ofd_brw_size;
+		if (data->ocd_brw_size == 0) {
+			CERROR("%s: cli %s/%p ocd_connect_flags: "LPX64
+			       " ocd_version: %x ocd_grant: %d ocd_index: %u "
+			       "ocd_brw_size is unexpectedly zero, "
+			       "network data corruption?"
+			       "Refusing connection of this client\n",
+			       exp->exp_obd->obd_name,
+			       exp->exp_client_uuid.uuid,
+			       exp, data->ocd_connect_flags, data->ocd_version,
+			       data->ocd_grant, data->ocd_index);
+			RETURN(-EPROTO);
+		}
+	}
 
 	if (ofd_grant_param_supp(exp)) {
 		exp->exp_filter_data.fed_pagesize = data->ocd_blocksize;
@@ -205,24 +233,6 @@ static int ofd_parse_connect_data(const struct lu_env *env,
 			/* sync is not needed here as lut_client_add will
 			 * set exp_need_sync flag */
 			tgt_server_data_update(env, &ofd->ofd_lut, 0);
-		}
-	}
-	if (OBD_FAIL_CHECK(OBD_FAIL_OST_BRW_SIZE)) {
-		data->ocd_brw_size = 65536;
-	} else if (data->ocd_connect_flags & OBD_CONNECT_BRW_SIZE) {
-		data->ocd_brw_size = min(data->ocd_brw_size,
-					 (__u32)DT_MAX_BRW_SIZE);
-		if (data->ocd_brw_size == 0) {
-			CERROR("%s: cli %s/%p ocd_connect_flags: "LPX64
-			       " ocd_version: %x ocd_grant: %d ocd_index: %u "
-			       "ocd_brw_size is unexpectedly zero, "
-			       "network data corruption?"
-			       "Refusing connection of this client\n",
-			       exp->exp_obd->obd_name,
-			       exp->exp_client_uuid.uuid,
-			       exp, data->ocd_connect_flags, data->ocd_version,
-			       data->ocd_grant, data->ocd_index);
-			RETURN(-EPROTO);
 		}
 	}
 
@@ -297,13 +307,17 @@ static int ofd_obd_reconnect(const struct lu_env *env, struct obd_export *exp,
 	if (exp == NULL || obd == NULL || cluuid == NULL)
 		RETURN(-EINVAL);
 
+	rc = nodemap_add_member(*(lnet_nid_t *)client_nid, exp);
+	if (rc != 0 && rc != -EEXIST)
+		RETURN(rc);
+
 	ofd = ofd_dev(obd->obd_lu_dev);
 
 	rc = ofd_parse_connect_data(env, exp, data, false);
 	if (rc == 0)
 		ofd_export_stats_init(ofd, exp, client_nid);
-
-	nodemap_add_member(*(lnet_nid_t *)client_nid, exp);
+	else
+		nodemap_del_member(exp);
 
 	RETURN(rc);
 }
@@ -333,7 +347,6 @@ static int ofd_obd_connect(const struct lu_env *env, struct obd_export **_exp,
 	struct ofd_device	*ofd;
 	struct lustre_handle	 conn = { 0 };
 	int			 rc;
-	lnet_nid_t		*client_nid;
 	ENTRY;
 
 	if (_exp == NULL || obd == NULL || cluuid == NULL)
@@ -348,14 +361,18 @@ static int ofd_obd_connect(const struct lu_env *env, struct obd_export **_exp,
 	exp = class_conn2export(&conn);
 	LASSERT(exp != NULL);
 
+	if (localdata != NULL) {
+		rc = nodemap_add_member(*(lnet_nid_t *)localdata, exp);
+		if (rc != 0 && rc != -EEXIST)
+			GOTO(out, rc);
+	} else {
+		CDEBUG(D_HA, "%s: cannot find nodemap for client %s: "
+		       "nid is null\n", obd->obd_name, cluuid->uuid);
+	}
+
 	rc = ofd_parse_connect_data(env, exp, data, true);
 	if (rc)
 		GOTO(out, rc);
-
-	if (localdata != NULL) {
-		client_nid = localdata;
-		nodemap_add_member(*client_nid, exp);
-	}
 
 	if (obd->obd_replayable) {
 		struct tg_export_data *ted = &exp->exp_target_data;
@@ -373,8 +390,8 @@ static int ofd_obd_connect(const struct lu_env *env, struct obd_export **_exp,
 
 out:
 	if (rc != 0) {
-		nodemap_del_member(exp);
 		class_disconnect(exp);
+		nodemap_del_member(exp);
 		*_exp = NULL;
 	} else {
 		*_exp = exp;
@@ -407,7 +424,6 @@ int ofd_obd_disconnect(struct obd_export *exp)
 	if (!(exp->exp_flags & OBD_OPT_FORCE))
 		ofd_grant_sanity_check(ofd_obd(ofd), __FUNCTION__);
 
-	nodemap_del_member(exp);
 	rc = server_disconnect_export(exp);
 
 	ofd_grant_discard(exp);
@@ -423,6 +439,7 @@ int ofd_obd_disconnect(struct obd_export *exp)
 		lu_env_fini(&env);
 	}
 out:
+	nodemap_del_member(exp);
 	class_export_put(exp);
 	RETURN(rc);
 }
@@ -1454,7 +1471,7 @@ static int ofd_health_check(const struct lu_env *nul, struct obd_device *obd)
 	if (unlikely(rc))
 		GOTO(out, rc);
 
-	if (info->fti_u.osfs.os_state == OS_STATE_READONLY)
+	if (info->fti_u.osfs.os_state & OS_STATE_READONLY)
 		GOTO(out, rc = -EROFS);
 
 #ifdef USE_HEALTH_CHECK_WRITE

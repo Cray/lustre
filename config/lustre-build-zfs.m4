@@ -430,6 +430,60 @@ your distribution.
 			AC_DEFINE(HAVE_SPA_MAXBLOCKSIZE, 1,
 				[Have spa_maxblocksize in ZFS])
 		])
+
+		dnl #
+		dnl # ZFS 0.7.x adds support for large dnodes.  This
+		dnl # allows Lustre to optionally specify the size of a
+		dnl # dnode which ZFS will then use to store metadata such
+		dnl # as xattrs. The default dnode size specified by the
+		dnl # 'dnodesize' dataset property will be used unless a
+		dnl # specific value is provided.
+		dnl #
+		LB_CHECK_COMPILE([if zfs defines dmu_object_alloc_dnsize],
+		dmu_object_alloc_dnsize, [
+			#include <sys/dmu.h>
+			#include <sys/dnode.h>
+		],[
+			objset_t *os = NULL;
+			dmu_object_type_t objtype = DMU_OT_NONE;
+			int blocksize = 0;
+			dmu_object_type_t bonustype = DMU_OT_SA;
+			int dnodesize = DNODE_MIN_SIZE;
+			dmu_tx_t *tx = NULL;
+			uint64_t id;
+
+			id = dmu_object_alloc_dnsize(os, objtype, blocksize,
+						     bonustype,
+						     DN_BONUS_SIZE(dnodesize),
+						     dnodesize, tx);
+		],[
+			AC_DEFINE(HAVE_DMU_OBJECT_ALLOC_DNSIZE, 1,
+				[Have dmu_object_alloc_dnsize in ZFS])
+		])
+
+		dnl #
+		dnl # ZFS 0.7.x extended dmu_prefetch() to take an additional
+		dnl # 'level' and 'priority' argument.  Use a level of 0 and a
+		dnl # priority of ZIO_PRIORITY_SYNC_READ to replicate the
+		dnl # behavior of the four argument version.
+		dnl #
+		LB_CHECK_COMPILE([if ZFS has 'dmu_prefetch' with 6 args],
+		dmu_prefetch, [
+			#include <sys/dmu.h>
+		],[
+			objset_t *os = NULL;
+			uint64_t object = 0;
+			int64_t level = 0;
+			uint64_t offset = 0;
+			uint64_t len = 0;
+			enum zio_priority pri = ZIO_PRIORITY_SYNC_READ;
+
+			dmu_prefetch(os, object, level, offset, len, pri);
+		],[
+			AC_DEFINE(HAVE_DMU_PREFETCH_6ARG, 1,
+				[Have 6 argument dmu_pretch in ZFS])
+		])
+
 		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE_save"
 	])
 

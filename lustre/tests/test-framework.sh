@@ -1589,25 +1589,37 @@ setup_quota(){
 }
 
 zconf_mount() {
-    local client=$1
-    local mnt=$2
-    local opts=${3:-$MOUNT_OPTS}
-    opts=${opts:+-o $opts}
-    local flags=${4:-$MOUNT_FLAGS}
+	local client=$1
+	local mnt=$2
+	local opts=${3:-$MOUNT_OPTS}
+	opts=${opts:+-o $opts}
+	local flags=${4:-$MOUNT_FLAGS}
 
-    local device=$MGSNID:/$FSNAME
-    if [ -z "$mnt" -o -z "$FSNAME" ]; then
-        echo Bad zconf mount command: opt=$flags $opts dev=$device mnt=$mnt
-        exit 1
-    fi
+	local device=$MGSNID:/$FSNAME$FILESET
+	if [ -z "$mnt" -o -z "$FSNAME" ]; then
+		echo "Bad mount command: opt=$flags $opts dev=$device " \
+		     "mnt=$mnt"
+		exit 1
+	fi
 
-    echo "Starting client: $client: $flags $opts $device $mnt"
-    do_node $client mkdir -p $mnt
-    do_node $client $MOUNT_CMD $flags $opts $device $mnt || return 1
+	echo "Starting client: $client: $flags $opts $device $mnt"
+	do_node $client mkdir -p $mnt
+	if [ -n "$FILESET" -a -z "$SKIP_FILESET" ];then
+		do_node $client $MOUNT_CMD $flags $opts $MGSNID:/$FSNAME \
+			$mnt || return 1
+		#disable FILESET if not supported
+		do_nodes $client lctl get_param -n \
+			mdc.$FSNAME-MDT0000*.import | grep -q subtree ||
+				device=$MGSNID:/$FSNAME
+		do_node $client mkdir -p $mnt/$FILESET
+		do_node $client "! grep -q $mnt' ' /proc/mounts ||
+			umount $mnt"
+	fi
+	do_node $client $MOUNT_CMD $flags $opts $device $mnt || return 1
 
-    set_default_debug_nodes $client
+	set_default_debug_nodes $client
 
-    return 0
+	return 0
 }
 
 zconf_umount() {
@@ -1697,21 +1709,35 @@ sanity_mount_check () {
 
 # mount clients if not mouted
 zconf_mount_clients() {
-    local clients=$1
-    local mnt=$2
-    local opts=${3:-$MOUNT_OPTS}
-    opts=${opts:+-o $opts}
-    local flags=${4:-$MOUNT_FLAGS}
+	local clients=$1
+	local mnt=$2
+	local opts=${3:-$MOUNT_OPTS}
+	opts=${opts:+-o $opts}
+	local flags=${4:-$MOUNT_FLAGS}
 
-    local device=$MGSNID:/$FSNAME
-    if [ -z "$mnt" -o -z "$FSNAME" ]; then
-        echo Bad zconf mount command: opt=$flags $opts dev=$device mnt=$mnt
-        exit 1
-    fi
+	local device=$MGSNID:/$FSNAME$FILESET
+	if [ -z "$mnt" -o -z "$FSNAME" ]; then
+		echo "Bad conf mount command: opt=$flags $opts dev=$device " \
+		     "mnt=$mnt"
+		exit 1
+	fi
 
-    echo "Starting client $clients: $flags $opts $device $mnt"
+	echo "Starting client $clients: $flags $opts $device $mnt"
+	if [ -n "$FILESET" -a ! -n "$SKIP_FILESET" ]; then
+		do_nodes $clients "! grep -q $mnt' ' /proc/mounts ||
+			umount $mnt"
+		do_nodes $clients $MOUNT_CMD $flags $opts $MGSNID:/$FSNAME \
+			$mnt || return 1
+		#disable FILESET if not supported
+		do_nodes $clients lctl get_param -n \
+			mdc.$FSNAME-MDT0000*.import | grep -q subtree ||
+				device=$MGSNID:/$FSNAME
+		do_nodes $clients mkdir -p $mnt/$FILESET
+		do_nodes $clients "! grep -q $mnt' ' /proc/mounts ||
+			umount $mnt"
+	fi
 
-    do_nodes $clients "
+	do_nodes $clients "
 running=\\\$(mount | grep -c $mnt' ');
 rc=0;
 if [ \\\$running -eq 0 ] ; then
@@ -1721,12 +1747,12 @@ if [ \\\$running -eq 0 ] ; then
 fi;
 exit \\\$rc" || return ${PIPESTATUS[0]}
 
-    echo "Started clients $clients: "
-    do_nodes $clients "mount | grep $mnt' '"
+	echo "Started clients $clients: "
+	do_nodes $clients "mount | grep $mnt' '"
 
-    set_default_debug_nodes $clients
+	set_default_debug_nodes $clients
 
-    return 0
+	return 0
 }
 
 zconf_umount_clients() {
@@ -1940,55 +1966,59 @@ start_client_loads () {
 
 # only for remote client
 check_client_load () {
-    local client=$1
-    local var=$(node_var_name $client)_load
-    local TESTLOAD=run_${!var}.sh
+	local client=$1
+	local var=$(node_var_name $client)_load
+	local testload=run_${!var}.sh
 
-    ps auxww | grep -v grep | grep $client | grep -q "$TESTLOAD" || return 1
+	ps auxww | grep -v grep | grep $client | grep -q $testload || return 1
 
-    # bug 18914: try to connect several times not only when
-    # check ps, but  while check_catastrophe also
-    local tries=3
-    local RC=254
-    while [ $RC = 254 -a $tries -gt 0 ]; do
-        let tries=$tries-1
-        # assume success
-        RC=0
-        if ! check_catastrophe $client; then
-            RC=${PIPESTATUS[0]}
-            if [ $RC -eq 254 ]; then
-                # FIXME: not sure how long we shuold sleep here
-                sleep 10
-                continue
-            fi
-            echo "check catastrophe failed: RC=$RC "
-            return $RC
-        fi
-    done
-    # We can continue try to connect if RC=254
-    # Just print the warning about this
-    if [ $RC = 254 ]; then
-        echo "got a return status of $RC from do_node while checking catastrophe on $client"
-    fi
+	# bug 18914: try to connect several times not only when
+	# check ps, but  while check_node_health also
 
-    # see if the load is still on the client
-    tries=3
-    RC=254
-    while [ $RC = 254 -a $tries -gt 0 ]; do
-        let tries=$tries-1
-        # assume success
-        RC=0
-        if ! do_node $client "ps auxwww | grep -v grep | grep -q $TESTLOAD"; then
-            RC=${PIPESTATUS[0]}
-            sleep 30
-        fi
-    done
-    if [ $RC = 254 ]; then
-        echo "got a return status of $RC from do_node while checking (catastrophe and 'ps') the client load on $client"
-        # see if we can diagnose a bit why this is
-    fi
+	local tries=3
+	local RC=254
+	while [ $RC = 254 -a $tries -gt 0 ]; do
+		let tries=$tries-1
+		# assume success
+		RC=0
+		if ! check_node_health $client; then
+			RC=${PIPESTATUS[0]}
+			if [ $RC -eq 254 ]; then
+				# FIXME: not sure how long we shuold sleep here
+				sleep 10
+				continue
+			fi
+			echo "check node health failed: RC=$RC "
+			return $RC
+		fi
+	done
+	# We can continue try to connect if RC=254
+	# Just print the warning about this
+	if [ $RC = 254 ]; then
+		echo "got a return status of $RC from do_node while checking " \
+		"node health on $client"
+	fi
 
-    return $RC
+	# see if the load is still on the client
+	tries=3
+	RC=254
+	while [ $RC = 254 -a $tries -gt 0 ]; do
+		let tries=$tries-1
+		# assume success
+		RC=0
+		if ! do_node $client \
+			"ps auxwww | grep -v grep | grep -q $testload"; then
+			RC=${PIPESTATUS[0]}
+			sleep 30
+		fi
+	done
+	if [ $RC = 254 ]; then
+		echo "got a return status of $RC from do_node while checking " \
+		"(node health and 'ps') the client load on $client"
+		# see if we can diagnose a bit why this is
+	fi
+
+	return $RC
 }
 check_client_loads () {
    local clients=${1//,/ }
@@ -2434,25 +2464,27 @@ wait_remote_prog () {
     return $rc
 }
 
+lfs_df_check() {
+	local clients=${1:-$CLIENTS}
+
+	if [ -z "$clients" ]; then
+		$LFS df $MOUNT
+	else
+		$PDSH $clients "$LFS df $MOUNT" > /dev/null
+	fi
+}
+
+
 clients_up() {
-    # not every config has many clients
-    sleep 1
-    if [ ! -z "$CLIENTS" ]; then
-        $PDSH $CLIENTS "stat -f $MOUNT" > /dev/null
-    else
-        stat -f $MOUNT > /dev/null
-    fi
+	# not every config has many clients
+	sleep 1
+	lfs_df_check
 }
 
 client_up() {
-    local client=$1
-    # usually checked on particular client or locally
-    sleep 1
-    if [ ! -z "$client" ]; then
-        $PDSH $client "stat -f $MOUNT" > /dev/null
-    else
-        stat -f $MOUNT > /dev/null
-    fi
+	# usually checked on particular client or locally
+	sleep 1
+	lfs_df_check $1
 }
 
 client_evicted() {
@@ -2460,16 +2492,17 @@ client_evicted() {
 }
 
 client_reconnect_try() {
-    uname -n >> $MOUNT/recon
-    if [ -z "$CLIENTS" ]; then
-        df $MOUNT; uname -n >> $MOUNT/recon
-    else
-        do_nodes $CLIENTS "df $MOUNT; uname -n >> $MOUNT/recon" > /dev/null
-    fi
-    echo Connected clients:
-    cat $MOUNT/recon
-    ls -l $MOUNT/recon > /dev/null
-    rm $MOUNT/recon
+	local f=$MOUNT/recon
+
+	uname -n >> $f
+	if [ -z "$CLIENTS" ]; then
+		$LFS df $MOUNT; uname -n >> $f
+	else
+		do_nodes $CLIENTS "$LFS df $MOUNT; uname -n >> $f" > /dev/null
+	fi
+	echo "Connected clients: $(cat $f)"
+	ls -l $f > /dev/null
+	rm $f
 }
 
 client_reconnect() {
@@ -2554,7 +2587,7 @@ obd_name() {
 replay_barrier() {
 	local facet=$1
 	do_facet $facet "sync; sync; sync"
-	df $MOUNT
+	$LFS df $MOUNT
 
 	# make sure there will be no seq change
 	local clients=${CLIENTS:-$HOSTNAME}
@@ -2639,7 +2672,7 @@ fail() {
 
 	facet_failover $* || error "failover: $?"
 	wait_clients_import_state "$clients" "$facets" FULL
-	clients_up || error "post-failover df: $?"
+	clients_up || error "post-failover stat: $?"
 }
 
 fail_nodf() {
@@ -2653,8 +2686,8 @@ fail_abort() {
 	change_active $facet
 	wait_for_facet $facet
 	mount_facet $facet -o abort_recovery
-	clients_up || echo "first df failed: $?"
-	clients_up || error "post-failover df: $?"
+	clients_up || echo "first stat failed: $?"
+	clients_up || error "post-failover stat: $?"
 }
 
 do_lmc() {
@@ -3308,7 +3341,7 @@ facet_mntpt () {
 mount_ldiskfs() {
 	local facet=$1
 	local dev=$(facet_device $facet)
-	local mnt=$(facet_mntpt $facet)
+	local mnt=${2:-$(facet_mntpt $facet)}
 	local opts
 
 	if ! do_facet $facet test -b $dev; then
@@ -3320,7 +3353,7 @@ mount_ldiskfs() {
 unmount_ldiskfs() {
 	local facet=$1
 	local dev=$(facet_device $facet)
-	local mnt=$(facet_mntpt $facet)
+	local mnt=${2:-$(facet_mntpt $facet)}
 
 	do_facet $facet $UMOUNT $mnt
 }
@@ -3332,7 +3365,7 @@ var_name() {
 mount_zfs() {
 	local facet=$1
 	local ds=$(facet_device $facet)
-	local mnt=$(facet_mntpt $facet)
+	local mnt=${2:-$(facet_mntpt $facet)}
 	local canmnt
 	local mntpt
 
@@ -3355,7 +3388,7 @@ mount_zfs() {
 unmount_zfs() {
 	local facet=$1
 	local ds=$(facet_device $facet)
-	local mnt=$(facet_mntpt $facet)
+	local mnt=${2:-$(facet_mntpt $facet)}
 	local var_mntpt=mz_$(var_name ${facet}_$ds)_mountpoint
 	local var_canmnt=mz_$(var_name ${facet}_$ds)_canmount
 	local mntpt=${!var_mntpt}
@@ -3371,16 +3404,18 @@ unmount_zfs() {
 
 mount_fstype() {
 	local facet=$1
+	local mnt=$2
 	local fstype=$(facet_fstype $facet)
 
-	mount_$fstype $facet
+	mount_$fstype $facet $mnt
 }
 
 unmount_fstype() {
 	local facet=$1
+	local mnt=$2
 	local fstype=$(facet_fstype $facet)
 
-	unmount_$fstype $facet
+	unmount_$fstype $facet $mnt
 }
 
 ########
@@ -4835,7 +4870,7 @@ debugrestore() {
 		true
 	DEBUGSAVE=""
 
-	[ -n "DEBUGSAVE_SERVER" ] &&
+	[ -n "$DEBUGSAVE_SERVER" ] &&
 		do_nodes $(comma_list $(all_server_nodes)) \
 			 "$LCTL set_param debug=\\\"${DEBUGSAVE_SERVER}\\\"" ||
 			 true
@@ -5196,7 +5231,7 @@ run_one() {
 	cd $SAVE_PWD
 	reset_fail_loc
 	check_grant ${testnum} || error "check_grant $testnum failed with $?"
-	check_catastrophe || error "LBUG/LASSERT detected"
+	check_node_health
 	check_dmesg_for_errors || error "Error in dmesg detected"
 	if [ "$PARALLEL" != "yes" ]; then
 		ps auxww | grep -v grep | grep -q multiop &&
@@ -5900,16 +5935,21 @@ restore_lustre_params() {
 	done
 }
 
-check_catastrophe() {
+check_node_health() {
 	local nodes=${1:-$(comma_list $(nodes_list))}
 
-	do_nodes $nodes "rc=0;
-val=\\\$($LCTL get_param -n catastrophe 2>&1);
-if [[ \\\$? -eq 0 && \\\$val -ne 0 ]]; then
-	echo \\\$(hostname -s): \\\$val;
-	rc=\\\$val;
-fi;
-exit \\\$rc"
+	for node in ${nodes//,/ }; do
+		check_network "$node" 5
+		if [ $? -eq 0 ]; then
+			do_node $node "rc=0;
+			val=\\\$($LCTL get_param -n catastrophe 2>&1);
+			if [[ \\\$? -eq 0 && \\\$val -ne 0 ]]; then
+				echo \\\$(hostname -s): \\\$val;
+				rc=\\\$val;
+			fi;
+			exit \\\$rc" || error "$node:LBUG/LASSERT detected"
+		fi
+	done
 }
 
 mdsrate_cleanup () {
@@ -6219,22 +6259,27 @@ pool_list () {
 }
 
 create_pool() {
-    local fsname=${1%%.*}
-    local poolname=${1##$fsname.}
+	local fsname=${1%%.*}
+	local poolname=${1##$fsname.}
 
-    do_facet mgs lctl pool_new $1
-    local RC=$?
-    # get param should return err unless pool is created
-    [[ $RC -ne 0 ]] && return $RC
+	do_facet mgs lctl pool_new $1
+	local RC=$?
+	# get param should return err unless pool is created
+	[[ $RC -ne 0 ]] && return $RC
 
-    wait_update $HOSTNAME "lctl get_param -n lov.$fsname-*.pools.$poolname \
-        2>/dev/null || echo foo" "" || RC=1
-    if [[ $RC -eq 0 ]]; then
-        add_pool_to_list $1
-    else
-        error "pool_new failed $1"
-    fi
-    return $RC
+	for mds_id in $(seq $MDSCOUNT); do
+		local mdt_id=$((mds_id-1))
+		local lodname=$fsname-MDT$(printf "%04x" $mdt_id)-mdtlov
+		wait_update_facet mds$mds_id \
+			"lctl get_param -n lod.$lodname.pools.$poolname \
+				2>/dev/null || echo foo" "" ||
+			error "mds$mds_id: pool_new failed $1"
+	done
+	wait_update $HOSTNAME "lctl get_param -n lov.$fsname-*.pools.$poolname \
+		2>/dev/null || echo foo" "" || error "pool_new failed $1"
+
+	add_pool_to_list $1
+	return $RC
 }
 
 add_pool_to_list () {
@@ -6267,28 +6312,31 @@ destroy_pool_int() {
 
 # <fsname>.<poolname> or <poolname>
 destroy_pool() {
-    local fsname=${1%%.*}
-    local poolname=${1##$fsname.}
+	local fsname=${1%%.*}
+	local poolname=${1##$fsname.}
 
-    [[ x$fsname = x$poolname ]] && fsname=$FSNAME
+	[[ x$fsname = x$poolname ]] && fsname=$FSNAME
 
-    local RC
+	local RC
 
-    pool_list $fsname.$poolname || return $?
+	pool_list $fsname.$poolname || return $?
 
-    destroy_pool_int $fsname.$poolname
-    RC=$?
-    [[ $RC -ne 0 ]] && return $RC
+	destroy_pool_int $fsname.$poolname
+	RC=$?
+	[[ $RC -ne 0 ]] && return $RC
+	for mds_id in $(seq $MDSCOUNT); do
+		local mdt_id=$((mds_id-1))
+		local lodname=$fsname-MDT$(printf "%04x" $mdt_id)-mdtlov
+		wait_update_facet mds$mds_id \
+			"lctl get_param -n lod.$lodname.pools.$poolname \
+				2>/dev/null || echo foo" "foo" ||
+			error "mds$mds_id: destroy pool failed $1"
+	done
+	wait_update $HOSTNAME "lctl get_param -n lov.$fsname-*.pools.$poolname \
+		2>/dev/null || echo foo" "foo" || error "destroy pool failed $1"
 
-    wait_update $HOSTNAME "lctl get_param -n lov.$fsname-*.pools.$poolname \
-      2>/dev/null || echo foo" "foo" || RC=1
-
-    if [[ $RC -eq 0 ]]; then
-        remove_pool_from_list $fsname.$poolname
-    else
-        error "destroy pool failed $1"
-    fi
-    return $RC
+	remove_pool_from_list $fsname.$poolname
+	return $RC
 }
 
 destroy_pools () {
@@ -7257,6 +7305,18 @@ pool_add_targets() {
 	local t=$(for i in $list; do printf "$FSNAME-OST%04x_UUID " $i; done)
 	do_facet mgs $LCTL pool_add \
 			$FSNAME.$pool $FSNAME-OST[$first-$last/$step]
+
+	# wait for OSTs to be added to the pool
+	for mds_id in $(seq $MDSCOUNT); do
+		local mdt_id=$((mds_id-1))
+		local lodname=$FSNAME-MDT$(printf "%04x" $mdt_id)-mdtlov
+		wait_update_facet mds$mds_id \
+			"lctl get_param -n lod.$lodname.pools.$pool |
+				sort -u | tr '\n' ' ' " "$t" || {
+			error_noexit "mds$mds_id: Add to pool failed"
+			return 3
+		}
+	done
 	wait_update $HOSTNAME "lctl get_param -n lov.$FSNAME-*.pools.$pool \
 			| sort -u | tr '\n' ' ' " "$t" || {
 		error_noexit "Add to pool failed"
@@ -7393,6 +7453,17 @@ pool_remove_first_target() {
 	local pname="lov.$FSNAME-*.pools.$pool"
 	local t=$($LCTL get_param -n $pname | head -1)
 	do_facet mgs $LCTL pool_remove $FSNAME.$pool $t
+	for mds_id in $(seq $MDSCOUNT); do
+		local mdt_id=$((mds_id-1))
+		local lodname=$FSNAME-MDT$(printf "%04x" $mdt_id)-mdtlov
+		wait_update_facet mds$mds_id \
+			"lctl get_param -n lod.$lodname.pools.$pool |
+				grep $t" "" || {
+			error_noexit "mds$mds_id: $t not removed from" \
+			"$FSNAME.$pool"
+			return 2
+		}
+	done
 	wait_update $HOSTNAME "lctl get_param -n $pname | grep $t" "" || {
 		error_noexit "$t not removed from $FSNAME.$pool"
 		return 1
@@ -7407,6 +7478,15 @@ pool_remove_all_targets() {
 	for t in $($LCTL get_param -n $pname | sort -u)
 	do
 		do_facet mgs $LCTL pool_remove $FSNAME.$pool $t
+	done
+	for mds_id in $(seq $MDSCOUNT); do
+		local mdt_id=$((mds_id-1))
+		local lodname=$FSNAME-MDT$(printf "%04x" $mdt_id)-mdtlov
+		wait_update_facet mds$mds_id "lctl get_param -n \
+			lod.$lodname.pools.$pool" "" || {
+			error_noexit "mds$mds_id: Pool $pool not drained"
+			return 4
+		}
 	done
 	wait_update $HOSTNAME "lctl get_param -n $pname" "" || {
 		error_noexit "Pool $FSNAME.$pool cannot be drained"

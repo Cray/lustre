@@ -280,8 +280,7 @@ struct osd_device {
 				 od_xattr_in_sa:1,
 				 od_quota_iused_est:1,
 				 od_is_ost:1,
-				 od_posix_acl:1,
-				 od_seq_init:1;
+				 od_posix_acl:1;
 
 	char			 od_mntdev[128];
 	char			 od_svname[128];
@@ -339,10 +338,17 @@ struct osd_object {
 
 	/* the i_flags in LMA */
 	__u32			 oo_lma_flags;
-	/* record size for index file */
-	unsigned char		 oo_keysize;
-	unsigned char		 oo_recsize;
-	unsigned char		 oo_recusize;	/* unit size */
+	union {
+		int		oo_ea_in_bonus; /* EA bytes we expect */
+		struct {
+			/* record size for index file */
+			unsigned char		 oo_keysize;
+			unsigned char		 oo_recsize;
+			unsigned char		 oo_recusize;	/* unit size */
+		};
+	};
+
+
 };
 
 int osd_statfs(const struct lu_env *, struct dt_device *, struct obd_statfs *);
@@ -457,10 +463,12 @@ int osd_object_sa_update(struct osd_object *obj, sa_attr_type_t type,
 			 void *buf, uint32_t buflen, struct osd_thandle *oh);
 int __osd_zap_create(const struct lu_env *env, struct osd_device *osd,
 		     dmu_buf_t **zap_dbp, dmu_tx_t *tx, struct lu_attr *la,
-		     uint64_t parent, zap_flags_t flags);
-int __osd_object_create(const struct lu_env *env, struct osd_device *osd,
-			dmu_buf_t **dbp, dmu_tx_t *tx, struct lu_attr *la,
-			uint64_t parent);
+		     zap_flags_t flags);
+int __osd_object_create(const struct lu_env *env, struct osd_object *obj,
+			dmu_buf_t **dbp, dmu_tx_t *tx, struct lu_attr *la);
+int __osd_attr_init(const struct lu_env *env, struct osd_device *osd,
+		    sa_handle_t *sa_hdl, dmu_tx_t *tx,
+		    struct lu_attr *la, uint64_t parent);
 
 /* osd_oi.c */
 int osd_oi_init(const struct lu_env *env, struct osd_device *o);
@@ -468,10 +476,8 @@ void osd_oi_fini(const struct lu_env *env, struct osd_device *o);
 int osd_fid_lookup(const struct lu_env *env,
 		   struct osd_device *, const struct lu_fid *, uint64_t *);
 uint64_t osd_get_name_n_idx(const struct lu_env *env, struct osd_device *osd,
-			    const struct lu_fid *fid, char *buf);
+			    const struct lu_fid *fid, char *buf, int bufsize);
 int osd_options_init(void);
-int osd_convert_root_to_new_seq(const struct lu_env *env,
-				struct osd_device *o);
 int osd_ost_seq_exists(const struct lu_env *env, struct osd_device *osd,
 		       __u64 seq);
 /* osd_index.c */
@@ -516,6 +522,8 @@ int __osd_sa_xattr_set(const struct lu_env *env, struct osd_object *obj,
 int __osd_xattr_set(const struct lu_env *env, struct osd_object *obj,
 		    const struct lu_buf *buf, const char *name, int fl,
 		    struct osd_thandle *oh);
+int __osd_sa_xattr_update(const struct lu_env *env, struct osd_object *obj,
+			  struct osd_thandle *oh);
 static inline int
 osd_xattr_set_internal(const struct lu_env *env, struct osd_object *obj,
 		       const struct lu_buf *buf, const char *name, int fl,
@@ -584,6 +592,59 @@ osd_zio_buf_free(void *buf, size_t size)
 #else
 #define	osd_zio_buf_alloc(size)		zio_buf_alloc(size)
 #define	osd_zio_buf_free(buf, size)	zio_buf_free(buf, size)
+#endif
+
+#ifdef HAVE_DMU_OBJECT_ALLOC_DNSIZE
+static inline uint64_t
+osd_dmu_object_alloc(objset_t *os, dmu_object_type_t objtype, int blocksize,
+		     int dnodesize, dmu_tx_t *tx)
+{
+	if (dnodesize == 0)
+		dnodesize = MAX(dmu_objset_dnodesize(os), DNODE_MIN_SIZE);
+
+	return dmu_object_alloc_dnsize(os, objtype, blocksize, DMU_OT_SA,
+				       DN_BONUS_SIZE(dnodesize), dnodesize, tx);
+}
+
+static inline uint64_t
+osd_zap_create_flags(objset_t *os, int normflags, zap_flags_t flags,
+		     dmu_object_type_t ot, int leaf_blockshift,
+		     int indirect_blockshift, int dnodesize, dmu_tx_t *tx)
+{
+	if (dnodesize == 0)
+		dnodesize = MAX(dmu_objset_dnodesize(os), DNODE_MIN_SIZE);
+
+	return zap_create_flags_dnsize(os, normflags, flags, ot,
+				       leaf_blockshift, indirect_blockshift,
+				       DMU_OT_SA, DN_BONUS_SIZE(dnodesize),
+				       dnodesize, tx);
+}
+#else
+static inline uint64_t
+osd_dmu_object_alloc(objset_t *os, dmu_object_type_t objtype, int blocksize,
+		     int dnodesize, dmu_tx_t *tx)
+{
+	return dmu_object_alloc(os, objtype, blocksize, DMU_OT_SA,
+				DN_MAX_BONUSLEN, tx);
+}
+
+static inline uint64_t
+osd_zap_create_flags(objset_t *os, int normflags, zap_flags_t flags,
+		     dmu_object_type_t ot, int leaf_blockshift,
+		     int indirect_blockshift, int dnodesize, dmu_tx_t *tx)
+{
+	return zap_create_flags(os, normflags, flags, ot, leaf_blockshift,
+				indirect_blockshift, DMU_OT_SA,
+				DN_MAX_BONUSLEN, tx);
+}
+#endif /* HAVE_DMU_OBJECT_ALLOC_DNSIZE */
+
+#ifdef HAVE_DMU_PREFETCH_6ARG
+#define osd_dmu_prefetch(os, obj, lvl, off, len, pri)	\
+	dmu_prefetch((os), (obj), (lvl), (off), (len), (pri))
+#else
+#define osd_dmu_prefetch(os, obj, lvl, off, len, pri)	\
+	dmu_prefetch((os), (obj), (lvl), (off))
 #endif
 
 #endif /* _OSD_INTERNAL_H */

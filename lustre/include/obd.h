@@ -943,6 +943,11 @@ struct md_op_data {
 	__u64			op_data_version;
 	struct lustre_handle	op_lease_handle;
 
+	/* File security context, for creates. */
+	const char	       *op_file_secctx_name;
+	void		       *op_file_secctx;
+	__u32			op_file_secctx_size;
+
 	/* default stripe offset */
 	__u32			op_default_stripe_offset;
 };
@@ -1197,8 +1202,8 @@ struct md_ops {
 
 #define MD_STATS_LAST_OP m_revalidate_lock
 
-	int (*m_getstatus)(struct obd_export *, struct lu_fid *,
-			   struct obd_capa **);
+	int (*m_getstatus)(struct obd_export *, const char *fileset,
+			   struct lu_fid *, struct obd_capa **);
 
 	int (*m_null_inode)(struct obd_export *, const struct lu_fid *);
 

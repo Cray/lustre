@@ -433,12 +433,9 @@ int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
 #endif
 	atomic_set(&cli->cl_resends, OSC_DEFAULT_RESENDS);
 
-	/* This value may be reduced at connect time in
-	 * ptlrpc_connect_interpret() . We initialize it to only
-	 * 1MB until we know what the performance looks like.
-	 * In the future this should likely be increased. LU-1431 */
-	cli->cl_max_pages_per_rpc = min_t(int, PTLRPC_MAX_BRW_PAGES,
-					  LNET_MTU >> PAGE_CACHE_SHIFT);
+	/* Set it to possible maximum size. It may be reduced by ocd_brw_size
+	 * from OFD after connecting. */
+	cli->cl_max_pages_per_rpc = PTLRPC_MAX_BRW_PAGES;
 
 	/* set cl_chunkbits default value to PAGE_CACHE_SHIFT,
 	 * it will be updated at OSC connection time. */
@@ -579,63 +576,66 @@ int client_connect_import(const struct lu_env *env,
 	bool			is_mdc = false;
 	ENTRY;
 
-        *exp = NULL;
+	*exp = NULL;
 	down_write(&cli->cl_sem);
 	if (cli->cl_conn_count > 0)
                 GOTO(out_sem, rc = -EALREADY);
 
-        rc = class_connect(&conn, obd, cluuid);
-        if (rc)
-                GOTO(out_sem, rc);
+	rc = class_connect(&conn, obd, cluuid);
+	if (rc)
+		GOTO(out_sem, rc);
 
-        cli->cl_conn_count++;
-        *exp = class_conn2export(&conn);
+	cli->cl_conn_count++;
+	*exp = class_conn2export(&conn);
 
-        LASSERT(obd->obd_namespace);
+	LASSERT(obd->obd_namespace);
 
-        imp->imp_dlm_handle = conn;
-        rc = ptlrpc_init_import(imp);
-        if (rc != 0)
-                GOTO(out_ldlm, rc);
+	imp->imp_dlm_handle = conn;
+	rc = ptlrpc_init_import(imp);
+	if (rc != 0)
+		GOTO(out_ldlm, rc);
 
-        ocd = &imp->imp_connect_data;
-        if (data) {
-                *ocd = *data;
+	ocd = &imp->imp_connect_data;
+	if (data) {
+		*ocd = *data;
 		is_mdc = strncmp(imp->imp_obd->obd_type->typ_name,
 				 LUSTRE_MDC_NAME, 3) == 0;
 		if (is_mdc)
 			data->ocd_connect_flags |= OBD_CONNECT_MULTIMODRPCS;
-                imp->imp_connect_flags_orig = data->ocd_connect_flags;
-        }
+		imp->imp_connect_flags_orig = data->ocd_connect_flags;
+		imp->imp_connect_flags2_orig = data->ocd_connect_flags2;
+	}
 
-        rc = ptlrpc_connect_import(imp);
-        if (rc != 0) {
-                LASSERT (imp->imp_state == LUSTRE_IMP_DISCON);
-                GOTO(out_ldlm, rc);
-        }
+	rc = ptlrpc_connect_import(imp);
+	if (rc != 0) {
+		if (data && is_mdc)
+			data->ocd_connect_flags &= ~OBD_CONNECT_MULTIMODRPCS;
+		LASSERT(imp->imp_state == LUSTRE_IMP_DISCON);
+		GOTO(out_ldlm, rc);
+	}
 	LASSERT(*exp != NULL && (*exp)->exp_connection);
 
-        if (data) {
-                LASSERTF((ocd->ocd_connect_flags & data->ocd_connect_flags) ==
-                         ocd->ocd_connect_flags, "old "LPX64", new "LPX64"\n",
-                         data->ocd_connect_flags, ocd->ocd_connect_flags);
-                data->ocd_connect_flags = ocd->ocd_connect_flags;
+	if (data) {
+		LASSERTF((ocd->ocd_connect_flags & data->ocd_connect_flags) ==
+			 ocd->ocd_connect_flags, "old "LPX64", new "LPX64"\n",
+			 data->ocd_connect_flags, ocd->ocd_connect_flags);
+		data->ocd_connect_flags = ocd->ocd_connect_flags;
 		/* clear the flag as it was not set and is not known
 		 * by upper layers */
 		if (is_mdc)
 			data->ocd_connect_flags &= ~OBD_CONNECT_MULTIMODRPCS;
-        }
+	}
 
-        ptlrpc_pinger_add_import(imp);
+	ptlrpc_pinger_add_import(imp);
 
-        EXIT;
+	EXIT;
 
-        if (rc) {
+	if (rc) {
 out_ldlm:
-                cli->cl_conn_count--;
-                class_disconnect(*exp);
-                *exp = NULL;
-        }
+		cli->cl_conn_count--;
+		class_disconnect(*exp);
+		*exp = NULL;
+	}
 out_sem:
 	up_write(&cli->cl_sem);
 
@@ -2812,8 +2812,7 @@ int target_bulk_io(struct obd_export *exp, struct ptlrpc_bulk_desc *desc,
 		if (req->rq_bulk_read)
 			rc = sptlrpc_svc_wrap_bulk(req, desc);
 
-		if ((exp->exp_connect_data.ocd_connect_flags &
-		     OBD_CONNECT_BULK_MBITS) != 0)
+		if (OCD_HAS_FLAG(&exp->exp_connect_data, BULK_MBITS))
 			req->rq_mbits = lustre_msg_get_mbits(req->rq_reqmsg);
 		else /* old version, bulk matchbits is rq_xid */
 			req->rq_mbits = req->rq_xid;

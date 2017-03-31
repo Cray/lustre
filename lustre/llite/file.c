@@ -663,6 +663,7 @@ restart:
         } else {
                 LASSERT(*och_usecount == 0);
                 if (!it->d.lustre.it_disposition) {
+			struct ll_dentry_data *ldd = ll_d2d(file->f_path.dentry);
                         /* We cannot just request lock handle now, new ELC code
                            means that one of other OPEN locks for this file
                            could be cancelled, and since blocking ast handler
@@ -676,12 +677,24 @@ restart:
 			 *    handle to be returned from LOOKUP|OPEN request,
 			 *    for example if the target entry was a symlink.
 			 *
-			 * Always fetch MDS_OPEN_LOCK if this is not setstripe.
+			 *  Only fetch MDS_OPEN_LOCK if this is in NFS path,
+			 *  marked by a bit set in ll_iget_for_nfs. Clear the
+			 *  bit so that it's not confusing later callers.
 			 *
+			 *  NB; when ldd is NULL, it must have come via normal
+			 *  lookup path only, since ll_iget_for_nfs always calls
+			 *  ll_d_init().
+			 */
+			if (ldd && ldd->lld_nfs_dentry) {
+				ldd->lld_nfs_dentry = 0;
+				it->it_flags |= MDS_OPEN_LOCK;
+			}
+
+			 /*
 			 * Always specify MDS_OPEN_BY_FID because we don't want
 			 * to get file with different fid.
 			 */
-			it->it_flags |= MDS_OPEN_LOCK | MDS_OPEN_BY_FID;
+			it->it_flags |= MDS_OPEN_BY_FID;
                         rc = ll_intent_file_open(file, NULL, 0, it);
                         if (rc)
                                 GOTO(out_openerr, rc);
@@ -2162,6 +2175,10 @@ int ll_fid2path(struct inode *inode, void __user *arg)
 
 	if (copy_from_user(gfout, arg, sizeof(*gfout)))
 		GOTO(gf_free, rc = -EFAULT);
+	/* append root FID after gfout to let MDT know the root FID so that it
+	 * can lookup the correct path, this is mainly for fileset.
+	 * old server without fileset mount support will ignore this. */
+	*gfout->gf_u.gf_root_fid = *ll_inode2fid(inode);
 
 	/* Call mdc_iocontrol */
 	rc = obd_iocontrol(OBD_IOC_FID2PATH, exp, outsize, gfout, NULL);
@@ -3312,9 +3329,10 @@ static int ll_flock_upcall(void *cookie, int err)
 		lock_res_and_lock(lock);
 		args = lock->l_ast_data;
 		lock->l_ast_data = NULL;
-		args->fa_err = err;
 		unlock_res_and_lock(lock);
 
+		if (args != NULL)
+			args->fa_err = err;
 		ll_flock_run_flock_cb(args);
 	}
 
@@ -3327,13 +3345,16 @@ ll_flock_completion_ast_async(struct ldlm_lock *lock, __u64 flags, void *data)
 	struct ldlm_flock_info *args;
 	ENTRY;
 
-	if (flags & (LDLM_FL_BLOCK_WAIT | LDLM_FL_BLOCK_GRANTED |
-		     LDLM_FL_BLOCK_CONV)) {
-		LDLM_DEBUG(lock, "client-side enqueue returned a blocked lock");
-		RETURN(0);
+	args = ldlm_flock_completion_ast_async(lock, flags, data);
+	if (args != NULL && args->fa_flags & FA_FL_CANCELED) {
+		/* lock was cancelled in a race */
+		struct file_lock *flc = &args->fa_flc;
+		struct file *file = args->fa_file;
+		struct inode *inode = file->f_path.dentry->d_inode;
+
+		ll_file_flock_async_unlock(inode, flc);
 	}
 
-	args = ldlm_flock_completion_ast_async(lock, flags, data);
 	ll_flock_run_flock_cb(args);
 
 	RETURN(0);
@@ -3563,7 +3584,18 @@ int ll_migrate(struct inode *parent, struct file *file, int mdtidx,
 	if (dchild != NULL) {
 		if (dchild->d_inode != NULL) {
 			child_inode = igrab(dchild->d_inode);
-			if (child_inode != NULL) {
+
+			/*
+			 * lfs migrate command needs to be blocked on the client
+			 * by checking the migrate FID against the FID of the
+			 * filesystem root.
+			 */
+			if (child_inode == parent->i_sb->s_root->d_inode) {
+				iput(child_inode);
+				child_inode = NULL;
+				dput(dchild);
+				GOTO(out_free, rc = -EINVAL);
+			} else if (child_inode != NULL) {
 				inode_lock(child_inode);
 				op_data->op_fid3 = *ll_inode2fid(child_inode);
 				ll_invalidate_aliases(child_inode);
