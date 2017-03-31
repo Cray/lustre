@@ -241,4 +241,4 @@ done
 /
 
 %post
-%{__ln_s} %{_sbindir}/ko2iblnd-probe /usr/sbin
+%{__ln_s} -f %{_sbindir}/ko2iblnd-probe /usr/sbin
