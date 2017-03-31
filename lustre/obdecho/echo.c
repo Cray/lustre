@@ -291,7 +291,7 @@ static int echo_map_nb_to_lb(struct obdo *oa, struct obd_ioobj *obj,
                              struct niobuf_local *lb, int cmd, int *left)
 {
 	gfp_t gfp_mask = (ostid_id(&obj->ioo_oid) & 1) ?
-			GFP_HIGHUSER : GFP_IOFS;
+			GFP_HIGHUSER : GFP_KERNEL;
 	int ispersistent = ostid_id(&obj->ioo_oid) == ECHO_PERSISTENT_OBJID;
 	int debug_setup = (!ispersistent &&
 			   (oa->o_valid & OBD_MD_FLFLAGS) != 0 &&
@@ -668,7 +668,7 @@ int echo_persistent_pages_init(void)
 
 	for (i = 0; i < ECHO_PERSISTENT_PAGES; i++) {
 		gfp_t gfp_mask = (i < ECHO_PERSISTENT_PAGES/2) ?
-			GFP_IOFS : GFP_HIGHUSER;
+			GFP_KERNEL : GFP_HIGHUSER;
 
 		OBD_PAGE_ALLOC(pg, gfp_mask);
 		if (pg == NULL) {
