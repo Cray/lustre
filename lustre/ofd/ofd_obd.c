@@ -181,6 +181,26 @@ static int ofd_parse_connect_data(const struct lu_env *env,
 	else if (data->ocd_connect_flags & OBD_CONNECT_SKIP_ORPHAN)
 		RETURN(-EPROTO);
 
+	/* Determine optimal brw size before calculating grant */
+	if (OBD_FAIL_CHECK(OBD_FAIL_OST_BRW_SIZE)) {
+		data->ocd_brw_size = 65536;
+	} else if (OCD_HAS_FLAG(data, BRW_SIZE)) {
+		if (data->ocd_brw_size > ofd->ofd_brw_size)
+			data->ocd_brw_size = ofd->ofd_brw_size;
+		if (data->ocd_brw_size == 0) {
+			CERROR("%s: cli %s/%p ocd_connect_flags: "LPX64
+			       " ocd_version: %x ocd_grant: %d ocd_index: %u "
+			       "ocd_brw_size is unexpectedly zero, "
+			       "network data corruption?"
+			       "Refusing connection of this client\n",
+			       exp->exp_obd->obd_name,
+			       exp->exp_client_uuid.uuid,
+			       exp, data->ocd_connect_flags, data->ocd_version,
+			       data->ocd_grant, data->ocd_index);
+			RETURN(-EPROTO);
+		}
+	}
+
 	if (ofd_grant_param_supp(exp)) {
 		exp->exp_filter_data.fed_pagesize = data->ocd_blocksize;
 		/* ocd_{blocksize,inodespace} are log2 values */
@@ -213,24 +233,6 @@ static int ofd_parse_connect_data(const struct lu_env *env,
 			/* sync is not needed here as lut_client_add will
 			 * set exp_need_sync flag */
 			tgt_server_data_update(env, &ofd->ofd_lut, 0);
-		}
-	}
-	if (OBD_FAIL_CHECK(OBD_FAIL_OST_BRW_SIZE)) {
-		data->ocd_brw_size = 65536;
-	} else if (data->ocd_connect_flags & OBD_CONNECT_BRW_SIZE) {
-		data->ocd_brw_size = min(data->ocd_brw_size,
-					 (__u32)DT_MAX_BRW_SIZE);
-		if (data->ocd_brw_size == 0) {
-			CERROR("%s: cli %s/%p ocd_connect_flags: "LPX64
-			       " ocd_version: %x ocd_grant: %d ocd_index: %u "
-			       "ocd_brw_size is unexpectedly zero, "
-			       "network data corruption?"
-			       "Refusing connection of this client\n",
-			       exp->exp_obd->obd_name,
-			       exp->exp_client_uuid.uuid,
-			       exp, data->ocd_connect_flags, data->ocd_version,
-			       data->ocd_grant, data->ocd_index);
-			RETURN(-EPROTO);
 		}
 	}
 
@@ -1469,7 +1471,7 @@ static int ofd_health_check(const struct lu_env *nul, struct obd_device *obd)
 	if (unlikely(rc))
 		GOTO(out, rc);
 
-	if (info->fti_u.osfs.os_state == OS_STATE_READONLY)
+	if (info->fti_u.osfs.os_state & OS_STATE_READONLY)
 		GOTO(out, rc = -EROFS);
 
 #ifdef USE_HEALTH_CHECK_WRITE
