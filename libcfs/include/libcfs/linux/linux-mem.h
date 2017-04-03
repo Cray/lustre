@@ -84,10 +84,6 @@
  * blockable.
  */
 #define ALLOC_ATOMIC_TRY   GFP_ATOMIC
-/* GFP_IOFS was added in 2.6.33 kernel */
-#ifndef GFP_IOFS
-#define GFP_IOFS       (__GFP_IO | __GFP_FS)
-#endif
 
 #define DECL_MMSPACE                mm_segment_t __oldfs
 #define MMSPACE_OPEN \
