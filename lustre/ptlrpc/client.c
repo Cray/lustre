@@ -905,6 +905,7 @@ EXPORT_SYMBOL(ptlrpc_request_alloc_pool);
  */
 void ptlrpc_request_free(struct ptlrpc_request *request)
 {
+	LASSERT(list_empty(&request->rq_unreplied_list));
 	if (request->rq_pool)
 		__ptlrpc_free_req_to_pool(request);
 	else
