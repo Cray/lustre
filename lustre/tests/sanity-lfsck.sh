@@ -1246,6 +1246,14 @@ test_11b() {
 	umount_client $MOUNT
 	stop ost1 || error "(1) Fail to stop ost1"
 
+	# stop MDS to forget last precreated object
+	echo "stop $SINGLEMDS"
+	stop $SINGLEMDS > /dev/null || error "(11) Fail to stop MDS!"
+	do_facet $SINGLEMDS $LCTL set_param fail_loc=0 fail_val=0
+	echo "start $SINGLEMDS"
+	start $SINGLEMDS $MDT_DEVNAME $MOUNT_OPTS_SCRUB > /dev/null ||
+		error "(12) Fail to start MDS!"
+
 	#define OBD_FAIL_OST_ENOSPC              0x215
 	do_facet ost1 $LCTL set_param fail_loc=0x215
 
@@ -2113,18 +2121,8 @@ test_18d() {
 	[ "$cur_size" != "$saved_size" ] ||
 		error "(1) Expect incorrect file2 size"
 
-	#define OBD_FAIL_LFSCK_DELAY3		0x1602
-	do_facet $SINGLEMDS $LCTL set_param fail_val=5 fail_loc=0x1602
-
 	echo "Trigger layout LFSCK on all devices to find out orphan OST-object"
 	$START_LAYOUT -r -o -c || error "(2) Fail to start LFSCK for layout!"
-
-	wait_update_facet mds1 "$LCTL get_param -n \
-		mdd.$(facet_svc mds1).lfsck_layout |
-		awk '/^status/ { print \\\$2 }'" "scanning-phase2" $LTIME ||
-		error "(3.0) MDS1 is not the expected 'scanning-phase2'"
-
-	do_facet $SINGLEMDS $LCTL set_param fail_val=0 fail_loc=0
 
 	for k in $(seq $MDSCOUNT); do
 		# The LFSCK status query internal is 30 seconds. For the case

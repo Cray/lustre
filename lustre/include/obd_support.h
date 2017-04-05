@@ -273,6 +273,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_MDS_XATTR_REP			0x161
 #define OBD_FAIL_MDS_TRACK_OVERFLOW	 0x162
 #define OBD_FAIL_MDS_LOV_CREATE_RACE	 0x163
+#define OBD_FAIL_MDS_OSP_PRECREATE_WAIT	 0x164
 
 /* layout lock */
 #define OBD_FAIL_MDS_NO_LL_GETATTR	 0x170
@@ -472,6 +473,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_TGT_REPLAY_RECONNECT	 0x715
 #define OBD_FAIL_TGT_MOUNT_RACE		 0x716
 #define OBD_FAIL_TGT_CLIENT_DEL          0x718
+#define OBD_FAIL_TGT_SLUGGISH_NET	 0x719
 
 #define OBD_FAIL_MDC_REVALIDATE_PAUSE    0x800
 #define OBD_FAIL_MDC_ENQUEUE_PAUSE       0x801

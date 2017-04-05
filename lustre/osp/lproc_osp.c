@@ -313,7 +313,7 @@ static int osp_create_count_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL || osp->opd_pre == NULL)
 		return 0;
 
-	seq_printf(m, "%d\n", osp->opd_pre_grow_count);
+	seq_printf(m, "%d\n", osp->opd_pre_create_count);
 	return 0;
 }
 
@@ -355,12 +355,12 @@ osp_create_count_seq_write(struct file *file, const char *buffer,
 	 * filesystem as a safety measure. */
 	if (val < OST_MIN_PRECREATE || val > OST_MAX_PRECREATE)
 		return -ERANGE;
-	if (val > osp->opd_pre_max_grow_count)
+	if (val > osp->opd_pre_max_create_count)
 		return -ERANGE;
 
 	for (i = 1; (i << 1) <= val; i <<= 1)
 		;
-	osp->opd_pre_grow_count = i;
+	osp->opd_pre_create_count = i;
 
 	return count;
 }
@@ -382,7 +382,7 @@ static int osp_max_create_count_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL || osp->opd_pre == NULL)
 		return 0;
 
-	seq_printf(m, "%d\n", osp->opd_pre_max_grow_count);
+	seq_printf(m, "%d\n", osp->opd_pre_max_create_count);
 	return 0;
 }
 
@@ -417,10 +417,10 @@ osp_max_create_count_seq_write(struct file *file, const char *buffer,
 	if (val > OST_MAX_PRECREATE)
 		return -ERANGE;
 
-	if (osp->opd_pre_grow_count > val)
-		osp->opd_pre_grow_count = val;
+	if (osp->opd_pre_create_count > val)
+		osp->opd_pre_create_count = val;
 
-	osp->opd_pre_max_grow_count = val;
+	osp->opd_pre_max_create_count = val;
 
 	return count;
 }
