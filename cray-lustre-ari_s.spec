@@ -245,7 +245,8 @@ popd
 /usr/lib64/*
 
 %post
-%{__ln_s} %{_sbindir}/ko2iblnd-probe /usr/sbin
+%{__ln_s} -f %{_sbindir}/ko2iblnd-probe /usr/sbin
+%{__ln_s} -f %{_prefix}/sbin/lctl /usr/sbin
 
 for f in %{pc_files}
 do
@@ -267,6 +268,7 @@ fi
 /opt/cray/lustre-utils/default/bin/lustrerelswitch -p lustre-%{flavor} -l %{version}-%{release} ${switch_extra}
 
 %preun
+%{__rm} -f /usr/sbin/lctl
 %{__rm} -f /usr/sbin/ko2iblnd-probe
 
 for file in `cat %{_sysconfdir}/switch.files`
