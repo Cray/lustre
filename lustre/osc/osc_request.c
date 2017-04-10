@@ -941,6 +941,7 @@ static int osc_del_shrink_grant(struct client_obd *client)
 
 static void osc_init_grant(struct client_obd *cli, struct obd_connect_data *ocd)
 {
+	int chunk_mask;
 	/*
 	 * ocd_grant is the total grant amount we're expect to hold: if we've
 	 * been evicted, it's the new avail_grant amount, cl_dirty_pages will
@@ -967,7 +968,13 @@ static void osc_init_grant(struct client_obd *cli, struct obd_connect_data *ocd)
         }
 
 	/* determine the appropriate chunk size used by osc_extent. */
-	cli->cl_chunkbits = max_t(int, PAGE_CACHE_SHIFT, ocd->ocd_blocksize);
+	cli->cl_chunkbits = max_t(int, PAGE_SHIFT, ocd->ocd_blocksize);
+
+	/* max_pages_per_rpc must be chunk aligned */
+	chunk_mask = ~((1 << (cli->cl_chunkbits - PAGE_SHIFT)) - 1);
+	cli->cl_max_pages_per_rpc = (cli->cl_max_pages_per_rpc +
+				     ~chunk_mask) & chunk_mask;
+
 	spin_unlock(&cli->cl_loi_list_lock);
 
 	CDEBUG(D_CACHE, "%s, setting cl_avail_grant: %ld cl_lost_grant: %ld."
@@ -1189,8 +1196,11 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
 
 	desc = ptlrpc_prep_bulk_imp(req, page_count,
 		cli->cl_import->imp_connect_data.ocd_brw_size >> LNET_MTU_BITS,
-		opc == OST_WRITE ? BULK_GET_SOURCE : BULK_PUT_SINK,
-		OST_BULK_PORTAL);
+		(opc == OST_WRITE ? PTLRPC_BULK_GET_SOURCE :
+			PTLRPC_BULK_PUT_SINK) |
+			PTLRPC_BULK_BUF_KIOV,
+		OST_BULK_PORTAL,
+		&ptlrpc_bulk_kiov_pin_ops);
 
         if (desc == NULL)
                 GOTO(out, rc = -ENOMEM);
@@ -1237,7 +1247,7 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
                 LASSERT((pga[0]->flag & OBD_BRW_SRVLOCK) ==
                         (pg->flag & OBD_BRW_SRVLOCK));
 
-		ptlrpc_prep_bulk_page_pin(desc, pg->pg, poff, pg->count);
+		desc->bd_frag_ops->add_kiov_frag(desc, pg->pg, poff, pg->count);
                 requested_nob += pg->count;
 
                 if (i > 0 && can_merge_pages(pg_prev, pg)) {

@@ -22,7 +22,7 @@ ALWAYS_EXCEPT="132 $ALWAYS_EXCEPT"
 # Cray Bugzilla 847175
 # Skip sanity test failures while we work to resolve them,
 # preventing all builds from failing, and new failures going unnoticed
-ALWAYS_EXCEPT="                 247  253  400a      $ALWAYS_EXCEPT"
+ALWAYS_EXCEPT="                 247  261  400a      $ALWAYS_EXCEPT"
 
 is_sles11()						# LU-4341
 {
@@ -6545,32 +6545,65 @@ run_test 101f "check mmap read performance"
 
 test_101g() {
 	local rpcs
+	local osts=$(get_facets OST)
+	local list=$(comma_list $(osts_nodes))
 	local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
 
-	save_lustre_params client "osc.*.max_pages_per_rpc" > $p
-	save_lustre_params client "llite.*.read_ahead_step" >> $p
+	save_lustre_params $osts "obdfilter.*.brw_size" > $p
 
 	$LFS setstripe -c 1 $DIR/$tfile
-	# 100 Mb should be enough for the test
+
+	local server_version=$(lustre_version_code ost1)
+	if [[ $server_version -ge $(version_code 2.8.52) ]] ||
+	   [[ $server_version -ge $(version_code 2.7.2) &&
+	      $server_version -lt $(version_code 2.7.50) ]]; then
+		set_osd_param $list '' brw_size 16M
+
+		echo "remount client to enable large RPC size"
+		remount_client $MOUNT || error "remount_client failed"
+
+		for mp in $($LCTL get_param -n osc.*.max_pages_per_rpc); do
+			[ "$mp" -eq 4096 ] ||
+				error "max_pages_per_rpc not correctly set"
+		done
+
+		$LCTL set_param -n osc.*.rpc_stats=0
+
+		# 10*16 MiB should be enough for the test
+		dd if=/dev/zero of=$DIR/$tfile bs=16M count=10
+		cancel_lru_locks osc
+		dd of=/dev/null if=$DIR/$tfile bs=16M count=10
+
+		# calculate 16 MiB RPCs
+		rpcs=$($LCTL get_param 'osc.*.rpc_stats' |
+		       sed -n '/pages per rpc/,/^$/p' |
+		       awk 'BEGIN { sum = 0 }; /4096:/ { sum += $2 };
+			    END { print sum }')
+		echo $rpcs RPCs
+		[ "$rpcs" -eq 10 ] || error "not all RPCs are 16 MiB BRW rpcs"
+	fi
+
+	echo "set RPC size to 4MB"
+
+	$LCTL set_param -n osc.*.max_pages_per_rpc=4M osc.*.rpc_stats=0
 	dd if=/dev/zero of=$DIR/$tfile bs=4M count=25
 	cancel_lru_locks osc
-	$LCTL set_param -n osc.*.max_pages_per_rpc 1024
-	$LCTL set_param -n llite.*.read_ahead_step 4
-	$LCTL set_param -n osc.*.rpc_stats 0
+	dd of=/dev/null if=$DIR/$tfile bs=4M count=25
 
-	dd of=/dev/zero if=$DIR/$tfile bs=4M count=25
-	# calculate 4 Mb rpcs
-	rpcs=$(lctl get_param 'osc.*.rpc_stats' |
-		 sed -n '/pages per rpc/,/^$/p'   |
-		 awk 'BEGIN { sum = 0 }; /1024:/ { sum += $2 } ; END { print sum }')
-	echo $rpcs RPCS
-	[ "$rpcs" -eq 25 ] || error "not all rpcs are 4 Mb BRW rpcs"
-	rm -f $DIR/$tfile
+	# calculate 4 MiB RPCs
+	rpcs=$($LCTL get_param 'osc.*.rpc_stats' |
+		sed -n '/pages per rpc/,/^$/p' |
+		awk 'BEGIN { sum = 0 }; /1024:/ { sum += $2 };
+		     END { print sum }')
+	echo $rpcs RPCs
+	[ "$rpcs" -eq 25 ] || error "not all RPCs are 4 MiB BRW rpcs"
 
 	restore_lustre_params < $p
-	rm -f $p
+	remount_client $MOUNT || error "remount_client failed"
+
+	rm -f $p $DIR/$tfile
 }
-run_test 101g "4MB bulk readahead"
+run_test 101g "Big bulk(4/16 MiB) readahead"
 
 setup_test102() {
 	test_mkdir -p $DIR/$tdir
@@ -13509,9 +13542,9 @@ test_247() {
 		echo Dumping log pattern: $dpath
 	fi
         # check is done on MDS
-	l1=$(do_facet $SINGLEMDS "dmesg | grep dumping" | awk  '/dumping log to / { s=$5 } END { print s }')
+	l1=$(do_facet $SINGLEMDS "dmesg | grep dumping" | awk  '/dumping log to / { s=$NF } END { print s }')
         do_facet $SINGLEMDS "lctl set_param trigger_watchdog=1"
-	l2=$(do_facet $SINGLEMDS "dmesg | grep dumping" | awk  '/dumping log to / { s=$5 } END { print s }')
+	l2=$(do_facet $SINGLEMDS "dmesg | grep dumping" | awk  '/dumping log to / { s=$NF } END { print s }')
 
 	if [ "$l1" != "$l2" ] ; then
 		echo "Lustre log was dumped to $l2 on $SINGLEMDS"
@@ -13697,12 +13730,128 @@ test_252() {
 }
 run_test 252 "check lr_reader tool"
 
-test_253()
-{
-	test_mkdir -p $DIR/$tdir
-	lock_ahead_test -d $DIR/$tdir || error "A lock ahead test failed"
+test_253_fill_ost() {
+	local size_mb #how many MB should we write to pass watermark
+	local lwm=$3  #low watermark
+	local free_10mb #10% of free space
+
+	free_kb=$($LFS df $MOUNT | grep $1 | awk '{ print $4 }')
+	size_mb=$((free_kb / 1024 - lwm))
+	free_10mb=$((free_kb / 10240))
+	#If 10% of free space cross low watermark use it
+	if (( free_10mb > size_mb )); then
+		size_mb=$free_10mb
+	else
+		#At least we need to store 1.1 of difference between
+		#free space and low watermark
+		size_mb=$((size_mb + size_mb / 10))
+	fi
+	if (( lwm <= $((free_kb / 1024)) )) || [ ! -f $DIR/$tdir/1 ]; then
+		dd if=/dev/zero of=$DIR/$tdir/1 bs=1M count=$size_mb \
+			 oflag=append conv=notrunc
+	fi
+
+	sleep_maxage
+
+	free_kb=$($LFS df $MOUNT | grep $1 | awk '{ print $4 }')
+	echo "OST still has $((free_kb / 1024)) mbytes free"
 }
-run_test 253 "various lock ahead tests"
+
+test_253() {
+	local ostidx=0
+	local rc=0
+
+	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	remote_mgs_nodsh && skip "remote MGS with nodsh" && return
+
+	local ost_name=$($LFS osts | grep ${ostidx}": " | \
+		awk '{print $2}' | sed -e 's/_UUID$//')
+	# on the mdt's osc
+	local mdtosc_proc1=$(get_mdtosc_proc_path $SINGLEMDS $ost_name)
+	do_facet $SINGLEMDS $LCTL get_param -n \
+		osp.$mdtosc_proc1.reserved_mb_high ||
+		{ skip  "remote MDS does not support reserved_mb_high" &&
+		  return; }
+
+	rm -rf $DIR/$tdir
+	wait_mds_ost_sync
+	wait_delete_completed
+	mkdir $DIR/$tdir
+
+	local last_wm_h=$(do_facet $SINGLEMDS $LCTL get_param -n \
+			osp.$mdtosc_proc1.reserved_mb_high)
+	local last_wm_l=$(do_facet $SINGLEMDS $LCTL get_param -n \
+			osp.$mdtosc_proc1.reserved_mb_low)
+	echo "prev high watermark $last_wm_h, prev low watermark $last_wm_l"
+
+	do_facet mgs $LCTL pool_new $FSNAME.$TESTNAME ||
+		error "Pool creation failed"
+	do_facet mgs $LCTL pool_add $FSNAME.$TESTNAME $ost_name ||
+		error "Adding $ost_name to pool failed"
+
+	# Wait for client to see a OST at pool
+	wait_update $HOSTNAME "$LCTL get_param -n
+		lov.$FSNAME-*.pools.$TESTNAME | sort -u |
+		grep $ost_name" "$ost_name""_UUID" $((TIMEOUT/2)) ||
+		error "Client can not see the pool"
+	$SETSTRIPE $DIR/$tdir -i $ostidx -c 1 -p $FSNAME.$TESTNAME ||
+		error "Setstripe failed"
+
+	dd if=/dev/zero of=$DIR/$tdir/0 bs=1M count=10
+	local blocks=$($LFS df $MOUNT | grep $ost_name | awk '{ print $4 }')
+	echo "OST still has $((blocks/1024)) mbytes free"
+
+	local new_lwm=$((blocks/1024-10))
+	do_facet $SINGLEMDS $LCTL set_param \
+			osp.$mdtosc_proc1.reserved_mb_high=$((new_lwm+5))
+	do_facet $SINGLEMDS $LCTL set_param \
+			osp.$mdtosc_proc1.reserved_mb_low=$new_lwm
+
+	test_253_fill_ost $ost_name $mdtosc_proc1 $new_lwm
+
+	#First enospc could execute orphan deletion so repeat.
+	test_253_fill_ost $ost_name $mdtosc_proc1 $new_lwm
+
+	local oa_status=$(do_facet $SINGLEMDS $LCTL get_param -n \
+			osp.$mdtosc_proc1.prealloc_status)
+	echo "prealloc_status $oa_status"
+
+	dd if=/dev/zero of=$DIR/$tdir/2 bs=1M count=1 &&
+		error "File creation should fail"
+	#object allocation was stopped, but we still able to append files
+	dd if=/dev/zero of=$DIR/$tdir/1 bs=1M seek=6 count=5 oflag=append ||
+		error "Append failed"
+	rm -f $DIR/$tdir/1 $DIR/$tdir/0 $DIR/$tdir/r*
+
+	wait_delete_completed
+
+	sleep_maxage
+
+	for i in $(seq 10 12); do
+		dd if=/dev/zero of=$DIR/$tdir/$i bs=1M count=1 2>/dev/null ||
+			error "File creation failed after rm";
+	done
+
+	oa_status=$(do_facet $SINGLEMDS $LCTL get_param -n \
+			osp.$mdtosc_proc1.prealloc_status)
+	echo "prealloc_status $oa_status"
+
+	if (( oa_status != 0 )); then
+		error "Object allocation still disable after rm"
+	fi
+	do_facet $SINGLEMDS $LCTL set_param \
+			osp.$mdtosc_proc1.reserved_mb_high=$last_wm_h
+	do_facet $SINGLEMDS $LCTL set_param \
+			osp.$mdtosc_proc1.reserved_mb_low=$last_wm_l
+
+
+	do_facet mgs $LCTL pool_remove $FSNAME.$TESTNAME $ost_name ||
+		error "Remove $ost_name from pool failed"
+	do_facet mgs $LCTL pool_destroy $FSNAME.$TESTNAME ||
+		error "Pool destroy fialed"
+}
+run_test 253 "Check object allocation limit"
 
 test_254() {
 	local cl_user
@@ -13984,6 +14133,13 @@ test_striped_dir() {
 
 	true
 }
+
+test_261()
+{
+	test_mkdir -p $DIR/$tdir
+	lock_ahead_test -d $DIR/$tdir || error "A lock ahead test failed"
+}
+run_test 261 "various lock ahead tests"
 
 test_300a() {
 	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.0) ] &&

@@ -2786,6 +2786,11 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
 	}
 	m->ofd_blockbits = fls(osfs->os_bsize) - 1;
 
+	if (ONE_MB_BRW_SIZE < (1U << m->ofd_blockbits))
+		m->ofd_brw_size = 1U << m->ofd_blockbits;
+	else
+		m->ofd_brw_size = ONE_MB_BRW_SIZE;
+
 	m->ofd_precreate_batch = OFD_PRECREATE_BATCH_DEFAULT;
 	if (osfs->os_bsize * osfs->os_blocks < OFD_PRECREATE_SMALL_FS)
 		m->ofd_precreate_batch = OFD_PRECREATE_BATCH_SMALL;
