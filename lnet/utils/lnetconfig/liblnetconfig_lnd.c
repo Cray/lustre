@@ -25,7 +25,7 @@
  */
 #include <stdio.h>
 #include <string.h>
-#include <libcfs/util/ioctl.h>
+#include <libcfs/libcfsutil.h>
 #include "liblnetconfig.h"
 #include "cyaml.h"
 

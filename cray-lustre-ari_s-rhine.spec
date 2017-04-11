@@ -33,6 +33,7 @@ BuildRequires: pkgconfig
 BuildRequires: sles-release
 BuildRequires: -post-build-checks
 BuildRequires: libtool
+BuildRequires: libyaml-devel
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}
