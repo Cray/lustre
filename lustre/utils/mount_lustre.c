@@ -73,6 +73,12 @@
 #endif
 #endif
 
+#ifdef HAVE_LIBMOUNT
+# define WITH_LIBMOUNT	"(libmount)"
+#else
+# define WITH_LIBMOUNT	""
+#endif
+
 #define MAX_RETRIES 99
 
 int	verbose;
@@ -614,8 +620,8 @@ static int parse_opts(int argc, char *const argv[], struct mount_opts *mop)
 			break;
 		case 'V':
 			++version;
-			fprintf(stdout, "%s %s\n", progname,
-				LUSTRE_VERSION_STRING);
+			fprintf(stdout, "%s %s %s\n", progname,
+				LUSTRE_VERSION_STRING, WITH_LIBMOUNT);
 			return 0;
 		default:
 			fprintf(stderr, "%s: unknown option '%c'\n",
@@ -909,9 +915,17 @@ int main(int argc, char *const argv[])
                                 rc = WEXITSTATUS(ret);
                 }
 
-	} else if (!mop.mo_nomtab) {
-		rc = update_mtab_entry(mop.mo_usource, mop.mo_target, "lustre",
-				       mop.mo_orig_options, 0,0,0);
+	} else {
+		/* Deal with utab just for client. Note that we ignore
+		 * the return value here since it is not worth to fail
+		 * mount by prevent some rare cases */
+		if (strstr(mop.mo_usource, ":/") != NULL)
+			update_utab_entry(&mop);
+		if (!mop.mo_nomtab) {
+			rc = update_mtab_entry(mop.mo_usource, mop.mo_target,
+					       "lustre", mop.mo_orig_options,
+					       0, 0, 0);
+		}
 	}
 
 out_osd:
