@@ -3554,7 +3554,9 @@ static int mdd_migrate_entries(const struct lu_env *env,
 		if (IS_ERR(child))
 			GOTO(out, rc = PTR_ERR(child));
 
-		is_dir = S_ISDIR(mdd_object_type(child));
+		/* child may not exist, but lu_object_attr will assert this,
+		 * get type from loh_attr directly */
+		is_dir = S_ISDIR(child->mod_obj.mo_lu.lo_header->loh_attr);
 
 		snprintf(name, ent->lde_namelen + 1, "%s", ent->lde_name);
 
@@ -3579,9 +3581,9 @@ static int mdd_migrate_entries(const struct lu_env *env,
 		handle->th_local = 1;
 		if (likely(!target_exist)) {
 			rc = mdo_declare_index_insert(env, mdd_tobj,
-						      &ent->lde_fid,
-						      mdd_object_type(child),
-						      name, handle);
+				&ent->lde_fid,
+				child->mod_obj.mo_lu.lo_header->loh_attr,
+				name, handle);
 			if (rc != 0)
 				GOTO(out_put, rc);
 
@@ -3630,9 +3632,8 @@ static int mdd_migrate_entries(const struct lu_env *env,
 
 		if (likely(!target_exist)) {
 			rc = __mdd_index_insert(env, mdd_tobj, &ent->lde_fid,
-						mdd_object_type(child),
-						name, handle,
-						mdd_object_capa(env, mdd_tobj));
+				child->mod_obj.mo_lu.lo_header->loh_attr, name,
+				handle, mdd_object_capa(env, mdd_tobj));
 			if (rc != 0)
 				GOTO(out_put, rc);
 
