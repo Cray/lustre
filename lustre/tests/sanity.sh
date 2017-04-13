@@ -3521,7 +3521,7 @@ test_39p() {
 run_test 39p "remote directory cached attributes updated after create ========"
 
 
-test_39p() { # LU-8041
+test_39q() { # LU-8041
 	local testdir=$DIR/$tdir
 	mkdir -p $testdir
 	multiop_bg_pause $testdir D_c || error "multiop failed"
@@ -3531,7 +3531,7 @@ test_39p() { # LU-8041
 	local atime=$(stat -c %X $testdir)
 	[ "$atime" -ne 0 ] || error "atime is zero"
 }
-run_test 39p "close won't zero out atime"
+run_test 39q "close won't zero out atime"
 
 test_40() {
 	dd if=/dev/zero of=$DIR/$tfile bs=4096 count=1
@@ -13013,6 +13013,9 @@ test_230a() {
 run_test 230a "Create remote directory and files under the remote directory"
 
 test_230b() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.6.57) ]] ||
+		{ skip "Need MDS version with at least 2.6.57"; return 0; }
+
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local MDTIDX=1
@@ -14580,6 +14583,20 @@ test_311() {
 		error "objs not destroyed after unlink"
 }
 run_test 311 "disable OSP precreate, and unlink should destroy objs"
+
+test_313() {
+	local file=$DIR/$tfile
+	rm -f $file
+	$SETSTRIPE -c 1 -i 0 $file || error "setstripe failed"
+
+	# define OBD_FAIL_TGT_RCVD_EIO		 0x720
+	do_facet ost1 "$LCTL set_param fail_loc=0x720"
+	dd if=/dev/zero of=$file bs=4096 oflag=direct count=1 &&
+		error "write should failed"
+	do_facet ost1 "$LCTL set_param fail_loc=0"
+	rm -f $file
+}
+run_test 313 "io should fail after last_rcvd update fail"
 
 test_400a() { # LU-1606, was conf-sanity test_74
 	local extra_flags=''

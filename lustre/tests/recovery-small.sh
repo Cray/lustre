@@ -262,12 +262,13 @@ test_10d() {
 	remount_client $MOUNT
 	mount_client $MOUNT2
 
+	cancel_lru_locks osc
 	$LFS setstripe -i 0 -c 1 $DIR1/$tfile
 	echo -n hello > $DIR1/$tfile
 
 	stat $DIR2/$tfile >& /dev/null
 	$LCTL set_param fail_err=71
-	drop_bl_callback_once "echo -n \\\", world\\\" >> $DIR2/$tfile"
+	drop_bl_callback "echo -n \\\", world\\\" >> $DIR2/$tfile"
 
 	client_reconnect
 
@@ -432,7 +433,7 @@ test_16() {
 }
 run_test 16 "timeout bulk put, don't evict client (2732)"
 
-test_17() {
+test_17a() {
     local at_max_saved=0
 
     remote_ost_nodsh && skip "remote OST with nodsh" && return 0
@@ -466,7 +467,93 @@ test_17() {
     [ $at_max_saved -ne 0 ] && at_max_set $at_max_saved ost1
     return 0
 }
-run_test 17 "timeout bulk get, don't evict client (2732)"
+run_test 17a "timeout bulk get, don't evict client (2732)"
+
+test_17b() {
+	[ -z "$RCLIENTS" ] && skip "Needs multiple clients" && return 0
+
+	# get one of the clients from client list
+	local rcli=$(echo $RCLIENTS | cut -d ' ' -f 1)
+	local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
+	local ldlm_enqueue_min=$(do_facet ost1 find /sys -name ldlm_enqueue_min)
+	[ -z "$ldlm_enqueue_min" ] &&
+		skip "missing /sys/.../ldlm_enqueue_min" && return 0
+
+	$LFS setstripe -i 0 -c 1 -S 1048576 $DIR/$tfile ||
+		error "setstripe failed"
+	$LFS setstripe -i 0 -c 1 -S 1048576 $DIR/${tfile}2 ||
+		error "setstripe 2 failed"
+
+	save_lustre_params ost1 "at_history" > $p
+	save_lustre_params ost1 "bulk_timeout" >> $p
+	local dev="${FSNAME}-OST0000"
+	save_lustre_params ost1 "obdfilter.$dev.brw_size" >> $p
+	local ldlm_enqueue_min_save=$(do_facet ost1 cat $ldlm_enqueue_min)
+
+	local new_at_history=15
+
+	do_facet ost1 "$LCTL set_param at_history=$new_at_history"
+	do_facet ost1 "$LCTL set_param bulk_timeout=30"
+	do_facet ost1 "echo 30 > /sys/module/ptlrpc/parameters/ldlm_enqueue_min"
+
+	# brw_size is required to be 4m so that bulk transfer timeout
+	# could be simulated with OBD_FAIL_PTLRPC_CLIENT_BULK_CB3
+	local brw_size=$($LCTL get_param -n \
+	    osc.$FSNAME-OST0000-osc-[^M]*.import |
+	    awk '/max_brw_size/{print $2}')
+	if [ $brw_size -ne 4194304 ]
+	then
+		save_lustre_params ost1 "obdfilter.$dev.brw_size" >> $p
+		do_facet ost1 "$LCTL set_param obdfilter.$dev.brw_size=4"
+		remount_client $MOUNT
+	fi
+
+	# get service estimate expanded
+	#define OBD_FAIL_OST_BRW_PAUSE_PACK		 0x224
+	do_facet ost1 "$LCTL set_param fail_loc=0x80000224 fail_val=35"
+	echo "delay rpc servicing by 35 seconds"
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 conv=fdatasync
+
+	local estimate
+	estimate=$($LCTL get_param -n osc.$dev-osc-*.timeouts |
+	    awk '/portal 6/ {print $5}')
+	echo "service estimates increased to $estimate"
+
+	# let current worst service estimate to get closer to obliteration
+	sleep $((new_at_history / 3))
+
+	# start i/o and simulate bulk transfer loss
+	#define OBD_FAIL_PTLRPC_CLIENT_BULK_CB3     0x520
+	do_facet ost1 "$LCTL set_param fail_loc=0xa0000520 fail_val=1"
+	dd if=/dev/zero of=$DIR/$tfile bs=2M count=1 conv=fdatasync,notrunc &
+	local writedd=$!
+
+	# start lock conflict handling
+	sleep $((new_at_history / 3))
+	do_node $rcli "dd if=$DIR/$tfile of=/dev/null bs=1M count=1" &
+	local readdd=$!
+
+	# obliterate the worst service estimate
+	sleep $((new_at_history / 3 + 1))
+	dd if=/dev/zero of=$DIR/${tfile}2 bs=1M count=1
+
+	estimate=$($LCTL get_param -n osc.$dev-osc-*.timeouts |
+	    awk '/portal 6/ {print $5}')
+	echo "service estimate dropped to $estimate"
+
+	wait $writedd
+	[[ $? == 0 ]] || error "write failed"
+	wait $readdd
+	[[ $? == 0 ]] || error "read failed"
+
+	restore_lustre_params <$p
+	if [ $brw_size -ne 4194304 ]
+	then
+		remount_client $MOUNT || error "remount_client failed"
+	fi
+	do_facet ost1 "echo $ldlm_enqueue_min_save > $ldlm_enqueue_min"
+}
+run_test 17b "timeout bulk get, dont evict client (3582)"
 
 test_18a() {
     [ -z ${ost2_svc} ] && skip_env "needs 2 osts" && return 0
@@ -2040,6 +2127,9 @@ test_110f () {
 run_test 110f "remove remote directory: drop slave rep"
 
 test_110g () {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.6.57) ]] ||
+		{ skip "Need MDS version at least 2.6.57"; return 0; }
+
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return 0
 	local remote_dir=$DIR/$tdir/remote_dir
 	local MDTIDX=1
@@ -2436,8 +2526,9 @@ test_131() {
 	dd if=/dev/zero of=$DIR/$tfile count=1 || error "dd failed"
 
 	# another IO under the same lock
-	#define OBD_FAIL_OSC_DELAY_IO            0x413
-	$LCTL set_param fail_loc=0x80000413
+	#define OBD_FAIL_OSC_DELAY_IO            0x414
+	$LCTL set_param fail_loc=0x80000414
+	$LCTL set_param fail_val=4 fail_loc=0x80000414
 	dd if=/dev/zero of=$DIR/$tfile count=1 conv=notrunc oflag=dsync &
 	local pid=$!
 	sleep 1
@@ -2544,53 +2635,6 @@ test_133() {
 	return 0
 }
 run_test 133 "don't fail on flock resend"
-
-test_134() {
-	local file1
-	local pid1
-	local pid2
-	local i
-
-	[ $OSTCOUNT -lt 2 ] && skip "needs >= 2 OSTs" && return 0
-	[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.8.59) ]] &&
-		skip "Need MDS version at least 2.8.59" && return
-
-	test_mkdir -p $DIR/$tdir
-	file1="$DIR/$tdir/file1"
-	file2="$DIR/$tdir/file2"
-
-#define OBD_FAIL_MDS_OSP_PRECREATE_WAIT	 0x164
-	# reserve stripe on ost1, block on ost2
-	do_facet $SINGLEMDS \
-		"lctl set_param fail_loc=0x80000164 fail_val=1"
-	$SETSTRIPE  -c 2 -o 0,1 $file1 &
-	pid1=$!
-	sleep 1
-
-	# initiate recovery with orphan cleanup on ost1
-	facet_failover ost1
-
-	# when OST1 recovery is over, the first setstripe should still
-	# have the object reserved, but that should not block new creates
-	# on OST1
-	$SETSTRIPE  -c 1 -o 0 $file2 &
-	pid2=$!
-	for ((i=0;i<$((TIMEOUT/2));i++)); do
-		if ! stat /proc/$pid2 >&/dev/null; then
-			echo "DONE!"
-			break
-		fi
-		echo "WAITING ..."
-		sleep 1
-	done
-	if let "i >= (TIMEOUT/2)"; then
-		error "create seem to get blocked by recovery"
-	fi
-	wait $pid1
-	wait $pid2
-	return 0
-}
-run_test 134 "MDT<>OST recovery don't block multistripe file creation"
 
 complete $SECONDS
 check_and_cleanup_lustre

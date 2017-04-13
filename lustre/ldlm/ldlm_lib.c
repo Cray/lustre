@@ -166,14 +166,17 @@ int client_import_del_conn(struct obd_import *imp, struct obd_uuid *uuid)
                         ptlrpc_connection_put(imp->imp_connection);
                         imp->imp_connection = NULL;
 
-                        dlmexp = class_conn2export(&imp->imp_dlm_handle);
-                        if (dlmexp && dlmexp->exp_connection) {
-                                LASSERT(dlmexp->exp_connection ==
-                                        imp_conn->oic_conn);
-                                ptlrpc_connection_put(dlmexp->exp_connection);
-                                dlmexp->exp_connection = NULL;
-                        }
-                }
+			dlmexp = class_conn2export(&imp->imp_dlm_handle);
+			if (dlmexp && dlmexp->exp_connection) {
+				LASSERT(dlmexp->exp_connection ==
+					imp_conn->oic_conn);
+				ptlrpc_connection_put(dlmexp->exp_connection);
+				dlmexp->exp_connection = NULL;
+			}
+
+			if (dlmexp != NULL)
+				class_export_put(dlmexp);
+		}
 
 		list_del(&imp_conn->oic_item);
                 ptlrpc_connection_put(imp_conn->oic_conn);
@@ -1513,7 +1516,7 @@ static void target_finish_recovery(struct obd_device *obd)
 			obd->obd_stale_clients == 1 ? "was" : "were");
 	}
 
-        ldlm_reprocess_all_ns(obd->obd_namespace);
+	ldlm_reprocess_recovery_done(obd->obd_namespace);
 	spin_lock(&obd->obd_recovery_task_lock);
 	if (!list_empty(&obd->obd_req_replay_queue) ||
 	    !list_empty(&obd->obd_lock_replay_queue) ||

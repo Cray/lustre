@@ -803,11 +803,12 @@ static void tgt_cb_last_committed(struct lu_env *env, struct thandle *th,
 	} else {
 		spin_unlock(&ccb->llcc_tgt->lut_translock);
 	}
+
+	CDEBUG(D_HA, "%s: transno %lld is committed\n",
+	       ccb->llcc_tgt->lut_obd->obd_name, ccb->llcc_transno);
+
 out:
 	class_export_cb_put(ccb->llcc_exp);
-	if (ccb->llcc_transno)
-		CDEBUG(D_HA, "%s: transno "LPD64" is committed\n",
-		       ccb->llcc_tgt->lut_obd->obd_name, ccb->llcc_transno);
 	OBD_FREE_PTR(ccb);
 }
 
@@ -1289,7 +1290,11 @@ static int tgt_last_rcvd_update(const struct lu_env *env, struct lu_target *tgt,
 
 	if (!lw_client) {
 		tti->tti_off = ted->ted_lr_off;
-		rc = tgt_client_data_write(env, tgt, ted->ted_lcd, &tti->tti_off, th);
+		if (CFS_FAIL_CHECK(OBD_FAIL_TGT_RCVD_EIO))
+			rc = -EIO;
+		else
+			rc = tgt_client_data_write(env, tgt, ted->ted_lcd,
+						   &tti->tti_off, th);
 		if (rc < 0) {
 			mutex_unlock(&ted->ted_lcd_lock);
 			RETURN(rc);

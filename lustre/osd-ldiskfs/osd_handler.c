@@ -56,6 +56,7 @@
 
 #include <ldiskfs/ldiskfs.h>
 #include <ldiskfs/xattr.h>
+#include <ldiskfs/ldiskfs_extents.h>
 #undef ENTRY
 /*
  * struct OBD_{ALLOC,FREE}*()
@@ -81,7 +82,7 @@ int ldiskfs_pdo = 1;
 CFS_MODULE_PARM(ldiskfs_pdo, "i", int, 0644,
                 "ldiskfs with parallel directory operations");
 
-int ldiskfs_track_declares_assert;
+int ldiskfs_track_declares_assert = 0;
 CFS_MODULE_PARM(ldiskfs_track_declares_assert, "i", int, 0644,
 		"LBUG during tracking of declares");
 
@@ -1119,14 +1120,61 @@ static struct thandle *osd_trans_create(const struct lu_env *env,
 		osd_th_alloced(oh);
 
 		memset(oti->oti_declare_ops, 0,
-					sizeof(oti->oti_declare_ops));
-		memset(oti->oti_declare_ops_rb, 0,
-					sizeof(oti->oti_declare_ops_rb));
+		       sizeof(oti->oti_declare_ops));
 		memset(oti->oti_declare_ops_cred, 0,
-					sizeof(oti->oti_declare_ops_cred));
-		oti->oti_rollback = false;
+		       sizeof(oti->oti_declare_ops_cred));
+		memset(oti->oti_declare_ops_used, 0,
+		       sizeof(oti->oti_declare_ops_used));
 	}
 	RETURN(th);
+}
+
+void osd_trans_dump_creds(const struct lu_env *env, struct thandle *th)
+{
+	struct osd_thread_info	*oti = osd_oti_get(env);
+	struct osd_thandle	*oh;
+
+	oh = container_of0(th, struct osd_thandle, ot_super);
+	LASSERT(oh != NULL);
+
+	CWARN("  create: %u/%u/%u, destroy: %u/%u/%u\n",
+	      oti->oti_declare_ops[OSD_OT_CREATE],
+	      oti->oti_declare_ops_cred[OSD_OT_CREATE],
+	      oti->oti_declare_ops_used[OSD_OT_CREATE],
+	      oti->oti_declare_ops[OSD_OT_DESTROY],
+	      oti->oti_declare_ops_cred[OSD_OT_DESTROY],
+	      oti->oti_declare_ops_used[OSD_OT_DESTROY]);
+	CWARN("  attr_set: %u/%u/%u, xattr_set: %u/%u/%u\n",
+	      oti->oti_declare_ops[OSD_OT_ATTR_SET],
+	      oti->oti_declare_ops_cred[OSD_OT_ATTR_SET],
+	      oti->oti_declare_ops_used[OSD_OT_ATTR_SET],
+	      oti->oti_declare_ops[OSD_OT_XATTR_SET],
+	      oti->oti_declare_ops_cred[OSD_OT_XATTR_SET],
+	      oti->oti_declare_ops_used[OSD_OT_XATTR_SET]);
+	CWARN("  write: %u/%u/%u, punch: %u/%u/%u, quota %u/%u/%u\n",
+	      oti->oti_declare_ops[OSD_OT_WRITE],
+	      oti->oti_declare_ops_cred[OSD_OT_WRITE],
+	      oti->oti_declare_ops_used[OSD_OT_WRITE],
+	      oti->oti_declare_ops[OSD_OT_PUNCH],
+	      oti->oti_declare_ops_cred[OSD_OT_PUNCH],
+	      oti->oti_declare_ops_used[OSD_OT_PUNCH],
+	      oti->oti_declare_ops[OSD_OT_QUOTA],
+	      oti->oti_declare_ops_cred[OSD_OT_QUOTA],
+	      oti->oti_declare_ops_used[OSD_OT_QUOTA]);
+	CWARN("  insert: %u/%u/%u, delete: %u/%u/%u\n",
+	      oti->oti_declare_ops[OSD_OT_INSERT],
+	      oti->oti_declare_ops_cred[OSD_OT_INSERT],
+	      oti->oti_declare_ops_used[OSD_OT_INSERT],
+	      oti->oti_declare_ops[OSD_OT_DELETE],
+	      oti->oti_declare_ops_cred[OSD_OT_DELETE],
+	      oti->oti_declare_ops_used[OSD_OT_DELETE]);
+	CWARN("  ref_add: %u/%u/%u, ref_del: %u/%u/%u\n",
+	      oti->oti_declare_ops[OSD_OT_REF_ADD],
+	      oti->oti_declare_ops_cred[OSD_OT_REF_ADD],
+	      oti->oti_declare_ops_used[OSD_OT_REF_ADD],
+	      oti->oti_declare_ops[OSD_OT_REF_DEL],
+	      oti->oti_declare_ops_cred[OSD_OT_REF_DEL],
+	      oti->oti_declare_ops_used[OSD_OT_REF_DEL]);
 }
 
 /*
@@ -1161,33 +1209,8 @@ static int osd_trans_start(const struct lu_env *env, struct dt_device *d,
 		      LDISKFS_SB(osd_sb(dev))->s_es->s_volume_name,
 		      oh->ot_credits,
 		      osd_journal(dev)->j_max_transaction_buffers);
-		CWARN("  create: %u/%u, destroy: %u/%u\n",
-		      oti->oti_declare_ops[OSD_OT_CREATE],
-		      oti->oti_declare_ops_cred[OSD_OT_CREATE],
-		      oti->oti_declare_ops[OSD_OT_DESTROY],
-		      oti->oti_declare_ops_cred[OSD_OT_DESTROY]);
-		CWARN("  attr_set: %u/%u, xattr_set: %u/%u\n",
-		      oti->oti_declare_ops[OSD_OT_ATTR_SET],
-		      oti->oti_declare_ops_cred[OSD_OT_ATTR_SET],
-		      oti->oti_declare_ops[OSD_OT_XATTR_SET],
-		      oti->oti_declare_ops_cred[OSD_OT_XATTR_SET]);
-		CWARN("  write: %u/%u, punch: %u/%u, quota %u/%u\n",
-		      oti->oti_declare_ops[OSD_OT_WRITE],
-		      oti->oti_declare_ops_cred[OSD_OT_WRITE],
-		      oti->oti_declare_ops[OSD_OT_PUNCH],
-		      oti->oti_declare_ops_cred[OSD_OT_PUNCH],
-		      oti->oti_declare_ops[OSD_OT_QUOTA],
-		      oti->oti_declare_ops_cred[OSD_OT_QUOTA]);
-		CWARN("  insert: %u/%u, delete: %u/%u\n",
-		      oti->oti_declare_ops[OSD_OT_INSERT],
-		      oti->oti_declare_ops_cred[OSD_OT_INSERT],
-		      oti->oti_declare_ops[OSD_OT_DELETE],
-		      oti->oti_declare_ops_cred[OSD_OT_DELETE]);
-		CWARN("  ref_add: %u/%u, ref_del: %u/%u\n",
-		      oti->oti_declare_ops[OSD_OT_REF_ADD],
-		      oti->oti_declare_ops_cred[OSD_OT_REF_ADD],
-		      oti->oti_declare_ops[OSD_OT_REF_DEL],
-		      oti->oti_declare_ops_cred[OSD_OT_REF_DEL]);
+
+		osd_trans_dump_creds(env, th);
 
 		if (last_credits != oh->ot_credits &&
 		    time_after(jiffies, last_printed +
@@ -1273,7 +1296,8 @@ static int osd_trans_stop(const struct lu_env *env, struct dt_device *dt,
 	qtrans = oh->ot_quota_trans;
 	oh->ot_quota_trans = NULL;
 
-        if (oh->ot_handle != NULL) {
+	if (oh->ot_handle != NULL) {
+		int rc2;
                 handle_t *hdl = oh->ot_handle;
 
                 /*
@@ -1295,10 +1319,12 @@ static int osd_trans_stop(const struct lu_env *env, struct dt_device *dt,
 		hdl->h_sync = th->th_sync;
 
 		oh->ot_handle = NULL;
-		OSD_CHECK_SLOW_TH(oh, osd, rc = ldiskfs_journal_stop(hdl));
-		if (rc != 0)
+		OSD_CHECK_SLOW_TH(oh, osd, rc2 = ldiskfs_journal_stop(hdl));
+		if (rc2 != 0)
 			CERROR("%s: failed to stop transaction: rc = %d\n",
-			       osd_name(osd), rc);
+			       osd_name(osd), rc2);
+		if (!rc)
+			rc = rc2;
 	} else {
 		thandle_put(&oh->ot_super);
 	}
@@ -1409,18 +1435,17 @@ static int osd_object_print(const struct lu_env *env, void *cookie,
                     d ? d->id_ops->id_name : "plain");
 }
 
-#define GRANT_FOR_LOCAL_OIDS 32 /* 128kB for last_rcvd, quota files, ... */
-
 /*
  * Concurrency: shouldn't matter.
  */
 int osd_statfs(const struct lu_env *env, struct dt_device *d,
                struct obd_statfs *sfs)
 {
-        struct osd_device  *osd = osd_dt_dev(d);
-        struct super_block *sb = osd_sb(osd);
-        struct kstatfs     *ksfs;
-        int result = 0;
+	struct osd_device	*osd = osd_dt_dev(d);
+	struct super_block	*sb = osd_sb(osd);
+	struct kstatfs		*ksfs;
+	__u64			 reserved;
+	int			 result = 0;
 
 	if (unlikely(osd->od_mnt == NULL))
 		return -EINPROGRESS;
@@ -1434,34 +1459,40 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
                 ksfs = &osd_oti_get(env)->oti_ksfs;
         }
 
-	spin_lock(&osd->od_osfs_lock);
 	result = sb->s_op->statfs(sb->s_root, ksfs);
-	if (likely(result == 0)) { /* N.B. statfs can't really fail */
-		statfs_pack(sfs, ksfs);
-		if (unlikely(sb->s_flags & MS_RDONLY))
-			sfs->os_state |= OS_STATE_READONLY;
-		if (LDISKFS_HAS_INCOMPAT_FEATURE(sb,
-					      LDISKFS_FEATURE_INCOMPAT_EXTENTS))
-			sfs->os_maxbytes = sb->s_maxbytes;
-		else
-			sfs->os_maxbytes = LDISKFS_SB(sb)->s_bitmap_maxbytes;
-	}
-	spin_unlock(&osd->od_osfs_lock);
+	if (result)
+		goto out;
 
+	statfs_pack(sfs, ksfs);
+	if (unlikely(sb->s_flags & MS_RDONLY))
+		sfs->os_state = OS_STATE_READONLY;
+	if (LDISKFS_HAS_INCOMPAT_FEATURE(sb,
+					 LDISKFS_FEATURE_INCOMPAT_EXTENTS))
+		sfs->os_maxbytes = sb->s_maxbytes;
+	else
+		sfs->os_maxbytes = LDISKFS_SB(sb)->s_bitmap_maxbytes;
+
+	/*
+	 * Reserve some space so to avoid fragmenting the filesystem too much.
+	 * Fragmentation not only impacts performance, but can also increase
+	 * metadata overhead significantly, causing grant calculation to be
+	 * wrong.
+	 *
+	 * Reserve 0.78% of total space, at least 8MB for small filesystems.
+	 */
+	CLASSERT(OSD_STATFS_RESERVED > LDISKFS_MAX_BLOCK_SIZE);
+	reserved = OSD_STATFS_RESERVED >> sb->s_blocksize_bits;
+	if (likely(sfs->os_blocks >= reserved << OSD_STATFS_RESERVED_SHIFT))
+		reserved = sfs->os_blocks >> OSD_STATFS_RESERVED_SHIFT;
+
+	sfs->os_blocks -= reserved;
+	sfs->os_bfree  -= min(reserved, sfs->os_bfree);
+	sfs->os_bavail -= min(reserved, sfs->os_bavail);
+
+out:
 	if (unlikely(env == NULL))
-                OBD_FREE_PTR(ksfs);
-
-	/* Reserve a small amount of space for local objects like last_rcvd,
-	 * llog, quota files, ... */
-	if (sfs->os_bavail <= GRANT_FOR_LOCAL_OIDS) {
-		sfs->os_bavail = 0;
-	} else {
-		sfs->os_bavail -= GRANT_FOR_LOCAL_OIDS;
-		/** Take out metadata overhead for indirect blocks */
-		sfs->os_bavail -= sfs->os_bavail >> (sb->s_blocksize_bits - 3);
-	}
-
-        return result;
+		OBD_FREE_PTR(ksfs);
+	return result;
 }
 
 /**
@@ -1490,21 +1521,23 @@ static void osd_conf_get(const struct lu_env *env,
          */
         param->ddp_max_name_len = LDISKFS_NAME_LEN;
         param->ddp_max_nlink    = LDISKFS_LINK_MAX;
-	param->ddp_block_shift  = sb->s_blocksize_bits;
+	param->ddp_symlink_max  = sb->s_blocksize;
 	param->ddp_mount_type     = LDD_MT_LDISKFS;
 	if (LDISKFS_HAS_INCOMPAT_FEATURE(sb, LDISKFS_FEATURE_INCOMPAT_EXTENTS))
 		param->ddp_maxbytes = sb->s_maxbytes;
 	else
 		param->ddp_maxbytes = LDISKFS_SB(sb)->s_bitmap_maxbytes;
-	/* Overhead estimate should be fairly accurate, so we really take a tiny
-	 * error margin which also avoids fragmenting the filesystem too much */
-	param->ddp_grant_reserved = 2; /* end up to be 1.9% after conversion */
 	/* inode are statically allocated, so per-inode space consumption
 	 * is the space consumed by the directory entry */
 	param->ddp_inodespace     = PER_OBJ_USAGE;
-	/* per-fragment overhead to be used by the client code */
-	param->ddp_grant_frag     = 6 * LDISKFS_BLOCK_SIZE(sb);
-        param->ddp_mntopts      = 0;
+	/* EXT_INIT_MAX_LEN is the theoretical maximum extent size  (32k blocks
+	 * = 128MB) which is unlikely to be hit in real life. Report a smaller
+	 * maximum length to not under count the actual number of extents
+	 * needed for writing a file. */
+	param->ddp_max_extent_blks = EXT_INIT_MAX_LEN >> 2;
+	/* worst-case extent insertion metadata overhead */
+	param->ddp_extent_tax = 6 * LDISKFS_BLOCK_SIZE(sb);
+	param->ddp_mntopts      = 0;
         if (test_opt(sb, XATTR_USER))
                 param->ddp_mntopts |= MNTOPT_USERXATTR;
         if (test_opt(sb, POSIX_ACL))
@@ -2245,6 +2278,8 @@ static int osd_attr_set(const struct lu_env *env,
 	}
 out:
 
+	osd_trans_exec_check(env, handle, OSD_OT_ATTR_SET);
+
         return rc;
 }
 
@@ -2513,6 +2548,8 @@ static int __osd_object_create(struct osd_thread_info *info,
 	int	result;
 	__u32	umask;
 
+	osd_trans_exec_op(info->oti_env, th, OSD_OT_CREATE);
+
 	/* we drop umask so that permissions we pass are not affected */
 	umask = current->fs->umask;
 	current->fs->umask = 0;
@@ -2533,6 +2570,8 @@ static int __osd_object_create(struct osd_thread_info *info,
 	/* restore previous umask value */
 	current->fs->umask = umask;
 
+	osd_trans_exec_check(info->oti_env, th, OSD_OT_CREATE);
+
 	return result;
 }
 
@@ -2548,14 +2587,19 @@ static int __osd_oi_insert(const struct lu_env *env, struct osd_object *obj,
 	struct osd_inode_id    *id   = &info->oti_id;
 	struct osd_device      *osd  = osd_obj2dev(obj);
 	struct osd_thandle     *oh;
+	int			rc;
 
 	LASSERT(obj->oo_inode != NULL);
 
 	oh = container_of0(th, struct osd_thandle, ot_super);
 	LASSERT(oh->ot_handle);
+	osd_trans_exec_op(env, th, OSD_OT_INSERT);
 
 	osd_id_gen(id, obj->oo_inode->i_ino, obj->oo_inode->i_generation);
-	return osd_oi_insert(info, osd, fid, id, oh->ot_handle, OI_CHECK_FLD);
+	rc = osd_oi_insert(info, osd, fid, id, oh->ot_handle, OI_CHECK_FLD);
+	osd_trans_exec_check(env, th, OSD_OT_INSERT);
+
+	return rc;
 }
 
 int osd_fld_lookup(const struct lu_env *env, struct osd_device *osd,
@@ -2603,23 +2647,17 @@ static int osd_declare_object_create(const struct lu_env *env,
 	oh = container_of0(handle, struct osd_thandle, ot_super);
 	LASSERT(oh->ot_handle == NULL);
 
+	/* EA object consumes more credits than regular object: osd_mk_index
+	 * vs. osd_mkreg: osd_mk_index will create 2 blocks for root_node and
+	 * leaf_node, could involves the block, block bitmap, groups, GDT
+	 * change for each block, so add 4 * 2 credits in that case. */
 	osd_trans_declare_op(env, oh, OSD_OT_CREATE,
-			     osd_dto_credits_noquota[DTO_OBJECT_CREATE]);
+			     osd_dto_credits_noquota[DTO_OBJECT_CREATE] +
+			     (dof->dof_type == DFT_INDEX) ? 4 * 2 : 0);
 	/* Reuse idle OI block may cause additional one OI block
 	 * to be changed. */
 	osd_trans_declare_op(env, oh, OSD_OT_INSERT,
 			     osd_dto_credits_noquota[DTO_INDEX_INSERT] + 1);
-
-	/* If this is directory, then we expect . and .. to be inserted as
-	 * well. The one directory block always needs to be created for the
-	 * directory, so we could use DTO_WRITE_BASE here (GDT, block bitmap,
-	 * block), there is no danger of needing a tree for the first block.
-	 */
-	if (attr && S_ISDIR(attr->la_mode)) {
-		osd_trans_declare_op(env, oh, OSD_OT_INSERT,
-				     osd_dto_credits_noquota[DTO_WRITE_BASE]);
-		osd_trans_declare_op(env, oh, OSD_OT_INSERT, 0);
-	}
 
 	if (!attr)
 		RETURN(0);
@@ -2656,18 +2694,15 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
 		 * 'tune2fs -O quota' will take care of creating them */
 		RETURN(-EPERM);
 
-	osd_trans_exec_op(env, th, OSD_OT_CREATE);
-	osd_trans_declare_rb(env, th, OSD_OT_REF_ADD);
-
-        result = __osd_object_create(info, obj, attr, hint, dof, th);
-        if (result == 0)
-                result = __osd_oi_insert(env, obj, fid, th);
+	result = __osd_object_create(info, obj, attr, hint, dof, th);
+	if (result == 0)
+		result = __osd_oi_insert(env, obj, fid, th);
 
 	LASSERT(ergo(result == 0,
-		     dt_object_exists(dt) && !dt_object_remote(dt)));
+		dt_object_exists(dt) && !dt_object_remote(dt)));
 
-        LASSERT(osd_invariant(obj));
-        RETURN(result);
+	LASSERT(osd_invariant(obj));
+	RETURN(result);
 }
 
 /**
@@ -2751,13 +2786,14 @@ static int osd_object_destroy(const struct lu_env *env,
 	result = osd_oi_delete(osd_oti_get(env), osd, fid, oh->ot_handle,
 			       OI_CHECK_FLD);
 
-        /* XXX: add to ext3 orphan list */
-        /* rc = ext3_orphan_add(handle_t *handle, struct inode *inode) */
+	osd_trans_exec_check(env, th, OSD_OT_DESTROY);
+	/* XXX: add to ext3 orphan list */
+	/* rc = ext3_orphan_add(handle_t *handle, struct inode *inode) */
 
-        /* not needed in the cache anymore */
-        set_bit(LU_OBJECT_HEARD_BANSHEE, &dt->do_lu.lo_header->loh_flags);
+	/* not needed in the cache anymore */
+	set_bit(LU_OBJECT_HEARD_BANSHEE, &dt->do_lu.lo_header->loh_flags);
 
-        RETURN(0);
+	RETURN(0);
 }
 
 /**
@@ -3051,9 +3087,6 @@ static int osd_object_ea_create(const struct lu_env *env, struct dt_object *dt,
 		 * 'tune2fs -O quota' will take care of creating them */
 		RETURN(-EPERM);
 
-	osd_trans_exec_op(env, th, OSD_OT_CREATE);
-	osd_trans_declare_rb(env, th, OSD_OT_REF_ADD);
-
 	result = __osd_object_create(info, obj, attr, hint, dof, th);
 	if (result == 0) {
 		if (fid_is_idif(fid) &&
@@ -3151,6 +3184,8 @@ static int osd_object_ref_add(const struct lu_env *env,
 	ll_dirty_inode(inode, I_DIRTY_DATASYNC);
 	LINVRNT(osd_invariant(obj));
 
+	osd_trans_exec_check(env, th, OSD_OT_REF_ADD);
+
 	return rc;
 }
 
@@ -3217,6 +3252,8 @@ static int osd_object_ref_del(const struct lu_env *env, struct dt_object *dt,
 
 	ll_dirty_inode(inode, I_DIRTY_DATASYNC);
 	LINVRNT(osd_invariant(obj));
+
+	osd_trans_exec_check(env, th, OSD_OT_REF_DEL);
 
 	return 0;
 }
@@ -3333,7 +3370,7 @@ upgrade:
 		 * xattr set may involve inode quota change, reserve credits for
 		 * dquot_initialize()
 		 */
-		oh->ot_credits += LDISKFS_MAXQUOTAS_INIT_BLOCKS(sb);
+		credits += LDISKFS_MAXQUOTAS_INIT_BLOCKS(sb);
 	}
 
 	osd_trans_declare_op(env, oh, OSD_OT_XATTR_SET, credits);
@@ -3370,6 +3407,7 @@ static int osd_xattr_set(const struct lu_env *env, struct dt_object *dt,
 	struct inode	       *inode    = obj->oo_inode;
 	struct osd_thread_info *info     = osd_oti_get(env);
 	int			fs_flags = 0;
+	int			rc;
 	ENTRY;
 
         LASSERT(handle != NULL);
@@ -3416,8 +3454,11 @@ static int osd_xattr_set(const struct lu_env *env, struct dt_object *dt,
 	    strcmp(name, XATTR_NAME_LINK) == 0)
 		return -ENOSPC;
 
-	return __osd_xattr_set(info, inode, name, buf->lb_buf, buf->lb_len,
+	rc = __osd_xattr_set(info, inode, name, buf->lb_buf, buf->lb_len,
 			       fs_flags);
+	osd_trans_exec_check(env, handle, OSD_OT_XATTR_SET);
+
+	return rc;
 }
 
 /*
@@ -3500,6 +3541,7 @@ static int osd_xattr_del(const struct lu_env *env, struct dt_object *dt,
 	dentry->d_inode = inode;
 	dentry->d_sb = inode->i_sb;
 	rc = inode->i_op->removexattr(dentry, name);
+	osd_trans_exec_check(env, handle, OSD_OT_XATTR_SET);
 	return rc;
 }
 
@@ -3907,6 +3949,7 @@ static int osd_index_iam_delete(const struct lu_env *env, struct dt_object *dt,
         rc = iam_delete(oh->ot_handle, bag, (const struct iam_key *)key, ipd);
         osd_ipd_put(env, bag, ipd);
         LINVRNT(osd_invariant(obj));
+	osd_trans_exec_check(env, handle, OSD_OT_DELETE);
         RETURN(rc);
 }
 
@@ -3928,6 +3971,16 @@ static int osd_index_declare_ea_delete(const struct lu_env *env,
 
 	osd_trans_declare_op(env, oh, OSD_OT_DELETE,
 			     osd_dto_credits_noquota[DTO_INDEX_DELETE]);
+	/* local agent inode can be removed. it can be a directory, so
+	 * +3 to remove the block storing . and .. */
+	osd_trans_declare_op(env, oh, OSD_OT_DESTROY,
+			osd_dto_credits_noquota[DTO_OBJECT_DELETE] + 3);
+	if (key != NULL && unlikely(strcmp((char *)key, dotdot) == 0)) {
+		/* '..' to a remote object has a local representative */
+		/* + 1 to reset LMAI_REMOTE_PARENT */
+		osd_trans_declare_op(env, oh, OSD_OT_DESTROY, 1 +
+				    osd_dto_credits_noquota[DTO_OBJECT_DELETE]);
+	}
 
 	inode = osd_dt_obj(dt)->oo_inode;
 	LASSERT(inode);
@@ -4006,8 +4059,6 @@ static int osd_index_ea_delete(const struct lu_env *env, struct dt_object *dt,
 	LASSERT(!dt_object_remote(dt));
 	LASSERT(handle != NULL);
 
-	osd_trans_exec_op(env, handle, OSD_OT_DELETE);
-
         oh = container_of(handle, struct osd_thandle, ot_super);
         LASSERT(oh->ot_handle != NULL);
         LASSERT(oh->ot_handle->h_transaction != NULL);
@@ -4057,7 +4108,9 @@ static int osd_index_ea_delete(const struct lu_env *env, struct dt_object *dt,
 						le32_to_cpu(de->inode));
 			}
 		}
+		osd_trans_exec_op(env, handle, OSD_OT_DELETE);
                 rc = ldiskfs_delete_entry(oh->ot_handle, dir, de, bh);
+		osd_trans_exec_check(env, handle, OSD_OT_DELETE);
                 brelse(bh);
         } else {
                 rc = -ENOENT;
@@ -4076,8 +4129,10 @@ static int osd_index_ea_delete(const struct lu_env *env, struct dt_object *dt,
 	if (unlikely(strcmp((char *)key, dotdot) == 0)) {
 		int ret;
 
+		osd_trans_exec_op(env, handle, OSD_OT_DESTROY);
 		ret = osd_delete_from_remote_parent(env, osd_obj2dev(obj),
 						    obj, oh);
+		osd_trans_exec_check(env, handle, OSD_OT_DESTROY);
 		if (ret != 0)
 			/* Sigh, the entry has been deleted, and
 			 * it is not easy to revert it back, so
@@ -4247,6 +4302,7 @@ static int osd_index_iam_insert(const struct lu_env *env, struct dt_object *dt,
                         iam_rec, ipd);
         osd_ipd_put(env, bag, ipd);
         LINVRNT(osd_invariant(obj));
+	osd_trans_exec_check(env, th, OSD_OT_INSERT);
         RETURN(rc);
 }
 
@@ -4787,7 +4843,7 @@ static int osd_index_declare_ea_insert(const struct lu_env *env,
 	struct osd_thandle	*oh;
 	struct osd_device	*osd   = osd_dev(dt->do_lu.lo_dev);
 	struct lu_fid		*fid = (struct lu_fid *)rec;
-	int			rc;
+	int			 credits, rc = 0;
 	ENTRY;
 
 	LASSERT(!dt_object_remote(dt));
@@ -4796,8 +4852,21 @@ static int osd_index_declare_ea_insert(const struct lu_env *env,
 	oh = container_of0(handle, struct osd_thandle, ot_super);
 	LASSERT(oh->ot_handle == NULL);
 
-	osd_trans_declare_op(env, oh, OSD_OT_INSERT,
-			     osd_dto_credits_noquota[DTO_INDEX_INSERT]);
+	credits = osd_dto_credits_noquota[DTO_INDEX_INSERT];
+	if (fid != NULL) {
+		rc = osd_remote_fid(env, osd, fid);
+		if (unlikely(rc < 0))
+			RETURN(rc);
+		if (rc > 0) {
+			/* a reference to remote inode is represented by an
+			 * agent inode which we have to create */
+			credits += osd_dto_credits_noquota[DTO_OBJECT_CREATE];
+			credits += osd_dto_credits_noquota[DTO_INDEX_INSERT];
+		}
+		rc = 0;
+	}
+
+	osd_trans_declare_op(env, oh, OSD_OT_INSERT, credits);
 
 	if (osd_dt_obj(dt)->oo_inode != NULL) {
 		struct inode *inode = osd_dt_obj(dt)->oo_inode;
@@ -4809,22 +4878,6 @@ static int osd_index_declare_ea_insert(const struct lu_env *env,
 					   i_gid_read(inode), 0, oh,
 					   osd_dt_obj(dt), true, NULL, false);
 	}
-
-	if (fid == NULL)
-		RETURN(0);
-
-	rc = osd_remote_fid(env, osd, fid);
-	if (rc <= 0)
-		RETURN(rc);
-
-	rc = 0;
-
-	osd_trans_declare_op(env, oh, OSD_OT_CREATE,
-			     osd_dto_credits_noquota[DTO_OBJECT_CREATE]);
-	osd_trans_declare_op(env, oh, OSD_OT_INSERT,
-			     osd_dto_credits_noquota[DTO_INDEX_INSERT] + 1);
-	osd_trans_declare_op(env, oh, OSD_OT_INSERT,
-			     osd_dto_credits_noquota[DTO_INDEX_INSERT] + 1);
 
 	RETURN(rc);
 }
@@ -4924,6 +4977,7 @@ static int osd_index_ea_insert(const struct lu_env *env, struct dt_object *dt,
 	if (child != NULL)
 		osd_object_put(env, child);
 	LASSERT(osd_invariant(obj));
+	osd_trans_exec_check(env, th, OSD_OT_INSERT);
 	RETURN(rc);
 }
 
@@ -6297,7 +6351,7 @@ static int osd_mount(const struct lu_env *env,
 	struct osd_thread_info	*info = osd_oti_get(env);
 	struct lu_fid		*fid = &info->oti_fid;
 	struct inode		*inode;
-	int			 rc = 0, force_over_256tb = 0;
+	int			 rc = 0, force_over_512tb = 0;
         ENTRY;
 
 	if (o->od_mnt != NULL)
@@ -6321,8 +6375,17 @@ static int osd_mount(const struct lu_env *env,
 		RETURN(-EINVAL);
 	}
 #endif
-	if (opts != NULL && strstr(opts, "force_over_256tb") != NULL)
-		force_over_256tb = 1;
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(3, 1, 53, 0)
+	if (opts != NULL && strstr(opts, "force_over_256tb") != NULL) {
+		CWARN("force_over_256tb option is deprecated. "
+		      "Filesystems less than 512TB can be created without any "
+		      "force options. Use force_over_512tb option for "
+		      "filesystems greater than 512TB.\n");
+	}
+#endif
+
+	if (opts != NULL && strstr(opts, "force_over_512tb") != NULL)
+		force_over_512tb = 1;
 
 	OBD_PAGE_ALLOC(__page, GFP_KERNEL);
 	if (__page == NULL)
@@ -6342,6 +6405,7 @@ static int osd_mount(const struct lu_env *env,
 			/* strip out option we processed in osd */
 			"bigendian_extents",
 			"force_over_256tb",
+			"force_over_512tb",
 			NULL
 		};
 		strcat(options, opts);
@@ -6387,11 +6451,12 @@ static int osd_mount(const struct lu_env *env,
 		GOTO(out, rc);
 	}
 
-	if (ldiskfs_blocks_count(LDISKFS_SB(osd_sb(o))->s_es) > (16ULL << 32) &&
-	    force_over_256tb == 0) {
+	if (ldiskfs_blocks_count(LDISKFS_SB(osd_sb(o))->s_es) <<
+				 osd_sb(o)->s_blocksize_bits > 512ULL << 40 &&
+				 force_over_512tb == 0) {
 		CERROR("%s: device %s LDISKFS does not support filesystems "
-		       "greater than 256TB and can cause data corruption. "
-		       "Use \"force_over_256tb\" mount option to override.\n",
+		       "greater than 512TB and can cause data corruption. "
+		       "Use \"force_over_512tb\" mount option to override.\n",
 		       name, dev);
 		GOTO(out, rc = -EINVAL);
 	}

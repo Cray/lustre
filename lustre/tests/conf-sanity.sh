@@ -2772,7 +2772,7 @@ test_42() { #bug 14693
 }
 run_test 42 "allow client/server mount/unmount with invalid config param"
 
-test_43() {
+test_43a() {
 	[[ $(lustre_version_code mgs) -ge $(version_code 2.5.58) ]] ||
 		{ skip "Need MDS version at least 2.5.58" && return 0; }
 	[ $UID -ne 0 -o $RUNAS_ID -eq 0 ] && skip_env "run as root"
@@ -2920,9 +2920,44 @@ test_43() {
 	touch $DIR/$tdir-rootdir/tfile-2 ||
 		error "$ST: root create permission is denied"
 	echo "$ST: root create permission is granted - ok"
+	cleanup || error "cleanup failed with $?"
+}
+run_test 43a "check root_squash and nosquash_nids"
+
+test_43b() { # LU-5690
+	[[ $(lustre_version_code mgs) -ge $(version_code 2.7.62) ]] ||
+		{ skip "Need MGS version 2.7.62+"; return; }
+
+	if [[ -z "$fs2mds_DEV" ]]; then
+		is_blkdev $SINGLEMDS $(mdsdevname ${SINGLEMDS//mds/}) &&
+		skip_env "mixed loopback and real device not working" && return
+	fi
+
+	local fs2mdsdev=$(mdsdevname 1_2)
+	local fs2mdsvdev=$(mdsvdevname 1_2)
+
+	# temporarily use fs2mds as fs2mgs
+	local fs2mgs=fs2mds
+	local fs2mgsdev=$fs2mdsdev
+	local fs2mgsvdev=$fs2mdsvdev
+
+	local fsname=test1234
+
+	load_module llite/lustre
+	local client_ip=$(host_nids_address $HOSTNAME $NETTYPE)
+	local host=${client_ip//*./}
+	local net=${client_ip/%$host/}
+	local nosquash_nids=$(h2$NETTYPE $net[$host,$host,$host])
+
+	add $fs2mgs $(mkfs_opts mgs $fs2mgsdev) --fsname=$fsname \
+		--param mdt.root_squash=$RUNAS_ID:$RUNAS_ID \
+		--param mdt.nosquash_nids=$nosquash_nids \
+		--reformat $fs2mgsdev $fs2mgsvdev || error "add fs2mgs failed"
+	start $fs2mgs $fs2mgsdev $MGS_MOUNT_OPTS  || error "start fs2mgs failed"
+	stop $fs2mgs -f || error "stop fs2mgs failed"
 	cleanup
 }
-run_test 43 "check root_squash and nosquash_nids"
+run_test 43b "parse nosquash_nids with commas in expr_list"
 
 test_44() { # 16317
 	setup
@@ -4073,7 +4108,7 @@ test_64() {
 	mount_client $MOUNT || error "Unable to mount client"
 	stop_ost2 || error "Unable to stop second ost"
 	echo "$LFS df"
-	$LFS df --lazy || error "lfs df failed"
+	$LFS df --lazy
 	umount_client $MOUNT -f || error “unmount $MOUNT failed”
 	cleanup_nocli || error "cleanup_nocli failed with $?"
 	#writeconf to remove all ost2 traces for subsequent tests
@@ -4819,10 +4854,8 @@ run_test 76c "verify changelog_mask is applied with set_param -P"
 
 test_77() { # LU-3445
 	local server_version=$(lustre_version_code $SINGLEMDS)
-
-	[[ $server_version -ge $(version_code 2.2.60) ]] &&
-	[[ $server_version -le $(version_code 2.4.0) ]] &&
-		skip "Need MDS version < 2.2.60 or > 2.4.0" && return
+	[[ $server_version -ge $(version_code 2.8.55) ]] ||
+		{ skip "Need MDS version 2.8.55+ "; return; }
 
 	if [[ -z "$fs2ost_DEV" || -z "$fs2mds_DEV" ]]; then
 		is_blkdev $SINGLEMDS $(mdsdevname ${SINGLEMDS//mds/}) &&
@@ -4843,7 +4876,7 @@ test_77() { # LU-3445
 		error "start fs2mds failed"
 
 	mgsnid=$(do_facet fs2mds $LCTL list_nids | xargs | tr ' ' ,)
-	[[ $mgsnid = *,* ]] || mgsnid+=",$mgsnid"
+	mgsnid="$mgsnid,$mgsnid:$mgsnid"
 
 	add fs2ost $(mkfs_opts ost1 $fs2ostdev) --mgsnode=$mgsnid \
 		--failnode=$failnid --fsname=$fsname \
@@ -4864,8 +4897,12 @@ test_78() {
 		skip "only applicable to ldiskfs-based MDTs and OSTs" && return
 
 	# reformat the Lustre filesystem with a smaller size
+	local saved_MDSCOUNT=$MDSCOUNT
 	local saved_MDSSIZE=$MDSSIZE
+	local saved_OSTCOUNT=$OSTCOUNT
 	local saved_OSTSIZE=$OSTSIZE
+	MDSCOUNT=1
+	OSTCOUNT=1
 	MDSSIZE=$((MDSSIZE - 20000))
 	OSTSIZE=$((OSTSIZE - 20000))
 	reformat || error "(1) reformat Lustre filesystem failed"
@@ -4880,11 +4917,26 @@ test_78() {
 	local i
 	local file
 	local num_files=100
+
 	mkdir $MOUNT/$tdir || error "(3) mkdir $MOUNT/$tdir failed"
+	$LFS df; $LFS df -i
 	for i in $(seq $num_files); do
 		file=$MOUNT/$tdir/$tfile-$i
-		dd if=/dev/urandom of=$file count=1 bs=1M ||
+		dd if=/dev/urandom of=$file count=1 bs=1M || {
+			$LCTL get_param osc.*.cur*grant*
+			$LFS df; $LFS df -i;
+			# stop creating files if there is no more space
+			if [ ! -e $file ]; then
+				num_files=$((i - 1))
+				break
+			fi
+
+			$LFS getstripe -v $file
+			local ost_idx=$(LFS getstripe -i $file)
+			do_facet ost$((ost_idx + 1)) \
+				$LCTL get_param obdfilter.*.*grant*
 			error "(4) create $file failed"
+		}
 	done
 
 	# unmount the Lustre filesystem
@@ -4996,6 +5048,9 @@ test_78() {
 	# unmount and reformat the Lustre filesystem
 	cleanup || error "(12) cleanup Lustre filesystem failed"
 	combined_mgs_mds || stop_mgs || error "(13) stop mgs failed"
+
+	MDSCOUNT=$saved_MDSCOUNT
+	OSTCOUNT=$saved_OSTCOUNT
 	reformat || error "(14) reformat Lustre filesystem failed"
 }
 run_test 78 "run resize2fs on MDT and OST filesystems"
@@ -5338,7 +5393,8 @@ test_82b() { # LU-4665
 	wait_update $HOSTNAME "$LCTL get_param -n lov.$FSNAME-*.pools.$TESTNAME|
 			       sort -u | tr '\n' ' ' " "$ost_targets_uuid" ||
 					error "wait_update $ost_pool failed"
-	pool_list $ost_pool || error "list OST pool $ost_pool failed"
+	[[ -z $(list_pool $ost_pool) ]] &&
+			error "list OST pool $ost_pool failed"
 
 	# If [--pool|-p <pool_name>] is set with [--ost-list|-o <ost_indices>],
 	# then the OSTs must be the members of the pool.
@@ -5753,19 +5809,14 @@ test_98()
 	local temp=$MDS_MOUNT_OPTS
 
 	setup
-	check_mount || return 41
+	check_mount || error "mount failed"
 	mountopt="user_xattr"
-	for x in $(seq 1 400); do
+	for ((x = 1; x <= 400; x++)); do
 		mountopt="$mountopt,user_xattr"
 	done
-	stop_mds
-	MDS_MOUNT_OPTS="-o $mountopt"
-	out_str=$(start_mds 2>&1)
-	[[ "$out_str" =~ "mount options exceeds page size of kernel" ]] \
-	|| error "Buffer overflow check failed"
-	MDS_MOUNT_OPTS=$temp
-	start_mds
-	cleanup || return $?
+	remount_client $mountopt $MOUNT  2>&1 | grep "too long" ||
+		error "Buffer overflow check failed"
+	cleanup || error "cleanup failed"
 }
 run_test 98 "Buffer-overflow check while parsing mount_opts"
 
@@ -6074,6 +6125,32 @@ test_124()
 	stopall
 }
 run_test 124 "test ost registration failure after writeconf"
+
+test_101() {
+	local createmany_oid
+	local dev=$FSNAME-OST0000-osc-MDT0000
+	setup
+
+	createmany -o $DIR1/$tfile-%d 50000 &
+	createmany_oid=$!
+	# MDT->OST reconnection causes MDT<->OST last_id synchornisation
+	# via osp_precreate_cleanup_orphans.
+	for ((i = 0; i < 100; i++)); do
+		for ((k = 0; k < 10; k++)); do
+			do_facet $SINGLEMDS "$LCTL --device $dev deactivate;" \
+					    "$LCTL --device $dev activate"
+		done
+
+		ls -asl $MOUNT | grep '???' &&
+			(kill -9 $createmany_oid &>/dev/null; \
+			 error "File hasn't object on OST")
+
+		kill -s 0 $createmany_oid || break
+	done
+	wait $createmany_oid
+	cleanup
+}
+run_test 101 "Race MDT->OST reconnection with create"
 
 if ! combined_mgs_mds ; then
 	stop mgs
