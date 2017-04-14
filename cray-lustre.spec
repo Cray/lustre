@@ -136,6 +136,10 @@ sed -i '1i%%define _prefix /' lustre.spec.in
 sed -i '1i%%define _includedir /usr/include' lustre.spec.in
 sed -i '/Requires: kernel = %{krequires}/d' lustre.spec.in
 sed -i '/Release.*/c\Release: %{release}' lustre.spec.in
+%if %{with dal}
+sed -i '/%%global requires_kmod_name kmod-%%{lustre_name}/c\%%global requires_kmod_name %%{lustre_name}-kmp' lustre.spec.in
+sed -i "/%%global requires_kmod_version %%{version}/c\%%global requires_kmod_version %%{version}_%%(echo %%{krequires} | sed -r 'y\/-\/_\/;')" lustre.spec.in
+%endif
 %if %{with service} || %{with compute} || %{with dal}
 sed -i 's/kernel_module_package /cray_kernel_module_package /g' lustre.spec.in
 %endif
