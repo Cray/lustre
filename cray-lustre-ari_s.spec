@@ -31,7 +31,7 @@ Name: %{namespace}-%{intranamespace_name}
 Release: %{release}
 Requires: %{switch_requires}
 Summary: Lustre File System for Gemini Service Nodes
-Version: %{_version}_%{kernel_version}_%{kernel_release}
+Version: %{_version}_%{kernel_version}
 Source0: %{source_name}.tar.bz2
 Source1: %{vendor_namespace}-%{vendor_name}-switch-%{_version}.tar.bz2
 Source99: cray-lustre-rpmlintrc
@@ -45,9 +45,13 @@ Summary: Lustre networking for Gemini Service Nodes
 
 %description
 Userspace tools and files for the Lustre file system on XT SIO nodes.
+kernel_version: %{kernel_version}
+kernel_release: %{kernel_release}
 
 %description lnet
 Userspace tools and files for Lustre networking on XT SIO nodes.
+kernel_version: %{kernel_version}
+kernel_release: %{kernel_release}
 
 %package -n cray-lustre-cray_ari_s-devel
 Group: Development/Libraries
@@ -57,6 +61,8 @@ Summary: Cray Lustre Header files
 %description -n cray-lustre-cray_ari_s-devel
 Development files for building against Lustre library.
 Includes headers, dynamic, and static libraries.
+kernel_version: %{kernel_version}
+kernel_release: %{kernel_release}
 
 %prep
 # using source_name here results in too deep of a macro stack, so use

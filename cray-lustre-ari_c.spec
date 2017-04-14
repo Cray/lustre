@@ -29,7 +29,7 @@ License: GPL
 Name: %{namespace}-%{intranamespace_name}
 Release: %release
 Summary: Lustre File System for CNL
-Version: %{_version}_%{kernel_version}_%{kernel_release}
+Version: %{_version}_%{kernel_version}
 Source: %{source_name}.tar.bz2
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
@@ -48,6 +48,8 @@ Userspace tools and files for the Lustre file system on XT compute nodes.
 
 %description lnet
 Userspace tools and files for Lustre networking on XT compute nodes.
+kernel_version: %{kernel_version}
+kernel_release: %{kernel_release}
 
 %prep
 # using source_name here results in too deep of a macro stack, so use

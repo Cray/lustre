@@ -25,7 +25,7 @@ License: GPLv2
 Name: %{namespace}-%{intranamespace_name}
 Release: %release
 Summary: Lustre File System for CLFS CentOS Nodes
-Version: %{_version}_%{local_kernel_version}_%{kernel_release}
+Version: %{_version}_%{local_kernel_version}
 Source: %{source_name}.tar.bz2
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
@@ -36,6 +36,8 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %description
 Userspace tools and files for the Lustre file system on Apollo CentOS nodes.
+kernel_version: %{local_kernel_version}
+kernel_release: %{kernel_release}
 
 %prep
 # using source_name here results in too deep of a macro stack, so use
