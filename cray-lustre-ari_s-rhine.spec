@@ -40,7 +40,7 @@ Name: %{namespace}-%{intranamespace_name}
 Release: %{release}
 Requires: module-init-tools
 Summary: Lustre File System for Aries Service Nodes running CLE Rhine
-Version: %{_version}_%{kernel_version}_%{kernel_release}
+Version: %{_version}_%{kernel_version}
 Source0: %{source_name}.tar.bz2
 Source1: %{vendor_namespace}-%{vendor_name}-switch-%{_version}.tar.bz2
 Source99: cray-lustre-rpmlintrc
@@ -56,9 +56,13 @@ Summary: Lustre networking for Gemini Service Nodes
 %description
 Kernel modules and userspace tools needed for a Lustre client on XC SLES-based
 service nodes running the CLE Rhine release.
+kernel_version: %{kernel_version}
+kernel_release: %{kernel_release}
 
 %description lnet
 Userspace tools and files for Lustre networking on XT SIO nodes.
+kernel_version: %{kernel_version}
+kernel_release: %{kernel_release}
 
 %package -n cray-lustre-cray_ari_s-%{vendor_version}-devel
 Group: Development/Libraries
@@ -69,6 +73,8 @@ Provides: cray-lnet-%{vendor_version}-devel
 %description -n cray-lustre-cray_ari_s-%{vendor_version}-devel
 Development files for building against Lustre library.
 Includes headers, dynamic, and static libraries.
+kernel_version: %{kernel_version}
+kernel_release: %{kernel_release}
 
 %prep
 # using source_name here results in too deep of a macro stack, so use
