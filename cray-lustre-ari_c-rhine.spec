@@ -3,11 +3,13 @@
 %define flavor cray_ari_c
 %define intranamespace_name %{vendor_name}-%{flavor}_rhine
 %define branch trunk
+%define pc_files cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc cray-lustre-ptlctl-devel.pc
 %define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
 %define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-source)
 %define cray_kernel_version %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease) 
+%define _includedir /usr/include
 
 BuildRequires: cray-gni-devel
 BuildRequires: cray-gni-headers
@@ -105,7 +107,28 @@ fi
 make DESTDIR=${RPM_BUILD_ROOT} install 
 %{__install} -D -m 0644 ${PWD}/Module.symvers %{buildroot}/opt/cray/%{name}/%{version}/symvers/%{flavor}/Module.symvers
 # Install this just so we could verify the version matches the _s version
-%{__install} -D -m 0644 config.h %{buildroot}/usr/%{_includedir}/lustre/%{flavor}/config.h
+%{__install} -D -m 0644 config.h %{buildroot}/%{_includedir}/lustre/%{flavor}/config.h
+%{__install} -D -m 0644 config.h %{buildroot}/%{_includedir}/lustre/config.h
+
+for f in %{pc_files}
+do
+    eval "sed -i 's,^prefix=.*$,prefix=/usr,' %{_sourcedir}/${f}"
+    install -D -m 0644  %{_sourcedir}/${f} %{buildroot}/%{_pkgconfigdir}/${f}
+    %{__rm} -f %{_sourcedir}/${f}
+done
+
+# This is a not so pleasent *HACK* but rather than change the lustre build we list
+# out the required header files for the lnet devel package.
+for header in api.h lib-dlc.h lib-lnet.h lib-types.h lnetctl.h lnet.h lnetst.h nidstr.h socklnd.h types.h
+do
+    %{__install} -D -m 0644 lnet/include/lnet/${header} %{buildroot}/%{_includedir}/lnet/${header}
+done
+for header in libcfs.h list.h curproc.h bitmap.h byteorder.h err.h libcfs_debug.h libcfs_private.h libcfs_cpu.h libcfs_ioctl.h \
+                       libcfs_prim.h libcfs_time.h libcfs_string.h libcfs_kernelcomm.h libcfs_workitem.h libcfs_hash.h libcfs_heap.h libcfs_fail.h \
+                       linux/kp30.h linux/libcfs.h linux/linux-fs.h linux/linux-lock.h linux/linux-mem.h linux/linux-prim.h linux/linux-time.h linux/linux-cpu.h linux/linux-crypto.h
+do
+    %{__install} -D -m 0644 libcfs/include/libcfs/${header} %{buildroot}/%{_includedir}/libcfs/${header}
+done
 
 for dir in init.d sysconfig ha.d; do
     %{__rm} -fr %{buildroot}/etc/$dir
@@ -116,7 +139,7 @@ done
 %{__rm} -f %{buildroot}/lib/lustre/lc_common
 
 # Remove all the extras not needed for CNL
-for dir in %{_libdir}/lustre %{_includedir} %{_datadir}; do
+for dir in %{_libdir}/lustre %{_datadir}; do
     find %{buildroot}$dir -type f | xargs rm -fv
     rm -frv %{buildroot}$dir
 done
@@ -144,6 +167,8 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 %exclude %dir %{_bindir}
 %{_mandir}
 %exclude %dir %{_mandir}
+%{_includedir}
+%exclude %dir %{_includedir}
 %config /etc/udev/rules.d/99-lustre.rules
 
 %files lnet
@@ -154,9 +179,8 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 %files -n cray-lustre-cray_ari_c-%{vendor_version}-devel
 %defattr(-,root,root)
 /opt/cray/%{name}/%{version}/symvers/%{flavor}
-/usr/%{_includedir}/lustre/%{flavor}/config.h
-%exclude %{_includedir}
 %exclude %{_sysconfdir}
+%{_includedir}/lustre/%{flavor}/config.h
 
 %post
 

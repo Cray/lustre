@@ -11,6 +11,7 @@
 
 %define kernel_version %(rpm -q --qf '%{VERSION}' kernel-source)
 %define kernel_release %(rpm -q --qf '%{RELEASE}' kernel-source)
+%define _includedir /usr/include
 
 BuildRequires: cray-gni-devel
 BuildRequires: cray-gni-headers
@@ -104,7 +105,7 @@ done
 %{__rm} -f %{buildroot}/lib/lustre/lc_common
 
 # Remove all the extras not needed for CNL
-for dir in %{_libdir} %{_mandir} %{_bindir} %{_includedir} %{_datadir}; do
+for dir in %{_libdir} %{_mandir} %{_bindir} %{_datadir}; do
     find %{buildroot}$dir -type f | xargs rm -fv
     rm -frv %{buildroot}$dir
 done
@@ -120,6 +121,7 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 /lib/modules/*
 /sbin/mount.lustre
 /sbin/lctl
+%{_includedir}
 %config /etc/udev/rules.d/99-lustre.rules
 
 %files lnet
