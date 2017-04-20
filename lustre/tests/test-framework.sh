@@ -551,9 +551,8 @@ load_modules_local() {
 
 	load_module ../libcfs/libcfs/libcfs
 
-    [ "$PTLDEBUG" ] && lctl set_param debug="$PTLDEBUG"
-    [ "$SUBSYSTEM" ] && lctl set_param subsystem_debug="${SUBSYSTEM# }"
-    load_module ../lnet/lnet/lnet
+	set_default_debug
+	load_module ../lnet/lnet/lnet
 	case $NETTYPE in
 	o2ib)
 		LNETLND="o2iblnd/ko2iblnd"
@@ -1287,6 +1286,11 @@ mount_facet() {
 	if [ $RC -ne 0 ]; then
 		echo "Start of ${!dev} on ${facet} failed ${RC}"
 		return $RC
+	fi
+
+	health=$(do_facet ${facet} "$LCTL get_param -n health_check")
+	if [[ "$health" != "healthy" ]]; then
+		error "$facet is in a unhealthy state"
 	fi
 
 	set_default_debug_facet $facet
@@ -3451,12 +3455,14 @@ stopall() {
 }
 
 cleanup_echo_devs () {
-    local devs=$($LCTL dl | grep echo | awk '{print $4}')
+	trap 0
+	local dev
+	local devs=$($LCTL dl | grep echo | awk '{print $4}')
 
-    for dev in $devs; do
-        $LCTL --device $dev cleanup
-        $LCTL --device $dev detach
-    done
+	for dev in $devs; do
+		$LCTL --device $dev cleanup
+		$LCTL --device $dev detach
+	done
 }
 
 cleanupall() {
@@ -6254,8 +6260,17 @@ oos_full() {
 	return $OSCFULL
 }
 
-pool_list () {
-   do_facet mgs lctl pool_list $1
+list_pool() {
+	echo -e "$(do_facet $SINGLEMDS $LCTL pool_list $1 | sed '1d')"
+}
+
+check_pool_not_exist() {
+	local fsname=${1%%.*}
+	local poolname=${1##$fsname.}
+	[[ $# -ne 1 ]] && return 0
+	[[ x$poolname = x ]] &&  return 0
+	list_pool $fsname | grep -w $1 && return 1
+	return 0
 }
 
 create_pool() {
@@ -6301,13 +6316,12 @@ remove_pool_from_list () {
 }
 
 destroy_pool_int() {
-    local ost
-    local OSTS=$(do_facet $SINGLEMDS lctl pool_list $1 | \
-        awk '$1 !~ /^Pool:/ {print $1}')
-    for ost in $OSTS; do
-        do_facet mgs lctl pool_remove $1 $ost
-    done
-    do_facet mgs lctl pool_destroy $1
+	local ost
+	local OSTS=$(list_pool $1)
+	for ost in $OSTS; do
+		do_facet mgs lctl pool_remove $1 $ost
+	done
+	do_facet mgs lctl pool_destroy $1
 }
 
 # <fsname>.<poolname> or <poolname>
@@ -6319,7 +6333,8 @@ destroy_pool() {
 
 	local RC
 
-	pool_list $fsname.$poolname || return $?
+	check_pool_not_exist $fsname.$poolname
+	[[ $? -eq 0 ]] && return 0
 
 	destroy_pool_int $fsname.$poolname
 	RC=$?
@@ -6336,6 +6351,7 @@ destroy_pool() {
 		2>/dev/null || echo foo" "foo" || error "destroy pool failed $1"
 
 	remove_pool_from_list $fsname.$poolname
+
 	return $RC
 }
 
@@ -6343,8 +6359,6 @@ destroy_pools () {
     local fsname=${1:-$FSNAME}
     local poolname
     local listvar=${fsname}_CREATED_POOLS
-
-    pool_list $fsname
 
     [ x${!listvar} = x ] && return 0
 

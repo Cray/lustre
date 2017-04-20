@@ -166,14 +166,17 @@ int client_import_del_conn(struct obd_import *imp, struct obd_uuid *uuid)
                         ptlrpc_connection_put(imp->imp_connection);
                         imp->imp_connection = NULL;
 
-                        dlmexp = class_conn2export(&imp->imp_dlm_handle);
-                        if (dlmexp && dlmexp->exp_connection) {
-                                LASSERT(dlmexp->exp_connection ==
-                                        imp_conn->oic_conn);
-                                ptlrpc_connection_put(dlmexp->exp_connection);
-                                dlmexp->exp_connection = NULL;
-                        }
-                }
+			dlmexp = class_conn2export(&imp->imp_dlm_handle);
+			if (dlmexp && dlmexp->exp_connection) {
+				LASSERT(dlmexp->exp_connection ==
+					imp_conn->oic_conn);
+				ptlrpc_connection_put(dlmexp->exp_connection);
+				dlmexp->exp_connection = NULL;
+			}
+
+			if (dlmexp != NULL)
+				class_export_put(dlmexp);
+		}
 
 		list_del(&imp_conn->oic_item);
                 ptlrpc_connection_put(imp_conn->oic_conn);
@@ -818,21 +821,6 @@ static int target_handle_reconnect(struct lustre_handle *conn,
                cluuid->uuid, exp, conn->cookie);
         RETURN(0);
 }
-
-void target_client_add_cb(struct obd_device *obd, __u64 transno, void *cb_data,
-                          int error)
-{
-        struct obd_export *exp = cb_data;
-
-        CDEBUG(D_RPCTRACE, "%s: committing for initial connect of %s\n",
-               obd->obd_name, exp->exp_client_uuid.uuid);
-
-	spin_lock(&exp->exp_lock);
-	exp->exp_need_sync = 0;
-	spin_unlock(&exp->exp_lock);
-	class_export_cb_put(exp);
-}
-EXPORT_SYMBOL(target_client_add_cb);
 
 static void
 check_and_start_recovery_timer(struct obd_device *obd,
@@ -1528,7 +1516,7 @@ static void target_finish_recovery(struct obd_device *obd)
 			obd->obd_stale_clients == 1 ? "was" : "were");
 	}
 
-        ldlm_reprocess_all_ns(obd->obd_namespace);
+	ldlm_reprocess_recovery_done(obd->obd_namespace);
 	spin_lock(&obd->obd_recovery_task_lock);
 	if (!list_empty(&obd->obd_req_replay_queue) ||
 	    !list_empty(&obd->obd_lock_replay_queue) ||
@@ -1720,8 +1708,13 @@ static void extend_recovery_timer(struct obd_device *obd, int drt, bool extend)
                 to = drt;
         }
 
-        if (to > obd->obd_recovery_time_hard)
-                to = obd->obd_recovery_time_hard;
+	if (to > obd->obd_recovery_time_hard) {
+		to = obd->obd_recovery_time_hard;
+		CWARN("%s: extended recovery timer reaching hard "
+		      "limit: %d, extend: %d\n",
+		      obd->obd_name, to, extend);
+	}
+
 	if (obd->obd_recovery_timeout < to) {
                 obd->obd_recovery_timeout = to;
 		end = obd->obd_recovery_start + to;
@@ -1764,6 +1757,10 @@ check_and_start_recovery_timer(struct obd_device *obd,
 	/* Convert the service time to RPC timeout,
 	 * and reuse service_time to limit stack usage. */
 	service_time = at_est2timeout(service_time);
+
+	if (OBD_FAIL_CHECK(OBD_FAIL_TGT_SLUGGISH_NET) &&
+	    service_time < at_extra)
+		service_time = at_extra;
 
 	/* We expect other clients to timeout within service_time, then try
 	 * to reconnect, then try the failover server.  The max delay between

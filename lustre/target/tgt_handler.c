@@ -1670,6 +1670,9 @@ int tgt_brw_lock(struct ldlm_namespace *ns, struct ldlm_res_id *res_id,
 	LASSERT(mode == LCK_PR || mode == LCK_PW);
 	LASSERT(!lustre_handle_is_used(lh));
 
+	if (ns->ns_obd->obd_recovering)
+		RETURN(0);
+
 	if (nrbufs == 0 || !(nb[0].rnb_flags & OBD_BRW_SRVLOCK))
 		RETURN(0);
 
@@ -2032,6 +2035,7 @@ int tgt_brw_write(struct tgt_session_info *tsi)
 	cksum_type_t		 cksum_type = OBD_CKSUM_CRC32;
 	bool			 no_reply = false, mmap;
 	struct tgt_thread_big_cache *tbc = req->rq_svc_thread->t_data;
+	bool wait_sync = false;
 
 	ENTRY;
 
@@ -2201,6 +2205,12 @@ skip_transfer:
 		 * has timed out the request already */
 		no_reply = true;
 
+	for (i = 0; i < niocount; i++) {
+		if (!(local_nb[i].lnb_flags & OBD_BRW_ASYNC)) {
+			wait_sync = true;
+			break;
+		}
+	}
 	/*
 	 * Disable sending mtime back to the client. If the client locked the
 	 * whole object, then it has already updated the mtime on its side,
@@ -2236,15 +2246,16 @@ out_lock:
 	if (desc)
 		ptlrpc_free_bulk(desc);
 out:
-	if (no_reply) {
+	if (unlikely(no_reply || (exp->exp_obd->obd_no_transno && wait_sync))) {
 		req->rq_no_reply = 1;
 		/* reply out callback would free */
 		ptlrpc_req_drop_rs(req);
-		LCONSOLE_WARN("%s: Bulk IO write error with %s (at %s), "
-			      "client will retry: rc %d\n",
-			      exp->exp_obd->obd_name,
-			      obd_uuid2str(&exp->exp_client_uuid),
-			      obd_export_nid2str(exp), rc);
+		if (!exp->exp_obd->obd_no_transno)
+			LCONSOLE_WARN("%s: Bulk IO write error with %s (at %s),"
+				      " client will retry: rc = %d\n",
+				      exp->exp_obd->obd_name,
+				      obd_uuid2str(&exp->exp_client_uuid),
+				      obd_export_nid2str(exp), rc);
 	}
 	memory_pressure_clr();
 	RETURN(rc);

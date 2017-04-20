@@ -803,14 +803,19 @@ static void tgt_cb_last_committed(struct lu_env *env, struct thandle *th,
 	} else {
 		spin_unlock(&ccb->llcc_tgt->lut_translock);
 	}
+
+	CDEBUG(D_HA, "%s: transno %lld is committed\n",
+	       ccb->llcc_tgt->lut_obd->obd_name, ccb->llcc_transno);
+
 out:
 	class_export_cb_put(ccb->llcc_exp);
-	if (ccb->llcc_transno)
-		CDEBUG(D_HA, "%s: transno "LPD64" is committed\n",
-		       ccb->llcc_tgt->lut_obd->obd_name, ccb->llcc_transno);
 	OBD_FREE_PTR(ccb);
 }
 
+/**
+ * Add commit callback function, it returns a non-zero value to inform
+ * caller to use sync transaction if necessary.
+*/
 static int tgt_last_commit_cb_add(struct thandle *th, struct lu_target *tgt,
 				  struct obd_export *exp, __u64 transno)
 {
@@ -841,7 +846,9 @@ static int tgt_last_commit_cb_add(struct thandle *th, struct lu_target *tgt,
 		/* report failure to force synchronous operation */
 		return -EPERM;
 
-	return rc;
+	/* if exp_need_sync is set, return non-zero value to force
+	 * a sync transaction. */
+	return rc ? rc : exp->exp_need_sync;
 }
 
 struct tgt_new_client_callback {
@@ -1059,6 +1066,9 @@ int tgt_client_del(const struct lu_env *env, struct obd_export *exp)
 
 	/* Do not erase record for recoverable client. */
 	if (exp->exp_flags & OBD_OPT_FAILOVER)
+		RETURN(0);
+
+	if (OBD_FAIL_CHECK(OBD_FAIL_TGT_CLIENT_DEL))
 		RETURN(0);
 
 	/* Make sure the server's last_transno is up to date.
@@ -1280,7 +1290,11 @@ static int tgt_last_rcvd_update(const struct lu_env *env, struct lu_target *tgt,
 
 	if (!lw_client) {
 		tti->tti_off = ted->ted_lr_off;
-		rc = tgt_client_data_write(env, tgt, ted->ted_lcd, &tti->tti_off, th);
+		if (CFS_FAIL_CHECK(OBD_FAIL_TGT_RCVD_EIO))
+			rc = -EIO;
+		else
+			rc = tgt_client_data_write(env, tgt, ted->ted_lcd,
+						   &tti->tti_off, th);
 		if (rc < 0) {
 			mutex_unlock(&ted->ted_lcd_lock);
 			RETURN(rc);

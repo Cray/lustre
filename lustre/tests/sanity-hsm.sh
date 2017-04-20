@@ -1443,6 +1443,8 @@ cleanup_test_12q() {
 }
 
 test_12q() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.58) ] &&
+		skip "need MDS version at least 2.7.58" && return 0
 
 	zconf_mount $(facet_host $SINGLEAGT) $MOUNT3 ||
 		error "cannot mount $MOUNT3 on $SINGLEAGT"
@@ -2991,11 +2993,8 @@ run_test 58 "Truncate a released file will trigger restore"
 
 test_59() {
 	local server_version=$(lustre_version_code $SINGLEMDS)
-
-	[[ $server_version -ge $(version_code 2.7.11) ]] ||
-	[[ $server_version -ge $(version_code 2.5.38) &&
-	   $server_version -lt $(version_code 2.5.50) ]] ||
-		{ skip "Need MDS version 2.5.38+ or 2.7.11+"; return; }
+	[[ $server_version -lt $(version_code 2.7.63) ]] &&
+		skip "Need MDS version at least 2.7.63" && return
 
 	# test needs a running copytool
 	copytool_setup
@@ -3083,7 +3082,7 @@ test_60() {
 	# and which will be rounded off to 5.
 	let elapsed=elapsed+1
 	# Ensure that the progress update occurred within the expected window.
-	if [ $elapsed -lt $interval ]; then
+	if [ $elapsed -lt $((interval - 1)) ]; then
 		error "Expected progress update after at least $interval seconds"
 	fi
 

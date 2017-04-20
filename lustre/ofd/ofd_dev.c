@@ -629,21 +629,26 @@ static int ofd_prepare(const struct lu_env *env, struct lu_device *pdev,
 static int ofd_recovery_complete(const struct lu_env *env,
 				 struct lu_device *dev)
 {
+	struct ofd_thread_info	*oti = ofd_info(env);
 	struct ofd_device	*ofd = ofd_dev(dev);
 	struct lu_device	*next = &ofd->ofd_osd->dd_lu_dev;
-	int			 rc = 0, max_precreate;
+	int			 rc = 0;
 
 	ENTRY;
 
 	/*
 	 * Grant space for object precreation on the self export.
-	 * This initial reserved space (i.e. 10MB for zfs and 280KB for ldiskfs)
+	 * The initial reserved space (i.e. 10MB for zfs and 280KB for ldiskfs)
 	 * is enough to create 10k objects. More space is then acquired for
 	 * precreation in ofd_grant_create().
 	 */
-	max_precreate = OST_MAX_PRECREATE * ofd->ofd_dt_conf.ddp_inodespace / 2;
-	ofd_grant_connect(env, dev->ld_obd->obd_self_export, max_precreate,
-			  false);
+	memset(&oti->fti_ocd, 0, sizeof(oti->fti_ocd));
+	oti->fti_ocd.ocd_grant = OST_MAX_PRECREATE / 2;
+	oti->fti_ocd.ocd_grant *= ofd->ofd_dt_conf.ddp_inodespace;
+	oti->fti_ocd.ocd_connect_flags = OBD_CONNECT_GRANT |
+					 OBD_CONNECT_GRANT_PARAM;
+	ofd_grant_connect(env, dev->ld_obd->obd_self_export, &oti->fti_ocd,
+			  true);
 	rc = next->ld_ops->ldo_recovery_complete(env, next);
 	RETURN(rc);
 }
@@ -1556,6 +1561,7 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 	struct ofd_seq		*oseq;
 	int			 rc = 0, diff;
 	int			 sync_trans = 0;
+	long			 granted = 0;
 
 	ENTRY;
 
@@ -1693,10 +1699,12 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 		if (!(oa->o_valid & OBD_MD_FLFLAGS) ||
 		    !(oa->o_flags & OBD_FL_DELORPHAN)) {
 			/* don't enforce grant during orphan recovery */
-			rc = ofd_grant_create(tsi->tsi_env,
-					      ofd_obd(ofd)->obd_self_export,
-					      &diff);
-			if (rc) {
+			granted = ofd_grant_create(tsi->tsi_env,
+						  ofd_obd(ofd)->obd_self_export,
+						   &diff);
+			if (granted < 0) {
+				rc = granted;
+				granted = 0;
 				CDEBUG(D_HA, "%s: failed to acquire grant "
 				       "space for precreate (%d): rc = %d\n",
 				       ofd_name(ofd), diff, rc);
@@ -1763,9 +1771,11 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 			       ofd_name(ofd), rc);
 
 		if (!(oa->o_valid & OBD_MD_FLFLAGS) ||
-		    !(oa->o_flags & OBD_FL_DELORPHAN))
-			ofd_grant_commit(tsi->tsi_env,
-					 ofd_obd(ofd)->obd_self_export, rc);
+		    !(oa->o_flags & OBD_FL_DELORPHAN)) {
+			ofd_grant_commit(ofd_obd(ofd)->obd_self_export, granted,
+					 rc);
+			granted = 0;
+		}
 
 		ostid_set_id(&rep_oa->o_oi, ofd_seq_last_oid(oseq));
 	}
@@ -2163,11 +2173,14 @@ static int ofd_quotactl(struct tgt_session_info *tsi)
 static inline int prolong_timeout(struct ptlrpc_request *req)
 {
 	struct ptlrpc_service_part *svcpt = req->rq_rqbd->rqbd_svcpt;
+	time_t req_timeout;
 
 	if (AT_OFF)
 		return obd_timeout / 2;
 
-	return at_est2timeout(at_get(&svcpt->scp_at_estimate));
+	req_timeout = req->rq_deadline - req->rq_arrival_time.tv_sec;
+	return max_t(time_t, at_est2timeout(at_get(&svcpt->scp_at_estimate)),
+		     req_timeout);
 }
 
 /**
@@ -2813,14 +2826,6 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
 			   "filter_ldlm_cb_client", &obd->obd_ldlm_client);
 
 	dt_conf_get(env, m->ofd_osd, &m->ofd_dt_conf);
-
-	/* Allow at most ddp_grant_reserved% of the available filesystem space
-	 * to be granted to clients, so that any errors in the grant overhead
-	 * calculations do not allow granting more space to clients than can be
-	 * written. Assumes that in aggregate the grant overhead calculations do
-	 * not have more than ddp_grant_reserved% estimation error in them. */
-	m->ofd_grant_ratio =
-		ofd_grant_ratio_conv(m->ofd_dt_conf.ddp_grant_reserved);
 
 	rc = tgt_init(env, &m->ofd_lut, obd, m->ofd_osd, ofd_common_slice,
 		      OBD_FAIL_OST_ALL_REQUEST_NET,

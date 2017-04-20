@@ -603,7 +603,7 @@ void lnet_ni_recv(lnet_ni_t *ni, void *private, lnet_msg_t *msg,
 lnet_msg_t *lnet_create_reply_msg (lnet_ni_t *ni, lnet_msg_t *get_msg);
 void lnet_set_reply_msg_len(lnet_ni_t *ni, lnet_msg_t *msg, unsigned int len);
 
-void lnet_finalize(lnet_ni_t *ni, lnet_msg_t *msg, int rc);
+void lnet_finalize(lnet_msg_t *msg, int rc);
 
 void lnet_drop_message(lnet_ni_t *ni, int cpt, void *private,
 		       unsigned int nob);

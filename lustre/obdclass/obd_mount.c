@@ -383,7 +383,7 @@ int lustre_start_mgc(struct super_block *sb)
 			if (rc == 0)
 				++i;
                         /* Stop at the first failover nid */
-			if (*ptr == ':' || *ptr == ',')
+                        if (*ptr == ':')
                                 break;
                 }
         }
@@ -411,7 +411,7 @@ int lustre_start_mgc(struct super_block *sb)
 
         /* Add any failover MGS nids */
         i = 1;
-	while (ptr && ((*ptr == ':' || *ptr == ',' ||
+	while (ptr && ((*ptr == ':' ||
 	       class_find_param(ptr, PARAM_MGSNODE, &ptr) == 0))) {
 		/* New failover node */
 		sprintf(niduuid, "%s_%x", mgcname, i);
@@ -421,7 +421,7 @@ int lustre_start_mgc(struct super_block *sb)
 				     niduuid, NULL, NULL, NULL);
 			if (rc == 0)
 				++j;
-			if (*ptr == ':' || *ptr == ',')
+			if (*ptr == ':')
 				break;
 		}
 		if (j > 0) {
@@ -1043,6 +1043,89 @@ static int lmd_parse_mgs(struct lustre_mount_data *lmd, char **ptr)
 	return 0;
 }
 
+/**
+ * Find the first delimiter (comma or colon) from the specified \a buf and
+ * make \a *endh point to the string starting with the delimiter. The commas
+ * in expression list [...] will be skipped.
+ *
+ * \param[in] buf	a delimiter-separated string
+ * \param[in] endh	a pointer to a pointer that will point to the string
+ *			starting with the delimiter
+ *
+ * \retval 0		if delimiter is found
+ * \retval 1		if delimiter is not found
+ */
+static int lmd_find_delimiter(char *buf, char **endh)
+{
+	char *c = buf;
+	int   skip = 0;
+
+	if (buf == NULL)
+		return 1;
+
+	while (*c != '\0') {
+		if (*c == '[')
+			skip++;
+		else if (*c == ']')
+			skip--;
+
+		if ((*c == ',' || *c == ':') && skip == 0) {
+			if (endh != NULL)
+				*endh = c;
+			return 0;
+		}
+
+		c++;
+	}
+
+	return 1;
+}
+
+/**
+ * Find the first valid string delimited by comma or colon from the specified
+ * \a buf and parse it to see whether it's a valid nid list. If yes, \a *endh
+ * will point to the next string starting with the delimiter.
+ *
+ * \param[in] buf	a delimiter-separated string
+ * \param[in] endh	a pointer to a pointer that will point to the string
+ *			starting with the delimiter
+ *
+ * \retval 0		if the string is a valid nid list
+ * \retval 1		if the string is not a valid nid list
+ */
+static int lmd_parse_nidlist(char *buf, char **endh)
+{
+	struct list_head nidlist;
+	char		*endp = buf;
+	char		 tmp;
+	int		 rc = 0;
+
+	if (buf == NULL)
+		return 1;
+	while (*buf == ',' || *buf == ':')
+		buf++;
+	if (*buf == ' ' || *buf == '/' || *buf == '\0')
+		return 1;
+
+	if (lmd_find_delimiter(buf, &endp) != 0)
+		endp = buf + strlen(buf);
+
+	tmp = *endp;
+	*endp = '\0';
+
+	INIT_LIST_HEAD(&nidlist);
+	if (cfs_parse_nidlist(buf, strlen(buf), &nidlist) <= 0)
+		rc = 1;
+	cfs_free_nidlist(&nidlist);
+
+	*endp = tmp;
+	if (rc != 0)
+		return rc;
+	if (endh != NULL)
+		*endh = endp;
+	return 0;
+}
+
 /** Parse mount line options
  * e.g. mount -v -t lustre -o abort_recov uml1:uml2:/lustre-client /mnt/lustre
  * dev is passed as device=uml1:/lustre by mount.lustre
@@ -1162,16 +1245,14 @@ static int lmd_parse(char *options, struct lustre_mount_data *lmd)
 			clear++;
 		} else if (strncmp(s1, "param=", 6) == 0) {
 			size_t length, params_length;
-			char *tail = strchr(s1 + 6, ',');
-			if (tail == NULL) {
+			char  *tail = s1;
+			if (lmd_find_delimiter(s1 + 6, &tail) != 0)
 				length = strlen(s1);
-			} else {
-				lnet_nid_t nid;
-				char      *param_str = tail + 1;
-				int        supplementary = 1;
-
-				while (class_parse_nid_quiet(param_str, &nid,
-							     &param_str) == 0) {
+			else {
+				char *param_str = tail + 1;
+				int   supplementary = 1;
+				while (lmd_parse_nidlist(param_str,
+							 &param_str) == 0) {
 					supplementary = 0;
 				}
 				length = param_str - s1 - supplementary;

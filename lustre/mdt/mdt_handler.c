@@ -3235,7 +3235,7 @@ static int
 mdt_intent_lock_replace(struct mdt_thread_info *info,
 			struct ldlm_lock **lockp,
 			struct mdt_lock_handle *lh,
-			__u64 flags)
+			__u64 flags, int result)
 {
         struct ptlrpc_request  *req = mdt_info_req(info);
         struct ldlm_lock       *lock = *lockp;
@@ -3244,22 +3244,24 @@ mdt_intent_lock_replace(struct mdt_thread_info *info,
 	/* If possible resent found a lock, @lh is set to its handle */
 	new_lock = ldlm_handle2lock_long(&lh->mlh_reg_lh, 0);
 
-	if (new_lock == NULL) {
-		int  rc;
+        if (new_lock == NULL && (flags & LDLM_FL_INTENT_ONLY)) {
+                lh->mlh_reg_lh.cookie = 0;
+                RETURN(0);
+        }
 
-		if (flags & LDLM_FL_INTENT_ONLY) {
-			rc = 0;
-		} else if (flags & LDLM_FL_RESENT) {
-			LDLM_DEBUG_NOLOCK("Invalid lock handle "LPX64"\n",
-					  lh->mlh_reg_lh.cookie);
-			rc = -ESTALE;
-		} else {
-			LASSERTF(new_lock != NULL,
-				 "lockh "LPX64"\n", lh->mlh_reg_lh.cookie);
-		}
+	if (new_lock == NULL && (flags & LDLM_FL_RESENT)) {
+		/* Lock is pinned by ldlm_handle_enqueue0() as it is
+		 * a resend case, however, it could be already destroyed
+		 * due to client eviction or a raced cancel RPC. */
+		LDLM_DEBUG_NOLOCK("Invalid lock handle "LPX64"\n",
+				  lh->mlh_reg_lh.cookie);
 		lh->mlh_reg_lh.cookie = 0;
-		RETURN(rc);
+		RETURN(-ESTALE);
 	}
+
+	LASSERTF(new_lock != NULL,
+		 "lockh "LPX64" flags "LPX64" rc %d\n",
+		 lh->mlh_reg_lh.cookie, flags, result);
 
         /*
          * If we've already given this lock to a client once, then we should
@@ -3414,7 +3416,7 @@ static int mdt_intent_getxattr(enum mdt_it_code opcode,
 	}
 #endif
 
-	rc = mdt_intent_lock_replace(info, lockp, lhc, flags);
+	rc = mdt_intent_lock_replace(info, lockp, lhc, flags, 0);
 	RETURN(rc);
 }
 
@@ -3475,7 +3477,7 @@ static int mdt_intent_getattr(enum mdt_it_code opcode,
                 GOTO(out_ucred, rc = ELDLM_LOCK_ABORTED);
         }
 
-	rc = mdt_intent_lock_replace(info, lockp, lhc, flags);
+	rc = mdt_intent_lock_replace(info, lockp, lhc, flags, rc);
         EXIT;
 out_ucred:
         mdt_exit_ucred(info);
@@ -3545,7 +3547,7 @@ out_obj:
 	mdt_object_put(info->mti_env, obj);
 
 	if (rc == 0 && lustre_handle_is_used(&lhc->mlh_reg_lh))
-		rc = mdt_intent_lock_replace(info, lockp, lhc, flags);
+		rc = mdt_intent_lock_replace(info, lockp, lhc, flags, rc);
 
 out:
 	lhc->mlh_reg_lh.cookie = 0;
@@ -3600,7 +3602,7 @@ static int mdt_intent_reint(enum mdt_it_code opcode,
 	if (lustre_handle_is_used(&lhc->mlh_reg_lh) &&
 	    (rc == 0 || rc == -MDT_EREMOTE_OPEN)) {
 		rep->lock_policy_res2 = 0;
-		rc = mdt_intent_lock_replace(info, lockp, lhc, flags);
+		rc = mdt_intent_lock_replace(info, lockp, lhc, flags, rc);
 		RETURN(rc);
 	}
 
@@ -5441,9 +5443,11 @@ static int mdt_obd_connect(const struct lu_env *env,
 			mdt_export_stats_init(obd, lexp, localdata);
 
 		/* For phase I, sync for cross-ref operation. */
-		spin_lock(&lexp->exp_lock);
-		lexp->exp_keep_sync = 1;
-		spin_unlock(&lexp->exp_lock);
+		if (data->ocd_connect_flags & OBD_CONNECT_MDS_MDS) {
+			spin_lock(&lexp->exp_lock);
+			lexp->exp_keep_sync = 1;
+			spin_unlock(&lexp->exp_lock);
+		}
 	}
 out:
 	if (rc != 0) {

@@ -556,8 +556,9 @@ static void append_unique(char *buf, char *prefix, char *key, char *val,
 
 		strscat(buf, key, maxbuflen);
 		if (val != NULL) {
-			strscat(buf, "=", maxbuflen);
+			strscat(buf, "=\"", maxbuflen);
 			strscat(buf, val, maxbuflen);
+			strscat(buf, "\"", maxbuflen);
 		}
 	}
 }
@@ -567,7 +568,7 @@ static int enable_default_ext4_features(struct mkfs_opts *mop, char *anchor,
 {
 	if (IS_OST(&mop->mo_ldd)) {
 		append_unique(anchor, user_spec ? "," : " -O ",
-			      "extents", NULL, sizeof(mop->mo_mkfsopts));
+			      "extents", NULL, maxbuflen);
 		append_unique(anchor, ",", "uninit_bg", NULL, maxbuflen);
 	} else if (IS_MDT(&mop->mo_ldd)) {
 		append_unique(anchor, user_spec ? "," : " -O ",
@@ -703,9 +704,9 @@ int ldiskfs_make_lustre(struct mkfs_opts *mop)
 	}
 
 	if (mop->mo_device_kb != 0) {
-		if (mop->mo_device_kb < 8096) {
+		if (mop->mo_device_kb < 32384) {
 			fprintf(stderr, "%s: size of filesystem must be larger "
-				"than 8MB, but is set to %lldKB\n",
+				"than 32MB, but is set to %lldKB\n",
 				progname, (long long)mop->mo_device_kb);
 			return EINVAL;
 		}

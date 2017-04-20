@@ -269,7 +269,7 @@ derive_key_lucid(const gss_krb5_lucid_key_t *in, gss_krb5_lucid_key_t *out,
 #if HAVE_KRB5INT_DERIVE_KEY
 	krb5_key key_in, key_out;
 #else
-	int keylength;
+	int keylength __attribute__ ((unused));
 #endif
 
 	/*

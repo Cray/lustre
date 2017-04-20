@@ -1410,7 +1410,8 @@ static dmu_buf_t *osd_mkreg(const struct lu_env *env, struct osd_object *obj,
 	 * blocksize is selected based on the file size rather than the
 	 * making broad assumptions based on the osd type.
 	 */
-	if ((fid_is_idif(fid) || fid_is_norm(fid)) && osd->od_is_ost) {
+	if ((fid_is_idif(fid) || fid_is_norm(fid) || fid_is_echo(fid)) &&
+	    osd->od_is_ost) {
 		rc = -dmu_object_set_blocksize(osd->od_os, db->db_object,
 					       osd->od_max_blksz, 0, oh->ot_tx);
 		if (unlikely(rc)) {

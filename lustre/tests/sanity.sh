@@ -3094,7 +3094,7 @@ test_38() {
 }
 run_test 38 "open a regular file with O_DIRECTORY should return -ENOTDIR ==="
 
-test_39() {
+test_39a() { # was test_39
 	touch $DIR/$tfile
 	touch $DIR/${tfile}2
 #	ls -l  $DIR/$tfile $DIR/${tfile}2
@@ -3112,7 +3112,7 @@ test_39() {
 		error "O_TRUNC didn't change timestamps"
 	fi
 }
-run_test 39 "mtime changed on create ==========================="
+run_test 39a "mtime changed on create ==========================="
 
 test_39b() {
 	test_mkdir -p -c1 $DIR/$tdir
@@ -3521,7 +3521,7 @@ test_39p() {
 run_test 39p "remote directory cached attributes updated after create ========"
 
 
-test_39p() { # LU-8041
+test_39q() { # LU-8041
 	local testdir=$DIR/$tdir
 	mkdir -p $testdir
 	multiop_bg_pause $testdir D_c || error "multiop failed"
@@ -3531,7 +3531,7 @@ test_39p() { # LU-8041
 	local atime=$(stat -c %X $testdir)
 	[ "$atime" -ne 0 ] || error "atime is zero"
 }
-run_test 39p "close won't zero out atime"
+run_test 39q "close won't zero out atime"
 
 test_40() {
 	dd if=/dev/zero of=$DIR/$tfile bs=4096 count=1
@@ -3773,7 +3773,7 @@ test_42e() { # bug22074
 }
 run_test 42e "verify sub-RPC writes are not done synchronously"
 
-test_43() {
+test_43A() { # was test_43
 	test_mkdir -p $DIR/$tdir
 	cp -p /bin/ls $DIR/$tdir/$tfile
 	$MULTIOP $DIR/$tdir/$tfile Ow_c &
@@ -3784,7 +3784,7 @@ test_43() {
 	$DIR/$tdir/$tfile && error || true
 	kill -USR1 $pid
 }
-run_test 43 "execution of file opened for write should return -ETXTBSY"
+run_test 43A "execution of file opened for write should return -ETXTBSY"
 
 test_43a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
@@ -3825,12 +3825,12 @@ test_43c() {
 }
 run_test 43c "md5sum of copy into lustre========================"
 
-test_44() {
+test_44A() { # was test_44
 	[[ $OSTCOUNT -lt 2 ]] && skip_env "skipping 2-stripe test" && return
 	dd if=/dev/zero of=$DIR/f1 bs=4k count=1 seek=1023
 	dd if=$DIR/f1 bs=4k count=1 > /dev/null
 }
-run_test 44 "zero length read from a sparse stripe ============="
+run_test 44A "zero length read from a sparse stripe ============="
 
 test_44a() {
 	local nstripe=$($LCTL lov_getconfig $DIR | grep default_stripe_count: |
@@ -6522,6 +6522,9 @@ run_test 101e "check read-ahead for small read(1k) for small files(500k)"
 test_101f() {
 	which iozone || { skip "no iozone installed" && return; }
 
+	local old_debug=$($LCTL get_param -n debug)
+	$LCTL set_param debug="reada mmap"
+
 	# create a test file
 	iozone -i 0 -+n -r 1m -s 128m -w -f $DIR/$tfile > /dev/null 2>&1
 
@@ -6532,13 +6535,15 @@ test_101f() {
 	$LCTL set_param -n llite.*.read_ahead_stats 0
 
 	echo mmap read the file with small block size
-	iozone -i 1 -+n -r 32k -s 128m -B -f $DIR/$tfile > /dev/null 2>&1
+	iozone -i 1 -u 1 -l 1 -+n -r 32k -s 128m -B -f $DIR/$tfile \
+		> /dev/null 2>&1
 
 	echo checking missing pages
 	local miss=$($LCTL get_param -n llite.*.read_ahead_stats |
 			get_named_value 'misses' | cut -d" " -f1 | calc_total)
 
-	[ $miss -lt 3 ] || error "misses too much pages!"
+	$LCTL set_param debug="$old_debug"
+	[ $miss -lt 3 ] || error "misses too much pages ('$miss')!"
 	rm -f $DIR/$tfile
 }
 run_test 101f "check mmap read performance"
@@ -7115,7 +7120,8 @@ test_103a() {
 
 	SAVE_UMASK=$(umask)
 	umask 0022
-	cd $DIR
+	mkdir -p $DIR/$tdir
+	cd $DIR/$tdir
 
 	echo "performing cp ..."
 	run_acl_subtest cp || error "run_acl_subtest cp failed"
@@ -12056,8 +12062,10 @@ test_205() { # Job stats
 	cmd="mv -f $DIR/$tfile $DIR/$tdir.rename"
 	verify_jobstats "$cmd" "$SINGLEMDS"
 	# jobstats expiry - sleep until old stats should be expired
-	local left=$((interval_new + 2 - (SECONDS - start)))
-	[ $left -ge 0 ] && echo "sleep $left for expiry" && sleep $((left + 1))
+	local left=$((interval_new + 5 - (SECONDS - start)))
+	[ $left -ge 0 ] && wait_update_facet $SINGLEMDS \
+		"lctl get_param *.*.job_stats | grep -c 'job_id.*mkdir'" \
+			"0" $left
 	cmd="mkdir $DIR/$tdir.expire"
 	verify_jobstats "$cmd" "$SINGLEMDS"
 	[ $(do_facet $SINGLEMDS lctl get_param *.*.job_stats |
@@ -12983,6 +12991,9 @@ test_230a() {
 run_test 230a "Create remote directory and files under the remote directory"
 
 test_230b() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.6.57) ]] ||
+		{ skip "Need MDS version with at least 2.6.57"; return 0; }
+
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	local MDTIDX=1
@@ -13478,7 +13489,7 @@ test_241_dio() {
 	done
 }
 
-test_241() {
+test_241a() { # was test_241
 	dd if=/dev/zero of=$DIR/$tfile count=1 bs=40960
 	ls -la $DIR/$tfile
 	cancel_lru_locks osc
@@ -13487,7 +13498,7 @@ test_241() {
 	test_241_dio 1000
 	wait $PID
 }
-run_test 241 "bio vs dio"
+run_test 241a "bio vs dio"
 
 test_241b() {
 	dd if=/dev/zero of=$DIR/$tfile count=1 bs=40960
@@ -14550,6 +14561,20 @@ test_311() {
 		error "objs not destroyed after unlink"
 }
 run_test 311 "disable OSP precreate, and unlink should destroy objs"
+
+test_313() {
+	local file=$DIR/$tfile
+	rm -f $file
+	$SETSTRIPE -c 1 -i 0 $file || error "setstripe failed"
+
+	# define OBD_FAIL_TGT_RCVD_EIO		 0x720
+	do_facet ost1 "$LCTL set_param fail_loc=0x720"
+	dd if=/dev/zero of=$file bs=4096 oflag=direct count=1 &&
+		error "write should failed"
+	do_facet ost1 "$LCTL set_param fail_loc=0"
+	rm -f $file
+}
+run_test 313 "io should fail after last_rcvd update fail"
 
 test_400a() { # LU-1606, was conf-sanity test_74
 	local extra_flags=''

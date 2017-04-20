@@ -2098,6 +2098,39 @@ make_request_fn_blk_qc_t, [
 ]) # LC_HAVE_QC_MAKE_REQUEST_FN
 
 #
+# LC_HAVE_KEY_PAYLOAD_DATA_ARRAY
+#
+# 4.4 kernel merged type-specific data with the payload data for keys
+#
+AC_DEFUN([LC_HAVE_KEY_PAYLOAD_DATA_ARRAY], [
+LB_CHECK_COMPILE([if 'struct key' has 'payload.data' as an array],
+key_payload_data_array, [
+	#include <linux/key.h>
+],[
+	((struct key *)0)->payload.data[0] = NULL;
+],[
+	AC_DEFINE(HAVE_KEY_PAYLOAD_DATA_ARRAY, 1, [payload.data is an array])
+])
+]) #LC_HAVE_KEY_PAYLOAD_DATA_ARRAY
+
+#
+# LC_HAVE_CACHE_HEAD_HLIST
+#
+# 4.3 kernel swiched to hlist for cache_head
+#
+AC_DEFUN([LC_HAVE_CACHE_HEAD_HLIST], [
+LB_CHECK_COMPILE([if 'struct cache_head' has 'cache_list' field],
+cache_head_has_hlist, [
+	#include <linux/sunrpc/cache.h>
+],[
+	do {} while(sizeof(((struct cache_head *)0)->cache_list));
+],[
+	AC_DEFINE(HAVE_CACHE_HEAD_HLIST, 1,
+		[cache_head has hlist cache_list])
+])
+]) # LC_HAVE_CACHE_HEAD_HLIST
+
+#
 # LC_HAVE_INODE_LOCK
 #
 # 4.5 introduced inode_lock
@@ -2281,9 +2314,13 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_BIO_ENDIO_USES_ONE_ARG
 	LC_SYMLINK_OPS_USE_NAMEIDATA
 
+	# 4.3
+	LC_HAVE_CACHE_HEAD_HLIST
+
 	# 4.4
 	LC_HAVE_LOCKS_LOCK_FILE_WAIT
 	LC_HAVE_QC_MAKE_REQUEST_FN
+	LC_HAVE_KEY_PAYLOAD_DATA_ARRAY
 
 	# 4.5
 	LC_HAVE_INODE_LOCK
