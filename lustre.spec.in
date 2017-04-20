@@ -149,7 +149,7 @@ AutoReqProv: no
 %if %{defined krequires}
 # for RHEL we need to require the specific kernel still since weak-modules
 # support on RH is, well, weak, to be punny about it
-Requires: kernel = %{krequires}
+Requires: kernel >= %{krequires}
 %endif
 %if %{with lnet_dlc}
 Requires: libyaml
