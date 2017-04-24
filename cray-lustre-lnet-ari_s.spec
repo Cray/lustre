@@ -34,7 +34,7 @@ Release: %{release}
 Requires: %{switch_requires}
 Summary: Lustre networking for Aries Service Nodes
 
-Version: %{_version}_%{kernel_version}_%{kernel_release}
+Version: %{_version}_%{kernel_version}
 Source0: %{source_name}.tar.bz2
 Source1: %{vendor_namespace}-%{vendor_name}-switch-%{_version}.tar.bz2
 URL: %url
@@ -42,6 +42,8 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 %description
 Userspace tools and files for Lustre networking on XT SIO nodes.
+kernel_version: %{kernel_version}
+kernel_release: %{kernel_release}
 
 %prep
 # using source_name here results in too deep of a macro stack, so use
