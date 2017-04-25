@@ -880,8 +880,6 @@ static enum interval_iter ldlm_kms_shift_cb(struct interval_node *n,
 	if (!lock)
 		RETURN(INTERVAL_ITER_CONT);
 
-	LDLM_DEBUG(lock, "considering updating kms with this lock");
-
 	/* If we find a lock with a greater or equal kms, we are not the
 	 * highest lock (or we share that distinction with another lock), and
 	 * don't need to update KMS.  Return old_kms and stop looking. */
