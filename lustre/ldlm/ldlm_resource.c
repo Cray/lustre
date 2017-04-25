@@ -727,15 +727,16 @@ struct ldlm_namespace *ldlm_namespace_new(struct obd_device *obd, char *name,
 	ns->ns_contention_time    = NS_DEFAULT_CONTENTION_SECONDS;
 	ns->ns_contended_locks    = NS_DEFAULT_CONTENDED_LOCKS;
 
-        ns->ns_max_parallel_ast   = LDLM_DEFAULT_PARALLEL_AST_LIMIT;
-        ns->ns_nr_unused          = 0;
-        ns->ns_max_unused         = LDLM_DEFAULT_LRU_SIZE;
-        ns->ns_max_age            = LDLM_DEFAULT_MAX_ALIVE;
-        ns->ns_ctime_age_limit    = LDLM_CTIME_AGE_LIMIT;
-        ns->ns_timeouts           = 0;
-        ns->ns_orig_connect_flags = 0;
-        ns->ns_connect_flags      = 0;
-        ns->ns_stopping           = 0;
+	ns->ns_max_parallel_ast   = LDLM_DEFAULT_PARALLEL_AST_LIMIT;
+	ns->ns_nr_unused          = 0;
+	ns->ns_max_unused         = LDLM_DEFAULT_LRU_SIZE;
+	ns->ns_max_age            = LDLM_DEFAULT_MAX_ALIVE;
+	ns->ns_ctime_age_limit    = LDLM_CTIME_AGE_LIMIT;
+	ns->ns_timeouts           = 0;
+	ns->ns_orig_connect_flags = 0;
+	ns->ns_connect_flags      = 0;
+	ns->ns_stopping           = 0;
+	ns->ns_in_elc             = 0;
 	ns->ns_reclaim_start	  = 0;
         rc = ldlm_namespace_proc_register(ns);
         if (rc != 0) {

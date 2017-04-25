@@ -792,12 +792,25 @@ int ldlm_prep_elc_req(struct obd_export *exp, struct ptlrpc_request *req,
 	struct ldlm_request	*dlm = NULL;
 	struct list_head	head = LIST_HEAD_INIT(head);
 	int flags, avail, to_free, pack = 0;
+	bool do_elc = true;
 	int rc;
 	ENTRY;
 
+	/* Do not enter ELC if a thread is already doing ELC on this
+	 * namespace. */
+	if (ns->ns_in_elc) {
+		do_elc = false;
+	} else {
+		spin_lock(&ns->ns_lock);
+		if (likely(!ns->ns_in_elc))
+			ns->ns_in_elc = 1;
+		else
+			do_elc = false;
+		spin_unlock(&ns->ns_lock);
+	}
 	if (cancels == NULL)
 		cancels = &head;
-	if (ns_connect_cancelset(ns)) {
+	if (ns_connect_cancelset(ns) && do_elc) {
                 /* Estimate the amount of available space in the request. */
                 req_capsule_filled_sizes(pill, RCL_CLIENT);
                 avail = ldlm_capsule_handles_avail(pill, RCL_CLIENT, canceloff);
@@ -821,13 +834,9 @@ int ldlm_prep_elc_req(struct obd_export *exp, struct ptlrpc_request *req,
                                      ldlm_request_bufsize(pack, opc));
         }
 
-        rc = ptlrpc_request_pack(req, version, opc);
-        if (rc) {
-                ldlm_lock_list_put(cancels, l_bl_ast, count);
-                RETURN(rc);
-        }
+	rc = ptlrpc_request_pack(req, version, opc);
 
-	if (ns_connect_cancelset(ns)) {
+	if (ns_connect_cancelset(ns) && do_elc && !rc) {
                 if (canceloff) {
                         dlm = req_capsule_client_get(pill, &RMF_DLM_REQ);
                         LASSERT(dlm);
@@ -844,7 +853,15 @@ int ldlm_prep_elc_req(struct obd_export *exp, struct ptlrpc_request *req,
         } else {
                 ldlm_lock_list_put(cancels, l_bl_ast, count);
         }
-        RETURN(0);
+
+	/* If we did elc, then we are responsible for the ns_in_elc flag. */
+	if (do_elc) {
+		spin_lock(&ns->ns_lock);
+		ns->ns_in_elc = 0;
+		spin_unlock(&ns->ns_lock);
+	}
+
+	RETURN(rc);
 }
 EXPORT_SYMBOL(ldlm_prep_elc_req);
 
