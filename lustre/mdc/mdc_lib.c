@@ -137,6 +137,30 @@ static void mdc_pack_name(struct ptlrpc_request *req,
 	LASSERT(cpy_len == name_len && lu_name_is_valid_2(buf, cpy_len));
 }
 
+void mdc_file_secctx_pack(struct ptlrpc_request *req, const char *secctx_name,
+			  const void *secctx, size_t secctx_size)
+{
+	void *buf;
+	size_t buf_size;
+
+	if (secctx_name == NULL)
+		return;
+
+	buf = req_capsule_client_get(&req->rq_pill, &RMF_FILE_SECCTX_NAME);
+	buf_size = req_capsule_get_size(&req->rq_pill, &RMF_FILE_SECCTX_NAME,
+					RCL_CLIENT);
+
+	LASSERT(buf_size == strlen(secctx_name) + 1);
+	memcpy(buf, secctx_name, buf_size);
+
+	buf = req_capsule_client_get(&req->rq_pill, &RMF_FILE_SECCTX);
+	buf_size = req_capsule_get_size(&req->rq_pill, &RMF_FILE_SECCTX,
+					RCL_CLIENT);
+
+	LASSERT(buf_size == secctx_size);
+	memcpy(buf, secctx, buf_size);
+}
+
 void mdc_readdir_pack(struct ptlrpc_request *req, __u64 pgoff, size_t size,
 		      const struct lu_fid *fid, struct obd_capa *oc)
 {
@@ -190,6 +214,10 @@ void mdc_create_pack(struct ptlrpc_request *req, struct md_op_data *op_data,
 		tmp = req_capsule_client_get(&req->rq_pill, &RMF_EADATA);
 		memcpy(tmp, data, datalen);
 	}
+
+	mdc_file_secctx_pack(req, op_data->op_file_secctx_name,
+			     op_data->op_file_secctx,
+			     op_data->op_file_secctx_size);
 }
 
 static inline __u64 mds_pack_open_flags(__u64 flags)
@@ -263,6 +291,10 @@ void mdc_open_pack(struct ptlrpc_request *req, struct md_op_data *op_data,
 			if (op_data->op_bias & MDS_CREATE_VOLATILE)
 				cr_flags |= MDS_OPEN_VOLATILE;
 		}
+
+		mdc_file_secctx_pack(req, op_data->op_file_secctx_name,
+				     op_data->op_file_secctx,
+				     op_data->op_file_secctx_size);
 	}
 
 	if (lmm) {
@@ -525,14 +557,26 @@ static void mdc_intent_close_pack(struct ptlrpc_request *req,
 
 void mdc_close_pack(struct ptlrpc_request *req, struct md_op_data *op_data)
 {
-        struct mdt_ioepoch *epoch;
-        struct mdt_rec_setattr *rec;
+	struct mdt_ioepoch *epoch;
+	struct mdt_rec_setattr *rec;
 
-        epoch = req_capsule_client_get(&req->rq_pill, &RMF_MDT_EPOCH);
-        rec = req_capsule_client_get(&req->rq_pill, &RMF_REC_REINT);
+	epoch = req_capsule_client_get(&req->rq_pill, &RMF_MDT_EPOCH);
+	rec = req_capsule_client_get(&req->rq_pill, &RMF_REC_REINT);
 
-        mdc_setattr_pack_rec(rec, op_data);
-        mdc_pack_capa(req, &RMF_CAPA1, op_data->op_capa1);
-        mdc_ioepoch_pack(epoch, op_data);
+	mdc_setattr_pack_rec(rec, op_data);
+	/*
+	 * The client will zero out local timestamps when losing the IBITS lock
+	 * so any new RPC timestamps will update the client inode's timestamps.
+	 * There was a defect on the server side which allowed the atime to be
+	 * overwritten by a zeroed-out atime packed into the close RPC.
+	 *
+	 * Proactively clear the MDS_ATTR_ATIME flag in the RPC in this case
+	 * to avoid zeroing the atime on old unpatched servers.  See LU-8041.
+	 */
+	if (rec->sa_atime == 0)
+		rec->sa_valid &= ~MDS_ATTR_ATIME;
+
+	mdc_pack_capa(req, &RMF_CAPA1, op_data->op_capa1);
+	mdc_ioepoch_pack(epoch, op_data);
 	mdc_intent_close_pack(req, op_data);
 }

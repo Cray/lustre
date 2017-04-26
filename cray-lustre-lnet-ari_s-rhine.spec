@@ -23,7 +23,9 @@ BuildRequires: kernel-syms
 BuildRequires: %{namespace}-krca-devel
 BuildRequires: lsb-cray-hss-devel
 BuildRequires: module-init-tools
+%if 0%{?sle_version} <= 120000
 BuildRequires: ofed-devel
+%endif
 BuildRequires: sles-release
 BuildRequires: -post-build-checks
 BuildRequires: libtool
@@ -52,7 +54,10 @@ service nodes running the CLE Rhine release.
 echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
-%define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
+%define lustre_version %{_version}-%{branch}-%{release}-%{build_user}-%{version_path}-%{date}
+
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
 
 # only keep lnet related directories
 sed -i '/^SUBDIRS/,/config contrib/d' autoMakefile.am
@@ -100,6 +105,9 @@ pushd ./lustre/utils
 popd
 
 %install
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
+
 # %makeinstall
 # don't use %makeinstall for Rhine RPMS - it needlessly puts things into 
 # /opt/cray/...

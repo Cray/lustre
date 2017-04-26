@@ -166,14 +166,17 @@ int client_import_del_conn(struct obd_import *imp, struct obd_uuid *uuid)
                         ptlrpc_connection_put(imp->imp_connection);
                         imp->imp_connection = NULL;
 
-                        dlmexp = class_conn2export(&imp->imp_dlm_handle);
-                        if (dlmexp && dlmexp->exp_connection) {
-                                LASSERT(dlmexp->exp_connection ==
-                                        imp_conn->oic_conn);
-                                ptlrpc_connection_put(dlmexp->exp_connection);
-                                dlmexp->exp_connection = NULL;
-                        }
-                }
+			dlmexp = class_conn2export(&imp->imp_dlm_handle);
+			if (dlmexp && dlmexp->exp_connection) {
+				LASSERT(dlmexp->exp_connection ==
+					imp_conn->oic_conn);
+				ptlrpc_connection_put(dlmexp->exp_connection);
+				dlmexp->exp_connection = NULL;
+			}
+
+			if (dlmexp != NULL)
+				class_export_put(dlmexp);
+		}
 
 		list_del(&imp_conn->oic_item);
                 ptlrpc_connection_put(imp_conn->oic_conn);
@@ -250,6 +253,15 @@ static int osc_on_mdt(char *obdname)
 	return 0;
 }
 
+typedef enum {
+	CFS_LOCK_CLASS_OSC = 0,
+	CFS_LOCK_CLASS_MDC,
+	CFS_LOCK_CLASS_MGC,
+	CFS_LOCK_CLASS_MAX
+} cfs_lock_class_type_t;
+
+static struct lock_class_key client_key[CFS_LOCK_CLASS_MAX];
+
 /* Configure an RPC client OBD device.
  *
  * lcfg parameters:
@@ -259,15 +271,37 @@ static int osc_on_mdt(char *obdname)
  */
 int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
 {
-        struct client_obd *cli = &obddev->u.cli;
-        struct obd_import *imp;
-        struct obd_uuid server_uuid;
-        int rq_portal, rp_portal, connect_op;
-        char *name = obddev->obd_type->typ_name;
-        ldlm_ns_type_t ns_type = LDLM_NS_TYPE_UNKNOWN;
-        int rc;
-        ENTRY;
+	struct client_obd *cli = &obddev->u.cli;
+	struct obd_import *imp;
+	struct obd_uuid server_uuid;
+	int rq_portal, rp_portal, connect_op;
+	char *name = obddev->obd_type->typ_name;
+	ldlm_ns_type_t ns_type = LDLM_NS_TYPE_UNKNOWN;
+	int rc;
+	char *cli_name = lustre_cfg_buf(lcfg, 0);
+	ENTRY;
 
+	if (LUSTRE_CFG_BUFLEN(lcfg, 1) < 1) {
+		CERROR("requires a TARGET UUID\n");
+		RETURN(-EINVAL);
+	}
+
+	if (LUSTRE_CFG_BUFLEN(lcfg, 1) > 37) {
+		CERROR("client UUID must be less than 38 characters\n");
+		RETURN(-EINVAL);
+	}
+
+	if (LUSTRE_CFG_BUFLEN(lcfg, 2) < 1) {
+		CERROR("setup requires a SERVER UUID\n");
+		RETURN(-EINVAL);
+	}
+
+	if (LUSTRE_CFG_BUFLEN(lcfg, 2) > 37) {
+		CERROR("target UUID must be less than 38 characters\n");
+		RETURN(-EINVAL);
+	}
+
+	init_rwsem(&cli->cl_sem);
         /* In a more perfect world, we would hang a ptlrpc_client off of
          * obd_type and just use the values from there. */
 	if (!strcmp(name, LUSTRE_OSC_NAME)) {
@@ -277,14 +311,21 @@ int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
 		cli->cl_sp_me = LUSTRE_SP_CLI;
 		cli->cl_sp_to = LUSTRE_SP_OST;
 		ns_type = LDLM_NS_TYPE_OSC;
+		lockdep_set_class(&cli->cl_sem,&client_key[CFS_LOCK_CLASS_OSC]);
 	} else if (!strcmp(name, LUSTRE_MDC_NAME) ||
 		   !strcmp(name, LUSTRE_LWP_NAME)) {
 		rq_portal = MDS_REQUEST_PORTAL;
 		rp_portal = MDC_REPLY_PORTAL;
 		connect_op = MDS_CONNECT;
-		cli->cl_sp_me = LUSTRE_SP_CLI;
+		if (is_lwp_on_ost(cli_name))
+			cli->cl_sp_me = LUSTRE_SP_OST;
+		else if (is_lwp_on_mdt(cli_name))
+			cli->cl_sp_me = LUSTRE_SP_MDT;
+		else
+			cli->cl_sp_me = LUSTRE_SP_CLI;
 		cli->cl_sp_to = LUSTRE_SP_MDT;
 		ns_type = LDLM_NS_TYPE_MDC;
+		lockdep_set_class(&cli->cl_sem,&client_key[CFS_LOCK_CLASS_MDC]);
 	} else if (!strcmp(name, LUSTRE_OSP_NAME)) {
 		if (strstr(lustre_cfg_buf(lcfg, 1), "OST") == NULL) {
 			/* OSP_on_MDT for other MDTs */
@@ -292,15 +333,19 @@ int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
 			cli->cl_sp_to = LUSTRE_SP_MDT;
 			ns_type = LDLM_NS_TYPE_MDC;
 			rq_portal = OUT_PORTAL;
+			lockdep_set_class(&cli->cl_sem,
+					  &client_key[CFS_LOCK_CLASS_MDC]);
 		} else {
 			/* OSP on MDT for OST */
 			connect_op = OST_CONNECT;
 			cli->cl_sp_to = LUSTRE_SP_OST;
 			ns_type = LDLM_NS_TYPE_OSC;
 			rq_portal = OST_REQUEST_PORTAL;
+			lockdep_set_class(&cli->cl_sem,
+					  &client_key[CFS_LOCK_CLASS_OSC]);
 		}
 		rp_portal = OSC_REPLY_PORTAL;
-		cli->cl_sp_me = LUSTRE_SP_CLI;
+		cli->cl_sp_me = LUSTRE_SP_MDT;
         } else if (!strcmp(name, LUSTRE_MGC_NAME)) {
                 rq_portal = MGS_REQUEST_PORTAL;
                 rp_portal = MGC_REPLY_PORTAL;
@@ -309,7 +354,9 @@ int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
                 cli->cl_sp_to = LUSTRE_SP_MGS;
                 cli->cl_flvr_mgc.sf_rpc = SPTLRPC_FLVR_INVALID;
                 ns_type = LDLM_NS_TYPE_MGC;
+		lockdep_set_class(&cli->cl_sem, &client_key[CFS_LOCK_CLASS_MGC]);
 	} else {
+		fini_rwsem(&cli->cl_sem);
                 CERROR("unknown client OBD type \"%s\", can't setup\n",
                        name);
                 RETURN(-EINVAL);
@@ -389,12 +436,9 @@ int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
 #endif
 	atomic_set(&cli->cl_resends, OSC_DEFAULT_RESENDS);
 
-	/* This value may be reduced at connect time in
-	 * ptlrpc_connect_interpret() . We initialize it to only
-	 * 1MB until we know what the performance looks like.
-	 * In the future this should likely be increased. LU-1431 */
-	cli->cl_max_pages_per_rpc = min_t(int, PTLRPC_MAX_BRW_PAGES,
-					  LNET_MTU >> PAGE_CACHE_SHIFT);
+	/* Set it to possible maximum size. It may be reduced by ocd_brw_size
+	 * from OFD after connecting. */
+	cli->cl_max_pages_per_rpc = PTLRPC_MAX_BRW_PAGES;
 
 	/* set cl_chunkbits default value to PAGE_CACHE_SHIFT,
 	 * it will be updated at OSC connection time. */
@@ -414,6 +458,23 @@ int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
 		else
 			cli->cl_max_rpcs_in_flight = OBD_MAX_RIF_DEFAULT;
         }
+
+	spin_lock_init(&cli->cl_mod_rpcs_lock);
+	spin_lock_init(&cli->cl_mod_rpcs_hist.oh_lock);
+	cli->cl_max_mod_rpcs_in_flight = 0;
+	cli->cl_mod_rpcs_in_flight = 0;
+	cli->cl_close_rpcs_in_flight = 0;
+	init_waitqueue_head(&cli->cl_mod_rpcs_waitq);
+	cli->cl_mod_tag_bitmap = NULL;
+
+	if (connect_op == MDS_CONNECT) {
+		cli->cl_max_mod_rpcs_in_flight = cli->cl_max_rpcs_in_flight - 1;
+		OBD_ALLOC(cli->cl_mod_tag_bitmap,
+			  BITS_TO_LONGS(OBD_MAX_RIF_MAX) * sizeof(long));
+		if (cli->cl_mod_tag_bitmap == NULL)
+			GOTO(err, rc = -ENOMEM);
+	}
+
         rc = ldlm_get_ref();
         if (rc) {
                 CERROR("ldlm_get_ref failed: %d\n", rc);
@@ -473,6 +534,10 @@ err_import:
 err_ldlm:
         ldlm_put_ref();
 err:
+	if (cli->cl_mod_tag_bitmap != NULL)
+		OBD_FREE(cli->cl_mod_tag_bitmap,
+			 BITS_TO_LONGS(OBD_MAX_RIF_MAX) * sizeof(long));
+	cli->cl_mod_tag_bitmap = NULL;
         RETURN(rc);
 
 }
@@ -480,6 +545,7 @@ EXPORT_SYMBOL(client_obd_setup);
 
 int client_obd_cleanup(struct obd_device *obddev)
 {
+	struct client_obd *cli = &obddev->u.cli;
 	ENTRY;
 
 	ldlm_namespace_free_post(obddev->obd_namespace);
@@ -489,6 +555,12 @@ int client_obd_cleanup(struct obd_device *obddev)
 	LASSERT(obddev->u.cli.cl_import == NULL);
 
 	ldlm_put_ref();
+
+	if (cli->cl_mod_tag_bitmap != NULL)
+		OBD_FREE(cli->cl_mod_tag_bitmap,
+			 BITS_TO_LONGS(OBD_MAX_RIF_MAX) * sizeof(long));
+	cli->cl_mod_tag_bitmap = NULL;
+
 	RETURN(0);
 }
 EXPORT_SYMBOL(client_obd_cleanup);
@@ -504,57 +576,69 @@ int client_connect_import(const struct lu_env *env,
 	struct obd_connect_data *ocd;
 	struct lustre_handle    conn    = { 0 };
 	int                     rc;
+	bool			is_mdc = false;
 	ENTRY;
 
-        *exp = NULL;
+	*exp = NULL;
 	down_write(&cli->cl_sem);
 	if (cli->cl_conn_count > 0)
                 GOTO(out_sem, rc = -EALREADY);
 
-        rc = class_connect(&conn, obd, cluuid);
-        if (rc)
-                GOTO(out_sem, rc);
+	rc = class_connect(&conn, obd, cluuid);
+	if (rc)
+		GOTO(out_sem, rc);
 
-        cli->cl_conn_count++;
-        *exp = class_conn2export(&conn);
+	cli->cl_conn_count++;
+	*exp = class_conn2export(&conn);
 
-        LASSERT(obd->obd_namespace);
+	LASSERT(obd->obd_namespace);
 
-        imp->imp_dlm_handle = conn;
-        rc = ptlrpc_init_import(imp);
-        if (rc != 0)
-                GOTO(out_ldlm, rc);
+	imp->imp_dlm_handle = conn;
+	rc = ptlrpc_init_import(imp);
+	if (rc != 0)
+		GOTO(out_ldlm, rc);
 
-        ocd = &imp->imp_connect_data;
-        if (data) {
-                *ocd = *data;
-                imp->imp_connect_flags_orig = data->ocd_connect_flags;
-        }
+	ocd = &imp->imp_connect_data;
+	if (data) {
+		*ocd = *data;
+		is_mdc = strncmp(imp->imp_obd->obd_type->typ_name,
+				 LUSTRE_MDC_NAME, 3) == 0;
+		if (is_mdc)
+			data->ocd_connect_flags |= OBD_CONNECT_MULTIMODRPCS;
+		imp->imp_connect_flags_orig = data->ocd_connect_flags;
+		imp->imp_connect_flags2_orig = data->ocd_connect_flags2;
+	}
 
-        rc = ptlrpc_connect_import(imp);
-        if (rc != 0) {
-                LASSERT (imp->imp_state == LUSTRE_IMP_DISCON);
-                GOTO(out_ldlm, rc);
-        }
+	rc = ptlrpc_connect_import(imp);
+	if (rc != 0) {
+		if (data && is_mdc)
+			data->ocd_connect_flags &= ~OBD_CONNECT_MULTIMODRPCS;
+		LASSERT(imp->imp_state == LUSTRE_IMP_DISCON);
+		GOTO(out_ldlm, rc);
+	}
 	LASSERT(*exp != NULL && (*exp)->exp_connection);
 
-        if (data) {
-                LASSERTF((ocd->ocd_connect_flags & data->ocd_connect_flags) ==
-                         ocd->ocd_connect_flags, "old "LPX64", new "LPX64"\n",
-                         data->ocd_connect_flags, ocd->ocd_connect_flags);
-                data->ocd_connect_flags = ocd->ocd_connect_flags;
-        }
+	if (data) {
+		LASSERTF((ocd->ocd_connect_flags & data->ocd_connect_flags) ==
+			 ocd->ocd_connect_flags, "old "LPX64", new "LPX64"\n",
+			 data->ocd_connect_flags, ocd->ocd_connect_flags);
+		data->ocd_connect_flags = ocd->ocd_connect_flags;
+		/* clear the flag as it was not set and is not known
+		 * by upper layers */
+		if (is_mdc)
+			data->ocd_connect_flags &= ~OBD_CONNECT_MULTIMODRPCS;
+	}
 
-        ptlrpc_pinger_add_import(imp);
+	ptlrpc_pinger_add_import(imp);
 
-        EXIT;
+	EXIT;
 
-        if (rc) {
+	if (rc) {
 out_ldlm:
-                cli->cl_conn_count--;
-                class_disconnect(*exp);
-                *exp = NULL;
-        }
+		cli->cl_conn_count--;
+		class_disconnect(*exp);
+		*exp = NULL;
+	}
 out_sem:
 	up_write(&cli->cl_sem);
 
@@ -647,8 +731,7 @@ int server_disconnect_export(struct obd_export *exp)
 	if (exp->exp_imp_reverse)
 		ptlrpc_cleanup_imp(exp->exp_imp_reverse);
 
-	if (exp->exp_obd->obd_namespace != NULL)
-		ldlm_cancel_locks_for_export(exp);
+	ldlm_bl_thread_wakeup();
 
         /* complete all outstanding replies */
 	spin_lock(&exp->exp_lock);
@@ -738,21 +821,6 @@ static int target_handle_reconnect(struct lustre_handle *conn,
                cluuid->uuid, exp, conn->cookie);
         RETURN(0);
 }
-
-void target_client_add_cb(struct obd_device *obd, __u64 transno, void *cb_data,
-                          int error)
-{
-        struct obd_export *exp = cb_data;
-
-        CDEBUG(D_RPCTRACE, "%s: committing for initial connect of %s\n",
-               obd->obd_name, exp->exp_client_uuid.uuid);
-
-	spin_lock(&exp->exp_lock);
-	exp->exp_need_sync = 0;
-	spin_unlock(&exp->exp_lock);
-	class_export_cb_put(exp);
-}
-EXPORT_SYMBOL(target_client_add_cb);
 
 static void
 check_and_start_recovery_timer(struct obd_device *obd,
@@ -1448,7 +1516,7 @@ static void target_finish_recovery(struct obd_device *obd)
 			obd->obd_stale_clients == 1 ? "was" : "were");
 	}
 
-        ldlm_reprocess_all_ns(obd->obd_namespace);
+	ldlm_reprocess_recovery_done(obd->obd_namespace);
 	spin_lock(&obd->obd_recovery_task_lock);
 	if (!list_empty(&obd->obd_req_replay_queue) ||
 	    !list_empty(&obd->obd_lock_replay_queue) ||
@@ -1640,8 +1708,13 @@ static void extend_recovery_timer(struct obd_device *obd, int drt, bool extend)
                 to = drt;
         }
 
-        if (to > obd->obd_recovery_time_hard)
-                to = obd->obd_recovery_time_hard;
+	if (to > obd->obd_recovery_time_hard) {
+		to = obd->obd_recovery_time_hard;
+		CWARN("%s: extended recovery timer reaching hard "
+		      "limit: %d, extend: %d\n",
+		      obd->obd_name, to, extend);
+	}
+
 	if (obd->obd_recovery_timeout < to) {
                 obd->obd_recovery_timeout = to;
 		end = obd->obd_recovery_start + to;
@@ -1684,6 +1757,10 @@ check_and_start_recovery_timer(struct obd_device *obd,
 	/* Convert the service time to RPC timeout,
 	 * and reuse service_time to limit stack usage. */
 	service_time = at_est2timeout(service_time);
+
+	if (OBD_FAIL_CHECK(OBD_FAIL_TGT_SLUGGISH_NET) &&
+	    service_time < at_extra)
+		service_time = at_extra;
 
 	/* We expect other clients to timeout within service_time, then try
 	 * to reconnect, then try the failover server.  The max delay between
@@ -2216,6 +2293,10 @@ static void target_recovery_expired(unsigned long castmeharder)
 void target_recovery_init(struct lu_target *lut, svc_handler_t handler)
 {
         struct obd_device *obd = lut->lut_obd;
+
+	if (lut->lut_bottom->dd_rdonly)
+		return;
+
         if (obd->obd_max_recoverable_clients == 0) {
                 /** Update server last boot epoch */
                 tgt_boot_epoch_update(lut);
@@ -2457,12 +2538,18 @@ int target_pack_pool_reply(struct ptlrpc_request *req)
 }
 EXPORT_SYMBOL(target_pack_pool_reply);
 
-static int target_send_reply_msg(struct ptlrpc_request *req,
-				 int rc, int fail_id)
+static int target_send_reply_msg(struct ptlrpc_request *req, int rc,
+				 int fail_id)
 {
-        if (OBD_FAIL_CHECK_ORSET(fail_id & ~OBD_FAIL_ONCE, OBD_FAIL_ONCE)) {
-                DEBUG_REQ(D_ERROR, req, "dropping reply");
-                return (-ECOMM);
+	if (OBD_FAIL_PRECHECK(fail_id)) {
+		__u32 opc = lustre_msg_get_opc(req->rq_reqmsg);
+		if (cfs_fail_val == 0 || cfs_fail_val == opc) {
+			if (OBD_FAIL_CHECK_ORSET(fail_id & ~OBD_FAIL_ONCE,
+						 OBD_FAIL_ONCE)) {
+				DEBUG_REQ(D_ERROR, req, "dropping reply");
+				return -ECOMM;
+			}
+		}
         }
 
         if (unlikely(rc)) {
@@ -2686,9 +2773,13 @@ static int target_bulk_timeout(void *data)
         RETURN(1);
 }
 
-static inline char *bulk2type(struct ptlrpc_bulk_desc *desc)
+static inline const char *bulk2type(struct ptlrpc_request *req)
 {
-        return desc->bd_type == BULK_GET_SINK ? "GET" : "PUT";
+	if (req->rq_bulk_read)
+		return "READ";
+	if (req->rq_bulk_write)
+		return "WRITE";
+	return "UNKNOWN";
 }
 
 int target_bulk_io(struct obd_export *exp, struct ptlrpc_bulk_desc *desc,
@@ -2715,15 +2806,21 @@ int target_bulk_io(struct obd_export *exp, struct ptlrpc_bulk_desc *desc,
 	    exp->exp_conn_cnt > lustre_msg_get_conn_cnt(req->rq_reqmsg)) {
 		rc = -ENOTCONN;
 	} else {
-		if (desc->bd_type == BULK_PUT_SINK)
+		if (req->rq_bulk_read)
 			rc = sptlrpc_svc_wrap_bulk(req, desc);
+
+		if (OCD_HAS_FLAG(&exp->exp_connect_data, BULK_MBITS))
+			req->rq_mbits = lustre_msg_get_mbits(req->rq_reqmsg);
+		else /* old version, bulk matchbits is rq_xid */
+			req->rq_mbits = req->rq_xid;
+
 		if (rc == 0)
 			rc = ptlrpc_start_bulk_transfer(desc);
 	}
 
 	if (rc < 0) {
 		DEBUG_REQ(D_ERROR, req, "bulk %s failed: rc %d",
-			  bulk2type(desc), rc);
+			  bulk2type(req), rc);
 		RETURN(rc);
 	}
 
@@ -2762,31 +2859,36 @@ int target_bulk_io(struct obd_export *exp, struct ptlrpc_bulk_desc *desc,
 
 	if (rc == -ETIMEDOUT) {
 		DEBUG_REQ(D_ERROR, req, "timeout on bulk %s after %ld%+lds",
-			  bulk2type(desc), deadline - start,
+			  bulk2type(req), deadline - start,
 			  cfs_time_current_sec() - deadline);
 		ptlrpc_abort_bulk(desc);
 	} else if (exp->exp_failed) {
 		DEBUG_REQ(D_ERROR, req, "Eviction on bulk %s",
-			  bulk2type(desc));
+			  bulk2type(req));
 		rc = -ENOTCONN;
 		ptlrpc_abort_bulk(desc);
 	} else if (exp->exp_conn_cnt >
 		   lustre_msg_get_conn_cnt(req->rq_reqmsg)) {
 		DEBUG_REQ(D_ERROR, req, "Reconnect on bulk %s",
-			  bulk2type(desc));
+			  bulk2type(req));
 		/* We don't reply anyway. */
 		rc = -ETIMEDOUT;
 		ptlrpc_abort_bulk(desc);
-	} else if (desc->bd_failure ||
-		   desc->bd_nob_transferred != desc->bd_nob) {
-		DEBUG_REQ(D_ERROR, req, "%s bulk %s %d(%d)",
-			  desc->bd_failure ? "network error on" : "truncated",
-			  bulk2type(desc), desc->bd_nob_transferred,
-			  desc->bd_nob);
-		/* XXX Should this be a different errno? */
+	} else if (desc->bd_failure) {
+		DEBUG_REQ(D_ERROR, req, "network error on bulk %s",
+			  bulk2type(req));
+		/* XXX should this be a different errno? */
 		rc = -ETIMEDOUT;
-	} else if (desc->bd_type == BULK_GET_SINK) {
-		rc = sptlrpc_svc_unwrap_bulk(req, desc);
+	} else {
+		if (req->rq_bulk_write)
+			rc = sptlrpc_svc_unwrap_bulk(req, desc);
+		if (rc == 0 && desc->bd_nob_transferred != desc->bd_nob) {
+			DEBUG_REQ(D_ERROR, req, "truncated bulk %s %d(%d)",
+				  bulk2type(req), desc->bd_nob_transferred,
+				  desc->bd_nob);
+			/* XXX should this be a different errno? */
+			rc = -ETIMEDOUT;
+		}
 	}
 
 	RETURN(rc);

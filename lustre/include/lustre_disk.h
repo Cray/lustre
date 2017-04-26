@@ -59,6 +59,7 @@
 /** Persistent mount data are stored on the disk in this file. */
 #define MOUNT_DATA_FILE		MOUNT_CONFIGS_DIR"/"CONFIGS_FILE
 #define LAST_RCVD		"last_rcvd"
+#define REPLY_DATA		"reply_data"
 #define LOV_OBJID		"lov_objid"
 #define LOV_OBJSEQ		"lov_objseq"
 #define HEALTH_CHECK		"health_check"
@@ -114,6 +115,8 @@
 #define LDD_F_ONDISK_MASK  (LDD_F_SV_TYPE_MASK)
 
 #define LDD_F_MASK          0xFFFF
+
+#define XATTR_TARGET_RENAME	"trusted.rename_tgt"
 
 enum ldd_mount_type {
 	LDD_MT_EXT3 = 0,
@@ -217,21 +220,22 @@ static inline int server_make_name(__u32 flags, __u16 index, char *fs,
 
 /* gleaned from the mount command - no persistent info here */
 struct lustre_mount_data {
-        __u32      lmd_magic;
-        __u32      lmd_flags;         /* lustre mount flags */
-        int        lmd_mgs_failnodes; /* mgs failover node count */
-        int        lmd_exclude_count;
-        int        lmd_recovery_time_soft;
-        int        lmd_recovery_time_hard;
-        char      *lmd_dev;           /* device name */
-        char      *lmd_profile;       /* client only */
-        char      *lmd_mgssec;        /* sptlrpc flavor to mgs */
-        char      *lmd_opts;          /* lustre mount options (as opposed to
-                                         _device_ mount options) */
-	char      *lmd_params;        /* lustre params */
-        __u32     *lmd_exclude;       /* array of OSTs to ignore */
-	char	*lmd_mgs;           /* MGS nid */
-	char	*lmd_osd_type;      /* OSD type */
+	__u32	lmd_magic;
+	__u32	lmd_flags;	/* lustre mount flags */
+	int	lmd_mgs_failnodes; /* mgs failover node count */
+	int	lmd_exclude_count;
+	int	lmd_recovery_time_soft;
+	int	lmd_recovery_time_hard;
+	char   *lmd_dev;	/* device name */
+	char   *lmd_profile;	/* client only */
+	char   *lmd_fileset;	/* mount fileset */
+	char   *lmd_mgssec;	/* sptlrpc flavor to mgs */
+	char   *lmd_opts;	/* lustre mount options (as opposed to
+				 * device_ mount options) */
+	char   *lmd_params;	/* lustre params */
+	__u32  *lmd_exclude;	/* array of OSTs to ignore */
+	char   *lmd_mgs;	/* MGS nid */
+	char   *lmd_osd_type;	/* OSD type */
 };
 
 #define LMD_FLG_SERVER		0x0001	/* Mounting a server */
@@ -250,6 +254,7 @@ struct lustre_mount_data {
 #define LMD_FLG_VIRGIN		0x1000	/* the service registers first time */
 #define LMD_FLG_UPDATE		0x2000	/* update parameters */
 #define LMD_FLG_HSM		0x4000	/* Start coordinator */
+#define LMD_FLG_DEV_RDONLY	0x8000	/* discard modification quitely */
 
 #define lmd_is_client(x) ((x)->lmd_flags & LMD_FLG_CLIENT)
 
@@ -317,6 +322,8 @@ struct lustre_mount_data {
 #define OBD_INCOMPAT_LMM_VER    0x00000100
 /** multiple OI files for MDT */
 #define OBD_INCOMPAT_MULTI_OI   0x00000200
+/** multiple RPCs in flight */
+#define OBD_INCOMPAT_MULTI_RPCS	0x00000400
 
 /* Data stored per server at the head of the last_rcvd file.  In le32 order.
    This should be common to filter_internal.h, lustre_mds.h */
@@ -361,10 +368,34 @@ struct lsd_client_data {
         /* VBR: last versions */
         __u64 lcd_pre_versions[4];
         __u32 lcd_last_epoch;
-        /** orphans handling for delayed export rely on that */
-        __u32 lcd_first_epoch;
-        __u8  lcd_padding[LR_CLIENT_SIZE - 128];
+	/* generation counter of client slot in last_rcvd */
+	__u32 lcd_generation;
+	__u8  lcd_padding[LR_CLIENT_SIZE - 128];
 };
+
+
+/* Data stored in each slot of the reply_data file.
+ *
+ * The lrd_client_gen field is assigned with lcd_generation value
+ * to allow identify which client the reply data belongs to.
+ */
+struct lsd_reply_data {
+	__u64	lrd_transno;	/* transaction number */
+	__u64	lrd_xid;	/* transmission id */
+	__u64	lrd_data;	/* per-operation data */
+	__u32	lrd_result;	/* request result */
+	__u32	lrd_client_gen; /* client generation */
+};
+
+/* Header of the reply_data file */
+#define LRH_MAGIC 0xbdabda01
+struct lsd_reply_header {
+	__u32	lrh_magic;
+	__u32	lrh_header_size;
+	__u32	lrh_reply_size;
+	__u8	lrh_pad[sizeof(struct lsd_reply_data) - 12];
+};
+
 
 /* bug20354: the lcd_uuid for export of clients may be wrong */
 static inline void check_lcd(char *obd_name, int index,
@@ -452,7 +483,7 @@ static inline void lcd_le_to_cpu(struct lsd_client_data *buf,
         lcd->lcd_pre_versions[2]    = le64_to_cpu(buf->lcd_pre_versions[2]);
         lcd->lcd_pre_versions[3]    = le64_to_cpu(buf->lcd_pre_versions[3]);
         lcd->lcd_last_epoch         = le32_to_cpu(buf->lcd_last_epoch);
-        lcd->lcd_first_epoch        = le32_to_cpu(buf->lcd_first_epoch);
+	lcd->lcd_generation	    = le32_to_cpu(buf->lcd_generation);
 }
 
 static inline void lcd_cpu_to_le(struct lsd_client_data *lcd,
@@ -472,7 +503,7 @@ static inline void lcd_cpu_to_le(struct lsd_client_data *lcd,
         buf->lcd_pre_versions[2]    = cpu_to_le64(lcd->lcd_pre_versions[2]);
         buf->lcd_pre_versions[3]    = cpu_to_le64(lcd->lcd_pre_versions[3]);
         buf->lcd_last_epoch         = cpu_to_le32(lcd->lcd_last_epoch);
-        buf->lcd_first_epoch        = cpu_to_le32(lcd->lcd_first_epoch);
+	buf->lcd_generation	    = cpu_to_le32(lcd->lcd_generation);
 }
 
 static inline __u64 lcd_last_transno(struct lsd_client_data *lcd)
@@ -521,6 +552,7 @@ struct lustre_sb_info {
 #define     get_profile_name(sb)   (s2lsi(sb)->lsi_lmd->lmd_profile)
 #define	    get_mount_flags(sb)	   (s2lsi(sb)->lsi_lmd->lmd_flags)
 #define	    get_mntdev_name(sb)	   (s2lsi(sb)->lsi_lmd->lmd_dev)
+#define     get_mount_fileset(sb)  (s2lsi(sb)->lsi_lmd->lmd_fileset)
 
 #endif /* __KERNEL__ */
 

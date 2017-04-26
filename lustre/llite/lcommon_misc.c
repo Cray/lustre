@@ -100,7 +100,8 @@ int cl_ocd_update(struct obd_device *host,
         int   result;
 
         ENTRY;
-        if (!strcmp(watched->obd_type->typ_name, LUSTRE_OSC_NAME)) {
+	if (!strcmp(watched->obd_type->typ_name, LUSTRE_OSC_NAME) &&
+	    watched->obd_set_up && !watched->obd_stopping) {
                 cli = &watched->u.cli;
                 lco = owner;
                 flags = cli->cl_import->imp_connect_data.ocd_connect_flags;
@@ -115,10 +116,12 @@ int cl_ocd_update(struct obd_device *host,
 		mutex_unlock(&lco->lco_lock);
                 result = 0;
         } else {
-                CERROR("unexpected notification from %s %s!\n",
-                       watched->obd_type->typ_name,
-                       watched->obd_name);
-                result = -EINVAL;
+		CERROR("unexpected notification from %s %s"
+		       "(setup:%d,stopping:%d)!\n",
+		       watched->obd_type->typ_name,
+		       watched->obd_name, watched->obd_set_up,
+		       watched->obd_stopping);
+		result = -EINVAL;
         }
         RETURN(result);
 }
@@ -133,7 +136,7 @@ int cl_get_grouplock(struct cl_object *obj, unsigned long gid, int nonblock,
         struct cl_lock         *lock;
         struct cl_lock_descr   *descr;
         __u32                   enqflags;
-        int                     refcheck;
+	__u16                   refcheck;
         int                     rc;
 
         env = cl_env_get(&refcheck);
@@ -172,13 +175,10 @@ int cl_get_grouplock(struct cl_object *obj, unsigned long gid, int nonblock,
 		return rc;
 	}
 
-        cg->cg_env  = cl_env_get(&refcheck);
+        cg->cg_env  = env;
         cg->cg_io   = io;
         cg->cg_lock = lock;
         cg->cg_gid  = gid;
-        LASSERT(cg->cg_env == env);
-
-        cl_env_unplant(env, &refcheck);
         return 0;
 }
 
@@ -187,13 +187,9 @@ void cl_put_grouplock(struct ccc_grouplock *cg)
 	struct lu_env  *env  = cg->cg_env;
 	struct cl_io   *io   = cg->cg_io;
 	struct cl_lock *lock = cg->cg_lock;
-	int             refcheck;
 
 	LASSERT(cg->cg_env);
 	LASSERT(cg->cg_gid);
-
-	cl_env_implant(env, &refcheck);
-	cl_env_put(env, &refcheck);
 
 	cl_lock_release(env, lock);
 	cl_io_fini(env, io);
@@ -236,7 +232,7 @@ int cl_lock_ahead(struct inode *inode, off_t start, off_t end,
 	struct cl_lock_descr	*descr = NULL;
 	enum cl_lock_mode	cl_mode;
 	int                     result;
-	int                     refcheck;
+	__u16                   refcheck;
 
 	ENTRY;
 

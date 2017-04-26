@@ -217,7 +217,8 @@ static int mdt_identity_expire_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", mdt->mdt_identity_cache->uc_entry_expire);
+	seq_printf(m, "%u\n", mdt->mdt_identity_cache->uc_entry_expire);
+	return 0;
 }
 
 static ssize_t
@@ -243,7 +244,8 @@ static int mdt_identity_acquire_expire_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", mdt->mdt_identity_cache->uc_acquire_expire);
+	seq_printf(m, "%u\n", mdt->mdt_identity_cache->uc_acquire_expire);
+	return 0;
 }
 
 static ssize_t
@@ -415,9 +417,10 @@ static int mdt_capa_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "capability on: %s %s\n",
-			  mdt->mdt_lut.lut_oss_capa ? "oss" : "",
-			  mdt->mdt_lut.lut_mds_capa ? "mds" : "");
+	seq_printf(m, "capability on: %s %s\n",
+		   mdt->mdt_lut.lut_oss_capa ? "oss" : "",
+		   mdt->mdt_lut.lut_mds_capa ? "mds" : "");
+	return 0;
 }
 
 static ssize_t
@@ -466,8 +469,9 @@ LPROC_SEQ_FOPS(mdt_capa);
 
 static int mdt_capa_count_seq_show(struct seq_file *m, void *data)
 {
-	return seq_printf(m, "%d %d\n", capa_count[CAPA_SITE_CLIENT],
-			  capa_count[CAPA_SITE_SERVER]);
+	seq_printf(m, "%d %d\n", capa_count[CAPA_SITE_CLIENT],
+		   capa_count[CAPA_SITE_SERVER]);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(mdt_capa_count);
 
@@ -485,7 +489,8 @@ static int mdt_capa_timeout_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%lu\n", mdt->mdt_capa_timeout);
+	seq_printf(m, "%lu\n", mdt->mdt_capa_timeout);
+	return 0;
 }
 
 static ssize_t
@@ -512,7 +517,8 @@ static int mdt_ck_timeout_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%lu\n", mdt->mdt_ck_timeout);
+	seq_printf(m, "%lu\n", mdt->mdt_ck_timeout);
+	return 0;
 }
 
 static ssize_t
@@ -537,50 +543,92 @@ LPROC_SEQ_FOPS(mdt_ck_timeout);
 #define BUFLEN (UUID_MAX + 4)
 
 static ssize_t
-lprocfs_mds_evict_client_seq_write(struct file *file,
-				   const char __user *buffer,
+lprocfs_mds_evict_client_seq_write(struct file *file, const char __user *buf,
 				   size_t count, loff_t *off)
 {
+	struct seq_file	  *m = file->private_data;
+	struct obd_device *obd = m->private;
+	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 	char *kbuf;
 	char *tmpbuf;
+	int rc = 0;
 
-        OBD_ALLOC(kbuf, BUFLEN);
-        if (kbuf == NULL)
-                return -ENOMEM;
+	OBD_ALLOC(kbuf, BUFLEN);
+	if (kbuf == NULL)
+		return -ENOMEM;
 
-        /*
-         * OBD_ALLOC() will zero kbuf, but we only copy BUFLEN - 1
-         * bytes into kbuf, to ensure that the string is NUL-terminated.
-         * UUID_MAX should include a trailing NUL already.
-         */
-	if (copy_from_user(kbuf, buffer,
-			   min_t(unsigned long, BUFLEN - 1, count))) {
-                count = -EFAULT;
-                goto out;
-        }
-        tmpbuf = cfs_firststr(kbuf, min_t(unsigned long, BUFLEN - 1, count));
+	/*
+	 * OBD_ALLOC() will zero kbuf, but we only copy BUFLEN - 1
+	 * bytes into kbuf, to ensure that the string is NUL-terminated.
+	 * UUID_MAX should include a trailing NUL already.
+	 */
+	if (copy_from_user(kbuf, buf, min_t(unsigned long, BUFLEN - 1, count)))
+		GOTO(out, rc = -EFAULT);
+	tmpbuf = cfs_firststr(kbuf, min_t(unsigned long, BUFLEN - 1, count));
 
-        if (strncmp(tmpbuf, "nid:", 4) != 0) {
-		count = lprocfs_evict_client_seq_write(file, buffer, count,
-						       off);
-                goto out;
-        }
+	if (strncmp(tmpbuf, "nid:", 4) != 0) {
+		count = lprocfs_evict_client_seq_write(file, buf, count, off);
+		goto out;
+	}
 
-        CERROR("NOT implement evict client by nid %s\n", tmpbuf);
+	if (mdt->mdt_opts.mo_evict_tgt_nids) {
+		rc = obd_set_info_async(NULL, mdt->mdt_child_exp,
+					sizeof(KEY_EVICT_BY_NID),
+					KEY_EVICT_BY_NID,
+					strlen(tmpbuf + 4) + 1,
+					tmpbuf + 4, NULL);
+		if (rc)
+			CERROR("Failed to evict nid %s from OSTs: rc %d\n",
+			       tmpbuf + 4, rc);
+	}
+
+	/* See the comments in function lprocfs_wr_evict_client()
+	 * in ptlrpc/lproc_ptlrpc.c for details. - jay */
+	class_incref(obd, __func__, current);
+	obd_export_evict_by_nid(obd, tmpbuf + 4);
+	class_decref(obd, __func__, current);
+
 
 out:
-        OBD_FREE(kbuf, BUFLEN);
-        return count;
+	OBD_FREE(kbuf, BUFLEN);
+	return rc < 0 ? rc : count;
 }
 
 #undef BUFLEN
+
+static int mdt_evict_tgt_nids_seq_show(struct seq_file *m, void *data)
+{
+	struct obd_device *obd = m->private;
+	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
+
+	return seq_printf(m, "%u\n", mdt->mdt_opts.mo_evict_tgt_nids);
+}
+
+static ssize_t
+mdt_evict_tgt_nids_seq_write(struct file *file, const char __user *buffer,
+			       size_t count, loff_t *off)
+{
+	struct seq_file   *m = file->private_data;
+	struct obd_device *obd = m->private;
+	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
+	int val, rc;
+
+	rc = lprocfs_write_helper(buffer, count, &val);
+	if (rc)
+		return rc;
+	mdt->mdt_opts.mo_evict_tgt_nids = !!val;
+	return count;
+}
+LPROC_SEQ_FOPS(mdt_evict_tgt_nids);
+
 
 static int mdt_sec_level_seq_show(struct seq_file *m, void *data)
 {
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%d\n", mdt->mdt_lut.lut_sec_level);
+	seq_printf(m, "%d\n", mdt->mdt_lut.lut_sec_level);
+	return 0;
 }
 
 static ssize_t
@@ -615,7 +663,8 @@ static int mdt_cos_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", mdt_cos_is_enabled(mdt));
+	seq_printf(m, "%u\n", mdt_cos_is_enabled(mdt));
+	return 0;
 }
 
 static ssize_t
@@ -641,8 +690,9 @@ static int mdt_root_squash_seq_show(struct seq_file *m, void *data)
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 	struct root_squash_info *squash = &mdt->mdt_squash;
 
-	return seq_printf(m, "%u:%u\n", squash->rsi_uid,
-			  squash->rsi_gid);
+	seq_printf(m, "%u:%u\n", squash->rsi_uid,
+		   squash->rsi_gid);
+	return 0;
 }
 
 static ssize_t
@@ -664,19 +714,19 @@ static int mdt_nosquash_nids_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 	struct root_squash_info *squash = &mdt->mdt_squash;
-	int len = 0, rc;
+	int len = 0;
 
 	down_read(&squash->rsi_sem);
 	if (!list_empty(&squash->rsi_nosquash_nids)) {
 		len = cfs_print_nidlist(m->buf + m->count, m->size - m->count,
 					&squash->rsi_nosquash_nids);
 		m->count += len;
-		rc = seq_printf(m, "\n");
+		seq_putc(m, '\n');
 	} else
-		rc = seq_printf(m, "NONE\n");
+		seq_puts(m, "NONE\n");
 	up_read(&squash->rsi_sem);
 
-	return rc;
+	return 0;
 }
 
 static ssize_t
@@ -698,8 +748,9 @@ static int mdt_som_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%sabled\n",
-			  mdt->mdt_som_conf ? "en" : "dis");
+	seq_printf(m, "%sabled\n",
+		   mdt->mdt_som_conf ? "en" : "dis");
+	return 0;
 }
 
 static ssize_t
@@ -760,7 +811,8 @@ static int mdt_enable_remote_dir_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", mdt->mdt_enable_remote_dir);
+	seq_printf(m, "%u\n", mdt->mdt_enable_remote_dir);
+	return 0;
 }
 
 static ssize_t
@@ -790,8 +842,9 @@ static int mdt_enable_remote_dir_gid_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%d\n",
-			  (int)mdt->mdt_enable_remote_dir_gid);
+	seq_printf(m, "%d\n",
+		  (int)mdt->mdt_enable_remote_dir_gid);
+	return 0;
 }
 
 static ssize_t
@@ -854,6 +907,8 @@ static struct lprocfs_vars lprocfs_mdt_obd_vars[] = {
 	  .fops =	&mdt_site_stats_fops			},
 	{ .name =	"evict_client",
 	  .fops =	&mdt_mds_evict_client_fops		},
+	{ .name =	"evict_tgt_nids",
+	  .fops =	&mdt_evict_tgt_nids_fops		},
 	{ .name =	"hash_stats",
 	  .fops =	&mdt_hash_fops				},
 	{ .name =	"sec_level",

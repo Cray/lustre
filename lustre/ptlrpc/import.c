@@ -372,7 +372,7 @@ void ptlrpc_invalidate_import(struct obd_import *imp)
 				}
 
 				CERROR("%s: Unregistering RPCs found (%d). "
-				       "Network is sluggish? Waiting them "
+				       "Network is sluggish? Waiting for them "
 				       "to error out.\n", cli_tgt,
 				       atomic_read(&imp->imp_unregistering));
 			}
@@ -668,7 +668,8 @@ int ptlrpc_connect_import(struct obd_import *imp)
 		spin_unlock(&imp->imp_lock);
 		CERROR("already connected\n");
 		RETURN(0);
-	} else if (imp->imp_state == LUSTRE_IMP_CONNECTING) {
+	} else if (imp->imp_state == LUSTRE_IMP_CONNECTING ||
+		   imp->imp_connected) {
 		spin_unlock(&imp->imp_lock);
 		CERROR("already connecting\n");
 		RETURN(-EALREADY);
@@ -699,6 +700,7 @@ int ptlrpc_connect_import(struct obd_import *imp)
         /* Reset connect flags to the originally requested flags, in case
          * the server is updated on-the-fly we will get the new features. */
         imp->imp_connect_data.ocd_connect_flags = imp->imp_connect_flags_orig;
+	imp->imp_connect_data.ocd_connect_flags2 = imp->imp_connect_flags2_orig;
 	/* Reset ocd_version each time so the server knows the exact versions */
 	imp->imp_connect_data.ocd_version = LUSTRE_VERSION_CODE;
         imp->imp_msghdr_flags &= ~MSGHDR_AT_SUPPORT;
@@ -902,6 +904,14 @@ static int ptlrpc_connect_set_flags(struct obd_import *imp,
 
 	client_adjust_max_dirty(cli);
 
+	/* Update client max modify RPCs in flight with value returned
+	 * by the server */
+	if (ocd->ocd_connect_flags & OBD_CONNECT_MULTIMODRPCS)
+		cli->cl_max_mod_rpcs_in_flight = min(
+					cli->cl_max_mod_rpcs_in_flight,
+					ocd->ocd_maxmodrpcs);
+	else
+		cli->cl_max_mod_rpcs_in_flight = 1;
 
 	/* Reset ns_connect_flags only for initial connect. It might be
 	 * changed in while using FS and if we reset it in reconnect
@@ -941,6 +951,37 @@ static int ptlrpc_connect_set_flags(struct obd_import *imp,
 }
 
 /**
+ * Add all replay requests back to unreplied list before start replay,
+ * so that we can make sure the known replied XID is always increased
+ * only even if when replaying requests.
+ */
+static void ptlrpc_prepare_replay(struct obd_import *imp)
+{
+	struct ptlrpc_request *req;
+
+	if (imp->imp_state != LUSTRE_IMP_REPLAY ||
+	    imp->imp_resend_replay)
+		return;
+
+	/* If the server was restart during repaly, the requests may
+	 * have been added to the unreplied list in former replay. */
+	spin_lock(&imp->imp_lock);
+
+	list_for_each_entry(req, &imp->imp_committed_list, rq_replay_list) {
+		if (list_empty(&req->rq_unreplied_list))
+			ptlrpc_add_unreplied(req);
+	}
+
+	list_for_each_entry(req, &imp->imp_replay_list, rq_replay_list) {
+		if (list_empty(&req->rq_unreplied_list))
+			ptlrpc_add_unreplied(req);
+	}
+
+	imp->imp_known_replied_xid = ptlrpc_known_replied_xid(imp);
+	spin_unlock(&imp->imp_lock);
+}
+
+/**
  * interpret_reply callback for connect RPCs.
  * Looks into returned status of connect operation and decides
  * what to do with the import - i.e enter recovery, promote it to
@@ -975,11 +1016,16 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 		ptlrpc_maybe_ping_import_soon(imp);
 		GOTO(out, rc);
 	}
+
+	/* LU-7558: indicate that we are interpretting connect reply,
+	 * pltrpc_connect_import() will not try to reconnect until
+	 * interpret will finish. */
+	imp->imp_connected = 1;
 	spin_unlock(&imp->imp_lock);
 
-        LASSERT(imp->imp_conn_current);
+	LASSERT(imp->imp_conn_current);
 
-        msg_flags = lustre_msg_get_op_flags(request->rq_repmsg);
+	msg_flags = lustre_msg_get_op_flags(request->rq_repmsg);
 
 	ret = req_capsule_get_size(&request->rq_pill, &RMF_CONNECT_DATA,
 				   RCL_SERVER);
@@ -1009,13 +1055,30 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 
 	spin_unlock(&imp->imp_lock);
 
+	if (!exp) {
+		/* This could happen if export is cleaned during the
+		   connect attempt */
+		CERROR("%s: missing export after connect\n",
+		       imp->imp_obd->obd_name);
+		GOTO(out, rc = -ENODEV);
+	}
+
 	/* check that server granted subset of flags we asked for. */
 	if ((ocd->ocd_connect_flags & imp->imp_connect_flags_orig) !=
 	    ocd->ocd_connect_flags) {
-		CERROR("%s: Server didn't granted asked subset of flags: "
-		       "asked="LPX64" grranted="LPX64"\n",
+		CERROR("%s: Server didn't grant requested subset of flags: "
+		       "asked="LPX64" granted="LPX64"\n",
 		       imp->imp_obd->obd_name,imp->imp_connect_flags_orig,
 		       ocd->ocd_connect_flags);
+		GOTO(out, rc = -EPROTO);
+	}
+
+	if ((ocd->ocd_connect_flags2 & imp->imp_connect_flags2_orig) !=
+	    ocd->ocd_connect_flags2) {
+		CERROR("%s: Server didn't grant requested subset of flags2: "
+		       "asked="LPX64" granted="LPX64"\n",
+		       imp->imp_obd->obd_name, imp->imp_connect_flags2_orig,
+		       ocd->ocd_connect_flags2);
 		GOTO(out, rc = -EPROTO);
 	}
 
@@ -1045,13 +1108,6 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 		}
 	}
 
-	if (!exp) {
-		/* This could happen if export is cleaned during the
-		   connect attempt */
-		CERROR("%s: missing export after connect\n",
-		       imp->imp_obd->obd_name);
-		GOTO(out, rc = -ENODEV);
-	}
 	old_connect_flags = exp_connect_flags(exp);
 	exp->exp_connect_data = *ocd;
 	imp->imp_obd->obd_self_export->exp_connect_data = *ocd;
@@ -1187,8 +1243,8 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
                 LASSERT(imp->imp_replayable);
                 imp->imp_remote_handle =
                                 *lustre_msg_get_handle(request->rq_repmsg);
-		imp->imp_replay_cursor = &imp->imp_committed_list;
                 imp->imp_last_replay_transno = 0;
+		imp->imp_replay_cursor = &imp->imp_committed_list;
                 IMPORT_SET_STATE(imp, LUSTRE_IMP_REPLAY);
         } else {
                 DEBUG_REQ(D_HA, request, "%s: evicting (reconnect/recover flags"
@@ -1216,6 +1272,7 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
         }
 
 finish:
+	ptlrpc_prepare_replay(imp);
 	rc = ptlrpc_import_recovery_state_machine(imp);
 	if (rc == -ENOTCONN) {
 		CDEBUG(D_HA, "evicted/aborted by %s@%s during recovery;"
@@ -1223,12 +1280,18 @@ finish:
 		       obd2cli_tgt(imp->imp_obd),
 		       imp->imp_connection->c_remote_uuid.uuid);
 		ptlrpc_connect_import(imp);
+		spin_lock(&imp->imp_lock);
+		imp->imp_connected = 0;
 		imp->imp_connect_tried = 1;
+		spin_unlock(&imp->imp_lock);
 		RETURN(0);
 	}
 
 out:
+	spin_lock(&imp->imp_lock);
+	imp->imp_connected = 0;
 	imp->imp_connect_tried = 1;
+	spin_unlock(&imp->imp_lock);
 
         if (rc != 0) {
                 IMPORT_SET_STATE(imp, LUSTRE_IMP_DISCON);
@@ -1435,7 +1498,7 @@ int ptlrpc_import_recovery_state_machine(struct obd_import *imp)
 		{
 		struct task_struct *task;
 		/* bug 17802:  XXX client_disconnect_export vs connect request
-		 * race. if client will evicted at this time, we start
+		 * race. if client is evicted at this time then we start
 		 * invalidate thread without reference to import and import can
 		 * be freed at same time. */
 		class_import_get(imp);

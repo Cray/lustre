@@ -152,7 +152,7 @@ struct obd_info {
         /* statfs data specific for every OSC, if needed at all. */
         struct obd_statfs      *oi_osfs;
         /* An update callback which is called to update some data on upper
-         * level. E.g. it is used for update lsm->lsm_oinfo at every recieved
+	 * level. E.g. it is used for update lsm->lsm_oinfo at every received
          * request in osc level for enqueue requests. It is also possible to
          * update some caller data from LOV layer if needed. */
         obd_enqueue_update_f    oi_cb_up;
@@ -265,6 +265,8 @@ struct client_obd {
 	unsigned long		 cl_dirty_transit;    /* dirty synchronous */
 	unsigned long		 cl_avail_grant;   /* bytes of credit for ost */
 	unsigned long		 cl_lost_grant;    /* lost credits (trunc) */
+	/* grant consumed for dirty pages */
+	unsigned long		 cl_dirty_grant;
 
 	/* since we allocate grant by blocks, we don't know how many grant will
 	 * be used to add a page into cache. As a solution, we reserve maximum
@@ -279,7 +281,11 @@ struct client_obd {
 	/* A chunk is an optimal size used by osc_extent to determine
 	 * the extent size. A chunk is max(PAGE_CACHE_SIZE, OST block size) */
 	int			cl_chunkbits;
-	unsigned int		cl_extent_tax;	/* extent overhead, by bytes */
+	/* extent insertion metadata overhead to be accounted in grant,
+	 * in bytes */
+	unsigned int		cl_grant_extent_tax;
+	/* maximum extent size, in number of pages */
+	unsigned int		cl_max_extent_pages;
 
 	/* keep track of objects that have lois that contain pages which
 	 * have been queued for async brw.  this lock also protects the
@@ -333,7 +339,16 @@ struct client_obd {
 	wait_queue_head_t	 cl_destroy_waitq;
 
         struct mdc_rpc_lock     *cl_rpc_lock;
-        struct mdc_rpc_lock     *cl_close_lock;
+
+	/* modify rpcs in flight
+	 * currently used for metadata only */
+	spinlock_t		 cl_mod_rpcs_lock;
+	__u16			 cl_max_mod_rpcs_in_flight;
+	__u16			 cl_mod_rpcs_in_flight;
+	__u16			 cl_close_rpcs_in_flight;
+	wait_queue_head_t	 cl_mod_rpcs_waitq;
+	unsigned long		*cl_mod_tag_bitmap;
+	struct obd_histogram	 cl_mod_rpcs_hist;
 
         /* mgc datastruct */
 	struct mutex		  cl_mgc_mutex;
@@ -518,6 +533,58 @@ struct niobuf_local {
 #define LUSTRE_MGS_OBDNAME "MGS"
 #define LUSTRE_MGC_OBDNAME "MGC"
 
+static inline int is_lwp_on_mdt(char *name)
+{
+	char   *ptr;
+
+	ptr = strrchr(name, '-');
+	if (ptr == NULL) {
+		CERROR("%s is not a obdname\n", name);
+		return 0;
+	}
+
+	/* LWP name on MDT is fsname-MDTxxxx-lwp-MDTxxxx */
+
+	if (strncmp(ptr + 1, "MDT", 3) != 0)
+		return 0;
+
+	while (*(--ptr) != '-' && ptr != name);
+
+	if (ptr == name)
+		return 0;
+
+	if (strncmp(ptr + 1, LUSTRE_LWP_NAME, strlen(LUSTRE_LWP_NAME)) != 0)
+		return 0;
+
+	return 1;
+}
+
+static inline int is_lwp_on_ost(char *name)
+{
+	char   *ptr;
+
+	ptr = strrchr(name, '-');
+	if (ptr == NULL) {
+		CERROR("%s is not a obdname\n", name);
+		return 0;
+	}
+
+	/* LWP name on OST is fsname-MDTxxxx-lwp-OSTxxxx */
+
+	if (strncmp(ptr + 1, "OST", 3) != 0)
+		return 0;
+
+	while (*(--ptr) != '-' && ptr != name);
+
+	if (ptr == name)
+		return 0;
+
+	if (strncmp(ptr + 1, LUSTRE_LWP_NAME, strlen(LUSTRE_LWP_NAME)) != 0)
+		return 0;
+
+	return 1;
+}
+
 struct obd_trans_info {
 	__u64			 oti_xid;
 	/* Only used on the server side for tracking acks. */
@@ -635,6 +702,8 @@ struct obd_device {
         cfs_hash_t             *obd_nid_hash;
 	/* nid stats body */
 	cfs_hash_t             *obd_nid_stats_hash;
+	/* client_generation-export hash body */
+	cfs_hash_t		*obd_gen_hash;
 	struct list_head	obd_nid_stats;
 	atomic_t		obd_refcount;
 	struct list_head	obd_exports;
@@ -823,6 +892,15 @@ enum md_cli_flags {
 	CLI_MIGRATE     = 1 << 4,
 };
 
+/**
+ * GETXATTR is not included as only a couple of fields in the reply body
+ * is filled, but not FID which is needed for common intent handling in
+ * mdc_finish_intent_lock() */
+static inline bool it_has_reply_body(const struct lookup_intent *it)
+{
+	return it->it_op & (IT_OPEN | IT_UNLINK | IT_LOOKUP | IT_GETATTR);
+}
+
 struct md_op_data {
         struct lu_fid           op_fid1; /* operation fid1 (usualy parent) */
         struct lu_fid           op_fid2; /* operation fid2 (usualy child) */
@@ -870,6 +948,11 @@ struct md_op_data {
 	/* File object data version for HSM release, on client */
 	__u64			op_data_version;
 	struct lustre_handle	op_lease_handle;
+
+	/* File security context, for creates. */
+	const char	       *op_file_secctx_name;
+	void		       *op_file_secctx;
+	__u32			op_file_secctx_size;
 
 	/* default stripe offset */
 	__u32			op_default_stripe_offset;
@@ -1070,9 +1153,12 @@ struct md_ops {
 			cfs_cap_t, __u64, struct ptlrpc_request **);
 
 	int (*m_enqueue)(struct obd_export *, struct ldlm_enqueue_info *,
-			 const union ldlm_policy_data *,
-			 struct lookup_intent *, struct md_op_data *,
+			 const union ldlm_policy_data *, struct md_op_data *,
 			 struct lustre_handle *, __u64);
+
+	int (*m_enqueue_async)(struct obd_export *, struct ldlm_enqueue_info *,
+			       obd_enqueue_update_f, struct md_op_data *,
+			       ldlm_policy_data_t *, __u64);
 
 	int (*m_getattr)(struct obd_export *, struct md_op_data *,
 			 struct ptlrpc_request **);
@@ -1122,8 +1208,8 @@ struct md_ops {
 
 #define MD_STATS_LAST_OP m_revalidate_lock
 
-	int (*m_getstatus)(struct obd_export *, struct lu_fid *,
-			   struct obd_capa **);
+	int (*m_getstatus)(struct obd_export *, const char *fileset,
+			   struct lu_fid *, struct obd_capa **);
 
 	int (*m_null_inode)(struct obd_export *, const struct lu_fid *);
 
@@ -1276,7 +1362,7 @@ static inline bool filename_is_volatile(const char *name, size_t namelen,
 	}
 	/* we have an idx, read it */
 	start = name + LUSTRE_VOLATILE_HDR_LEN + 1;
-	*idx = strtoul(start, &end, 16);
+	*idx = simple_strtoul(start, &end, 16);
 	/* error cases:
 	 * no digit, no trailing :, negative value
 	 */

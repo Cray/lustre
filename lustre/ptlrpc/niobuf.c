@@ -109,23 +109,26 @@ static void mdunlink_iterate_helper(lnet_handle_md_t *bd_mds, int count)
 #ifdef HAVE_SERVER_SUPPORT
 /**
  * Prepare bulk descriptor for specified incoming request \a req that
- * can fit \a npages * pages. \a type is bulk type. \a portal is where
+ * can fit \a nfrags * pages. \a type is bulk type. \a portal is where
  * the bulk to be sent. Used on server-side after request was already
  * received.
  * Returns pointer to newly allocatrd initialized bulk descriptor or NULL on
  * error.
  */
 struct ptlrpc_bulk_desc *ptlrpc_prep_bulk_exp(struct ptlrpc_request *req,
-					      unsigned npages, unsigned max_brw,
-					      unsigned type, unsigned portal)
+					      unsigned nfrags, unsigned max_brw,
+					      unsigned int type,
+					      unsigned portal,
+					      const struct ptlrpc_bulk_frag_ops
+						*ops)
 {
 	struct obd_export *exp = req->rq_export;
 	struct ptlrpc_bulk_desc *desc;
 
 	ENTRY;
-	LASSERT(type == BULK_PUT_SOURCE || type == BULK_GET_SINK);
+	LASSERT(ptlrpc_is_bulk_op_active(type));
 
-	desc = ptlrpc_new_bulk(npages, max_brw, type, portal);
+	desc = ptlrpc_new_bulk(nfrags, max_brw, type, portal, ops);
 	if (desc == NULL)
 		RETURN(NULL);
 
@@ -151,7 +154,7 @@ int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc)
 	struct obd_export        *exp = desc->bd_export;
 	struct ptlrpc_connection *conn = exp->exp_connection;
 	int                       rc = 0;
-	__u64                     xid;
+	__u64                     mbits;
 	int                       posted_md;
 	int                       total_md;
 	lnet_md_t                 md;
@@ -162,8 +165,7 @@ int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc)
 
 	/* NB no locking required until desc is on the network */
 	LASSERT(desc->bd_md_count == 0);
-	LASSERT(desc->bd_type == BULK_PUT_SOURCE ||
-		desc->bd_type == BULK_GET_SINK);
+	LASSERT(ptlrpc_is_bulk_op_active(desc->bd_type));
 
 	LASSERT(desc->bd_cbid.cbid_fn == server_bulk_callback);
 	LASSERT(desc->bd_cbid.cbid_arg == desc);
@@ -171,11 +173,11 @@ int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc)
 	/* NB total length may be 0 for a read past EOF, so we send 0
 	 * length bulks, since the client expects bulk events.
 	 *
-	 * The client may not need all of the bulk XIDs for the RPC.  The RPC
-	 * used the XID of the highest bulk XID needed, and the server masks
+	 * The client may not need all of the bulk mbits for the RPC. The RPC
+	 * used the mbits of the highest bulk mbits needed, and the server masks
 	 * off high bits to get bulk count for this RPC. LU-1431 */
-	xid = desc->bd_req->rq_xid & ~((__u64)desc->bd_md_max_brw - 1);
-	total_md = desc->bd_req->rq_xid - xid + 1;
+	mbits = desc->bd_req->rq_mbits & ~((__u64)desc->bd_md_max_brw - 1);
+	total_md = desc->bd_req->rq_mbits - mbits + 1;
 
 	desc->bd_md_count = total_md;
 	desc->bd_failure = 0;
@@ -184,7 +186,7 @@ int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc)
 	md.eq_handle = ptlrpc_eq_h;
 	md.threshold = 2; /* SENT and ACK/REPLY */
 
-	for (posted_md = 0; posted_md < total_md; xid++) {
+	for (posted_md = 0; posted_md < total_md; mbits++) {
 		md.options = PTLRPC_MD_OPTIONS;
 
 		/* NB it's assumed that source and sink buffer frags are
@@ -212,20 +214,20 @@ int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc)
 		}
 
 		/* Network is about to get at the memory */
-		if (desc->bd_type == BULK_PUT_SOURCE)
+		if (ptlrpc_is_bulk_put_source(desc->bd_type))
 			rc = LNetPut(conn->c_self, desc->bd_mds[posted_md],
 				     LNET_ACK_REQ, conn->c_peer,
-				     desc->bd_portal, xid, 0, 0);
+				     desc->bd_portal, mbits, 0, 0);
 		else
 			rc = LNetGet(conn->c_self, desc->bd_mds[posted_md],
-				     conn->c_peer, desc->bd_portal, xid, 0);
+				     conn->c_peer, desc->bd_portal, mbits, 0);
 
 		posted_md++;
 		if (rc != 0) {
 			CERROR("%s: failed bulk transfer with %s:%u x"LPU64": "
 			       "rc = %d\n", exp->exp_obd->obd_name,
 			       libcfs_id2str(conn->c_peer), desc->bd_portal,
-			       xid, rc);
+			       mbits, rc);
 			break;
 		}
 	}
@@ -244,9 +246,9 @@ int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc)
 	}
 
 	CDEBUG(D_NET, "Transferring %u pages %u bytes via portal %d "
-	       "id %s xid "LPX64"-"LPX64"\n", desc->bd_iov_count,
+	       "id %s mbits "LPX64"-"LPX64"\n", desc->bd_iov_count,
 	       desc->bd_nob, desc->bd_portal, libcfs_id2str(conn->c_peer),
-	       xid - posted_md, xid - 1);
+	       mbits - posted_md, mbits - 1);
 
 	RETURN(0);
 }
@@ -304,7 +306,7 @@ int ptlrpc_register_bulk(struct ptlrpc_request *req)
 	int rc2;
 	int posted_md;
 	int total_md;
-	__u64 xid;
+	__u64 mbits;
 	lnet_handle_me_t  me_h;
 	lnet_md_t         md;
 	ENTRY;
@@ -318,8 +320,7 @@ int ptlrpc_register_bulk(struct ptlrpc_request *req)
 	LASSERT(desc->bd_md_max_brw <= PTLRPC_BULK_OPS_COUNT);
 	LASSERT(desc->bd_iov_count <= PTLRPC_MAX_BRW_PAGES);
 	LASSERT(desc->bd_req != NULL);
-	LASSERT(desc->bd_type == BULK_PUT_SINK ||
-		desc->bd_type == BULK_GET_SOURCE);
+	LASSERT(ptlrpc_is_bulk_op_passive(desc->bd_type));
 
 	/* cleanup the state of the bulk for it will be reused */
 	if (req->rq_resend || req->rq_send_state == LUSTRE_IMP_REPLAY)
@@ -334,39 +335,38 @@ int ptlrpc_register_bulk(struct ptlrpc_request *req)
 	LASSERT(desc->bd_cbid.cbid_fn == client_bulk_callback);
 	LASSERT(desc->bd_cbid.cbid_arg == desc);
 
-	/* An XID is only used for a single request from the client.
-	 * For retried bulk transfers, a new XID will be allocated in
-	 * in ptlrpc_check_set() if it needs to be resent, so it is not
-	 * using the same RDMA match bits after an error.
-	 *
-	 * For multi-bulk RPCs, rq_xid is the last XID needed for bulks. The
-	 * first bulk XID is power-of-two aligned before rq_xid. LU-1431 */
-	xid = req->rq_xid & ~((__u64)desc->bd_md_max_brw - 1);
+	total_md = (desc->bd_iov_count + LNET_MAX_IOV - 1) / LNET_MAX_IOV;
+	/* rq_mbits is matchbits of the final bulk */
+	mbits = req->rq_mbits - total_md + 1;
+
+	LASSERTF(mbits == (req->rq_mbits & PTLRPC_BULK_OPS_MASK),
+		 "first mbits = x"LPU64", last mbits = x"LPU64"\n",
+		 mbits, req->rq_mbits);
+
 	LASSERTF(!(desc->bd_registered &&
 		   req->rq_send_state != LUSTRE_IMP_REPLAY) ||
-		 xid != desc->bd_last_xid,
-		 "registered: %d  rq_xid: "LPU64" bd_last_xid: "LPU64"\n",
-		 desc->bd_registered, xid, desc->bd_last_xid);
+		 mbits != desc->bd_last_mbits,
+		 "registered: %d  rq_mbits: "LPU64" bd_last_mbits: "LPU64"\n",
+		 desc->bd_registered, mbits, desc->bd_last_mbits);
 
-	total_md = (desc->bd_iov_count + LNET_MAX_IOV - 1) / LNET_MAX_IOV;
 	desc->bd_registered = 1;
-	desc->bd_last_xid = xid;
+	desc->bd_last_mbits = mbits;
 	desc->bd_md_count = total_md;
 	md.user_ptr = &desc->bd_cbid;
 	md.eq_handle = ptlrpc_eq_h;
 	md.threshold = 1;                       /* PUT or GET */
 
-	for (posted_md = 0; posted_md < total_md; posted_md++, xid++) {
+	for (posted_md = 0; posted_md < total_md; posted_md++, mbits++) {
 		md.options = PTLRPC_MD_OPTIONS |
-			     ((desc->bd_type == BULK_GET_SOURCE) ?
+			     (ptlrpc_is_bulk_op_get(desc->bd_type) ?
 			      LNET_MD_OP_GET : LNET_MD_OP_PUT);
 		ptlrpc_fill_bulk_md(&md, desc, posted_md);
 
-		rc = LNetMEAttach(desc->bd_portal, peer, xid, 0,
+		rc = LNetMEAttach(desc->bd_portal, peer, mbits, 0,
 				  LNET_UNLINK, LNET_INS_AFTER, &me_h);
 		if (rc != 0) {
 			CERROR("%s: LNetMEAttach failed x"LPU64"/%d: rc = %d\n",
-			       desc->bd_import->imp_obd->obd_name, xid,
+			       desc->bd_import->imp_obd->obd_name, mbits,
 			       posted_md, rc);
 			break;
 		}
@@ -376,7 +376,7 @@ int ptlrpc_register_bulk(struct ptlrpc_request *req)
 				  &desc->bd_mds[posted_md]);
 		if (rc != 0) {
 			CERROR("%s: LNetMDAttach failed x"LPU64"/%d: rc = %d\n",
-			       desc->bd_import->imp_obd->obd_name, xid,
+			       desc->bd_import->imp_obd->obd_name, mbits,
 			       posted_md, rc);
 			rc2 = LNetMEUnlink(me_h);
 			LASSERT(rc2 == 0);
@@ -395,15 +395,8 @@ int ptlrpc_register_bulk(struct ptlrpc_request *req)
 		RETURN(-ENOMEM);
 	}
 
-	/* Set rq_xid to matchbits of the final bulk so that server can
-	 * infer the number of bulks that were prepared */
-	req->rq_xid = --xid;
-	LASSERTF(desc->bd_last_xid == (req->rq_xid & PTLRPC_BULK_OPS_MASK),
-		 "bd_last_xid = x"LPU64", rq_xid = x"LPU64"\n",
-		 desc->bd_last_xid, req->rq_xid);
-
 	spin_lock(&desc->bd_lock);
-	/* Holler if peer manages to touch buffers before he knows the xid */
+	/* Holler if peer manages to touch buffers before he knows the mbits */
 	if (desc->bd_md_count != total_md)
 		CWARN("%s: Peer %s touched %d buffers while I registered\n",
 		      desc->bd_import->imp_obd->obd_name, libcfs_id2str(peer),
@@ -411,10 +404,10 @@ int ptlrpc_register_bulk(struct ptlrpc_request *req)
 	spin_unlock(&desc->bd_lock);
 
 	CDEBUG(D_NET, "Setup %u bulk %s buffers: %u pages %u bytes, "
-	       "xid x"LPX64"-"LPX64", portal %u\n", desc->bd_md_count,
-	       desc->bd_type == BULK_GET_SOURCE ? "get-source" : "put-sink",
+	       "mbits x"LPX64"-"LPX64", portal %u\n", desc->bd_md_count,
+	       ptlrpc_is_bulk_op_get(desc->bd_type) ? "get-source" : "put-sink",
 	       desc->bd_iov_count, desc->bd_nob,
-	       desc->bd_last_xid, req->rq_xid, desc->bd_portal);
+	       desc->bd_last_mbits, req->rq_mbits, desc->bd_portal);
 
 	RETURN(0);
 }
@@ -512,11 +505,24 @@ static void ptlrpc_at_set_reply(struct ptlrpc_request *req, int flags)
          * (to be ignored by client) if it's a error reply during recovery.
          * (bz15815) */
         if (req->rq_type == PTL_RPC_MSG_ERR &&
-            (req->rq_export == NULL || req->rq_export->exp_obd->obd_recovering))
+	    (req->rq_export == NULL ||
+	     req->rq_export->exp_obd->obd_recovering)) {
                 lustre_msg_set_timeout(req->rq_repmsg, 0);
-        else
-                lustre_msg_set_timeout(req->rq_repmsg,
-				       at_get(&svcpt->scp_at_estimate));
+	} else {
+		__u32 timeout;
+
+		if (req->rq_export && req->rq_reqmsg != NULL &&
+		    lustre_msg_get_flags(req->rq_reqmsg) &
+		    (MSG_REPLAY | MSG_REQ_REPLAY_DONE | MSG_LOCK_REPLAY_DONE))
+			timeout = cfs_time_current_sec() -
+				req->rq_arrival_time.tv_sec +
+				min(at_extra,
+				    req->rq_export->exp_obd->
+				    obd_recovery_timeout / 4);
+		else
+			timeout = at_get(&svcpt->scp_at_estimate);
+		lustre_msg_set_timeout(req->rq_repmsg, timeout);
+	}
 
         if (req->rq_reqmsg &&
             !(lustre_msghdr_get_flags(req->rq_reqmsg) & MSGHDR_AT_SUPPORT)) {
@@ -711,6 +717,38 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 	lustre_msghdr_set_flags(request->rq_reqmsg,
 				imp->imp_msghdr_flags);
 
+	/* If it's the first time to resend the request for EINPROGRESS,
+	 * we need to allocate a new XID (see after_reply()), it's different
+	 * from the resend for reply timeout. */
+	if (request->rq_nr_resend != 0 &&
+	    list_empty(&request->rq_unreplied_list)) {
+		__u64 min_xid = 0;
+		/* resend for EINPROGRESS, allocate new xid to avoid reply
+		 * reconstruction */
+		spin_lock(&imp->imp_lock);
+		ptlrpc_assign_next_xid_nolock(request);
+		min_xid = ptlrpc_known_replied_xid(imp);
+		spin_unlock(&imp->imp_lock);
+
+		lustre_msg_set_last_xid(request->rq_reqmsg, min_xid);
+		DEBUG_REQ(D_RPCTRACE, request, "Allocating new xid for "
+			  "resend on EINPROGRESS");
+	}
+
+	if (request->rq_bulk != NULL) {
+		ptlrpc_set_bulk_mbits(request);
+		lustre_msg_set_mbits(request->rq_reqmsg, request->rq_mbits);
+	}
+
+	if (list_empty(&request->rq_unreplied_list) ||
+	    request->rq_xid <= imp->imp_known_replied_xid) {
+		DEBUG_REQ(D_ERROR, request, "xid: "LPU64", replied: "LPU64", "
+			  "list_empty:%d\n", request->rq_xid,
+			  imp->imp_known_replied_xid,
+			  list_empty(&request->rq_unreplied_list));
+		LBUG();
+	}
+
 	/** For enabled AT all request should have AT_SUPPORT in the
 	 * FULL import state when OBD_CONNECT_AT is set */
 	LASSERT(AT_OFF || imp->imp_state != LUSTRE_IMP_FULL ||
@@ -726,9 +764,13 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
         if (request->rq_memalloc)
                 mpflag = cfs_memory_pressure_get_and_set();
 
-        rc = sptlrpc_cli_wrap_request(request);
-        if (rc)
-                GOTO(out, rc);
+	rc = sptlrpc_cli_wrap_request(request);
+	if (rc == -ENOMEM)
+		/* set rq_sent so that this request is treated
+		 * as a delayed send in the upper layers */
+		request->rq_sent = cfs_time_current_sec();
+	if (rc)
+		GOTO(out, rc);
 
         /* bulk register should be done after wrap_request() */
         if (request->rq_bulk != NULL) {

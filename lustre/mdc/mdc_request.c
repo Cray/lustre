@@ -105,24 +105,53 @@ static inline int mdc_queue_wait(struct ptlrpc_request *req)
 	return rc;
 }
 
-/* Helper that implements most of mdc_getstatus and signal_completed_replay. */
-/* XXX this should become mdc_get_info("key"), sending MDS_GET_INFO RPC */
-static int send_getstatus(struct obd_import *imp, struct lu_fid *rootfid,
-                          struct obd_capa **pc, int level, int msg_flags)
+/*
+ * Send MDS_GET_ROOT RPC to fetch root FID.
+ *
+ * If \a fileset is not NULL it should contain a subdirectory off
+ * the ROOT/ directory to be mounted on the client. Return the FID
+ * of the subdirectory to the client to mount onto its mountpoint.
+ *
+ * \param[in]	imp	MDC import
+ * \param[in]	fileset	fileset name, which could be NULL
+ * \param[out]	rootfid	root FID of this mountpoint
+ * \param[out]	pc	root capa will be unpacked and saved in this pointer
+ *
+ * \retval	0 on success, negative errno on failure
+ */
+static int mdc_get_root(struct obd_export *exp, const char *fileset,
+			struct lu_fid *rootfid, struct obd_capa **pc)
 {
         struct ptlrpc_request *req;
         struct mdt_body       *body;
         int                    rc;
         ENTRY;
 
-        req = ptlrpc_request_alloc_pack(imp, &RQF_MDS_GETSTATUS,
-                                        LUSTRE_MDS_VERSION, MDS_GETSTATUS);
+	if (fileset && !(exp_connect_flags(exp) & OBD_CONNECT_SUBTREE))
+		RETURN(-ENOTSUPP);
+
+	req = ptlrpc_request_alloc(class_exp2cliimp(exp),
+				&RQF_MDS_GET_ROOT);
         if (req == NULL)
                 RETURN(-ENOMEM);
 
+	if (fileset != NULL)
+		req_capsule_set_size(&req->rq_pill, &RMF_NAME, RCL_CLIENT,
+				     strlen(fileset) + 1);
+	rc = ptlrpc_request_pack(req, LUSTRE_MDS_VERSION, MDS_GET_ROOT);
+	if (rc) {
+		ptlrpc_request_free(req);
+		RETURN(rc);
+	}
+
         mdc_pack_body(req, NULL, NULL, 0, 0, -1, 0);
-        lustre_msg_add_flags(req->rq_reqmsg, msg_flags);
-        req->rq_send_state = level;
+	if (fileset != NULL) {
+		char *name = req_capsule_client_get(&req->rq_pill, &RMF_NAME);
+
+		memcpy(name, fileset, strlen(fileset));
+	}
+	lustre_msg_add_flags(req->rq_reqmsg, LUSTRE_IMP_FULL);
+        req->rq_send_state = LUSTRE_IMP_FULL;
 
         ptlrpc_request_set_replen(req);
 
@@ -147,14 +176,6 @@ static int send_getstatus(struct obd_import *imp, struct lu_fid *rootfid,
 out:
         ptlrpc_req_finished(req);
         return rc;
-}
-
-/* This should be mdc_get_info("rootfid") */
-static int mdc_getstatus(struct obd_export *exp, struct lu_fid *rootfid,
-			 struct obd_capa **pc)
-{
-        return send_getstatus(class_exp2cliimp(exp), rootfid, pc,
-                              LUSTRE_IMP_FULL, 0);
 }
 
 /*
@@ -404,12 +425,12 @@ static int mdc_xattr_common(struct obd_export *exp,const struct req_format *fmt,
 
         /* make rpc */
         if (opcode == MDS_REINT)
-                mdc_get_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
+		mdc_get_mod_rpc_slot(req, NULL);
 
         rc = ptlrpc_queue_wait(req);
 
         if (opcode == MDS_REINT)
-                mdc_put_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
+		mdc_put_mod_rpc_slot(req, NULL);
 
         if (rc)
                 ptlrpc_req_finished(req);
@@ -793,10 +814,9 @@ static void mdc_free_open(struct md_open_data *mod)
 	 * close request wasn`t sent. It is not fatal to client.
 	 * The worst thing is eviction if the client gets open lock
 	 **/
-	if (mod->mod_open_req->rq_replay != 0)
-		CWARN("Close open request with rq_replay == 1\n");
 
-	DEBUG_REQ(D_RPCTRACE, mod->mod_open_req, "free open request\n");
+	DEBUG_REQ(D_RPCTRACE, mod->mod_open_req, "free open request rq_replay"
+		  "= %d\n", mod->mod_open_req->rq_replay);
 
 	ptlrpc_request_committed(mod->mod_open_req, committed);
 	if (mod->mod_close_req)
@@ -894,6 +914,12 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 		CDEBUG(D_HA, "couldn't find open req; expecting close error\n");
 	}
 	if (req == NULL) {
+		/**
+		 * TODO: repeat close after errors
+		 */
+		CWARN("%s: close of FID "DFID" failed, file reference will be "
+		      "dropped when this client unmounts or is evicted\n",
+		      obd->obd_name, PFID(&op_data->op_fid1));
 		GOTO(out, rc = -ENOMEM);
 	}
 
@@ -921,9 +947,9 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 
         ptlrpc_request_set_replen(req);
 
-        mdc_get_rpc_lock(obd->u.cli.cl_close_lock, NULL);
-        rc = ptlrpc_queue_wait(req);
-        mdc_put_rpc_lock(obd->u.cli.cl_close_lock, NULL);
+	mdc_get_mod_rpc_slot(req, NULL);
+	rc = ptlrpc_queue_wait(req);
+	mdc_put_mod_rpc_slot(req, NULL);
 
         if (req->rq_repmsg == NULL) {
                 CDEBUG(D_RPCTRACE, "request failed to send: %p, %d\n", req,
@@ -973,71 +999,8 @@ out:
 static int mdc_done_writing(struct obd_export *exp, struct md_op_data *op_data,
 			    struct md_open_data *mod)
 {
-        struct obd_device     *obd = class_exp2obd(exp);
-        struct ptlrpc_request *req;
-        int                    rc;
-        ENTRY;
-
-        req = ptlrpc_request_alloc(class_exp2cliimp(exp),
-                                   &RQF_MDS_DONE_WRITING);
-        if (req == NULL)
-                RETURN(-ENOMEM);
-
-        mdc_set_capa_size(req, &RMF_CAPA1, op_data->op_capa1);
-        rc = ptlrpc_request_pack(req, LUSTRE_MDS_VERSION, MDS_DONE_WRITING);
-        if (rc) {
-                ptlrpc_request_free(req);
-                RETURN(rc);
-        }
-
-        if (mod != NULL) {
-                LASSERTF(mod->mod_open_req != NULL &&
-                         mod->mod_open_req->rq_type != LI_POISON,
-                         "POISONED setattr %p!\n", mod->mod_open_req);
-
-                mod->mod_close_req = req;
-                DEBUG_REQ(D_HA, mod->mod_open_req, "matched setattr");
-                /* We no longer want to preserve this setattr for replay even
-                 * though the open was committed. b=3632, b=3633 */
-		spin_lock(&mod->mod_open_req->rq_lock);
-		mod->mod_open_req->rq_replay = 0;
-		spin_unlock(&mod->mod_open_req->rq_lock);
-        }
-
-        mdc_close_pack(req, op_data);
-        ptlrpc_request_set_replen(req);
-
-        mdc_get_rpc_lock(obd->u.cli.cl_close_lock, NULL);
-        rc = ptlrpc_queue_wait(req);
-        mdc_put_rpc_lock(obd->u.cli.cl_close_lock, NULL);
-
-        if (rc == -ESTALE) {
-                /**
-                 * it can be allowed error after 3633 if open or setattr were
-                 * committed and server failed before close was sent.
-                 * Let's check if mod exists and return no error in that case
-                 */
-                if (mod) {
-                        LASSERT(mod->mod_open_req != NULL);
-                        if (mod->mod_open_req->rq_committed)
-                                rc = 0;
-                }
-        }
-
-        if (mod) {
-                if (rc != 0)
-                        mod->mod_close_req = NULL;
-		LASSERT(mod->mod_open_req != NULL);
-		mdc_free_open(mod);
-
-                /* Since now, mod is accessed through setattr req only,
-                 * thus DW req does not keep a reference on mod anymore. */
-                obd_mod_put(mod);
-        }
-
-        mdc_close_handle_reply(req, op_data, rc);
-        ptlrpc_req_finished(req);
-        RETURN(rc);
+	/* is not used anymore */
+	return 0;
 }
 
 static int mdc_getpage(struct obd_export *exp, const struct lu_fid *fid,
@@ -1073,16 +1036,19 @@ restart_bulk:
 	req->rq_request_portal = MDS_READPAGE_PORTAL;
 	ptlrpc_at_set_req_timeout(req);
 
-	desc = ptlrpc_prep_bulk_imp(req, npages, 1, BULK_PUT_SINK,
-				    MDS_BULK_PORTAL);
+	desc = ptlrpc_prep_bulk_imp(req, npages, 1,
+				    PTLRPC_BULK_PUT_SINK | PTLRPC_BULK_BUF_KIOV,
+				    MDS_BULK_PORTAL,
+				    &ptlrpc_bulk_kiov_pin_ops);
 	if (desc == NULL) {
-		ptlrpc_request_free(req);
+		ptlrpc_req_finished(req);
 		RETURN(-ENOMEM);
 	}
 
 	/* NB req now owns desc and will free it when it gets freed */
 	for (i = 0; i < npages; i++)
-		ptlrpc_prep_bulk_page_pin(desc, pages[i], 0, PAGE_CACHE_SIZE);
+		desc->bd_frag_ops->add_kiov_frag(desc, pages[i], 0,
+						 PAGE_CACHE_SIZE);
 
 	mdc_readdir_pack(req, offset, PAGE_CACHE_SIZE * npages, fid, oc);
 
@@ -1646,28 +1612,30 @@ output:
 
 static int mdc_ioc_fid2path(struct obd_export *exp, struct getinfo_fid2path *gf)
 {
-        __u32 keylen, vallen;
-        void *key;
-        int rc;
+	__u32 keylen, vallen;
+	void *key;
+	int rc;
 
-        if (gf->gf_pathlen > PATH_MAX)
-                RETURN(-ENAMETOOLONG);
-        if (gf->gf_pathlen < 2)
-                RETURN(-EOVERFLOW);
+	if (gf->gf_pathlen > PATH_MAX)
+		RETURN(-ENAMETOOLONG);
+	if (gf->gf_pathlen < 2)
+		RETURN(-EOVERFLOW);
 
-        /* Key is KEY_FID2PATH + getinfo_fid2path description */
-        keylen = cfs_size_round(sizeof(KEY_FID2PATH)) + sizeof(*gf);
-        OBD_ALLOC(key, keylen);
-        if (key == NULL)
-                RETURN(-ENOMEM);
-        memcpy(key, KEY_FID2PATH, sizeof(KEY_FID2PATH));
-        memcpy(key + cfs_size_round(sizeof(KEY_FID2PATH)), gf, sizeof(*gf));
+	/* Key is KEY_FID2PATH + getinfo_fid2path description */
+	keylen = cfs_size_round(sizeof(KEY_FID2PATH) + sizeof(*gf) +
+				sizeof(struct lu_fid));
+	OBD_ALLOC(key, keylen);
+	if (key == NULL)
+		RETURN(-ENOMEM);
+	memcpy(key, KEY_FID2PATH, sizeof(KEY_FID2PATH));
+	memcpy(key + cfs_size_round(sizeof(KEY_FID2PATH)), gf, sizeof(*gf));
+	memcpy(key + cfs_size_round(sizeof(KEY_FID2PATH)) + sizeof(*gf),
+	       gf->gf_u.gf_root_fid, sizeof(struct lu_fid));
+	CDEBUG(D_IOCTL, "path get "DFID" from "LPU64" #%d\n",
+	       PFID(&gf->gf_fid), gf->gf_recno, gf->gf_linkno);
 
-        CDEBUG(D_IOCTL, "path get "DFID" from "LPU64" #%d\n",
-               PFID(&gf->gf_fid), gf->gf_recno, gf->gf_linkno);
-
-        if (!fid_is_sane(&gf->gf_fid))
-                GOTO(out, rc = -EINVAL);
+	if (!fid_is_sane(&gf->gf_fid))
+		GOTO(out, rc = -EINVAL);
 
         /* Val is struct getinfo_fid2path result plus path */
         vallen = sizeof(*gf) + gf->gf_pathlen;
@@ -1682,7 +1650,11 @@ static int mdc_ioc_fid2path(struct obd_export *exp, struct getinfo_fid2path *gf)
                 GOTO(out, rc = -EOVERFLOW);
 
         CDEBUG(D_IOCTL, "path get "DFID" from "LPU64" #%d\n%s\n",
-               PFID(&gf->gf_fid), gf->gf_recno, gf->gf_linkno, gf->gf_path);
+ 	       PFID(&gf->gf_fid), gf->gf_recno, gf->gf_linkno,
+	       gf->gf_pathlen < 512 ? gf->gf_u.gf_path :
+ 	       /* only log the last 512 characters of the path */
+	       gf->gf_u.gf_path + gf->gf_pathlen - 512);
+
 
 out:
         OBD_FREE(key, keylen);
@@ -1715,10 +1687,9 @@ static int mdc_ioc_hsm_progress(struct obd_export *exp,
 
 	ptlrpc_request_set_replen(req);
 
-	mdc_get_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
-	rc = ptlrpc_queue_wait(req);
-	mdc_put_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
-
+	mdc_get_mod_rpc_slot(req, NULL);
+	rc = mdc_queue_wait(req);
+	mdc_put_mod_rpc_slot(req, NULL);
 	GOTO(out, rc);
 out:
 	ptlrpc_req_finished(req);
@@ -1900,9 +1871,9 @@ static int mdc_ioc_hsm_state_set(struct obd_export *exp,
 
 	ptlrpc_request_set_replen(req);
 
-	mdc_get_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
-	rc = ptlrpc_queue_wait(req);
-	mdc_put_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
+	mdc_get_mod_rpc_slot(req, NULL);
+	rc = mdc_queue_wait(req);
+	mdc_put_mod_rpc_slot(req, NULL);
 
 	GOTO(out, rc);
 out:
@@ -1960,9 +1931,9 @@ static int mdc_ioc_hsm_request(struct obd_export *exp,
 
 	ptlrpc_request_set_replen(req);
 
-	mdc_get_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
-	rc = ptlrpc_queue_wait(req);
-	mdc_put_rpc_lock(exp->exp_obd->u.cli.cl_rpc_lock, NULL);
+	mdc_get_mod_rpc_slot(req, NULL);
+	rc = mdc_queue_wait(req);
+	mdc_put_mod_rpc_slot(req, NULL);
 
 	GOTO(out, rc);
 
@@ -2888,27 +2859,16 @@ static void mdc_llog_finish(struct obd_device *obd)
 
 static int mdc_setup(struct obd_device *obd, struct lustre_cfg *cfg)
 {
-	struct client_obd		*cli = &obd->u.cli;
 	int				rc;
 	ENTRY;
 
-        OBD_ALLOC(cli->cl_rpc_lock, sizeof (*cli->cl_rpc_lock));
-        if (!cli->cl_rpc_lock)
-                RETURN(-ENOMEM);
-        mdc_init_rpc_lock(cli->cl_rpc_lock);
-
 	rc = ptlrpcd_addref();
 	if (rc < 0)
-		GOTO(err_rpc_lock, rc);
-
-        OBD_ALLOC(cli->cl_close_lock, sizeof (*cli->cl_close_lock));
-        if (!cli->cl_close_lock)
-                GOTO(err_ptlrpcd_decref, rc = -ENOMEM);
-        mdc_init_rpc_lock(cli->cl_close_lock);
+		RETURN(rc);
 
         rc = client_obd_setup(obd, cfg);
         if (rc)
-                GOTO(err_close_lock, rc);
+		GOTO(err_ptlrpcd_decref, rc);
 #ifdef CONFIG_PROC_FS
 	obd->obd_vars = lprocfs_mdc_obd_vars;
 	lprocfs_obd_setup(obd);
@@ -2925,16 +2885,13 @@ static int mdc_setup(struct obd_device *obd, struct lustre_cfg *cfg)
         if (rc) {
                 mdc_cleanup(obd);
                 CERROR("failed to setup llogging subsystems\n");
+		RETURN(rc);
         }
 
         RETURN(rc);
 
-err_close_lock:
-        OBD_FREE(cli->cl_close_lock, sizeof (*cli->cl_close_lock));
 err_ptlrpcd_decref:
         ptlrpcd_decref();
-err_rpc_lock:
-        OBD_FREE(cli->cl_rpc_lock, sizeof (*cli->cl_rpc_lock));
         RETURN(rc);
 }
 
@@ -2994,11 +2951,6 @@ static int mdc_precleanup(struct obd_device *obd, enum obd_cleanup_stage stage)
 
 static int mdc_cleanup(struct obd_device *obd)
 {
-        struct client_obd *cli = &obd->u.cli;
-
-        OBD_FREE(cli->cl_rpc_lock, sizeof (*cli->cl_rpc_lock));
-        OBD_FREE(cli->cl_close_lock, sizeof (*cli->cl_close_lock));
-
         ptlrpcd_decref();
 
         return client_obd_cleanup(obd);
@@ -3130,12 +3082,13 @@ static struct obd_ops mdc_obd_ops = {
 };
 
 static struct md_ops mdc_md_ops = {
-        .m_getstatus        = mdc_getstatus,
+	.m_getstatus        = mdc_get_root,
         .m_null_inode	    = mdc_null_inode,
         .m_close            = mdc_close,
         .m_create           = mdc_create,
         .m_done_writing     = mdc_done_writing,
         .m_enqueue          = mdc_enqueue,
+	.m_enqueue_async    = mdc_enqueue_async,
         .m_getattr          = mdc_getattr,
         .m_getattr_name     = mdc_getattr_name,
         .m_intent_lock      = mdc_intent_lock,
@@ -3173,7 +3126,7 @@ static void /*__exit*/ mdc_exit(void)
         class_unregister_type(LUSTRE_MDC_NAME);
 }
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Metadata Client");
 MODULE_LICENSE("GPL");
 

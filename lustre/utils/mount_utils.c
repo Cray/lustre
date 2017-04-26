@@ -52,6 +52,12 @@
 #include <linux/loop.h>
 #include <dlfcn.h>
 
+#include <lustre/lustre_idl.h>
+#include <lustre_cfg.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/xattr.h>
+
 extern char *progname;
 extern int verbose;
 
@@ -111,11 +117,13 @@ int add_param(char *buf, char *key, char *val)
 {
 	int end = sizeof(((struct lustre_disk_data *)0)->ldd_params);
 	int start = strlen(buf);
+	int vallen = strlen(val);
 	int keylen = 0;
 
 	if (key)
 		keylen = strlen(key);
-	if (start + 1 + keylen + strlen(val) >= end) {
+	if (start + 1 + keylen + vallen >= end ||
+	    keylen + vallen > PARAM_MAX) {
 		fprintf(stderr, "%s: params are too long-\n%s %s%s\n",
 			progname, buf, key ? key : "", val);
 		return 1;
@@ -224,18 +232,16 @@ int check_mtab_entry(char *spec1, char *spec2, char *mtpt, char *type)
 	return 0;
 }
 
-#define PROC_DIR	"/proc/"
+#include <sys/vfs.h>
+#include <linux/magic.h>
+
 static int mtab_is_proc(const char *mtab)
 {
-	char path[16];
-
-	if (readlink(mtab, path, sizeof(path)) < 0)
+	struct statfs s;
+	if (statfs(mtab, &s) < 0)
 		return 0;
 
-	if (strncmp(path, PROC_DIR, strlen(PROC_DIR)))
-		return 0;
-
-	return 1;
+	return (s.f_type == PROC_SUPER_MAGIC);
 }
 
 int update_mtab_entry(char *spec, char *mtpt, char *type, char *opts,
@@ -258,12 +264,12 @@ int update_mtab_entry(char *spec, char *mtpt, char *type, char *opts,
 
 	fp = setmntent(MOUNTED, "a+");
 	if (fp == NULL) {
-		fprintf(stderr, "%s: setmntent(%s): %s:",
+		fprintf(stderr, "%s: setmntent(%s): %s\n",
 			progname, MOUNTED, strerror (errno));
 		rc = 16;
 	} else {
 		if ((addmntent(fp, &mnt)) == 1) {
-			fprintf(stderr, "%s: addmntent: %s:",
+			fprintf(stderr, "%s: addmntent: %s\n",
 				progname, strerror (errno));
 			rc = 16;
 		}
@@ -366,7 +372,7 @@ int loop_setup(struct mkfs_opts *mop)
 		char cmd[PATH_MAX];
 		int cmdsz = sizeof(cmd);
 
-#ifdef LOOP_CTL_GET_FREE
+#ifdef HAVE_LOOP_CTL_GET_FREE
 		ret = open("/dev/loop-control", O_RDWR);
 		if (ret < 0) {
 			fprintf(stderr, "%s: can't access loop control\n", progname);
@@ -536,6 +542,7 @@ struct module_backfs_ops *load_backfs_module(enum ldd_mount_type mount_type)
 	DLSYM(name, ops, prepare_lustre);
 	DLSYM(name, ops, tune_lustre);
 	DLSYM(name, ops, label_lustre);
+	DLSYM(name, ops, rename_fsname);
 	DLSYM(name, ops, enable_quota);
 
 	error = dlerror();
@@ -572,7 +579,7 @@ int backfs_mount_type_okay(enum ldd_mount_type mount_type)
 	}
 	if (backfs_ops[mount_type] == NULL) {
 		fatal();
-		fprintf(stderr, "unhandled fs type %d '%s'\n",
+		fprintf(stderr, "unhandled/unloaded fs type %d '%s'\n",
 			mount_type, mt_str(mount_type));
 		return 0;
 	}
@@ -587,7 +594,6 @@ int osd_write_ldd(struct mkfs_opts *mop)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->write_ldd(mop);
-
 	else
 		ret = EINVAL;
 
@@ -601,7 +607,6 @@ int osd_read_ldd(char *dev, struct lustre_disk_data *ldd)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->read_ldd(dev, ldd);
-
 	else
 		ret = EINVAL;
 
@@ -635,7 +640,6 @@ int osd_make_lustre(struct mkfs_opts *mop)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->make_lustre(mop);
-
 	else
 		ret = EINVAL;
 
@@ -653,7 +657,6 @@ int osd_prepare_lustre(struct mkfs_opts *mop,
 		ret = backfs_ops[ldd->ldd_mount_type]->prepare_lustre(mop,
 			default_mountopts, default_len,
 			always_mountopts, always_len);
-
 	else
 		ret = EINVAL;
 
@@ -667,7 +670,6 @@ int osd_tune_lustre(char *dev, struct mount_opts *mop)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->tune_lustre(dev, mop);
-
 	else
 		ret = EINVAL;
 
@@ -681,7 +683,21 @@ int osd_label_lustre(struct mount_opts *mop)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->label_lustre(mop);
+	else
+		ret = EINVAL;
 
+	return ret;
+}
+
+/* Rename filesystem fsname */
+int osd_rename_fsname(struct mkfs_opts *mop, const char *oldname)
+{
+	struct lustre_disk_data *ldd = &mop->mo_ldd;
+	int ret;
+
+	if (backfs_mount_type_okay(ldd->ldd_mount_type))
+		ret = backfs_ops[ldd->ldd_mount_type]->rename_fsname(mop,
+								     oldname);
 	else
 		ret = EINVAL;
 
@@ -696,7 +712,6 @@ int osd_enable_quota(struct mkfs_opts *mop)
 
 	if (backfs_mount_type_okay(ldd->ldd_mount_type))
 		ret = backfs_ops[ldd->ldd_mount_type]->enable_quota(mop);
-
 	else
 		ret = EINVAL;
 
@@ -705,14 +720,19 @@ int osd_enable_quota(struct mkfs_opts *mop)
 
 int osd_init(void)
 {
-	int i, ret = 0;
+	int i, rc, ret = EINVAL;
 
 	for (i = 0; i < LDD_MT_LAST; ++i) {
+		rc = 0;
 		backfs_ops[i] = load_backfs_module(i);
 		if (backfs_ops[i] != NULL)
-			ret = backfs_ops[i]->init();
-		if (ret)
-			break;
+			rc = backfs_ops[i]->init();
+		if (rc != 0) {
+			backfs_ops[i]->fini();
+			unload_backfs_module(backfs_ops[i]);
+			backfs_ops[i] = NULL;
+		} else
+			ret = 0;
 	}
 
 	return ret;
@@ -808,4 +828,193 @@ int file_create(char *path, __u64 size)
 	}
 
 	return 0;
+}
+
+struct lustre_cfg_entry {
+	struct list_head lce_list;
+	char		 lce_name[0];
+};
+
+static struct lustre_cfg_entry *lustre_cfg_entry_init(const char *name)
+{
+	struct lustre_cfg_entry *lce;
+	int len = strlen(name) + 1;
+
+	lce = malloc(sizeof(*lce) + len);
+	if (lce != NULL) {
+		INIT_LIST_HEAD(&lce->lce_list);
+		memcpy(lce->lce_name, name, len);
+	}
+
+	return lce;
+}
+
+static void lustre_cfg_entry_fini(struct lustre_cfg_entry *lce)
+{
+	free(lce);
+}
+
+int lustre_rename_fsname(struct mkfs_opts *mop, const char *mntpt,
+			 const char *oldname)
+{
+	struct lustre_disk_data *ldd = &mop->mo_ldd;
+	struct lr_server_data lsd;
+	char filepnm[128];
+	char cfg_dir[128];
+	DIR *dir = NULL;
+	struct dirent64 *dirent;
+	struct lustre_cfg_entry *lce;
+	struct list_head cfg_list;
+	int old_namelen = strlen(oldname);
+	int new_namelen = strlen(ldd->ldd_fsname);
+	int ret;
+	int fd;
+
+	INIT_LIST_HEAD(&cfg_list);
+
+	snprintf(filepnm, sizeof(filepnm), "%s/%s", mntpt, LAST_RCVD);
+	fd = open(filepnm, O_RDWR);
+	if (fd < 0) {
+		if (errno == ENOENT)
+			goto config;
+
+		if (errno != 0)
+			ret = errno;
+		else
+			ret = fd;
+		fprintf(stderr, "Unable to open %s: %s\n",
+			filepnm, strerror(ret));
+		return ret;
+	}
+
+	ret = read(fd, &lsd, sizeof(lsd));
+	if (ret != sizeof(lsd)) {
+		if (errno != 0)
+			ret = errno;
+		fprintf(stderr, "Unable to read %s: %s\n",
+			filepnm, strerror(ret));
+		close(fd);
+		return ret;
+	}
+
+	ret = lseek(fd, 0, SEEK_SET);
+	if (ret != 0) {
+		if (errno != 0)
+			ret = errno;
+		fprintf(stderr, "Unable to lseek %s: %s\n",
+			filepnm, strerror(ret));
+		close(fd);
+		return ret;
+	}
+
+	/* replace fsname in lr_server_data::lsd_uuid. */
+	if (old_namelen > new_namelen)
+		memmove(lsd.lsd_uuid + new_namelen,
+			lsd.lsd_uuid + old_namelen,
+			sizeof(lsd.lsd_uuid) - old_namelen);
+	else if (old_namelen < new_namelen)
+		memmove(lsd.lsd_uuid + new_namelen,
+			lsd.lsd_uuid + old_namelen,
+			sizeof(lsd.lsd_uuid) - new_namelen);
+	memcpy(lsd.lsd_uuid, ldd->ldd_fsname, new_namelen);
+	ret = write(fd, &lsd, sizeof(lsd));
+	if (ret != sizeof(lsd)) {
+		if (errno != 0)
+			ret = errno;
+		fprintf(stderr, "Unable to write %s: %s\n",
+			filepnm, strerror(ret));
+		close(fd);
+		return ret;
+	}
+
+	close(fd);
+
+config:
+	snprintf(cfg_dir, sizeof(cfg_dir), "%s/%s", mntpt, MOUNT_CONFIGS_DIR);
+	dir = opendir(cfg_dir);
+	if (dir == NULL) {
+		if (errno != 0)
+			ret = errno;
+		else
+			ret = EINVAL;
+		fprintf(stderr, "Unable to opendir %s: %s\n",
+			cfg_dir, strerror(ret));
+		return ret;
+	}
+
+	while ((dirent = readdir64(dir)) != NULL) {
+		char *ptr;
+
+		if (strlen(dirent->d_name) <= old_namelen)
+			continue;
+
+		ptr = strrchr(dirent->d_name, '-');
+		if (ptr == NULL || (ptr - dirent->d_name) != old_namelen)
+			continue;
+
+		if (strncmp(dirent->d_name, oldname, old_namelen) != 0)
+			continue;
+
+		lce = lustre_cfg_entry_init(dirent->d_name);
+		if (lce == NULL) {
+			if (errno != 0)
+				ret = errno;
+			else
+				ret = EINVAL;
+
+			fprintf(stderr, "Fail to init item for %s: %s\n",
+				dirent->d_name, strerror(ret));
+			goto out;
+		}
+
+		list_add(&lce->lce_list, &cfg_list);
+	}
+
+	closedir(dir);
+	dir = NULL;
+	ret = 0;
+
+	while (!list_empty(&cfg_list) && ret == 0) {
+		lce = list_entry(cfg_list.next, struct lustre_cfg_entry,
+				 lce_list);
+		list_del(&lce->lce_list);
+		snprintf(filepnm, sizeof(filepnm), "%s/%s", cfg_dir,
+			 lce->lce_name);
+		if (IS_MGS(ldd))
+			/* Store the new fsname in the XATTR_TARGET_RENAME EA.
+			 * When the MGS start, it will scan config logs, and
+			 * for the ones which have the XATTR_TARGET_RENAME EA,
+			 * it will replace old fsname with the new fsname in
+			 * the config log by some shared kernel level config
+			 * logs {fork,erase} functionalities automatically. */
+			ret = setxattr(filepnm, XATTR_TARGET_RENAME,
+				       ldd->ldd_fsname,
+				       strlen(ldd->ldd_fsname), 0);
+		else
+			ret = unlink(filepnm);
+
+		if (ret != 0) {
+			if (errno != 0)
+				ret = errno;
+
+			fprintf(stderr, "Fail to %s %s: %s\n",
+				IS_MGS(ldd) ? "setxattr" : "unlink",
+				filepnm, strerror(ret));
+		}
+
+		lustre_cfg_entry_fini(lce);
+	}
+
+out:
+	if (dir != NULL)
+		closedir(dir);
+
+	while (!list_empty(&cfg_list)) {
+		lce = list_entry(cfg_list.next, struct lustre_cfg_entry,
+				 lce_list);
+		list_del(&lce->lce_list);
+		lustre_cfg_entry_fini(lce);
+	}
+
+	return ret;
 }

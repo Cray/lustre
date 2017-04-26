@@ -209,9 +209,8 @@ static int osd_trans_start(const struct lu_env *env, struct dt_device *d,
 		struct osd_device *osd = osd_dt_dev(d);
 		/* dmu will call commit callback with error code during abort */
 		if (!lu_device_is_md(&d->dd_lu_dev) && rc == -ENOSPC)
-			CERROR("%s: failed to start transaction due to ENOSPC. "
-			       "Metadata overhead is underestimated or "
-			       "grant_ratio is too low.\n", osd->od_svname);
+			CERROR("%s: failed to start transaction due to ENOSPC"
+			       "\n", osd->od_svname);
 		else
 			CERROR("%s: can't assign tx: rc = %d\n",
 			       osd->od_svname, rc);
@@ -287,6 +286,14 @@ static struct thandle *osd_trans_create(const struct lu_env *env,
 	struct thandle		*th;
 	dmu_tx_t		*tx;
 	ENTRY;
+
+	if (dt->dd_rdonly) {
+		CERROR("%s: someone try to start transaction under "
+		       "readonly mode, should be disabled.\n",
+		       osd_name(osd_dt_dev(dt)));
+		dump_stack();
+		RETURN(ERR_PTR(-EROFS));
+	}
 
 	tx = dmu_tx_create(osd->od_os);
 	if (tx == NULL)
@@ -410,7 +417,8 @@ static int osd_objset_statfs(struct osd_device *osd, struct obd_statfs *osfs)
 	osfs->os_bavail = osfs->os_bfree; /* no extra root reservation */
 
 	/* Take replication (i.e. number of copies) into account */
-	osfs->os_bavail /= os->os_copies;
+	if (os->os_copies != 0)
+		osfs->os_bavail /= os->os_copies;
 
 	/*
 	 * Reserve some space so we don't run into ENOSPC due to grants not
@@ -422,14 +430,13 @@ static int osd_objset_statfs(struct osd_device *osd, struct obd_statfs *osfs)
 	 * for internal files to be created/unlinked when space is tight.
 	 */
 	CLASSERT(OSD_STATFS_RESERVED_SIZE > 0);
-	if (likely(osfs->os_blocks >= OSD_STATFS_RESERVED_SIZE))
+	reserved = OSD_STATFS_RESERVED_SIZE >> bshift;
+	if (likely(osfs->os_blocks >= reserved << OSD_STATFS_RESERVED_SHIFT))
 		reserved = osfs->os_blocks >> OSD_STATFS_RESERVED_SHIFT;
-	else
-		reserved = OSD_STATFS_RESERVED_SIZE >> bshift;
 
 	osfs->os_blocks -= reserved;
-	osfs->os_bfree  -= MIN(reserved, osfs->os_bfree);
-	osfs->os_bavail -= MIN(reserved, osfs->os_bavail);
+	osfs->os_bfree  -= min(reserved, osfs->os_bfree);
+	osfs->os_bavail -= min(reserved, osfs->os_bavail);
 
 	/*
 	 * The availobjs value returned from dmu_objset_space() is largely
@@ -513,7 +520,7 @@ static void osd_conf_get(const struct lu_env *env,
 	 */
 	param->ddp_max_name_len	= MAXNAMELEN;
 	param->ddp_max_nlink	= 1 << 31; /* it's 8byte on a disk */
-	param->ddp_block_shift	= 12; /* XXX */
+	param->ddp_symlink_max	= PATH_MAX;
 	param->ddp_mount_type	= LDD_MT_ZFS;
 
 	param->ddp_mntopts	= MNTOPT_USERXATTR;
@@ -524,20 +531,22 @@ static void osd_conf_get(const struct lu_env *env,
 	/* for maxbytes, report same value as ZPL */
 	param->ddp_maxbytes	= MAX_LFS_FILESIZE;
 
-	/* Default reserved fraction of the available space that should be kept
-	 * for error margin. Unfortunately, there are many factors that can
-	 * impact the overhead with zfs, so let's be very cautious for now and
-	 * reserve 20% of the available space which is not given out as grant.
-	 * This tunable can be changed on a live system via procfs if needed. */
-	param->ddp_grant_reserved = 20;
-
 	/* inodes are dynamically allocated, so we report the per-inode space
 	 * consumption to upper layers. This static value is not really accurate
 	 * and we should use the same logic as in udmu_objset_statfs() to
 	 * estimate the real size consumed by an object */
 	param->ddp_inodespace = OSD_DNODE_EST_COUNT;
-	/* per-fragment overhead to be used by the client code */
-	param->ddp_grant_frag = osd_blk_insert_cost(osd);
+	/* Although ZFS isn't an extent-based filesystem, the metadata overhead
+	 * (i.e. 7 levels of indirect blocks, see osd_blk_insert_cost()) should
+	 * not be accounted for every single new block insertion.
+	 * Instead, the maximum extent size is set to the number of blocks that
+	 * can fit into a single contiguous indirect block. There would be some
+	 * cases where this crosses indirect blocks, but it also won't have 7
+	 * new levels of indirect blocks in that case either, so it will still
+	 * have enough reserved space for the extra indirect block */
+	param->ddp_max_extent_blks =
+		(1 << (DN_MAX_INDBLKSHIFT - SPA_BLKPTRSHIFT));
+	param->ddp_extent_tax = osd_blk_insert_cost(osd);
 }
 
 /*
@@ -545,10 +554,14 @@ static void osd_conf_get(const struct lu_env *env,
  */
 static int osd_sync(const struct lu_env *env, struct dt_device *d)
 {
-	struct osd_device  *osd = osd_dt_dev(d);
-	CDEBUG(D_CACHE, "syncing OSD %s\n", LUSTRE_OSD_ZFS_NAME);
-	txg_wait_synced(dmu_objset_pool(osd->od_os), 0ULL);
-	CDEBUG(D_CACHE, "synced OSD %s\n", LUSTRE_OSD_ZFS_NAME);
+	if (!d->dd_rdonly) {
+		struct osd_device  *osd = osd_dt_dev(d);
+
+		CDEBUG(D_CACHE, "syncing OSD %s\n", LUSTRE_OSD_ZFS_NAME);
+		txg_wait_synced(dmu_objset_pool(osd->od_os), 0ULL);
+		CDEBUG(D_CACHE, "synced OSD %s\n", LUSTRE_OSD_ZFS_NAME);
+	}
+
 	return 0;
 }
 
@@ -770,10 +783,13 @@ static int osd_objset_open(struct osd_device *o)
 	int		rc;
 	ENTRY;
 
-	rc = -dmu_objset_own(o->od_mntdev, DMU_OST_ZFS, B_FALSE, o, &o->od_os);
-	if (rc) {
+	rc = -dmu_objset_own(o->od_mntdev, DMU_OST_ZFS,
+			     o->od_dt_dev.dd_rdonly ? B_TRUE : B_FALSE,
+			     o, &o->od_os);
+	if (rc != 0) {
 		o->od_os = NULL;
-		goto out;
+
+		GOTO(out, rc);
 	}
 
 	/* Check ZFS version */
@@ -816,8 +832,10 @@ static int osd_objset_open(struct osd_device *o)
 	}
 
 out:
-	if (rc != 0 && o->od_os != NULL)
+	if (rc != 0 && o->od_os != NULL) {
 		dmu_objset_disown(o->od_os, o);
+		o->od_os = NULL;
+	}
 
 	RETURN(rc);
 }
@@ -826,6 +844,7 @@ static int osd_mount(const struct lu_env *env,
 		     struct osd_device *o, struct lustre_cfg *cfg)
 {
 	char			*mntdev = lustre_cfg_string(cfg, 1);
+	char			*str	= lustre_cfg_string(cfg, 2);
 	char			*svname = lustre_cfg_string(cfg, 4);
 	dmu_buf_t		*rootdb;
 	const char		*opts;
@@ -845,6 +864,18 @@ static int osd_mount(const struct lu_env *env,
 	rc = strlcpy(o->od_svname, svname, sizeof(o->od_svname));
 	if (rc >= sizeof(o->od_svname))
 		RETURN(-E2BIG);
+
+	str = strstr(str, ":");
+	if (str != NULL) {
+		unsigned long flags;
+
+		flags = simple_strtoul(str + 1, NULL, 0);
+		if (flags & LMD_FLG_DEV_RDONLY) {
+			o->od_dt_dev.dd_rdonly = 1;
+			LCONSOLE_WARN("%s: set dev_rdonly on this device\n",
+				      svname);
+		}
+	}
 
 	if (server_name_is_ost(o->od_svname))
 		o->od_is_ost = 1;
@@ -881,10 +912,6 @@ static int osd_mount(const struct lu_env *env,
 	if (rc)
 		GOTO(err, rc);
 
-	rc = osd_convert_root_to_new_seq(env, o);
-	if (rc)
-		GOTO(err, rc);
-
 	/* Use our own ZAP for inode accounting by default, this can be changed
 	 * via procfs to estimate the inode usage from the block usage */
 	o->od_quota_iused_est = 0;
@@ -909,7 +936,8 @@ static int osd_mount(const struct lu_env *env,
 
 err:
 	if (rc) {
-		dmu_objset_disown(o->od_os, o);
+		if (o->od_os)
+			dmu_objset_disown(o->od_os, o);
 		o->od_os = NULL;
 	}
 
@@ -931,8 +959,9 @@ static void osd_umount(const struct lu_env *env, struct osd_device *o)
 		       atomic_read(&o->od_zerocopy_pin));
 
 	if (o->od_os != NULL) {
-		/* force a txg sync to get all commit callbacks */
-		txg_wait_synced(dmu_objset_pool(o->od_os), 0ULL);
+		if (!o->od_dt_dev.dd_rdonly)
+			/* force a txg sync to get all commit callbacks */
+			txg_wait_synced(dmu_objset_pool(o->od_os), 0ULL);
 
 		/* close the object set */
 		dmu_objset_disown(o->od_os, o);
@@ -973,12 +1002,18 @@ static struct lu_device *osd_device_alloc(const struct lu_env *env,
 					  struct lu_device_type *type,
 					  struct lustre_cfg *cfg)
 {
-	struct osd_device *dev;
-	int		   rc;
+	struct osd_device	*dev;
+	struct osd_seq_list	*osl;
+	int			rc;
 
 	OBD_ALLOC_PTR(dev);
 	if (dev == NULL)
 		return ERR_PTR(-ENOMEM);
+
+	osl = &dev->od_seq_list;
+	INIT_LIST_HEAD(&osl->osl_seq_list);
+	rwlock_init(&osl->osl_seq_list_lock);
+	sema_init(&osl->osl_seq_init_sem, 1);
 
 	rc = dt_device_init(&dev->od_dt_dev, type);
 	if (rc == 0) {
@@ -1032,8 +1067,11 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
 
 	if (o->od_os) {
 		osd_objset_unregister_callbacks(o);
-		osd_sync(env, lu2dt_dev(d));
-		txg_wait_callbacks(spa_get_dsl(dmu_objset_spa(o->od_os)));
+		if (!o->od_dt_dev.dd_rdonly) {
+			osd_sync(env, lu2dt_dev(d));
+			txg_wait_callbacks(
+					spa_get_dsl(dmu_objset_spa(o->od_os)));
+		}
 	}
 
 	rc = osd_procfs_fini(o);
@@ -1284,7 +1322,7 @@ CFS_MODULE_PARM(osd_oi_count, "i", int, 0444,
 		"Number of Object Index containers to be created, "
 		"it's only valid for new filesystem.");
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Object Storage Device ("LUSTRE_OSD_ZFS_NAME")");
 MODULE_LICENSE("GPL");
 

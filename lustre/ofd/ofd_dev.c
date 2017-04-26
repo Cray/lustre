@@ -629,21 +629,26 @@ static int ofd_prepare(const struct lu_env *env, struct lu_device *pdev,
 static int ofd_recovery_complete(const struct lu_env *env,
 				 struct lu_device *dev)
 {
+	struct ofd_thread_info	*oti = ofd_info(env);
 	struct ofd_device	*ofd = ofd_dev(dev);
 	struct lu_device	*next = &ofd->ofd_osd->dd_lu_dev;
-	int			 rc = 0, max_precreate;
+	int			 rc = 0;
 
 	ENTRY;
 
 	/*
 	 * Grant space for object precreation on the self export.
-	 * This initial reserved space (i.e. 10MB for zfs and 280KB for ldiskfs)
+	 * The initial reserved space (i.e. 10MB for zfs and 280KB for ldiskfs)
 	 * is enough to create 10k objects. More space is then acquired for
 	 * precreation in ofd_grant_create().
 	 */
-	max_precreate = OST_MAX_PRECREATE * ofd->ofd_dt_conf.ddp_inodespace / 2;
-	ofd_grant_connect(env, dev->ld_obd->obd_self_export, max_precreate,
-			  false);
+	memset(&oti->fti_ocd, 0, sizeof(oti->fti_ocd));
+	oti->fti_ocd.ocd_grant = OST_MAX_PRECREATE / 2;
+	oti->fti_ocd.ocd_grant *= ofd->ofd_dt_conf.ddp_inodespace;
+	oti->fti_ocd.ocd_connect_flags = OBD_CONNECT_GRANT |
+					 OBD_CONNECT_GRANT_PARAM;
+	ofd_grant_connect(env, dev->ld_obd->obd_self_export, &oti->fti_ocd,
+			  true);
 	rc = next->ld_ops->ldo_recovery_complete(env, next);
 	RETURN(rc);
 }
@@ -824,60 +829,52 @@ int ofd_fid_init(const struct lu_env *env, struct ofd_device *ofd)
 	ss->ss_lu = lu->ld_site;
 	ss->ss_node_id = ofd->ofd_lut.lut_lsd.lsd_osd_index;
 
+	OBD_ALLOC(name, sizeof(obd_name) * 2 + 10);
+	if (name == NULL)
+		return -ENOMEM;
+
 	OBD_ALLOC_PTR(ss->ss_server_seq);
 	if (ss->ss_server_seq == NULL)
-		GOTO(out_free, rc = -ENOMEM);
-
-	OBD_ALLOC(name, strlen(obd_name) + 10);
-	if (!name) {
-		OBD_FREE_PTR(ss->ss_server_seq);
-		ss->ss_server_seq = NULL;
-		GOTO(out_free, rc = -ENOMEM);
-	}
+		GOTO(out_name, rc = -ENOMEM);
 
 	rc = seq_server_init(env, ss->ss_server_seq, ofd->ofd_osd, obd_name,
 			     LUSTRE_SEQ_SERVER, ss);
 	if (rc) {
 		CERROR("%s : seq server init error %d\n", obd_name, rc);
-		GOTO(out_free, rc);
+		GOTO(out_server, rc);
 	}
 	ss->ss_server_seq->lss_space.lsr_index = ss->ss_node_id;
 
 	OBD_ALLOC_PTR(ss->ss_client_seq);
 	if (ss->ss_client_seq == NULL)
-		GOTO(out_free, rc = -ENOMEM);
+		GOTO(out_server, rc = -ENOMEM);
 
-	snprintf(name, strlen(obd_name) + 6, "%p-super", obd_name);
+	/*
+	 * It always printed as "%p", so that the name is unique in the kernel,
+	 * even if the filesystem is mounted twice. So sizeof(.) * 2 is enough.
+	 */
+	snprintf(name, sizeof(obd_name) * 2 + 7, "%p-super", obd_name);
 	rc = seq_client_init(ss->ss_client_seq, NULL, LUSTRE_SEQ_DATA,
 			     name, NULL);
 	if (rc) {
 		CERROR("%s : seq client init error %d\n", obd_name, rc);
-		GOTO(out_free, rc);
+		GOTO(out_client, rc);
 	}
-	OBD_FREE(name, strlen(obd_name) + 10);
-	name = NULL;
 
 	rc = seq_server_set_cli(env, ss->ss_server_seq, ss->ss_client_seq);
 
-out_free:
 	if (rc) {
-		if (ss->ss_server_seq) {
-			seq_server_fini(ss->ss_server_seq, env);
-			OBD_FREE_PTR(ss->ss_server_seq);
-			ss->ss_server_seq = NULL;
-		}
-
-		if (ss->ss_client_seq) {
-			seq_client_fini(ss->ss_client_seq);
-			OBD_FREE_PTR(ss->ss_client_seq);
-			ss->ss_client_seq = NULL;
-		}
-
-		if (name) {
-			OBD_FREE(name, strlen(obd_name) + 10);
-			name = NULL;
-		}
+out_client:
+		seq_client_fini(ss->ss_client_seq);
+		OBD_FREE_PTR(ss->ss_client_seq);
+		ss->ss_client_seq = NULL;
+out_server:
+		seq_server_fini(ss->ss_server_seq, env);
+		OBD_FREE_PTR(ss->ss_server_seq);
+		ss->ss_server_seq = NULL;
 	}
+out_name:
+	OBD_FREE(name, sizeof(obd_name) * 2 + 10);
 
 	return rc;
 }
@@ -1564,6 +1561,7 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 	struct ofd_seq		*oseq;
 	int			 rc = 0, diff;
 	int			 sync_trans = 0;
+	long			 granted = 0;
 
 	ENTRY;
 
@@ -1701,10 +1699,12 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 		if (!(oa->o_valid & OBD_MD_FLFLAGS) ||
 		    !(oa->o_flags & OBD_FL_DELORPHAN)) {
 			/* don't enforce grant during orphan recovery */
-			rc = ofd_grant_create(tsi->tsi_env,
-					      ofd_obd(ofd)->obd_self_export,
-					      &diff);
-			if (rc) {
+			granted = ofd_grant_create(tsi->tsi_env,
+						  ofd_obd(ofd)->obd_self_export,
+						   &diff);
+			if (granted < 0) {
+				rc = granted;
+				granted = 0;
 				CDEBUG(D_HA, "%s: failed to acquire grant "
 				       "space for precreate (%d): rc = %d\n",
 				       ofd_name(ofd), diff, rc);
@@ -1771,9 +1771,11 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 			       ofd_name(ofd), rc);
 
 		if (!(oa->o_valid & OBD_MD_FLFLAGS) ||
-		    !(oa->o_flags & OBD_FL_DELORPHAN))
-			ofd_grant_commit(tsi->tsi_env,
-					 ofd_obd(ofd)->obd_self_export, rc);
+		    !(oa->o_flags & OBD_FL_DELORPHAN)) {
+			ofd_grant_commit(ofd_obd(ofd)->obd_self_export, granted,
+					 rc);
+			granted = 0;
+		}
 
 		ostid_set_id(&rep_oa->o_oi, ofd_seq_last_oid(oseq));
 	}
@@ -2168,59 +2170,17 @@ static int ofd_quotactl(struct tgt_session_info *tsi)
  *
  * \retval		amount of time to extend the timeout with
  */
-static inline int prolong_timeout(struct ptlrpc_request *req,
-				  struct ldlm_lock *lock)
+static inline int prolong_timeout(struct ptlrpc_request *req)
 {
 	struct ptlrpc_service_part *svcpt = req->rq_rqbd->rqbd_svcpt;
+	time_t req_timeout;
 
 	if (AT_OFF)
 		return obd_timeout / 2;
 
-	/* We are in the middle of the process - BL AST is sent, CANCEL
-	  is ahead. Take half of AT + IO process time. */
-	return at_est2timeout(at_get(&svcpt->scp_at_estimate)) +
-		(ldlm_bl_timeout(lock) >> 1);
-}
-
-/**
- * Prolong single lock timeout.
- *
- * This is supplemental function to the ofd_prolong_locks(). It prolongs
- * a single lock.
- *
- * \param[in] tsi	target session environment for this request
- * \param[in] lock	LDLM lock to prolong
- * \param[in] extent	related extent
- * \param[in] timeout	timeout value to add
- *
- * \retval		0 if lock is not suitable for prolongation
- * \retval		1 if lock was prolonged successfully
- */
-static int ofd_prolong_one_lock(struct tgt_session_info *tsi,
-				struct ldlm_lock *lock,
-				struct ldlm_extent *extent)
-{
-	int timeout = prolong_timeout(tgt_ses_req(tsi), lock);
-
-	if (lock->l_flags & LDLM_FL_DESTROYED) /* lock already cancelled */
-		return 0;
-
-	/* XXX: never try to grab resource lock here because we're inside
-	 * exp_bl_list_lock; in ldlm_lockd.c to handle waiting list we take
-	 * res lock and then exp_bl_list_lock. */
-
-	if (!(lock->l_flags & LDLM_FL_AST_SENT))
-		/* ignore locks not being cancelled */
-		return 0;
-
-	LDLM_DEBUG(lock, "refreshed for req x"LPU64" ext("LPU64"->"LPU64") "
-			 "to %ds.\n", tgt_ses_req(tsi)->rq_xid, extent->start,
-			 extent->end, timeout);
-
-	/* OK. this is a possible lock the user holds doing I/O
-	 * let's refresh eviction timer for it */
-	ldlm_refresh_waiting_lock(lock, timeout);
-	return 1;
+	req_timeout = req->rq_deadline - req->rq_arrival_time.tv_sec;
+	return max_t(time_t, at_est2timeout(at_get(&svcpt->scp_at_estimate)),
+		     req_timeout);
 }
 
 /**
@@ -2243,25 +2203,24 @@ static int ofd_prolong_one_lock(struct tgt_session_info *tsi,
  * request may cover multiple locks.
  *
  * \param[in] tsi	target session environment for this request
- * \param[in] start	start of extent
- * \param[in] end	end of extent
- *
- * \retval		number of prolonged locks
+ * \param[in] data	prolong arguments, timeout, export, extent
+ *			and counter are used
  */
-static int ofd_prolong_extent_locks(struct tgt_session_info *tsi,
-				    __u64 start, __u64 end)
+static void ofd_prolong_extent_locks(struct tgt_session_info *tsi,
+				     struct prolong_args *data)
 {
-	struct obd_export	*exp = tsi->tsi_exp;
 	struct obdo		*oa  = &tsi->tsi_ost_body->oa;
-	struct ldlm_extent	 extent = {
-		.start = start,
-		.end = end
-	};
 	struct ldlm_lock	*lock;
-	int			 lock_count = 0;
 
 	ENTRY;
 
+	data->timeout = prolong_timeout(tgt_ses_req(tsi));
+	data->export = tsi->tsi_exp;
+	data->resid = tsi->tsi_resid;
+
+	CDEBUG(D_RPCTRACE, "Prolong locks for req %p with x"LPU64
+	       " ext("LPU64"->"LPU64")\n", tgt_ses_req(tsi),
+	       tgt_ses_req(tsi)->rq_xid, data->extent.start, data->extent.end);
 	if (oa->o_valid & OBD_MD_FLHANDLE) {
 		/* mostly a request should be covered by only one lock, try
 		 * fast path. */
@@ -2269,37 +2228,20 @@ static int ofd_prolong_extent_locks(struct tgt_session_info *tsi,
 		if (lock != NULL) {
 			/* Fast path to check if the lock covers the whole IO
 			 * region exclusively. */
-			if (lock->l_granted_mode == LCK_PW &&
-			    ldlm_extent_contain(&lock->l_policy_data.l_extent,
-						&extent)) {
+			if (ldlm_extent_contain(&lock->l_policy_data.l_extent,
+						&data->extent)) {
 				/* bingo */
-				LASSERT(lock->l_export == exp);
-				lock_count = ofd_prolong_one_lock(tsi, lock,
-								  &extent);
+				LASSERT(lock->l_export == data->export);
+				ldlm_lock_prolong_one(lock, data);
 				LDLM_LOCK_PUT(lock);
-				RETURN(lock_count);
+				RETURN_EXIT;
 			}
+			lock->l_last_used = cfs_time_current();
 			LDLM_LOCK_PUT(lock);
 		}
 	}
-
-	spin_lock_bh(&exp->exp_bl_list_lock);
-	list_for_each_entry(lock, &exp->exp_bl_list, l_exp_list) {
-		LASSERT(lock->l_flags & LDLM_FL_AST_SENT);
-		LASSERT(lock->l_resource->lr_type == LDLM_EXTENT);
-
-		if (!ldlm_res_eq(&tsi->tsi_resid, &lock->l_resource->lr_name))
-			continue;
-
-		if (!ldlm_extent_overlap(&lock->l_policy_data.l_extent,
-					 &extent))
-			continue;
-
-		lock_count += ofd_prolong_one_lock(tsi, lock, &extent);
-	}
-	spin_unlock_bh(&exp->exp_bl_list_lock);
-
-	RETURN(lock_count);
+	ldlm_resource_prolong(data);
+	EXIT;
 }
 
 /**
@@ -2347,7 +2289,7 @@ static int ofd_rw_hpreq_lock_match(struct ptlrpc_request *req,
 		RETURN(0);
 
 	/* a bulk write can only hold a reference on a PW extent lock */
-	mode = LCK_PW;
+	mode = LCK_PW | LCK_GROUP;
 	if (opc == OST_READ)
 		/* whereas a bulk read can be protected by either a PR or PW
 		 * extent lock */
@@ -2375,8 +2317,8 @@ static int ofd_rw_hpreq_check(struct ptlrpc_request *req)
 	struct tgt_session_info	*tsi;
 	struct obd_ioobj	*ioo;
 	struct niobuf_remote	*rnb;
-	__u64			 start, end;
-	int			 lock_count;
+	int opc;
+	struct prolong_args pa = { 0 };
 
 	ENTRY;
 
@@ -2388,6 +2330,9 @@ static int ofd_rw_hpreq_check(struct ptlrpc_request *req)
 	 * Use LASSERT below because malformed RPCs should have
 	 * been filtered out in tgt_hpreq_handler().
 	 */
+	opc = lustre_msg_get_opc(req->rq_reqmsg);
+	LASSERT(opc == OST_READ || opc == OST_WRITE);
+
 	ioo = req_capsule_client_get(&req->rq_pill, &RMF_OBD_IOOBJ);
 	LASSERT(ioo != NULL);
 
@@ -2395,21 +2340,28 @@ static int ofd_rw_hpreq_check(struct ptlrpc_request *req)
 	LASSERT(rnb != NULL);
 	LASSERT(!(rnb->rnb_flags & OBD_BRW_SRVLOCK));
 
-	start = rnb->rnb_offset;
+	pa.mode = LCK_PW | LCK_GROUP;
+	if (opc == OST_READ)
+		pa.mode |= LCK_PR;
+
+	pa.extent.start = rnb->rnb_offset;
 	rnb += ioo->ioo_bufcnt - 1;
-	end = rnb->rnb_offset + rnb->rnb_len - 1;
+	pa.extent.end = rnb->rnb_offset + rnb->rnb_len - 1;
 
 	DEBUG_REQ(D_RPCTRACE, req, "%s %s: refresh rw locks: "DFID
-				   " ("LPU64"->"LPU64")\n",
-		  tgt_name(tsi->tsi_tgt), current->comm,
-		  PFID(&tsi->tsi_fid), start, end);
+		  " ("LPU64"->"LPU64")\n", tgt_name(tsi->tsi_tgt),
+		  current->comm, PFID(&tsi->tsi_fid), pa.extent.start,
+		  pa.extent.end);
 
-	lock_count = ofd_prolong_extent_locks(tsi, start, end);
+	ofd_prolong_extent_locks(tsi, &pa);
 
 	CDEBUG(D_DLMTRACE, "%s: refreshed %u locks timeout for req %p.\n",
-	       tgt_name(tsi->tsi_tgt), lock_count, req);
+	       tgt_name(tsi->tsi_tgt), pa.blocks_cnt, req);
 
-	RETURN(lock_count > 0);
+	if (pa.blocks_cnt > 0)
+		RETURN(1);
+
+	RETURN(pa.locks_cnt > 0 ? 0 : -ESTALE);
 }
 
 /**
@@ -2490,7 +2442,7 @@ static int ofd_punch_hpreq_check(struct ptlrpc_request *req)
 {
 	struct tgt_session_info	*tsi;
 	struct obdo		*oa;
-	int			 lock_count;
+	struct prolong_args pa = { 0 };
 
 	ENTRY;
 
@@ -2503,17 +2455,23 @@ static int ofd_punch_hpreq_check(struct ptlrpc_request *req)
 	LASSERT(!(oa->o_valid & OBD_MD_FLFLAGS &&
 		  oa->o_flags & OBD_FL_SRVLOCK));
 
+	pa.mode = LCK_PW | LCK_GROUP;
+	pa.extent.start = oa->o_size;
+	pa.extent.end   = oa->o_blocks;
+
 	CDEBUG(D_DLMTRACE,
 	       "%s: refresh locks: "LPU64"/"LPU64" ("LPU64"->"LPU64")\n",
 	       tgt_name(tsi->tsi_tgt), tsi->tsi_resid.name[0],
-	       tsi->tsi_resid.name[1], oa->o_size, oa->o_blocks);
+	       tsi->tsi_resid.name[1], pa.extent.start, pa.extent.end);
 
-	lock_count = ofd_prolong_extent_locks(tsi, oa->o_size, oa->o_blocks);
+	ofd_prolong_extent_locks(tsi, &pa);
 
 	CDEBUG(D_DLMTRACE, "%s: refreshed %u locks timeout for req %p.\n",
-	       tgt_name(tsi->tsi_tgt), lock_count, req);
+	       tgt_name(tsi->tsi_tgt), pa.blocks_cnt, req);
 
-	RETURN(lock_count > 0);
+	if (pa.blocks_cnt > 0)
+		RETURN(1);
+	RETURN(pa.locks_cnt > 0 ? 0 : -ESTALE);
 }
 
 /**
@@ -2564,7 +2522,9 @@ static void ofd_hp_brw(struct tgt_session_info *tsi)
 		LASSERT(rnb != NULL); /* must exist after request preprocessing */
 
 		/* no high priority if server lock is needed */
-		if (rnb->rnb_flags & OBD_BRW_SRVLOCK)
+		if (rnb->rnb_flags & OBD_BRW_SRVLOCK ||
+		    (lustre_msg_get_flags(tgt_ses_req(tsi)->rq_reqmsg)
+		     & MSG_REPLAY))
 			return;
 	}
 	tgt_ses_req(tsi)->rq_ops = &ofd_hpreq_rw;
@@ -2583,8 +2543,10 @@ static void ofd_hp_punch(struct tgt_session_info *tsi)
 {
 	LASSERT(tsi->tsi_ost_body != NULL); /* must exists if we are here */
 	/* no high-priority if server lock is needed */
-	if (tsi->tsi_ost_body->oa.o_valid & OBD_MD_FLFLAGS &&
-	    tsi->tsi_ost_body->oa.o_flags & OBD_FL_SRVLOCK)
+	if ((tsi->tsi_ost_body->oa.o_valid & OBD_MD_FLFLAGS &&
+	     tsi->tsi_ost_body->oa.o_flags & OBD_FL_SRVLOCK) ||
+	    tgt_conn_flags(tsi) & OBD_CONNECT_MDS ||
+	    lustre_msg_get_flags(tgt_ses_req(tsi)->rq_reqmsg) & MSG_REPLAY)
 		return;
 	tgt_ses_req(tsi)->rq_ops = &ofd_hpreq_punch;
 }
@@ -2664,6 +2626,11 @@ static struct tgt_opc_slice ofd_common_slice[] = {
 		.tos_opc_start	= LFSCK_FIRST_OPC,
 		.tos_opc_end	= LFSCK_LAST_OPC,
 		.tos_hs		= tgt_lfsck_handlers
+	},
+	{
+		.tos_opc_start  = SEC_FIRST_OPC,
+		.tos_opc_end    = SEC_LAST_OPC,
+		.tos_hs         = tgt_sec_ctx_handlers
 	},
 	{
 		.tos_hs		= NULL
@@ -2832,6 +2799,11 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
 	}
 	m->ofd_blockbits = fls(osfs->os_bsize) - 1;
 
+	if (ONE_MB_BRW_SIZE < (1U << m->ofd_blockbits))
+		m->ofd_brw_size = 1U << m->ofd_blockbits;
+	else
+		m->ofd_brw_size = ONE_MB_BRW_SIZE;
+
 	m->ofd_precreate_batch = OFD_PRECREATE_BATCH_DEFAULT;
 	if (osfs->os_bsize * osfs->os_blocks < OFD_PRECREATE_SMALL_FS)
 		m->ofd_precreate_batch = OFD_PRECREATE_BATCH_SMALL;
@@ -2855,14 +2827,6 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
 
 	dt_conf_get(env, m->ofd_osd, &m->ofd_dt_conf);
 
-	/* Allow at most ddp_grant_reserved% of the available filesystem space
-	 * to be granted to clients, so that any errors in the grant overhead
-	 * calculations do not allow granting more space to clients than can be
-	 * written. Assumes that in aggregate the grant overhead calculations do
-	 * not have more than ddp_grant_reserved% estimation error in them. */
-	m->ofd_grant_ratio =
-		ofd_grant_ratio_conv(m->ofd_dt_conf.ddp_grant_reserved);
-
 	rc = tgt_init(env, &m->ofd_lut, obd, m->ofd_osd, ofd_common_slice,
 		      OBD_FAIL_OST_ALL_REQUEST_NET,
 		      OBD_FAIL_OST_ALL_REPLY_NET);
@@ -2876,6 +2840,8 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
 	rc = ofd_start_inconsistency_verification_thread(m);
 	if (rc != 0)
 		GOTO(err_fini_fs, rc);
+
+	tgt_adapt_sptlrpc_conf(&m->ofd_lut, 1);
 
 	RETURN(0);
 
@@ -2912,6 +2878,10 @@ static void ofd_fini(const struct lu_env *env, struct ofd_device *m)
 	stop.ls_flags = 0;
 	lfsck_stop(env, m->ofd_osd, &stop);
 	target_recovery_fini(obd);
+	if (m->ofd_namespace != NULL)
+		ldlm_namespace_free_prior(m->ofd_namespace, NULL,
+					  d->ld_obd->obd_force);
+
 	obd_exports_barrier(obd);
 	obd_zombie_barrier();
 
@@ -2924,8 +2894,7 @@ static void ofd_fini(const struct lu_env *env, struct ofd_device *m)
 	cleanup_capa_hash(obd->u.filter.fo_capa_hash);
 
 	if (m->ofd_namespace != NULL) {
-		ldlm_namespace_free(m->ofd_namespace, NULL,
-				    d->ld_obd->obd_force);
+		ldlm_namespace_free_post(m->ofd_namespace);
 		d->ld_obd->obd_namespace = m->ofd_namespace = NULL;
 	}
 

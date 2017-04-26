@@ -96,8 +96,11 @@ extern char *progname;
 #define DUMMY_FILE_NAME_LEN             25
 #define EXT3_DIRENT_SIZE                DUMMY_FILE_NAME_LEN
 
+static void append_unique(char *buf, char *prefix, char *key, char *val,
+			  size_t maxbuflen);
+
 /*
- * Concatenate context of the temporary mount point iff selinux is enabled
+ * Concatenate context of the temporary mount point if selinux is enabled
  */
 #ifdef HAVE_SELINUX
 static void append_context_for_mount(char *mntpt, struct mkfs_opts *mop)
@@ -112,8 +115,9 @@ static void append_context_for_mount(char *mntpt, struct mkfs_opts *mop)
 	}
 
 	if (fcontext != NULL) {
-		strcat(mop->mo_ldd.ldd_mount_opts, ",context=");
-		strcat(mop->mo_ldd.ldd_mount_opts, fcontext);
+		append_unique(mop->mo_ldd.ldd_mount_opts,
+			      ",", "context", fcontext,
+			      sizeof(mop->mo_ldd.ldd_mount_opts));
 		freecon(fcontext);
 	}
 }
@@ -265,7 +269,8 @@ int ldiskfs_write_ldd(struct mkfs_opts *mop)
 		dev = mop->mo_loopdev;
 
 	ret = mount(dev, mntpt, MT_STR(&mop->mo_ldd), 0,
-		    mop->mo_ldd.ldd_mount_opts);
+		(mop->mo_mountopts == NULL) ?
+		"errors=remount-ro" : mop->mo_mountopts);
 	if (ret) {
 		fprintf(stderr, "%s: Unable to mount %s: %s\n",
 			progname, dev, strerror(errno));
@@ -551,8 +556,9 @@ static void append_unique(char *buf, char *prefix, char *key, char *val,
 
 		strscat(buf, key, maxbuflen);
 		if (val != NULL) {
-			strscat(buf, "=", maxbuflen);
+			strscat(buf, "=\"", maxbuflen);
 			strscat(buf, val, maxbuflen);
+			strscat(buf, "\"", maxbuflen);
 		}
 	}
 }
@@ -562,7 +568,7 @@ static int enable_default_ext4_features(struct mkfs_opts *mop, char *anchor,
 {
 	if (IS_OST(&mop->mo_ldd)) {
 		append_unique(anchor, user_spec ? "," : " -O ",
-			      "extents", NULL, sizeof(mop->mo_mkfsopts));
+			      "extents", NULL, maxbuflen);
 		append_unique(anchor, ",", "uninit_bg", NULL, maxbuflen);
 	} else if (IS_MDT(&mop->mo_ldd)) {
 		append_unique(anchor, user_spec ? "," : " -O ",
@@ -618,7 +624,8 @@ static int enable_default_ext4_features(struct mkfs_opts *mop, char *anchor,
 
 		append_unique(anchor, ",", "flex_bg", NULL, maxbuflen);
 
-		if (IS_OST(&mop->mo_ldd)) {
+		if (IS_OST(&mop->mo_ldd) &&
+		    strstr(mop->mo_mkfsopts, "-G") == NULL) {
 			snprintf(tmp_buf, sizeof(tmp_buf), " -G %u",
 				 (1 << 20) / L_BLOCK_SIZE);
 			strscat(anchor, tmp_buf, maxbuflen);
@@ -697,9 +704,9 @@ int ldiskfs_make_lustre(struct mkfs_opts *mop)
 	}
 
 	if (mop->mo_device_kb != 0) {
-		if (mop->mo_device_kb < 8096) {
+		if (mop->mo_device_kb < 32384) {
 			fprintf(stderr, "%s: size of filesystem must be larger "
-				"than 8MB, but is set to %lldKB\n",
+				"than 32MB, but is set to %lldKB\n",
 				progname, (long long)mop->mo_device_kb);
 			return EINVAL;
 		}
@@ -867,7 +874,8 @@ int ldiskfs_make_lustre(struct mkfs_opts *mop)
 		 * descriptor blocks, but leave one block for the superblock.
 		 * Only useful for filesystems with < 2^32 blocks due to resize
 		 * limitations. */
-		if (IS_OST(&mop->mo_ldd) && mop->mo_device_kb > 100 * 1024 &&
+		if (strstr(mop->mo_mkfsopts, "meta_bg") == NULL &&
+		    IS_OST(&mop->mo_ldd) && mop->mo_device_kb > 100 * 1024 &&
 		    mop->mo_device_kb * 1024 / L_BLOCK_SIZE <= 0xffffffffULL) {
 			unsigned group_blocks = L_BLOCK_SIZE * 8;
 			unsigned desc_per_block = L_BLOCK_SIZE / 32;
@@ -881,9 +889,16 @@ int ldiskfs_make_lustre(struct mkfs_opts *mop)
 		}
 
 		/* Avoid zeroing out the full journal - speeds up mkfs */
-		if (is_e2fsprogs_feature_supp("-E lazy_journal_init") == 0)
+		if (is_e2fsprogs_feature_supp("-E lazy_journal_init") == 0) {
 			append_unique(start, ext_opts ? "," : " -E ",
 				      "lazy_journal_init", NULL, maxbuflen);
+			ext_opts = 1;
+		}
+		if (is_e2fsprogs_feature_supp("-E lazy_itable_init=0") == 0) {
+			append_unique(start, ext_opts ? "," : "-E",
+				      "lazy_itable_init=0", NULL, maxbuflen);
+			ext_opts = 1;
+		}
 		/* end handle -E mkfs options */
 
 		/* Allow reformat of full devices (as opposed to
@@ -1275,6 +1290,69 @@ int ldiskfs_label_lustre(struct mount_opts *mop)
 	rc = run_command(label_cmd, sizeof(label_cmd));
 
 	return rc;
+}
+
+int ldiskfs_rename_fsname(struct mkfs_opts *mop, const char *oldname)
+{
+	struct mount_opts opts;
+	struct lustre_disk_data *ldd = &mop->mo_ldd;
+	char mntpt[] = "/tmp/mntXXXXXX";
+	char *dev;
+	int ret;
+
+	/* Change the filesystem label. */
+	opts.mo_ldd = *ldd;
+	opts.mo_source = mop->mo_device;
+	ret = ldiskfs_label_lustre(&opts);
+	if (ret != 0) {
+		if (errno != 0)
+			ret = errno;
+		fprintf(stderr, "Can't change filesystem label: %s\n",
+			strerror(ret));
+		return ret;
+	}
+
+	/* Mount this device temporarily in order to write these files */
+	if (mkdtemp(mntpt) == NULL) {
+		if (errno != 0)
+			ret = errno;
+		else
+			ret = EINVAL;
+		fprintf(stderr, "Can't create temp mount point %s: %s\n",
+			mntpt, strerror(ret));
+		return ret;
+	}
+
+#ifdef HAVE_SELINUX
+	/*
+	 * Append file context to mount options if SE Linux is enabled
+	 */
+	if (is_selinux_enabled() > 0)
+		append_context_for_mount(mntpt, mop);
+#endif
+
+	if (mop->mo_flags & MO_IS_LOOP)
+		dev = mop->mo_loopdev;
+	else
+		dev = mop->mo_device;
+	ret = mount(dev, mntpt, MT_STR(ldd), 0, ldd->ldd_mount_opts);
+	if (ret != 0) {
+		if (errno != 0)
+			ret = errno;
+		fprintf(stderr, "Unable to mount %s: %s\n",
+			dev, strerror(ret));
+		if (ret == ENODEV)
+			fprintf(stderr, "Is the %s module available?\n",
+				MT_STR(ldd));
+		goto out_rmdir;
+	}
+
+	ret = lustre_rename_fsname(mop, mntpt, oldname);
+	umount(mntpt);
+
+out_rmdir:
+	rmdir(mntpt);
+	return ret;
 }
 
 /* Enable quota accounting */

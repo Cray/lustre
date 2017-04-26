@@ -207,6 +207,10 @@ check_lustre_mdt_attrs(void)
 	CHECK_MEMBER(lustre_mdt_attrs, lma_incompat);
 	CHECK_MEMBER(lustre_mdt_attrs, lma_self_fid);
 	CHECK_VALUE_X(LMAI_RELEASED);
+	CHECK_VALUE_X(LMAI_AGENT);
+	CHECK_VALUE_X(LMAI_REMOTE_PARENT);
+	CHECK_VALUE_X(LMAI_STRIPED);
+	CHECK_VALUE_X(LMAI_ORPHAN);
 
 	CHECK_VALUE_X(LMAC_HSM);
 	CHECK_VALUE_X(LMAC_SOM);
@@ -354,7 +358,9 @@ check_ptlrpc_body(void)
 	CHECK_MEMBER(ptlrpc_body, pb_opc);
 	CHECK_MEMBER(ptlrpc_body, pb_status);
 	CHECK_MEMBER(ptlrpc_body, pb_last_xid);
-	CHECK_MEMBER(ptlrpc_body, pb_last_seen);
+	CHECK_MEMBER(ptlrpc_body, pb_tag);
+	CHECK_MEMBER(ptlrpc_body, pb_padding0);
+	CHECK_MEMBER(ptlrpc_body, pb_padding1);
 	CHECK_MEMBER(ptlrpc_body, pb_last_committed);
 	CHECK_MEMBER(ptlrpc_body, pb_transno);
 	CHECK_MEMBER(ptlrpc_body, pb_flags);
@@ -366,7 +372,10 @@ check_ptlrpc_body(void)
 	CHECK_MEMBER(ptlrpc_body, pb_slv);
 	CHECK_CVALUE(PTLRPC_NUM_VERSIONS);
 	CHECK_MEMBER(ptlrpc_body, pb_pre_versions);
-	CHECK_MEMBER(ptlrpc_body, pb_padding);
+	CHECK_MEMBER(ptlrpc_body, pb_mbits);
+	CHECK_MEMBER(ptlrpc_body, pb_padding64_0);
+	CHECK_MEMBER(ptlrpc_body, pb_padding64_1);
+	CHECK_MEMBER(ptlrpc_body, pb_padding64_2);
 	CHECK_CVALUE(LUSTRE_JOBID_SIZE);
 	CHECK_MEMBER(ptlrpc_body, pb_jobid);
 
@@ -376,7 +385,9 @@ check_ptlrpc_body(void)
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_opc);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_status);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_last_xid);
-	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_last_seen);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_tag);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_padding0);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_padding1);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_last_committed);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_transno);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_flags);
@@ -387,7 +398,10 @@ check_ptlrpc_body(void)
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_limit);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_slv);
 	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_pre_versions);
-	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_padding);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_mbits);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_padding64_0);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_padding64_1);
+	CHECK_MEMBER_SAME(ptlrpc_body_v3, ptlrpc_body_v2, pb_padding64_2);
 
 	CHECK_VALUE(MSG_PTLRPC_BODY_OFF);
 	CHECK_VALUE(REQ_REC_OFF);
@@ -434,6 +448,14 @@ check_ptlrpc_body(void)
 	CHECK_VALUE_X(MSG_CONNECT_TRANSNO);
 }
 
+/* XXX README XXX:
+ * Please DO NOT add flag values here before first ensuring that this same
+ * flag value is not in use on some other branch.  Please clear any such
+ * changes with senior engineers before starting to use a new flag.  Then,
+ * submit a small patch against EVERY branch that ONLY adds the new flag,
+ * updates obd_connect_names[] for lprocfs_rd_connect_flags(), adds the
+ * flag to check_obd_connect_data(), and updates wiretests accordingly, so it
+ * can be approved and landed easily to reserve the flag for future use. */
 static void
 check_obd_connect_data(void)
 {
@@ -445,18 +467,20 @@ check_obd_connect_data(void)
 	CHECK_MEMBER(obd_connect_data, ocd_index);
 	CHECK_MEMBER(obd_connect_data, ocd_brw_size);
 	CHECK_MEMBER(obd_connect_data, ocd_ibits_known);
-	CHECK_MEMBER(obd_connect_data, ocd_blocksize);
-	CHECK_MEMBER(obd_connect_data, ocd_inodespace);
-	CHECK_MEMBER(obd_connect_data, ocd_grant_extent);
-	CHECK_MEMBER(obd_connect_data, ocd_unused);
+	CHECK_MEMBER(obd_connect_data, ocd_grant_blkbits);
+	CHECK_MEMBER(obd_connect_data, ocd_grant_inobits);
+	CHECK_MEMBER(obd_connect_data, ocd_grant_tax_kb);
+	CHECK_MEMBER(obd_connect_data, ocd_grant_max_blks);
 	CHECK_MEMBER(obd_connect_data, ocd_transno);
 	CHECK_MEMBER(obd_connect_data, ocd_group);
 	CHECK_MEMBER(obd_connect_data, ocd_cksum_types);
 	CHECK_MEMBER(obd_connect_data, ocd_max_easize);
 	CHECK_MEMBER(obd_connect_data, ocd_instance);
 	CHECK_MEMBER(obd_connect_data, ocd_maxbytes);
+	CHECK_MEMBER(obd_connect_data, ocd_maxmodrpcs);
+	CHECK_MEMBER(obd_connect_data, padding0);
 	CHECK_MEMBER(obd_connect_data, padding1);
-	CHECK_MEMBER(obd_connect_data, padding2);
+	CHECK_MEMBER(obd_connect_data, ocd_connect_flags2);
 	CHECK_MEMBER(obd_connect_data, padding3);
 	CHECK_MEMBER(obd_connect_data, padding4);
 	CHECK_MEMBER(obd_connect_data, padding5);
@@ -484,7 +508,7 @@ check_obd_connect_data(void)
 	CHECK_DEFINE_64X(OBD_CONNECT_TRUNCLOCK);
 	CHECK_DEFINE_64X(OBD_CONNECT_TRANSNO);
 	CHECK_DEFINE_64X(OBD_CONNECT_IBITS);
-	CHECK_DEFINE_64X(OBD_CONNECT_JOIN);
+	CHECK_DEFINE_64X(OBD_CONNECT_BARRIER);
 	CHECK_DEFINE_64X(OBD_CONNECT_ATTRFID);
 	CHECK_DEFINE_64X(OBD_CONNECT_NODEVOH);
 	CHECK_DEFINE_64X(OBD_CONNECT_RMT_CLIENT);
@@ -526,8 +550,14 @@ check_obd_connect_data(void)
 	CHECK_DEFINE_64X(OBD_CONNECT_OPEN_BY_FID);
 	CHECK_DEFINE_64X(OBD_CONNECT_LFSCK);
 	CHECK_DEFINE_64X(OBD_CONNECT_UNLINK_CLOSE);
+	CHECK_DEFINE_64X(OBD_CONNECT_MULTIMODRPCS);
 	CHECK_DEFINE_64X(OBD_CONNECT_DIR_STRIPE);
+	CHECK_DEFINE_64X(OBD_CONNECT_SUBTREE);
 	CHECK_DEFINE_64X(OBD_CONNECT_LOCK_AHEAD);
+	CHECK_DEFINE_64X(OBD_CONNECT_BULK_MBITS);
+	CHECK_DEFINE_64X(OBD_CONNECT_OBDOPACK);
+	CHECK_DEFINE_64X(OBD_CONNECT_FLAGS2);
+	CHECK_DEFINE_64X(OBD_CONNECT2_FILE_SECCTX);
 
 	CHECK_VALUE_X(OBD_CKSUM_CRC32);
 	CHECK_VALUE_X(OBD_CKSUM_ADLER);
@@ -744,6 +774,7 @@ check_obd_ioobj(void)
 	CHECK_MEMBER(obd_ioobj, ioo_oid);
 	CHECK_MEMBER(obd_ioobj, ioo_max_brw);
 	CHECK_MEMBER(obd_ioobj, ioo_bufcnt);
+	CHECK_VALUE(IOOBJ_MAX_BRW_BITS);
 }
 
 static void
@@ -956,11 +987,17 @@ check_mdt_body(void)
 
 	/* these should be identical to their EXT3_*_FL counterparts, and
 	 * are redefined only to avoid dragging in ext3_fs.h */
-	CHECK_DEFINE_X(LUSTRE_SYNC_FL);
-	CHECK_DEFINE_X(LUSTRE_IMMUTABLE_FL);
-	CHECK_DEFINE_X(LUSTRE_APPEND_FL);
-	CHECK_DEFINE_X(LUSTRE_NOATIME_FL);
-	CHECK_DEFINE_X(LUSTRE_DIRSYNC_FL);
+	CHECK_VALUE_X(LUSTRE_SYNC_FL);
+	CHECK_VALUE_X(LUSTRE_IMMUTABLE_FL);
+	CHECK_VALUE_X(LUSTRE_APPEND_FL);
+	CHECK_VALUE_X(LUSTRE_NODUMP_FL);
+	CHECK_VALUE_X(LUSTRE_NOATIME_FL);
+	CHECK_VALUE_X(LUSTRE_INDEX_FL);
+	CHECK_VALUE_X(LUSTRE_ORPHAN_FL);
+	CHECK_VALUE_X(LUSTRE_DIRSYNC_FL);
+	CHECK_VALUE_X(LUSTRE_TOPDIR_FL);
+	CHECK_VALUE_X(LUSTRE_DIRECTIO_FL);
+	CHECK_VALUE_X(LUSTRE_INLINE_DATA_FL);
 
 	CHECK_DEFINE_X(MDS_INODELOCK_LOOKUP);
 	CHECK_DEFINE_X(MDS_INODELOCK_UPDATE);
@@ -1765,7 +1802,8 @@ check_getinfo_fid2path(void)
 	CHECK_MEMBER(getinfo_fid2path, gf_recno);
 	CHECK_MEMBER(getinfo_fid2path, gf_linkno);
 	CHECK_MEMBER(getinfo_fid2path, gf_pathlen);
-	CHECK_MEMBER(getinfo_fid2path, gf_path[0]);
+	CHECK_MEMBER(getinfo_fid2path, gf_u.gf_path[0]);
+	CHECK_MEMBER(getinfo_fid2path, gf_u.gf_root_fid);
 }
 
 /* We don't control the definitions of posix_acl_xattr_{entry,header}
@@ -2148,6 +2186,36 @@ static void check_lfsck_reply(void)
 	CHECK_MEMBER(lfsck_reply, lr_padding_2);
 }
 
+static void check_barrier_request(void)
+{
+	BLANK_LINE();
+	CHECK_STRUCT(barrier_request);
+	CHECK_MEMBER(barrier_request, br_name);
+	CHECK_MEMBER(barrier_request, br_event);
+	CHECK_MEMBER(barrier_request, br_gen);
+	CHECK_MEMBER(barrier_request, br_index);
+	CHECK_MEMBER(barrier_request, br_padding_1);
+	CHECK_MEMBER(barrier_request, br_padding_2);
+
+	CHECK_VALUE(BNE_READ);
+	CHECK_VALUE(BNE_FREEZE_DONE_P1);
+	CHECK_VALUE(BNE_FREEZE_DONE_P2);
+	CHECK_VALUE(BNE_FREEZE_FAILED);
+	CHECK_VALUE(BNE_THAW_DONE);
+	CHECK_VALUE(BNE_EXPIRED);
+}
+
+static void check_barrier_reply(void)
+{
+	BLANK_LINE();
+	CHECK_STRUCT(barrier_reply);
+	CHECK_MEMBER(barrier_reply, br_status);
+	CHECK_MEMBER(barrier_reply, br_gen);
+	CHECK_MEMBER(barrier_reply, br_timeout);
+	CHECK_MEMBER(barrier_reply, br_padding_1);
+	CHECK_MEMBER(barrier_reply, br_padding_2);
+}
+
 static void system_string(char *cmdline, char *str, int len)
 {
 	int   fds[2];
@@ -2265,7 +2333,7 @@ main(int argc, char **argv)
 	CHECK_VALUE(MDS_READPAGE);
 	CHECK_VALUE(MDS_CONNECT);
 	CHECK_VALUE(MDS_DISCONNECT);
-	CHECK_VALUE(MDS_GETSTATUS);
+	CHECK_VALUE(MDS_GET_ROOT);
 	CHECK_VALUE(MDS_STATFS);
 	CHECK_VALUE(MDS_PIN);
 	CHECK_VALUE(MDS_UNPIN);
@@ -2419,6 +2487,9 @@ main(int argc, char **argv)
 	CHECK_VALUE(MGS_TARGET_REG);
 	CHECK_VALUE(MGS_TARGET_DEL);
 	CHECK_VALUE(MGS_SET_INFO);
+	CHECK_VALUE(MGS_CONFIG_READ);
+	CHECK_VALUE(MGS_BARRIER_READ);
+	CHECK_VALUE(MGS_BARRIER_NOTIFY);
 	CHECK_VALUE(MGS_LAST_OPC);
 
 	CHECK_VALUE(SEC_CTX_INIT);
@@ -2548,6 +2619,9 @@ main(int argc, char **argv)
 
 	check_lfsck_request();
 	check_lfsck_reply();
+
+	check_barrier_request();
+	check_barrier_reply();
 
 	printf("}\n\n");
 

@@ -73,7 +73,7 @@ static int sec_install_rctx_kr(struct ptlrpc_sec *sec,
 /*
  * the timeout is only for the case that upcall child process die abnormally.
  * in any other cases it should finally update kernel key.
- * 
+ *
  * FIXME we'd better to incorporate the client & server side upcall timeouts
  * into the framework of Adaptive Timeouts, but we need to figure out how to
  * make sure that kernel knows the upcall processes is in-progress or died
@@ -118,7 +118,11 @@ static int sec_install_rctx_kr(struct ptlrpc_sec *sec,
 }
 
 #define key_cred(tsk)   ((tsk)->cred)
+#ifdef HAVE_CRED_TGCRED
 #define key_tgcred(tsk) ((tsk)->cred->tgcred)
+#else
+#define key_tgcred(tsk) key_cred(tsk)
+#endif
 
 static inline void keyring_upcall_lock(struct gss_sec_keyring *gsec_kr)
 {
@@ -344,6 +348,43 @@ static int ctx_unlist_kr(struct ptlrpc_cli_ctx *ctx, int locked)
 }
 
 /*
+ * Get specific payload. Newer kernels support 4 slots.
+ */
+static void *
+key_get_payload(struct key *key, unsigned int index)
+{
+	void *key_ptr = NULL;
+
+#ifdef HAVE_KEY_PAYLOAD_DATA_ARRAY
+	key_ptr = key->payload.data[index];
+#else
+	if (!index)
+		key_ptr = key->payload.data;
+#endif
+	return key_ptr;
+}
+
+/*
+ * Set specific payload. Newer kernels support 4 slots.
+ */
+static int key_set_payload(struct key *key, unsigned int index,
+			   struct ptlrpc_cli_ctx *ctx)
+{
+	int rc = -EINVAL;
+
+#ifdef HAVE_KEY_PAYLOAD_DATA_ARRAY
+	if (index < 4) {
+		key->payload.data[index] = ctx;
+#else
+	if (!index) {
+		key->payload.data = ctx;
+#endif
+		rc = 0;
+	}
+	return rc;
+}
+
+/*
  * bind a key with a ctx together.
  * caller must hold write lock of the key, as well as ref on key & ctx.
  */
@@ -352,13 +393,13 @@ static void bind_key_ctx(struct key *key, struct ptlrpc_cli_ctx *ctx)
 	LASSERT(atomic_read(&ctx->cc_refcount) > 0);
         LASSERT(atomic_read(&key->usage) > 0);
 	LASSERT(ctx2gctx_keyring(ctx)->gck_key == NULL);
-	LASSERT(key->payload.data == NULL);
+	LASSERT(!key_get_payload(key, 0));
 
 	/* at this time context may or may not in list. */
 	key_get(key);
 	atomic_inc(&ctx->cc_refcount);
 	ctx2gctx_keyring(ctx)->gck_key = key;
-	key->payload.data = ctx;
+	LASSERT(!key_set_payload(key, 0, ctx));
 }
 
 /*
@@ -367,13 +408,13 @@ static void bind_key_ctx(struct key *key, struct ptlrpc_cli_ctx *ctx)
  */
 static void unbind_key_ctx(struct key *key, struct ptlrpc_cli_ctx *ctx)
 {
-        LASSERT(key->payload.data == ctx);
+	LASSERT(key_get_payload(key, 0) == ctx);
 	LASSERT(test_bit(PTLRPC_CTX_CACHED_BIT, &ctx->cc_flags) == 0);
 
         /* must revoke the key, or others may treat it as newly created */
         key_revoke_locked(key);
 
-        key->payload.data = NULL;
+	key_set_payload(key, 0, NULL);
         ctx2gctx_keyring(ctx)->gck_key = NULL;
 
         /* once ctx get split from key, the timer is meaningless */
@@ -393,7 +434,7 @@ static void unbind_ctx_kr(struct ptlrpc_cli_ctx *ctx)
         struct key      *key = ctx2gctx_keyring(ctx)->gck_key;
 
         if (key) {
-                LASSERT(key->payload.data == ctx);
+		LASSERT(key_get_payload(key, 0) == ctx);
 
                 key_get(key);
                 down_write(&key->sem);
@@ -409,7 +450,7 @@ static void unbind_ctx_kr(struct ptlrpc_cli_ctx *ctx)
  */
 static void unbind_key_locked(struct key *key)
 {
-        struct ptlrpc_cli_ctx   *ctx = key->payload.data;
+	struct ptlrpc_cli_ctx *ctx = key_get_payload(key, 0);
 
         if (ctx)
                 unbind_key_ctx(key, ctx);
@@ -430,7 +471,7 @@ static void kill_ctx_kr(struct ptlrpc_cli_ctx *ctx)
  */
 static void kill_key_locked(struct key *key)
 {
-        struct ptlrpc_cli_ctx *ctx = key->payload.data;
+	struct ptlrpc_cli_ctx *ctx = key_get_payload(key, 0);
 
         if (ctx && ctx_unlist_kr(ctx, 0))
                 unbind_key_locked(key);
@@ -747,6 +788,17 @@ struct ptlrpc_cli_ctx * gss_sec_lookup_ctx_kr(struct ptlrpc_sec *sec,
          * encode real uid/gid into callout info.
          */
 
+	/* But first we need to make sure the obd type is supported */
+	if (strcmp(imp->imp_obd->obd_type->typ_name, LUSTRE_MDC_NAME) &&
+	    strcmp(imp->imp_obd->obd_type->typ_name, LUSTRE_OSC_NAME) &&
+	    strcmp(imp->imp_obd->obd_type->typ_name, LUSTRE_MGC_NAME) &&
+	    strcmp(imp->imp_obd->obd_type->typ_name, LUSTRE_LWP_NAME) &&
+	    strcmp(imp->imp_obd->obd_type->typ_name, LUSTRE_OSP_NAME)) {
+		CERROR("obd %s is not a supported device\n",
+			imp->imp_obd->obd_name);
+		GOTO(out, ctx = NULL);
+	}
+
         construct_key_desc(desc, sizeof(desc), sec, vcred->vc_uid);
 
         /* callout info format:
@@ -757,11 +809,12 @@ struct ptlrpc_cli_ctx * gss_sec_lookup_ctx_kr(struct ptlrpc_sec *sec,
         if (coinfo == NULL)
                 goto out;
 
-        snprintf(coinfo, coinfo_size, "%d:%s:%u:%u:%s:%d:"LPX64":%s",
-                 sec->ps_id, sec2gsec(sec)->gs_mech->gm_name,
-                 vcred->vc_uid, vcred->vc_gid,
-                 co_flags, import_to_gss_svc(imp),
-                 imp->imp_connection->c_peer.nid, imp->imp_obd->obd_name);
+	snprintf(coinfo, coinfo_size, "%d:%s:%u:%u:%s:%d:"LPX64":%s:"LPX64,
+		 sec->ps_id, sec2gsec(sec)->gs_mech->gm_name,
+		 vcred->vc_uid, vcred->vc_gid,
+		 co_flags, import_to_gss_svc(imp),
+		 imp->imp_connection->c_peer.nid, imp->imp_obd->obd_name,
+		 imp->imp_connection->c_self);
 
         CDEBUG(D_SEC, "requesting key for %s\n", desc);
 
@@ -783,9 +836,8 @@ struct ptlrpc_cli_ctx * gss_sec_lookup_ctx_kr(struct ptlrpc_sec *sec,
          * need wirtelock of key->sem to serialize them. */
         down_write(&key->sem);
 
-	if (likely(key->payload.data != NULL)) {
-		ctx = key->payload.data;
-
+	ctx = key_get_payload(key, 0);
+	if (likely(ctx)) {
 		LASSERT(atomic_read(&ctx->cc_refcount) >= 1);
 		LASSERT(ctx2gctx_keyring(ctx)->gck_key == key);
 		LASSERT(atomic_read(&key->usage) >= 2);
@@ -858,28 +910,30 @@ void flush_user_ctx_cache_kr(struct ptlrpc_sec *sec,
 
         construct_key_desc(desc, sizeof(desc), sec, uid);
 
-        /* there should be only one valid key, but we put it in the
-         * loop in case of any weird cases */
-        for (;;) {
-                key = request_key(&gss_key_type, desc, NULL);
-                if (IS_ERR(key)) {
-                        CDEBUG(D_SEC, "No more key found for current user\n");
-                        break;
-                }
+	/* there should be only one valid key, but we put it in the
+	 * loop in case of any weird cases */
+	for (;;) {
+		key = request_key(&gss_key_type, desc, NULL);
+		if (IS_ERR(key)) {
+			CDEBUG(D_SEC, "No more key found for current user\n");
+			break;
+		}
 
-                down_write(&key->sem);
+		down_write(&key->sem);
 
-                kill_key_locked(key);
+		kill_key_locked(key);
 
-                /* kill_key_locked() should usually revoke the key, but we
-                 * revoke it again to make sure, e.g. some case the key may
-                 * not well coupled with a context. */
-                key_revoke_locked(key);
+		/* kill_key_locked() should usually revoke the key, but we
+		 * revoke it again to make sure, e.g. some case the key may
+		 * not well coupled with a context. */
+		key_revoke_locked(key);
 
-                up_write(&key->sem);
+		up_write(&key->sem);
 
-                key_put(key);
-        }
+		request_key_unlink(key);
+
+		key_put(key);
+	}
 }
 
 /*
@@ -1149,7 +1203,7 @@ int sec_install_rctx_kr(struct ptlrpc_sec *sec,
 
         down_write(&key->sem);
 
-        LASSERT(key->payload.data == NULL);
+	LASSERT(!key_get_payload(key, 0));
 
         cli_ctx = ctx_create_kr(sec, &vcred);
         if (cli_ctx == NULL) {
@@ -1216,8 +1270,15 @@ int gss_svc_install_rctx_kr(struct obd_import *imp,
  ****************************************/
 
 static
+#ifdef HAVE_KEY_TYPE_INSTANTIATE_2ARGS
+int gss_kt_instantiate(struct key *key, struct key_preparsed_payload *prep)
+{
+	const void     *data = prep->data;
+	size_t          datalen = prep->datalen;
+#else
 int gss_kt_instantiate(struct key *key, const void *data, size_t datalen)
 {
+#endif
         int             rc;
         ENTRY;
 
@@ -1226,7 +1287,7 @@ int gss_kt_instantiate(struct key *key, const void *data, size_t datalen)
                 RETURN(-EINVAL);
         }
 
-	if (key->payload.data != NULL) {
+	if (key_get_payload(key, 0)) {
                 CERROR("key already have payload\n");
                 RETURN(-EINVAL);
         }
@@ -1253,7 +1314,8 @@ int gss_kt_instantiate(struct key *key, const void *data, size_t datalen)
 		RETURN(rc);
 	}
 
-	CDEBUG(D_SEC, "key %p instantiated, ctx %p\n", key, key->payload.data);
+	CDEBUG(D_SEC, "key %p instantiated, ctx %p\n", key,
+	       key_get_payload(key, 0));
 	RETURN(0);
 }
 
@@ -1262,19 +1324,26 @@ int gss_kt_instantiate(struct key *key, const void *data, size_t datalen)
  * on the context without fear of loosing refcount.
  */
 static
+#ifdef HAVE_KEY_TYPE_INSTANTIATE_2ARGS
+int gss_kt_update(struct key *key, struct key_preparsed_payload *prep)
+{
+	const void              *data = prep->data;
+	__u32                    datalen32 = (__u32) prep->datalen;
+#else
 int gss_kt_update(struct key *key, const void *data, size_t datalen)
 {
-        struct ptlrpc_cli_ctx   *ctx = key->payload.data;
+	__u32                    datalen32 = (__u32) datalen;
+#endif
+	struct ptlrpc_cli_ctx *ctx = key_get_payload(key, 0);
         struct gss_cli_ctx      *gctx;
         rawobj_t                 tmpobj = RAWOBJ_EMPTY;
-        __u32                    datalen32 = (__u32) datalen;
         int                      rc;
         ENTRY;
 
-        if (data == NULL || datalen == 0) {
-                CWARN("invalid: data %p, len %lu\n", data, (long)datalen);
-                RETURN(-EINVAL);
-        }
+	if (data == NULL || datalen32 == 0) {
+		CWARN("invalid: data %p, len %lu\n", data, (long)datalen32);
+		RETURN(-EINVAL);
+	}
 
         /* if upcall finished negotiation too fast (mostly likely because
          * of local error happened) and call kt_update(), the ctx
@@ -1378,17 +1447,39 @@ out:
         RETURN(0);
 }
 
-static
-int gss_kt_match(const struct key *key, const void *desc)
+#ifndef HAVE_KEY_MATCH_DATA
+static int
+gss_kt_match(const struct key *key, const void *desc)
 {
-        return (strcmp(key->description, (const char *) desc) == 0);
+	return strcmp(key->description, (const char *) desc) == 0 &&
+		!test_bit(KEY_FLAG_REVOKED, &key->flags);
 }
+#else /* ! HAVE_KEY_MATCH_DATA */
+static bool
+gss_kt_match(const struct key *key, const struct key_match_data *match_data)
+{
+	const char *desc = match_data->raw_data;
+
+	return strcmp(key->description, desc) == 0 &&
+		!test_bit(KEY_FLAG_REVOKED, &key->flags);
+}
+
+/*
+ * Preparse the match criterion.
+ */
+static int gss_kt_match_preparse(struct key_match_data *match_data)
+{
+	match_data->lookup_type = KEYRING_SEARCH_LOOKUP_DIRECT;
+	match_data->cmp = gss_kt_match;
+	return 0;
+}
+#endif /* HAVE_KEY_MATCH_DATA */
 
 static
 void gss_kt_destroy(struct key *key)
 {
         ENTRY;
-        LASSERT(key->payload.data == NULL);
+	LASSERT(!key_get_payload(key, 0));
         CDEBUG(D_SEC, "destroy key %p\n", key);
         EXIT;
 }
@@ -1404,13 +1495,17 @@ void gss_kt_describe(const struct key *key, struct seq_file *s)
 
 static struct key_type gss_key_type =
 {
-        .name           = "lgssc",
-        .def_datalen    = 0,
-        .instantiate    = gss_kt_instantiate,
-        .update         = gss_kt_update,
-        .match          = gss_kt_match,
-        .destroy        = gss_kt_destroy,
-        .describe       = gss_kt_describe,
+	.name		= "lgssc",
+	.def_datalen	= 0,
+	.instantiate	= gss_kt_instantiate,
+	.update		= gss_kt_update,
+#ifdef HAVE_KEY_MATCH_DATA
+	.match_preparse = gss_kt_match_preparse,
+#else
+	.match		= gss_kt_match,
+#endif
+	.destroy	= gss_kt_destroy,
+	.describe	= gss_kt_describe,
 };
 
 /****************************************

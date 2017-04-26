@@ -64,7 +64,8 @@ static int ofd_seqs_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", ofd->ofd_seq_count);
+	seq_printf(m, "%u\n", ofd->ofd_seq_count);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(ofd_seqs);
 
@@ -84,7 +85,8 @@ static int ofd_tot_dirty_seq_show(struct seq_file *m, void *data)
 
 	LASSERT(obd != NULL);
 	ofd = ofd_dev(obd->obd_lu_dev);
-	return seq_printf(m, LPU64"\n", ofd->ofd_tot_dirty);
+	seq_printf(m, LPU64"\n", ofd->ofd_tot_dirty);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(ofd_tot_dirty);
 
@@ -104,7 +106,8 @@ static int ofd_tot_granted_seq_show(struct seq_file *m, void *data)
 
 	LASSERT(obd != NULL);
 	ofd = ofd_dev(obd->obd_lu_dev);
-	return seq_printf(m, LPU64"\n", ofd->ofd_tot_granted);
+	seq_printf(m, LPU64"\n", ofd->ofd_tot_granted);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(ofd_tot_granted);
 
@@ -124,7 +127,8 @@ static int ofd_tot_pending_seq_show(struct seq_file *m, void *data)
 
 	LASSERT(obd != NULL);
 	ofd = ofd_dev(obd->obd_lu_dev);
-	return seq_printf(m, LPU64"\n", ofd->ofd_tot_pending);
+	seq_printf(m, LPU64"\n", ofd->ofd_tot_pending);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(ofd_tot_pending);
 
@@ -142,72 +146,11 @@ static int ofd_grant_precreate_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 
 	LASSERT(obd != NULL);
-	return seq_printf(m, "%ld\n",
-			  obd->obd_self_export->exp_filter_data.fed_grant);
+	seq_printf(m, "%ld\n",
+		   obd->obd_self_export->exp_filter_data.fed_grant);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(ofd_grant_precreate);
-
-/**
- * Show total amount of free space reserved for grants.
- *
- * \param[in] m		seq_file handle
- * \param[in] data	unused for single entry
- *
- * \retval		0 on success
- * \retval		negative value on error
- */
-static int ofd_grant_ratio_seq_show(struct seq_file *m, void *data)
-{
-	struct obd_device *obd = m->private;
-	struct ofd_device *ofd;
-
-	LASSERT(obd != NULL);
-	ofd = ofd_dev(obd->obd_lu_dev);
-	return seq_printf(m, "%d%%\n",
-			  (int) ofd_grant_reserved(ofd, 100));
-}
-
-/**
- * Change amount of free space reserved for grants.
- *
- * \param[in] file	proc file
- * \param[in] buffer	string which represents maximum number
- * \param[in] count	\a buffer length
- * \param[in] off	unused for single entry
- *
- * \retval		\a count on success
- * \retval		negative number on error
- */
-static ssize_t
-ofd_grant_ratio_seq_write(struct file *file, const char __user *buffer,
-			  size_t count, loff_t *off)
-{
-	struct seq_file         *m = file->private_data;
-	struct obd_device       *obd = m->private;
-	struct ofd_device	*ofd = ofd_dev(obd->obd_lu_dev);
-	int			 val;
-	int			 rc;
-
-	rc = lprocfs_write_helper(buffer, count, &val);
-	if (rc)
-		return rc;
-
-	if (val > 100 || val < 0)
-		return -EINVAL;
-
-	if (val == 0)
-		CWARN("%s: disabling grant error margin\n", obd->obd_name);
-	if (val > 50)
-		CWARN("%s: setting grant error margin >50%%, be warned that "
-		      "a huge part of the free space is now reserved for "
-		      "grants\n", obd->obd_name);
-
-	spin_lock(&ofd->ofd_grant_lock);
-	ofd->ofd_grant_ratio = ofd_grant_ratio_conv(val);
-	spin_unlock(&ofd->ofd_grant_lock);
-	return count;
-}
-LPROC_SEQ_FOPS(ofd_grant_ratio);
 
 /**
  * Show number of precreates allowed in a single transaction.
@@ -225,7 +168,8 @@ static int ofd_precreate_batch_seq_show(struct seq_file *m, void *data)
 
 	LASSERT(obd != NULL);
 	ofd = ofd_dev(obd->obd_lu_dev);
-	return seq_printf(m, "%d\n", ofd->ofd_precreate_batch);
+	seq_printf(m, "%d\n", ofd->ofd_precreate_batch);
+	return 0;
 }
 
 /**
@@ -277,7 +221,6 @@ static int ofd_last_id_seq_show(struct seq_file *m, void *data)
 	struct obd_device	*obd = m->private;
 	struct ofd_device	*ofd;
 	struct ofd_seq		*oseq = NULL;
-	int			retval = 0, rc;
 
 	if (obd == NULL)
 		return 0;
@@ -292,15 +235,10 @@ static int ofd_last_id_seq_show(struct seq_file *m, void *data)
 		      fid_idif_seq(ostid_id(&oseq->os_oi),
 				   ofd->ofd_lut.lut_lsd.lsd_osd_index) :
 		      ostid_seq(&oseq->os_oi);
-		rc = seq_printf(m, DOSTID"\n", seq, ostid_id(&oseq->os_oi));
-		if (rc < 0) {
-			retval = rc;
-			break;
-		}
-		retval += rc;
+		seq_printf(m, DOSTID"\n", seq, ostid_id(&oseq->os_oi));
 	}
 	read_unlock(&ofd->ofd_seq_list_lock);
-	return retval;
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(ofd_last_id);
 
@@ -318,7 +256,8 @@ static int ofd_fmd_max_num_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", ofd->ofd_fmd_max_num);
+	seq_printf(m, "%u\n", ofd->ofd_fmd_max_num);
+	return 0;
 }
 
 /**
@@ -373,8 +312,9 @@ static int ofd_fmd_max_age_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%ld\n", jiffies_to_msecs(ofd->ofd_fmd_max_age) /
-				      MSEC_PER_SEC);
+	seq_printf(m, "%ld\n", jiffies_to_msecs(ofd->ofd_fmd_max_age) /
+		   MSEC_PER_SEC);
+	return 0;
 }
 
 /**
@@ -426,8 +366,9 @@ static int ofd_capa_seq_show(struct seq_file *m, void *data)
 {
 	struct obd_device	*obd = m->private;
 
-	return seq_printf(m, "capability on: %s\n",
-			  obd->u.filter.fo_fl_oss_capa ? "oss" : "");
+	seq_printf(m, "capability on: %s\n",
+		   obd->u.filter.fo_fl_oss_capa ? "oss" : "");
+	return 0;
 }
 
 /**
@@ -480,8 +421,9 @@ LPROC_SEQ_FOPS(ofd_capa);
  */
 static int ofd_capa_count_seq_show(struct seq_file *m, void *data)
 {
-	return seq_printf(m, "%d %d\n", capa_count[CAPA_SITE_CLIENT],
-			  capa_count[CAPA_SITE_SERVER]);
+	seq_printf(m, "%d %d\n", capa_count[CAPA_SITE_CLIENT],
+		   capa_count[CAPA_SITE_SERVER]);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(ofd_capa_count);
 
@@ -505,7 +447,8 @@ static int ofd_degraded_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", ofd->ofd_raid_degraded);
+	seq_printf(m, "%u\n", ofd->ofd_raid_degraded);
+	return 0;
 }
 
 /**
@@ -563,7 +506,8 @@ static int ofd_fstype_seq_show(struct seq_file *m, void *data)
 	LASSERT(ofd->ofd_osd);
 	d = &ofd->ofd_osd->dd_lu_dev;
 	LASSERT(d->ld_type);
-	return seq_printf(m, "%s\n", d->ld_type->ldt_name);
+	seq_printf(m, "%s\n", d->ld_type->ldt_name);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(ofd_fstype);
 
@@ -589,7 +533,8 @@ static int ofd_syncjournal_seq_show(struct seq_file *m, void *data)
 	struct obd_device	*obd = m->private;
 	struct ofd_device	*ofd = ofd_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", ofd->ofd_syncjournal);
+	seq_printf(m, "%u\n", ofd->ofd_syncjournal);
+	return 0;
 }
 
 /**
@@ -633,6 +578,47 @@ LPROC_SEQ_FOPS(ofd_syncjournal);
 
 /* This must be longer than the longest string below */
 #define SYNC_STATES_MAXLEN 16
+
+static int ofd_brw_size_seq_show(struct seq_file *m, void *data)
+{
+	struct obd_device	*obd = m->private;
+	struct ofd_device	*ofd = ofd_dev(obd->obd_lu_dev);
+	int			 rc;
+
+	rc = seq_printf(m, "%u\n", ofd->ofd_brw_size / ONE_MB_BRW_SIZE);
+	return rc;
+}
+
+static ssize_t
+ofd_brw_size_seq_write(struct file *file, const char __user *buffer,
+		       size_t count, loff_t *off)
+{
+	struct seq_file		*m = file->private_data;
+	struct obd_device	*obd = m->private;
+	struct ofd_device	*ofd = ofd_dev(obd->obd_lu_dev);
+	int			 val;
+	int			 rc;
+
+	rc = lprocfs_write_helper(buffer, count, &val);
+	if (rc)
+		return rc;
+
+	if (val < 0)
+		return -EINVAL;
+
+	val = val * ONE_MB_BRW_SIZE;
+	if (val <= 0 || val > DT_MAX_BRW_SIZE ||
+	    val < (1 << ofd->ofd_blockbits))
+		return -ERANGE;
+
+	spin_lock(&ofd->ofd_flags_lock);
+	ofd->ofd_brw_size = val;
+	spin_unlock(&ofd->ofd_flags_lock);
+
+	return count;
+}
+LPROC_SEQ_FOPS(ofd_brw_size);
+
 static char *sync_on_cancel_states[] = {"never",
 					"blocking",
 					"always" };
@@ -651,8 +637,9 @@ static int ofd_sync_lock_cancel_seq_show(struct seq_file *m, void *data)
 	struct obd_device	*obd = m->private;
 	struct lu_target	*tgt = obd->u.obt.obt_lut;
 
-	return seq_printf(m, "%s\n",
-			  sync_on_cancel_states[tgt->lut_sync_lock_cancel]);
+	seq_printf(m, "%s\n",
+		   sync_on_cancel_states[tgt->lut_sync_lock_cancel]);
+	return 0;
 }
 
 /**
@@ -745,7 +732,8 @@ static int ofd_grant_compat_disable_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
 
-	return seq_printf(m, "%u\n", ofd->ofd_grant_compat_disable);
+	seq_printf(m, "%u\n", ofd->ofd_grant_compat_disable);
+	return 0;
 }
 
 /**
@@ -923,11 +911,11 @@ static int ofd_lfsck_verify_pfid_seq_show(struct seq_file *m, void *data)
 	struct obd_device *obd = m->private;
 	struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
 
-	return seq_printf(m,
-			  "switch: %s\ndetected: "LPU64"\nrepaired: "LPU64"\n",
-			  ofd->ofd_lfsck_verify_pfid ? "on" : "off",
-			  ofd->ofd_inconsistency_self_detected,
-			  ofd->ofd_inconsistency_self_repaired);
+	seq_printf(m, "switch: %s\ndetected: "LPU64"\nrepaired: "LPU64"\n",
+		   ofd->ofd_lfsck_verify_pfid ? "on" : "off",
+		   ofd->ofd_inconsistency_self_detected,
+		   ofd->ofd_inconsistency_self_repaired);
+	return 0;
 }
 
 /**
@@ -1012,8 +1000,6 @@ struct lprocfs_vars lprocfs_ofd_obd_vars[] = {
 	  .fops =	&ofd_tot_granted_fops		},
 	{ .name =	"grant_precreate",
 	  .fops =	&ofd_grant_precreate_fops	},
-	{ .name =	"grant_ratio",
-	  .fops =	&ofd_grant_ratio_fops		},
 	{ .name =	"precreate_batch",
 	  .fops =	&ofd_precreate_batch_fops	},
 	{ .name =	"recovery_status",
@@ -1030,6 +1016,8 @@ struct lprocfs_vars lprocfs_ofd_obd_vars[] = {
 	  .fops =	&ofd_degraded_fops		},
 	{ .name =	"sync_journal",
 	  .fops =	&ofd_syncjournal_fops		},
+	{ .name =	"brw_size",
+	  .fops =	&ofd_brw_size_fops		},
 	{ .name =	"sync_on_lock_cancel",
 	  .fops =	&ofd_sync_lock_cancel_fops	},
 	{ .name =	"instance",

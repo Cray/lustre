@@ -1102,6 +1102,10 @@ run_test 52 "time out lock replay (3764)"
 
 # bug 3462 - simultaneous MDC requests
 test_53a() {
+	[[ $(lctl get_param mdc.*.import |
+	     grep "connect_flags:.*multi_mod_rpc") ]] ||
+		{ skip "Need MDC with 'multi_mod_rpcs' feature"; return 0; }
+
         cancel_lru_locks mdc    # cleanup locks from former test cases
         mkdir -p $DIR/${tdir}-1
         mkdir -p $DIR/${tdir}-2
@@ -1201,6 +1205,10 @@ test_53c() {
 run_test 53c "|X| open request and close request while two MDC requests in flight"
 
 test_53d() {
+	[[ $(lctl get_param mdc.*.import |
+	     grep "connect_flags:.*multi_mod_rpc") ]] ||
+		{ skip "Need MDC with 'multi_mod_rpcs' feature"; return 0; }
+
         cancel_lru_locks mdc    # cleanup locks from former test cases
         rm -rf $DIR/${tdir}-1 $DIR/${tdir}-2
 
@@ -1925,15 +1933,6 @@ check_for_process () {
 	killall_process $clients "$prog" -0
 }
 
-killall_process () {
-	local clients=${1:-$(hostname)}
-	local name=$2
-	local signal=$3
-	local rc=0
-
-	do_nodes $clients "killall $signal $name"
-}
-
 test_70b () {
 	local clients=${CLIENTS:-$HOSTNAME}
 
@@ -1988,6 +1987,118 @@ test_70b () {
 }
 run_test 70b "mds recovery; $CLIENTCOUNT clients"
 # end multi-client tests
+
+test_70f_write_and_read(){
+	local srcfile=$1
+	local stopflag=$2
+	local client
+
+	echo "Write/read files in: '$DIR/$tdir', clients: '$CLIENTS' ..."
+	for client in ${CLIENTS//,/ }; do
+		[ -f $stopflag ] || return
+
+		local tgtfile=$DIR/$tdir/$tfile.$client
+		do_node $client dd $DD_OPTS bs=1M count=10 if=$srcfile \
+			of=$tgtfile 2>/dev/null ||
+			error "dd $DD_OPTS bs=1M count=10 if=$srcfile " \
+			      "of=$tgtfile failed on $client, rc=$?"
+	done
+
+	local prev_client=$(echo ${CLIENTS//,/ } | awk '{ print $NF }')
+	local index=0
+
+	for client in ${CLIENTS//,/ }; do
+		[ -f $stopflag ] || return
+
+		# flush client cache in case test is running on only one client
+		# do_node $client cancel_lru_locks osc
+		do_node $client $LCTL set_param ldlm.namespaces.*.lru_size=clear
+
+		tgtfile=$DIR/$tdir/$tfile.$client
+		local md5=$(do_node $prev_client "md5sum $tgtfile")
+		[ ${checksum[$index]// */} = ${md5// */} ] ||
+			error "$tgtfile: checksum doesn't match on $prev_client"
+		index=$((index + 1))
+		prev_client=$client
+	done
+}
+
+test_70f_loop(){
+	local srcfile=$1
+	local stopflag=$2
+	DD_OPTS=
+
+	mkdir -p $DIR/$tdir || error "cannot create $DIR/$tdir directory"
+	$SETSTRIPE -c -1 $DIR/$tdir || error "cannot $SETSTRIPE $DIR/$tdir"
+
+	touch $stopflag
+	while [ -f $stopflag ]; do
+		test_70f_write_and_read $srcfile $stopflag
+		# use direct IO and buffer cache in turns if loop
+		[ -n "$DD_OPTS" ] && DD_OPTS="" || DD_OPTS="oflag=direct"
+	done
+}
+
+test_70f_cleanup() {
+	trap 0
+	rm -f $TMP/$tfile.stop
+	do_nodes $CLIENTS rm -f $TMP/$tfile
+	rm -f $DIR/$tdir/$tfile.*
+}
+
+test_70f() {
+#	[ x$ost1failover_HOST = x$ost_HOST ] &&
+#		{ skip "Failover host not defined" && return; }
+#	[ -z "$CLIENTS" ] &&
+#		{ skip "CLIENTS are not specified." && return; }
+#	[ $CLIENTCOUNT -lt 2 ] &&
+#		{ skip "Need 2 or more clients, have $CLIENTCOUNT" && return; }
+
+	echo "mount clients $CLIENTS ..."
+	zconf_mount_clients $CLIENTS $MOUNT
+
+	local srcfile=$TMP/$tfile
+	local client
+	local index=0
+
+	trap test_70f_cleanup EXIT
+	# create a different source file local to each client node so we can
+	# detect if the file wasn't written out properly after failover
+	do_nodes $CLIENTS dd bs=1M count=10 if=/dev/urandom of=$srcfile \
+		2>/dev/null || error "can't create $srcfile on $CLIENTS"
+	for client in ${CLIENTS//,/ }; do
+		checksum[$index]=$(do_node $client "md5sum $srcfile")
+		index=$((index + 1))
+	done
+
+	local duration=120
+	[ "$SLOW" = "no" ] && duration=60
+	# set duration to 900 because it takes some time to boot node
+	[ "$FAILURE_MODE" = HARD ] && duration=900
+
+	local stopflag=$TMP/$tfile.stop
+	test_70f_loop $srcfile $stopflag &
+	local pid=$!
+
+	local elapsed=0
+	local num_failovers=0
+	local start_ts=$SECONDS
+	while [ $elapsed -lt $duration ]; do
+		sleep 3
+		replay_barrier ost1
+		sleep 1
+		num_failovers=$((num_failovers + 1))
+		log "$TESTNAME failing OST $num_failovers times"
+		fail ost1
+		sleep 2
+		elapsed=$((SECONDS - start_ts))
+	done
+
+	rm -f $stopflag
+	wait $pid
+	test_70f_cleanup
+}
+run_test 70f "OSS O_DIRECT recovery with $CLIENTCOUNT clients"
 
 test_73a() {
     multiop_bg_pause $DIR/$tfile O_tSc || return 3
@@ -2524,7 +2635,7 @@ test_85a() { #bug 16774
     done
 
     lov_id=`lctl dl | grep "clilov"`
-    addr=`echo $lov_id | awk '{print $4}' | awk -F '-' '{print $3}'`
+	addr=$(echo $lov_id | awk '{print $4}' | awk -F '-' '{print $NF}')
     count=`lctl get_param -n ldlm.namespaces.*MDT0000*$addr.lock_unused_count`
     echo "before recovery: unused locks count = $count"
 
@@ -2558,10 +2669,11 @@ test_85b() { #bug 16774
     done
 
     lov_id=`lctl dl | grep "clilov"`
-    addr=`echo $lov_id | awk '{print $4}' | awk -F '-' '{print $3}'`
-    count=`lctl get_param -n ldlm.namespaces.*OST0000*$addr.lock_unused_count`
-    echo "before recovery: unused locks count = $count"
-    [ $count != 0 ] || return 3
+	addr=$(echo $lov_id | awk '{print $4}' | awk -F '-' '{print $NF}')
+	count=$(lctl get_param -n \
+		ldlm.namespaces.*OST0000*$addr.lock_unused_count)
+	echo "before recovery: unused locks count = $count"
+	[ $count -ne 0 ] || return 3
 
     fail ost1
 
@@ -2587,7 +2699,7 @@ test_86() {
 }
 run_test 86 "umount server after clear nid_stats should not hit LBUG"
 
-test_87() {
+test_87a() {
     do_facet ost1 "lctl set_param -n obdfilter.${ost1_svc}.sync_journal 0"
 
     replay_barrier ost1
@@ -2602,7 +2714,7 @@ test_87() {
 	error "New checksum $cksum2 does not match original $cksum"
     fi
 }
-run_test 87 "write replay"
+run_test 87a "write replay"
 
 test_87b() {
     do_facet ost1 "lctl set_param -n obdfilter.${ost1_svc}.sync_journal 0"
@@ -2681,7 +2793,7 @@ test_88() { #bug 17485
         dd if=/dev/urandom of=$DIR/$tdir/f-$file_id bs=4096 count=128
     done
 
-    # if the objids were not recreated, then "ls" will failed for -ENOENT
+    # if the objids were not recreated, then "ls" will fail with -ENOENT
     ls -l $DIR/$tdir/* || error "can't get the status of precreated files"
 
     local file_id
@@ -2818,6 +2930,76 @@ test_90() { # bug 19494
 }
 run_test 90 "lfs find identifies the missing striped file segments"
 
+#MRP-1658
+# set_blk_tunables(btune_sz)
+set_blk_tunesz() {
+        local btune=$(($1 * BLK_SZ))
+        # set btune size on all obdfilters
+        do_nodes $(comma_list $(osts_nodes)) "lctl set_param lquota.${FSNAME}-OST*.quota_btune_sz=$btune"
+        # set btune size on mds
+        do_facet $SINGLEMDS "lctl set_param lquota.mdd_obd-${FSNAME}-MDT*.quota_btune_sz=$btune"
+}
+
+# set_blk_unitsz(bunit_sz)
+set_blk_unitsz() {
+        local bunit=$(($1 * BLK_SZ))
+        # set bunit size on all obdfilters
+        do_nodes $(comma_list $(osts_nodes)) "lctl set_param lquota.${FSNAME}-OST*.quota_bunit_sz=$bunit"
+        # set bunit size on mds
+        do_facet $SINGLEMDS "lctl set_param lquota.mdd_obd-${FSNAME}-MDT*.quota_bunit_sz=$bunit"
+}
+do_client_write() {
+     local FSIZE=`$LFS df $DIR | grep OST0000 | awk '{print $4}'`
+     FSIZE=$(($FSIZE/1024))
+
+     echo start io filesize = $FSIZE
+     for i in {1..100}
+     do
+         dd if=/dev/zero of=$DIR/$tdir/data bs=1M count=$FSIZE > /dev/null 2>&1
+     done
+     rm -rf $DIR/$tdir/data
+     echo end io
+}
+
+#this test requeires ENABLE_QOUTA=yes
+test_92() {
+    mkdir -p $DIR/$tdir
+    $SETSTRIPE -i 0 -c 1 $DIR/$tdir
+    #remount ost1 with errors=panic
+    stop ost1
+    mount_facet ost1 -o errors=panic
+
+    local now=`date +"%s"`
+    local period=$((60*3))
+
+    local till=$(($now+$period))
+    local iteration=0
+
+    local pid=99999999
+    while [ $(date +"%s") -lt  $till ]
+    do
+        #run IO activity on clients fpp
+        kill -s 0 $pid > /dev/null 2>&1
+        if [ $? != 0 ]; then
+            do_client_write &
+            pid=$!
+            sleep 4
+        fi
+        echo iteration $iteration
+        local svc=ost1_svc
+        let iteration++
+        #Here we emulate failback operations notransno/readonly/umount
+        do_facet ost1 "$LCTL --device %${!svc} notransno;$LCTL --device %${!svc} readonly;"
+        stop ost1
+        #The OSS should panic during stop ost1, and this command would not be completed
+        mount_facet ost1 -o errors=panic
+        sleep 30
+   done
+   kill -9 $pid
+   rm -rf $DIR/$tdir
+}
+run_test 92 "Check failback with errors=panic"
+
 test_93() {
     local server_version=$(lustre_version_code $SINGLEMDS)
 	[[ $server_version -ge $(version_code 2.6.90) ]] ||
@@ -2932,6 +3114,21 @@ test_101() { #LU-5648
 	rm -rf $DIR/$tdir
 }
 run_test 101 "Shouldn't reassign precreated objs to other files after recovery"
+
+test_103() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+#define OBD_FAIL_MDS_TRACK_OVERFLOW 0x162
+	do_facet mds1 $LCTL set_param fail_loc=0x80000162
+
+	mkdir -p $DIR/$tdir
+	createmany -o $DIR/$tdir/t- 30 || error "create files on remote directory failed"
+	sync
+	rm -rf $DIR/$tdir/t-*
+	sync
+#MDS should crash with tr->otr_next_id overflow
+	fail mds1
+}
+run_test 103 "Check otr_next_id overflow"
 
 complete $SECONDS
 check_and_cleanup_lustre

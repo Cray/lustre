@@ -1034,6 +1034,25 @@ __u64 lustre_msg_get_last_xid(struct lustre_msg *msg)
                 return 0;
         }
 }
+EXPORT_SYMBOL(lustre_msg_get_last_xid);
+
+__u16 lustre_msg_get_tag(struct lustre_msg *msg)
+{
+	switch (msg->lm_magic) {
+	case LUSTRE_MSG_MAGIC_V2: {
+		struct ptlrpc_body *pb = lustre_msg_ptlrpc_body(msg);
+		if (!pb) {
+			CERROR("invalid msg %p: no ptlrpc body!\n", msg);
+			return 0;
+		}
+		return pb->pb_tag;
+	}
+	default:
+		CERROR("incorrect message magic: %08x\n", msg->lm_magic);
+		return 0;
+	}
+}
+EXPORT_SYMBOL(lustre_msg_get_tag);
 
 __u64 lustre_msg_get_last_committed(struct lustre_msg *msg)
 {
@@ -1297,6 +1316,23 @@ __u32 lustre_msg_get_cksum(struct lustre_msg *msg)
         }
 }
 
+__u64 lustre_msg_get_mbits(struct lustre_msg *msg)
+{
+	switch (msg->lm_magic) {
+	case LUSTRE_MSG_MAGIC_V2: {
+		struct ptlrpc_body *pb = lustre_msg_ptlrpc_body(msg);
+		if (pb == NULL) {
+			CERROR("invalid msg %p: no ptlrpc body!\n", msg);
+			return 0;
+		}
+		return pb->pb_mbits;
+	}
+	default:
+		CERROR("incorrect message magic: %08x\n", msg->lm_magic);
+		return 0;
+	}
+}
+
 #if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 7, 53, 0)
 /*
  * In 1.6 and 1.8 the checksum was computed only on struct ptlrpc_body as
@@ -1390,6 +1426,22 @@ void lustre_msg_set_last_xid(struct lustre_msg *msg, __u64 last_xid)
                 LASSERTF(0, "incorrect message magic: %08x\n", msg->lm_magic);
         }
 }
+EXPORT_SYMBOL(lustre_msg_set_last_xid);
+
+void lustre_msg_set_tag(struct lustre_msg *msg, __u16 tag)
+{
+	switch (msg->lm_magic) {
+	case LUSTRE_MSG_MAGIC_V2: {
+		struct ptlrpc_body *pb = lustre_msg_ptlrpc_body(msg);
+		LASSERTF(pb, "invalid msg %p: no ptlrpc body!\n", msg);
+		pb->pb_tag = tag;
+		return;
+	}
+	default:
+		LASSERTF(0, "incorrect message magic: %08x\n", msg->lm_magic);
+	}
+}
+EXPORT_SYMBOL(lustre_msg_set_tag);
 
 void lustre_msg_set_last_committed(struct lustre_msg *msg, __u64 last_committed)
 {
@@ -1545,6 +1597,20 @@ void lustre_msg_set_cksum(struct lustre_msg *msg, __u32 cksum)
         }
 }
 
+void lustre_msg_set_mbits(struct lustre_msg *msg, __u64 mbits)
+{
+	switch (msg->lm_magic) {
+	case LUSTRE_MSG_MAGIC_V2: {
+		struct ptlrpc_body *pb = lustre_msg_ptlrpc_body(msg);
+
+		LASSERTF(pb != NULL, "invalid msg %p: no ptlrpc body!\n", msg);
+		pb->pb_mbits = mbits;
+		return;
+	}
+	default:
+		LASSERTF(0, "incorrect message magic: %08x\n", msg->lm_magic);
+	}
+}
 
 void ptlrpc_request_set_replen(struct ptlrpc_request *req)
 {
@@ -1623,7 +1689,7 @@ void lustre_swab_ptlrpc_body(struct ptlrpc_body *b)
         __swab32s (&b->pb_opc);
         __swab32s (&b->pb_status);
         __swab64s (&b->pb_last_xid);
-        __swab64s (&b->pb_last_seen);
+	__swab16s (&b->pb_tag);
         __swab64s (&b->pb_last_committed);
         __swab64s (&b->pb_transno);
         __swab32s (&b->pb_flags);
@@ -1637,7 +1703,12 @@ void lustre_swab_ptlrpc_body(struct ptlrpc_body *b)
         __swab64s (&b->pb_pre_versions[1]);
         __swab64s (&b->pb_pre_versions[2]);
         __swab64s (&b->pb_pre_versions[3]);
-        CLASSERT(offsetof(typeof(*b), pb_padding) != 0);
+	__swab64s(&b->pb_mbits);
+	CLASSERT(offsetof(typeof(*b), pb_padding0) != 0);
+	CLASSERT(offsetof(typeof(*b), pb_padding1) != 0);
+	CLASSERT(offsetof(typeof(*b), pb_padding64_0) != 0);
+	CLASSERT(offsetof(typeof(*b), pb_padding64_1) != 0);
+	CLASSERT(offsetof(typeof(*b), pb_padding64_2) != 0);
 	/* While we need to maintain compatibility between
 	 * clients and servers without ptlrpc_body_v2 (< 2.3)
 	 * do not swab any fields beyond pb_jobid, as we are
@@ -1656,8 +1727,8 @@ void lustre_swab_connect(struct obd_connect_data *ocd)
         __swab32s(&ocd->ocd_brw_size);
         /* ocd_blocksize and ocd_inodespace don't need to be swabbed because
          * they are 8-byte values */
-        __swab16s(&ocd->ocd_grant_extent);
-        __swab32s(&ocd->ocd_unused);
+	__swab16s(&ocd->ocd_grant_tax_kb);
+	__swab32s(&ocd->ocd_grant_max_blks);
         __swab64s(&ocd->ocd_transno);
         __swab32s(&ocd->ocd_group);
         __swab32s(&ocd->ocd_cksum_types);
@@ -1670,8 +1741,12 @@ void lustre_swab_connect(struct obd_connect_data *ocd)
                 __swab32s(&ocd->ocd_max_easize);
         if (ocd->ocd_connect_flags & OBD_CONNECT_MAXBYTES)
                 __swab64s(&ocd->ocd_maxbytes);
-        CLASSERT(offsetof(typeof(*ocd), padding1) != 0);
-        CLASSERT(offsetof(typeof(*ocd), padding2) != 0);
+	if (ocd->ocd_connect_flags & OBD_CONNECT_MULTIMODRPCS)
+		__swab16s(&ocd->ocd_maxmodrpcs);
+	CLASSERT(offsetof(typeof(*ocd), padding0) != 0);
+	CLASSERT(offsetof(typeof(*ocd), padding1) != 0);
+	if (ocd->ocd_connect_flags & OBD_CONNECT_FLAGS2)
+		__swab64s(&ocd->ocd_connect_flags2);
         CLASSERT(offsetof(typeof(*ocd), padding3) != 0);
         CLASSERT(offsetof(typeof(*ocd), padding4) != 0);
         CLASSERT(offsetof(typeof(*ocd), padding5) != 0);
@@ -2087,6 +2162,7 @@ void lustre_swab_lmv_mds_md(union lmv_mds_md *lmm)
 		break;
 	}
 }
+EXPORT_SYMBOL(lustre_swab_lmv_mds_md);
 
 void lustre_swab_lmv_user_md(struct lmv_user_md *lum)
 {
@@ -2181,6 +2257,7 @@ void lustre_swab_lov_mds_md(struct lov_mds_md *lmm)
 	__swab16s(&lmm->lmm_layout_gen);
 	EXIT;
 }
+EXPORT_SYMBOL(lustre_swab_lov_mds_md);
 
 void lustre_swab_lov_user_md_objects(struct lov_user_ost_data *lod,
                                      int stripe_count)
@@ -2613,3 +2690,23 @@ void lustre_swab_orphan_ent(struct lu_orphan_ent *ent)
 	__swab32s(&ent->loe_rec.lor_gid);
 }
 EXPORT_SYMBOL(lustre_swab_orphan_ent);
+
+void lustre_swab_barrier_request(struct barrier_request *br)
+{
+	__swab32s(&br->br_event);
+	__swab32s(&br->br_gen);
+	__swab32s(&br->br_index);
+	CLASSERT(offsetof(typeof(*br), br_padding_1) != 0);
+	CLASSERT(offsetof(typeof(*br), br_padding_2) != 0);
+}
+EXPORT_SYMBOL(lustre_swab_barrier_request);
+
+void lustre_swab_barrier_reply(struct barrier_reply *br)
+{
+	__swab32s(&br->br_status);
+	__swab32s(&br->br_gen);
+	__swab32s(&br->br_timeout);
+	CLASSERT(offsetof(typeof(*br), br_padding_1) != 0);
+	CLASSERT(offsetof(typeof(*br), br_padding_2) != 0);
+}
+EXPORT_SYMBOL(lustre_swab_barrier_reply);

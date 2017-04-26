@@ -245,6 +245,9 @@ extern int llapi_dir_create_pool(const char *name, int flags, int stripe_offset,
 				 int stripe_count, int stripe_pattern,
 				 const char *poolname);
 int llapi_direntry_remove(char *dname);
+
+int llapi_obd_fstatfs(int fd, __u32 type, __u32 index,
+		      struct obd_statfs *stat_buf, struct obd_uuid *uuid_buf);
 extern int llapi_obd_statfs(char *path, __u32 type, __u32 index,
                      struct obd_statfs *stat_buf,
                      struct obd_uuid *uuid_buf);
@@ -264,6 +267,7 @@ extern int llapi_search_mounts(const char *pathname, int index,
                                char *mntdir, char *fsname);
 extern int llapi_search_fsname(const char *pathname, char *fsname);
 extern int llapi_getname(const char *path, char *buf, size_t size);
+extern int llapi_search_fileset(const char *pathname, char *fileset);
 
 extern int llapi_search_rootpath(char *pathname, const char *fsname);
 extern int llapi_nodemap_exists(const char *name);
@@ -333,9 +337,9 @@ extern int llapi_swap_layouts(const char *path1, const char *path2,
 /* Changelog interface.  priv is private state, managed internally by these
  * functions */
 
-/* Records received are in extentded format now, though most of them are still
+/* Records received are in extended format now, though most of them are still
  * written in disk in changelog_rec format (to save space and time), it's
- * converted to extented format in the lustre api to ease changelog analysis. */
+ * converted to extended format in the lustre api to ease changelog analysis. */
 #define HAVE_CHANGELOG_EXTEND_REC 1
 
 extern int llapi_changelog_start(void **priv, enum changelog_send_flag flags,

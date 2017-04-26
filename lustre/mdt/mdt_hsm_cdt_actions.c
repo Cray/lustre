@@ -36,13 +36,135 @@
 
 #define DEBUG_SUBSYSTEM S_MDS
 
+#include <libcfs/libcfs.h>
+#include <libcfs/libcfs_hash.h>
 #include <obd_support.h>
-#include <lustre_net.h>
 #include <lustre_export.h>
 #include <obd.h>
 #include <lprocfs_status.h>
 #include <lustre_log.h>
 #include "mdt_internal.h"
+
+struct cdt_agent_record_loc {
+	struct hlist_node carl_hnode;
+	atomic_t carl_refcount;
+	u64 carl_cookie;
+	u32 carl_cat_idx;
+	u32 carl_rec_idx;
+};
+
+static inline void cdt_agent_record_loc_get(struct cdt_agent_record_loc *carl)
+{
+	LASSERT(atomic_read(&carl->carl_refcount) > 0);
+	atomic_inc(&carl->carl_refcount);
+}
+
+static inline void cdt_agent_record_loc_put(struct cdt_agent_record_loc *carl)
+{
+	LASSERT(atomic_read(&carl->carl_refcount) > 0);
+	if (atomic_dec_and_test(&carl->carl_refcount))
+		OBD_FREE_PTR(carl);
+}
+
+static unsigned int
+cdt_agent_record_hash(struct cfs_hash *hs, const void *key, unsigned int mask)
+{
+	return cfs_hash_djb2_hash(key, sizeof(u64), mask);
+}
+
+static void *cdt_agent_record_object(struct hlist_node *hnode)
+{
+	return hlist_entry(hnode, struct cdt_agent_record_loc, carl_hnode);
+}
+
+static void *cdt_agent_record_key(struct hlist_node *hnode)
+{
+	struct cdt_agent_record_loc *carl = cdt_agent_record_object(hnode);
+
+	return &carl->carl_cookie;
+}
+
+static int cdt_agent_record_keycmp(const void *key, struct hlist_node *hnode)
+{
+	const u64 *cookie2 = cdt_agent_record_key(hnode);
+
+	return *(const u64 *)key == *cookie2;
+}
+
+static void cdt_agent_record_get(struct cfs_hash *hs, struct hlist_node *hnode)
+{
+	struct cdt_agent_record_loc *carl = cdt_agent_record_object(hnode);
+
+	cdt_agent_record_loc_get(carl);
+}
+
+static void cdt_agent_record_put(struct cfs_hash *hs, struct hlist_node *hnode)
+{
+	struct cdt_agent_record_loc *carl = cdt_agent_record_object(hnode);
+
+	cdt_agent_record_loc_put(carl);
+}
+
+struct cfs_hash_ops cdt_agent_record_hash_ops = {
+	.hs_hash	= cdt_agent_record_hash,
+	.hs_key		= cdt_agent_record_key,
+	.hs_keycmp	= cdt_agent_record_keycmp,
+	.hs_object	= cdt_agent_record_object,
+	.hs_get		= cdt_agent_record_get,
+	.hs_put_locked	= cdt_agent_record_put,
+};
+
+void cdt_agent_record_hash_add(struct coordinator *cdt, u64 cookie, u32 cat_idx,
+			       u32 rec_idx)
+{
+	struct cdt_agent_record_loc *carl0;
+	struct cdt_agent_record_loc *carl1;
+
+	OBD_ALLOC_PTR(carl1);
+	if (carl1 == NULL)
+		return;
+
+	INIT_HLIST_NODE(&carl1->carl_hnode);
+	atomic_set(&carl1->carl_refcount, 1);
+	carl1->carl_cookie = cookie;
+	carl1->carl_cat_idx = cat_idx;
+	carl1->carl_rec_idx = rec_idx;
+
+	carl0 = cfs_hash_findadd_unique(cdt->cdt_agent_record_hash,
+					&carl1->carl_cookie,
+					&carl1->carl_hnode);
+
+	LASSERT(carl0->carl_cookie == carl1->carl_cookie);
+	LASSERT(carl0->carl_cat_idx == carl1->carl_cat_idx);
+	LASSERT(carl0->carl_rec_idx == carl1->carl_rec_idx);
+
+	if (carl0 != carl1)
+		cdt_agent_record_loc_put(carl0);
+
+	cdt_agent_record_loc_put(carl1);
+}
+
+void cdt_agent_record_hash_lookup(struct coordinator *cdt, u64 cookie,
+				  u32 *cat_idx, u32 *rec_idx)
+{
+	struct cdt_agent_record_loc *carl;
+
+	carl = cfs_hash_lookup(cdt->cdt_agent_record_hash, &cookie);
+	if (carl != NULL) {
+		LASSERT(carl->carl_cookie == cookie);
+		*cat_idx = carl->carl_cat_idx;
+		*rec_idx = carl->carl_rec_idx;
+		cdt_agent_record_loc_put(carl);
+	} else {
+		*cat_idx = 0;
+		*rec_idx = 0;
+	}
+}
+
+void cdt_agent_record_hash_del(struct coordinator *cdt, u64 cookie)
+{
+	cfs_hash_del_key(cdt->cdt_agent_record_hash, &cookie);
+}
 
 void dump_llog_agent_req_rec(const char *prefix,
 			     const struct llog_agent_req_rec *larr)
@@ -81,11 +203,15 @@ void dump_llog_agent_req_rec(const char *prefix,
  * \param mdt [IN] MDT device
  * \param cb [IN] llog callback funtion
  * \param data [IN] llog callback  data
+ * \param rw [IN] cdt_llog_lock mode (READ or WRITE)
+ * \param start_cat_idx first catalog index to examine
+ * \param start_rec_idx first record index to examine
  * \retval 0 success
  * \retval -ve failure
  */
 int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
-		     llog_cb_t cb, void *data)
+		     llog_cb_t cb, void *data, u32 start_cat_idx,
+		     u32 start_rec_idx, int rw)
 {
 	struct obd_device	*obd = mdt2obd_dev(mdt);
 	struct llog_ctxt	*lctxt = NULL;
@@ -97,9 +223,13 @@ int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
 	if (lctxt == NULL || lctxt->loc_handle == NULL)
 		RETURN(-ENOENT);
 
-	mutex_lock(&cdt->cdt_llog_lock);
+	if (rw == READ)
+		down_read(&cdt->cdt_llog_lock);
+	else
+		down_write(&cdt->cdt_llog_lock);
 
-	rc = llog_cat_process(env, lctxt->loc_handle, cb, data, 0, 0);
+	rc = llog_cat_process(env, lctxt->loc_handle, cb, data, start_cat_idx,
+			      start_rec_idx);
 	if (rc < 0)
 		CERROR("%s: failed to process HSM_ACTIONS llog (rc=%d)\n",
 			mdt_obd_name(mdt), rc);
@@ -107,7 +237,12 @@ int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
 		rc = 0;
 
 	llog_ctxt_put(lctxt);
-	mutex_unlock(&cdt->cdt_llog_lock);
+
+	if (rw == READ)
+		up_read(&cdt->cdt_llog_lock);
+	else
+		up_write(&cdt->cdt_llog_lock);
+
 	RETURN(rc);
 }
 
@@ -152,21 +287,22 @@ int mdt_agent_record_add(const struct lu_env *env,
 	if (lctxt == NULL || lctxt->loc_handle == NULL)
 		GOTO(free, rc = -ENOENT);
 
-	mutex_lock(&cdt->cdt_llog_lock);
+	down_write(&cdt->cdt_llog_lock);
 
 	/* in case of cancel request, the cookie is already set to the
 	 * value of the request cookie to be cancelled
 	 * so we do not change it */
-	if (hai->hai_action != HSMA_CANCEL) {
+	if (hai->hai_action == HSMA_CANCEL) {
+		larr->arr_hai.hai_cookie = hai->hai_cookie;
+	} else {
 		cdt->cdt_last_cookie++;
-		hai->hai_cookie = cdt->cdt_last_cookie;
+		larr->arr_hai.hai_cookie = cdt->cdt_last_cookie;
 	}
-	larr->arr_hai.hai_cookie = hai->hai_cookie;
 	rc = llog_cat_add(env, lctxt->loc_handle, &larr->arr_hdr, NULL);
 	if (rc > 0)
 		rc = 0;
 
-	mutex_unlock(&cdt->cdt_llog_lock);
+	up_write(&cdt->cdt_llog_lock);
 	llog_ctxt_put(lctxt);
 
 	EXIT;
@@ -181,10 +317,9 @@ free:
  */
 struct data_update_cb {
 	struct mdt_device	*mdt;
-	__u64			*cookies;
-	int			 cookies_count;
-	int			 cookies_done;
-	enum agent_req_status	 status;
+	struct hsm_record_update *updates;
+	unsigned int		 updates_count;
+	unsigned int		 updates_done;
 	cfs_time_t		 change_time;
 };
 
@@ -205,42 +340,44 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
 	struct llog_agent_req_rec	*larr;
 	struct data_update_cb		*ducb;
 	int				 rc, i;
-	int				 found;
 	ENTRY;
 
 	larr = (struct llog_agent_req_rec *)hdr;
 	ducb = data;
-	found = 0;
 
 	/* check if all done */
-	if (ducb->cookies_count == ducb->cookies_done)
+	if (ducb->updates_count == ducb->updates_done)
 		RETURN(LLOG_PROC_BREAK);
 
 	/* if record is in final state, never change */
-	/* if record is a cancel request, it cannot be canceled
-	 * this is to manage the following case:
-	 * when a request is canceled, we have 2 records with the
-	 * the same cookie : the one to cancel and the cancel request
-	 * the 1st has to be set to ARS_CANCELED and the 2nd to ARS_SUCCEED
-	 */
-	if (agent_req_in_final_state(larr->arr_status) ||
-	    (larr->arr_hai.hai_action == HSMA_CANCEL &&
-	     ducb->status == ARS_CANCELED))
+	if (agent_req_in_final_state(larr->arr_status))
 		RETURN(0);
 
 	rc = 0;
-	for (i = 0 ; i < ducb->cookies_count ; i++) {
-		CDEBUG(D_HSM, "%s: search "LPX64", found "LPX64"\n",
-		       mdt_obd_name(ducb->mdt), ducb->cookies[i],
-		       larr->arr_hai.hai_cookie);
-		if (larr->arr_hai.hai_cookie == ducb->cookies[i]) {
+	for (i = 0 ; i < ducb->updates_count ; i++) {
+		struct hsm_record_update *update = &ducb->updates[i];
 
-			larr->arr_status = ducb->status;
+		CDEBUG(D_HSM, "%s: search %#llx, found %#llx\n",
+		       mdt_obd_name(ducb->mdt), update->cookie,
+		       larr->arr_hai.hai_cookie);
+		if (larr->arr_hai.hai_cookie == update->cookie) {
+
+			/* If record is a cancel request, it cannot be
+			 * canceled. This is to manage the following
+			 * case: when a request is canceled, we have 2
+			 * records with the the same cookie: the one
+			 * to cancel and the cancel request the 1st
+			 * has to be set to ARS_CANCELED and the 2nd
+			 * to ARS_SUCCEED
+			 */
+			if (larr->arr_hai.hai_action == HSMA_CANCEL &&
+			    update->status == ARS_CANCELED)
+				RETURN(0);
+
+			larr->arr_status = update->status;
 			larr->arr_req_change = ducb->change_time;
-			rc = mdt_agent_llog_update_rec(env, ducb->mdt, llh,
-						       larr);
-			ducb->cookies_done++;
-			found = 1;
+			rc = llog_write(env, llh, hdr, hdr->lrh_index);
+			ducb->updates_done++;
 			break;
 		}
 	}
@@ -248,9 +385,6 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
 	if (rc < 0)
 		CERROR("%s: mdt_agent_llog_update_rec() failed, rc = %d\n",
 		       mdt_obd_name(ducb->mdt), rc);
-
-	if (found == 1)
-		RETURN(LLOG_DEL_RECORD);
 
 	RETURN(rc);
 }
@@ -266,56 +400,56 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
  * \retval -ve failure
  */
 int mdt_agent_record_update(const struct lu_env *env, struct mdt_device *mdt,
-			    __u64 *cookies, int cookies_count,
-			    enum agent_req_status status)
+			    struct hsm_record_update *updates,
+			    unsigned int updates_count)
 {
 	struct data_update_cb	 ducb;
-	int			 rc;
+	u32 start_cat_idx = -1;
+	u32 start_rec_idx = -1;
+	u32 cat_idx;
+	u32 rec_idx;
+	int i;
+	int rc;
 	ENTRY;
+
+	/* Find the first location (start_cat_idx, start_rec_idx)
+	 * among the records corresponding to cookies. */
+	for (i = 0; i < updates_count; i++) {
+		struct hsm_record_update *update = &updates[i];
+		/* If we cannot find a cached location for a cookie
+		 * (perhaps because the MDT was restart then we must
+		 * start from the beginning. In this case
+		 * mdt_agent_record_hash_get() sets both of cat_idx and
+		 * rec_idx to 0. */
+		cdt_agent_record_hash_lookup(&mdt->mdt_coordinator,
+					     update->cookie, &cat_idx,
+					     &rec_idx);
+		if (cat_idx < start_cat_idx) {
+			start_cat_idx = cat_idx;
+			start_rec_idx = rec_idx;
+		} else if (cat_idx == start_cat_idx &&
+			   rec_idx < start_rec_idx) {
+			start_rec_idx = rec_idx;
+		}
+	}
+
+	/* Fixup starting record index for llog_cat_process(). */
+	if (start_rec_idx != 0)
+		start_rec_idx -= 1;
 
 	ducb.mdt = mdt;
-	ducb.cookies = cookies;
-	ducb.cookies_count = cookies_count;
-	ducb.cookies_done = 0;
-	ducb.status = status;
+	ducb.updates = updates;
+	ducb.updates_count = updates_count;
+	ducb.updates_done = 0;
 	ducb.change_time = cfs_time_current_sec();
 
-	rc = cdt_llog_process(env, mdt, mdt_agent_record_update_cb, &ducb);
+	rc = cdt_llog_process(env, mdt, mdt_agent_record_update_cb, &ducb,
+			      start_cat_idx, start_rec_idx, WRITE);
 	if (rc < 0)
 		CERROR("%s: cdt_llog_process() failed, rc=%d, cannot update "
-		       "status to %s for %d cookies, done %d\n",
+		       "status for %u cookies, done %u\n",
 		       mdt_obd_name(mdt), rc,
-		       agent_req_status2name(status),
-		       cookies_count, ducb.cookies_done);
-	RETURN(rc);
-}
-
-/**
- * update a llog record
- *  cdt_llog_lock must be hold
- * \param env [IN] environment
- * \param mdt [IN] mdt device
- * \param llh [IN] llog handle, must be a catalog handle
- * \param larr [IN] record
- * \retval 0 success
- * \retval -ve failure
- */
-int mdt_agent_llog_update_rec(const struct lu_env *env,
-			      struct mdt_device *mdt, struct llog_handle *llh,
-			      struct llog_agent_req_rec *larr)
-{
-	struct llog_rec_hdr	 saved_hdr;
-	int			 rc;
-	ENTRY;
-
-	/* saved old record info */
-	saved_hdr = larr->arr_hdr;
-	/* add new record with updated values */
-	larr->arr_hdr.lrh_id = 0;
-	larr->arr_hdr.lrh_index = 0;
-	rc = llog_cat_add(env, llh->u.phd.phd_cat_handle, &larr->arr_hdr,
-			  NULL);
-	larr->arr_hdr = saved_hdr;
+		       updates_count, ducb.updates_done);
 	RETURN(rc);
 }
 
@@ -398,7 +532,7 @@ static int hsm_actions_show_cb(const struct lu_env *env,
 	struct llog_agent_req_rec    *larr = (struct llog_agent_req_rec *)hdr;
 	struct seq_file		     *s = data;
 	struct agent_action_iterator *aai;
-	int			      rc, sz;
+	int			      sz;
 	size_t			      count;
 	char			      buf[12];
 	ENTRY;
@@ -417,35 +551,29 @@ static int hsm_actions_show_cb(const struct lu_env *env,
 
 	count = s->count;
 	sz = larr->arr_hai.hai_len - sizeof(larr->arr_hai);
-	rc = seq_printf(s, "lrh=[type=%X len=%d idx=%d/%d] fid="DFID
-			" dfid="DFID
-			" compound/cookie="LPX64"/"LPX64
-			" action=%s archive#=%d flags="LPX64
-			" extent="LPX64"-"LPX64
-			" gid="LPX64" datalen=%d status=%s"
-			" data=[%s]\n",
-			hdr->lrh_type, hdr->lrh_len,
-			llh->lgh_hdr->llh_cat_idx, hdr->lrh_index,
-			PFID(&larr->arr_hai.hai_fid),
-			PFID(&larr->arr_hai.hai_dfid),
-			larr->arr_compound_id, larr->arr_hai.hai_cookie,
-			hsm_copytool_action2name(larr->arr_hai.hai_action),
-			larr->arr_archive_id,
-			larr->arr_flags,
-			larr->arr_hai.hai_extent.offset,
-			larr->arr_hai.hai_extent.length,
-			larr->arr_hai.hai_gid, sz,
-			agent_req_status2name(larr->arr_status),
-			hai_dump_data_field(&larr->arr_hai, buf, sizeof(buf)));
-	if (rc == 0) {
-		aai->aai_cat_index = llh->lgh_hdr->llh_cat_idx;
-		aai->aai_index = hdr->lrh_index;
-	} else {
-		if (s->count == s->size && count > 0) /* rewind the buffer */
-			s->count = count;
-		rc = LLOG_PROC_BREAK;
-	}
-	RETURN(rc);
+	seq_printf(s, "lrh=[type=%X len=%d idx=%d/%d] fid="DFID
+		   " dfid="DFID" compound/cookie="LPX64"/"LPX64
+		   " action=%s archive#=%d flags="LPX64
+		   " extent="LPX64"-"LPX64
+		   " gid="LPX64" datalen=%d status=%s data=[%s]\n",
+		   hdr->lrh_type, hdr->lrh_len,
+		   llh->lgh_hdr->llh_cat_idx, hdr->lrh_index,
+		   PFID(&larr->arr_hai.hai_fid),
+		   PFID(&larr->arr_hai.hai_dfid),
+		   larr->arr_compound_id, larr->arr_hai.hai_cookie,
+		   hsm_copytool_action2name(larr->arr_hai.hai_action),
+		   larr->arr_archive_id,
+		   larr->arr_flags,
+		   larr->arr_hai.hai_extent.offset,
+		   larr->arr_hai.hai_extent.length,
+		   larr->arr_hai.hai_gid, sz,
+		   agent_req_status2name(larr->arr_status),
+		   hai_dump_data_field(&larr->arr_hai, buf, sizeof(buf)));
+
+	aai->aai_cat_index = llh->lgh_hdr->llh_cat_idx;
+	aai->aai_index = hdr->lrh_index;
+
+	RETURN(0);
 }
 
 /**
@@ -468,11 +596,11 @@ static int mdt_hsm_actions_proc_show(struct seq_file *s, void *v)
 	if (aai->aai_eof)
 		RETURN(0);
 
-	mutex_lock(&cdt->cdt_llog_lock);
+	down_read(&cdt->cdt_llog_lock);
 	rc = llog_cat_process(&aai->aai_env, aai->aai_ctxt->loc_handle,
 			      hsm_actions_show_cb, s,
 			      aai->aai_cat_index, aai->aai_index + 1);
-	mutex_unlock(&cdt->cdt_llog_lock);
+	up_read(&cdt->cdt_llog_lock);
 	if (rc == 0) /* all llog parsed */
 		aai->aai_eof = true;
 	if (rc == LLOG_PROC_BREAK) /* buffer full */
@@ -549,7 +677,7 @@ out:
 
 /**
  * lprocfs_release_hsm_actions() is called at end of /proc access.
- * It frees allocated ressources and calls cleanup lprocfs methods.
+ * It frees allocated resources and calls cleanup lprocfs methods.
  */
 static int lprocfs_release_hsm_actions(struct inode *inode, struct file *file)
 {
@@ -572,4 +700,3 @@ const struct file_operations mdt_hsm_actions_fops = {
 	.llseek		= seq_lseek,
 	.release	= lprocfs_release_hsm_actions,
 };
-

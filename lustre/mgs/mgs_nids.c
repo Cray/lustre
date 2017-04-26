@@ -145,7 +145,7 @@ static int mgs_nidtbl_read(struct obd_export *exp, struct mgs_nidtbl *tbl,
 
 			if (units_in_page == 0) {
 				/* allocate a new page */
-				pages[index] = alloc_page(GFP_IOFS);
+				pages[index] = alloc_page(GFP_KERNEL);
 				if (pages[index] == NULL) {
 					rc = -ENOMEM;
 					break;
@@ -222,6 +222,9 @@ static int nidtbl_update_version(const struct lu_env *env,
 	loff_t		  off = 0;
 	int		  rc;
         ENTRY;
+
+	if (mgs->mgs_bottom->dd_rdonly)
+		RETURN(0);
 
 	LASSERT(mutex_is_locked(&tbl->mn_lock));
 
@@ -417,18 +420,15 @@ void mgs_ir_notify_complete(struct fs_db *fsdb)
 
 static int mgs_ir_notify(void *arg)
 {
-        struct fs_db      *fsdb   = arg;
-        struct ldlm_res_id resid;
+	struct fs_db      *fsdb   = arg;
+	struct ldlm_res_id resid;
+	char name[sizeof(fsdb->fsdb_name) + 16];
 
-        char name[sizeof(fsdb->fsdb_name) + 20];
+	LASSERTF(sizeof(name) < 40, "name is too large to be in stack.\n");
 
-        LASSERTF(sizeof(name) < 32, "name is too large to be in stack.\n");
-        sprintf(name, "mgs_%s_notify", fsdb->fsdb_name);
-
+	sprintf(name, "mgs_%s_notify", fsdb->fsdb_name);
 	complete(&fsdb->fsdb_notify_comp);
-
-        set_user_nice(current, -2);
-
+	set_user_nice(current, -2);
 	mgc_fsname2resid(fsdb->fsdb_name, &resid, CONFIG_T_RECOVER);
 	while (1) {
 		struct l_wait_info   lwi = { 0 };
@@ -464,14 +464,9 @@ int mgs_ir_init_fs(const struct lu_env *env, struct mgs_device *mgs,
 			    mgs->mgs_start_time + ir_timeout))
 		fsdb->fsdb_ir_state = IR_STARTUP;
 	fsdb->fsdb_nonir_clients = 0;
-	INIT_LIST_HEAD(&fsdb->fsdb_clients);
 
 	/* start notify thread */
 	fsdb->fsdb_mgs = mgs;
-	atomic_set(&fsdb->fsdb_notify_phase, 0);
-	init_waitqueue_head(&fsdb->fsdb_notify_waitq);
-	init_completion(&fsdb->fsdb_notify_comp);
-
 	task = kthread_run(mgs_ir_notify, fsdb,
 			       "mgs_%s_notify", fsdb->fsdb_name);
 	if (!IS_ERR(task))
@@ -657,18 +652,22 @@ int mgs_get_ir_logs(struct ptlrpc_request *req)
 	page_count = (bytes + PAGE_CACHE_SIZE - 1) >> PAGE_CACHE_SHIFT;
 	LASSERT(page_count <= nrpages);
 	desc = ptlrpc_prep_bulk_exp(req, page_count, 1,
-				    BULK_PUT_SOURCE, MGS_BULK_PORTAL);
+				    PTLRPC_BULK_PUT_SOURCE |
+					PTLRPC_BULK_BUF_KIOV,
+				    MGS_BULK_PORTAL,
+				    &ptlrpc_bulk_kiov_pin_ops);
 	if (desc == NULL)
 		GOTO(out, rc = -ENOMEM);
 
 	for (i = 0; i < page_count && bytes > 0; i++) {
-		ptlrpc_prep_bulk_page_pin(desc, pages[i], 0,
-					  min_t(int, bytes, PAGE_CACHE_SIZE));
+		desc->bd_frag_ops->add_kiov_frag(desc, pages[i], 0,
+						 min_t(int, bytes,
+						      PAGE_CACHE_SIZE));
 		bytes -= PAGE_CACHE_SIZE;
         }
 
         rc = target_bulk_io(req->rq_export, desc, &lwi);
-	ptlrpc_free_bulk_pin(desc);
+	ptlrpc_free_bulk(desc);
 
 out:
 	for (i = 0; i < nrpages; i++) {

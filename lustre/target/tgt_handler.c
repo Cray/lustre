@@ -384,8 +384,23 @@ static int tgt_handle_request0(struct tgt_session_info *tsi,
 {
 	int	 serious = 0;
 	int	 rc;
+	__u32    opc = lustre_msg_get_opc(req->rq_reqmsg);
 
 	ENTRY;
+
+
+	/* When dealing with sec context requests, no export is associated yet,
+	 * because these requests are sent before *_CONNECT requests.
+	 * A NULL req->rq_export means the normal *_common_slice handlers will
+	 * not be called, because there is no reference to the target.
+	 * So deal with them by hand and jump directly to target_send_reply().
+	 */
+	switch (opc) {
+	case SEC_CTX_INIT:
+	case SEC_CTX_INIT_CONT:
+	case SEC_CTX_FINI:
+		GOTO(out, rc = 0);
+	}
 
 	/*
 	 * Checking for various OBD_FAIL_$PREF_$OPC_NET codes. _Do_ not try
@@ -454,6 +469,7 @@ static int tgt_handle_request0(struct tgt_session_info *tsi,
 	if (likely(rc == 0 && req->rq_export))
 		target_committed_to_req(req);
 
+out:
 	target_send_reply(req, rc, tsi->tsi_reply_fail_id);
 	RETURN(0);
 }
@@ -521,11 +537,11 @@ static int tgt_handle_recovery(struct ptlrpc_request *req, int reply_fail_id)
 
 	/* sanity check: if the xid matches, the request must be marked as a
 	 * resent or replayed */
-	if (req_xid_is_last(req)) {
+	if (req_can_reconstruct(req, NULL)) {
 		if (!(lustre_msg_get_flags(req->rq_reqmsg) &
 		      (MSG_RESENT | MSG_REPLAY))) {
 			DEBUG_REQ(D_WARNING, req, "rq_xid "LPU64" matches "
-				  "last_xid, expected REPLAY or RESENT flag "
+				  "saved xid, expected REPLAY or RESENT flag "
 				  "(%x)", req->rq_xid,
 				  lustre_msg_get_flags(req->rq_reqmsg));
 			req->rq_status = -ENOTCONN;
@@ -590,6 +606,52 @@ static struct tgt_handler *tgt_handler_find_check(struct ptlrpc_request *req)
 	RETURN(h);
 }
 
+static int process_req_last_xid(struct ptlrpc_request *req)
+{
+	__u64	last_xid;
+	ENTRY;
+
+	/* check request's xid is consistent with export's last_xid */
+	last_xid = lustre_msg_get_last_xid(req->rq_reqmsg);
+	if (last_xid > req->rq_export->exp_last_xid)
+		req->rq_export->exp_last_xid = last_xid;
+
+	if (req->rq_xid == 0 ||
+	    (req->rq_xid <= req->rq_export->exp_last_xid)) {
+		DEBUG_REQ(D_ERROR, req, "Unexpected xid %llx vs. "
+			  "last_xid %llx\n", req->rq_xid,
+			  req->rq_export->exp_last_xid);
+		/* Some request is allowed to be sent during replay,
+		 * such as OUT update requests, FLD requests, so it
+		 * is possible that replay requests has smaller XID
+		 * than the exp_last_xid.
+		 *
+		 * Some non-replay requests may have smaller XID as
+		 * well:
+		 *
+		 * - Client send a no_resend RPC, like statfs;
+		 * - The RPC timedout (or some other error) on client,
+		 *   then it's removed from the unreplied list;
+		 * - Client send some other request to bump the
+		 *   exp_last_xid on server;
+		 * - The former RPC got chance to be processed;
+		 */
+		if (!(lustre_msg_get_flags(req->rq_reqmsg) & MSG_REPLAY))
+			RETURN(-EPROTO);
+	}
+
+	/* try to release in-memory reply data */
+	if (tgt_is_multimodrpcs_client(req->rq_export)) {
+		tgt_handle_received_xid(req->rq_export,
+				lustre_msg_get_last_xid(req->rq_reqmsg));
+		if (!(lustre_msg_get_flags(req->rq_reqmsg) &
+		      (MSG_RESENT | MSG_REPLAY)))
+			tgt_handle_tag(req->rq_export,
+				       lustre_msg_get_tag(req->rq_reqmsg));
+	}
+	RETURN(0);
+}
+
 int tgt_request_handle(struct ptlrpc_request *req)
 {
 	struct tgt_session_info	*tsi = tgt_ses_info(req->rq_svc_thread->t_env);
@@ -599,8 +661,9 @@ int tgt_request_handle(struct ptlrpc_request *req)
 	struct lu_target	*tgt;
 	int			 request_fail_id = 0;
 	__u32			 opc = lustre_msg_get_opc(msg);
+	struct obd_device	*obd;
 	int			 rc;
-
+	bool			 is_connect = false;
 	ENTRY;
 
 	/* Refill the context, to make sure all thread keys are allocated */
@@ -614,6 +677,7 @@ int tgt_request_handle(struct ptlrpc_request *req)
 	 * target, otherwise that should be connect operation */
 	if (opc == MDS_CONNECT || opc == OST_CONNECT ||
 	    opc == MGS_CONNECT) {
+		is_connect = true;
 		req_capsule_set(&req->rq_pill, &RQF_CONNECT);
 		rc = target_handle_connect(req);
 		if (rc != 0) {
@@ -627,6 +691,14 @@ int tgt_request_handle(struct ptlrpc_request *req)
 	}
 
 	if (unlikely(!class_connected_export(req->rq_export))) {
+		if (opc == SEC_CTX_INIT || opc == SEC_CTX_INIT_CONT ||
+		    opc == SEC_CTX_FINI) {
+			/* sec context initialization has to be handled
+			 * by hand in tgt_handle_request0() */
+			tsi->tsi_reply_fail_id = OBD_FAIL_SEC_CTX_INIT_NET;
+			h = NULL;
+			GOTO(handle_recov, rc = 0);
+		}
 		CDEBUG(D_HA, "operation %d on unconnected OST from %s\n",
 		       opc, libcfs_id2str(req->rq_peer));
 		req->rq_status = -ENOTCONN;
@@ -641,6 +713,24 @@ int tgt_request_handle(struct ptlrpc_request *req)
 	else
 		tsi->tsi_jobid = NULL;
 
+	/* Skip last_xid processing for the recovery thread, otherwise, the
+	 * last_xid on same request could be processed twice: first time when
+	 * processing the incoming request, second time when the request is
+	 * being processed by recovery thread. */
+	obd = class_exp2obd(req->rq_export);
+	if (is_connect) {
+		/* reset the exp_last_xid on each connection. */
+		req->rq_export->exp_last_xid = 0;
+	} else if (obd->obd_recovery_data.trd_processing_task !=
+		   current_pid()) {
+		rc = process_req_last_xid(req);
+		if (rc) {
+			req->rq_status = rc;
+			rc = ptlrpc_error(req);
+			GOTO(out, rc);
+		}
+	}
+
 	request_fail_id = tgt->lut_request_fail_id;
 	tsi->tsi_reply_fail_id = tgt->lut_reply_fail_id;
 
@@ -650,6 +740,9 @@ int tgt_request_handle(struct ptlrpc_request *req)
 		rc = ptlrpc_error(req);
 		GOTO(out, rc);
 	}
+
+	LASSERTF(h->th_opc == opc, "opcode mismatch %d != %d\n",
+		 h->th_opc, opc);
 
 	if (CFS_FAIL_CHECK_ORSET(request_fail_id, CFS_FAIL_ONCE))
 		GOTO(out, rc = 0);
@@ -664,10 +757,9 @@ int tgt_request_handle(struct ptlrpc_request *req)
 		GOTO(out, rc);
 	}
 
+handle_recov:
 	rc = tgt_handle_recovery(req, tsi->tsi_reply_fail_id);
 	if (likely(rc == 1)) {
-		LASSERTF(h->th_opc == opc, "opcode mismatch %d != %d\n",
-			 h->th_opc, opc);
 		rc = tgt_handle_request0(tsi, h, req);
 		if (rc)
 			GOTO(out, rc);
@@ -880,6 +972,16 @@ int tgt_connect_check_sptlrpc(struct ptlrpc_request *req, struct obd_export *exp
 		spin_lock(&exp->exp_lock);
 		exp->exp_sp_peer = req->rq_sp_from;
 		exp->exp_flvr = flvr;
+
+		/* when on mgs, if no restriction is set, or if client
+		 * is loopback, allow any flavor */
+		if ((strcmp(exp->exp_obd->obd_type->typ_name,
+			   LUSTRE_MGS_NAME) == 0) &&
+		     (exp->exp_flvr.sf_rpc == SPTLRPC_FLVR_NULL ||
+		      LNET_NETTYP(LNET_NIDNET(exp->exp_connection->c_peer.nid))
+		      == LOLND))
+			exp->exp_flvr.sf_rpc = SPTLRPC_FLVR_ANY;
+
 		if (exp->exp_flvr.sf_rpc != SPTLRPC_FLVR_ANY &&
 		    exp->exp_flvr.sf_rpc != req->rq_flvr.sf_rpc) {
 			CERROR("%s: unauthorized rpc flavor %x from %s, "
@@ -1021,8 +1123,11 @@ int tgt_sendpage(struct tgt_session_info *tsi, struct lu_rdpg *rdpg, int nob)
 
 	ENTRY;
 
-	desc = ptlrpc_prep_bulk_exp(req, rdpg->rp_npages, 1, BULK_PUT_SOURCE,
-				    MDS_BULK_PORTAL);
+	desc = ptlrpc_prep_bulk_exp(req, rdpg->rp_npages, 1,
+				    PTLRPC_BULK_PUT_SOURCE |
+					PTLRPC_BULK_BUF_KIOV,
+				    MDS_BULK_PORTAL,
+				    &ptlrpc_bulk_kiov_pin_ops);
 	if (desc == NULL)
 		RETURN(-ENOMEM);
 
@@ -1034,12 +1139,13 @@ int tgt_sendpage(struct tgt_session_info *tsi, struct lu_rdpg *rdpg, int nob)
 	for (i = 0, tmpcount = nob; i < rdpg->rp_npages && tmpcount > 0;
 	     i++, tmpcount -= tmpsize) {
 		tmpsize = min_t(int, tmpcount, PAGE_CACHE_SIZE);
-		ptlrpc_prep_bulk_page_pin(desc, rdpg->rp_pages[i], 0, tmpsize);
+		desc->bd_frag_ops->add_kiov_frag(desc, rdpg->rp_pages[i], 0,
+						 tmpsize);
 	}
 
 	LASSERT(desc->bd_nob == nob);
 	rc = target_bulk_io(exp, desc, lwi);
-	ptlrpc_free_bulk_pin(desc);
+	ptlrpc_free_bulk(desc);
 	RETURN(rc);
 }
 EXPORT_SYMBOL(tgt_sendpage);
@@ -1100,7 +1206,7 @@ static int tgt_obd_idx_read(struct tgt_session_info *tsi)
 	if (rdpg->rp_pages == NULL)
 		GOTO(out, rc = -ENOMEM);
 	for (i = 0; i < rdpg->rp_npages; i++) {
-		rdpg->rp_pages[i] = alloc_page(GFP_IOFS);
+		rdpg->rp_pages[i] = alloc_page(GFP_NOFS);
 		if (rdpg->rp_pages[i] == NULL)
 			GOTO(out, rc = -ENOMEM);
 	}
@@ -1564,6 +1670,9 @@ int tgt_brw_lock(struct ldlm_namespace *ns, struct ldlm_res_id *res_id,
 	LASSERT(mode == LCK_PR || mode == LCK_PW);
 	LASSERT(!lustre_handle_is_used(lh));
 
+	if (ns->ns_obd->obd_recovering)
+		RETURN(0);
+
 	if (nrbufs == 0 || !(nb[0].rnb_flags & OBD_BRW_SRVLOCK))
 		RETURN(0);
 
@@ -1602,6 +1711,8 @@ static __u32 tgt_checksum_bulk(struct lu_target *tgt,
 	unsigned char			cfs_alg = cksum_obd2cfs(cksum_type);
 	__u32				cksum;
 
+	LASSERT(ptlrpc_is_bulk_desc_kiov(desc->bd_type));
+
 	hdesc = cfs_crypto_hash_init(cfs_alg, NULL, 0);
 	if (IS_ERR(hdesc)) {
 		CERROR("%s: unable to initialize checksum hash %s\n",
@@ -1615,10 +1726,11 @@ static __u32 tgt_checksum_bulk(struct lu_target *tgt,
 		 * simulate a client->OST data error */
 		if (i == 0 && opc == OST_WRITE &&
 		    OBD_FAIL_CHECK(OBD_FAIL_OST_CHECKSUM_RECEIVE)) {
-			int off = desc->bd_iov[i].kiov_offset & ~CFS_PAGE_MASK;
-			int len = desc->bd_iov[i].kiov_len;
+			int off = BD_GET_KIOV(desc, i).kiov_offset &
+				~PAGE_MASK;
+			int len = BD_GET_KIOV(desc, i).kiov_len;
 			struct page *np = tgt_page_to_corrupt;
-			char *ptr = kmap(desc->bd_iov[i].kiov_page) + off;
+			char *ptr = kmap(BD_GET_KIOV(desc, i).kiov_page) + off;
 
 			if (np) {
 				char *ptr2 = kmap(np) + off;
@@ -1626,24 +1738,28 @@ static __u32 tgt_checksum_bulk(struct lu_target *tgt,
 				memcpy(ptr2, ptr, len);
 				memcpy(ptr2, "bad3", min(4, len));
 				kunmap(np);
-				desc->bd_iov[i].kiov_page = np;
+				BD_GET_KIOV(desc, i).kiov_page = np;
 			} else {
 				CERROR("%s: can't alloc page for corruption\n",
 				       tgt_name(tgt));
 			}
 		}
-		cfs_crypto_hash_update_page(hdesc, desc->bd_iov[i].kiov_page,
-				  desc->bd_iov[i].kiov_offset & ~CFS_PAGE_MASK,
-				  desc->bd_iov[i].kiov_len);
+		cfs_crypto_hash_update_page(hdesc,
+				  BD_GET_KIOV(desc, i).kiov_page,
+				  BD_GET_KIOV(desc, i).kiov_offset &
+					~PAGE_MASK,
+				  BD_GET_KIOV(desc, i).kiov_len);
 
 		 /* corrupt the data after we compute the checksum, to
 		 * simulate an OST->client data error */
 		if (i == 0 && opc == OST_READ &&
 		    OBD_FAIL_CHECK(OBD_FAIL_OST_CHECKSUM_SEND)) {
-			int off = desc->bd_iov[i].kiov_offset & ~CFS_PAGE_MASK;
-			int len = desc->bd_iov[i].kiov_len;
+			int off = BD_GET_KIOV(desc, i).kiov_offset
+			  & ~PAGE_MASK;
+			int len = BD_GET_KIOV(desc, i).kiov_len;
 			struct page *np = tgt_page_to_corrupt;
-			char *ptr = kmap(desc->bd_iov[i].kiov_page) + off;
+			char *ptr =
+			  kmap(BD_GET_KIOV(desc, i).kiov_page) + off;
 
 			if (np) {
 				char *ptr2 = kmap(np) + off;
@@ -1651,7 +1767,7 @@ static __u32 tgt_checksum_bulk(struct lu_target *tgt,
 				memcpy(ptr2, ptr, len);
 				memcpy(ptr2, "bad4", min(4, len));
 				kunmap(np);
-				desc->bd_iov[i].kiov_page = np;
+				BD_GET_KIOV(desc, i).kiov_page = np;
 			} else {
 				CERROR("%s: can't alloc page for corruption\n",
 				       tgt_name(tgt));
@@ -1754,7 +1870,10 @@ int tgt_brw_read(struct tgt_session_info *tsi)
 		GOTO(out_lock, rc);
 
 	desc = ptlrpc_prep_bulk_exp(req, npages, ioobj_max_brw_get(ioo),
-				    BULK_PUT_SOURCE, OST_BULK_PORTAL);
+				    PTLRPC_BULK_PUT_SOURCE |
+					PTLRPC_BULK_BUF_KIOV,
+				    OST_BULK_PORTAL,
+				    &ptlrpc_bulk_kiov_nopin_ops);
 	if (desc == NULL)
 		GOTO(out_commitrw, rc = -ENOMEM);
 
@@ -1770,9 +1889,10 @@ int tgt_brw_read(struct tgt_session_info *tsi)
 		nob += page_rc;
 		if (page_rc != 0) { /* some data! */
 			LASSERT(local_nb[i].lnb_page != NULL);
-			ptlrpc_prep_bulk_page_nopin(desc, local_nb[i].lnb_page,
-						    local_nb[i].lnb_page_offset,
-						    page_rc);
+			desc->bd_frag_ops->add_kiov_frag
+			  (desc, local_nb[i].lnb_page,
+			   local_nb[i].lnb_page_offset,
+			   page_rc);
 		}
 
 		if (page_rc != local_nb[i].lnb_len) { /* short read */
@@ -1818,7 +1938,7 @@ out_lock:
 	tgt_brw_unlock(ioo, remote_nb, &lockh, LCK_PR);
 
 	if (desc && !CFS_FAIL_PRECHECK(OBD_FAIL_PTLRPC_CLIENT_BULK_CB2))
-		ptlrpc_free_bulk_nopin(desc);
+		ptlrpc_free_bulk(desc);
 
 	LASSERT(rc <= 0);
 	if (rc == 0) {
@@ -1846,7 +1966,7 @@ out_lock:
 		lwi1 = LWI_TIMEOUT_INTR(cfs_time_seconds(3), NULL, NULL, NULL);
 		l_wait_event(waitq, 0, &lwi1);
 		target_bulk_io(exp, desc, &lwi);
-		ptlrpc_free_bulk_nopin(desc);
+		ptlrpc_free_bulk(desc);
 	}
 
 	RETURN(rc);
@@ -1915,6 +2035,7 @@ int tgt_brw_write(struct tgt_session_info *tsi)
 	cksum_type_t		 cksum_type = OBD_CKSUM_CRC32;
 	bool			 no_reply = false, mmap;
 	struct tgt_thread_big_cache *tbc = req->rq_svc_thread->t_data;
+	bool wait_sync = false;
 
 	ENTRY;
 
@@ -2024,15 +2145,18 @@ int tgt_brw_write(struct tgt_session_info *tsi)
 		GOTO(out_lock, rc);
 
 	desc = ptlrpc_prep_bulk_exp(req, npages, ioobj_max_brw_get(ioo),
-				    BULK_GET_SINK, OST_BULK_PORTAL);
+				    PTLRPC_BULK_GET_SINK | PTLRPC_BULK_BUF_KIOV,
+				    OST_BULK_PORTAL,
+				    &ptlrpc_bulk_kiov_nopin_ops);
 	if (desc == NULL)
 		GOTO(skip_transfer, rc = -ENOMEM);
 
 	/* NB Having prepped, we must commit... */
 	for (i = 0; i < npages; i++)
-		ptlrpc_prep_bulk_page_nopin(desc, local_nb[i].lnb_page,
-					    local_nb[i].lnb_page_offset,
-					    local_nb[i].lnb_len);
+		desc->bd_frag_ops->add_kiov_frag(desc,
+						 local_nb[i].lnb_page,
+						 local_nb[i].lnb_page_offset,
+						 local_nb[i].lnb_len);
 
 	rc = sptlrpc_svc_prep_bulk(req, desc);
 	if (rc != 0)
@@ -2081,6 +2205,12 @@ skip_transfer:
 		 * has timed out the request already */
 		no_reply = true;
 
+	for (i = 0; i < niocount; i++) {
+		if (!(local_nb[i].lnb_flags & OBD_BRW_ASYNC)) {
+			wait_sync = true;
+			break;
+		}
+	}
 	/*
 	 * Disable sending mtime back to the client. If the client locked the
 	 * whole object, then it has already updated the mtime on its side,
@@ -2114,19 +2244,61 @@ skip_transfer:
 out_lock:
 	tgt_brw_unlock(ioo, remote_nb, &lockh, LCK_PW);
 	if (desc)
-		ptlrpc_free_bulk_nopin(desc);
+		ptlrpc_free_bulk(desc);
 out:
-	if (no_reply) {
+	if (unlikely(no_reply || (exp->exp_obd->obd_no_transno && wait_sync))) {
 		req->rq_no_reply = 1;
 		/* reply out callback would free */
 		ptlrpc_req_drop_rs(req);
-		LCONSOLE_WARN("%s: Bulk IO write error with %s (at %s), "
-			      "client will retry: rc %d\n",
-			      exp->exp_obd->obd_name,
-			      obd_uuid2str(&exp->exp_client_uuid),
-			      obd_export_nid2str(exp), rc);
+		if (!exp->exp_obd->obd_no_transno)
+			LCONSOLE_WARN("%s: Bulk IO write error with %s (at %s),"
+				      " client will retry: rc = %d\n",
+				      exp->exp_obd->obd_name,
+				      obd_uuid2str(&exp->exp_client_uuid),
+				      obd_export_nid2str(exp), rc);
 	}
 	memory_pressure_clr();
 	RETURN(rc);
 }
 EXPORT_SYMBOL(tgt_brw_write);
+
+/* Check if request can be reconstructed from saved reply data
+ * A copy of the reply data is returned in @trd if the pointer is not NULL
+ */
+bool req_can_reconstruct(struct ptlrpc_request *req,
+			 struct tg_reply_data *trd)
+{
+	struct tg_export_data *ted = &req->rq_export->exp_target_data;
+	struct lsd_client_data *lcd = ted->ted_lcd;
+	bool found;
+
+	if (tgt_is_multimodrpcs_client(req->rq_export))
+		return tgt_lookup_reply(req, trd);
+
+	mutex_lock(&ted->ted_lcd_lock);
+	found = req->rq_xid == lcd->lcd_last_xid ||
+		req->rq_xid == lcd->lcd_last_close_xid;
+
+	if (found && trd != NULL) {
+		if (lustre_msg_get_opc(req->rq_reqmsg) == MDS_CLOSE) {
+			trd->trd_reply.lrd_xid = lcd->lcd_last_close_xid;
+			trd->trd_reply.lrd_transno =
+						lcd->lcd_last_close_transno;
+			trd->trd_reply.lrd_result = lcd->lcd_last_close_result;
+		} else {
+			trd->trd_reply.lrd_xid = lcd->lcd_last_xid;
+			trd->trd_reply.lrd_transno = lcd->lcd_last_transno;
+			trd->trd_reply.lrd_result = lcd->lcd_last_result;
+			trd->trd_reply.lrd_data = lcd->lcd_last_data;
+			trd->trd_pre_versions[0] = lcd->lcd_pre_versions[0];
+			trd->trd_pre_versions[1] = lcd->lcd_pre_versions[1];
+			trd->trd_pre_versions[2] = lcd->lcd_pre_versions[2];
+			trd->trd_pre_versions[3] = lcd->lcd_pre_versions[3];
+		}
+	}
+	mutex_unlock(&ted->ted_lcd_lock);
+
+	return found;
+}
+EXPORT_SYMBOL(req_can_reconstruct);
+

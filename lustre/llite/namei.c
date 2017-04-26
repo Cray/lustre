@@ -193,13 +193,18 @@ int ll_md_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *desc,
 		}
 		break;
 	case LDLM_CB_CANCELING: {
-		struct inode *inode = ll_inode_from_resource_lock(lock);
+		struct inode *inode;
 		__u64 bits = lock->l_policy_data.l_inodebits.bits;
+
+		/* Nothing to do for non-granted locks */
+		if (lock->l_req_mode != lock->l_granted_mode)
+			break;
 
 		/* Inode is set to lock->l_resource->lr_lvb_inode
 		 * for mdc - bug 24555 */
 		LASSERT(lock->l_ast_data == NULL);
 
+		inode = ll_inode_from_resource_lock(lock);
 		if (inode == NULL)
 			break;
 
@@ -269,6 +274,10 @@ int ll_md_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *desc,
 			struct ll_inode_info *lli = ll_i2info(inode);
 
 			spin_lock(&lli->lli_lock);
+			LTIME_S(inode->i_mtime) = 0;
+			LTIME_S(inode->i_atime) = 0;
+			LTIME_S(inode->i_ctime) = 0;
+
 			lli->lli_flags &= ~LLIF_MDS_SIZE_LOCK;
 			spin_unlock(&lli->lli_lock);
 		}
@@ -373,7 +382,8 @@ static struct dentry *ll_find_alias(struct inode *inode, struct dentry *dentry)
 		LASSERT(alias != dentry);
 
 		spin_lock(&alias->d_lock);
-		if (alias->d_flags & DCACHE_DISCONNECTED)
+		if ((alias->d_flags & DCACHE_DISCONNECTED) &&
+		    S_ISDIR(inode->i_mode))
 			/* LASSERT(last_discon == NULL); LU-405, bz 20055 */
 			discon_alias = alias;
 		else if (alias->d_parent == dentry->d_parent             &&
@@ -553,11 +563,22 @@ static struct dentry *ll_lookup_it(struct inode *parent, struct dentry *dentry,
 	op_data = ll_prep_md_op_data(NULL, parent, NULL, dentry->d_name.name,
 				     dentry->d_name.len, 0, opc, NULL);
 	if (IS_ERR(op_data))
-		RETURN((void *)op_data);
+		GOTO(out, retval = ERR_CAST(op_data));
 
 	/* enforce umask if acl disabled or MDS doesn't support umask */
 	if (!IS_POSIXACL(parent) || !exp_connect_umask(ll_i2mdexp(parent)))
 		it->it_create_mode &= ~current_umask();
+
+	if (it->it_op & IT_CREAT &&
+	    ll_i2sbi(parent)->ll_flags & LL_SBI_FILE_SECCTX) {
+		rc = ll_dentry_init_security(dentry, it->it_create_mode,
+					     &dentry->d_name,
+					     &op_data->op_file_secctx_name,
+					     &op_data->op_file_secctx,
+					     &op_data->op_file_secctx_size);
+		if (rc < 0)
+			GOTO(out, retval = ERR_PTR(rc));
+	}
 
 	rc = md_intent_lock(ll_i2mdexp(parent), op_data, it, &req,
 			    &ll_md_blocking_ast, 0);
@@ -678,6 +699,8 @@ static int ll_atomic_open(struct inode *dir, struct dentry *dentry,
 		rc = PTR_ERR(de);
 	else if (de != NULL)
 		dentry = de;
+
+	CFS_FAIL_TIMEOUT(OBD_FAIL_LLITE_CREATE_FILE_PAUSE, cfs_fail_val);
 
 	if (!rc) {
 		if (it_disposition(it, DISP_OPEN_CREATE)) {
@@ -884,6 +907,13 @@ static int ll_create_it(struct inode *dir, struct dentry *dentry,
 		RETURN(PTR_ERR(inode));
 
 	d_instantiate(dentry, inode);
+
+	if (!(ll_i2sbi(inode)->ll_flags & LL_SBI_FILE_SECCTX)) {
+		rc = ll_inode_init_security(dentry, inode, dir);
+		if (rc)
+			RETURN(rc);
+	}
+
 	RETURN(0);
 }
 
@@ -922,16 +952,26 @@ static int ll_new_node(struct inode *dir, struct dentry *dchild,
                 tgt_len = strlen(tgt) + 1;
 
 again:
-        op_data = ll_prep_md_op_data(NULL, dir, NULL, name->name,
-                                     name->len, 0, opc, NULL);
-        if (IS_ERR(op_data))
-                GOTO(err_exit, err = PTR_ERR(op_data));
+	op_data = ll_prep_md_op_data(NULL, dir, NULL, name->name,
+				     name->len, 0, opc, NULL);
+	if (IS_ERR(op_data))
+		GOTO(err_exit, err = PTR_ERR(op_data));
+
+	if (sbi->ll_flags & LL_SBI_FILE_SECCTX) {
+		err = ll_dentry_init_security(dchild, mode, &dchild->d_name,
+					      &op_data->op_file_secctx_name,
+					      &op_data->op_file_secctx,
+					      &op_data->op_file_secctx_size);
+		if (err < 0)
+			GOTO(err_exit, err);
+	}
 
 	err = md_create(sbi->ll_md_exp, op_data, tgt, tgt_len, mode,
 			from_kuid(&init_user_ns, current_fsuid()),
 			from_kgid(&init_user_ns, current_fsgid()),
 			cfs_curproc_cap_pack(), rdev, &request);
 	ll_finish_md_op_data(op_data);
+	op_data = NULL;
 	if (err) {
 		/* If the client doesn't know where to create a subdirectory (or
 		 * in case of a race that sends the RPC to the wrong MDS), the
@@ -968,7 +1008,9 @@ again:
 		GOTO(err_exit, err);
 	}
 
-        ll_update_times(request, dir);
+	ll_update_times(request, dir);
+
+	CFS_FAIL_TIMEOUT(OBD_FAIL_LLITE_NEWNODE_PAUSE, cfs_fail_val);
 
 	err = ll_prep_inode(&inode, request, dchild->d_sb, NULL);
 	if (err)
@@ -976,12 +1018,21 @@ again:
 
 	d_instantiate(dchild, inode);
 
-        EXIT;
+	if (!(sbi->ll_flags & LL_SBI_FILE_SECCTX)) {
+		err = ll_inode_init_security(dchild, inode, dir);
+		if (err)
+			GOTO(err_exit, err);
+	}
+
+	EXIT;
 err_exit:
 	if (request != NULL)
 		ptlrpc_req_finished(request);
 
-        return err;
+	if (!IS_ERR_OR_NULL(op_data))
+		ll_finish_md_op_data(op_data);
+
+	return err;
 }
 
 static int ll_mknod(struct inode *dir, struct dentry *dchild, ll_umode_t mode,
@@ -1031,6 +1082,8 @@ static int ll_create_nd(struct inode *dir, struct dentry *dentry,
 {
 	int rc;
 
+	CFS_FAIL_TIMEOUT(OBD_FAIL_LLITE_CREATE_FILE_PAUSE, cfs_fail_val);
+
 	CDEBUG(D_VFSTRACE, "VFS Op:name=%.*s, dir="DFID"(%p), "
 			   "flags=%u, excl=%d\n", dentry->d_name.len,
 	       dentry->d_name.name, PFID(ll_inode2fid(dir)),
@@ -1051,7 +1104,9 @@ static int ll_create_nd(struct inode *dir, struct dentry *dentry,
 {
 	struct ll_dentry_data *lld = ll_d2d(dentry);
 	struct lookup_intent *it = NULL;
-        int rc;
+	int rc;
+
+	CFS_FAIL_TIMEOUT(OBD_FAIL_LLITE_CREATE_FILE_PAUSE, cfs_fail_val);
 
 	if (lld != NULL)
 		it = lld->lld_it;

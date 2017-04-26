@@ -156,7 +156,7 @@ fail_peer (lnet_nid_t nid, int outgoing)
 }
 
 unsigned int
-lnet_iov_nob (unsigned int niov, struct iovec *iov)
+lnet_iov_nob(unsigned int niov, struct kvec *iov)
 {
         unsigned int nob = 0;
 
@@ -169,9 +169,9 @@ lnet_iov_nob (unsigned int niov, struct iovec *iov)
 EXPORT_SYMBOL(lnet_iov_nob);
 
 void
-lnet_copy_iov2iov (unsigned int ndiov, struct iovec *diov, unsigned int doffset,
-                   unsigned int nsiov, struct iovec *siov, unsigned int soffset,
-                   unsigned int nob)
+lnet_copy_iov2iov(unsigned int ndiov, struct kvec *diov, unsigned int doffset,
+		  unsigned int nsiov, struct kvec *siov, unsigned int soffset,
+		  unsigned int nob)
 {
         /* NB diov, siov are READ-ONLY */
         unsigned int  this_nob;
@@ -228,9 +228,9 @@ lnet_copy_iov2iov (unsigned int ndiov, struct iovec *diov, unsigned int doffset,
 EXPORT_SYMBOL(lnet_copy_iov2iov);
 
 int
-lnet_extract_iov (int dst_niov, struct iovec *dst,
-                  int src_niov, struct iovec *src,
-                  unsigned int offset, unsigned int len)
+lnet_extract_iov(int dst_niov, struct kvec *dst,
+		 int src_niov, struct kvec *src,
+		 unsigned int offset, unsigned int len)
 {
         /* Initialise 'dst' to the subset of 'src' starting at 'offset',
          * for exactly 'len' bytes, and return the number of entries.
@@ -276,7 +276,7 @@ EXPORT_SYMBOL(lnet_extract_iov);
 
 
 unsigned int
-lnet_kiov_nob (unsigned int niov, lnet_kiov_t *kiov)
+lnet_kiov_nob(unsigned int niov, lnet_kiov_t *kiov)
 {
         unsigned int  nob = 0;
 
@@ -289,9 +289,9 @@ lnet_kiov_nob (unsigned int niov, lnet_kiov_t *kiov)
 EXPORT_SYMBOL(lnet_kiov_nob);
 
 void
-lnet_copy_kiov2kiov (unsigned int ndiov, lnet_kiov_t *diov, unsigned int doffset,
-                     unsigned int nsiov, lnet_kiov_t *siov, unsigned int soffset,
-                     unsigned int nob)
+lnet_copy_kiov2kiov(unsigned int ndiov, lnet_kiov_t *diov, unsigned int doffset,
+		    unsigned int nsiov, lnet_kiov_t *siov, unsigned int soffset,
+		    unsigned int nob)
 {
 	/* NB diov, siov are READ-ONLY */
 	unsigned int    this_nob;
@@ -371,7 +371,7 @@ lnet_copy_kiov2kiov (unsigned int ndiov, lnet_kiov_t *diov, unsigned int doffset
 EXPORT_SYMBOL(lnet_copy_kiov2kiov);
 
 void
-lnet_copy_kiov2iov (unsigned int niov, struct iovec *iov, unsigned int iovoffset,
+lnet_copy_kiov2iov (unsigned int niov, struct kvec *iov, unsigned int iovoffset,
                     unsigned int nkiov, lnet_kiov_t *kiov, unsigned int kiovoffset,
                     unsigned int nob)
 {
@@ -441,9 +441,9 @@ lnet_copy_kiov2iov (unsigned int niov, struct iovec *iov, unsigned int iovoffset
 EXPORT_SYMBOL(lnet_copy_kiov2iov);
 
 void
-lnet_copy_iov2kiov (unsigned int nkiov, lnet_kiov_t *kiov, unsigned int kiovoffset,
-                    unsigned int niov, struct iovec *iov, unsigned int iovoffset,
-                    unsigned int nob)
+lnet_copy_iov2kiov(unsigned int nkiov, lnet_kiov_t *kiov, unsigned int kiovoffset,
+		   unsigned int niov, struct kvec *iov, unsigned int iovoffset,
+		   unsigned int nob)
 {
 	/* NB kiov, iov are READ-ONLY */
 	unsigned int    this_nob;
@@ -510,9 +510,9 @@ lnet_copy_iov2kiov (unsigned int nkiov, lnet_kiov_t *kiov, unsigned int kiovoffs
 EXPORT_SYMBOL(lnet_copy_iov2kiov);
 
 int
-lnet_extract_kiov (int dst_niov, lnet_kiov_t *dst,
-                   int src_niov, lnet_kiov_t *src,
-                   unsigned int offset, unsigned int len)
+lnet_extract_kiov(int dst_niov, lnet_kiov_t *dst,
+		  int src_niov, lnet_kiov_t *src,
+		  unsigned int offset, unsigned int len)
 {
         /* Initialise 'dst' to the subset of 'src' starting at 'offset',
          * for exactly 'len' bytes, and return the number of entries.
@@ -564,7 +564,7 @@ lnet_ni_recv(lnet_ni_t *ni, void *private, lnet_msg_t *msg, int delayed,
              unsigned int offset, unsigned int mlen, unsigned int rlen)
 {
 	unsigned int  niov = 0;
-	struct iovec *iov = NULL;
+	struct kvec *iov = NULL;
 	lnet_kiov_t  *kiov = NULL;
 	int           rc;
 
@@ -594,7 +594,7 @@ lnet_ni_recv(lnet_ni_t *ni, void *private, lnet_msg_t *msg, int delayed,
         rc = (ni->ni_lnd->lnd_recv)(ni, private, msg, delayed,
                                     niov, iov, kiov, offset, mlen, rlen);
         if (rc < 0)
-                lnet_finalize(ni, msg, rc);
+                lnet_finalize(msg, rc);
 }
 
 static void
@@ -649,7 +649,7 @@ lnet_ni_send(lnet_ni_t *ni, lnet_msg_t *msg)
 
 	rc = (ni->ni_lnd->lnd_send)(ni, priv, msg);
 	if (rc < 0)
-		lnet_finalize(ni, msg, rc);
+		lnet_finalize(msg, rc);
 }
 
 static int
@@ -809,7 +809,7 @@ lnet_post_send_locked(lnet_msg_t *msg, int do_send)
 		CNETERR("Dropping message for %s: peer not alive\n",
 			libcfs_id2str(msg->msg_target));
 		if (do_send)
-			lnet_finalize(ni, msg, -EHOSTUNREACH);
+			lnet_finalize(msg, -EHOSTUNREACH);
 
 		lnet_net_lock(cpt);
 		return -EHOSTUNREACH;
@@ -823,7 +823,7 @@ lnet_post_send_locked(lnet_msg_t *msg, int do_send)
 			"called on the MD/ME.\n",
 			libcfs_id2str(msg->msg_target));
 		if (do_send)
-			lnet_finalize(ni, msg, -ECANCELED);
+			lnet_finalize(msg, -ECANCELED);
 
 		lnet_net_lock(cpt);
 		return -ECANCELED;
@@ -1056,7 +1056,7 @@ lnet_drop_routed_msgs_locked(struct list_head *list, int cpt)
 		lnet_ni_recv(msg->msg_rxpeer->lp_ni, msg->msg_private, NULL,
 			     0, 0, 0, msg->msg_hdr.payload_length);
 		list_del_init(&msg->msg_list);
-		lnet_finalize(NULL, msg, -ECANCELED);
+		lnet_finalize(msg, -ECANCELED);
 	}
 
 	lnet_net_lock(cpt);
@@ -1144,6 +1144,8 @@ lnet_compare_routes(lnet_route_t *r1, lnet_route_t *r2)
 {
 	lnet_peer_t *p1 = r1->lr_gateway;
 	lnet_peer_t *p2 = r2->lr_gateway;
+	int r1_hops = (r1->lr_hops == LNET_UNDEFINED_HOPS) ? 1 : r1->lr_hops;
+	int r2_hops = (r2->lr_hops == LNET_UNDEFINED_HOPS) ? 1 : r2->lr_hops;
 
 	if (r1->lr_priority < r2->lr_priority)
 		return 1;
@@ -1151,10 +1153,10 @@ lnet_compare_routes(lnet_route_t *r1, lnet_route_t *r2)
 	if (r1->lr_priority > r2->lr_priority)
 		return -1;
 
-	if (r1->lr_hops < r2->lr_hops)
+	if (r1_hops < r2_hops)
 		return 1;
 
-	if (r1->lr_hops > r2->lr_hops)
+	if (r1_hops > r2_hops)
 		return -1;
 
 	if (p1->lp_txqnob < p2->lp_txqnob)
@@ -1441,6 +1443,7 @@ lnet_parse_put(lnet_ni_t *ni, lnet_msg_t *msg)
 	lnet_hdr_t		*hdr = &msg->msg_hdr;
 	struct lnet_match_info	info;
 	int			rc;
+	bool			ready_delay;
 
 	/* Convert put fields to host byte order */
 	hdr->msg.put.match_bits	= le64_to_cpu(hdr->msg.put.match_bits);
@@ -1456,6 +1459,7 @@ lnet_parse_put(lnet_ni_t *ni, lnet_msg_t *msg)
 	info.mi_mbits	= hdr->msg.put.match_bits;
 
 	msg->msg_rx_ready_delay = ni->ni_lnd->lnd_eager_recv == NULL;
+	ready_delay = msg->msg_rx_ready_delay;
 
  again:
 	rc = lnet_ptl_match_md(&info, msg);
@@ -1468,12 +1472,16 @@ lnet_parse_put(lnet_ni_t *ni, lnet_msg_t *msg)
                 return 0;
 
         case LNET_MATCHMD_NONE:
-		if (msg->msg_rx_delayed) /* attached on delayed list */
+		if (ready_delay)
+			/* no eager_recv or has already called it, should
+			 * have been attached on delayed list */
 			return 0;
 
 		rc = lnet_ni_eager_recv(ni, msg);
-		if (rc == 0)
+		if (rc == 0) {
+			ready_delay = true;
 			goto again;
+		}
 		/* fall through */
 
 	case LNET_MATCHMD_DROP:
@@ -1545,7 +1553,7 @@ lnet_parse_get(lnet_ni_t *ni, lnet_msg_t *msg, int rdma_get)
 		       libcfs_nid2str(ni->ni_nid),
 		       libcfs_id2str(info.mi_id), rc);
 
-		lnet_finalize(ni, msg, rc);
+		lnet_finalize(msg, rc);
 	}
 
 	return 0;
@@ -1986,6 +1994,9 @@ lnet_parse(lnet_ni_t *ni, lnet_hdr_t *hdr, lnet_nid_t from_nid,
 		       libcfs_nid2str(from_nid), libcfs_nid2str(src_nid),
 		       lnet_msgtyp2str(type), rc);
 		lnet_msg_free(msg);
+		if (rc == -ESHUTDOWN)
+			/* We are shutting down.  Don't do anything more */
+			return 0;
 		goto drop;
 	}
 
@@ -2034,7 +2045,7 @@ lnet_parse(lnet_ni_t *ni, lnet_hdr_t *hdr, lnet_nid_t from_nid,
 
  free_drop:
 	LASSERT(msg->msg_md == NULL);
-	lnet_finalize(ni, msg, rc);
+	lnet_finalize(msg, rc);
 
  drop:
 	lnet_drop_message(ni, cpt, private, payload_length);
@@ -2080,7 +2091,7 @@ lnet_drop_delayed_msg_list(struct list_head *head, char *reason)
 		 * but we still should give error code so lnet_msg_decommit()
 		 * can skip counters operations and other checks.
 		 */
-		lnet_finalize(msg->msg_rxpeer->lp_ni, msg, -ENOENT);
+		lnet_finalize(msg, -ENOENT);
 	}
 }
 
@@ -2237,7 +2248,7 @@ LNetPut(lnet_nid_t self, lnet_handle_md_t mdh, lnet_ack_req_t ack,
         if (rc != 0) {
                 CNETERR( "Error sending PUT to %s: %d\n",
                        libcfs_id2str(target), rc);
-                lnet_finalize (NULL, msg, rc);
+                lnet_finalize (msg, rc);
         }
 
         /* completion will be signalled by an event */
@@ -2429,7 +2440,7 @@ LNetGet(lnet_nid_t self, lnet_handle_md_t mdh,
 	if (rc < 0) {
 		CNETERR("Error sending GET to %s: %d\n",
 			libcfs_id2str(target), rc);
-		lnet_finalize(NULL, msg, rc);
+		lnet_finalize(msg, rc);
 	}
 
         /* completion will be signalled by an event */
@@ -2508,22 +2519,29 @@ LNetDist(lnet_nid_t dstnid, lnet_nid_t *srcnidp, __u32 *orderp)
 		if (rnet->lrn_net == dstnet) {
 			lnet_route_t *route;
 			lnet_route_t *shortest = NULL;
+			__u32 shortest_hops = LNET_UNDEFINED_HOPS;
+			__u32 route_hops;
 
 			LASSERT(!list_empty(&rnet->lrn_routes));
 
 			list_for_each_entry(route, &rnet->lrn_routes,
 					    lr_list) {
+				route_hops = route->lr_hops;
+				if (route_hops == LNET_UNDEFINED_HOPS)
+					route_hops = 1;
 				if (shortest == NULL ||
-				    route->lr_hops < shortest->lr_hops)
+				    route_hops < shortest_hops) {
 					shortest = route;
+					shortest_hops = route_hops;
+				}
 			}
 
-                        LASSERT (shortest != NULL);
-                        hops = shortest->lr_hops;
-                        if (srcnidp != NULL)
-                                *srcnidp = shortest->lr_gateway->lp_ni->ni_nid;
-                        if (orderp != NULL)
-                                *orderp = order;
+			LASSERT(shortest != NULL);
+			hops = shortest_hops;
+			if (srcnidp != NULL)
+				*srcnidp = shortest->lr_gateway->lp_ni->ni_nid;
+			if (orderp != NULL)
+				*orderp = order;
 			lnet_net_unlock(cpt);
 			return hops + 1;
 		}

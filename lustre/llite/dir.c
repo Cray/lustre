@@ -297,7 +297,7 @@ static int ll_iterate(struct file *filp, struct dir_context *ctx)
 static int ll_readdir(struct file *filp, void *cookie, filldir_t filldir)
 #endif
 {
-	struct inode		*inode	= filp->f_dentry->d_inode;
+	struct inode		*inode	= filp->f_path.dentry->d_inode;
 	struct ll_file_data	*lfd	= LUSTRE_FPRIVATE(filp);
 	struct ll_sb_info	*sbi	= ll_i2sbi(inode);
 	int			hash64	= sbi->ll_flags & LL_SBI_64BIT_HASH;
@@ -330,11 +330,11 @@ static int ll_readdir(struct file *filp, void *cookie, filldir_t filldir)
 	if (unlikely(op_data->op_mea1 != NULL)) {
 		/* This is only needed for striped dir to fill ..,
 		 * see lmv_read_entry */
-		if (filp->f_dentry->d_parent != NULL &&
-		    filp->f_dentry->d_parent->d_inode != NULL) {
+		if (filp->f_path.dentry->d_parent != NULL &&
+		    filp->f_path.dentry->d_parent->d_inode != NULL) {
 			__u64 ibits = MDS_INODELOCK_UPDATE;
 			struct inode *parent =
-				filp->f_dentry->d_parent->d_inode;
+				filp->f_path.dentry->d_parent->d_inode;
 
 			if (ll_have_md_lock(parent, &ibits, LCK_MINMODE))
 				op_data->op_fid3 = *ll_inode2fid(parent);
@@ -407,20 +407,30 @@ static int ll_send_mgc_param(struct obd_export *mgc, char *string)
 /**
  * Create striped directory with specified stripe(@lump)
  *
- * param[in]parent	the parent of the directory.
- * param[in]lump	the specified stripes.
- * param[in]dirname	the name of the directory.
- * param[in]mode	the specified mode of the directory.
+ * \param[in] dparent	the parent of the directory.
+ * \param[in] lump	the specified stripes.
+ * \param[in] dirname	the name of the directory.
+ * \param[in] mode	the specified mode of the directory.
  *
- * retval		=0 if striped directory is being created successfully.
+ * \retval		=0 if striped directory is being created successfully.
  *                      <0 if the creation is failed.
  */
-static int ll_dir_setdirstripe(struct inode *parent, struct lmv_user_md *lump,
+static int ll_dir_setdirstripe(struct dentry *dparent, struct lmv_user_md *lump,
 			       const char *dirname, umode_t mode)
 {
+	struct inode *parent = dparent->d_inode;
 	struct ptlrpc_request *request = NULL;
 	struct md_op_data *op_data;
 	struct ll_sb_info *sbi = ll_i2sbi(parent);
+	struct inode *inode = NULL;
+	struct dentry dentry = {
+		.d_parent = dparent,
+		.d_name = {
+			.name = dirname,
+			.len = strlen(dirname),
+			.hash = full_name_hash(dirname, strlen(dirname)),
+		},
+	};
 	int err;
 	ENTRY;
 
@@ -432,6 +442,10 @@ static int ll_dir_setdirstripe(struct inode *parent, struct lmv_user_md *lump,
 	       PFID(ll_inode2fid(parent)), parent, dirname,
 	       (int)lump->lum_stripe_offset, lump->lum_stripe_count);
 
+	if (IS_DEADDIR(parent) &&
+	    !OBD_FAIL_CHECK(OBD_FAIL_LLITE_NO_CHECK_DEAD))
+		RETURN(-ENOENT);
+
 	if (lump->lum_magic != cpu_to_le32(LMV_USER_MAGIC))
 		lustre_swab_lmv_user_md(lump);
 
@@ -442,18 +456,50 @@ static int ll_dir_setdirstripe(struct inode *parent, struct lmv_user_md *lump,
 				     strlen(dirname), mode, LUSTRE_OPC_MKDIR,
 				     lump);
 	if (IS_ERR(op_data))
-		GOTO(err_exit, err = PTR_ERR(op_data));
+		RETURN(PTR_ERR(op_data));
+
+	if (sbi->ll_flags & LL_SBI_FILE_SECCTX) {
+		/* selinux_dentry_init_security() uses dentry->d_parent and name
+		 * to determine the security context for the file. So our fake
+		 * dentry should be real enough for this purpose. */
+		err = ll_dentry_init_security(&dentry, mode, &dentry.d_name,
+					      &op_data->op_file_secctx_name,
+					      &op_data->op_file_secctx,
+					      &op_data->op_file_secctx_size);
+		if (err < 0)
+			GOTO(out_op_data, err);
+	}
 
 	op_data->op_cli_flags |= CLI_SET_MEA;
 	err = md_create(sbi->ll_md_exp, op_data, lump, sizeof(*lump), mode,
 			from_kuid(&init_user_ns, current_fsuid()),
 			from_kgid(&init_user_ns, current_fsgid()),
 			cfs_curproc_cap_pack(), 0, &request);
-	ll_finish_md_op_data(op_data);
 	if (err)
-		GOTO(err_exit, err);
-err_exit:
+		GOTO(out_request, err);
+
+	CFS_FAIL_TIMEOUT(OBD_FAIL_LLITE_SETDIRSTRIPE_PAUSE, cfs_fail_val);
+
+	err = ll_prep_inode(&inode, request, parent->i_sb, NULL);
+	if (err)
+		GOTO(out_inode, err);
+
+	dentry.d_inode = inode;
+
+	if (!(sbi->ll_flags & LL_SBI_FILE_SECCTX)) {
+		err = ll_inode_init_security(&dentry, inode, parent);
+		if (err)
+			GOTO(out_inode, err);
+	}
+
+out_inode:
+	if (inode != NULL)
+		iput(inode);
+out_request:
 	ptlrpc_req_finished(request);
+out_op_data:
+	ll_finish_md_op_data(op_data);
+
 	return err;
 }
 
@@ -686,7 +732,7 @@ int ll_get_mdt_idx(struct inode *inode)
 /**
  * Generic handler to do any pre-copy work.
  *
- * It send a first hsm_progress (with extent length == 0) to coordinator as a
+ * It sends a first hsm_progress (with extent length == 0) to coordinator as a
  * first information for it that real work has started.
  *
  * Moreover, for a ARCHIVE request, it will sample the file data version and
@@ -741,7 +787,7 @@ static int ll_ioc_copy_start(struct super_block *sb, struct hsm_copy *copy)
 			GOTO(progress, rc);
 		}
 
-		/* Store it the hsm_copy for later copytool use.
+		/* Store in the hsm_copy for later copytool use.
 		 * Always modified even if no lsm. */
 		copy->hc_data_version = data_version;
 	}
@@ -824,7 +870,7 @@ static int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
 			GOTO(progress, rc);
 		}
 
-		/* Store it the hsm_copy for later copytool use.
+		/* Store in the hsm_copy for later copytool use.
 		 * Always modified even if no lsm. */
 		hpk.hpk_data_version = data_version;
 
@@ -1047,7 +1093,8 @@ ll_getname(const char __user *filename)
 
 static long ll_dir_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-        struct inode *inode = file->f_dentry->d_inode;
+	struct dentry *dentry = file->f_path.dentry;
+	struct inode *inode = dentry->d_inode;
         struct ll_sb_info *sbi = ll_i2sbi(inode);
         struct obd_ioctl_data *data;
         int rc = 0;
@@ -1155,7 +1202,7 @@ out_free:
 #else
 		mode = data->ioc_type;
 #endif
-		rc = ll_dir_setdirstripe(inode, lum, filename, mode);
+		rc = ll_dir_setdirstripe(dentry, lum, filename, mode);
 lmv_out_free:
 		obd_ioctl_freedata(buf, len);
 		RETURN(rc);
@@ -1199,7 +1246,7 @@ lmv_out_free:
                                 RETURN(-EFAULT);
                 }
 
-                if (inode->i_sb->s_root == file->f_dentry)
+		if (inode->i_sb->s_root == file->f_path.dentry)
                         set_default = 1;
 
                 /* in v1 and v3 cases lumv1 points to data */
@@ -1242,9 +1289,6 @@ lmv_out_free:
 
 		/* Get default LMV EA */
 		if (lum.lum_magic == LMV_USER_MAGIC) {
-			if (rc != 0)
-				GOTO(finish_req, rc);
-
 			if (lmmsize > sizeof(*ulmv))
 				GOTO(finish_req, rc = -EINVAL);
 
@@ -1857,7 +1901,7 @@ static loff_t ll_dir_seek(struct file *file, loff_t offset, int origin)
         loff_t ret = -EINVAL;
         ENTRY;
 
-	mutex_lock(&inode->i_mutex);
+	inode_lock(inode);
         switch (origin) {
                 case SEEK_SET:
                         break;
@@ -1895,7 +1939,7 @@ static loff_t ll_dir_seek(struct file *file, loff_t offset, int origin)
         GOTO(out, ret);
 
 out:
-	mutex_unlock(&inode->i_mutex);
+	inode_unlock(inode);
         return ret;
 }
 

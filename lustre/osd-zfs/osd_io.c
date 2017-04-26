@@ -169,18 +169,11 @@ static ssize_t osd_declare_write(const struct lu_env *env, struct dt_object *dt,
 	 * LOHA_EXISTs is supposed to be the last step in the
 	 * initialization */
 
-	/* declare possible size change. notice we can't check
-	 * current size here as another thread can change it */
-
-	if (dt_object_exists(dt)) {
-		LASSERT(obj->oo_db);
+	/* size change (in dnode) will be declared by dmu_tx_hold_write() */
+	if (dt_object_exists(dt))
 		oid = obj->oo_db->db_object;
-
-		dmu_tx_hold_sa(oh->ot_tx, obj->oo_sa_hdl, 0);
-	} else {
+	else
 		oid = DMU_NEW_OBJECT;
-		dmu_tx_hold_sa_create(oh->ot_tx, ZFS_SA_BASE_ATTR_SIZE);
-	}
 
 	/* XXX: we still miss for append declaration support in ZFS
 	 *	-1 means append which is used by llog mostly, llog
@@ -217,8 +210,6 @@ static ssize_t osd_write(const struct lu_env *env, struct dt_object *dt,
 	LASSERT(th != NULL);
 	oh = container_of0(th, struct osd_thandle, ot_super);
 
-	record_start_io(osd, WRITE, 0);
-
 	dmu_write(osd->od_os, obj->oo_db->db_object, offset,
 		(uint64_t)buf->lb_len, buf->lb_buf, oh->ot_tx);
 	write_lock(&obj->oo_attr_lock);
@@ -240,9 +231,6 @@ static ssize_t osd_write(const struct lu_env *env, struct dt_object *dt,
 	rc = buf->lb_len;
 
 out:
-	record_end_io(osd, WRITE, 0, buf->lb_len,
-		      buf->lb_len >> PAGE_CACHE_SHIFT);
-
 	RETURN(rc);
 }
 
@@ -374,7 +362,7 @@ static int osd_bufs_get_read(const struct lu_env *env, struct osd_object *obj,
 				lnb->lnb_page = kmem_to_page(dbp[i]->db_data +
 							     bufoff);
 				/* mark just a single slot: we need this
-				 * reference to dbuf to be release once */
+				 * reference to dbuf to be released once */
 				lnb->lnb_data = dbf;
 				dbf = NULL;
 
@@ -387,7 +375,8 @@ static int osd_bufs_get_read(const struct lu_env *env, struct osd_object *obj,
 				lnb++;
 			}
 
-			/* steal dbuf so dmu_buf_rele_array() cant release it */
+			/* steal dbuf so dmu_buf_rele_array() can't release
+			 * it */
 			dbp[i] = NULL;
 		}
 

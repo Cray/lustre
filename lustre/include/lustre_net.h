@@ -55,8 +55,10 @@
  * @{
  */
 
+#include <linux/uio.h>
 #include <libcfs/libcfs.h>
-#include <lnet/lnet.h>
+#include <lnet/nidstr.h>
+#include <lnet/api.h>
 #include <lustre/lustre_idl.h>
 #include <lustre_ha.h>
 #include <lustre_sec.h>
@@ -71,12 +73,16 @@
 #define PTLRPC_MD_OPTIONS  0
 
 /**
- * Max # of bulk operations in one request.
+ * log2 max # of bulk operations in one request: 2=4MB/RPC, 5=32MB/RPC, ...
  * In order for the client and server to properly negotiate the maximum
  * possible transfer size, PTLRPC_BULK_OPS_COUNT must be a power-of-two
  * value.  The client is free to limit the actual RPC size for any bulk
- * transfer via cl_max_pages_per_rpc to some non-power-of-two value. */
-#define PTLRPC_BULK_OPS_BITS	2
+ * transfer via cl_max_pages_per_rpc to some non-power-of-two value.
+ * NOTE: This is limited to 16 (=64GB RPCs) by IOOBJ_MAX_BRW_BITS. */
+#define PTLRPC_BULK_OPS_BITS	4
+#if PTLRPC_BULK_OPS_BITS > 16
+#error "More than 65536 BRW RPCs not allowed by IOOBJ_MAX_BRW_BITS."
+#endif
 #define PTLRPC_BULK_OPS_COUNT	(1U << PTLRPC_BULK_OPS_BITS)
 /**
  * PTLRPC_BULK_OPS_MASK is for the convenience of the client only, and
@@ -454,7 +460,6 @@
 				NUM_CACHEPAGES >> (28 - PAGE_CACHE_SHIFT))
 #define OSS_NTHRS_INIT		(PTLRPC_NTHRS_INIT + 1)
 #define OSS_NTHRS_BASE		64
-#define OSS_NTHRS_MAX		512
 
 /* threads for handling "create" request */
 #define OSS_CR_THR_FACTOR	1
@@ -739,7 +744,7 @@ struct ptlrpc_request_pool {
 	/** Maximum message size that would fit into a rquest from this pool */
 	int			prp_rq_size;
 	/** Function to allocate more requests for this pool */
-	void (*prp_populate)(struct ptlrpc_request_pool *, int);
+	int (*prp_populate)(struct ptlrpc_request_pool *, int);
 };
 
 struct lu_context;
@@ -1840,6 +1845,8 @@ struct ptlrpc_cli_req {
 	union ptlrpc_async_args		 cr_async_args;
 	/** Opaq data for replay and commit callbacks. */
 	void				*cr_cb_data;
+	/** Link to the imp->imp_unreplied_list */
+	struct list_head		 cr_unreplied_list;
 	/**
 	 * Commit callback, called when request is committed and about to be
 	 * freed.
@@ -1879,6 +1886,7 @@ struct ptlrpc_cli_req {
 #define rq_resend_cb		rq_cli.cr_resend_cb
 #define rq_async_args		rq_cli.cr_async_args
 #define rq_cb_data		rq_cli.cr_cb_data
+#define rq_unreplied_list	rq_cli.cr_unreplied_list
 #define rq_commit_cb		rq_cli.cr_commit_cb
 #define rq_replay_cb		rq_cli.cr_replay_cb
 
@@ -2038,7 +2046,9 @@ struct ptlrpc_request {
         /** Transaction number */
         __u64 rq_transno;
         /** xid */
-        __u64 rq_xid;
+        __u64				 rq_xid;
+	/** bulk match bits */
+	__u64				 rq_mbits;
 	/**
 	 * List item to for replay list. Not yet commited requests get linked
 	 * there.
@@ -2333,12 +2343,97 @@ struct ptlrpc_bulk_page {
 	struct page	*bp_page;
 };
 
-#define BULK_GET_SOURCE   0
-#define BULK_PUT_SINK     1
-#define BULK_GET_SINK     2
-#define BULK_PUT_SOURCE   3
+enum ptlrpc_bulk_op_type {
+	PTLRPC_BULK_OP_ACTIVE =	 0x00000001,
+	PTLRPC_BULK_OP_PASSIVE = 0x00000002,
+	PTLRPC_BULK_OP_PUT =	 0x00000004,
+	PTLRPC_BULK_OP_GET =	 0x00000008,
+	PTLRPC_BULK_BUF_KVEC =	 0x00000010,
+	PTLRPC_BULK_BUF_KIOV =	 0x00000020,
+	PTLRPC_BULK_GET_SOURCE = PTLRPC_BULK_OP_PASSIVE | PTLRPC_BULK_OP_GET,
+	PTLRPC_BULK_PUT_SINK =	 PTLRPC_BULK_OP_PASSIVE | PTLRPC_BULK_OP_PUT,
+	PTLRPC_BULK_GET_SINK =	 PTLRPC_BULK_OP_ACTIVE | PTLRPC_BULK_OP_GET,
+	PTLRPC_BULK_PUT_SOURCE = PTLRPC_BULK_OP_ACTIVE | PTLRPC_BULK_OP_PUT,
+};
 
-/**
+static inline bool ptlrpc_is_bulk_op_get(enum ptlrpc_bulk_op_type type)
+{
+	return (type & PTLRPC_BULK_OP_GET) == PTLRPC_BULK_OP_GET;
+}
+
+static inline bool ptlrpc_is_bulk_get_source(enum ptlrpc_bulk_op_type type)
+{
+	return (type & PTLRPC_BULK_GET_SOURCE) == PTLRPC_BULK_GET_SOURCE;
+}
+
+static inline bool ptlrpc_is_bulk_put_sink(enum ptlrpc_bulk_op_type type)
+{
+	return (type & PTLRPC_BULK_PUT_SINK) == PTLRPC_BULK_PUT_SINK;
+}
+
+static inline bool ptlrpc_is_bulk_get_sink(enum ptlrpc_bulk_op_type type)
+{
+	return (type & PTLRPC_BULK_GET_SINK) == PTLRPC_BULK_GET_SINK;
+}
+
+static inline bool ptlrpc_is_bulk_put_source(enum ptlrpc_bulk_op_type type)
+{
+	return (type & PTLRPC_BULK_PUT_SOURCE) == PTLRPC_BULK_PUT_SOURCE;
+}
+
+static inline bool ptlrpc_is_bulk_desc_kvec(enum ptlrpc_bulk_op_type type)
+{
+	return ((type & PTLRPC_BULK_BUF_KVEC) | (type & PTLRPC_BULK_BUF_KIOV))
+			== PTLRPC_BULK_BUF_KVEC;
+}
+
+static inline bool ptlrpc_is_bulk_desc_kiov(enum ptlrpc_bulk_op_type type)
+{
+	return ((type & PTLRPC_BULK_BUF_KVEC) | (type & PTLRPC_BULK_BUF_KIOV))
+			== PTLRPC_BULK_BUF_KIOV;
+}
+
+static inline bool ptlrpc_is_bulk_op_active(enum ptlrpc_bulk_op_type type)
+{
+	return ((type & PTLRPC_BULK_OP_ACTIVE) |
+		(type & PTLRPC_BULK_OP_PASSIVE))
+			== PTLRPC_BULK_OP_ACTIVE;
+}
+
+static inline bool ptlrpc_is_bulk_op_passive(enum ptlrpc_bulk_op_type type)
+{
+	return ((type & PTLRPC_BULK_OP_ACTIVE) |
+		(type & PTLRPC_BULK_OP_PASSIVE))
+			== PTLRPC_BULK_OP_PASSIVE;
+}
+
+struct ptlrpc_bulk_frag_ops {
+	/**
+	 * Add a page \a page to the bulk descriptor \a desc
+	 * Data to transfer in the page starts at offset \a pageoffset and
+	 * amount of data to transfer from the page is \a len
+	 */
+	void (*add_kiov_frag)(struct ptlrpc_bulk_desc *desc,
+			      struct page *page, int pageoffset, int len);
+
+	/*
+	 * Add a \a fragment to the bulk descriptor \a desc.
+	 * Data to transfer in the fragment is pointed to by \a frag
+	 * The size of the fragment is \a len
+	 */
+	int (*add_iov_frag)(struct ptlrpc_bulk_desc *desc, void *frag, int len);
+
+	/**
+	 * Uninitialize and free bulk descriptor \a desc.
+	 * Works on bulk descriptors both from server and client side.
+	 */
+	void (*release_frags)(struct ptlrpc_bulk_desc *desc);
+};
+
+extern const struct ptlrpc_bulk_frag_ops ptlrpc_bulk_kiov_pin_ops;
+extern const struct ptlrpc_bulk_frag_ops ptlrpc_bulk_kiov_nopin_ops;
+
+/*
  * Definition of bulk descriptor.
  * Bulks are special "Two phase" RPCs where initial request message
  * is sent first and it is followed bt a transfer (o receiving) of a large
@@ -2351,14 +2446,14 @@ struct ptlrpc_bulk_page {
 struct ptlrpc_bulk_desc {
 	/** completed with failure */
 	unsigned long bd_failure:1;
-	/** {put,get}{source,sink} */
-	unsigned long bd_type:2;
 	/** client side */
 	unsigned long bd_registered:1;
 	/** For serialization with callback */
 	spinlock_t bd_lock;
 	/** Import generation when request for this bulk was sent */
 	int bd_import_generation;
+	/** {put,get}{source,sink}{kvec,kiov} */
+	enum ptlrpc_bulk_op_type bd_type;
 	/** LNet portal for this bulk */
 	__u32 bd_portal;
 	/** Server side - export this bulk created for */
@@ -2367,13 +2462,14 @@ struct ptlrpc_bulk_desc {
 	struct obd_import *bd_import;
 	/** Back pointer to the request */
 	struct ptlrpc_request *bd_req;
+	struct ptlrpc_bulk_frag_ops *bd_frag_ops;
 	wait_queue_head_t      bd_waitq;        /* server side only WQ */
 	int                    bd_iov_count;    /* # entries in bd_iov */
 	int                    bd_max_iov;      /* allocated size of bd_iov */
 	int                    bd_nob;          /* # bytes covered */
 	int                    bd_nob_transferred; /* # bytes GOT/PUT */
 
-	__u64                  bd_last_xid;
+	__u64                  bd_last_mbits;
 
 	struct ptlrpc_cb_id    bd_cbid;         /* network callback info */
 	lnet_nid_t             bd_sender;       /* stash event::sender */
@@ -2382,13 +2478,31 @@ struct ptlrpc_bulk_desc {
 	/** array of associated MDs */
 	lnet_handle_md_t	bd_mds[PTLRPC_BULK_OPS_COUNT];
 
-	/*
-	 * encrypt iov, size is either 0 or bd_iov_count.
-	 */
-	lnet_kiov_t           *bd_enc_iov;
+	union {
+		struct {
+			/*
+			 * encrypt iov, size is either 0 or bd_iov_count.
+			 */
+			lnet_kiov_t *bd_enc_vec;
+			lnet_kiov_t *bd_vec;
+		} bd_kiov;
 
-	lnet_kiov_t            bd_iov[0];
+		struct {
+			struct kvec *bd_enc_kvec;
+			struct kvec *bd_kvec;
+		} bd_kvec;
+	} bd_u;
+
 };
+
+#define GET_KIOV(desc)			((desc)->bd_u.bd_kiov.bd_vec)
+#define BD_GET_KIOV(desc, i)		((desc)->bd_u.bd_kiov.bd_vec[i])
+#define GET_ENC_KIOV(desc)		((desc)->bd_u.bd_kiov.bd_enc_vec)
+#define BD_GET_ENC_KIOV(desc, i)	((desc)->bd_u.bd_kiov.bd_enc_vec[i])
+#define GET_KVEC(desc)			((desc)->bd_u.bd_kvec.bd_kvec)
+#define BD_GET_KVEC(desc, i)		((desc)->bd_u.bd_kvec.bd_kvec[i])
+#define GET_ENC_KVEC(desc)		((desc)->bd_u.bd_kvec.bd_enc_kvec)
+#define BD_GET_ENC_KVEC(desc, i)	((desc)->bd_u.bd_kvec.bd_enc_kvec[i])
 
 enum {
         SVC_STOPPED     = 1 << 0,
@@ -2917,8 +3031,11 @@ extern lnet_pid_t ptl_get_pid(void);
  */
 #ifdef HAVE_SERVER_SUPPORT
 struct ptlrpc_bulk_desc *ptlrpc_prep_bulk_exp(struct ptlrpc_request *req,
-					      unsigned npages, unsigned max_brw,
-					      unsigned type, unsigned portal);
+					      unsigned nfrags, unsigned max_brw,
+					      unsigned int type,
+					      unsigned portal,
+					      const struct ptlrpc_bulk_frag_ops
+						*ops);
 int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc);
 void ptlrpc_abort_bulk(struct ptlrpc_bulk_desc *desc);
 
@@ -3001,11 +3118,11 @@ void ptlrpc_set_destroy(struct ptlrpc_request_set *);
 void ptlrpc_set_add_req(struct ptlrpc_request_set *, struct ptlrpc_request *);
 
 void ptlrpc_free_rq_pool(struct ptlrpc_request_pool *pool);
-void ptlrpc_add_rqs_to_pool(struct ptlrpc_request_pool *pool, int num_rq);
+int ptlrpc_add_rqs_to_pool(struct ptlrpc_request_pool *pool, int num_rq);
 
 struct ptlrpc_request_pool *
 ptlrpc_init_rq_pool(int, int,
-                    void (*populate_pool)(struct ptlrpc_request_pool *, int));
+		    int (*populate_pool)(struct ptlrpc_request_pool *, int));
 
 void ptlrpc_at_set_req_timeout(struct ptlrpc_request *req);
 struct ptlrpc_request *ptlrpc_request_alloc(struct obd_import *imp,
@@ -3033,19 +3150,17 @@ void ptlrpc_req_finished(struct ptlrpc_request *request);
 void ptlrpc_req_finished_with_imp_lock(struct ptlrpc_request *request);
 struct ptlrpc_request *ptlrpc_request_addref(struct ptlrpc_request *req);
 struct ptlrpc_bulk_desc *ptlrpc_prep_bulk_imp(struct ptlrpc_request *req,
-					      unsigned npages, unsigned max_brw,
-					      unsigned type, unsigned portal);
-void __ptlrpc_free_bulk(struct ptlrpc_bulk_desc *bulk, int pin);
-static inline void ptlrpc_free_bulk_pin(struct ptlrpc_bulk_desc *bulk)
-{
-	__ptlrpc_free_bulk(bulk, 1);
-}
-static inline void ptlrpc_free_bulk_nopin(struct ptlrpc_bulk_desc *bulk)
-{
-	__ptlrpc_free_bulk(bulk, 0);
-}
+					      unsigned nfrags, unsigned max_brw,
+					      unsigned int type,
+					      unsigned portal,
+					      const struct ptlrpc_bulk_frag_ops
+						*ops);
+
+int ptlrpc_prep_bulk_frag(struct ptlrpc_bulk_desc *desc,
+			  void *frag, int len);
 void __ptlrpc_prep_bulk_page(struct ptlrpc_bulk_desc *desc,
-			     struct page *page, int pageoffset, int len, int);
+			     struct page *page, int pageoffset, int len,
+			     int pin);
 static inline void ptlrpc_prep_bulk_page_pin(struct ptlrpc_bulk_desc *desc,
 					     struct page *page, int pageoffset,
 					     int len)
@@ -3058,6 +3173,20 @@ static inline void ptlrpc_prep_bulk_page_nopin(struct ptlrpc_bulk_desc *desc,
 					       int len)
 {
 	__ptlrpc_prep_bulk_page(desc, page, pageoffset, len, 0);
+}
+
+void ptlrpc_free_bulk(struct ptlrpc_bulk_desc *bulk);
+
+static inline void ptlrpc_release_bulk_page_pin(struct ptlrpc_bulk_desc *desc)
+{
+	int i;
+
+	for (i = 0; i < desc->bd_iov_count ; i++)
+		page_cache_release(BD_GET_KIOV(desc, i).kiov_page);
+}
+
+static inline void ptlrpc_release_bulk_noop(struct ptlrpc_bulk_desc *desc)
+{
 }
 
 void ptlrpc_retain_replayable_request(struct ptlrpc_request *req,
@@ -3237,6 +3366,7 @@ __u32 lustre_msg_get_version(struct lustre_msg *msg);
 void lustre_msg_add_version(struct lustre_msg *msg, __u32 version);
 __u32 lustre_msg_get_opc(struct lustre_msg *msg);
 __u64 lustre_msg_get_last_xid(struct lustre_msg *msg);
+__u16 lustre_msg_get_tag(struct lustre_msg *msg);
 __u64 lustre_msg_get_last_committed(struct lustre_msg *msg);
 __u64 *lustre_msg_get_versions(struct lustre_msg *msg);
 __u64 lustre_msg_get_transno(struct lustre_msg *msg);
@@ -3252,6 +3382,7 @@ __u32 lustre_msg_get_timeout(struct lustre_msg *msg);
 __u32 lustre_msg_get_service_time(struct lustre_msg *msg);
 char *lustre_msg_get_jobid(struct lustre_msg *msg);
 __u32 lustre_msg_get_cksum(struct lustre_msg *msg);
+__u64 lustre_msg_get_mbits(struct lustre_msg *msg);
 #if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 7, 53, 0)
 __u32 lustre_msg_calc_cksum(struct lustre_msg *msg, int compat18);
 #else
@@ -3261,6 +3392,7 @@ void lustre_msg_set_handle(struct lustre_msg *msg,struct lustre_handle *handle);
 void lustre_msg_set_type(struct lustre_msg *msg, __u32 type);
 void lustre_msg_set_opc(struct lustre_msg *msg, __u32 opc);
 void lustre_msg_set_last_xid(struct lustre_msg *msg, __u64 last_xid);
+void lustre_msg_set_tag(struct lustre_msg *msg, __u16 tag);
 void lustre_msg_set_last_committed(struct lustre_msg *msg,__u64 last_committed);
 void lustre_msg_set_versions(struct lustre_msg *msg, __u64 *versions);
 void lustre_msg_set_transno(struct lustre_msg *msg, __u64 transno);
@@ -3272,6 +3404,7 @@ void lustre_msg_set_timeout(struct lustre_msg *msg, __u32 timeout);
 void lustre_msg_set_service_time(struct lustre_msg *msg, __u32 service_time);
 void lustre_msg_set_jobid(struct lustre_msg *msg, char *jobid);
 void lustre_msg_set_cksum(struct lustre_msg *msg, __u32 cksum);
+void lustre_msg_set_mbits(struct lustre_msg *msg, __u64 mbits);
 
 static inline void
 lustre_shrink_reply(struct ptlrpc_request *req, int segment,
@@ -3572,7 +3705,6 @@ int llog_origin_handle_close(struct ptlrpc_request *req);
 
 /* ptlrpc/llog_client.c */
 extern struct llog_operations llog_client_ops;
-
 /** @} net */
 
 #endif

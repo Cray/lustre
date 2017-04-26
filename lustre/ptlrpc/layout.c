@@ -218,30 +218,36 @@ static const struct req_msg_field *mds_reint_create_slave_client[] = {
 };
 
 static const struct req_msg_field *mds_reint_create_rmt_acl_client[] = {
-        &RMF_PTLRPC_BODY,
-        &RMF_REC_REINT,
-        &RMF_CAPA1,
-        &RMF_NAME,
-        &RMF_EADATA,
-        &RMF_DLM_REQ
+	&RMF_PTLRPC_BODY,
+	&RMF_REC_REINT,
+	&RMF_CAPA1,
+	&RMF_NAME,
+	&RMF_EADATA,
+	&RMF_DLM_REQ,
+	&RMF_FILE_SECCTX_NAME,
+	&RMF_FILE_SECCTX
 };
 
 static const struct req_msg_field *mds_reint_create_sym_client[] = {
-        &RMF_PTLRPC_BODY,
-        &RMF_REC_REINT,
-        &RMF_CAPA1,
-        &RMF_NAME,
-        &RMF_SYMTGT,
-        &RMF_DLM_REQ
+	&RMF_PTLRPC_BODY,
+	&RMF_REC_REINT,
+	&RMF_CAPA1,
+	&RMF_NAME,
+	&RMF_SYMTGT,
+	&RMF_DLM_REQ,
+	&RMF_FILE_SECCTX_NAME,
+	&RMF_FILE_SECCTX
 };
 
 static const struct req_msg_field *mds_reint_open_client[] = {
-        &RMF_PTLRPC_BODY,
-        &RMF_REC_REINT,
-        &RMF_CAPA1,
-        &RMF_CAPA2,
-        &RMF_NAME,
-        &RMF_EADATA
+	&RMF_PTLRPC_BODY,
+	&RMF_REC_REINT,
+	&RMF_CAPA1,
+	&RMF_CAPA2,
+	&RMF_NAME,
+	&RMF_EADATA,
+	&RMF_FILE_SECCTX_NAME,
+	&RMF_FILE_SECCTX
 };
 
 static const struct req_msg_field *mds_reint_open_server[] = {
@@ -443,24 +449,28 @@ static const struct req_msg_field *ldlm_intent_getattr_server[] = {
 };
 
 static const struct req_msg_field *ldlm_intent_create_client[] = {
-        &RMF_PTLRPC_BODY,
-        &RMF_DLM_REQ,
-        &RMF_LDLM_INTENT,
-        &RMF_REC_REINT,    /* coincides with mds_reint_create_client[] */
-        &RMF_CAPA1,
-        &RMF_NAME,
-        &RMF_EADATA
+	&RMF_PTLRPC_BODY,
+	&RMF_DLM_REQ,
+	&RMF_LDLM_INTENT,
+	&RMF_REC_REINT,    /* coincides with mds_reint_create_client[] */
+	&RMF_CAPA1,
+	&RMF_NAME,
+	&RMF_EADATA,
+	&RMF_FILE_SECCTX_NAME,
+	&RMF_FILE_SECCTX
 };
 
 static const struct req_msg_field *ldlm_intent_open_client[] = {
-        &RMF_PTLRPC_BODY,
-        &RMF_DLM_REQ,
-        &RMF_LDLM_INTENT,
-        &RMF_REC_REINT,    /* coincides with mds_reint_open_client[] */
-        &RMF_CAPA1,
-        &RMF_CAPA2,
-        &RMF_NAME,
-        &RMF_EADATA
+	&RMF_PTLRPC_BODY,
+	&RMF_DLM_REQ,
+	&RMF_LDLM_INTENT,
+	&RMF_REC_REINT,    /* coincides with mds_reint_open_client[] */
+	&RMF_CAPA1,
+	&RMF_CAPA2,
+	&RMF_NAME,
+	&RMF_EADATA,
+	&RMF_FILE_SECCTX_NAME,
+	&RMF_FILE_SECCTX
 };
 
 static const struct req_msg_field *ldlm_intent_unlink_client[] = {
@@ -489,6 +499,12 @@ static const struct req_msg_field *ldlm_intent_getxattr_server[] = {
 	&RMF_EADATA,
 	&RMF_EAVALS,
 	&RMF_EAVALS_LENS
+};
+
+static const struct req_msg_field *mds_get_root_client[] = {
+	&RMF_PTLRPC_BODY,
+	&RMF_MDT_BODY,
+	&RMF_NAME
 };
 
 static const struct req_msg_field *mds_getxattr_client[] = {
@@ -699,6 +715,16 @@ static const struct req_msg_field *obd_lfsck_reply[] = {
 	&RMF_LFSCK_REPLY,
 };
 
+static const struct req_msg_field *obd_barrier_request[] = {
+	&RMF_PTLRPC_BODY,
+	&RMF_BARRIER_REQUEST,
+};
+
+static const struct req_msg_field *obd_barrier_reply[] = {
+	&RMF_PTLRPC_BODY,
+	&RMF_BARRIER_REPLY,
+};
+
 static struct req_format *req_formats[] = {
         &RQF_OBD_PING,
         &RQF_OBD_SET_INFO,
@@ -713,7 +739,7 @@ static struct req_format *req_formats[] = {
         &RQF_MDS_CONNECT,
         &RQF_MDS_DISCONNECT,
         &RQF_MDS_GET_INFO,
-        &RQF_MDS_GETSTATUS,
+	&RQF_MDS_GET_ROOT,
         &RQF_MDS_STATFS,
         &RQF_MDS_GETATTR,
         &RQF_MDS_GETATTR_NAME,
@@ -794,6 +820,8 @@ static struct req_format *req_formats[] = {
 	&RQF_CONNECT,
 	&RQF_LFSCK_NOTIFY,
 	&RQF_LFSCK_QUERY,
+	&RQF_MGS_BARRIER_READ,
+	&RQF_MGS_BARRIER_NOTIFY,
 };
 
 struct req_msg_field {
@@ -975,6 +1003,14 @@ struct req_msg_field RMF_STRING =
         DEFINE_MSGF("string", RMF_F_STRING, -1, NULL, NULL);
 EXPORT_SYMBOL(RMF_STRING);
 
+struct req_msg_field RMF_FILE_SECCTX_NAME =
+	DEFINE_MSGF("file_secctx_name", RMF_F_STRING, -1, NULL, NULL);
+EXPORT_SYMBOL(RMF_FILE_SECCTX_NAME);
+
+struct req_msg_field RMF_FILE_SECCTX =
+	DEFINE_MSGF("file_secctx", 0, -1, NULL, NULL);
+EXPORT_SYMBOL(RMF_FILE_SECCTX);
+
 struct req_msg_field RMF_LLOGD_BODY =
         DEFINE_MSGF("llogd_body", 0,
                     sizeof(struct llogd_body), lustre_swab_llogd_body, NULL);
@@ -1004,18 +1040,7 @@ EXPORT_SYMBOL(RMF_CONN);
 struct req_msg_field RMF_CONNECT_DATA =
 	DEFINE_MSGF("cdata",
 		    RMF_F_NO_SIZE_CHECK /* we allow extra space for interop */,
-#if LUSTRE_VERSION_CODE > OBD_OCD_VERSION(2, 7, 53, 0)
 		    sizeof(struct obd_connect_data),
-#else
-/* For interoperability with 1.8 and 2.0 clients/servers.
- * The RPC verification code allows larger RPC buffers, but not
- * smaller buffers.  Until we no longer need to keep compatibility
- * with older servers/clients we can only check that the buffer
- * size is at least as large as obd_connect_data_v1.  That is not
- * not in itself harmful, since the chance of just corrupting this
- * field is low.  See JIRA LU-16 for details. */
-		    sizeof(struct obd_connect_data_v1),
-#endif
 		    lustre_swab_connect, NULL);
 EXPORT_SYMBOL(RMF_CONNECT_DATA);
 
@@ -1205,6 +1230,16 @@ struct req_msg_field RMF_LFSCK_REPLY =
 		    lustre_swab_lfsck_reply, NULL);
 EXPORT_SYMBOL(RMF_LFSCK_REPLY);
 
+struct req_msg_field RMF_BARRIER_REQUEST =
+	DEFINE_MSGF("barrier_request", 0, sizeof(struct barrier_request),
+		    lustre_swab_barrier_request, NULL);
+EXPORT_SYMBOL(RMF_BARRIER_REQUEST);
+
+struct req_msg_field RMF_BARRIER_REPLY =
+	DEFINE_MSGF("barrier_reply", 0, sizeof(struct barrier_reply),
+		    lustre_swab_barrier_reply, NULL);
+EXPORT_SYMBOL(RMF_BARRIER_REPLY);
+
 /*
  * Request formats.
  */
@@ -1314,9 +1349,9 @@ struct req_format RQF_LDLM_INTENT_QUOTA =
 			ldlm_intent_quota_server);
 EXPORT_SYMBOL(RQF_LDLM_INTENT_QUOTA);
 
-struct req_format RQF_MDS_GETSTATUS =
-        DEFINE_REQ_FMT0("MDS_GETSTATUS", mdt_body_only, mdt_body_capa);
-EXPORT_SYMBOL(RQF_MDS_GETSTATUS);
+struct req_format RQF_MDS_GET_ROOT =
+	DEFINE_REQ_FMT0("MDS_GET_ROOT", mds_get_root_client, mdt_body_capa);
+EXPORT_SYMBOL(RQF_MDS_GET_ROOT);
 
 struct req_format RQF_MDS_STATFS =
         DEFINE_REQ_FMT0("MDS_STATFS", empty, obd_statfs_server);
@@ -1665,6 +1700,15 @@ struct req_format RQF_LFSCK_QUERY =
 	DEFINE_REQ_FMT0("LFSCK_QUERY", obd_lfsck_request, obd_lfsck_reply);
 EXPORT_SYMBOL(RQF_LFSCK_QUERY);
 
+struct req_format RQF_MGS_BARRIER_READ =
+	DEFINE_REQ_FMT0("MGS_BARRIER_READ", obd_barrier_request,
+			obd_barrier_reply);
+EXPORT_SYMBOL(RQF_MGS_BARRIER_READ);
+
+struct req_format RQF_MGS_BARRIER_NOTIFY =
+	DEFINE_REQ_FMT0("MGS_BARRIER_NOTIFY", obd_barrier_request, empty);
+EXPORT_SYMBOL(RQF_MGS_BARRIER_NOTIFY);
+
 #if !defined(__REQ_LAYOUT_USER__)
 
 /* Convenience macro */
@@ -2002,18 +2046,19 @@ static void *__req_capsule_get(struct req_capsule *pill,
         getter = (field->rmf_flags & RMF_F_STRING) ?
                 (typeof(getter))lustre_msg_string : lustre_msg_buf;
 
-        if (field->rmf_flags & RMF_F_STRUCT_ARRAY) {
-                /*
-                 * We've already asserted that field->rmf_size > 0 in
-                 * req_layout_init().
-                 */
-                len = lustre_msg_buflen(msg, offset);
-                if ((len % field->rmf_size) != 0) {
-                        CERROR("%s: array field size mismatch "
+	if (field->rmf_flags & (RMF_F_STRUCT_ARRAY|RMF_F_NO_SIZE_CHECK)) {
+		/*
+		 * We've already asserted that field->rmf_size > 0 in
+		 * req_layout_init().
+		 */
+		len = lustre_msg_buflen(msg, offset);
+		if (!(field->rmf_flags & RMF_F_NO_SIZE_CHECK) &&
+		    (len % field->rmf_size) != 0) {
+			CERROR("%s: array field size mismatch "
 				"%d modulo %u != 0 (%d)\n",
 				field->rmf_name, len, field->rmf_size, loc);
-                        return NULL;
-                }
+			return NULL;
+		}
         } else if (pill->rc_area[loc][offset] != -1) {
                 len = pill->rc_area[loc][offset];
         } else {

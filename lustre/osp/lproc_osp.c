@@ -52,12 +52,11 @@
 static int osp_active_seq_show(struct seq_file *m, void *data)
 {
 	struct obd_device	*dev = m->private;
-	int			 rc;
 
 	LPROCFS_CLIMP_CHECK(dev);
-	rc = seq_printf(m, "%d\n", !dev->u.cli.cl_import->imp_deactive);
+	seq_printf(m, "%d\n", !dev->u.cli.cl_import->imp_deactive);
 	LPROCFS_CLIMP_EXIT(dev);
-	return rc;
+	return 0;
 }
 
 /**
@@ -113,7 +112,8 @@ static int osp_syn_in_flight_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%u\n", osp->opd_syn_rpc_in_flight);
+	seq_printf(m, "%u\n", osp->opd_syn_rpc_in_flight);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osp_syn_in_flight);
 
@@ -133,7 +133,8 @@ static int osp_syn_in_prog_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%u\n", osp->opd_syn_rpc_in_progress);
+	seq_printf(m, "%u\n", osp->opd_syn_rpc_in_progress);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osp_syn_in_prog);
 
@@ -153,7 +154,8 @@ static int osp_syn_changes_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%lu\n", osp->opd_syn_changes);
+	seq_printf(m, "%lu\n", osp->opd_syn_changes);
+	return 0;
 }
 
 /**
@@ -202,7 +204,8 @@ static int osp_max_rpcs_in_flight_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%u\n", osp->opd_syn_max_rpc_in_flight);
+	seq_printf(m, "%u\n", osp->opd_syn_max_rpc_in_flight);
+	return 0;
 }
 
 /**
@@ -255,7 +258,8 @@ static int osp_max_rpcs_in_prog_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%u\n", osp->opd_syn_max_rpc_in_progress);
+	seq_printf(m, "%u\n", osp->opd_syn_max_rpc_in_progress);
+	return 0;
 }
 
 /**
@@ -309,7 +313,8 @@ static int osp_create_count_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL || osp->opd_pre == NULL)
 		return 0;
 
-	return seq_printf(m, "%d\n", osp->opd_pre_grow_count);
+	seq_printf(m, "%d\n", osp->opd_pre_create_count);
+	return 0;
 }
 
 /**
@@ -350,12 +355,12 @@ osp_create_count_seq_write(struct file *file, const char *buffer,
 	 * filesystem as a safety measure. */
 	if (val < OST_MIN_PRECREATE || val > OST_MAX_PRECREATE)
 		return -ERANGE;
-	if (val > osp->opd_pre_max_grow_count)
+	if (val > osp->opd_pre_max_create_count)
 		return -ERANGE;
 
 	for (i = 1; (i << 1) <= val; i <<= 1)
 		;
-	osp->opd_pre_grow_count = i;
+	osp->opd_pre_create_count = i;
 
 	return count;
 }
@@ -377,7 +382,8 @@ static int osp_max_create_count_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL || osp->opd_pre == NULL)
 		return 0;
 
-	return seq_printf(m, "%d\n", osp->opd_pre_max_grow_count);
+	seq_printf(m, "%d\n", osp->opd_pre_max_create_count);
+	return 0;
 }
 
 /**
@@ -411,10 +417,10 @@ osp_max_create_count_seq_write(struct file *file, const char *buffer,
 	if (val > OST_MAX_PRECREATE)
 		return -ERANGE;
 
-	if (osp->opd_pre_grow_count > val)
-		osp->opd_pre_grow_count = val;
+	if (osp->opd_pre_create_count > val)
+		osp->opd_pre_create_count = val;
 
-	osp->opd_pre_max_grow_count = val;
+	osp->opd_pre_max_create_count = val;
 
 	return count;
 }
@@ -436,7 +442,8 @@ static int osp_prealloc_next_id_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL || osp->opd_pre == NULL)
 		return 0;
 
-	return seq_printf(m, "%u\n", fid_oid(&osp->opd_pre_used_fid) + 1);
+	seq_printf(m, "%u\n", fid_oid(&osp->opd_pre_used_fid) + 1);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osp_prealloc_next_id);
 
@@ -456,7 +463,8 @@ static int osp_prealloc_last_id_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL || osp->opd_pre == NULL)
 		return 0;
 
-	return seq_printf(m, "%u\n", fid_oid(&osp->opd_pre_last_created_fid));
+	seq_printf(m, "%u\n", fid_oid(&osp->opd_pre_last_created_fid));
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osp_prealloc_last_id);
 
@@ -476,7 +484,8 @@ static int osp_prealloc_next_seq_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL || osp->opd_pre == NULL)
 		return 0;
 
-	return seq_printf(m, LPX64"\n", fid_seq(&osp->opd_pre_used_fid));
+	seq_printf(m, LPX64"\n", fid_seq(&osp->opd_pre_used_fid));
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osp_prealloc_next_seq);
 
@@ -496,8 +505,9 @@ static int osp_prealloc_last_seq_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL || osp->opd_pre == NULL)
 		return 0;
 
-	return seq_printf(m, LPX64"\n",
-			fid_seq(&osp->opd_pre_last_created_fid));
+	seq_printf(m, LPX64"\n",
+		   fid_seq(&osp->opd_pre_last_created_fid));
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osp_prealloc_last_seq);
 
@@ -517,7 +527,8 @@ static int osp_prealloc_reserved_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL || osp->opd_pre == NULL)
 		return 0;
 
-	return seq_printf(m, LPU64"\n", osp->opd_pre_reserved);
+	seq_printf(m, LPU64"\n", osp->opd_pre_reserved);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osp_prealloc_reserved);
 
@@ -537,7 +548,8 @@ static int osp_maxage_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%u\n", osp->opd_statfs_maxage);
+	seq_printf(m, "%u\n", osp->opd_statfs_maxage);
+	return 0;
 }
 
 /**
@@ -592,7 +604,8 @@ static int osp_pre_status_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL || osp->opd_pre == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%d\n", osp->opd_pre_status);
+	seq_printf(m, "%d\n", osp->opd_pre_status);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osp_pre_status);
 
@@ -619,8 +632,9 @@ static int osp_destroys_in_flight_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%lu\n",
-			  osp->opd_syn_rpc_in_progress + osp->opd_syn_changes);
+	seq_printf(m, "%lu\n",
+		   osp->opd_syn_rpc_in_progress + osp->opd_syn_changes);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osp_destroys_in_flight);
 
@@ -640,7 +654,8 @@ static int osp_old_sync_processed_seq_show(struct seq_file *m, void *data)
 	if (osp == NULL)
 		return -EINVAL;
 
-	return seq_printf(m, "%d\n", osp->opd_syn_prev_done);
+	seq_printf(m, "%d\n", osp->opd_syn_prev_done);
+	return 0;
 }
 LPROC_SEQ_FOPS_RO(osp_old_sync_processed);
 
@@ -659,7 +674,8 @@ osp_lfsck_max_rpcs_in_flight_seq_show(struct seq_file *m, void *data)
 	__u32 max;
 
 	max = obd_get_max_rpcs_in_flight(&dev->u.cli);
-	return seq_printf(m, "%u\n", max);
+	seq_printf(m, "%u\n", max);
+	return 0;
 }
 
 /**
@@ -717,6 +733,126 @@ LPROC_SEQ_FOPS_RO_TYPE(osp, timeouts);
 LPROC_SEQ_FOPS_RW_TYPE(osp, import);
 LPROC_SEQ_FOPS_RO_TYPE(osp, state);
 
+/**
+ * Show high watermark (in megabytes). If available free space at OST is grater
+ * than high watermark and object allocation for OST is disabled, enable it.
+ *
+ * \param[in] m		seq_file handle
+ * \param[in] data	unused for single entry
+ * \retval		0 on success
+ * \retval		negative number on error
+ */
+static int osp_reserved_mb_high_seq_show(struct seq_file *m, void *data)
+{
+	struct obd_device	*dev = m->private;
+	struct osp_device	*osp = lu2osp_dev(dev->obd_lu_dev);
+
+	if (osp == NULL)
+		return -EINVAL;
+
+	seq_printf(m, "%u\n", osp->opd_reserved_mb_high);
+	return 0;
+}
+
+/**
+ * Change high watermark
+ *
+ * \param[in] file	proc file
+ * \param[in] buffer	string which represents new value (in megabytes)
+ * \param[in] count	\a buffer length
+ * \param[in] off	unused for single entry
+ * \retval		\a count on success
+ * \retval		negative number on error
+ */
+static ssize_t
+osp_reserved_mb_high_seq_write(struct file *file, const char __user *buffer,
+			size_t count, loff_t *off)
+{
+	struct seq_file		*m = file->private_data;
+	struct obd_device	*dev = m->private;
+	struct osp_device	*osp = lu2osp_dev(dev->obd_lu_dev);
+	__u64			val;
+	int			rc;
+
+	if (osp == NULL)
+		return -EINVAL;
+
+	rc = lprocfs_write_frac_u64_helper(buffer, count, &val, 1 << 20);
+	if (rc)
+		return rc;
+	val >>= 20;
+	if (val < 1)
+		return -ERANGE;
+
+	spin_lock(&osp->opd_pre_lock);
+	osp->opd_reserved_mb_high = val;
+	if (val <= osp->opd_reserved_mb_low)
+		osp->opd_reserved_mb_low = val - 1;
+	spin_unlock(&osp->opd_pre_lock);
+
+	return count;
+}
+LPROC_SEQ_FOPS(osp_reserved_mb_high);
+
+/**
+ * Show low watermark (in megabytes). If available free space at OST is less
+ * than low watermark, object allocation for OST is disabled.
+ *
+ * \param[in] m		seq_file handle
+ * \param[in] data	unused for single entry
+ * \retval		0 on success
+ * \retval		negative number on error
+ */
+static int osp_reserved_mb_low_seq_show(struct seq_file *m, void *data)
+{
+	struct obd_device	*dev = m->private;
+	struct osp_device	*osp = lu2osp_dev(dev->obd_lu_dev);
+
+	if (osp == NULL)
+		return -EINVAL;
+
+	seq_printf(m, "%u\n", osp->opd_reserved_mb_low);
+	return 0;
+}
+
+/**
+ * Change low watermark
+ *
+ * \param[in] file	proc file
+ * \param[in] buffer	string which represents new value (in megabytes)
+ * \param[in] count	\a buffer length
+ * \param[in] off	unused for single entry
+ * \retval		\a count on success
+ * \retval		negative number on error
+ */
+static ssize_t
+osp_reserved_mb_low_seq_write(struct file *file, const char __user *buffer,
+			size_t count, loff_t *off)
+{
+	struct seq_file		*m = file->private_data;
+	struct obd_device	*dev = m->private;
+	struct osp_device	*osp = lu2osp_dev(dev->obd_lu_dev);
+	__u64			val;
+	int			rc;
+
+	if (osp == NULL)
+		return -EINVAL;
+
+	rc = lprocfs_write_frac_u64_helper(buffer, count, &val, 1 << 20);
+	if (rc)
+		return rc;
+	val >>= 20;
+
+	spin_lock(&osp->opd_pre_lock);
+	osp->opd_reserved_mb_low = val;
+	if (val >= osp->opd_reserved_mb_high)
+		osp->opd_reserved_mb_high = val + 1;
+	spin_unlock(&osp->opd_pre_lock);
+
+	return count;
+}
+LPROC_SEQ_FOPS(osp_reserved_mb_low);
+
 static struct lprocfs_vars lprocfs_osp_obd_vars[] = {
 	{ .name =	"uuid",
 	  .fops =	&osp_uuid_fops			},
@@ -767,6 +903,10 @@ static struct lprocfs_vars lprocfs_osp_obd_vars[] = {
 	  .fops =	&osp_syn_in_prog_fops		},
 	{ .name =	"old_sync_processed",
 	  .fops =	&osp_old_sync_processed_fops	},
+	{ .name =	"reserved_mb_high",
+	  .fops =	&osp_reserved_mb_high_fops	},
+	{ .name =	"reserved_mb_low",
+	  .fops =	&osp_reserved_mb_low_fops	},
 
 	/* for compatibility reasons */
 	{ .name =	"destroys_in_flight",
@@ -823,6 +963,7 @@ void osp_lprocfs_init(struct osp_device *osp)
 		return;
 	}
 
+	sptlrpc_lprocfs_cliobd_attach(obd);
 	ptlrpc_lprocfs_register_obd(obd);
 
 	if (osp->opd_connect_mdt || !strstr(obd->obd_name, "osc"))

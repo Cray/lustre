@@ -21,8 +21,10 @@ BuildRequires: kernel-syms
 BuildRequires: pkgconfig
 BuildRequires: -post-build-checks
 BuildRequires: module-init-tools
-%if "%{?craynum}" == "0000" || 0%{?cle_major}%{?cle_update} >= 62
-# Only required for DEV (craynum == 0000) builds and CLE 6.0UP02 and later
+BuildRequires: libtool
+%if "%{?sle_version}" == "120000"
+# Only SLES 12 SP0 builds require this. Was needed for EDR IB support in eLogin
+# for 6.0UP02. Future versions will use in-kernel drivers.
 BuildRequires: ofed-devel
 %endif
 Group: System/Filesystems
@@ -51,12 +53,6 @@ service nodes.
 
 %build
 echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
-# LUSTRE_VERS used in ko versioning.
-%define version_path %(basename %url)
-%define date %(date +%%F-%%R)
-%define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -65,7 +61,7 @@ fi
 
 if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
     _with_o2ib="--with-o2ib=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}"
-    _with_symvers="--with-symvers=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}/Modules.symvers"
+    _with_symvers="--with-extra-symbols=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}/Modules.symvers"
 fi
 
 CFLAGS="%{optflags} -Werror"
@@ -122,7 +118,8 @@ done
 %{__install} -D -m 0644 module %{buildroot}/%{_release_modulefile}
 
 %post
-%{__ln_s} %{_sbindir}/ko2iblnd-probe /usr/sbin
+%{__ln_s} -f %{_sbindir}/ko2iblnd-probe /usr/sbin
+%{__ln_s} -f /sbin/lctl /usr/sbin
 
 DEPMOD_OPTS=""
 if [ -f /boot/System.map-%{cray_kernel_version} ]; then
@@ -133,10 +130,12 @@ depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
 
 %preun
 %{__rm} -f /usr/sbin/ko2iblnd-probe
+%{__rm} -f /usr/sbin/lctl
 
 %files
 %defattr(-,root,root)
 %{_prefix}
+%exclude %{_sysconfdir}/lustre/perm.conf
 
 %clean
 %clean_build_root

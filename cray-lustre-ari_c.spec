@@ -56,13 +56,12 @@ Userspace tools and files for Lustre networking on XT compute nodes.
 
 %build
 echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
-# LUSTRE_VERS used in ko versioning.
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
-%define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
+%define lustre_version %{_version}-%{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 
-export LUSTRE_VERS=%{lustre_version}
-export SVN_CODE_REV=%{_version}-${LUSTRE_VERS}
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
         chmod +x autogen.sh
@@ -83,13 +82,16 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
            --disable-server \
            --with-o2ib=no \
            --enable-gni \
-           --with-symvers="$syms" \
+           --with-extra-symbols="$syms" \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-obd-buffer-size=16384
 fi
 %{__make} %_smp_mflags
 
 %install
+# Sets internal kgnilnd build version
+export SVN_CODE_REV=%{lustre_version}
+
 # don't use %makeinstall for compute node RPMS - it needlessly puts things into 
 #  /opt/cray/,.....
 
@@ -121,6 +123,7 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 /sbin/mount.lustre
 /sbin/lctl
 %config /etc/udev/rules.d/99-lustre.rules
+%exclude %{_sysconfdir}/lustre/perm.conf
 
 %files lnet
 %defattr(-,root,root)
@@ -130,6 +133,12 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 /lib/modules/*/updates/kernel/net/lustre
 %endif
 /sbin/lctl
+
+%post
+%{__ln_s} -f /sbin/lctl /usr/sbin
+
+%preun
+%{__rm} -f /usr/sbin/lctl
 
 %clean
 %clean_build_root

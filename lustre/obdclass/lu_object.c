@@ -60,7 +60,7 @@ enum {
 	LU_CACHE_PERCENT_DEFAULT = 20
 };
 
-#define	LU_CACHE_NR_MAX_ADJUST		128
+#define	LU_CACHE_NR_MAX_ADJUST		512
 #define	LU_CACHE_NR_UNLIMITED		-1
 #define	LU_CACHE_NR_DEFAULT		LU_CACHE_NR_UNLIMITED
 #define	LU_CACHE_NR_LDISKFS_LIMIT	LU_CACHE_NR_UNLIMITED
@@ -164,7 +164,7 @@ void lu_object_put(const struct lu_env *env, struct lu_object *o)
 	}
 
         /*
-         * If object is dying (will not be cached), removed it
+	 * If object is dying (will not be cached) then remove it
          * from hash table and LRU.
          *
          * This is done with hash table and LRU lists locked. As the only
@@ -347,8 +347,11 @@ static void lu_object_free(const struct lu_env *env, struct lu_object *o)
 
 /**
  * Free \a nr objects from the cold end of the site LRU list.
+ * if canblock is 0, then don't block awaiting for another
+ * instance of lu_site_purge() to complete
  */
-int lu_site_purge(const struct lu_env *env, struct lu_site *s, int nr)
+int lu_site_purge_objects(const struct lu_env *env, struct lu_site *s,
+			  int nr, int canblock)
 {
         struct lu_object_header *h;
         struct lu_object_header *temp;
@@ -357,7 +360,7 @@ int lu_site_purge(const struct lu_env *env, struct lu_site *s, int nr)
         cfs_hash_bd_t            bd2;
 	struct list_head	 dispose;
 	int                      did_sth;
-	unsigned int		 start;
+	unsigned int		 start = 0;
         int                      count;
         int                      bnr;
 	unsigned int             i;
@@ -370,14 +373,19 @@ int lu_site_purge(const struct lu_env *env, struct lu_site *s, int nr)
          * Under LRU list lock, scan LRU list and move unreferenced objects to
          * the dispose list, removing them from LRU and hash table.
          */
-        start = s->ls_purge_start;
+	if (nr != ~0)
+		start = s->ls_purge_start;
 	bnr = (nr == ~0) ? -1 : nr / (int)CFS_HASH_NBKT(s->ls_obj_hash) + 1;
  again:
 	/*
 	 * It doesn't make any sense to make purge threads parallel, that can
 	 * only bring troubles to us. See LU-5331.
 	 */
-	mutex_lock(&s->ls_purge_mutex);
+	if (canblock != 0)
+		mutex_lock(&s->ls_purge_mutex);
+	else if (mutex_trylock(&s->ls_purge_mutex) == 0)
+		goto out;
+
         did_sth = 0;
         cfs_hash_for_each_bucket(s->ls_obj_hash, &bd, i) {
                 if (i < start)
@@ -433,9 +441,10 @@ int lu_site_purge(const struct lu_env *env, struct lu_site *s, int nr)
         /* race on s->ls_purge_start, but nobody cares */
         s->ls_purge_start = i % CFS_HASH_NBKT(s->ls_obj_hash);
 
+out:
         return nr;
 }
-EXPORT_SYMBOL(lu_site_purge);
+EXPORT_SYMBOL(lu_site_purge_objects);
 
 /*
  * Object printing.
@@ -663,11 +672,11 @@ static void lu_object_limit(const struct lu_env *env,
 
 	size = cfs_hash_size_get(dev->ld_site->ls_obj_hash);
 	nr = (__u64)lu_cache_nr;
-	if (size > nr)
-		lu_site_purge(env, dev->ld_site,
-			      MIN(size - nr, LU_CACHE_NR_MAX_ADJUST));
+	if (size <= nr)
+		return;
 
-	return;
+	lu_site_purge_objects(env, dev->ld_site,
+			      MIN(size - nr, LU_CACHE_NR_MAX_ADJUST), 0);
 }
 
 static struct lu_object *lu_object_new(const struct lu_env *env,
@@ -1398,7 +1407,7 @@ enum {
 
 static struct lu_context_key *lu_keys[LU_CONTEXT_KEY_NR] = { NULL, };
 
-static DEFINE_SPINLOCK(lu_keys_guard);
+DEFINE_RWLOCK(lu_keys_guard);
 static atomic_t lu_key_initing_cnt = ATOMIC_INIT(0);
 
 /**
@@ -1423,7 +1432,7 @@ int lu_context_key_register(struct lu_context_key *key)
         LASSERT(key->lct_owner != NULL);
 
         result = -ENFILE;
-	spin_lock(&lu_keys_guard);
+	write_lock(&lu_keys_guard);
         for (i = 0; i < ARRAY_SIZE(lu_keys); ++i) {
                 if (lu_keys[i] == NULL) {
                         key->lct_index = i;
@@ -1435,7 +1444,7 @@ int lu_context_key_register(struct lu_context_key *key)
                         break;
                 }
         }
-	spin_unlock(&lu_keys_guard);
+	write_unlock(&lu_keys_guard);
 	return result;
 }
 EXPORT_SYMBOL(lu_context_key_register);
@@ -1474,7 +1483,7 @@ void lu_context_key_degister(struct lu_context_key *key)
 	lu_context_key_quiesce(key);
 
 	++key_set_version;
-	spin_lock(&lu_keys_guard);
+	write_lock(&lu_keys_guard);
 	key_fini(&lu_shrink_env.le_ctx, key->lct_index);
 
 	/**
@@ -1482,18 +1491,18 @@ void lu_context_key_degister(struct lu_context_key *key)
 	 * run lu_context_key::lct_fini() method.
 	 */
 	while (atomic_read(&key->lct_used) > 1) {
-		spin_unlock(&lu_keys_guard);
+		write_unlock(&lu_keys_guard);
 		CDEBUG(D_INFO, "lu_context_key_degister: \"%s\" %p, %d\n",
 		       key->lct_owner ? key->lct_owner->name : "", key,
 		       atomic_read(&key->lct_used));
 		schedule();
-		spin_lock(&lu_keys_guard);
+		write_lock(&lu_keys_guard);
 	}
 	if (lu_keys[key->lct_index]) {
 		lu_keys[key->lct_index] = NULL;
 		lu_ref_fini(&key->lct_reference);
 	}
-	spin_unlock(&lu_keys_guard);
+	write_unlock(&lu_keys_guard);
 
 	LASSERTF(atomic_read(&key->lct_used) == 1,
 		 "key has instances: %d\n",
@@ -1618,7 +1627,7 @@ void lu_context_key_quiesce(struct lu_context_key *key)
                 /*
                  * XXX memory barrier has to go here.
                  */
-		spin_lock(&lu_keys_guard);
+		write_lock(&lu_keys_guard);
 		key->lct_tags |= LCT_QUIESCENT;
 
 		/**
@@ -1626,20 +1635,20 @@ void lu_context_key_quiesce(struct lu_context_key *key)
 		 * have completed.
 		 */
 		while (atomic_read(&lu_key_initing_cnt) > 0) {
-			spin_unlock(&lu_keys_guard);
+			write_unlock(&lu_keys_guard);
 			CDEBUG(D_INFO, "lu_context_key_quiesce: \"%s\""
 			       " %p, %d (%d)\n",
 			       key->lct_owner ? key->lct_owner->name : "",
 			       key, atomic_read(&key->lct_used),
 			       atomic_read(&lu_key_initing_cnt));
 			schedule();
-			spin_lock(&lu_keys_guard);
+			write_lock(&lu_keys_guard);
 		}
 
 		list_for_each_entry(ctx, &lu_context_remembered,
 				    lc_remember)
 			key_fini(ctx, key->lct_index);
-		spin_unlock(&lu_keys_guard);
+		write_unlock(&lu_keys_guard);
 		++key_set_version;
 	}
 }
@@ -1677,9 +1686,9 @@ static int keys_fill(struct lu_context *ctx)
 	 * An atomic_t variable is still used, in order not to reacquire the
 	 * lock when decrementing the counter.
 	 */
-	spin_lock(&lu_keys_guard);
+	read_lock(&lu_keys_guard);
 	atomic_inc(&lu_key_initing_cnt);
-	spin_unlock(&lu_keys_guard);
+	read_unlock(&lu_keys_guard);
 
         LINVRNT(ctx->lc_value != NULL);
         for (i = 0; i < ARRAY_SIZE(lu_keys); ++i) {
@@ -1748,9 +1757,9 @@ int lu_context_init(struct lu_context *ctx, __u32 tags)
 	ctx->lc_state = LCS_INITIALIZED;
 	ctx->lc_tags = tags;
 	if (tags & LCT_REMEMBER) {
-		spin_lock(&lu_keys_guard);
+		write_lock(&lu_keys_guard);
 		list_add(&ctx->lc_remember, &lu_context_remembered);
-		spin_unlock(&lu_keys_guard);
+		write_unlock(&lu_keys_guard);
 	} else {
 		INIT_LIST_HEAD(&ctx->lc_remember);
 	}
@@ -1776,10 +1785,10 @@ void lu_context_fini(struct lu_context *ctx)
 		keys_fini(ctx);
 
 	} else { /* could race with key degister */
-		spin_lock(&lu_keys_guard);
+		write_lock(&lu_keys_guard);
 		keys_fini(ctx);
 		list_del_init(&ctx->lc_remember);
-		spin_unlock(&lu_keys_guard);
+		write_unlock(&lu_keys_guard);
 	}
 }
 EXPORT_SYMBOL(lu_context_fini);
@@ -1804,17 +1813,24 @@ void lu_context_exit(struct lu_context *ctx)
         LINVRNT(ctx->lc_state == LCS_ENTERED);
         ctx->lc_state = LCS_LEFT;
         if (ctx->lc_tags & LCT_HAS_EXIT && ctx->lc_value != NULL) {
-                for (i = 0; i < ARRAY_SIZE(lu_keys); ++i) {
-                        if (ctx->lc_value[i] != NULL) {
-                                struct lu_context_key *key;
+		/* could race with key quiescency */
+		if (ctx->lc_tags & LCT_REMEMBER)
+			read_lock(&lu_keys_guard);
 
-                                key = lu_keys[i];
-                                LASSERT(key != NULL);
-                                if (key->lct_exit != NULL)
-                                        key->lct_exit(ctx,
-                                                      key, ctx->lc_value[i]);
-                        }
+                for (i = 0; i < ARRAY_SIZE(lu_keys); ++i) {
+			if (ctx->lc_value[i] != NULL) {
+				struct lu_context_key *key;
+
+				key = lu_keys[i];
+				LASSERT(key != NULL);
+				if (key->lct_exit != NULL)
+					key->lct_exit(ctx,
+						      key, ctx->lc_value[i]);
+			}
                 }
+
+		if (ctx->lc_tags & LCT_REMEMBER)
+			read_unlock(&lu_keys_guard);
         }
 }
 EXPORT_SYMBOL(lu_context_exit);
@@ -1841,37 +1857,37 @@ __u32 lu_session_tags_default = 0;
 
 void lu_context_tags_update(__u32 tags)
 {
-	spin_lock(&lu_keys_guard);
+	write_lock(&lu_keys_guard);
 	lu_context_tags_default |= tags;
 	key_set_version++;
-	spin_unlock(&lu_keys_guard);
+	write_unlock(&lu_keys_guard);
 }
 EXPORT_SYMBOL(lu_context_tags_update);
 
 void lu_context_tags_clear(__u32 tags)
 {
-	spin_lock(&lu_keys_guard);
+	write_lock(&lu_keys_guard);
 	lu_context_tags_default &= ~tags;
 	key_set_version++;
-	spin_unlock(&lu_keys_guard);
+	write_unlock(&lu_keys_guard);
 }
 EXPORT_SYMBOL(lu_context_tags_clear);
 
 void lu_session_tags_update(__u32 tags)
 {
-	spin_lock(&lu_keys_guard);
+	write_lock(&lu_keys_guard);
 	lu_session_tags_default |= tags;
 	key_set_version++;
-	spin_unlock(&lu_keys_guard);
+	write_unlock(&lu_keys_guard);
 }
 EXPORT_SYMBOL(lu_session_tags_update);
 
 void lu_session_tags_clear(__u32 tags)
 {
-	spin_lock(&lu_keys_guard);
+	write_lock(&lu_keys_guard);
 	lu_session_tags_default &= ~tags;
 	key_set_version++;
-	spin_unlock(&lu_keys_guard);
+	write_unlock(&lu_keys_guard);
 }
 EXPORT_SYMBOL(lu_session_tags_clear);
 
@@ -2235,18 +2251,19 @@ int lu_site_stats_seq_print(const struct lu_site *s, struct seq_file *m)
 	memset(&stats, 0, sizeof(stats));
 	lu_site_stats_get(s->ls_obj_hash, &stats, 1);
 
-	return seq_printf(m, "%d/%d %d/%d %d %d %d %d %d %d %d\n",
-			  stats.lss_busy,
-			  stats.lss_total,
-			  stats.lss_populated,
-			  CFS_HASH_NHLIST(s->ls_obj_hash),
-			  stats.lss_max_search,
-			  ls_stats_read(s->ls_stats, LU_SS_CREATED),
-			  ls_stats_read(s->ls_stats, LU_SS_CACHE_HIT),
-			  ls_stats_read(s->ls_stats, LU_SS_CACHE_MISS),
-			  ls_stats_read(s->ls_stats, LU_SS_CACHE_RACE),
-			  ls_stats_read(s->ls_stats, LU_SS_CACHE_DEATH_RACE),
-			  ls_stats_read(s->ls_stats, LU_SS_LRU_PURGED));
+	seq_printf(m, "%d/%d %d/%d %d %d %d %d %d %d %d\n",
+		   stats.lss_busy,
+		   stats.lss_total,
+		   stats.lss_populated,
+		   CFS_HASH_NHLIST(s->ls_obj_hash),
+		   stats.lss_max_search,
+		   ls_stats_read(s->ls_stats, LU_SS_CREATED),
+		   ls_stats_read(s->ls_stats, LU_SS_CACHE_HIT),
+		   ls_stats_read(s->ls_stats, LU_SS_CACHE_MISS),
+		   ls_stats_read(s->ls_stats, LU_SS_CACHE_RACE),
+		   ls_stats_read(s->ls_stats, LU_SS_CACHE_DEATH_RACE),
+		   ls_stats_read(s->ls_stats, LU_SS_LRU_PURGED));
+	return 0;
 }
 EXPORT_SYMBOL(lu_site_stats_seq_print);
 
@@ -2318,19 +2335,24 @@ void lu_object_assign_fid(const struct lu_env *env, struct lu_object *o,
 {
 	struct lu_site		*s = o->lo_dev->ld_site;
 	struct lu_fid		*old = &o->lo_header->loh_fid;
-	struct lu_object	*shadow;
-	wait_queue_t		 waiter;
-	cfs_hash_t		*hs;
-	cfs_hash_bd_t		 bd;
-	__u64			 version = 0;
+	struct cfs_hash		*hs;
+	struct cfs_hash_bd	 bd;
 
 	LASSERT(fid_is_zero(old));
 
+	/* supposed to be unique */
 	hs = s->ls_obj_hash;
 	cfs_hash_bd_get_and_lock(hs, (void *)fid, &bd, 1);
-	shadow = htable_lookup(s, &bd, fid, &waiter, &version);
-	/* supposed to be unique */
-	LASSERT(IS_ERR(shadow) && PTR_ERR(shadow) == -ENOENT);
+#ifdef CONFIG_LUSTRE_DEBUG_EXPENSIVE_CHECK
+	{
+		__u64                    version = 0;
+		wait_queue_t             waiter;
+		struct lu_object        *shadow;
+		shadow = htable_lookup(s, &bd, fid, &waiter, &version);
+		/* supposed to be unique */
+		LASSERT(IS_ERR(shadow) && PTR_ERR(shadow) == -ENOENT);
+	}
+#endif
 	*old = *fid;
 	cfs_hash_bd_add_locked(hs, &bd, &o->lo_header->loh_hash);
 	cfs_hash_bd_unlock(hs, &bd, 1);

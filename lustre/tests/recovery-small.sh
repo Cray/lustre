@@ -23,6 +23,10 @@ require_dsh_mds || exit 0
 # bug number for skipped test:	      LU-2194 LU-2547
 	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 19b     24a 24b"
 
+[[ $MDSCOUNT -le 1 ]] ||
+# bug number for skipped test:	      LU-7710
+	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 130a 130b 130c"
+
 build_test_filter
 
 # Allow us to override the setup if we already have a mounted system by
@@ -255,19 +259,22 @@ test_10d() {
 	rm -f $TMP/$tfile
 	echo -n ", world" | dd of=$TMP/$tfile bs=1c seek=5
 
+	remount_client $MOUNT
 	mount_client $MOUNT2
 
+	cancel_lru_locks osc
 	$LFS setstripe -i 0 -c 1 $DIR1/$tfile
 	echo -n hello > $DIR1/$tfile
 
 	stat $DIR2/$tfile >& /dev/null
 	$LCTL set_param fail_err=71
-	drop_bl_callback_once "echo -n \\\", world\\\" >> $DIR2/$tfile"
+	drop_bl_callback "echo -n \\\", world\\\" >> $DIR2/$tfile"
 
 	client_reconnect
 
-	cmp $DIR1/$tfile $DIR2/$tfile || error "file contents differ"
-	cmp $DIR1/$tfile $TMP/$tfile || error "wrong content found"
+	cancel_lru_locks osc
+	cmp -l $DIR1/$tfile $DIR2/$tfile || error "file contents differ"
+	cmp -l $DIR1/$tfile $TMP/$tfile || error "wrong content found"
 
 	evict=$(do_facet client $LCTL get_param osc.$FSNAME-OST0000*.state | \
 		tr -d '\-\[\] ' | \
@@ -282,6 +289,45 @@ test_10d() {
 	umount_client $MOUNT2
 }
 run_test 10d "test failed blocking ast"
+
+test_10e()
+{
+	[[ $(lustre_version_code ost1) -le $(version_code 2.8.58) ]] &&
+		skip "Need OST version at least 2.8.59" && return 0
+	[ $CLIENTCOUNT -lt 2 ] && skip "need two clients" && return 0
+	[ $(facet_host client) == $(facet_host ost1) ] &&
+		skip "need ost1 and client on different nodes" && return 0
+	local -a clients=(${CLIENTS//,/ })
+	local client1=${clients[0]}
+	local client2=${clients[1]}
+
+	$LFS setstripe -c 1 -i 0 $DIR/$tfile-1 $DIR/$tfile-2
+	$MULTIOP $DIR/$tfile-1 Ow1048576c
+
+#define OBD_FAIL_LDLM_BL_CALLBACK_NET                   0x305
+	$LCTL set_param fail_loc=0x80000305
+
+#define OBD_FAIL_LDLM_ENQUEUE_OLD_EXPORT 0x30e
+	do_facet ost1 "$LCTL set_param fail_loc=0x1000030e"
+	# hit OBD_FAIL_LDLM_ENQUEUE_OLD_EXPORT twice:
+	# 1. to return ENOTCONN from ldlm_handle_enqueue0
+	# 2. to pause reconnect handling between resend and setting
+	# import to LUSTRE_IMP_FULL state
+	do_facet ost1 "$LCTL set_param fail_val=3"
+
+	# client1 fails ro respond to bl ast
+	do_node $client2 "$MULTIOP $DIR/$tfile-1 Ow1048576c" &
+	MULTIPID=$!
+
+	# ost1 returns error on enqueue, which causes client1 to reconnect
+	do_node $client1 "$MULTIOP $DIR/$tfile-2 Ow1048576c" ||
+		error "multiop failed"
+	wait $MULTIPID
+
+	do_facet ost1 "$LCTL set_param fail_loc=0"
+	do_facet ost1 "$LCTL set_param fail_val=0"
+}
+run_test 10e "re-send BL AST vs reconnect race 2"
 
 #bug 2460
 # wake up a thread waiting for completion after eviction
@@ -387,7 +433,7 @@ test_16() {
 }
 run_test 16 "timeout bulk put, don't evict client (2732)"
 
-test_17() {
+test_17a() {
     local at_max_saved=0
 
     remote_ost_nodsh && skip "remote OST with nodsh" && return 0
@@ -421,7 +467,93 @@ test_17() {
     [ $at_max_saved -ne 0 ] && at_max_set $at_max_saved ost1
     return 0
 }
-run_test 17 "timeout bulk get, don't evict client (2732)"
+run_test 17a "timeout bulk get, don't evict client (2732)"
+
+test_17b() {
+	[ -z "$RCLIENTS" ] && skip "Needs multiple clients" && return 0
+
+	# get one of the clients from client list
+	local rcli=$(echo $RCLIENTS | cut -d ' ' -f 1)
+	local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
+	local ldlm_enqueue_min=$(do_facet ost1 find /sys -name ldlm_enqueue_min)
+	[ -z "$ldlm_enqueue_min" ] &&
+		skip "missing /sys/.../ldlm_enqueue_min" && return 0
+
+	$LFS setstripe -i 0 -c 1 -S 1048576 $DIR/$tfile ||
+		error "setstripe failed"
+	$LFS setstripe -i 0 -c 1 -S 1048576 $DIR/${tfile}2 ||
+		error "setstripe 2 failed"
+
+	save_lustre_params ost1 "at_history" > $p
+	save_lustre_params ost1 "bulk_timeout" >> $p
+	local dev="${FSNAME}-OST0000"
+	save_lustre_params ost1 "obdfilter.$dev.brw_size" >> $p
+	local ldlm_enqueue_min_save=$(do_facet ost1 cat $ldlm_enqueue_min)
+
+	local new_at_history=15
+
+	do_facet ost1 "$LCTL set_param at_history=$new_at_history"
+	do_facet ost1 "$LCTL set_param bulk_timeout=30"
+	do_facet ost1 "echo 30 > /sys/module/ptlrpc/parameters/ldlm_enqueue_min"
+
+	# brw_size is required to be 4m so that bulk transfer timeout
+	# could be simulated with OBD_FAIL_PTLRPC_CLIENT_BULK_CB3
+	local brw_size=$($LCTL get_param -n \
+	    osc.$FSNAME-OST0000-osc-[^M]*.import |
+	    awk '/max_brw_size/{print $2}')
+	if [ $brw_size -ne 4194304 ]
+	then
+		save_lustre_params ost1 "obdfilter.$dev.brw_size" >> $p
+		do_facet ost1 "$LCTL set_param obdfilter.$dev.brw_size=4"
+		remount_client $MOUNT
+	fi
+
+	# get service estimate expanded
+	#define OBD_FAIL_OST_BRW_PAUSE_PACK		 0x224
+	do_facet ost1 "$LCTL set_param fail_loc=0x80000224 fail_val=35"
+	echo "delay rpc servicing by 35 seconds"
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 conv=fdatasync
+
+	local estimate
+	estimate=$($LCTL get_param -n osc.$dev-osc-*.timeouts |
+	    awk '/portal 6/ {print $5}')
+	echo "service estimates increased to $estimate"
+
+	# let current worst service estimate to get closer to obliteration
+	sleep $((new_at_history / 3))
+
+	# start i/o and simulate bulk transfer loss
+	#define OBD_FAIL_PTLRPC_CLIENT_BULK_CB3     0x520
+	do_facet ost1 "$LCTL set_param fail_loc=0xa0000520 fail_val=1"
+	dd if=/dev/zero of=$DIR/$tfile bs=2M count=1 conv=fdatasync,notrunc &
+	local writedd=$!
+
+	# start lock conflict handling
+	sleep $((new_at_history / 3))
+	do_node $rcli "dd if=$DIR/$tfile of=/dev/null bs=1M count=1" &
+	local readdd=$!
+
+	# obliterate the worst service estimate
+	sleep $((new_at_history / 3 + 1))
+	dd if=/dev/zero of=$DIR/${tfile}2 bs=1M count=1
+
+	estimate=$($LCTL get_param -n osc.$dev-osc-*.timeouts |
+	    awk '/portal 6/ {print $5}')
+	echo "service estimate dropped to $estimate"
+
+	wait $writedd
+	[[ $? == 0 ]] || error "write failed"
+	wait $readdd
+	[[ $? == 0 ]] || error "read failed"
+
+	restore_lustre_params <$p
+	if [ $brw_size -ne 4194304 ]
+	then
+		remount_client $MOUNT || error "remount_client failed"
+	fi
+	do_facet ost1 "echo $ldlm_enqueue_min_save > $ldlm_enqueue_min"
+}
+run_test 17b "timeout bulk get, dont evict client (3582)"
 
 test_18a() {
     [ -z ${ost2_svc} ] && skip_env "needs 2 osts" && return 0
@@ -518,10 +650,10 @@ test_18c() {
     do_facet ost1 lctl set_param fail_loc=0x80000225
     # force reconnect
     sleep 1
-    df $MOUNT > /dev/null 2>&1
+    $LFS df $MOUNT > /dev/null 2>&1
     sleep 2
     # my understanding is that there should be nothing in the page
-    # cache after the client reconnects?     
+    # cache after the client reconnects?
     rc=0
     pgcache_empty || rc=2
     rm -f $f $TMP/$tfile
@@ -951,20 +1083,28 @@ test_26a() {      # was test_26 bug 5921 - evict dead exports by pinger
 
 	check_timeout || return 1
 
-	local OST_NEXP=$(do_facet ost1 lctl get_param -n obdfilter.${ost1_svc}.num_exports | cut -d' ' -f2)
-
-	echo starting with $OST_NEXP OST exports
 # OBD_FAIL_PTLRPC_DROP_RPC 0x505
 	do_facet client lctl set_param fail_loc=0x505
+	local BEFORE=`date +%s`
+	local rc=0
+
         # evictor takes PING_EVICT_TIMEOUT + 3 * PING_INTERVAL to evict.
         # But if there's a race to start the evictor from various obds,
         # the loser might have to wait for the next ping.
-
-	local rc=0
-	wait_client_evicted ost1 $OST_NEXP $((TIMEOUT * 2 + TIMEOUT * 3 / 4))
-	rc=$?
+	sleep $((TIMEOUT * 2 + TIMEOUT * 3 / 4))
 	do_facet client lctl set_param fail_loc=0x0
-        [ $rc -eq 0 ] || error "client not evicted from OST"
+	do_facet client df > /dev/null
+
+	local oscs=`lctl dl | grep "\-osc\-" | awk '{print $4}'`
+	check_clients_evicted $BEFORE ${oscs[@]}
+
+	for osc in $oscs
+	do
+		wait_update_facet client \
+			"lctl get_param -n osc.$osc.state | grep \"current_state: FULL\"" \
+			"current_state: FULL" 10
+		[ $? -eq 0 ] || error "$osc state is not FULL"
+	done
 }
 run_test 26a "evict dead exports"
 
@@ -1408,6 +1548,69 @@ run_test 61 "Verify to not reuse orphan objects - bug 17025"
 #}
 #run_test 62 "Verify connection flags race - bug LU-1716"
 
+test_65() {
+	mount_client $DIR2
+
+	#grant lock1, export2
+	$SETSTRIPE -i -0 $DIR2/$tfile || return 1
+	$MULTIOP $DIR2/$tfile Ow  || return 2
+
+#define OBD_FAIL_LDLM_BL_EVICT            0x31e
+	do_facet ost $LCTL set_param fail_loc=0x31e
+	#get waiting lock2, export1
+	$MULTIOP $DIR/$tfile Ow &
+	PID1=$!
+	# let enqueue to get asleep
+	sleep 2
+
+	#get lock2 blocked
+	$MULTIOP $DIR2/$tfile Ow &
+	PID2=$!
+	sleep 2
+
+	#evict export1
+	ost_evict_client
+
+	sleep 2
+	do_facet ost $LCTL set_param fail_loc=0
+
+	wait $PID1
+	wait $PID2
+
+	umount_client $DIR2
+}
+run_test 65 "lock enqueue for destroyed export"
+
+test_66()
+{
+	local list=$(comma_list $(osts_nodes))
+
+	# modify dir so that next revalidate would not obtain UPDATE lock
+	touch $DIR
+
+	# drop 1 reply with UPDATE lock
+	mcreate $DIR/$tfile || error "mcreate failed: $?"
+	drop_ldlm_reply_once "stat $DIR/$tfile" &
+	sleep 2
+
+	# make the re-sent lock to sleep
+#define OBD_FAIL_MDS_RESEND              0x136
+	do_nodes $list $LCTL set_param fail_loc=0x80000136
+
+	#initiate the re-connect & re-send
+	local mdccli=$($LCTL dl | awk '/-mdc-/ {print $4;}')
+	local conn_uuid=$($LCTL get_param -n mdc.${mdccli}.mds_conn_uuid)
+	$LCTL set_param "mdc.${mdccli}.import=connection=${conn_uuid}"
+	sleep 2
+
+	#initiate the client eviction while enqueue re-send is in progress
+	mds_evict_client
+
+	client_reconnect
+	wait
+}
+run_test 66 "lock enqueue re-send vs client eviction"
+
 check_cli_ir_state()
 {
         local NODE=${1:-$HOSTNAME}
@@ -1426,6 +1629,11 @@ check_target_ir_state()
         local recovery_proc=obdfilter.${!name}.recovery_status
         local st
 
+	while : ; do
+		st=$(do_facet $target "$LCTL get_param -n $recovery_proc |
+			awk '/status:/{ print \\\$2}'")
+		[ x$st = xRECOVERING ] || break
+	done
         st=$(do_facet $target "lctl get_param -n $recovery_proc |
                                awk '/IR:/{ print \\\$2}'")
 	[ $st != ON -o $st != OFF -o $st != ENABLED -o $st != DISABLED ] ||
@@ -1919,6 +2127,9 @@ test_110f () {
 run_test 110f "remove remote directory: drop slave rep"
 
 test_110g () {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.6.57) ]] ||
+		{ skip "Need MDS version at least 2.6.57"; return 0; }
+
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return 0
 	local remote_dir=$DIR/$tdir/remote_dir
 	local MDTIDX=1
@@ -1927,8 +2138,8 @@ test_110g () {
 
 	createmany -o $remote_dir/f 100
 
-	#define OBD_FAIL_MIGRATE_NET_REP	0x1702
-	do_facet mds$MDTIDX lctl set_param fail_loc=0x1702
+	#define OBD_FAIL_MIGRATE_NET_REP	0x1800
+	do_facet mds$MDTIDX lctl set_param fail_loc=0x1800
 	$LFS mv -M $MDTIDX $remote_dir || error "migrate failed"
 	do_facet mds$MDTIDX lctl set_param fail_loc=0x0
 
@@ -1978,6 +2189,36 @@ test_112a() {
 }
 run_test 112a "bulk resend while orignal request is in progress"
 
+test_113() {
+	local BEFORE=$(date +%s)
+	local EVICT
+
+	# modify dir so that next revalidate would not obtain UPDATE lock
+	touch $DIR
+
+	# drop 1 reply with UPDATE lock,
+	# resend should not create 2nd lock on server
+	mcreate $DIR/$tfile || error "mcreate failed: $?"
+	drop_ldlm_reply_once "stat $DIR/$tfile" || error "stat failed: $?"
+
+	# 2 BL AST will be sent to client, both must find the same lock,
+	# race them to not get EINVAL for 2nd BL AST
+	#define OBD_FAIL_LDLM_PAUSE_CANCEL2      0x31f
+	$LCTL set_param fail_loc=0x8000031f
+
+	$LCTL set_param ldlm.namespaces.*.early_lock_cancel=0 > /dev/null
+	chmod 0777 $DIR/$tfile || error "chmod failed: $?"
+	$LCTL set_param ldlm.namespaces.*.early_lock_cancel=1 > /dev/null
+
+	# let the client reconnect
+	client_reconnect
+	EVICT=$($LCTL get_param mdc.$FSNAME-MDT*.state |
+	  awk -F"[ [,]" '/EVICTED ]$/ { if (mx<$5) {mx=$5;} } END { print mx }')
+
+	[ -z "$EVICT" ] || [[ $EVICT -le $BEFORE ]] || error "eviction happened"
+}
+run_test 113 "ldlm enqueue dropped reply should not cause deadlocks"
+
 test_115_read() {
 	local fail1=$1
 	local fail2=$2
@@ -2002,6 +2243,7 @@ test_115_write() {
 	local fail1=$1
 	local fail2=$2
 	local error=$3
+	local fail_val2=${4:-0}
 
 	df $DIR
 	touch $DIR/$tfile
@@ -2013,7 +2255,7 @@ test_115_write() {
 	sleep 1
 
 	df $MOUNT
-	set_nodes_failloc "$(osts_nodes)" $fail2
+	set_nodes_failloc "$(osts_nodes)" $fail2 $fail_val2
 
 	wait $pid
 	rc=$?
@@ -2032,7 +2274,10 @@ run_test 115a "read: late REQ MDunlink and no bulk"
 test_115b() {
 	#define OBD_FAIL_PTLRPC_LONG_REQ_UNLINK  0x51b
 	#define OBD_FAIL_OST_ENOSPC              0x215
-	test_115_write 0x8000051b 0x80000215 1
+
+	# pass $OSTCOUNT for the fail_loc to be caught
+	# appropriately by the IO thread
+	test_115_write 0x8000051b 0x80000215 1 $OSTCOUNT
 }
 run_test 115b "write: late REQ MDunlink and no bulk"
 
@@ -2174,35 +2419,164 @@ test_120() {
 }
 run_test 120 "flock race: completion vs. evict"
 
-test_113() {
-	local BEFORE=$(date +%s)
-	local EVICT
+T130_PID=0
+test_130_base() {
+	test_mkdir -p $DIR/$tdir
 
-	# modify dir so that next revalidate would not obtain UPDATE lock
-	touch $DIR
+	# Prevent interference from layout intent RPCs due to
+	# asynchronous writeback. These will be tested in 130c below.
+	do_nodes ${CLIENTS:-$HOSTNAME} sync
 
-	# drop 1 reply with UPDATE lock,
-	# resend should not create 2nd lock on server
-	mcreate $DIR/$tfile || error "mcreate failed: $?"
-	drop_ldlm_reply_once "stat $DIR/$tfile" || error "stat failed: $?"
+	# get only LOOKUP lock on $tdir
+	cancel_lru_locks mdc
+	ls $DIR/$tdir/$tfile 2>/dev/null
 
-	# 2 BL AST will be sent to client, both must find the same lock,
-	# race them to not get EINVAL for 2nd BL AST
-	#define OBD_FAIL_LDLM_PAUSE_CANCEL2      0x31f
-	$LCTL set_param fail_loc=0x8000031f
+	# get getattr by fid on $tdir
+	#
+	# we need to race with unlink, unlink must complete before we will
+	# take a DLM lock, otherwise unlink will wait until getattr will
+	# complete; but later than getattr starts so that getattr found
+	# the object
+#define OBD_FAIL_MDS_INTENT_DELAY		0x160
+	set_nodes_failloc "$(mdts_nodes)" 0x80000160
+	stat $DIR/$tdir &
+	T130_PID=$!
+	sleep 2
 
-	$LCTL set_param ldlm.namespaces.*.early_lock_cancel=0 > /dev/null
-	chmod 0777 $DIR/$tfile || error "chmod failed: $?"
-	$LCTL set_param ldlm.namespaces.*.early_lock_cancel=1 > /dev/null
+	rm -rf $DIR/$tdir
 
-	# let the client reconnect
-	client_reconnect
-	EVICT=$($LCTL get_param mdc.$FSNAME-MDT*.state |
-	  awk -F"[ [,]" '/EVICTED ]$/ { if (mx<$5) {mx=$5;} } END { print mx }')
-
-	[ -z "$EVICT" ] || [[ $EVICT -le $BEFORE ]] || error "eviction happened"
+	# drop the reply so that resend happens on an unlinked file.
+#define OBD_FAIL_MDS_LDLM_REPLY_NET	 0x157
+	set_nodes_failloc "$(mdts_nodes)" 0x80000157
 }
-run_test 113 "ldlm enqueue dropped reply should not cause deadlocks"
+
+test_130a() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	local server_version=$(lustre_version_code $SINGLEMDS)
+	[[ $server_version -ge $(version_code 2.7.65) ]] ||
+		{ skip "Need server version newer than 2.7.64"; return 0; }
+
+	test_130_base
+
+	wait $T130_PID && error "stat should fail"
+	return 0
+}
+run_test 130a "enqueue resend on not existing file"
+
+test_130b() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	local server_version=$(lustre_version_code $SINGLEMDS)
+	[[ $server_version -ge $(version_code 2.7.65) ]] ||
+		{ skip "Need server version newer than 2.7.64"; return 0; }
+
+	test_130_base
+	# let the reply to be dropped
+	sleep 10
+
+#define OBD_FAIL_SRV_ENOENT              0x217
+	set_nodes_failloc "$(mdts_nodes)" 0x80000217
+
+	wait $T130_PID && error "stat should fail"
+	return 0
+}
+run_test 130b "enqueue resend on a stale inode"
+
+test_130c() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+
+	do_nodes ${CLIENTS:-$HOSTNAME} sync
+	echo XXX > $DIR/$tfile
+
+	cancel_lru_locks mdc
+
+	# Trigger writeback on $tfile.
+	#
+	# we need to race with unlink, unlink must complete before we will
+	# take a DLM lock, otherwise unlink will wait until intent will
+	# complete; but later than intent starts so that intent found
+	# the object
+#define OBD_FAIL_MDS_INTENT_DELAY		0x160
+	set_nodes_failloc "$(mdts_nodes)" 0x80000160
+	sync &
+	T130_PID=$!
+	sleep 2
+
+	rm $DIR/$tfile
+
+	# drop the reply so that resend happens on an unlinked file.
+#define OBD_FAIL_MDS_LDLM_REPLY_NET	 0x157
+	set_nodes_failloc "$(mdts_nodes)" 0x80000157
+
+	# let the reply to be dropped
+	sleep 10
+
+#define OBD_FAIL_SRV_ENOENT              0x217
+	set_nodes_failloc "$(mdts_nodes)" 0x80000217
+
+	wait $T130_PID
+
+	return 0
+}
+run_test 130c "layout intent resend on a stale inode"
+
+test_131() {
+	rm -f $DIR/$tfile
+	# get a lock on client so that export would reach the stale list
+	$SETSTRIPE -i 0 $DIR/$tfile || error "setstripe failed"
+	dd if=/dev/zero of=$DIR/$tfile count=1 || error "dd failed"
+
+	# another IO under the same lock
+	#define OBD_FAIL_OSC_DELAY_IO            0x414
+	$LCTL set_param fail_loc=0x80000414
+	$LCTL set_param fail_val=4 fail_loc=0x80000414
+	dd if=/dev/zero of=$DIR/$tfile count=1 conv=notrunc oflag=dsync &
+	local pid=$!
+	sleep 1
+
+	#define OBD_FAIL_LDLM_BL_EVICT           0x31e
+	set_nodes_failloc "$(osts_nodes)" 0x8000031e
+	ost_evict_client
+	client_reconnect
+
+	wait $pid && error "dd succeeded"
+	return 0
+}
+run_test 131 "IO vs evict results to IO under staled lock"
+
+test_132() {
+	local before=$(date +%s)
+	local evict
+
+	mount_client $MOUNT2 || error "mount filed"
+
+	rm -f $DIR/$tfile
+	# get a lock on client so that export would reach the stale list
+	$SETSTRIPE -i 0 $DIR/$tfile || error "setstripe failed"
+	dd if=/dev/zero of=$DIR/$tfile bs=4096 count=1 conv=fsync ||
+		error "dd failed"
+
+	#define OBD_FAIL_OST_PAUSE_PUNCH         0x235
+	do_facet ost1 $LCTL set_param fail_val=120 fail_loc=0x80000235
+
+	$TRUNCATE $DIR/$tfile 100 &
+
+	sleep 1
+	dd if=/dev/zero of=$DIR2/$tfile bs=4096 count=1 conv=notrunc ||
+		error "dd failed"
+
+	wait
+	umount_client $MOUNT2
+
+	evict=$(do_facet client $LCTL get_param \
+		osc.$FSNAME-OST0000-osc-*/state | \
+	    awk -F"[ [,]" '/EVICTED ]$/ { if (t<$5) {t=$5;} } END { print t }')
+
+	[ -z "$evict" ] || [[ $evict -le $before ]] ||
+		(do_facet client $LCTL get_param \
+			osc.$FSNAME-OST0000-osc-*/state;
+		    error "eviction happened: $evict before:$before")
+}
+run_test 132 "long punch"
 
 test_132() {
 	local before=$(date +%s)

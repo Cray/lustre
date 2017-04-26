@@ -459,27 +459,65 @@ out:
         return rc;
 }
 
-static void mdt_squash_nodemap_id(struct lu_ucred *ucred,
-				  struct lu_nodemap *nodemap)
-{
-	if (ucred->uc_o_uid == nodemap->nm_squash_uid) {
-		ucred->uc_fsuid = nodemap->nm_squash_uid;
-		ucred->uc_fsgid = nodemap->nm_squash_gid;
-		ucred->uc_cap = 0;
-		ucred->uc_suppgids[0] = -1;
-		ucred->uc_suppgids[1] = -1;
-	}
-}
-
-
-static int old_init_ucred(struct mdt_thread_info *info,
-			  struct mdt_body *body, bool drop_fs_cap)
+static int old_init_ucred_common(struct mdt_thread_info *info,
+				  bool drop_fs_cap)
 {
 	struct lu_ucred		*uc = mdt_ucred(info);
 	struct mdt_device	*mdt = info->mti_mdt;
 	struct md_identity	*identity = NULL;
 	struct lu_nodemap	*nodemap =
 		info->mti_exp->exp_target_data.ted_nodemap;
+
+	if (nodemap == NULL) {
+		CDEBUG(D_SEC, "%s: cli %s/%p nodemap not set.\n",
+		       mdt2obd_dev(mdt)->obd_name,
+		       info->mti_exp->exp_client_uuid.uuid, info->mti_exp);
+		RETURN(-EACCES);
+	}
+
+	if (!is_identity_get_disabled(mdt->mdt_identity_cache)) {
+		identity = mdt_identity_get(mdt->mdt_identity_cache,
+					    uc->uc_fsuid);
+		if (IS_ERR(identity)) {
+			if (unlikely(PTR_ERR(identity) == -EREMCHG ||
+				     uc->uc_cap & CFS_CAP_FS_MASK)) {
+				identity = NULL;
+			} else {
+				CDEBUG(D_SEC, "Deny access without identity: "
+				       "uid %u\n", uc->uc_fsuid);
+				RETURN(-EACCES);
+			}
+		}
+	}
+	uc->uc_identity = identity;
+
+	if (uc->uc_o_uid == nodemap->nm_squash_uid) {
+		uc->uc_fsuid = nodemap->nm_squash_uid;
+		uc->uc_fsgid = nodemap->nm_squash_gid;
+		uc->uc_cap = 0;
+		uc->uc_suppgids[0] = -1;
+		uc->uc_suppgids[1] = -1;
+	}
+
+	/* process root_squash here. */
+	mdt_root_squash(info, mdt_info_req(info)->rq_peer.nid);
+
+	/* remove fs privilege for non-root user. */
+	if (uc->uc_fsuid && drop_fs_cap)
+		uc->uc_cap &= ~CFS_CAP_FS_MASK;
+	uc->uc_valid = UCRED_OLD;
+	ucred_set_jobid(info, uc);
+
+	return 0;
+}
+
+static int old_init_ucred(struct mdt_thread_info *info,
+			  struct mdt_body *body, bool drop_fs_cap)
+{
+	struct lu_ucred		*uc = mdt_ucred(info);
+	struct lu_nodemap	*nodemap =
+		info->mti_exp->exp_target_data.ted_nodemap;
+	int			 rc;
 	ENTRY;
 
 	body->mbo_uid = nodemap_map_id(nodemap, NODEMAP_UID,
@@ -500,44 +538,19 @@ static int old_init_ucred(struct mdt_thread_info *info,
 	uc->uc_suppgids[0] = body->mbo_suppgid;
 	uc->uc_suppgids[1] = -1;
 	uc->uc_ginfo = NULL;
-	if (!is_identity_get_disabled(mdt->mdt_identity_cache)) {
-		identity = mdt_identity_get(mdt->mdt_identity_cache,
-					    uc->uc_fsuid);
-		if (IS_ERR(identity)) {
-			if (unlikely(PTR_ERR(identity) == -EREMCHG)) {
-				identity = NULL;
-			} else {
-				CDEBUG(D_SEC, "Deny access without identity: "
-				       "uid %u\n", uc->uc_fsuid);
-				RETURN(-EACCES);
-			}
-		}
-	}
-	uc->uc_identity = identity;
+	uc->uc_cap = body->mbo_capability;
 
-	mdt_squash_nodemap_id(uc, nodemap);
+	rc = old_init_ucred_common(info, drop_fs_cap);
 
-	/* process root_squash here. */
-	mdt_root_squash(info, mdt_info_req(info)->rq_peer.nid);
-
-	/* remove fs privilege for non-root user. */
-	if (uc->uc_fsuid != 0 && drop_fs_cap)
-		uc->uc_cap = body->mbo_capability & ~CFS_CAP_FS_MASK;
-	else
-		uc->uc_cap = body->mbo_capability;
-	uc->uc_valid = UCRED_OLD;
-	ucred_set_jobid(info, uc);
-
-	RETURN(0);
+	RETURN(rc);
 }
 
 static int old_init_ucred_reint(struct mdt_thread_info *info)
 {
 	struct lu_ucred		*uc = mdt_ucred(info);
-	struct mdt_device	*mdt = info->mti_mdt;
-	struct md_identity	*identity = NULL;
 	struct lu_nodemap	*nodemap =
 		info->mti_exp->exp_target_data.ted_nodemap;
+	int			 rc;
 	ENTRY;
 
 	LASSERT(uc != NULL);
@@ -552,31 +565,9 @@ static int old_init_ucred_reint(struct mdt_thread_info *info)
 	uc->uc_o_gid = uc->uc_o_fsgid = uc->uc_gid = uc->uc_fsgid;
 	uc->uc_ginfo = NULL;
 
-	if (!is_identity_get_disabled(mdt->mdt_identity_cache)) {
-		identity = mdt_identity_get(mdt->mdt_identity_cache,
-					    uc->uc_fsuid);
-		if (IS_ERR(identity)) {
-			if (unlikely(PTR_ERR(identity) == -EREMCHG)) {
-				identity = NULL;
-			} else {
-				CDEBUG(D_SEC, "Deny access without identity: "
-				       "uid %u\n", uc->uc_fsuid);
-				RETURN(-EACCES);
-			}
-		}
-	}
-	uc->uc_identity = identity;
+	rc = old_init_ucred_common(info, true); /* drop_fs_cap = true */
 
-	/* process root_squash here. */
-	mdt_root_squash(info, mdt_info_req(info)->rq_peer.nid);
-
-	/* remove fs privilege for non-root user. */
-	if (uc->uc_fsuid)
-		uc->uc_cap &= ~CFS_CAP_FS_MASK;
-	uc->uc_valid = UCRED_OLD;
-	ucred_set_jobid(info, uc);
-
-	RETURN(0);
+	RETURN(rc);
 }
 
 static inline int __mdt_init_ucred(struct mdt_thread_info *info,
@@ -618,12 +609,18 @@ int mdt_init_ucred_reint(struct mdt_thread_info *info)
 {
         struct ptlrpc_request *req = mdt_info_req(info);
 	struct lu_ucred       *uc  = mdt_ucred(info);
+	struct md_attr        *ma  = &info->mti_attr;
 
 	LASSERT(uc != NULL);
 	if ((uc->uc_valid == UCRED_OLD) || (uc->uc_valid == UCRED_NEW))
 		return 0;
 
-        mdt_exit_ucred(info);
+	/* LU-5564: for normal close request, skip permission check */
+	if (lustre_msg_get_opc(req->rq_reqmsg) == MDS_CLOSE &&
+	    !(ma->ma_attr_flags & MDS_HSM_RELEASE))
+		uc->uc_cap |= CFS_CAP_FS_MASK;
+
+	mdt_exit_ucred(info);
 
         if (!req->rq_auth_gss || req->rq_auth_usr_mdt || !req->rq_user_desc)
                 return old_init_ucred_reint(info);
@@ -971,6 +968,41 @@ int mdt_name_unpack(struct req_capsule *pill,
 	return 0;
 }
 
+static int mdt_file_secctx_unpack(struct req_capsule *pill,
+				  const char **secctx_name,
+				  void **secctx, size_t *secctx_size)
+{
+	const char *name;
+	size_t name_size;
+
+	*secctx_name = NULL;
+	*secctx = NULL;
+	*secctx_size = 0;
+
+	if (!req_capsule_has_field(pill, &RMF_FILE_SECCTX_NAME, RCL_CLIENT) ||
+	    !req_capsule_field_present(pill, &RMF_FILE_SECCTX_NAME, RCL_CLIENT))
+		return 0;
+
+	name_size = req_capsule_get_size(pill, &RMF_FILE_SECCTX_NAME,
+					 RCL_CLIENT);
+	if (name_size == 0)
+		return 0;
+
+	name = req_capsule_client_get(pill, &RMF_FILE_SECCTX_NAME);
+	if (strnlen(name, name_size) != name_size - 1)
+		return -EPROTO;
+
+	if (!req_capsule_has_field(pill, &RMF_FILE_SECCTX, RCL_CLIENT) ||
+	    !req_capsule_field_present(pill, &RMF_FILE_SECCTX, RCL_CLIENT))
+		return -EPROTO;
+
+	*secctx_name = name;
+	*secctx = req_capsule_client_get(pill, &RMF_FILE_SECCTX);
+	*secctx_size = req_capsule_get_size(pill, &RMF_FILE_SECCTX, RCL_CLIENT);
+
+	return 0;
+}
+
 static int mdt_setattr_unpack_rec(struct mdt_thread_info *info)
 {
 	struct lu_ucred		*uc = mdt_ucred(info);
@@ -1220,6 +1252,12 @@ static int mdt_create_unpack(struct mdt_thread_info *info)
 		}
 	}
 
+	rc = mdt_file_secctx_unpack(pill, &sp->sp_cr_file_secctx_name,
+				    &sp->sp_cr_file_secctx,
+				    &sp->sp_cr_file_secctx_size);
+	if (rc < 0)
+		RETURN(rc);
+
 	rc = mdt_dlmreq_unpack(info);
 	RETURN(rc);
 }
@@ -1421,6 +1459,7 @@ static int mdt_open_unpack(struct mdt_thread_info *info)
         struct mdt_reint_record *rr   = &info->mti_rr;
         struct ptlrpc_request   *req  = mdt_info_req(info);
         struct md_op_spec       *sp   = &info->mti_spec;
+	int rc;
         ENTRY;
 
         CLASSERT(sizeof(struct mdt_rec_create) == sizeof(struct mdt_rec_reint));
@@ -1499,7 +1538,11 @@ static int mdt_open_unpack(struct mdt_thread_info *info)
 			rr->rr_eadatalen = MIN_MD_SIZE;
 	}
 
-        RETURN(0);
+	rc = mdt_file_secctx_unpack(pill, &sp->sp_cr_file_secctx_name,
+				    &sp->sp_cr_file_secctx,
+				    &sp->sp_cr_file_secctx_size);
+
+	RETURN(rc);
 }
 
 static int mdt_setxattr_unpack(struct mdt_thread_info *info)

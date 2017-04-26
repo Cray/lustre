@@ -276,7 +276,7 @@ static inline int osp_precreate_near_empty_nolock(const struct lu_env *env,
 
 	/* don't consider new precreation till OST is healty and
 	 * has free space */
-	return ((window - d->opd_pre_reserved < d->opd_pre_grow_count / 2) &&
+	return ((window - d->opd_pre_reserved < d->opd_pre_create_count / 2) &&
 		(d->opd_pre_status == 0));
 }
 
@@ -575,9 +575,9 @@ static int osp_precreate_send(const struct lu_env *env, struct osp_device *d)
 	}
 
 	spin_lock(&d->opd_pre_lock);
-	if (d->opd_pre_grow_count > d->opd_pre_max_grow_count / 2)
-		d->opd_pre_grow_count = d->opd_pre_max_grow_count / 2;
-	grow = d->opd_pre_grow_count;
+	if (d->opd_pre_create_count > d->opd_pre_max_create_count / 2)
+		d->opd_pre_create_count = d->opd_pre_max_create_count / 2;
+	grow = d->opd_pre_create_count;
 	spin_unlock(&d->opd_pre_lock);
 
 	body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
@@ -633,13 +633,13 @@ static int osp_precreate_send(const struct lu_env *env, struct osp_device *d)
 	if (diff < grow) {
 		/* the OST has not managed to create all the
 		 * objects we asked for */
-		d->opd_pre_grow_count = max(diff, OST_MIN_PRECREATE);
-		d->opd_pre_grow_slow = 1;
+		d->opd_pre_create_count = max(diff, OST_MIN_PRECREATE);
+		d->opd_pre_create_slow = 1;
 	} else {
 		/* the OST is able to keep up with the work,
-		 * we could consider increasing grow_count
+		 * we could consider increasing create_count
 		 * next time if needed */
-		d->opd_pre_grow_slow = 0;
+		d->opd_pre_create_slow = 0;
 	}
 
 	body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
@@ -861,10 +861,10 @@ static int osp_precreate_cleanup_orphans(struct lu_env *env,
 	spin_lock(&d->opd_pre_lock);
 	diff = osp_fid_diff(&d->opd_last_used_fid, last_fid);
 	if (diff > 0) {
-		d->opd_pre_grow_count = OST_MIN_PRECREATE + diff;
+		d->opd_pre_create_count = OST_MIN_PRECREATE + diff;
 		d->opd_pre_last_created_fid = d->opd_last_used_fid;
 	} else {
-		d->opd_pre_grow_count = OST_MIN_PRECREATE;
+		d->opd_pre_create_count = OST_MIN_PRECREATE;
 		d->opd_pre_last_created_fid = *last_fid;
 	}
 	/*
@@ -874,7 +874,7 @@ static int osp_precreate_cleanup_orphans(struct lu_env *env,
 	LASSERT(fid_oid(&d->opd_pre_last_created_fid) <=
 		LUSTRE_DATA_SEQ_MAX_WIDTH);
 	d->opd_pre_used_fid = d->opd_pre_last_created_fid;
-	d->opd_pre_grow_slow = 0;
+	d->opd_pre_create_slow = 0;
 	spin_unlock(&d->opd_pre_lock);
 
 	CDEBUG(D_HA, "%s: Got last_id "DFID" from OST, last_created "DFID
@@ -883,10 +883,6 @@ static int osp_precreate_cleanup_orphans(struct lu_env *env,
 out:
 	if (req)
 		ptlrpc_req_finished(req);
-
-	spin_lock(&d->opd_pre_lock);
-	d->opd_pre_recovering = 0;
-	spin_unlock(&d->opd_pre_lock);
 
 	/*
 	 * If rc is zero, the pre-creation window should have been emptied.
@@ -906,6 +902,10 @@ out:
 		} else {
 			wake_up(&d->opd_pre_user_waitq);
 		}
+	} else {
+		spin_lock(&d->opd_pre_lock);
+		d->opd_pre_recovering = 0;
+		spin_unlock(&d->opd_pre_lock);
 	}
 
 	RETURN(rc);
@@ -923,17 +923,8 @@ out:
  * Add a bit of hysteresis so this flag isn't continually flapping,
  * and ensure that new files don't get extremely fragmented due to
  * only a small amount of available space in the filesystem.
- * We want to set the NOSPC flag when there is less than ~0.1% free
- * and clear it when there is at least ~0.2% free space, so:
- *                   avail < ~0.1% max          max = avail + used
- *            1025 * avail < avail + used       used = blocks - free
- *            1024 * avail < used
- *            1024 * avail < blocks - free
- *                   avail < ((blocks - free) >> 10)
- *
- * On very large disk, say 16TB 0.1% will be 16 GB. We don't want to
- * lose that amount of space so in those cases we report no space left
- * if their is less than 1 GB left.
+ * We want to set the ENOSPC when there is less than reserved size
+ * free and clear it when there is at least 2*reserved size free space.
  * the function updates current precreation status used: functional or not
  *
  * \param[in] d		OSP device
@@ -946,42 +937,71 @@ void osp_pre_update_status(struct osp_device *d, int rc)
 {
 	struct obd_statfs	*msfs = &d->opd_statfs;
 	int			 old = d->opd_pre_status;
-	__u64			 used;
+	__u64			 available;
 
 	d->opd_pre_status = rc;
 	if (rc)
 		goto out;
 
 	if (likely(msfs->os_type)) {
-		used = min_t(__u64, (msfs->os_blocks - msfs->os_bfree) >> 10,
-				    1 << 30);
-		if ((msfs->os_ffree < 32) || (msfs->os_bavail < used)) {
+		if (unlikely(d->opd_reserved_mb_high == 0 &&
+			     d->opd_reserved_mb_low == 0)) {
+			/* Use ~0.1% by default to disable object allocation,
+			 * and ~0.2% to enable, size in MB, set both watermark
+			 */
+			spin_lock(&d->opd_pre_lock);
+			if (d->opd_reserved_mb_high == 0 &&
+			    d->opd_reserved_mb_low == 0) {
+				d->opd_reserved_mb_low =
+					((msfs->os_bsize >> 10) *
+					msfs->os_blocks) >> 20;
+				if (d->opd_reserved_mb_low == 0)
+					d->opd_reserved_mb_low = 1;
+				d->opd_reserved_mb_high =
+					(d->opd_reserved_mb_low << 1) + 1;
+			}
+			spin_unlock(&d->opd_pre_lock);
+		}
+		/* in MB */
+		available = (msfs->os_bavail * (msfs->os_bsize >> 10)) >> 10;
+		if (msfs->os_ffree < 32)
+			msfs->os_state |= OS_STATE_ENOINO;
+		else if (msfs->os_ffree > 64)
+			msfs->os_state &= ~OS_STATE_ENOINO;
+
+		if (available < d->opd_reserved_mb_low)
+			msfs->os_state |= OS_STATE_ENOSPC;
+		else if (available > d->opd_reserved_mb_high)
+			msfs->os_state &= ~OS_STATE_ENOSPC;
+		if (msfs->os_state & (OS_STATE_ENOINO | OS_STATE_ENOSPC)) {
 			d->opd_pre_status = -ENOSPC;
 			if (old != -ENOSPC)
-				CDEBUG(D_INFO, "%s: status: "LPU64" blocks, "
-				       LPU64" free, "LPU64" used, "LPU64" "
-				       "avail -> %d: rc = %d\n",
+				CDEBUG(D_INFO, "%s: status: %llu blocks, %llu "
+				       "free, %llu avail, %llu MB avail, %u "
+				       "hwm -> %d: rc = %d\n",
 				       d->opd_obd->obd_name, msfs->os_blocks,
-				       msfs->os_bfree, used, msfs->os_bavail,
+				       msfs->os_bfree, msfs->os_bavail,
+				       available, d->opd_reserved_mb_high,
 				       d->opd_pre_status, rc);
 			CDEBUG(D_INFO,
 			       "non-commited changes: %lu, in progress: %u\n",
 			       d->opd_syn_changes, d->opd_syn_rpc_in_progress);
-		} else if (old == -ENOSPC) {
+		} else if (unlikely(old == -ENOSPC)) {
 			d->opd_pre_status = 0;
 			spin_lock(&d->opd_pre_lock);
-			d->opd_pre_grow_slow = 0;
-			d->opd_pre_grow_count = OST_MIN_PRECREATE;
+			d->opd_pre_create_slow = 0;
+			d->opd_pre_create_count = OST_MIN_PRECREATE;
 			spin_unlock(&d->opd_pre_lock);
 			wake_up(&d->opd_pre_waitq);
-			CDEBUG(D_INFO, "%s: no space: "LPU64" blocks, "LPU64
-			       " free, "LPU64" used, "LPU64" avail -> %d: "
-			       "rc = %d\n", d->opd_obd->obd_name,
-			       msfs->os_blocks, msfs->os_bfree, used,
-			       msfs->os_bavail, d->opd_pre_status, rc);
+
+			CDEBUG(D_INFO, "%s: space available: %llu blocks, %llu"
+			       " free, %llu avail, %lluMB avail, %u lwm"
+			       " -> %d: rc = %d\n", d->opd_obd->obd_name,
+			       msfs->os_blocks, msfs->os_bfree, msfs->os_bavail,
+			       available, d->opd_reserved_mb_low,
+			       d->opd_pre_status, rc);
 		}
 	}
-
 out:
 	wake_up(&d->opd_pre_user_waitq);
 }
@@ -1103,6 +1123,10 @@ static int osp_precreate_thread(void *_arg)
 		 * need to be connected to OST
 		 */
 		while (osp_precreate_running(d)) {
+			if (d->opd_pre_recovering &&
+			    d->opd_imp_connected &&
+			    !d->opd_got_disconnected)
+				break;
 			l_wait_event(d->opd_pre_waitq,
 				     !osp_precreate_running(d) ||
 				     d->opd_new_connection,
@@ -1140,8 +1164,10 @@ static int osp_precreate_thread(void *_arg)
 		 * Clean up orphans or recreate missing objects.
 		 */
 		rc = osp_precreate_cleanup_orphans(&env, d);
-		if (rc != 0)
+		if (rc != 0) {
+			schedule_timeout_interruptible(cfs_time_seconds(1));
 			continue;
+		}
 		/*
 		 * connected, can handle precreates now
 		 */
@@ -1236,6 +1262,7 @@ static int osp_precreate_ready_condition(const struct lu_env *env,
 	if (d->opd_pre_status != 0 &&
 	    d->opd_pre_status != -EAGAIN &&
 	    d->opd_pre_status != -ENODEV &&
+	    d->opd_pre_status != -ENOTCONN &&
 	    d->opd_pre_status != -ENOSPC) {
 		/* DEBUG LU-3230 */
 		if (d->opd_pre_status != -EIO)
@@ -1298,6 +1325,10 @@ int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d)
 		 "Next FID "DFID"\n", PFID(&d->opd_pre_last_created_fid),
 		 PFID(&d->opd_pre_used_fid));
 
+	/* opd_pre_max_create_count 0 to not use specified OST. */
+	if (d->opd_pre_max_create_count == 0)
+		RETURN(-ENOBUFS);
+
 	/*
 	 * wait till:
 	 *  - preallocation is done
@@ -1312,12 +1343,12 @@ int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d)
 		 * increase number of precreations
 		 */
 		precreated = osp_objs_precreated(env, d);
-		if (d->opd_pre_grow_count < d->opd_pre_max_grow_count &&
-		    d->opd_pre_grow_slow == 0 &&
-		    precreated <= (d->opd_pre_grow_count / 4 + 1)) {
+		if (d->opd_pre_create_count < d->opd_pre_max_create_count &&
+		    d->opd_pre_create_slow == 0 &&
+		    precreated <= (d->opd_pre_create_count / 4 + 1)) {
 			spin_lock(&d->opd_pre_lock);
-			d->opd_pre_grow_slow = 1;
-			d->opd_pre_grow_count *= 2;
+			d->opd_pre_create_slow = 1;
+			d->opd_pre_create_count *= 2;
 			spin_unlock(&d->opd_pre_lock);
 		}
 
@@ -1479,6 +1510,13 @@ int osp_object_truncate(const struct lu_env *env, struct dt_object *dt,
 	 * XXX: decide how do we do here with resend
 	 * if we don't resend, then client may see wrong file size
 	 * if we do resend, then MDS thread can get stuck for quite long
+	 * and if we don't resend, then client will also get -EWOULDBLOCK !!
+	 * (see LU-7975 and sanity/test_27F use cases)
+	 * but let's decide not to resend/delay this truncate request to OST
+	 * and allow Client to decide to resend, in a less agressive way from
+	 * after_reply(), by returning -EINPROGRESS instead of
+	 * -EAGAIN/-EWOULDBLOCK upon return from ptlrpc_queue_wait() at the
+	 * end of this routine
 	 */
 	req->rq_no_resend = req->rq_no_delay = 1;
 
@@ -1506,8 +1544,23 @@ int osp_object_truncate(const struct lu_env *env, struct dt_object *dt,
 	ptlrpc_request_set_replen(req);
 
 	rc = ptlrpc_queue_wait(req);
-	if (rc)
-		CERROR("can't punch object: %d\n", rc);
+	if (rc) {
+		/* -EWOULDBLOCK/-EAGAIN means OST is unreachable at the moment
+		 * since we have decided not to resend/delay, but this could
+		 * lead to wrong size to be seen at Client side and even process
+		 * trying to open to exit/fail if not itself handling -EAGAIN.
+		 * So it should be better to return -EINPROGRESS instead and
+		 * leave the decision to resend at Client side in after_reply()
+		 */
+		if (rc == -EWOULDBLOCK) {
+			rc = -EINPROGRESS;
+			CDEBUG(D_HA, "returning -EINPROGRESS instead of "
+			       "-EWOULDBLOCK/-EAGAIN to allow Client to "
+			       "resend\n");
+		} else {
+			CERROR("can't punch object: %d\n", rc);
+		}
+	}
 out:
 	ptlrpc_req_finished(req);
 	if (oa)
@@ -1544,10 +1597,12 @@ int osp_init_precreate(struct osp_device *d)
 	d->opd_pre_last_created_fid.f_oid = 1;
 	d->opd_pre_reserved = 0;
 	d->opd_got_disconnected = 1;
-	d->opd_pre_grow_slow = 0;
-	d->opd_pre_grow_count = OST_MIN_PRECREATE;
-	d->opd_pre_min_grow_count = OST_MIN_PRECREATE;
-	d->opd_pre_max_grow_count = OST_MAX_PRECREATE;
+	d->opd_pre_create_slow = 0;
+	d->opd_pre_create_count = OST_MIN_PRECREATE;
+	d->opd_pre_min_create_count = OST_MIN_PRECREATE;
+	d->opd_pre_max_create_count = OST_MAX_PRECREATE;
+	d->opd_reserved_mb_high = 0;
+	d->opd_reserved_mb_low = 0;
 
 	spin_lock_init(&d->opd_pre_lock);
 	init_waitqueue_head(&d->opd_pre_waitq);
@@ -1564,6 +1619,9 @@ int osp_init_precreate(struct osp_device *d)
 	       (unsigned long long)d->opd_statfs_fresh_till);
 	cfs_timer_init(&d->opd_statfs_timer, osp_statfs_timer_cb, d);
 
+	if (d->opd_storage->dd_rdonly)
+		RETURN(0);
+
 	/*
 	 * start thread handling precreation and statfs updates
 	 */
@@ -1574,6 +1632,7 @@ int osp_init_precreate(struct osp_device *d)
 		RETURN(PTR_ERR(task));
 	}
 
+	d->opd_precreate_init = 1;
 	l_wait_event(d->opd_pre_thread.t_ctl_waitq,
 		     osp_precreate_running(d) || osp_precreate_stopped(d),
 		     &lwi);
@@ -1592,8 +1651,6 @@ int osp_init_precreate(struct osp_device *d)
  */
 void osp_precreate_fini(struct osp_device *d)
 {
-	struct ptlrpc_thread *thread;
-
 	ENTRY;
 
 	cfs_timer_disarm(&d->opd_statfs_timer);
@@ -1601,12 +1658,13 @@ void osp_precreate_fini(struct osp_device *d)
 	if (d->opd_pre == NULL)
 		RETURN_EXIT;
 
-	thread = &d->opd_pre_thread;
+	if (d->opd_precreate_init) {
+		struct ptlrpc_thread *thread = &d->opd_pre_thread;
 
-	thread->t_flags = SVC_STOPPING;
-	wake_up(&d->opd_pre_waitq);
-
-	wait_event(thread->t_ctl_waitq, thread->t_flags & SVC_STOPPED);
+		thread->t_flags = SVC_STOPPING;
+		wake_up(&d->opd_pre_waitq);
+		wait_event(thread->t_ctl_waitq, thread_is_stopped(thread));
+	}
 
 	OBD_FREE_PTR(d->opd_pre);
 	d->opd_pre = NULL;

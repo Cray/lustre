@@ -155,8 +155,13 @@ struct md_op_spec {
                 } sp_ea;
         } u;
 
-        /** Create flag from client: such as MDS_OPEN_CREAT, and others. */
-        __u64      sp_cr_flags;
+	/** Create flag from client: such as MDS_OPEN_CREAT, and others. */
+	__u64      sp_cr_flags;
+
+	/* File security context for creates. */
+	const char	*sp_cr_file_secctx_name; /* (security) xattr name */
+	void		*sp_cr_file_secctx; /* xattr value */
+	size_t		 sp_cr_file_secctx_size; /* xattr value size */
 
 	/** don't create lov objects or llog cookie - this replay */
 	unsigned int no_create:1,
@@ -315,14 +320,6 @@ struct md_object {
         const struct md_object_operations *mo_ops;
         const struct md_dir_operations    *mo_dir_ops;
 };
-
-/* Mark the object to be dead, and can not be accessed anymore.
- * XXX, right now, it will only be used for striped directory to
- * mark the slave stripes dead, when deleting master object. It will be
- * stored in slave LMV EA (see lod_mark_dead_object), which is only
- * temporary, and will be removed later when we have proper way to mark
- * the dead object. */
-#define LUSTRE_SLAVE_DEAD_FL		0x80000000
 
 static inline struct md_device *lu2md_dev(const struct lu_device *d)
 {

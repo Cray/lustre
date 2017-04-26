@@ -49,8 +49,18 @@
 #include <lustre_param.h>
 #include <lustre_fid.h>
 #include <obd_class.h>
+#include <obd.h>
+#include <lustre_net.h>
 #include "osc_internal.h"
 #include "osc_cl_internal.h"
+
+atomic_t osc_pool_req_count;
+unsigned int osc_reqpool_maxreqcount;
+struct ptlrpc_request_pool *osc_rq_pool;
+
+/* max memory used for request pool, unit is MB */
+static unsigned int osc_reqpool_mem_max = 5;
+module_param(osc_reqpool_mem_max, uint, 0444);
 
 struct osc_brw_async_args {
 	struct obdo		 *aa_oa;
@@ -685,7 +695,7 @@ static int osc_destroy(const struct lu_env *env, struct obd_export *exp,
 			rc = l_wait_event_exclusive(cli->cl_destroy_waitq,
 						    osc_can_send_destroy(cli), &lwi);
 			if (rc) {
-				ptlrpc_request_free(req);
+				ptlrpc_req_finished(req);
 				RETURN(rc);
 			}
                 }
@@ -705,7 +715,10 @@ static void osc_announce_cached(struct client_obd *cli, struct obdo *oa,
 
 	oa->o_valid |= bits;
 	spin_lock(&cli->cl_loi_list_lock);
-	oa->o_dirty = cli->cl_dirty_pages << PAGE_CACHE_SHIFT;
+	if (OCD_HAS_FLAG(&cli->cl_import->imp_connect_data, GRANT_PARAM))
+		oa->o_dirty = cli->cl_dirty_grant;
+	else
+		oa->o_dirty = cli->cl_dirty_pages << PAGE_CACHE_SHIFT;
 	if (unlikely(cli->cl_dirty_pages - cli->cl_dirty_transit >
 		     cli->cl_dirty_max_pages)) {
 		CERROR("dirty %lu - %lu > dirty_max %lu\n",
@@ -730,11 +743,22 @@ static void osc_announce_cached(struct client_obd *cli, struct obdo *oa,
 		       cli->cl_dirty_pages, cli->cl_dirty_max_pages);
 		oa->o_undirty = 0;
 	} else {
-		unsigned long max_in_flight = (cli->cl_max_pages_per_rpc <<
-				      PAGE_CACHE_SHIFT) *
-				     (cli->cl_max_rpcs_in_flight + 1);
-		oa->o_undirty = max(cli->cl_dirty_max_pages << PAGE_CACHE_SHIFT,
-				    max_in_flight);
+		unsigned long nrpages;
+
+		nrpages = cli->cl_max_pages_per_rpc;
+		nrpages *= cli->cl_max_rpcs_in_flight + 1;
+		nrpages = max(nrpages, cli->cl_dirty_max_pages);
+		oa->o_undirty = nrpages << PAGE_CACHE_SHIFT;
+		if (OCD_HAS_FLAG(&cli->cl_import->imp_connect_data,
+				 GRANT_PARAM)) {
+			int nrextents;
+
+			/* take extent tax into account when asking for more
+			 * grant space */
+			nrextents = (nrpages + cli->cl_max_extent_pages - 1)  /
+				     cli->cl_max_extent_pages;
+			oa->o_undirty += nrextents * cli->cl_grant_extent_tax;
+		}
         }
 	oa->o_grant = cli->cl_avail_grant + cli->cl_reserved_grant;
         oa->o_dropped = cli->cl_lost_grant;
@@ -742,7 +766,6 @@ static void osc_announce_cached(struct client_obd *cli, struct obdo *oa,
 	spin_unlock(&cli->cl_loi_list_lock);
         CDEBUG(D_CACHE,"dirty: "LPU64" undirty: %u dropped %u grant: "LPU64"\n",
                oa->o_dirty, oa->o_undirty, oa->o_dropped, oa->o_grant);
-
 }
 
 void osc_update_next_shrink(struct client_obd *cli)
@@ -941,11 +964,15 @@ static void osc_init_grant(struct client_obd *cli, struct obd_connect_data *ocd)
 	 * left EVICTED state, then cl_dirty_pages must be 0 already.
 	 */
 	spin_lock(&cli->cl_loi_list_lock);
-	if (cli->cl_import->imp_state == LUSTRE_IMP_EVICTED)
-		cli->cl_avail_grant = ocd->ocd_grant;
-	else
-		cli->cl_avail_grant = ocd->ocd_grant -
-				      (cli->cl_dirty_pages << PAGE_CACHE_SHIFT);
+	cli->cl_avail_grant = ocd->ocd_grant;
+	if (cli->cl_import->imp_state != LUSTRE_IMP_EVICTED) {
+		cli->cl_avail_grant -= cli->cl_reserved_grant;
+		if (OCD_HAS_FLAG(ocd, GRANT_PARAM))
+			cli->cl_avail_grant -= cli->cl_dirty_grant;
+		else
+			cli->cl_avail_grant -=
+					cli->cl_dirty_pages << PAGE_CACHE_SHIFT;
+	}
 
         if (cli->cl_avail_grant < 0) {
 		CWARN("%s: available grant < 0: avail/ocd/dirty %ld/%u/%ld\n",
@@ -956,13 +983,37 @@ static void osc_init_grant(struct client_obd *cli, struct obd_connect_data *ocd)
 		cli->cl_avail_grant = ocd->ocd_grant;
         }
 
-	/* determine the appropriate chunk size used by osc_extent. */
-	cli->cl_chunkbits = max_t(int, PAGE_CACHE_SHIFT, ocd->ocd_blocksize);
+
+	if (OCD_HAS_FLAG(ocd, GRANT_PARAM)) {
+		u64 size;
+		int chunk_mask;
+
+		/* overhead for each extent insertion */
+		cli->cl_grant_extent_tax = ocd->ocd_grant_tax_kb << 10;
+		/* determine the appropriate chunk size used by osc_extent. */
+		cli->cl_chunkbits = max_t(int, PAGE_CACHE_SHIFT,
+					  ocd->ocd_grant_blkbits);
+		/* max_pages_per_rpc must be chunk aligned */
+		chunk_mask = ~((1 << (cli->cl_chunkbits - PAGE_SHIFT)) - 1);
+		cli->cl_max_pages_per_rpc = (cli->cl_max_pages_per_rpc +
+					     ~chunk_mask) & chunk_mask;
+		/* determine maximum extent size, in #pages */
+		size = (u64)ocd->ocd_grant_max_blks << ocd->ocd_grant_blkbits;
+		cli->cl_max_extent_pages = size >> PAGE_CACHE_SHIFT;
+		if (cli->cl_max_extent_pages == 0)
+			cli->cl_max_extent_pages = 1;
+	} else {
+		cli->cl_grant_extent_tax = 0;
+		cli->cl_chunkbits = PAGE_CACHE_SHIFT;
+		cli->cl_max_extent_pages = DT_MAX_BRW_PAGES;
+	}
 	spin_unlock(&cli->cl_loi_list_lock);
 
 	CDEBUG(D_CACHE, "%s, setting cl_avail_grant: %ld cl_lost_grant: %ld."
-		"chunk bits: %d.\n", cli->cl_import->imp_obd->obd_name,
-		cli->cl_avail_grant, cli->cl_lost_grant, cli->cl_chunkbits);
+		"chunk bits: %d cl_max_extent_pages: %d\n",
+		cli->cl_import->imp_obd->obd_name,
+		cli->cl_avail_grant, cli->cl_lost_grant, cli->cl_chunkbits,
+		cli->cl_max_extent_pages);
 
 	if (ocd->ocd_connect_flags & OBD_CONNECT_GRANT_SHRINK &&
 	    list_empty(&cli->cl_grant_shrink_list))
@@ -1142,15 +1193,15 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
         if (OBD_FAIL_CHECK(OBD_FAIL_OSC_BRW_PREP_REQ2))
                 RETURN(-EINVAL); /* Fatal */
 
-        if ((cmd & OBD_BRW_WRITE) != 0) {
-                opc = OST_WRITE;
-                req = ptlrpc_request_alloc_pool(cli->cl_import,
-                                                cli->cl_import->imp_rq_pool,
-                                                &RQF_OST_BRW_WRITE);
-        } else {
-                opc = OST_READ;
-                req = ptlrpc_request_alloc(cli->cl_import, &RQF_OST_BRW_READ);
-        }
+	if ((cmd & OBD_BRW_WRITE) != 0) {
+		opc = OST_WRITE;
+		req = ptlrpc_request_alloc_pool(cli->cl_import,
+						osc_rq_pool,
+						&RQF_OST_BRW_WRITE);
+	} else {
+		opc = OST_READ;
+		req = ptlrpc_request_alloc(cli->cl_import, &RQF_OST_BRW_READ);
+	}
         if (req == NULL)
                 RETURN(-ENOMEM);
 
@@ -1179,8 +1230,11 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
 
 	desc = ptlrpc_prep_bulk_imp(req, page_count,
 		cli->cl_import->imp_connect_data.ocd_brw_size >> LNET_MTU_BITS,
-		opc == OST_WRITE ? BULK_GET_SOURCE : BULK_PUT_SINK,
-		OST_BULK_PORTAL);
+		(opc == OST_WRITE ? PTLRPC_BULK_GET_SOURCE :
+			PTLRPC_BULK_PUT_SINK) |
+			PTLRPC_BULK_BUF_KIOV,
+		OST_BULK_PORTAL,
+		&ptlrpc_bulk_kiov_pin_ops);
 
         if (desc == NULL)
                 GOTO(out, rc = -ENOMEM);
@@ -1227,7 +1281,7 @@ static int osc_brw_prep_request(int cmd, struct client_obd *cli,struct obdo *oa,
                 LASSERT((pga[0]->flag & OBD_BRW_SRVLOCK) ==
                         (pg->flag & OBD_BRW_SRVLOCK));
 
-		ptlrpc_prep_bulk_page_pin(desc, pg->pg, poff, pg->count);
+		desc->bd_frag_ops->add_kiov_frag(desc, pg->pg, poff, pg->count);
                 requested_nob += pg->count;
 
                 if (i > 0 && can_merge_pages(pg_prev, pg)) {
@@ -1802,6 +1856,7 @@ int osc_build_rpc(const struct lu_env *env, struct client_obd *cli,
 	int				page_count = 0;
 	bool				soft_sync = false;
 	int				i;
+	int				grant = 0;
 	int				rc;
 	struct list_head		rpc_list = LIST_HEAD_INIT(rpc_list);
 	struct ost_body			*body;
@@ -1812,6 +1867,7 @@ int osc_build_rpc(const struct lu_env *env, struct client_obd *cli,
 	list_for_each_entry(ext, ext_list, oe_link) {
 		LASSERT(ext->oe_state == OES_RPC);
 		mem_tight |= ext->oe_memalloc;
+		grant += ext->oe_grants;
 		list_for_each_entry(oap, &ext->oe_pages, oap_pending_item) {
 			++page_count;
 			list_add_tail(&oap->oap_rpc_item, &rpc_list);
@@ -1876,6 +1932,9 @@ int osc_build_rpc(const struct lu_env *env, struct client_obd *cli,
 		CERROR("cl_req_prep failed: %d\n", rc);
 		GOTO(out, rc);
 	}
+
+	if (cmd == OBD_BRW_WRITE)
+		oa->o_grant_used = grant;
 
 	sort_brw_pages(pga, page_count);
 	rc = osc_brw_prep_request(cmd, cli, oa, NULL, page_count,
@@ -1983,17 +2042,11 @@ out:
 	RETURN(rc);
 }
 
-static int osc_set_lock_data_with_check(struct ldlm_lock *lock,
-                                        struct ldlm_enqueue_info *einfo)
+static int osc_set_lock_data(struct ldlm_lock *lock, void *data)
 {
-        void *data = einfo->ei_cbdata;
         int set = 0;
 
         LASSERT(lock != NULL);
-        LASSERT(lock->l_blocking_ast == einfo->ei_cb_bl);
-        LASSERT(lock->l_resource->lr_type == einfo->ei_type);
-        LASSERT(lock->l_completion_ast == einfo->ei_cb_cp);
-        LASSERT(lock->l_glimpse_ast == einfo->ei_cb_gl);
 
         lock_res_and_lock(lock);
 
@@ -2005,21 +2058,6 @@ static int osc_set_lock_data_with_check(struct ldlm_lock *lock,
 	unlock_res_and_lock(lock);
 
 	return set;
-}
-
-static int osc_set_data_with_check(struct lustre_handle *lockh,
-                                   struct ldlm_enqueue_info *einfo)
-{
-        struct ldlm_lock *lock = ldlm_handle2lock(lockh);
-        int set = 0;
-
-        if (lock != NULL) {
-                set = osc_set_lock_data_with_check(lock, einfo);
-                LDLM_LOCK_PUT(lock);
-        } else
-                CERROR("lockh %p, data %p - client evicted?\n",
-                       lockh, einfo->ei_cbdata);
-        return set;
 }
 
 static int osc_enqueue_fini(struct ptlrpc_request *req,
@@ -2200,7 +2238,7 @@ int osc_enqueue_base(struct obd_export *exp, struct ldlm_res_id *res_id,
 			ldlm_lock_decref(&lockh, mode);
 			LDLM_LOCK_PUT(matched);
 			RETURN(rc);
-		} else if (osc_set_lock_data_with_check(matched, einfo)) {
+		} else if (osc_set_lock_data(matched, einfo->ei_cbdata)) {
 			*flags |= LDLM_FL_LVB_READY;
 
 			/* We already have a lock, and it's referenced. */
@@ -2216,7 +2254,7 @@ int osc_enqueue_base(struct obd_export *exp, struct ldlm_res_id *res_id,
 	}
 
 no_match:
-	if (*flags & LDLM_FL_TEST_LOCK)
+	if (*flags & (LDLM_FL_TEST_LOCK | LDLM_FL_MATCH_LOCK))
 		RETURN(-ENOLCK);
 
 	if (intent) {
@@ -2311,21 +2349,20 @@ int osc_match_base(struct obd_export *exp, struct ldlm_res_id *res_id,
                 rc |= LCK_PW;
         rc = ldlm_lock_match(obd->obd_namespace, lflags,
                              res_id, type, policy, rc, lockh, unref);
-        if (rc) {
-                if (data != NULL) {
-                        if (!osc_set_data_with_check(lockh, data)) {
-                                if (!(lflags & LDLM_FL_TEST_LOCK))
-                                        ldlm_lock_decref(lockh, rc);
-                                RETURN(0);
-                        }
-                }
-                if (!(lflags & LDLM_FL_TEST_LOCK) && mode != rc) {
-                        ldlm_lock_addref(lockh, LCK_PR);
-                        ldlm_lock_decref(lockh, LCK_PW);
-                }
-                RETURN(rc);
-        }
-        RETURN(rc);
+	if (rc == 0 || lflags & LDLM_FL_TEST_LOCK)
+		RETURN(rc);
+
+	if (data != NULL) {
+		struct ldlm_lock *lock = ldlm_handle2lock(lockh);
+
+		LASSERT(lock != NULL);
+		if (!osc_set_lock_data(lock, data)) {
+			ldlm_lock_decref(lockh, rc);
+			rc = 0;
+		}
+		LDLM_LOCK_PUT(lock);
+	}
+	RETURN(rc);
 }
 
 static int osc_statfs_interpret(const struct lu_env *env,
@@ -2638,11 +2675,15 @@ static int osc_reconnect(const struct lu_env *env,
 
         if (data != NULL && (data->ocd_connect_flags & OBD_CONNECT_GRANT)) {
                 long lost_grant;
+		long grant;
 
 		spin_lock(&cli->cl_loi_list_lock);
-		data->ocd_grant = (cli->cl_avail_grant +
-				  (cli->cl_dirty_pages << PAGE_CACHE_SHIFT)) ?:
-				  2 * cli_brw_size(obd);
+		grant = cli->cl_avail_grant + cli->cl_reserved_grant;
+		if (data->ocd_connect_flags & OBD_CONNECT_GRANT_PARAM)
+			grant += cli->cl_dirty_grant;
+		else
+			grant += cli->cl_dirty_pages << PAGE_CACHE_SHIFT;
+		data->ocd_grant = grant ? : 2 * cli_brw_size(obd);
 		lost_grant = cli->cl_lost_grant;
 		cli->cl_lost_grant = 0;
 		spin_unlock(&cli->cl_loi_list_lock);
@@ -2698,7 +2739,11 @@ static int osc_ldlm_resource_invalidate(struct cfs_hash *hs,
 			osc = lock->l_ast_data;
 			cl_object_get(osc2cl(osc), CL_OBJECT_REF_INVAL);
 		}
-		lock->l_ast_data = NULL;
+
+		/* clear LDLM_FL_CLEANED flag to make sure it will be canceled
+		 * by the 2nd round of ldlm_namespace_clean() call in
+		 * osc_import_event(). */
+		ldlm_clear_cleaned(lock);
 	}
 	unlock_res(res);
 
@@ -2736,7 +2781,7 @@ static int osc_import_event(struct obd_device *obd,
         case IMP_EVENT_INVALIDATE: {
                 struct ldlm_namespace *ns = obd->obd_namespace;
                 struct lu_env         *env;
-                int                    refcheck;
+		__u16                  refcheck;
 
 		ldlm_namespace_cleanup(ns, LDLM_FL_LOCAL_ONLY);
 
@@ -2746,7 +2791,7 @@ static int osc_import_event(struct obd_device *obd,
 
 			cfs_hash_for_each_nolock(ns->ns_rs_hash,
 						 osc_ldlm_resource_invalidate,
-						 env);
+						 env, 0);
 			cl_env_put(env, &refcheck);
 
 			ldlm_namespace_cleanup(ns, LDLM_FL_LOCAL_ONLY);
@@ -2822,6 +2867,9 @@ int osc_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
 	struct obd_type	  *type;
 	void		  *handler;
 	int		   rc;
+	int		   adding;
+	int		   added;
+	int		   req_count;
 	ENTRY;
 
 	rc = ptlrpcd_addref();
@@ -2878,15 +2926,20 @@ int osc_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
 		ptlrpc_lprocfs_register_obd(obd);
 	}
 
-	/* We need to allocate a few requests more, because
-	 * brw_interpret tries to create new requests before freeing
-	 * previous ones, Ideally we want to have 2x max_rpcs_in_flight
-	 * reserved, but I'm afraid that might be too much wasted RAM
-	 * in fact, so 2 is just my guess and still should work. */
-	cli->cl_import->imp_rq_pool =
-		ptlrpc_init_rq_pool(cli->cl_max_rpcs_in_flight + 2,
-				    OST_MAXREQSIZE,
-				    ptlrpc_add_rqs_to_pool);
+	/*
+	 * We try to control the total number of requests with a upper limit
+	 * osc_reqpool_maxreqcount. There might be some race which will cause
+	 * over-limit allocation, but it is fine.
+	 */
+	req_count = atomic_read(&osc_pool_req_count);
+	if (req_count < osc_reqpool_maxreqcount) {
+		adding = cli->cl_max_rpcs_in_flight + 2;
+		if (req_count + adding > osc_reqpool_maxreqcount)
+			adding = osc_reqpool_maxreqcount - req_count;
+
+		added = ptlrpc_add_rqs_to_pool(osc_rq_pool, adding);
+		atomic_add(added, &osc_pool_req_count);
+	}
 
 	INIT_LIST_HEAD(&cli->cl_grant_shrink_list);
 	ns_register_cancel(obd->obd_namespace, osc_cancel_weight);
@@ -2973,12 +3026,12 @@ int osc_cleanup(struct obd_device *obd)
 	}
 
         /* free memory of osc quota cache */
-        osc_quota_cleanup(obd);
+	osc_quota_cleanup(obd);
 
-        rc = client_obd_cleanup(obd);
+	rc = client_obd_cleanup(obd);
 
-        ptlrpcd_decref();
-        RETURN(rc);
+	ptlrpcd_decref();
+	RETURN(rc);
 }
 
 int osc_process_config_base(struct obd_device *obd, struct lustre_cfg *lcfg)
@@ -3022,7 +3075,10 @@ static int __init osc_init(void)
 {
 	bool enable_proc = true;
 	struct obd_type *type;
+	unsigned int reqpool_size;
+	unsigned int reqsize;
 	int rc;
+
 	ENTRY;
 
         /* print an address of _any_ initialized kernel symbol from this
@@ -3040,11 +3096,39 @@ static int __init osc_init(void)
 
 	rc = class_register_type(&osc_obd_ops, NULL, enable_proc, NULL,
 				 LUSTRE_OSC_NAME, &osc_device_type);
-        if (rc) {
-                lu_kmem_fini(osc_caches);
-                RETURN(rc);
-        }
+	if (rc)
+		GOTO(out_kmem, rc);
 
+	/* This is obviously too much memory, only prevent overflow here */
+	if (osc_reqpool_mem_max >= 1 << 12 || osc_reqpool_mem_max == 0)
+		GOTO(out_type, rc = -EINVAL);
+
+	reqpool_size = osc_reqpool_mem_max << 20;
+
+	reqsize = 1;
+	while (reqsize < OST_IO_MAXREQSIZE)
+		reqsize = reqsize << 1;
+
+	/*
+	 * We don't enlarge the request count in OSC pool according to
+	 * cl_max_rpcs_in_flight. The allocation from the pool will only be
+	 * tried after normal allocation failed. So a small OSC pool won't
+	 * cause much performance degression in most of cases.
+	 */
+	osc_reqpool_maxreqcount = reqpool_size / reqsize;
+
+	atomic_set(&osc_pool_req_count, 0);
+	osc_rq_pool = ptlrpc_init_rq_pool(0, OST_IO_MAXREQSIZE,
+					  ptlrpc_add_rqs_to_pool);
+
+	if (osc_rq_pool != NULL)
+		GOTO(out, rc);
+	rc = -ENOMEM;
+out_type:
+	class_unregister_type(LUSTRE_OSC_NAME);
+out_kmem:
+	lu_kmem_fini(osc_caches);
+out:
 	RETURN(rc);
 }
 
@@ -3052,9 +3136,10 @@ static void /*__exit*/ osc_exit(void)
 {
 	class_unregister_type(LUSTRE_OSC_NAME);
 	lu_kmem_fini(osc_caches);
+	ptlrpc_free_rq_pool(osc_rq_pool);
 }
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Object Storage Client (OSC)");
 MODULE_LICENSE("GPL");
 

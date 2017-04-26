@@ -231,6 +231,29 @@ int __osd_object_attr_get(const struct lu_env *env, struct osd_device *o,
 	la->la_flags = attrs_zfs2fs(osa->flags);
 	la->la_size = osa->size;
 
+	/* Try to get extra flag from LMA. Right now, only LMAI_ORPHAN
+	 * flags is stored in LMA, and it is only for orphan directory */
+	if (S_ISDIR(la->la_mode) && dt_object_exists(&obj->oo_dt)) {
+		struct osd_thread_info *info = osd_oti_get(env);
+		struct lustre_mdt_attrs *lma;
+		struct lu_buf buf;
+
+		lma = (struct lustre_mdt_attrs *)info->oti_buf;
+		buf.lb_buf = lma;
+		buf.lb_len = sizeof(info->oti_buf);
+		rc = osd_xattr_get(env, &obj->oo_dt, &buf, XATTR_NAME_LMA,
+				   BYPASS_CAPA);
+		if (rc > 0) {
+			rc = 0;
+			lma->lma_incompat = le32_to_cpu(lma->lma_incompat);
+			obj->oo_lma_flags =
+				lma_to_lustre_flags(lma->lma_incompat);
+
+		} else if (rc == -ENODATA) {
+			rc = 0;
+		}
+	}
+
 	if (S_ISCHR(la->la_mode) || S_ISBLK(la->la_mode)) {
 		rc = -sa_lookup(sa_hdl, SA_ZPL_RDEV(o), &osa->rdev, 8);
 		if (rc)
@@ -393,6 +416,9 @@ static int osd_object_init(const struct lu_env *env, struct lu_object *l,
 		RETURN(0);
 	}
 
+	if (conf != NULL && conf->loc_flags & LOC_F_NEW)
+		GOTO(out, rc = 0);
+
 	rc = osd_fid_lookup(env, osd, lu_object_fid(l), &oid);
 	if (rc == 0) {
 		LASSERT(obj->oo_db == NULL);
@@ -485,7 +511,6 @@ static int osd_declare_object_destroy(const struct lu_env *env,
 				      struct dt_object *dt,
 				      struct thandle *th)
 {
-	char			*buf = osd_oti_get(env)->oti_str;
 	const struct lu_fid	*fid = lu_object_fid(&dt->do_lu);
 	struct osd_object	*obj = osd_dt_obj(dt);
 	struct osd_device	*osd = osd_obj2dev(obj);
@@ -495,7 +520,9 @@ static int osd_declare_object_destroy(const struct lu_env *env,
 	ENTRY;
 
 	LASSERT(th != NULL);
-	LASSERT(dt_object_exists(dt));
+
+	if (!dt_object_exists(dt))
+		RETURN(0);
 
 	oh = container_of0(th, struct osd_thandle, ot_super);
 	LASSERT(oh->ot_tx != NULL);
@@ -504,15 +531,12 @@ static int osd_declare_object_destroy(const struct lu_env *env,
 	__osd_declare_object_destroy(env, obj, oh);
 
 	/* declare that we'll remove object from fid-dnode mapping */
-	zapid = osd_get_name_n_idx(env, osd, fid, buf);
-	dmu_tx_hold_bonus(oh->ot_tx, zapid);
-	dmu_tx_hold_zap(oh->ot_tx, zapid, 0, buf);
+	zapid = osd_get_name_n_idx(env, osd, fid, NULL, 0);
+	dmu_tx_hold_zap(oh->ot_tx, zapid, FALSE, NULL);
 
 	/* declare that we'll remove object from inode accounting ZAPs */
-	dmu_tx_hold_bonus(oh->ot_tx, osd->od_iusr_oid);
-	dmu_tx_hold_zap(oh->ot_tx, osd->od_iusr_oid, 0, buf);
-	dmu_tx_hold_bonus(oh->ot_tx, osd->od_igrp_oid);
-	dmu_tx_hold_zap(oh->ot_tx, osd->od_igrp_oid, 0, buf);
+	dmu_tx_hold_zap(oh->ot_tx, osd->od_iusr_oid, FALSE, NULL);
+	dmu_tx_hold_zap(oh->ot_tx, osd->od_igrp_oid, FALSE, NULL);
 
 	/* one less inode */
 	rc = osd_declare_quota(env, osd, obj->oo_attr.la_uid,
@@ -586,7 +610,8 @@ static int osd_object_destroy(const struct lu_env *env,
 			      struct dt_object *dt,
 			      struct thandle *th)
 {
-	char			*buf = osd_oti_get(env)->oti_str;
+	struct osd_thread_info	*info = osd_oti_get(env);
+	char			*buf = info->oti_str;
 	struct osd_object	*obj = osd_dt_obj(dt);
 	struct osd_device	*osd = osd_obj2dev(obj);
 	const struct lu_fid	*fid = lu_object_fid(&dt->do_lu);
@@ -603,7 +628,7 @@ static int osd_object_destroy(const struct lu_env *env,
 	LASSERT(oh != NULL);
 	LASSERT(oh->ot_tx != NULL);
 
-	zapid = osd_get_name_n_idx(env, osd, fid, buf);
+	zapid = osd_get_name_n_idx(env, osd, fid, buf, sizeof(info->oti_str));
 
 	/* remove obj ref from index dir (it depends) */
 	rc = -zap_remove(osd->od_os, zapid, buf, oh->ot_tx);
@@ -741,12 +766,16 @@ static int osd_attr_get(const struct lu_env *env,
 	uint64_t		 blocks;
 	uint32_t		 blksize;
 
-	LASSERT(dt_object_exists(dt));
+	if (unlikely(!dt_object_exists(dt)))
+		return -ENOENT;
+
 	LASSERT(osd_invariant(obj));
 	LASSERT(obj->oo_db);
 
 	read_lock(&obj->oo_attr_lock);
 	*attr = obj->oo_attr;
+	if (obj->oo_lma_flags & LUSTRE_ORPHAN_FL)
+		attr->la_flags |= LUSTRE_ORPHAN_FL;
 	read_unlock(&obj->oo_attr_lock);
 
 	/* with ZFS_DEBUG zrl_add_debug() called by DB_DNODE_ENTER()
@@ -836,13 +865,14 @@ static int osd_declare_attr_set(const struct lu_env *env,
 				struct thandle *handle)
 {
 	struct osd_thread_info	*info = osd_oti_get(env);
-	char			*buf = osd_oti_get(env)->oti_str;
 	struct osd_object	*obj = osd_dt_obj(dt);
 	struct osd_device	*osd = osd_obj2dev(obj);
+	dmu_tx_hold_t		*txh;
 	struct osd_thandle	*oh;
 	uint64_t		 bspace;
 	uint32_t		 blksize;
 	int			 rc;
+	bool			 found;
 	ENTRY;
 
 	if (!dt_object_exists(dt)) {
@@ -857,17 +887,42 @@ static int osd_declare_attr_set(const struct lu_env *env,
 
 	LASSERT(obj->oo_sa_hdl != NULL);
 	LASSERT(oh->ot_tx != NULL);
-	dmu_tx_hold_sa(oh->ot_tx, obj->oo_sa_hdl, 0);
+	/* regular attributes are part of the bonus buffer */
+	/* let's check whether this object is already part of
+	 * transaction.. */
+	found = false;
+	for (txh = list_head(&oh->ot_tx->tx_holds); txh;
+	     txh = list_next(&oh->ot_tx->tx_holds, txh)) {
+		if (txh->txh_dnode == NULL)
+			continue;
+		if (txh->txh_dnode->dn_object != obj->oo_db->db_object)
+			continue;
+		/* this object is part of the transaction already
+		 * we don't need to declare bonus again */
+		found = true;
+		break;
+	}
+	if (!found)
+		dmu_tx_hold_bonus(oh->ot_tx, obj->oo_db->db_object);
 	if (oh->ot_tx->tx_err != 0)
 		RETURN(-oh->ot_tx->tx_err);
 
-	sa_object_size(obj->oo_sa_hdl, &blksize, &bspace);
-	bspace = toqb(bspace * blksize);
+	if (attr && attr->la_valid & LA_FLAGS) {
+		/* LMA is usually a part of bonus, no need to declare
+		 * anything else */
+	}
+ 
+	if (attr && (attr->la_valid & (LA_UID | LA_GID))) {
+		sa_object_size(obj->oo_sa_hdl, &blksize, &bspace);
+		bspace = toqb(bspace * blksize);
+	}
+
+	__osd_xattr_declare_set(env, obj, sizeof(struct lustre_mdt_attrs),
+				XATTR_NAME_LMA, oh);
 
 	if (attr && attr->la_valid & LA_UID) {
 		/* account for user inode tracking ZAP update */
-		dmu_tx_hold_bonus(oh->ot_tx, osd->od_iusr_oid);
-		dmu_tx_hold_zap(oh->ot_tx, osd->od_iusr_oid, TRUE, buf);
+		dmu_tx_hold_zap(oh->ot_tx, osd->od_iusr_oid, FALSE, NULL);
 
 		/* quota enforcement for user */
 		if (attr->la_uid != obj->oo_attr.la_uid) {
@@ -881,8 +936,7 @@ static int osd_declare_attr_set(const struct lu_env *env,
 	}
 	if (attr && attr->la_valid & LA_GID) {
 		/* account for user inode tracking ZAP update */
-		dmu_tx_hold_bonus(oh->ot_tx, osd->od_igrp_oid);
-		dmu_tx_hold_zap(oh->ot_tx, osd->od_igrp_oid, TRUE, buf);
+		dmu_tx_hold_zap(oh->ot_tx, osd->od_igrp_oid, FALSE, NULL);
 
 		/* quota enforcement for group */
 		if (attr->la_gid != obj->oo_attr.la_gid) {
@@ -909,10 +963,11 @@ static int osd_attr_set(const struct lu_env *env, struct dt_object *dt,
 			const struct lu_attr *la, struct thandle *handle,
 			struct lustre_capa *capa)
 {
+	struct osd_thread_info	*info = osd_oti_get(env);
 	struct osd_object	*obj = osd_dt_obj(dt);
 	struct osd_device	*osd = osd_obj2dev(obj);
 	struct osd_thandle	*oh;
-	struct osa_attr		*osa = &osd_oti_get(env)->oti_osa;
+	struct osa_attr		*osa = &info->oti_osa;
 	sa_bulk_attr_t		*bulk;
 	__u64			 valid = la->la_valid;
 	int			 cnt;
@@ -933,8 +988,50 @@ static int osd_attr_set(const struct lu_env *env, struct dt_object *dt,
 	if (!S_ISREG(dt->do_lu.lo_header->loh_attr))
 		valid &= ~(LA_SIZE | LA_BLOCKS);
 
+	if (valid & LA_CTIME && la->la_ctime == obj->oo_attr.la_ctime)
+		valid &= ~LA_CTIME;
+
+	if (valid & LA_MTIME && la->la_mtime == obj->oo_attr.la_mtime)
+		valid &= ~LA_MTIME;
+
+	if (valid & LA_ATIME && la->la_atime == obj->oo_attr.la_atime)
+		valid &= ~LA_ATIME;
+
 	if (valid == 0)
 		RETURN(0);
+
+	if (valid & LA_FLAGS) {
+		struct lustre_mdt_attrs *lma;
+		struct lu_buf buf;
+
+		if (la->la_flags & LUSTRE_LMA_FL_MASKS) {
+			CLASSERT(sizeof(info->oti_buf) >= sizeof(*lma));
+			lma = (struct lustre_mdt_attrs *)&info->oti_buf;
+			buf.lb_buf = lma;
+			buf.lb_len = sizeof(info->oti_buf);
+			rc = osd_xattr_get(env, &obj->oo_dt, &buf,
+					   XATTR_NAME_LMA, capa);
+			if (rc > 0) {
+				lma->lma_incompat =
+					le32_to_cpu(lma->lma_incompat);
+				lma->lma_incompat |=
+					lustre_to_lma_flags(la->la_flags);
+				lma->lma_incompat =
+					cpu_to_le32(lma->lma_incompat);
+				buf.lb_buf = lma;
+				buf.lb_len = sizeof(*lma);
+				rc = osd_xattr_set_internal(env, obj, &buf,
+							    XATTR_NAME_LMA,
+							    LU_XATTR_REPLACE,
+							    oh, capa);
+			}
+			if (rc < 0) {
+				CWARN("%s: failed to set LMA flags: rc = %d\n",
+				       osd->od_svname, rc);
+				RETURN(rc);
+			}
+		}
+	}
 
 	OBD_ALLOC(bulk, sizeof(sa_bulk_attr_t) * 10);
 	if (bulk == NULL)
@@ -1062,13 +1159,12 @@ static int osd_declare_object_create(const struct lu_env *env,
 				     struct dt_object_format *dof,
 				     struct thandle *handle)
 {
-	char			*buf = osd_oti_get(env)->oti_str;
 	const struct lu_fid	*fid = lu_object_fid(&dt->do_lu);
 	struct osd_object	*obj = osd_dt_obj(dt);
 	struct osd_device	*osd = osd_obj2dev(obj);
 	struct osd_thandle	*oh;
 	uint64_t		 zapid;
-	int			 rc;
+	int			 rc, dnode_size;
 	ENTRY;
 
 	LASSERT(dof);
@@ -1088,18 +1184,26 @@ static int osd_declare_object_create(const struct lu_env *env,
 	oh = container_of0(handle, struct osd_thandle, ot_super);
 	LASSERT(oh->ot_tx != NULL);
 
+	/* this is the minimum set of EAs on every Lustre object */
+	obj->oo_ea_in_bonus = ZFS_SA_BASE_ATTR_SIZE +
+				sizeof(__u64) + /* VBR VERSION */
+				sizeof(struct lustre_mdt_attrs); /* LMA */
+	/* reserve 32 bytes for extra stuff like ACLs */
+	dnode_size = size_roundup_power2(obj->oo_ea_in_bonus + 32);
+
 	switch (dof->dof_type) {
 		case DFT_DIR:
 			dt->do_index_ops = &osd_dir_ops;
 		case DFT_INDEX:
 			/* for zap create */
-			dmu_tx_hold_zap(oh->ot_tx, DMU_NEW_OBJECT, 1, NULL);
+			dmu_tx_hold_zap(oh->ot_tx, DMU_NEW_OBJECT, FALSE, NULL);
+			dmu_tx_hold_sa_create(oh->ot_tx, dnode_size);
 			break;
 		case DFT_REGULAR:
 		case DFT_SYM:
 		case DFT_NODE:
 			/* first, we'll create new object */
-			dmu_tx_hold_bonus(oh->ot_tx, DMU_NEW_OBJECT);
+			dmu_tx_hold_sa_create(oh->ot_tx, dnode_size);
 			break;
 
 		default:
@@ -1108,20 +1212,12 @@ static int osd_declare_object_create(const struct lu_env *env,
 	}
 
 	/* and we'll add it to some mapping */
-	zapid = osd_get_name_n_idx(env, osd, fid, buf);
-	dmu_tx_hold_bonus(oh->ot_tx, zapid);
-	dmu_tx_hold_zap(oh->ot_tx, zapid, TRUE, buf);
+	zapid = osd_get_name_n_idx(env, osd, fid, NULL, 0);
+	dmu_tx_hold_zap(oh->ot_tx, zapid, TRUE, NULL);
 
 	/* we will also update inode accounting ZAPs */
-	dmu_tx_hold_bonus(oh->ot_tx, osd->od_iusr_oid);
-	dmu_tx_hold_zap(oh->ot_tx, osd->od_iusr_oid, TRUE, buf);
-	dmu_tx_hold_bonus(oh->ot_tx, osd->od_igrp_oid);
-	dmu_tx_hold_zap(oh->ot_tx, osd->od_igrp_oid, TRUE, buf);
-
-	dmu_tx_hold_sa_create(oh->ot_tx, ZFS_SA_BASE_ATTR_SIZE);
-
-	__osd_xattr_declare_set(env, obj, sizeof(struct lustre_mdt_attrs),
-				XATTR_NAME_LMA, oh);
+	dmu_tx_hold_zap(oh->ot_tx, osd->od_iusr_oid, FALSE, NULL);
+	dmu_tx_hold_zap(oh->ot_tx, osd->od_igrp_oid, FALSE, NULL);
 
 	rc = osd_declare_quota(env, osd, attr->la_uid, attr->la_gid, 1, oh,
 			       false, NULL, false);
@@ -1129,11 +1225,10 @@ static int osd_declare_object_create(const struct lu_env *env,
 }
 
 int __osd_attr_init(const struct lu_env *env, struct osd_device *osd,
-		    uint64_t oid, dmu_tx_t *tx, struct lu_attr *la,
-		    uint64_t parent)
+		    sa_handle_t *sa_hdl, dmu_tx_t *tx,
+		    struct lu_attr *la, uint64_t parent)
 {
 	sa_bulk_attr_t	*bulk;
-	sa_handle_t	*sa_hdl;
 	struct osa_attr	*osa = &osd_oti_get(env)->oti_osa;
 	uint64_t	 gen;
 	uint64_t	 crtime[2];
@@ -1141,9 +1236,10 @@ int __osd_attr_init(const struct lu_env *env, struct osd_device *osd,
 	int		 cnt;
 	int		 rc;
 
-	gethrestime(&now);
-	gen = dmu_tx_get_txg(tx);
+	LASSERT(sa_hdl);
 
+	gen = dmu_tx_get_txg(tx);
+	gethrestime(&now);
 	ZFS_TIME_ENCODE(&now, crtime);
 
 	osa->atime[0] = la->la_atime;
@@ -1156,11 +1252,6 @@ int __osd_attr_init(const struct lu_env *env, struct osd_device *osd,
 	osa->nlink = la->la_nlink;
 	osa->flags = attrs_fs2zfs(la->la_flags);
 	osa->size  = la->la_size;
-
-	/* Now add in all of the "SA" attributes */
-	rc = -sa_handle_get(osd->od_os, oid, NULL, SA_HDL_PRIVATE, &sa_hdl);
-	if (rc)
-		return rc;
 
 	OBD_ALLOC(bulk, sizeof(sa_bulk_attr_t) * 13);
 	if (bulk == NULL) {
@@ -1196,7 +1287,6 @@ int __osd_attr_init(const struct lu_env *env, struct osd_device *osd,
 
 	OBD_FREE(bulk, sizeof(sa_bulk_attr_t) * 13);
 out:
-	sa_handle_destroy(sa_hdl);
 	return rc;
 }
 
@@ -1205,34 +1295,29 @@ out:
  * dmu_tx_hold_bonus(tx, DMU_NEW_OBJECT) called and then assigned
  * to a transaction group.
  */
-int __osd_object_create(const struct lu_env *env, struct osd_device *osd,
-			dmu_buf_t **dbp, dmu_tx_t *tx, struct lu_attr *la,
-			uint64_t parent)
+int __osd_object_create(const struct lu_env *env, struct osd_object *obj,
+			dmu_buf_t **dbp, dmu_tx_t *tx, struct lu_attr *la)
 {
-	uint64_t oid;
-	int	 rc;
+	uint64_t	     oid;
+	int		     rc;
+	struct osd_device   *osd = osd_obj2dev(obj);
+	const struct lu_fid *fid = lu_object_fid(&obj->oo_dt.do_lu);
+	dmu_object_type_t    type = DMU_OT_PLAIN_FILE_CONTENTS;
 
-	/* Assert that the transaction has been assigned to a
-	   transaction group. */
-	LASSERT(tx->tx_txg != 0);
+	/* Use DMU_OTN_UINT8_METADATA for local objects so their data blocks
+	 * would get an additional ditto copy */
+	if (unlikely(S_ISREG(la->la_mode) &&
+		     fid_seq_is_local_file(fid_seq(fid))))
+		type = DMU_OTN_UINT8_METADATA;
 
-	/* Create a new DMU object. */
-	oid = dmu_object_alloc(osd->od_os, DMU_OT_PLAIN_FILE_CONTENTS, 0,
-			       DMU_OT_SA, DN_MAX_BONUSLEN, tx);
+	/* Create a new DMU object using the default dnode size. */
+	oid = osd_dmu_object_alloc(osd->od_os, type, 0, 0, tx);
 	rc = -sa_buf_hold(osd->od_os, oid, osd_obj_tag, dbp);
 	LASSERTF(rc == 0, "sa_buf_hold "LPU64" failed: %d\n", oid, rc);
 
 	LASSERT(la->la_valid & LA_MODE);
 	la->la_size = 0;
 	la->la_nlink = 1;
-
-	rc = __osd_attr_init(env, osd, oid, tx, la, parent);
-	if (rc != 0) {
-		sa_buf_rele(*dbp, osd_obj_tag);
-		*dbp = NULL;
-		dmu_object_free(osd->od_os, oid, tx);
-		return rc;
-	}
 
 	return 0;
 }
@@ -1249,7 +1334,7 @@ int __osd_object_create(const struct lu_env *env, struct osd_device *osd,
  * a conversion from the different internal ZAP hash formats being used. */
 int __osd_zap_create(const struct lu_env *env, struct osd_device *osd,
 		     dmu_buf_t **zap_dbp, dmu_tx_t *tx,
-		     struct lu_attr *la, uint64_t parent, zap_flags_t flags)
+		     struct lu_attr *la, zap_flags_t flags)
 {
 	uint64_t oid;
 	int	 rc;
@@ -1258,26 +1343,24 @@ int __osd_zap_create(const struct lu_env *env, struct osd_device *osd,
 	   transaction group. */
 	LASSERT(tx->tx_txg != 0);
 
-	oid = zap_create_flags(osd->od_os, 0, flags | ZAP_FLAG_HASH64,
-			       DMU_OT_DIRECTORY_CONTENTS,
-			       14, /* == ZFS fzap_default_block_shift */
-			       DN_MAX_INDBLKSHIFT, /* indirect block shift */
-			       DMU_OT_SA, DN_MAX_BONUSLEN, tx);
+	oid = osd_zap_create_flags(osd->od_os, 0, flags | ZAP_FLAG_HASH64,
+				   DMU_OT_DIRECTORY_CONTENTS,
+				   14, /* == ZFS fzap_default_blockshift */
+				   DN_MAX_INDBLKSHIFT, /* indirect blockshift */
+				   0, tx);
 
 	rc = -sa_buf_hold(osd->od_os, oid, osd_obj_tag, zap_dbp);
 	if (rc)
 		return rc;
 
-	LASSERT(la->la_valid & LA_MODE);
 	la->la_size = 2;
 	la->la_nlink = 1;
 
-	return __osd_attr_init(env, osd, oid, tx, la, parent);
+	return 0;
 }
 
-static dmu_buf_t *osd_mkidx(const struct lu_env *env, struct osd_device *osd,
-			    struct lu_attr *la, uint64_t parent,
-			    struct osd_thandle *oh)
+static dmu_buf_t *osd_mkidx(const struct lu_env *env, struct osd_object *obj,
+			    struct lu_attr *la, struct osd_thandle *oh)
 {
 	dmu_buf_t *db;
 	int	   rc;
@@ -1287,36 +1370,36 @@ static dmu_buf_t *osd_mkidx(const struct lu_env *env, struct osd_device *osd,
 	 * We set ZAP_FLAG_UINT64_KEY to let ZFS know than we are going to use
 	 * binary keys */
 	LASSERT(S_ISREG(la->la_mode));
-	rc = __osd_zap_create(env, osd, &db, oh->ot_tx, la, parent,
+	rc = __osd_zap_create(env, osd_obj2dev(obj), &db, oh->ot_tx, la,
 			      ZAP_FLAG_UINT64_KEY);
 	if (rc)
 		return ERR_PTR(rc);
 	return db;
 }
 
-static dmu_buf_t *osd_mkdir(const struct lu_env *env, struct osd_device *osd,
-			    struct lu_attr *la, uint64_t parent,
-			    struct osd_thandle *oh)
+static dmu_buf_t *osd_mkdir(const struct lu_env *env, struct osd_object *obj,
+			    struct lu_attr *la, struct osd_thandle *oh)
 {
 	dmu_buf_t *db;
 	int	   rc;
 
 	LASSERT(S_ISDIR(la->la_mode));
-	rc = __osd_zap_create(env, osd, &db, oh->ot_tx, la, parent, 0);
+	rc = __osd_zap_create(env, osd_obj2dev(obj), &db, oh->ot_tx, la, 0);
 	if (rc)
 		return ERR_PTR(rc);
 	return db;
 }
 
-static dmu_buf_t* osd_mkreg(const struct lu_env *env, struct osd_device *osd,
-			    struct lu_attr *la, uint64_t parent,
-			    struct osd_thandle *oh)
+static dmu_buf_t *osd_mkreg(const struct lu_env *env, struct osd_object *obj,
+			    struct lu_attr *la, struct osd_thandle *oh)
 {
-	dmu_buf_t *db;
-	int	    rc;
+	const struct lu_fid *fid = lu_object_fid(&obj->oo_dt.do_lu);
+	dmu_buf_t	    *db;
+	int		     rc;
+	struct osd_device *osd = osd_obj2dev(obj);
 
 	LASSERT(S_ISREG(la->la_mode));
-	rc = __osd_object_create(env, osd, &db, oh->ot_tx, la, parent);
+	rc = __osd_object_create(env, obj, &db, oh->ot_tx, la);
 	if (rc)
 		return ERR_PTR(rc);
 
@@ -1327,7 +1410,8 @@ static dmu_buf_t* osd_mkreg(const struct lu_env *env, struct osd_device *osd,
 	 * blocksize is selected based on the file size rather than the
 	 * making broad assumptions based on the osd type.
 	 */
-	if (!lu_device_is_md(osd2lu_dev(osd))) {
+	if ((fid_is_idif(fid) || fid_is_norm(fid) || fid_is_echo(fid)) &&
+	    osd->od_is_ost) {
 		rc = -dmu_object_set_blocksize(osd->od_os, db->db_object,
 					       osd->od_max_blksz, 0, oh->ot_tx);
 		if (unlikely(rc)) {
@@ -1340,41 +1424,37 @@ static dmu_buf_t* osd_mkreg(const struct lu_env *env, struct osd_device *osd,
 	return db;
 }
 
-static dmu_buf_t *osd_mksym(const struct lu_env *env, struct osd_device *osd,
-			    struct lu_attr *la, uint64_t parent,
-			    struct osd_thandle *oh)
+static dmu_buf_t *osd_mksym(const struct lu_env *env, struct osd_object *obj,
+			    struct lu_attr *la, struct osd_thandle *oh)
 {
 	dmu_buf_t *db;
 	int	   rc;
 
 	LASSERT(S_ISLNK(la->la_mode));
-	rc = __osd_object_create(env, osd, &db, oh->ot_tx, la, parent);
+	rc = __osd_object_create(env, obj, &db, oh->ot_tx, la);
 	if (rc)
 		return ERR_PTR(rc);
 	return db;
 }
 
-static dmu_buf_t *osd_mknod(const struct lu_env *env, struct osd_device *osd,
-			    struct lu_attr *la, uint64_t parent,
-			    struct osd_thandle *oh)
+static dmu_buf_t *osd_mknod(const struct lu_env *env, struct osd_object *obj,
+			    struct lu_attr *la, struct osd_thandle *oh)
 {
 	dmu_buf_t *db;
 	int	   rc;
 
-	la->la_valid = LA_MODE;
 	if (S_ISCHR(la->la_mode) || S_ISBLK(la->la_mode))
 		la->la_valid |= LA_RDEV;
 
-	rc = __osd_object_create(env, osd, &db, oh->ot_tx, la, parent);
+	rc = __osd_object_create(env, obj, &db, oh->ot_tx, la);
 	if (rc)
 		return ERR_PTR(rc);
 	return db;
 }
 
 typedef dmu_buf_t *(*osd_obj_type_f)(const struct lu_env *env,
-				     struct osd_device *osd,
+				     struct osd_object *obj,
 				     struct lu_attr *la,
-				     uint64_t parent,
 				     struct osd_thandle *oh);
 
 static osd_obj_type_f osd_create_type_f(enum dt_format_type type)
@@ -1405,28 +1485,6 @@ static osd_obj_type_f osd_create_type_f(enum dt_format_type type)
 }
 
 /*
- * Primitives for directory (i.e. ZAP) handling
- */
-static inline int osd_init_lma(const struct lu_env *env, struct osd_object *obj,
-			       const struct lu_fid *fid, struct osd_thandle *oh)
-{
-	struct osd_thread_info	*info = osd_oti_get(env);
-	struct lustre_mdt_attrs	*lma = &info->oti_mdt_attrs;
-	struct lu_buf		 buf;
-	int rc;
-
-	lustre_lma_init(lma, fid, 0, 0);
-	lustre_lma_swab(lma);
-	buf.lb_buf = lma;
-	buf.lb_len = sizeof(*lma);
-
-	rc = osd_xattr_set_internal(env, obj, &buf, XATTR_NAME_LMA,
-				    LU_XATTR_CREATE, oh, BYPASS_CAPA);
-
-	return rc;
-}
-
-/*
  * Concurrency: @dt is write locked.
  */
 static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
@@ -1435,14 +1493,16 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
 			     struct dt_object_format *dof,
 			     struct thandle *th)
 {
-	struct zpl_direntry	*zde = &osd_oti_get(env)->oti_zde.lzd_reg;
+	struct osd_thread_info	*info = osd_oti_get(env);
+	struct lustre_mdt_attrs	*lma = &info->oti_mdt_attrs;
+	struct zpl_direntry	*zde = &info->oti_zde.lzd_reg;
 	const struct lu_fid	*fid = lu_object_fid(&dt->do_lu);
 	struct osd_object	*obj = osd_dt_obj(dt);
 	struct osd_device	*osd = osd_obj2dev(obj);
-	char			*buf = osd_oti_get(env)->oti_str;
+	char			*buf = info->oti_str;
 	struct osd_thandle	*oh;
-	dmu_buf_t		*db;
-	uint64_t		 zapid;
+	dmu_buf_t		*db = NULL;
+	uint64_t		 zapid, parent = 0;
 	int			 rc;
 
 	ENTRY;
@@ -1467,21 +1527,64 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
 
 	/* to follow ZFS on-disk format we need
 	 * to initialize parent dnode properly */
-	zapid = 0;
 	if (hint && hint->dah_parent)
-		zapid = osd_dt_obj(hint->dah_parent)->oo_db->db_object;
+		parent = osd_dt_obj(hint->dah_parent)->oo_db->db_object;
 
-	db = osd_create_type_f(dof->dof_type)(env, osd, attr, zapid, oh);
-	if (IS_ERR(db))
-		GOTO(out, rc = PTR_ERR(db));
+	/* we may fix some attributes, better do not change the source */
+	obj->oo_attr = *attr;
+	obj->oo_attr.la_valid |= LA_SIZE | LA_NLINK | LA_TYPE;
+
+	db = osd_create_type_f(dof->dof_type)(env, obj, &obj->oo_attr, oh);
+	if (IS_ERR(db)) {
+		rc = PTR_ERR(db);
+		db = NULL;
+		GOTO(out, rc);
+	}
 
 	zde->zde_pad = 0;
 	zde->zde_dnode = db->db_object;
 	zde->zde_type = IFTODT(attr->la_mode & S_IFMT);
 
-	zapid = osd_get_name_n_idx(env, osd, fid, buf);
+	zapid = osd_get_name_n_idx(env, osd, fid, buf, sizeof(info->oti_str));
 
 	rc = -zap_add(osd->od_os, zapid, buf, 8, 1, zde, oh->ot_tx);
+	if (rc)
+		GOTO(out, rc);
+
+	/* Now add in all of the "SA" attributes */
+	rc = -sa_handle_get(osd->od_os, db->db_object, NULL,
+			    SA_HDL_PRIVATE, &obj->oo_sa_hdl);
+	if (rc)
+		GOTO(out, rc);
+
+	/* configure new osd object */
+	obj->oo_db = db;
+	parent = parent != 0 ? parent : zapid;
+	rc = __osd_attr_init(env, osd, obj->oo_sa_hdl, oh->ot_tx,
+			     &obj->oo_attr, parent);
+	if (rc)
+		GOTO(out, rc);
+
+	/* XXX: oo_lma_flags */
+	obj->oo_dt.do_lu.lo_header->loh_attr |= obj->oo_attr.la_mode & S_IFMT;
+	smp_mb();
+	obj->oo_dt.do_lu.lo_header->loh_attr |= LOHA_EXISTS;
+	if (likely(!fid_is_acct(lu_object_fid(&obj->oo_dt.do_lu))))
+		/* no body operations for accounting objects */
+		obj->oo_dt.do_body_ops = &osd_body_ops;
+
+	rc = -nvlist_alloc(&obj->oo_sa_xattr, NV_UNIQUE_NAME, KM_SLEEP);
+	if (rc)
+		GOTO(out, rc);
+
+	/* initialize LMA */
+	lustre_lma_init(lma, lu_object_fid(&obj->oo_dt.do_lu), 0, 0);
+	lustre_lma_swab(lma);
+	rc = -nvlist_add_byte_array(obj->oo_sa_xattr, XATTR_NAME_LMA,
+				    (uchar_t *)lma, sizeof(*lma));
+	if (rc)
+		GOTO(out, rc);
+	rc = __osd_sa_xattr_update(env, obj, oh);
 	if (rc)
 		GOTO(out, rc);
 
@@ -1500,21 +1603,12 @@ static int osd_object_create(const struct lu_env *env, struct dt_object *dt,
 		CERROR("%s: failed to add "DFID" to accounting ZAP for grp %d "
 			"(%d)\n", osd->od_svname, PFID(fid), attr->la_gid, rc);
 
-	/* configure new osd object */
-	obj->oo_db = db;
-	rc = osd_object_init0(env, obj);
-	LASSERT(ergo(rc == 0, dt_object_exists(dt)));
-	LASSERT(osd_invariant(obj));
-
-	rc = osd_init_lma(env, obj, fid, oh);
-	if (rc) {
-		CERROR("%s: can not set LMA on "DFID": rc = %d\n",
-		       osd->od_svname, PFID(fid), rc);
-		/* ignore errors during LMA initialization */
-		rc = 0;
-	}
-
 out:
+	if (unlikely(rc && db)) {
+		dmu_object_free(osd->od_os, db->db_object, oh->ot_tx);
+		sa_buf_rele(db, osd_obj_tag);
+		obj->oo_db = NULL;
+	}
 	up(&obj->oo_guard);
 	RETURN(rc);
 }
@@ -1741,7 +1835,8 @@ static int osd_object_sync(const struct lu_env *env, struct dt_object *dt,
 	 * support ZIL.  If the object tracked the txg that it was last
 	 * modified in, it could pass that txg here instead of "0".  Maybe
 	 * the changes are already committed, so no wait is needed at all? */
-	txg_wait_synced(dmu_objset_pool(osd->od_os), 0ULL);
+	if (!osd->od_dt_dev.dd_rdonly)
+		txg_wait_synced(dmu_objset_pool(osd->od_os), 0ULL);
 
 	RETURN(0);
 }

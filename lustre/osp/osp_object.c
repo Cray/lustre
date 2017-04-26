@@ -1060,7 +1060,6 @@ unlock:
 		GOTO(out, rc = -ERANGE);
 
 	memcpy(buf->lb_buf, rbuf->lb_buf, rbuf->lb_len);
-	rc = rbuf->lb_len;
 	if (obj->opo_ooa == NULL)
 		GOTO(out, rc);
 
@@ -1789,7 +1788,7 @@ static int osp_it_fetch(const struct lu_env *env, struct osp_it *it)
 	it->ooi_pages = pages;
 	it->ooi_total_npages = npages;
 	for (i = 0; i < npages; i++) {
-		pages[i] = alloc_page(GFP_IOFS);
+		pages[i] = alloc_page(GFP_NOFS);
 		if (pages[i] == NULL)
 			RETURN(-ENOMEM);
 	}
@@ -1829,15 +1828,16 @@ static int osp_it_fetch(const struct lu_env *env, struct osp_it *it)
 
 	ptlrpc_at_set_req_timeout(req);
 
-	desc = ptlrpc_prep_bulk_imp(req, npages, 1, BULK_PUT_SINK,
-				    MDS_BULK_PORTAL);
-	if (desc == NULL) {
-		ptlrpc_request_free(req);
-		RETURN(-ENOMEM);
-	}
+	desc = ptlrpc_prep_bulk_imp(req, npages, 1,
+				    PTLRPC_BULK_PUT_SINK | PTLRPC_BULK_BUF_KIOV,
+				    MDS_BULK_PORTAL,
+				    &ptlrpc_bulk_kiov_pin_ops);
+	if (desc == NULL)
+		GOTO(out, rc = -ENOMEM);
 
 	for (i = 0; i < npages; i++)
-		ptlrpc_prep_bulk_page_pin(desc, pages[i], 0, PAGE_CACHE_SIZE);
+		desc->bd_frag_ops->add_kiov_frag(desc, pages[i], 0,
+						 PAGE_CACHE_SIZE);
 
 	ptlrpc_request_set_replen(req);
 	rc = ptlrpc_queue_wait(req);

@@ -62,6 +62,10 @@ void mdc_create_pack(struct ptlrpc_request *req, struct md_op_data *op_data,
 void mdc_open_pack(struct ptlrpc_request *req, struct md_op_data *op_data,
 		   umode_t mode, __u64 rdev, __u64 flags,
 		   const void *data, size_t datalen);
+void mdc_file_secctx_pack(struct ptlrpc_request *req,
+			  const char *secctx_name,
+			  const void *secctx, size_t secctx_size);
+
 void mdc_unlink_pack(struct ptlrpc_request *req, struct md_op_data *op_data);
 void mdc_getxattr_pack(struct ptlrpc_request *req, struct md_op_data *op_data);
 void mdc_link_pack(struct ptlrpc_request *req, struct md_op_data *op_data);
@@ -85,8 +89,11 @@ int mdc_intent_lock(struct obd_export *exp,
 
 int mdc_enqueue(struct obd_export *exp, struct ldlm_enqueue_info *einfo,
 		const union ldlm_policy_data *policy,
-		struct lookup_intent *it, struct md_op_data *op_data,
+		struct md_op_data *op_data,
 		struct lustre_handle *lockh, __u64 extra_lock_flags);
+int mdc_enqueue_async(struct obd_export *exp, struct ldlm_enqueue_info *einfo,
+		      obd_enqueue_update_f upcall, struct md_op_data *op_data,
+		      ldlm_policy_data_t *policy, __u64 extra_lock_flags);
 
 int mdc_resource_get_unused(struct obd_export *exp, const struct lu_fid *fid,
 			    struct list_head *cancels, ldlm_mode_t mode,

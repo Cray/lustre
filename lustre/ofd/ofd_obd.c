@@ -122,6 +122,10 @@ out:
  * connect flags from the obd_connect_data::ocd_connect_flags field of the
  * reply. \see tgt_connect().
  *
+ * Before 2.7.50 clients will send a struct obd_connect_data_v1 rather than a
+ * full struct obd_connect_data. So care must be taken when accessing fields
+ * that are not present in struct obd_connect_data_v1. See LU-16.
+ *
  * \param[in] env		execution environment
  * \param[in] exp		the obd_export associated with this
  *				client/target pair
@@ -164,6 +168,10 @@ static int ofd_parse_connect_data(const struct lu_env *env,
 	fed->fed_group = data->ocd_group;
 
 	data->ocd_connect_flags &= OST_CONNECT_SUPPORTED;
+
+	if (data->ocd_connect_flags & OBD_CONNECT_FLAGS2)
+		data->ocd_connect_flags2 &= OST_CONNECT_SUPPORTED2;
+
 	data->ocd_version = LUSTRE_VERSION_CODE;
 
 	/* Kindly make sure the SKIP_ORPHAN flag is from MDS. */
@@ -173,18 +181,41 @@ static int ofd_parse_connect_data(const struct lu_env *env,
 	else if (data->ocd_connect_flags & OBD_CONNECT_SKIP_ORPHAN)
 		RETURN(-EPROTO);
 
-	if (ofd_grant_param_supp(exp)) {
-		exp->exp_filter_data.fed_pagesize = data->ocd_blocksize;
-		/* ocd_{blocksize,inodespace} are log2 values */
-		data->ocd_blocksize  = ofd->ofd_blockbits;
-		data->ocd_inodespace = ofd->ofd_dt_conf.ddp_inodespace;
-		/* ocd_grant_extent is in 1K blocks */
-		data->ocd_grant_extent = ofd->ofd_dt_conf.ddp_grant_frag >> 10;
+	/* Determine optimal brw size before calculating grant */
+	if (OBD_FAIL_CHECK(OBD_FAIL_OST_BRW_SIZE)) {
+		data->ocd_brw_size = 65536;
+	} else if (OCD_HAS_FLAG(data, BRW_SIZE)) {
+		if (data->ocd_brw_size > ofd->ofd_brw_size)
+			data->ocd_brw_size = ofd->ofd_brw_size;
+		if (data->ocd_brw_size == 0) {
+			CERROR("%s: cli %s/%p ocd_connect_flags: "LPX64
+			       " ocd_version: %x ocd_grant: %d ocd_index: %u "
+			       "ocd_brw_size is unexpectedly zero, "
+			       "network data corruption?"
+			       "Refusing connection of this client\n",
+			       exp->exp_obd->obd_name,
+			       exp->exp_client_uuid.uuid,
+			       exp, data->ocd_connect_flags, data->ocd_version,
+			       data->ocd_grant, data->ocd_index);
+			RETURN(-EPROTO);
+		}
 	}
 
-	if (data->ocd_connect_flags & OBD_CONNECT_GRANT)
-		data->ocd_grant = ofd_grant_connect(env, exp, data->ocd_grant,
-						    new_connection);
+	if (OCD_HAS_FLAG(data, GRANT_PARAM)) {
+		/* client is reporting its page size, for future use */
+		exp->exp_filter_data.fed_pagebits = data->ocd_grant_blkbits;
+		data->ocd_grant_blkbits  = ofd->ofd_blockbits;
+		/* ddp_inodespace may not be power-of-two value, eg. for ldiskfs
+		 * it's LDISKFS_DIR_REC_LEN(20) = 28. */
+		data->ocd_grant_inobits =
+				       fls(ofd->ofd_dt_conf.ddp_inodespace - 1);
+		/* ocd_grant_tax_kb is in 1K byte blocks */
+		data->ocd_grant_tax_kb = ofd->ofd_dt_conf.ddp_extent_tax >> 10;
+		data->ocd_grant_max_blks = ofd->ofd_dt_conf.ddp_max_extent_blks;
+	}
+
+	if (OCD_HAS_FLAG(data, GRANT))
+		ofd_grant_connect(env, exp, data, new_connection);
 
 	if (data->ocd_connect_flags & OBD_CONNECT_INDEX) {
 		struct lr_server_data *lsd = &ofd->ofd_lut.lut_lsd;
@@ -202,27 +233,9 @@ static int ofd_parse_connect_data(const struct lu_env *env,
 		if (!(lsd->lsd_feature_compat & OBD_COMPAT_OST)) {
 			/* this will only happen on the first connect */
 			lsd->lsd_feature_compat |= OBD_COMPAT_OST;
-			/* sync is not needed here as lut_client_add will
+			/* sync is not needed here as tgt_client_new will
 			 * set exp_need_sync flag */
 			tgt_server_data_update(env, &ofd->ofd_lut, 0);
-		}
-	}
-	if (OBD_FAIL_CHECK(OBD_FAIL_OST_BRW_SIZE)) {
-		data->ocd_brw_size = 65536;
-	} else if (data->ocd_connect_flags & OBD_CONNECT_BRW_SIZE) {
-		data->ocd_brw_size = min(data->ocd_brw_size,
-					 (__u32)DT_MAX_BRW_SIZE);
-		if (data->ocd_brw_size == 0) {
-			CERROR("%s: cli %s/%p ocd_connect_flags: "LPX64
-			       " ocd_version: %x ocd_grant: %d ocd_index: %u "
-			       "ocd_brw_size is unexpectedly zero, "
-			       "network data corruption?"
-			       "Refusing connection of this client\n",
-			       exp->exp_obd->obd_name,
-			       exp->exp_client_uuid.uuid,
-			       exp, data->ocd_connect_flags, data->ocd_version,
-			       data->ocd_grant, data->ocd_index);
-			RETURN(-EPROTO);
 		}
 	}
 
@@ -297,13 +310,17 @@ static int ofd_obd_reconnect(const struct lu_env *env, struct obd_export *exp,
 	if (exp == NULL || obd == NULL || cluuid == NULL)
 		RETURN(-EINVAL);
 
+	rc = nodemap_add_member(*(lnet_nid_t *)client_nid, exp);
+	if (rc != 0 && rc != -EEXIST)
+		RETURN(rc);
+
 	ofd = ofd_dev(obd->obd_lu_dev);
 
 	rc = ofd_parse_connect_data(env, exp, data, false);
 	if (rc == 0)
 		ofd_export_stats_init(ofd, exp, client_nid);
-
-	nodemap_add_member(*(lnet_nid_t *)client_nid, exp);
+	else
+		nodemap_del_member(exp);
 
 	RETURN(rc);
 }
@@ -333,7 +350,6 @@ static int ofd_obd_connect(const struct lu_env *env, struct obd_export **_exp,
 	struct ofd_device	*ofd;
 	struct lustre_handle	 conn = { 0 };
 	int			 rc;
-	lnet_nid_t		*client_nid;
 	ENTRY;
 
 	if (_exp == NULL || obd == NULL || cluuid == NULL)
@@ -348,14 +364,18 @@ static int ofd_obd_connect(const struct lu_env *env, struct obd_export **_exp,
 	exp = class_conn2export(&conn);
 	LASSERT(exp != NULL);
 
+	if (localdata != NULL) {
+		rc = nodemap_add_member(*(lnet_nid_t *)localdata, exp);
+		if (rc != 0 && rc != -EEXIST)
+			GOTO(out, rc);
+	} else {
+		CDEBUG(D_HA, "%s: cannot find nodemap for client %s: "
+		       "nid is null\n", obd->obd_name, cluuid->uuid);
+	}
+
 	rc = ofd_parse_connect_data(env, exp, data, true);
 	if (rc)
 		GOTO(out, rc);
-
-	if (localdata != NULL) {
-		client_nid = localdata;
-		nodemap_add_member(*client_nid, exp);
-	}
 
 	if (obd->obd_replayable) {
 		struct tg_export_data *ted = &exp->exp_target_data;
@@ -373,8 +393,8 @@ static int ofd_obd_connect(const struct lu_env *env, struct obd_export **_exp,
 
 out:
 	if (rc != 0) {
-		nodemap_del_member(exp);
 		class_disconnect(exp);
+		nodemap_del_member(exp);
 		*_exp = NULL;
 	} else {
 		*_exp = exp;
@@ -407,7 +427,6 @@ int ofd_obd_disconnect(struct obd_export *exp)
 	if (!(exp->exp_flags & OBD_OPT_FORCE))
 		ofd_grant_sanity_check(ofd_obd(ofd), __FUNCTION__);
 
-	nodemap_del_member(exp);
 	rc = server_disconnect_export(exp);
 
 	ofd_grant_discard(exp);
@@ -423,6 +442,7 @@ int ofd_obd_disconnect(struct obd_export *exp)
 		lu_env_fini(&env);
 	}
 out:
+	nodemap_del_member(exp);
 	class_export_put(exp);
 	RETURN(rc);
 }
@@ -501,10 +521,8 @@ static int ofd_destroy_export(struct obd_export *exp)
 	ofd_grant_discard(exp);
 	ofd_fmd_cleanup(exp);
 
-	if (exp_connect_flags(exp) & OBD_CONNECT_GRANT_SHRINK) {
-		if (ofd->ofd_tot_granted_clients > 0)
-			ofd->ofd_tot_granted_clients --;
-	}
+	if (exp_connect_flags(exp) & OBD_CONNECT_GRANT)
+		ofd->ofd_tot_granted_clients--;
 
 	if (!(exp->exp_flags & OBD_OPT_FORCE))
 		ofd_grant_sanity_check(exp->exp_obd, __FUNCTION__);
@@ -528,17 +546,20 @@ static int ofd_destroy_export(struct obd_export *exp)
 int ofd_postrecov(const struct lu_env *env, struct ofd_device *ofd)
 {
 	struct lu_device *ldev = &ofd->ofd_dt_dev.dd_lu_dev;
-	struct lfsck_start_param lsp;
-	int rc;
 
 	CDEBUG(D_HA, "%s: recovery is over\n", ofd_name(ofd));
 
-	lsp.lsp_start = NULL;
-	lsp.lsp_index_valid = 0;
-	rc = lfsck_start(env, ofd->ofd_osd, &lsp);
-	if (rc != 0 && rc != -EALREADY)
-		CWARN("%s: auto trigger paused LFSCK failed: rc = %d\n",
-		      ofd_name(ofd), rc);
+	if (!ofd->ofd_osd->dd_rdonly) {
+		struct lfsck_start_param lsp;
+		int rc;
+
+		lsp.lsp_start = NULL;
+		lsp.lsp_index_valid = 0;
+		rc = lfsck_start(env, ofd->ofd_osd, &lsp);
+		if (rc != 0 && rc != -EALREADY)
+			CWARN("%s: auto trigger paused LFSCK failed: rc = %d\n",
+			      ofd_name(ofd), rc);
+	}
 
 	return ldev->ld_ops->ldo_recovery_complete(env, ldev);
 }
@@ -731,7 +752,7 @@ int ofd_statfs_internal(const struct lu_env *env, struct ofd_device *ofd,
 		unstable = ofd->ofd_osfs_inflight - unstable;
 		ofd->ofd_osfs_unstable = 0;
 		if (unstable) {
-			/* some writes completed while we were running statfs
+			/* some writes committed while we were running statfs
 			 * w/o the ofd_osfs_lock. Those ones got added to
 			 * the cached statfs data that we are about to crunch.
 			 * Take them into account in the new statfs data */
@@ -850,7 +871,8 @@ int ofd_statfs(const struct lu_env *env,  struct obd_export *exp,
 	if (ofd->ofd_raid_degraded)
 		osfs->os_state |= OS_STATE_DEGRADED;
 
-	if (obd->obd_self_export != exp && ofd_grant_compat(exp, ofd)) {
+	if (obd->obd_self_export != exp && !ofd_grant_param_supp(exp) &&
+	    ofd->ofd_blockbits > COMPAT_BSIZE_SHIFT) {
 		/* clients which don't support OBD_CONNECT_GRANT_PARAM
 		 * should not see a block size > page size, otherwise
 		 * cl_lost_grant goes mad. Therefore, we emulate a 4KB (=2^12)
@@ -1097,6 +1119,7 @@ static int ofd_echo_create(const struct lu_env *env, struct obd_export *exp,
 	u64			 seq = ostid_seq(&oa->o_oi);
 	struct ofd_seq		*oseq;
 	int			 rc = 0, diff = 1;
+	long			 granted;
 	u64			 next_id;
 	int			 count;
 
@@ -1124,8 +1147,10 @@ static int ofd_echo_create(const struct lu_env *env, struct obd_export *exp,
 	}
 
 	mutex_lock(&oseq->os_create_lock);
-	rc = ofd_grant_create(env, ofd_obd(ofd)->obd_self_export, &diff);
-	if (rc < 0) {
+	granted = ofd_grant_create(env, ofd_obd(ofd)->obd_self_export, &diff);
+	if (granted < 0) {
+		rc = granted;
+		granted = 0;
 		CDEBUG(D_HA, "%s: failed to acquire grant space for "
 		       "precreate (%d): rc = %d\n", ofd_name(ofd), diff, rc);
 		diff = 0;
@@ -1145,7 +1170,7 @@ static int ofd_echo_create(const struct lu_env *env, struct obd_export *exp,
 		rc = 0;
 	}
 
-	ofd_grant_commit(env, ofd_obd(ofd)->obd_self_export, rc);
+	ofd_grant_commit(ofd_obd(ofd)->obd_self_export, granted, rc);
 out:
 	mutex_unlock(&oseq->os_create_lock);
 	ofd_seq_put(env, oseq);
@@ -1451,7 +1476,7 @@ static int ofd_health_check(const struct lu_env *nul, struct obd_device *obd)
 	if (unlikely(rc))
 		GOTO(out, rc);
 
-	if (info->fti_u.osfs.os_state == OS_STATE_READONLY)
+	if (info->fti_u.osfs.os_state & OS_STATE_READONLY)
 		GOTO(out, rc = -EROFS);
 
 #ifdef USE_HEALTH_CHECK_WRITE

@@ -37,6 +37,7 @@
 #include <linux/fs.h>
 #include <linux/sched.h>
 #include <linux/mm.h>
+#include <linux/xattr.h>
 #include <linux/selinux.h>
 
 #define DEBUG_SUBSYSTEM S_LLITE
@@ -47,6 +48,14 @@
 #include <lustre_eacl.h>
 
 #include "llite_internal.h"
+
+/* xattr related to IMA(Integrity Measurement Architecture) */
+#ifndef XATTR_NAME_IMA
+#define XATTR_NAME_IMA		"security.ima"
+#endif
+#ifndef XATTR_NAME_EVM
+#define XATTR_NAME_EVM		"security.evm"
+#endif
 
 #define XATTR_USER_T            (1)
 #define XATTR_TRUSTED_T         (2)
@@ -102,12 +111,6 @@ int xattr_type_filter(struct ll_sb_info *sbi, int xattr_type)
         return 0;
 }
 
-/* xattr related to IMA(Integrity Measurement Architecture) */
-#ifndef XATTR_NAME_IMA
-#define XATTR_NAME_IMA		"security.ima"
-#define XATTR_NAME_EVM		"security.evm"
-#endif
-
 static
 int ll_setxattr_common(struct inode *inode, const char *name,
 		       const void *value, size_t size,
@@ -161,6 +164,14 @@ int ll_setxattr_common(struct inode *inode, const char *name,
         if (xattr_type == XATTR_SECURITY_T && !selinux_is_enabled() &&
             strcmp(name, "security.selinux") == 0)
                 RETURN(-EOPNOTSUPP);
+
+	/* In user.* namespace, only regular files and directories can have
+	 * extended attributes.
+	 */
+	if (xattr_type == XATTR_USER_T) {
+		if (!S_ISREG(inode->i_mode) && !S_ISDIR(inode->i_mode))
+			return -EPERM;
+	}
 
 #ifdef CONFIG_FS_POSIX_ACL
 	if (sbi->ll_flags & LL_SBI_RMT_CLIENT &&
@@ -320,7 +331,7 @@ int ll_setxattr(struct dentry *dentry, const char *name,
 				return 0; /* b=10667: ignore error */
 
 			memset(&f, 0, sizeof(f)); /* f.f_flags is used below */
-			f.f_dentry = dentry;
+			f.f_path.dentry = dentry;
 			rc = ll_lov_setstripe_ea_info(inode, &f, it_flags, lump,
 						      lum_size);
 			/* b=10667: rc always be 0 here for now */
@@ -432,7 +443,10 @@ int ll_getxattr_common(struct inode *inode, const char *name,
 #endif
 
 do_getxattr:
-	if (sbi->ll_xattr_cache_enabled && xattr_type != XATTR_ACL_ACCESS_T) {
+	if (sbi->ll_xattr_cache_enabled &&
+	    xattr_type != XATTR_ACL_ACCESS_T &&
+	    (xattr_type != XATTR_SECURITY_T ||
+		strcmp(name, "security.selinux") != 0)) {
 		rc = ll_xattr_cache_get(inode, name, buffer, size, valid);
 		if (rc == -EAGAIN)
 			goto getxattr_nocache;
@@ -575,7 +589,7 @@ ssize_t ll_getxattr(struct dentry *dentry, const char *name,
                 }
 
                 if (size < lmmsize) {
-                        CERROR("server bug: replied size %d > %d for %s (%s)\n",
+                        CDEBUG(D_INODE, "replied size %d > %d for %s (%s)\n",
                                lmmsize, (int)size, dentry->d_name.name, name);
                         GOTO(out, rc = -ERANGE);
                 }

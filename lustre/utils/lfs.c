@@ -69,6 +69,7 @@
 #include <libcfs/libcfsutil.h>
 #include <lustre/lustreapi.h>
 #include <lustre_ver.h>
+#include <lustre_param.h>
 
 /* all functions */
 static int lfs_setstripe(int argc, char **argv);
@@ -142,7 +143,7 @@ static int lfs_mv(int argc, char **argv);
 static const char	*progname;
 static bool		 file_lease_supported = true;
 
-/* all avaialable commands */
+/* all available commands */
 command_t cmdlist[] = {
 	{"setstripe", lfs_setstripe, 0,
 	 "Create a new file with a specific striping pattern or\n"
@@ -615,9 +616,9 @@ static int lfs_migrate(char *name, __u64 migration_flags,
 	}
 
 	rc = llapi_file_get_stripe(name, lum);
-	/* failure can come from may case and some may be not real error
+	/* failure can happen for many reasons and some may be not real errors
 	 * (eg: no stripe)
-	 * in case of a real error, a later call will failed with a better
+	 * in case of a real error, a later call will fail with better
 	 * error management */
 	if (rc < 0)
 		buf_size = 1024 * 1024;
@@ -988,6 +989,43 @@ static int lfs_setstripe(int argc, char **argv)
 		fprintf(stderr, "error: %s: missing filename|dirname\n",
 			argv[0]);
 		return CMD_HELP;
+	}
+
+	if (pool_name_arg != NULL) {
+		char	*ptr;
+		int	rc;
+
+		ptr = strchr(pool_name_arg, '.');
+		if (ptr == NULL) {
+			ptr = pool_name_arg;
+		} else {
+			if ((ptr - pool_name_arg) == 0) {
+				fprintf(stderr, "error: %s: fsname is empty "
+					"in pool name '%s'\n",
+					argv[0], pool_name_arg);
+				return CMD_HELP;
+			}
+
+			++ptr;
+		}
+
+		rc = lustre_is_poolname_valid(ptr, 1, LOV_MAXPOOLNAME);
+		if (rc == -1) {
+			fprintf(stderr, "error: %s: poolname '%s' is "
+				"empty\n",
+				argv[0], pool_name_arg);
+			return CMD_HELP;
+		} else if (rc == -2) {
+			fprintf(stderr, "error: %s: pool name '%s' is too long "
+				"(max is %d characters)\n",
+				argv[0], pool_name_arg, LOV_MAXPOOLNAME);
+			return CMD_HELP;
+		} else if (rc > 0) {
+			fprintf(stderr, "error: %s: char '%c' not allowed in "
+				"pool name '%s'\n",
+				argv[0], rc, pool_name_arg);
+			return CMD_HELP;
+		}
 	}
 
 	/* get the stripe size */
@@ -2163,7 +2201,9 @@ static int mntdf(char *mntdir, char *fsname, char *pool, int ishow,
 	__u64 ost_ffree = 0;
 	__u32 index;
 	__u32 type;
-	int rc;
+	int fd;
+	int rc = 0;
+	int rc2;
 
         if (pool) {
                 poolname = strchr(pool, '.');
@@ -2176,6 +2216,14 @@ static int mntdf(char *mntdir, char *fsname, char *pool, int ishow,
                 } else
                         poolname = pool;
         }
+
+	fd = open(mntdir, O_RDONLY);
+	if (fd < 0) {
+		rc = -errno;
+		fprintf(stderr, "%s: cannot open '%s': %s\n", progname, mntdir,
+			strerror(errno));
+		return rc;
+	}
 
         if (ishow)
                 printf(UUF" "CSF" "CSF" "CSF" "RSF" %-s\n",
@@ -2191,13 +2239,16 @@ static int mntdf(char *mntdir, char *fsname, char *pool, int ishow,
                         memset(&stat_buf, 0, sizeof(struct obd_statfs));
                         memset(&uuid_buf, 0, sizeof(struct obd_uuid));
 			type = lazy ? tp->st_op | LL_STATFS_NODELAY : tp->st_op;
-			rc = llapi_obd_statfs(mntdir, type, index,
-                                              &stat_buf, &uuid_buf);
-                        if (rc == -ENODEV)
-                                break;
-
-			if (rc == -EAGAIN)
+			rc2 = llapi_obd_fstatfs(fd, type, index,
+					       &stat_buf, &uuid_buf);
+			if (rc2 == -ENODEV)
+				break;
+			else if (rc2 == -EAGAIN)
 				continue;
+			else if (rc2 == -ENODATA)
+				; /* Inactive device, OK. */
+			else if (rc2 < 0 && rc == 0)
+				rc = rc2;
 
                         if (poolname && tp->st_op == LL_STATFS_LOV &&
                             llapi_search_ost(fsname, poolname,
@@ -2212,10 +2263,10 @@ static int mntdf(char *mntdir, char *fsname, char *pool, int ishow,
                         if (uuid_buf.uuid[0] == '\0')
                                 sprintf(uuid_buf.uuid, "%s%04x",
                                         tp->st_name, index);
-                        showdf(mntdir, &stat_buf, obd_uuid2str(&uuid_buf),
-                               ishow, cooked, tp->st_name, index, rc);
+			showdf(mntdir, &stat_buf, obd_uuid2str(&uuid_buf),
+			       ishow, cooked, tp->st_name, index, rc2);
 
-                        if (rc == 0) {
+			if (rc2 == 0) {
                                 if (tp->st_op == LL_STATFS_LMV) {
                                         sum.os_ffree += stat_buf.os_ffree;
                                         sum.os_files += stat_buf.os_files;
@@ -2228,11 +2279,11 @@ static int mntdf(char *mntdir, char *fsname, char *pool, int ishow,
 						stat_buf.os_bsize;
 					ost_ffree += stat_buf.os_ffree;
 				}
-			} else if (rc == -EINVAL || rc == -EFAULT) {
-				break;
 			}
 		}
 	}
+
+	close(fd);
 
 	/* If we don't have as many objects free on the OST as inodes
 	 * on the MDS, we reduce the total number of inodes to
@@ -2245,7 +2296,8 @@ static int mntdf(char *mntdir, char *fsname, char *pool, int ishow,
 	printf("\n");
 	showdf(mntdir, &sum, "filesystem summary:", ishow, cooked, NULL, 0, 0);
 	printf("\n");
-	return 0;
+
+	return rc;
 }
 
 static int lfs_df(int argc, char **argv)
@@ -4124,8 +4176,8 @@ static int lfs_hsm_request(int argc, char **argv, int action)
 		while ((rc = getline(&line, &len, fp)) != -1) {
 			struct hsm_user_item *hui;
 
-			/* If allocated buffer was too small, gets something
-			 * bigger */
+			/* If allocated buffer was too small, get something
+			 * larger */
 			if (nbfile_alloc <= hur->hur_request.hr_itemcount) {
 				ssize_t size;
 				nbfile_alloc = nbfile_alloc * 2 + 1;

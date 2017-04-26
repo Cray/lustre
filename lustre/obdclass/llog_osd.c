@@ -368,12 +368,8 @@ static int llog_osd_write_rec(const struct lu_env *env,
 
 	ENTRY;
 
-	LASSERT(env);
 	llh = loghandle->lgh_hdr;
-	LASSERT(llh);
 	o = loghandle->lgh_obj;
-	LASSERT(o);
-	LASSERT(th);
 
 	CDEBUG(D_OTHER, "new record %x to "DFID"\n",
 	       rec->lrh_type, PFID(lu_object_fid(&o->do_lu)));
@@ -513,9 +509,17 @@ static int llog_osd_write_rec(const struct lu_env *env,
 			RETURN(rc);
 		loghandle->lgh_last_idx++; /* for pad rec */
 	}
-	/* if it's the last idx in log file, then return -ENOSPC */
-	if (loghandle->lgh_last_idx >= LLOG_BITMAP_SIZE(llh) - 1)
-		RETURN(-ENOSPC);
+	/* if it's the last idx in log file, then return -ENOSPC
+	 * or wrap around if a catalog */
+	if (llog_is_full(loghandle) ||
+	    unlikely(llh->llh_flags & LLOG_F_IS_CAT &&
+		     OBD_FAIL_PRECHECK(OBD_FAIL_CAT_RECORDS) &&
+		     loghandle->lgh_last_idx >= cfs_fail_val)) {
+		if (llh->llh_flags & LLOG_F_IS_CAT)
+			loghandle->lgh_last_idx = 0;
+		else
+			RETURN(-ENOSPC);
+	}
 
 	/* increment the last_idx along with llh_tail index, they should
 	 * be equal for a llog lifetime */
@@ -553,12 +557,20 @@ static int llog_osd_write_rec(const struct lu_env *env,
 		GOTO(out, rc);
 
 	header_is_updated = true;
-	rc = dt_attr_get(env, o, &lgi->lgi_attr, NULL);
-	if (rc)
-		GOTO(out, rc);
 
-	LASSERT(lgi->lgi_attr.la_valid & LA_SIZE);
-	lgi->lgi_off = lgi->lgi_attr.la_size;
+	/* computed index can be used to determine offset for fixed-size
+	 * records. This also allows to handle Catalog wrap around case */
+	if (llh->llh_size != 0) {
+		lgi->lgi_off = llh->llh_hdr.lrh_len + (index - 1) * reclen;
+	} else {
+		rc = dt_attr_get(env, o, &lgi->lgi_attr, NULL);
+		if (rc)
+			GOTO(out, rc);
+
+		LASSERT(lgi->lgi_attr.la_valid & LA_SIZE);
+		lgi->lgi_off = lgi->lgi_attr.la_size;
+	}
+
 	lgi->lgi_buf.lb_len = reclen;
 	lgi->lgi_buf.lb_buf = rec;
 	rc = dt_record_write(env, o, &lgi->lgi_buf, &lgi->lgi_off, th);
@@ -588,7 +600,11 @@ out:
 	spin_unlock(&loghandle->lgh_hdr_lock);
 
 	/* restore llog last_idx */
-	loghandle->lgh_last_idx--;
+	if (--loghandle->lgh_last_idx == 0 &&
+	    (llh->llh_flags & LLOG_F_IS_CAT) && llh->llh_cat_idx != 0) {
+		/* catalog had just wrap-around case */
+		loghandle->lgh_last_idx = LLOG_BITMAP_SIZE(llh) - 1;
+	}
 	llh->llh_tail.lrt_index = loghandle->lgh_last_idx;
 
 	/* restore the header on disk if it was written */
@@ -609,12 +625,19 @@ out:
  * actual records are larger than minimum size) we just skip
  * some more records.
  */
-static inline void llog_skip_over(__u64 *off, int curr, int goal)
+static inline void llog_skip_over(struct llog_log_hdr *llh, __u64 *off,
+				  int curr, int goal, __u32 chunk_size)
 {
-	if (goal <= curr)
-		return;
-	*off = (*off + (goal - curr - 1) * LLOG_MIN_REC_SIZE) &
-		~(LLOG_CHUNK_SIZE - 1);
+	if (goal > curr) {
+		if (llh->llh_size == 0) {
+			/* variable size records */
+			*off = (*off + (goal - curr - 1) * LLOG_MIN_REC_SIZE);
+		} else {
+			*off = chunk_size + (goal - 1) * llh->llh_size;
+		}
+	}
+	/* always align with lower chunk boundary*/
+	*off &= ~(chunk_size - 1);
 }
 
 /**
@@ -699,7 +722,8 @@ static int llog_osd_next_block(const struct lu_env *env,
 		struct llog_rec_hdr	*rec, *last_rec;
 		struct llog_rec_tail	*tail;
 
-		llog_skip_over(cur_offset, *cur_idx, next_idx);
+		llog_skip_over(loghandle->lgh_hdr, cur_offset, *cur_idx,
+			       next_idx, LLOG_CHUNK_SIZE);
 
 		/* read up to next LLOG_CHUNK_SIZE block */
 		lgi->lgi_buf.lb_len = LLOG_CHUNK_SIZE -
@@ -827,7 +851,8 @@ static int llog_osd_prev_block(const struct lu_env *env,
 	LASSERT(dt);
 
 	cur_offset = LLOG_CHUNK_SIZE;
-	llog_skip_over(&cur_offset, 0, prev_idx);
+	llog_skip_over(loghandle->lgh_hdr, &cur_offset, 0, prev_idx,
+		       LLOG_CHUNK_SIZE);
 
 	rc = dt_attr_get(env, o, &lgi->lgi_attr, BYPASS_CAPA);
 	if (rc)
@@ -976,6 +1001,7 @@ static int llog_osd_open(const struct lu_env *env, struct llog_handle *handle,
 	struct ls_device		*ls;
 	struct local_oid_storage	*los;
 	int				 rc = 0;
+	bool new_id = false;
 
 	ENTRY;
 
@@ -1014,6 +1040,7 @@ static int llog_osd_open(const struct lu_env *env, struct llog_handle *handle,
 			/* generate fid for new llog */
 			rc = local_object_fid_generate(env, los,
 						       &lgi->lgi_fid);
+			new_id = true;
 		}
 		if (rc < 0)
 			GOTO(out, rc);
@@ -1025,14 +1052,28 @@ static int llog_osd_open(const struct lu_env *env, struct llog_handle *handle,
 	} else {
 		LASSERTF(open_param & LLOG_OPEN_NEW, "%#x\n", open_param);
 		/* generate fid for new llog */
+generate:
 		rc = local_object_fid_generate(env, los, &lgi->lgi_fid);
 		if (rc < 0)
 			GOTO(out, rc);
+		new_id = true;
 	}
 
 	o = ls_locate(env, ls, &lgi->lgi_fid, NULL);
 	if (IS_ERR(o))
 		GOTO(out_name, rc = PTR_ERR(o));
+
+	if (dt_object_exists(o) && new_id) {
+		/* llog exists with just generated ID, e.g. some old llog file
+		 * still is in use or is orphan, drop a warn and skip it. */
+		CWARN("%s: llog exists with the same FID: "DFID", skipping\n",
+		      o->do_lu.lo_dev->ld_obd->obd_name,
+		      PFID(lu_object_fid(&o->do_lu)));
+		lu_object_put(env, &o->do_lu);
+		/* just skip this llog ID, we shouldn't delete it because we
+		 * don't know exactly what is its purpose and state. */
+		goto generate;
+	}
 
 	/* No new llog is expected but doesn't exist */
 	if (open_param != LLOG_OPEN_NEW && !dt_object_exists(o))

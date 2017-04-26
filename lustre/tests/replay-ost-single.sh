@@ -49,7 +49,7 @@ test_0a() {
     # needs to run during initial client->OST connection
     #define OBD_FAIL_OST_ALL_REPLY_NET       0x211
     do_facet ost1 "lctl set_param fail_loc=0x80000211"
-    zconf_mount `hostname` $MOUNT && df $MOUNT || error "0a mount fail"
+    zconf_mount $(hostname) $MOUNT && $LFS df $MOUNT || error "mount fail"
 }
 run_test 0a "target handle mismatch (bug 5317) `date +%H:%M:%S`"
 
@@ -384,13 +384,13 @@ test_8e() {
 	sleep 1 # ensure we have a fresh statfs
 #define OBD_FAIL_OST_STATFS_EINPROGRESS 0x231
 	do_facet ost1 "lctl set_param fail_loc=0x231"
-	df $MOUNT &
+	$LFS df $MOUNT &
 	dfpid=$!
 	sleep $TIMEOUT
 	if ! ps -p $dfpid  > /dev/null 2>&1; then
-			do_facet ost1 "lctl set_param fail_loc=0"
-			error "df shouldn't have completed!"
-			return 1
+		do_facet ost1 "lctl set_param fail_loc=0"
+		error "df shouldn't have completed!"
+		return 1
 	fi
 	do_facet ost1 "lctl set_param fail_loc=0"
 }
@@ -400,6 +400,10 @@ test_9() {
 	[ $(lustre_version_code ost1) -ge $(version_code 2.6.54) ] ||
 		{ skip "Need OST version at least 2.6.54"; return; }
 	$SETSTRIPE -i 0 -c 1 $DIR/$tfile
+
+	# LU-1573 - Add duplicate write to generate grants
+	dd if=/dev/zero of=$DIR/$tfile count=1 bs=1M > /dev/null ||
+		error "First write failed"
 	replay_barrier ost1
 	# do IO
 	dd if=/dev/zero of=$DIR/$tfile count=1 bs=1M > /dev/null ||
@@ -422,7 +426,7 @@ test_10() {
 
 	dd if=/dev/zero of=$TDIR/$tfile count=10 || error "dd failed"
 
-	#define OBD_FAIL_OSC_DELAY_IO            0x414
+	#define OBD_FAIL_OSC_DELAY_IO            0x413
 	$LCTL set_param fail_val=60 fail_loc=0x414
 	cancel_lru_locks OST0000-osc &
 	sleep 2

@@ -108,6 +108,9 @@ lnet_ni_free(struct lnet_ni *ni)
 	if (ni->ni_cpts != NULL)
 		cfs_expr_list_values_free(ni->ni_cpts, ni->ni_ncpts);
 
+	if (ni->ni_lnd_tunables != NULL)
+		LIBCFS_FREE(ni->ni_lnd_tunables, sizeof(*ni->ni_lnd_tunables));
+
 	for (i = 0; i < LNET_MAX_INTERFACES &&
 		    ni->ni_interfaces[i] != NULL; i++) {
 		LIBCFS_FREE(ni->ni_interfaces[i],
@@ -676,7 +679,7 @@ lnet_parse_route (char *str, int *im_a_router)
 	char             *token = str;
 	int               ntokens = 0;
 	int               myrc = -1;
-	unsigned int      hops;
+	__u32		  hops;
 	int               got_hops = 0;
 	unsigned int	  priority = 0;
 
@@ -759,8 +762,10 @@ lnet_parse_route (char *str, int *im_a_router)
 		}
 	}
 
+	/* if there are no hops set then we want to flag this value as
+	 * unset since hops is an optional parameter */
 	if (!got_hops)
-		hops = 1;
+		hops = LNET_UNDEFINED_HOPS;
 
 	LASSERT(!list_empty(&nets));
 	LASSERT(!list_empty(&gateways));

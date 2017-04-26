@@ -1311,61 +1311,13 @@ int lfsck_verify_lpf(const struct lu_env *env, struct lfsck_instance *lfsck)
 			       lfsck_lfsck2name(lfsck), rc);
 	}
 
-	if (!fid_is_zero(&bk->lb_lpf_fid)) {
-		if (unlikely(!fid_is_norm(&bk->lb_lpf_fid))) {
-			struct lu_fid tfid = bk->lb_lpf_fid;
-
-			/* Invalid FID record in the bookmark file, reset it. */
-			fid_zero(&bk->lb_lpf_fid);
-			rc = lfsck_bookmark_store(env, lfsck);
-
-			CDEBUG(D_LFSCK, "%s: reset invalid LPF fid "DFID
-			       " in the bookmark file: rc = %d\n",
-			       lfsck_lfsck2name(lfsck), PFID(&tfid), rc);
-
-			if (rc != 0)
-				GOTO(put, rc);
-		} else {
-			child1 = lfsck_object_find_bottom(env, lfsck,
-							  &bk->lb_lpf_fid);
-			if (IS_ERR(child1)) {
-				child1 = NULL;
-				goto find_child2;
-			}
-
-			if (unlikely(!dt_object_exists(child1) ||
-				     dt_object_remote(child1)) ||
-				     !S_ISDIR(lfsck_object_type(child1))) {
-				/* Invalid FID record in the bookmark file,
-				 * reset it. */
-				fid_zero(&bk->lb_lpf_fid);
-				rc = lfsck_bookmark_store(env, lfsck);
-
-				CDEBUG(D_LFSCK, "%s: reset invalid LPF fid "DFID
-				       " in the bookmark file: rc = %d\n",
-				       lfsck_lfsck2name(lfsck),
-				       PFID(lfsck_dto2fid(child1)), rc);
-
-				if (rc != 0)
-					GOTO(put, rc);
-
-				lfsck_object_put(env, child1);
-				child1 = NULL;
-			} else if (unlikely(!dt_try_as_dir(env, child1))) {
-				GOTO(put, rc = -ENOTDIR);
-			}
-		}
-	}
-
-find_child2:
+	/* child2 */
 	snprintf(name, 8, "MDT%04x", node);
 	rc = dt_lookup(env, parent, (struct dt_rec *)cfid,
 		       (const struct dt_key *)name, BYPASS_CAPA);
 	if (rc == -ENOENT) {
-		if (!fid_is_zero(&bk->lb_lpf_fid))
-			goto check_child1;
-
-		GOTO(put, rc = 0);
+		rc = 0;
+		goto find_child1;
 	}
 
 	if (rc != 0)
@@ -1377,7 +1329,7 @@ find_child2:
 		if (rc != 0)
 			GOTO(put, rc);
 
-		goto check_child1;
+		goto find_child1;
 	}
 
 	child2 = lfsck_object_find_bottom(env, lfsck, cfid);
@@ -1391,23 +1343,20 @@ find_child2:
 		if (rc != 0)
 			GOTO(put, rc);
 
-		goto check_child1;
+		goto find_child1;
 	}
 
-	if (unlikely(!dt_try_as_dir(env, child2)))
-		GOTO(put, rc = -ENOTDIR);
+	if (unlikely(!dt_try_as_dir(env, child2))) {
+		lfsck_object_put(env, child2);
+		child2 = NULL;
+		rc = -ENOTDIR;
+	}
 
-	if (child1 == NULL) {
-		rc = lfsck_verify_lpf_pairs(env, lfsck, child2, name,
-					    pfid, LVLT_BY_NAMEENTRY);
-	} else if (!lu_fid_eq(cfid, &bk->lb_lpf_fid)) {
-		rc = lfsck_verify_lpf_pairs(env, lfsck, child1, name,
-					    pfid, LVLT_BY_BOOKMARK);
-		if (!lu_fid_eq(pfid, &LU_LPF_FID))
-			rc = lfsck_verify_lpf_pairs(env, lfsck, child2,
-						    name, pfid,
-						    LVLT_BY_NAMEENTRY);
-	} else {
+find_child1:
+	if (fid_is_zero(&bk->lb_lpf_fid))
+		goto check_child2;
+
+	if (likely(lu_fid_eq(cfid, &bk->lb_lpf_fid))) {
 		if (lfsck->li_lpf_obj == NULL) {
 			lu_object_get(&child2->do_lu);
 			lfsck->li_lpf_obj = child2;
@@ -1415,14 +1364,69 @@ find_child2:
 
 		cname = lfsck_name_get_const(env, name, strlen(name));
 		rc = lfsck_verify_linkea(env, child2, cname, &LU_LPF_FID);
+
+		GOTO(put, rc);
 	}
 
-	GOTO(put, rc);
+	if (unlikely(!fid_is_norm(&bk->lb_lpf_fid))) {
+		struct lu_fid tfid = bk->lb_lpf_fid;
 
-check_child1:
-	if (child1 != NULL)
-		rc = lfsck_verify_lpf_pairs(env, lfsck, child1, name,
-					    pfid, LVLT_BY_BOOKMARK);
+		/* Invalid FID record in the bookmark file, reset it. */
+		fid_zero(&bk->lb_lpf_fid);
+		rc = lfsck_bookmark_store(env, lfsck);
+
+		CDEBUG(D_LFSCK, "%s: reset invalid LPF fid "DFID
+		       " in the bookmark file: rc = %d\n",
+		       lfsck_lfsck2name(lfsck), PFID(&tfid), rc);
+
+		if (rc != 0)
+			GOTO(put, rc);
+
+		goto check_child2;
+	}
+
+	child1 = lfsck_object_find_bottom(env, lfsck, &bk->lb_lpf_fid);
+	if (IS_ERR(child1)) {
+		child1 = NULL;
+		goto check_child2;
+	}
+
+	if (unlikely(!dt_object_exists(child1) ||
+		     dt_object_remote(child1)) ||
+		     !S_ISDIR(lfsck_object_type(child1))) {
+		/* Invalid FID record in the bookmark file, reset it. */
+		fid_zero(&bk->lb_lpf_fid);
+		rc = lfsck_bookmark_store(env, lfsck);
+
+		CDEBUG(D_LFSCK, "%s: reset invalid LPF fid "DFID
+		       " in the bookmark file: rc = %d\n",
+		       lfsck_lfsck2name(lfsck),
+		       PFID(lfsck_dto2fid(child1)), rc);
+
+		if (rc != 0)
+			GOTO(put, rc);
+
+		lfsck_object_put(env, child1);
+		child1 = NULL;
+		goto check_child2;
+	}
+
+	if (unlikely(!dt_try_as_dir(env, child1))) {
+		lfsck_object_put(env, child1);
+		child1 = NULL;
+		rc = -ENOTDIR;
+		goto check_child2;
+	}
+
+	rc = lfsck_verify_lpf_pairs(env, lfsck, child1, name, pfid,
+				    LVLT_BY_BOOKMARK);
+	if (lu_fid_eq(pfid, &LU_LPF_FID))
+		GOTO(put, rc);
+
+check_child2:
+	if (child2 != NULL)
+		rc = lfsck_verify_lpf_pairs(env, lfsck, child2, name,
+					    pfid, LVLT_BY_NAMEENTRY);
 
 	GOTO(put, rc);
 
@@ -1620,8 +1624,8 @@ static inline int lfsck_instance_add(struct lfsck_instance *lfsck)
 	return 0;
 }
 
-int lfsck_bits_dump(struct seq_file *m, int bits, const char *names[],
-		    const char *prefix)
+void lfsck_bits_dump(struct seq_file *m, int bits, const char *names[],
+		     const char *prefix)
 {
 	int flag;
 	int i;
@@ -1643,36 +1647,36 @@ int lfsck_bits_dump(struct seq_file *m, int bits, const char *names[],
 	}
 
 	if (!newline)
-		seq_printf(m, "\n");
-	return 0;
+		seq_putc(m, '\n');
 }
 
-int lfsck_time_dump(struct seq_file *m, __u64 time, const char *prefix)
+void lfsck_time_dump(struct seq_file *m, __u64 time, const char *name)
 {
-	if (time != 0)
-		seq_printf(m, "%s: "LPU64" seconds\n", prefix,
-			  cfs_time_current_sec() - time);
-	else
-		seq_printf(m, "%s: N/A\n", prefix);
-	return 0;
+	if (time == 0) {
+		seq_printf(m, "%s_time: N/A\n", name);
+		seq_printf(m, "time_since_%s: N/A\n", name);
+	} else {
+		seq_printf(m, "%s_time: "LPU64"\n", name, time);
+		seq_printf(m, "time_since_%s: "LPU64" seconds\n",
+			   name, cfs_time_current_sec() - time);
+	}
 }
 
-int lfsck_pos_dump(struct seq_file *m, struct lfsck_position *pos,
-		   const char *prefix)
+void lfsck_pos_dump(struct seq_file *m, struct lfsck_position *pos,
+		    const char *prefix)
 {
 	if (fid_is_zero(&pos->lp_dir_parent)) {
-		if (pos->lp_oit_cookie == 0)
-			seq_printf(m, "%s: N/A, N/A, N/A\n",
-				   prefix);
-		else
-			seq_printf(m, "%s: "LPU64", N/A, N/A\n",
-				   prefix, pos->lp_oit_cookie);
+		if (pos->lp_oit_cookie == 0) {
+			seq_printf(m, "%s: N/A, N/A, N/A\n", prefix);
+			return;
+		}
+		seq_printf(m, "%s: "LPU64", N/A, N/A\n",
+			   prefix, pos->lp_oit_cookie);
 	} else {
 		seq_printf(m, "%s: "LPU64", "DFID", "LPX64"\n",
 			   prefix, pos->lp_oit_cookie,
 			   PFID(&pos->lp_dir_parent), pos->lp_dir_cookie);
 	}
-	return 0;
 }
 
 void lfsck_pos_fill(const struct lu_env *env, struct lfsck_instance *lfsck,
@@ -2490,7 +2494,7 @@ int lfsck_dump(struct seq_file *m, struct dt_device *key, enum lfsck_type type)
 	if (likely(lfsck != NULL)) {
 		com = lfsck_component_find(lfsck, type);
 		if (likely(com != NULL)) {
-			rc = com->lc_ops->lfsck_dump(&env, com, m);
+			com->lc_ops->lfsck_dump(&env, com, m);
 			lfsck_component_put(&env, com);
 		} else {
 			rc = -ENOTSUPP;
@@ -2684,6 +2688,9 @@ int lfsck_start(const struct lu_env *env, struct dt_device *key,
 	__u16				 flags  = 0;
 	__u16				 type   = 1;
 	ENTRY;
+
+	if (key->dd_rdonly)
+		RETURN(-EROFS);
 
 	lfsck = lfsck_instance_find(key, true, false);
 	if (unlikely(lfsck == NULL))

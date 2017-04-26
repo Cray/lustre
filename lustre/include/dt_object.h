@@ -75,20 +75,20 @@ typedef enum {
 } mntopt_t;
 
 struct dt_device_param {
-        unsigned           ddp_max_name_len;
-        unsigned           ddp_max_nlink;
-        unsigned           ddp_block_shift;
-        mntopt_t           ddp_mntopts;
-        unsigned           ddp_max_ea_size;
-        int                ddp_mount_type;
-        unsigned long long ddp_maxbytes;
-        /* percentage of available space to reserve for grant error margin */
-        int                ddp_grant_reserved;
-        /* per-inode space consumption */
-        short              ddp_inodespace;
-        /* per-fragment grant overhead to be used by client for grant
-         * calculation */
-        int                ddp_grant_frag;
+	unsigned	   ddp_max_name_len;
+	unsigned	   ddp_max_nlink;
+	unsigned	   ddp_symlink_max;
+	mntopt_t	   ddp_mntopts;
+	unsigned	   ddp_max_ea_size;
+	unsigned	   ddp_mount_type;
+	unsigned long long ddp_maxbytes;
+	/* per-inode space consumption */
+	short		   ddp_inodespace;
+	/* maximum number of blocks in an extent */
+	unsigned	   ddp_max_extent_blks;
+	/* per-extent insertion overhead to be used by client for grant
+	 * calculation */
+	unsigned	   ddp_extent_tax;
 };
 
 /**
@@ -1152,7 +1152,7 @@ struct dt_body_operations {
 	 * at object's offset lnb_file_offset.
 	 *
 	 * The memory referenced by the descriptors can't change its purpose
-	 * until the complimentary ->dbo_bufs_put() is called. The caller should
+	 * until the complementary ->dbo_bufs_put() is called. The caller should
 	 * specify if the buffers are used to read or modify data so that OSD
 	 * can decide how to initialize the buffers: bring all the data for
 	 * reads or just bring partial buffers for write. Note: the method does
@@ -1738,7 +1738,7 @@ enum dt_otable_it_flags {
 	DOIF_DRYRUN	= 0x0008,
 };
 
-/* otable based iteration needs to use the common DT interation APIs.
+/* otable based iteration needs to use the common DT iteration APIs.
  * To initialize the iteration, it needs call dio_it::init() firstly.
  * Here is how the otable based iteration should prepare arguments to
  * call dt_it_ops::init().
@@ -1759,7 +1759,8 @@ struct dt_device {
          * single-threaded start-up shut-down procedures.
          */
 	struct list_head		   dd_txn_callbacks;
-	unsigned int			   dd_record_fid_accessed:1;
+	unsigned int			   dd_record_fid_accessed:1,
+					   dd_rdonly:1;
 };
 
 int  dt_device_init(struct dt_device *dev, struct lu_device_type *t);
@@ -1995,6 +1996,10 @@ int local_object_create(const struct lu_env *env,
 			struct dt_object *o,
 			struct lu_attr *attr, struct dt_object_format *dof,
 			struct thandle *th);
+struct dt_object *local_file_find(const struct lu_env *env,
+				  struct local_oid_storage *los,
+				  struct dt_object *parent,
+				  const char *name);
 struct dt_object *local_file_find_or_create(const struct lu_env *env,
 					    struct local_oid_storage *los,
 					    struct dt_object *parent,

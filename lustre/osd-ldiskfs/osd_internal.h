@@ -79,6 +79,7 @@ extern struct kmem_cache *dynlock_cachep;
 
 /* OI scrub should skip this inode. */
 #define LDISKFS_STATE_LUSTRE_NOSCRUB	31
+#define LDISKFS_STATE_LUSTRE_DESTROY	30
 
 /** Enable thandle usage statistics */
 #define OSD_THANDLE_STATS (0)
@@ -88,6 +89,10 @@ extern struct kmem_cache *dynlock_cachep;
 #define OBJECTS  	"OBJECTS"
 #define ADMIN_USR	"admin_quotafile_v2.usr"
 #define ADMIN_GRP	"admin_quotafile_v2.grp"
+
+/* Statfs space reservation for fragmentation and local objects */
+#define OSD_STATFS_RESERVED		(1ULL << 23) /* 8MB */
+#define OSD_STATFS_RESERVED_SHIFT	(7) /* reserve 0.78% of all space */
 
 struct osd_directory {
         struct iam_container od_container;
@@ -126,6 +131,9 @@ struct osd_object {
 	struct osd_directory	*oo_dir;
 	/** protects inode attributes. */
 	spinlock_t		oo_guard;
+
+	/* the i_flags in LMA */
+	__u32			oo_lma_flags;
         /**
          * Following two members are used to indicate the presence of dot and
          * dotdot in the given directory. This is required for interop mode
@@ -216,6 +224,12 @@ struct osd_otable_it {
 				 ooi_waiting:1; /* it::next is waiting. */
 };
 
+struct osd_obj_orphan {
+	struct list_head oor_list;
+	struct lu_env	*oor_env; /* to identify "own" records */
+	__u32 oor_ino;
+};
+
 /*
  * osd device.
  */
@@ -287,6 +301,9 @@ struct osd_device {
 	 * exceeds the osd_device::od_full_scrub_threshold_rate,
 	 * then trigger OI scrub to scan the whole device. */
 	__u64			 od_full_scrub_threshold_rate;
+
+	/* a list of orphaned agent inodes, protected with od_osfs_lock */
+	struct list_head	 od_orphan_list;
 };
 
 enum osd_full_scrub_ratio {
@@ -341,6 +358,7 @@ struct osd_thandle {
         unsigned short          ot_credits;
         unsigned short          ot_id_cnt;
         unsigned short          ot_id_type;
+	int			ot_remove_agents:1;
         uid_t                   ot_id_array[OSD_MAX_UGID_CNT];
 	struct lquota_trans    *ot_quota_trans;
 #if OSD_THANDLE_STATS
@@ -606,10 +624,10 @@ struct osd_thread_info {
 	/* Tracking for transaction credits, to allow debugging and optimizing
 	 * cases where a large number of credits are being allocated for
 	 * single transaction. */
+	unsigned int		oti_credits_before;
 	unsigned short		oti_declare_ops[OSD_OT_MAX];
-	unsigned short		oti_declare_ops_rb[OSD_OT_MAX];
 	unsigned short		oti_declare_ops_cred[OSD_OT_MAX];
-	bool			oti_rollback;
+	unsigned short		oti_declare_ops_used[OSD_OT_MAX];
 };
 
 extern int ldiskfs_pdo;
@@ -885,6 +903,11 @@ static inline char *osd_name(struct osd_device *osd)
 	return osd->od_dt_dev.dd_lu_dev.ld_obd->obd_name;
 }
 
+static inline bool osd_is_ea_inode(struct inode *inode)
+{
+	return !!(LDISKFS_I(inode)->i_flags & LDISKFS_EA_INODE_FL);
+}
+
 extern const struct dt_body_operations osd_body_ops;
 extern struct lu_context_key osd_key;
 
@@ -921,6 +944,10 @@ static inline void osd_ipd_put(const struct lu_env *env,
         bag->ic_descr->id_ops->id_ipd_free(ipd);
 }
 
+int osd_calc_bkmap_credits(struct super_block *sb, struct inode *inode,
+			   const loff_t size, const loff_t pos,
+			   const int blocks);
+
 int osd_ldiskfs_read(struct inode *inode, void *buf, int size, loff_t *offs);
 int osd_ldiskfs_write_record(struct inode *inode, void *buf, int bufsize,
 			     int write_NUL, loff_t *offs, handle_t *handle);
@@ -945,8 +972,47 @@ struct dentry *osd_child_dentry_by_inode(const struct lu_env *env,
         return child_dentry;
 }
 
+#ifdef JOURNAL_START_HAS_3ARGS
+# define osd_journal_start_sb(sb, type, nblock) \
+		ldiskfs_journal_start_sb(sb, type, nblock)
+# define osd_ldiskfs_append(handle, inode, nblock) \
+		ldiskfs_append(handle, inode, nblock)
+# define osd_ldiskfs_find_entry(dir, name, de, inlined, lock) \
+		__ldiskfs_find_entry(dir, name, de, inlined, lock)
+# define osd_journal_start(inode, type, nblocks) \
+		ldiskfs_journal_start(inode, type, nblocks)
+# define osd_transaction_size(dev) \
+		(osd_journal(dev)->j_max_transaction_buffers / 2)
+#else
+# define LDISKFS_HT_MISC	0
+# define osd_journal_start_sb(sb, type, nblock) \
+		ldiskfs_journal_start_sb(sb, nblock)
+
+static inline struct buffer_head *osd_ldiskfs_append(handle_t *handle,
+						     struct inode *inode,
+						     ldiskfs_lblk_t *nblock)
+{
+	struct buffer_head *bh;
+	int err = 0;
+
+	bh = ldiskfs_append(handle, inode, nblock, &err);
+	if (bh == NULL)
+		bh = ERR_PTR(err);
+
+	return bh;
+}
+
+# define osd_ldiskfs_find_entry(dir, name, de, inlined, lock) \
+		__ldiskfs_find_entry(dir, name, de, lock)
+# define osd_journal_start(inode, type, nblocks) \
+		ldiskfs_journal_start(inode, nblocks)
+# define osd_transaction_size(dev) \
+		(osd_journal(dev)->j_max_transaction_buffers)
+#endif
+
 extern int osd_trans_declare_op2rb[];
 extern int ldiskfs_track_declares_assert;
+void osd_trans_dump_creds(const struct lu_env *env, struct thandle *th);
 
 static inline void osd_trans_declare_op(const struct lu_env *env,
 					struct osd_thandle *oh,
@@ -976,7 +1042,7 @@ static inline void osd_trans_exec_op(const struct lu_env *env,
 	struct osd_thread_info *oti = osd_oti_get(env);
 	struct osd_thandle     *oh  = container_of(th, struct osd_thandle,
 						   ot_super);
-	unsigned int		rb;
+	unsigned int		rb, left;
 
 	LASSERT(oh->ot_handle != NULL);
 	if (unlikely(op >= OSD_OT_MAX)) {
@@ -990,58 +1056,99 @@ static inline void osd_trans_exec_op(const struct lu_env *env,
 		}
 	}
 
-	if (likely(!oti->oti_rollback && oti->oti_declare_ops[op] > 0)) {
-		oti->oti_declare_ops[op]--;
-		oti->oti_declare_ops_rb[op]++;
-	} else {
-		/* all future updates are considered rollback */
-		oti->oti_rollback = true;
-		rb = osd_trans_declare_op2rb[op];
-		if (unlikely(rb >= OSD_OT_MAX)) {
+	/* find rollback (or reverse) operation for the given one
+	 * such an operation doesn't require additional credits
+	 * as the same set of blocks are modified */
+	rb = osd_trans_declare_op2rb[op];
+
+	/* check whether credits for this operation were reserved at all */
+	if (unlikely(oti->oti_declare_ops_cred[op] == 0 &&
+		     oti->oti_declare_ops_cred[rb] == 0)) {
+		/* the API is not perfect yet: CREATE does REF_ADD internally
+		 * while DESTROY does not. To rollback CREATE the callers
+		 * needs to call REF_DEL+DESTROY which is hard to detect using
+		 * a simple table of rollback operations */
+		if (op == OSD_OT_REF_DEL &&
+		    oti->oti_declare_ops_cred[OSD_OT_CREATE] > 0)
+			goto proceed;
+		if (op == OSD_OT_REF_ADD &&
+		    oti->oti_declare_ops_cred[OSD_OT_DESTROY] > 0)
+			goto proceed;
+		osd_trans_dump_creds(env, th);
+		CERROR("%s: op = %d, rb = %d\n",
+		       osd_name(osd_dt_dev(oh->ot_super.th_dev)), op, rb);
+		if (unlikely(ldiskfs_track_declares_assert))
+			LBUG();
+	}
+
+proceed:
+	/* remember how many credits we have unused before the operation */
+	oti->oti_credits_before = oh->ot_handle->h_buffer_credits;
+	left = oti->oti_declare_ops_cred[op] - oti->oti_declare_ops_used[op];
+	if (unlikely(oti->oti_credits_before < left)) {
+		osd_trans_dump_creds(env, th);
+		CERROR("%s: op = %d, rb = %d\n",
+		       osd_name(osd_dt_dev(oh->ot_super.th_dev)), op, rb);
+		/* on a very small fs (testing?) it's possible that
+		 * the transaction can't fit 1/4 of journal, so we
+		 * just request less credits (see osd_trans_start()).
+		 * ignore the same case here */
+		rb = osd_transaction_size(osd_dt_dev(th->th_dev));
+		if (unlikely(oh->ot_credits < rb)) {
 			if (unlikely(ldiskfs_track_declares_assert))
-				LASSERTF(rb < OSD_OT_MAX, "rb = %u\n", rb);
-			else {
-				CWARN("%s: Invalid rollback index %d\n",
-				      osd_name(osd_dt_dev(th->th_dev)), rb);
-				libcfs_debug_dumpstack(NULL);
-				return;
-			}
+				LBUG();
 		}
-		if (unlikely(oti->oti_declare_ops_rb[rb] == 0)) {
-			if (unlikely(ldiskfs_track_declares_assert))
-				LASSERTF(oti->oti_declare_ops_rb[rb] > 0,
-					 "rb = %u\n", rb);
-			else {
-				CWARN("%s: Overflow in tracking declares for "
-				      "index, rb = %d\n",
-				      osd_name(osd_dt_dev(th->th_dev)), rb);
-				libcfs_debug_dumpstack(NULL);
-				return;
-			}
-		}
-		oti->oti_declare_ops_rb[rb]--;
 	}
 }
 
-static inline void osd_trans_declare_rb(const struct lu_env *env,
-					struct thandle *th, unsigned int op)
+static inline void osd_trans_exec_check(const struct lu_env *env,
+					struct thandle *th,
+					unsigned int op)
 {
 	struct osd_thread_info *oti = osd_oti_get(env);
 	struct osd_thandle     *oh  = container_of(th, struct osd_thandle,
 						   ot_super);
+	int			used, over, quota;
 
-	LASSERT(oh->ot_handle != NULL);
-	if (unlikely(op >= OSD_OT_MAX)) {
-		if (unlikely(ldiskfs_track_declares_assert))
-			LASSERT(op < OSD_OT_MAX);
-		else {
-			CWARN("%s: Invalid operation index %d\n",
-			      osd_name(osd_dt_dev(th->th_dev)), op);
-			libcfs_debug_dumpstack(NULL);
-		}
+	/* how many credits have been used by the operation */
+	used = oti->oti_credits_before - oh->ot_handle->h_buffer_credits;
 
+	if (unlikely(used < 0)) {
+		/* if some block was allocated and released in the same
+		 * transaction, then it won't be a part of the transaction
+		 * and delta can be negative */
+		return;
+	}
+
+	if (used == 0) {
+		/* rollback operations (e.g. when we destroy just created
+		 * object) should not consume any credits. there is no point
+		 * to confuse the checks below */
+		return;
+	}
+
+	oti->oti_declare_ops_used[op] += used;
+	if (oti->oti_declare_ops_used[op] <= oti->oti_declare_ops_cred[op])
+		return;
+
+	/* we account quota for a whole transaction and any operation can
+	 * consume corresponding credits */
+	over = oti->oti_declare_ops_used[op] -
+		oti->oti_declare_ops_cred[op];
+	quota = oti->oti_declare_ops_cred[OSD_OT_QUOTA] -
+		oti->oti_declare_ops_used[OSD_OT_QUOTA];
+	if (over <= quota) {
+		/* probably that credits were consumed by
+		 * quota indirectly (in the depths of ldiskfs) */
+		oti->oti_declare_ops_used[OSD_OT_QUOTA] += over;
+		oti->oti_declare_ops_used[op] -= over;
 	} else {
-		oti->oti_declare_ops_rb[op]++;
+		CWARN("op %d: used %u, used now %u, reserved %u\n",
+		      op, oti->oti_declare_ops_used[op], used,
+		      oti->oti_declare_ops_cred[op]);
+		osd_trans_dump_creds(env, th);
+		if (unlikely(ldiskfs_track_declares_assert))
+			LBUG();
 	}
 }
 
@@ -1133,31 +1240,6 @@ static inline struct buffer_head *__ldiskfs_bread(handle_t *handle,
 	return bh;
 #endif
 }
-
-#ifdef JOURNAL_START_HAS_3ARGS
-# define osd_journal_start_sb(sb, type, nblock) \
-		ldiskfs_journal_start_sb(sb, type, nblock)
-# define osd_ldiskfs_append(handle, inode, nblock, err) \
-		ldiskfs_append(handle, inode, nblock)
-# define osd_ldiskfs_find_entry(dir, name, de, inlined, lock) \
-		__ldiskfs_find_entry(dir, name, de, inlined, lock)
-# define osd_journal_start(inode, type, nblocks) \
-		ldiskfs_journal_start(inode, type, nblocks)
-# define osd_transaction_size(dev) \
-		(osd_journal(dev)->j_max_transaction_buffers / 2)
-#else
-# define LDISKFS_HT_MISC	0
-# define osd_journal_start_sb(sb, type, nblock) \
-		ldiskfs_journal_start_sb(sb, nblock)
-# define osd_ldiskfs_append(handle, inode, nblock, err) \
-		ldiskfs_append(handle, inode, nblock, err)
-# define osd_ldiskfs_find_entry(dir, name, de, inlined, lock) \
-		__ldiskfs_find_entry(dir, name, de, lock)
-# define osd_journal_start(inode, type, nblocks) \
-		ldiskfs_journal_start(inode, nblocks)
-# define osd_transaction_size(dev) \
-		(osd_journal(dev)->j_max_transaction_buffers)
-#endif
 
 void ldiskfs_inc_count(handle_t *handle, struct inode *inode);
 void ldiskfs_dec_count(handle_t *handle, struct inode *inode);

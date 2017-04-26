@@ -508,9 +508,9 @@ kgnilnd_nak_rdma(kgn_conn_t *conn, int rx_type, int error, __u64 cookie, lnet_ni
 }
 
 int
-kgnilnd_setup_immediate_buffer(kgn_tx_t *tx, unsigned int niov, struct iovec *iov,
-			       lnet_kiov_t *kiov, unsigned int offset, unsigned int nob)
-
+kgnilnd_setup_immediate_buffer(kgn_tx_t *tx, unsigned int niov,
+			       struct kvec *iov, lnet_kiov_t *kiov,
+			       unsigned int offset, unsigned int nob)
 {
 	kgn_msg_t       *msg = &tx->tx_msg;
 	int              i;
@@ -624,7 +624,7 @@ kgnilnd_setup_immediate_buffer(kgn_tx_t *tx, unsigned int niov, struct iovec *io
 
 int
 kgnilnd_setup_virt_buffer(kgn_tx_t *tx,
-			  unsigned int niov, struct iovec *iov,
+			  unsigned int niov, struct kvec *iov,
 			  unsigned int offset, unsigned int nob)
 
 {
@@ -764,7 +764,7 @@ error:
 
 static inline int
 kgnilnd_setup_rdma_buffer(kgn_tx_t *tx, unsigned int niov,
-			  struct iovec *iov, lnet_kiov_t *kiov,
+			  struct kvec *iov, lnet_kiov_t *kiov,
 			  unsigned int offset, unsigned int nob)
 {
 	int     rc;
@@ -1283,10 +1283,10 @@ kgnilnd_tx_done(kgn_tx_t *tx, int completion)
 	 * could free up lnet credits, resulting in a call chain back into
 	 * the LND via kgnilnd_send and friends */
 
-	lnet_finalize(ni, lntmsg0, status0);
+	lnet_finalize(lntmsg0, status0);
 
 	if (lntmsg1 != NULL) {
-		lnet_finalize(ni, lntmsg1, status1);
+		lnet_finalize(lntmsg1, status1);
 	}
 }
 
@@ -2108,7 +2108,7 @@ kgnilnd_send(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg)
 	int               target_is_router = lntmsg->msg_target_is_router;
 	int               routing = lntmsg->msg_routing;
 	unsigned int      niov = lntmsg->msg_niov;
-	struct iovec     *iov = lntmsg->msg_iov;
+	struct kvec      *iov = lntmsg->msg_iov;
 	lnet_kiov_t      *kiov = lntmsg->msg_kiov;
 	unsigned int      offset = lntmsg->msg_offset;
 	unsigned int      nob = lntmsg->msg_len;
@@ -2277,7 +2277,7 @@ kgnilnd_setup_rdma(lnet_ni_t *ni, kgn_rx_t *rx, lnet_msg_t *lntmsg, int mlen)
 	kgn_conn_t    *conn = rx->grx_conn;
 	kgn_msg_t     *rxmsg = rx->grx_msg;
 	unsigned int   niov = lntmsg->msg_niov;
-	struct iovec  *iov = lntmsg->msg_iov;
+	struct kvec   *iov = lntmsg->msg_iov;
 	lnet_kiov_t   *kiov = lntmsg->msg_kiov;
 	unsigned int   offset = lntmsg->msg_offset;
 	unsigned int   nob = lntmsg->msg_len;
@@ -2329,7 +2329,7 @@ kgnilnd_setup_rdma(lnet_ni_t *ni, kgn_rx_t *rx, lnet_msg_t *lntmsg, int mlen)
 	kgnilnd_tx_done(tx, rc);
 	kgnilnd_nak_rdma(conn, done_type, rc, rxmsg->gnm_u.get.gngm_cookie, ni->ni_nid);
  failed_0:
-	lnet_finalize(ni, lntmsg, rc);
+	lnet_finalize(lntmsg, rc);
 }
 
 int
@@ -2426,7 +2426,7 @@ kgnilnd_eager_recv(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg,
 int
 kgnilnd_recv(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg,
 	     int delayed, unsigned int niov,
-	     struct iovec *iov, lnet_kiov_t *kiov,
+	     struct kvec *iov, lnet_kiov_t *kiov,
 	     unsigned int offset, unsigned int mlen, unsigned int rlen)
 {
 	kgn_rx_t    *rx = private;
@@ -2455,7 +2455,7 @@ kgnilnd_recv(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg,
 
 		/* someone closed the conn after we copied this out, nuke it */
 		kgnilnd_consume_rx(rx);
-		lnet_finalize(ni, lntmsg, conn->gnc_error);
+		lnet_finalize(lntmsg, conn->gnc_error);
 		RETURN(0);
 	}
 	read_unlock(&kgnilnd_data.kgn_peer_conn_lock);
@@ -2529,14 +2529,14 @@ kgnilnd_recv(lnet_ni_t *ni, void *private, lnet_msg_t *lntmsg,
 				&rxmsg[1], 0, mlen);
 
 		kgnilnd_consume_rx(rx);
-		lnet_finalize(ni, lntmsg, 0);
+		lnet_finalize(lntmsg, 0);
 		RETURN(0);
 
 	case GNILND_MSG_PUT_REQ:
 		/* LNET wants to truncate or drop transaction, sending NAK */
 		if (mlen == 0) {
 			kgnilnd_consume_rx(rx);
-			lnet_finalize(ni, lntmsg, 0);
+			lnet_finalize(lntmsg, 0);
 
 			/* only error if lntmsg == NULL, otherwise we are just
 			 * short circuiting the rdma process of 0 bytes */
@@ -2595,7 +2595,7 @@ nak_put_req:
 		/* LNET wants to truncate or drop transaction, sending NAK */
 		if (mlen == 0) {
 			kgnilnd_consume_rx(rx);
-			lnet_finalize(ni, lntmsg, 0);
+			lnet_finalize(lntmsg, 0);
 
 			/* only error if lntmsg == NULL, otherwise we are just
 			 * short circuiting the rdma process of 0 bytes */
@@ -2665,7 +2665,7 @@ nak_get_req_rev:
 		/* LNET wants to truncate or drop transaction, sending NAK */
 		if (mlen == 0) {
 			kgnilnd_consume_rx(rx);
-			lnet_finalize(ni, lntmsg, 0);
+			lnet_finalize(lntmsg, 0);
 
 			/* only error if lntmsg == NULL, otherwise we are just
 			 * short circuiting the rdma process of 0 bytes */

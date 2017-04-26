@@ -694,13 +694,17 @@ static int lmv_fid2path(struct obd_export *exp, int len, void *karg, void *uarg)
 	struct getinfo_fid2path *gf;
 	struct lmv_tgt_desc     *tgt;
 	struct getinfo_fid2path *remote_gf = NULL;
+	struct lu_fid		root_fid;
 	int			remote_gf_size = 0;
 	int			rc;
 
-	gf = (struct getinfo_fid2path *)karg;
+	gf = karg;
 	tgt = lmv_find_target(lmv, &gf->gf_fid);
 	if (IS_ERR(tgt))
 		RETURN(PTR_ERR(tgt));
+
+	root_fid = *gf->gf_u.gf_root_fid;
+	LASSERT(fid_is_sane(&root_fid));
 
 repeat_fid2path:
 	rc = obd_iocontrol(OBD_IOC_FID2PATH, tgt->ltd_exp, len, gf, uarg);
@@ -714,23 +718,24 @@ repeat_fid2path:
 		char *ptr;
 
 		ori_gf = (struct getinfo_fid2path *)karg;
-		if (strlen(ori_gf->gf_path) +
-		    strlen(gf->gf_path) > ori_gf->gf_pathlen)
+		if (strlen(ori_gf->gf_u.gf_path) +
+		    strlen(gf->gf_u.gf_path) > ori_gf->gf_pathlen)
 			GOTO(out_fid2path, rc = -EOVERFLOW);
 
-		ptr = ori_gf->gf_path;
+		ptr = ori_gf->gf_u.gf_path;
 
-		memmove(ptr + strlen(gf->gf_path) + 1, ptr,
-			strlen(ori_gf->gf_path));
+		memmove(ptr + strlen(gf->gf_u.gf_path) + 1, ptr,
+			strlen(ori_gf->gf_u.gf_path));
 
-		strncpy(ptr, gf->gf_path, strlen(gf->gf_path));
-		ptr += strlen(gf->gf_path);
+		strncpy(ptr, gf->gf_u.gf_path,
+			strlen(gf->gf_u.gf_path));
+		ptr += strlen(gf->gf_u.gf_path);
 		*ptr = '/';
 	}
 
 	CDEBUG(D_INFO, "%s: get path %s "DFID" rec: "LPU64" ln: %u\n",
 	       tgt->ltd_exp->exp_obd->obd_name,
-	       gf->gf_path, PFID(&gf->gf_fid), gf->gf_recno,
+	       gf->gf_u.gf_path, PFID(&gf->gf_fid), gf->gf_recno,
 	       gf->gf_linkno);
 
 	if (rc == 0)
@@ -759,7 +764,8 @@ repeat_fid2path:
 	remote_gf->gf_fid = gf->gf_fid;
 	remote_gf->gf_recno = -1;
 	remote_gf->gf_linkno = -1;
-	memset(remote_gf->gf_path, 0, remote_gf->gf_pathlen);
+	memset(remote_gf->gf_u.gf_path, 0, remote_gf->gf_pathlen);
+	*remote_gf->gf_u.gf_root_fid = root_fid;
 	gf = remote_gf;
 	goto repeat_fid2path;
 
@@ -1508,19 +1514,20 @@ out_free_temp:
 }
 
 static int lmv_getstatus(struct obd_export *exp,
-                         struct lu_fid *fid,
-                         struct obd_capa **pc)
+			 const char *fileset,
+			 struct lu_fid *fid,
+			 struct obd_capa **pc)
 {
         struct obd_device    *obd = exp->exp_obd;
         struct lmv_obd       *lmv = &obd->u.lmv;
         int                   rc;
         ENTRY;
 
-        rc = lmv_check_connect(obd);
-        if (rc)
-                RETURN(rc);
+	rc = lmv_check_connect(obd);
+	if (rc)
+		RETURN(rc);
 
-	rc = md_getstatus(lmv->tgts[0]->ltd_exp, fid, pc);
+	rc = md_get_root(lmv->tgts[0]->ltd_exp, fileset, fid, pc);
 	RETURN(rc);
 }
 
@@ -1834,8 +1841,7 @@ static int lmv_done_writing(struct obd_export *exp,
 
 static int
 lmv_enqueue(struct obd_export *exp, struct ldlm_enqueue_info *einfo,
-	    const union ldlm_policy_data *policy,
-	    struct lookup_intent *it, struct md_op_data *op_data,
+	    const union ldlm_policy_data *policy, struct md_op_data *op_data,
 	    struct lustre_handle *lockh, __u64 extra_lock_flags)
 {
 	struct obd_device        *obd = exp->exp_obd;
@@ -1848,18 +1854,48 @@ lmv_enqueue(struct obd_export *exp, struct ldlm_enqueue_info *einfo,
 	if (rc)
 		RETURN(rc);
 
-	CDEBUG(D_INODE, "ENQUEUE '%s' on "DFID"\n",
-	       LL_IT2STR(it), PFID(&op_data->op_fid1));
+	CDEBUG(D_INODE, "ENQUEUE on "DFID"\n", PFID(&op_data->op_fid1));
 
 	tgt = lmv_locate_mds(lmv, op_data, &op_data->op_fid1);
 	if (IS_ERR(tgt))
 		RETURN(PTR_ERR(tgt));
 
-	CDEBUG(D_INODE, "ENQUEUE '%s' on "DFID" -> mds #%u\n",
-	       LL_IT2STR(it), PFID(&op_data->op_fid1), tgt->ltd_idx);
+	CDEBUG(D_INODE, "ENQUEUE on "DFID" -> mds #%u\n",
+	       PFID(&op_data->op_fid1), tgt->ltd_idx);
 
-	rc = md_enqueue(tgt->ltd_exp, einfo, policy, it, op_data, lockh,
+	rc = md_enqueue(tgt->ltd_exp, einfo, policy, op_data, lockh,
 			extra_lock_flags);
+
+	RETURN(rc);
+}
+
+static int
+lmv_enqueue_async(struct obd_export *exp, struct ldlm_enqueue_info *einfo,
+		  obd_enqueue_update_f upcall, struct md_op_data *op_data,
+		  ldlm_policy_data_t *policy, __u64 flags)
+{
+	struct obd_device        *obd = exp->exp_obd;
+	struct lmv_obd           *lmv = &obd->u.lmv;
+	struct lmv_tgt_desc      *tgt;
+	int                       rc;
+	ENTRY;
+
+	rc = lmv_check_connect(obd);
+	if (rc)
+		RETURN(rc);
+
+	CDEBUG(D_INODE, "ENQUEUE ASYNC on "DFID"\n",
+			PFID(&op_data->op_fid1));
+
+	tgt = lmv_locate_mds(lmv, op_data, &op_data->op_fid1);
+	if (IS_ERR(tgt))
+		RETURN(PTR_ERR(tgt));
+
+	CDEBUG(D_INODE, "ENQUEUE ASYNC on "DFID" -> mds #%d\n",
+	       PFID(&op_data->op_fid1), tgt->ltd_idx);
+
+	rc = md_enqueue_async(tgt->ltd_exp, einfo, upcall, op_data, policy,
+			      flags);
 
 	RETURN(rc);
 }
@@ -3521,6 +3557,7 @@ struct md_ops lmv_md_ops = {
         .m_create               = lmv_create,
         .m_done_writing         = lmv_done_writing,
         .m_enqueue              = lmv_enqueue,
+	.m_enqueue_async        = lmv_enqueue_async,
         .m_getattr              = lmv_getattr,
         .m_getxattr             = lmv_getxattr,
         .m_getattr_name         = lmv_getattr_name,
@@ -3560,7 +3597,7 @@ static void lmv_exit(void)
         class_unregister_type(LUSTRE_LMV_NAME);
 }
 
-MODULE_AUTHOR("Sun Microsystems, Inc. <http://www.lustre.org/>");
+MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Logical Metadata Volume OBD driver");
 MODULE_LICENSE("GPL");
 

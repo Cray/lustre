@@ -68,18 +68,22 @@ static int echo_connect(const struct lu_env *env,
                         struct obd_uuid *cluuid, struct obd_connect_data *data,
                         void *localdata)
 {
-        struct lustre_handle conn = { 0 };
-        int rc;
+	struct lustre_handle conn = { 0 };
+	int rc;
 
-        data->ocd_connect_flags &= ECHO_CONNECT_SUPPORTED;
-        rc = class_connect(&conn, obd, cluuid);
-        if (rc) {
-                CERROR("can't connect %d\n", rc);
-                return rc;
-        }
-        *exp = class_conn2export(&conn);
+	data->ocd_connect_flags &= ECHO_CONNECT_SUPPORTED;
 
-        return 0;
+	if (data->ocd_connect_flags & OBD_CONNECT_FLAGS2)
+		data->ocd_connect_flags2 &= ECHO_CONNECT_SUPPORTED2;
+
+	rc = class_connect(&conn, obd, cluuid);
+	if (rc) {
+		CERROR("can't connect %d\n", rc);
+		return rc;
+	}
+	*exp = class_conn2export(&conn);
+
+	return 0;
 }
 
 static int echo_disconnect(struct obd_export *exp)
@@ -291,7 +295,7 @@ static int echo_map_nb_to_lb(struct obdo *oa, struct obd_ioobj *obj,
                              struct niobuf_local *lb, int cmd, int *left)
 {
 	gfp_t gfp_mask = (ostid_id(&obj->ioo_oid) & 1) ?
-			GFP_HIGHUSER : GFP_IOFS;
+			GFP_HIGHUSER : GFP_KERNEL;
 	int ispersistent = ostid_id(&obj->ioo_oid) == ECHO_PERSISTENT_OBJID;
 	int debug_setup = (!ispersistent &&
 			   (oa->o_valid & OBD_MD_FLFLAGS) != 0 &&
@@ -668,7 +672,7 @@ int echo_persistent_pages_init(void)
 
 	for (i = 0; i < ECHO_PERSISTENT_PAGES; i++) {
 		gfp_t gfp_mask = (i < ECHO_PERSISTENT_PAGES/2) ?
-			GFP_IOFS : GFP_HIGHUSER;
+			GFP_KERNEL : GFP_HIGHUSER;
 
 		OBD_PAGE_ALLOC(pg, gfp_mask);
 		if (pg == NULL) {

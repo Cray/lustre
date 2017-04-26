@@ -201,7 +201,7 @@ static int qsd_reint_index(const struct lu_env *env, struct qsd_qtype_info *qqi,
 	if (pages == NULL)
 		GOTO(out, rc = -ENOMEM);
 	for (i = 0; i < npages; i++) {
-		pages[i] = alloc_page(GFP_IOFS);
+		pages[i] = alloc_page(GFP_NOFS);
 		if (pages[i] == NULL)
 			GOTO(out, rc = -ENOMEM);
 	}
@@ -530,11 +530,12 @@ out:
 	qqi->qqi_reint = 0;
 	write_unlock(&qsd->qsd_lock);
 
-	qqi_putref(qqi);
-	lu_ref_del(&qqi->qqi_reference, "reint_thread", thread);
-
 	thread_set_flags(thread, SVC_STOPPED);
 	wake_up(&thread->t_ctl_waitq);
+
+	lu_ref_del(&qqi->qqi_reference, "reint_thread", thread);
+	qqi_putref(qqi);
+
 	return rc;
 }
 
@@ -627,6 +628,9 @@ int qsd_start_reint_thread(struct qsd_qtype_info *qqi)
 	int			 rc;
 	char			*name;
 	ENTRY;
+
+	if (qsd->qsd_dev->dd_rdonly)
+		RETURN(0);
 
 	/* don't bother to do reintegration when quota isn't enabled */
 	if (!qsd_type_enabled(qsd, qqi->qqi_qtype))

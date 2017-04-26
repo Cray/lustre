@@ -204,7 +204,7 @@ typedef enum {
 	MDS_READPAGE		= 37,
 	MDS_CONNECT		= 38,
 	MDS_DISCONNECT		= 39,
-	MDS_GETSTATUS		= 40,
+	MDS_GET_ROOT		= 40,
 	MDS_STATFS		= 41,
 	MDS_PIN			= 42,
 	MDS_UNPIN		= 43,
@@ -252,8 +252,8 @@ typedef enum {
   REINT_RENAME   = 5,
   REINT_OPEN     = 6,
   REINT_SETXATTR = 7,
-  //      REINT_CLOSE    = 8,
-  //      REINT_WRITE    = 9,
+  REINT_RMENTRY  = 8,
+  REINT_MIGRATE  = 9,
   REINT_MAX
 } mds_reint_t;
 
@@ -1118,6 +1118,8 @@ const value_string lustre_mds_reint_t_vals[] = {
   { REINT_RENAME, "REINT_RENAME" },
   { REINT_OPEN, "REINT_OPEN" },
   { REINT_SETXATTR, "REINT_SETXATTR" },
+  { REINT_RMENTRY, "REINT_RMENTRY" },
+  { REINT_MIGRATE, "REINT_MIGRATE" },
   { 0, NULL }
 };
 const value_string lustre_op_codes[] = {
@@ -1151,7 +1153,7 @@ const value_string lustre_op_codes[] = {
   {37 , "MDS_READPAGE"},
   {38 , "MDS_CONNECT"},
   {39 , "MDS_DISCONNECT"},
-  {40 , "MDS_GETSTATUS"},
+  {40 , "MDS_GET_ROOT"},
   {41 , "MDS_STATFS"},
   {42 , "MDS_PIN"},
   {43 , "MDS_UNPIN"},
@@ -8494,7 +8496,7 @@ lustre_mds_opcode_process(tvbuff_t *tvb _U_, int offset _U_, packet_info *pinfo 
     case MDS_DISCONNECT:
       /*[nothing]*/
       break;
-    case MDS_GETSTATUS:
+    case MDS_GET_ROOT:
       /*request: [mds body]*/
       /*reply:   [mds body][capa] */
       offset=lustre_dissect_struct_mdt_body(tvb, offset, pinfo, tree, hf_lustre_mdt_body) ;

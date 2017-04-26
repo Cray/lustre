@@ -333,7 +333,7 @@ static void test15(void)
 	lla = llapi_alloc_lla(count, WRITE_USER, 0);
 
 	for (i = 0; i < 20000; i++) {
-		lla->lla_extents[0].start = i * 1024 * 1024 * 10;
+		lla->lla_extents[0].start = i * 1024UL * 1024UL * 10UL;
 		lla->lla_extents[0].end = lla->lla_extents[0].start + 1;
 
 		lla->lla_extents[0].result = 345678;

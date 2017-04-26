@@ -53,6 +53,12 @@
 
 #include "ptlrpc_internal.h"
 
+static int mult = 20 - PAGE_CACHE_SHIFT;
+static int enc_pool_max_memory_mb;
+CFS_MODULE_PARM(enc_pool_max_memory_mb, "i", int, 0644,
+		"Encoding pool max memory (MB), 1/8 of total physical memory by default");
+
+
 /****************************************
  * bulk encryption page pools           *
  ****************************************/
@@ -113,6 +119,7 @@ static struct ptlrpc_enc_page_pool {
         unsigned long    epp_st_lowfree;        /* lowest free pages reached */
         unsigned int     epp_st_max_wqlen;      /* highest waitqueue length */
         cfs_time_t       epp_st_max_wait;       /* in jeffies */
+	unsigned long	 epp_st_outofmem;	/* # of out of mem requests */
 	/*
 	 * pointers to pools
 	 */
@@ -131,53 +138,53 @@ static struct shrinker *pools_shrinker;
  */
 int sptlrpc_proc_enc_pool_seq_show(struct seq_file *m, void *v)
 {
-        int     rc;
-
 	spin_lock(&page_pools.epp_lock);
 
-	rc = seq_printf(m,
-                      "physical pages:          %lu\n"
-                      "pages per pool:          %lu\n"
-                      "max pages:               %lu\n"
-                      "max pools:               %u\n"
-                      "total pages:             %lu\n"
-                      "total free:              %lu\n"
-                      "idle index:              %lu/100\n"
-                      "last shrink:             %lds\n"
-                      "last access:             %lds\n"
-                      "max pages reached:       %lu\n"
-                      "grows:                   %u\n"
-                      "grows failure:           %u\n"
-                      "shrinks:                 %u\n"
-                      "cache access:            %lu\n"
-                      "cache missing:           %lu\n"
-                      "low free mark:           %lu\n"
-                      "max waitqueue depth:     %u\n"
-		      "max wait time:           "CFS_TIME_T"/%lu\n"
-                      ,
-		      totalram_pages,
-                      PAGES_PER_POOL,
-                      page_pools.epp_max_pages,
-                      page_pools.epp_max_pools,
-                      page_pools.epp_total_pages,
-                      page_pools.epp_free_pages,
-                      page_pools.epp_idle_idx,
-                      cfs_time_current_sec() - page_pools.epp_last_shrink,
-                      cfs_time_current_sec() - page_pools.epp_last_access,
-                      page_pools.epp_st_max_pages,
-                      page_pools.epp_st_grows,
-                      page_pools.epp_st_grow_fails,
-                      page_pools.epp_st_shrinks,
-                      page_pools.epp_st_access,
-		      page_pools.epp_st_missings,
-		      page_pools.epp_st_lowfree,
-		      page_pools.epp_st_max_wqlen,
-		      page_pools.epp_st_max_wait,
-		      msecs_to_jiffies(MSEC_PER_SEC)
-		     );
+	seq_printf(m,
+		   "physical pages:          %lu\n"
+		   "pages per pool:          %lu\n"
+		   "max pages:               %lu\n"
+		   "max pools:               %u\n"
+		   "total pages:             %lu\n"
+		   "total free:              %lu\n"
+		   "idle index:              %lu/100\n"
+		   "last shrink:             %lds\n"
+		   "last access:             %lds\n"
+		   "max pages reached:       %lu\n"
+		   "grows:                   %u\n"
+		   "grows failure:           %u\n"
+		   "shrinks:                 %u\n"
+		   "cache access:            %lu\n"
+		   "cache missing:           %lu\n"
+		   "low free mark:           %lu\n"
+		   "max waitqueue depth:     %u\n"
+		   "max wait time:           "CFS_TIME_T"/%lu\n"
+		   "out of mem:             %lu\n"
+		   ,
+		   totalram_pages,
+		   PAGES_PER_POOL,
+		   page_pools.epp_max_pages,
+		   page_pools.epp_max_pools,
+		   page_pools.epp_total_pages,
+		   page_pools.epp_free_pages,
+		   page_pools.epp_idle_idx,
+		   cfs_time_current_sec() - page_pools.epp_last_shrink,
+		   cfs_time_current_sec() - page_pools.epp_last_access,
+		   page_pools.epp_st_max_pages,
+		   page_pools.epp_st_grows,
+		   page_pools.epp_st_grow_fails,
+		   page_pools.epp_st_shrinks,
+		   page_pools.epp_st_access,
+		   page_pools.epp_st_missings,
+		   page_pools.epp_st_lowfree,
+		   page_pools.epp_st_max_wqlen,
+		   page_pools.epp_st_max_wait,
+		   msecs_to_jiffies(MSEC_PER_SEC),
+		   page_pools.epp_st_outofmem
+		   );
 
 	spin_unlock(&page_pools.epp_lock);
-	return rc;
+	return 0;
 }
 
 static void enc_pools_release_free_pages(long npages)
@@ -520,6 +527,24 @@ static int enc_pools_should_grow(int page_needed, long now)
 }
 
 /*
+ * Export the number of free pages in the pool
+ */
+int get_free_pages_in_pool(void)
+{
+	return page_pools.epp_free_pages;
+}
+EXPORT_SYMBOL(get_free_pages_in_pool);
+
+/*
+ * Let outside world know if enc_pool full capacity is reached
+ */
+int pool_is_at_full_capacity(void)
+{
+	return (page_pools.epp_total_pages == page_pools.epp_max_pages);
+}
+EXPORT_SYMBOL(pool_is_at_full_capacity);
+
+/*
  * we allocate the requested pages atomically.
  */
 int sptlrpc_enc_pool_get_pages(struct ptlrpc_bulk_desc *desc)
@@ -531,16 +556,17 @@ int sptlrpc_enc_pool_get_pages(struct ptlrpc_bulk_desc *desc)
 	int             p_idx, g_idx;
 	int             i;
 
+	LASSERT(ptlrpc_is_bulk_desc_kiov(desc->bd_type));
 	LASSERT(desc->bd_iov_count > 0);
 	LASSERT(desc->bd_iov_count <= page_pools.epp_max_pages);
 
 	/* resent bulk, enc iov might have been allocated previously */
-	if (desc->bd_enc_iov != NULL)
+	if (GET_ENC_KIOV(desc) != NULL)
 		return 0;
 
-	OBD_ALLOC(desc->bd_enc_iov,
-		  desc->bd_iov_count * sizeof(*desc->bd_enc_iov));
-	if (desc->bd_enc_iov == NULL)
+	OBD_ALLOC_LARGE(GET_ENC_KIOV(desc),
+		  desc->bd_iov_count * sizeof(*GET_ENC_KIOV(desc)));
+	if (GET_ENC_KIOV(desc) == NULL)
 		return -ENOMEM;
 
 	spin_lock(&page_pools.epp_lock);
@@ -567,21 +593,37 @@ again:
 
 			enc_pools_wakeup();
 		} else {
-			if (++page_pools.epp_waitqlen >
-			    page_pools.epp_st_max_wqlen)
-				page_pools.epp_st_max_wqlen =
-						page_pools.epp_waitqlen;
+			if (page_pools.epp_growing) {
+				if (++page_pools.epp_waitqlen >
+				    page_pools.epp_st_max_wqlen)
+					page_pools.epp_st_max_wqlen =
+							page_pools.epp_waitqlen;
 
-			set_current_state(TASK_UNINTERRUPTIBLE);
-			init_waitqueue_entry_current(&waitlink);
-			add_wait_queue(&page_pools.epp_waitq, &waitlink);
+				set_current_state(TASK_UNINTERRUPTIBLE);
+				init_waitqueue_entry(&waitlink, current);
+				add_wait_queue(&page_pools.epp_waitq,
+					       &waitlink);
 
-			spin_unlock(&page_pools.epp_lock);
-			waitq_wait(&waitlink, TASK_UNINTERRUPTIBLE);
-			remove_wait_queue(&page_pools.epp_waitq, &waitlink);
-			LASSERT(page_pools.epp_waitqlen > 0);
-			spin_lock(&page_pools.epp_lock);
-			page_pools.epp_waitqlen--;
+				spin_unlock(&page_pools.epp_lock);
+				schedule();
+				remove_wait_queue(&page_pools.epp_waitq,
+						  &waitlink);
+				LASSERT(page_pools.epp_waitqlen > 0);
+				spin_lock(&page_pools.epp_lock);
+				page_pools.epp_waitqlen--;
+			} else {
+				/* ptlrpcd thread should not sleep in that case,
+				 * or deadlock may occur!
+				 * Instead, return -ENOMEM so that upper layers
+				 * will put request back in queue. */
+				page_pools.epp_st_outofmem++;
+				spin_unlock(&page_pools.epp_lock);
+				OBD_FREE_LARGE(GET_ENC_KIOV(desc),
+					 desc->bd_iov_count *
+					 sizeof(*GET_ENC_KIOV(desc)));
+				GET_ENC_KIOV(desc) = NULL;
+				return -ENOMEM;
+			}
 		}
 
 		LASSERT(page_pools.epp_pages_short >= desc->bd_iov_count);
@@ -604,17 +646,17 @@ again:
         p_idx = page_pools.epp_free_pages / PAGES_PER_POOL;
         g_idx = page_pools.epp_free_pages % PAGES_PER_POOL;
 
-        for (i = 0; i < desc->bd_iov_count; i++) {
-                LASSERT(page_pools.epp_pools[p_idx][g_idx] != NULL);
-                desc->bd_enc_iov[i].kiov_page =
-                                        page_pools.epp_pools[p_idx][g_idx];
-                page_pools.epp_pools[p_idx][g_idx] = NULL;
+	for (i = 0; i < desc->bd_iov_count; i++) {
+		LASSERT(page_pools.epp_pools[p_idx][g_idx] != NULL);
+		BD_GET_ENC_KIOV(desc, i).kiov_page =
+		       page_pools.epp_pools[p_idx][g_idx];
+		page_pools.epp_pools[p_idx][g_idx] = NULL;
 
-                if (++g_idx == PAGES_PER_POOL) {
-                        p_idx++;
-                        g_idx = 0;
-                }
-        }
+		if (++g_idx == PAGES_PER_POOL) {
+			p_idx++;
+			g_idx = 0;
+		}
+	}
 
         if (page_pools.epp_free_pages < page_pools.epp_st_lowfree)
                 page_pools.epp_st_lowfree = page_pools.epp_free_pages;
@@ -639,46 +681,48 @@ EXPORT_SYMBOL(sptlrpc_enc_pool_get_pages);
 
 void sptlrpc_enc_pool_put_pages(struct ptlrpc_bulk_desc *desc)
 {
-        int     p_idx, g_idx;
-        int     i;
+	int     p_idx, g_idx;
+	int     i;
 
-        if (desc->bd_enc_iov == NULL)
-                return;
+	LASSERT(ptlrpc_is_bulk_desc_kiov(desc->bd_type));
 
-        LASSERT(desc->bd_iov_count > 0);
+	if (GET_ENC_KIOV(desc) == NULL)
+		return;
+
+	LASSERT(desc->bd_iov_count > 0);
 
 	spin_lock(&page_pools.epp_lock);
 
-        p_idx = page_pools.epp_free_pages / PAGES_PER_POOL;
-        g_idx = page_pools.epp_free_pages % PAGES_PER_POOL;
+	p_idx = page_pools.epp_free_pages / PAGES_PER_POOL;
+	g_idx = page_pools.epp_free_pages % PAGES_PER_POOL;
 
-        LASSERT(page_pools.epp_free_pages + desc->bd_iov_count <=
-                page_pools.epp_total_pages);
-        LASSERT(page_pools.epp_pools[p_idx]);
+	LASSERT(page_pools.epp_free_pages + desc->bd_iov_count <=
+		page_pools.epp_total_pages);
+	LASSERT(page_pools.epp_pools[p_idx]);
 
-        for (i = 0; i < desc->bd_iov_count; i++) {
-                LASSERT(desc->bd_enc_iov[i].kiov_page != NULL);
-                LASSERT(g_idx != 0 || page_pools.epp_pools[p_idx]);
-                LASSERT(page_pools.epp_pools[p_idx][g_idx] == NULL);
+	for (i = 0; i < desc->bd_iov_count; i++) {
+		LASSERT(BD_GET_ENC_KIOV(desc, i).kiov_page != NULL);
+		LASSERT(g_idx != 0 || page_pools.epp_pools[p_idx]);
+		LASSERT(page_pools.epp_pools[p_idx][g_idx] == NULL);
 
-                page_pools.epp_pools[p_idx][g_idx] =
-                                        desc->bd_enc_iov[i].kiov_page;
+		page_pools.epp_pools[p_idx][g_idx] =
+			BD_GET_ENC_KIOV(desc, i).kiov_page;
 
-                if (++g_idx == PAGES_PER_POOL) {
-                        p_idx++;
-                        g_idx = 0;
-                }
-        }
+		if (++g_idx == PAGES_PER_POOL) {
+			p_idx++;
+			g_idx = 0;
+		}
+	}
 
-        page_pools.epp_free_pages += desc->bd_iov_count;
+	page_pools.epp_free_pages += desc->bd_iov_count;
 
-        enc_pools_wakeup();
+	enc_pools_wakeup();
 
 	spin_unlock(&page_pools.epp_lock);
 
-	OBD_FREE(desc->bd_enc_iov,
-		 desc->bd_iov_count * sizeof(*desc->bd_enc_iov));
-	desc->bd_enc_iov = NULL;
+	OBD_FREE_LARGE(GET_ENC_KIOV(desc),
+		 desc->bd_iov_count * sizeof(*GET_ENC_KIOV(desc)));
+	GET_ENC_KIOV(desc) = NULL;
 }
 
 /*
@@ -738,11 +782,12 @@ int sptlrpc_enc_pool_init(void)
 {
 	DEF_SHRINKER_VAR(shvar, enc_pools_shrink,
 			 enc_pools_shrink_count, enc_pools_shrink_scan);
-	/*
-	 * maximum capacity is 1/8 of total physical memory.
-	 * is the 1/8 a good number?
-	 */
+
 	page_pools.epp_max_pages = totalram_pages / 8;
+	if (enc_pool_max_memory_mb > 0 &&
+	    enc_pool_max_memory_mb <= (totalram_pages >> mult))
+		page_pools.epp_max_pages = enc_pool_max_memory_mb << mult;
+
 	page_pools.epp_max_pools = npages_to_npools(page_pools.epp_max_pages);
 
 	init_waitqueue_head(&page_pools.epp_waitq);
@@ -768,6 +813,7 @@ int sptlrpc_enc_pool_init(void)
         page_pools.epp_st_lowfree = 0;
         page_pools.epp_st_max_wqlen = 0;
         page_pools.epp_st_max_wait = 0;
+	page_pools.epp_st_outofmem = 0;
 
         enc_pools_alloc();
         if (page_pools.epp_pools == NULL)
@@ -802,13 +848,14 @@ void sptlrpc_enc_pool_fini(void)
 		CDEBUG(D_SEC,
 		       "max pages %lu, grows %u, grow fails %u, shrinks %u, "
 		       "access %lu, missing %lu, max qlen %u, max wait "
-		       CFS_TIME_T"/%lu\n",
+		       CFS_TIME_T"/%lu, out of mem %lu\n",
 		       page_pools.epp_st_max_pages, page_pools.epp_st_grows,
 		       page_pools.epp_st_grow_fails,
 		       page_pools.epp_st_shrinks, page_pools.epp_st_access,
 		       page_pools.epp_st_missings, page_pools.epp_st_max_wqlen,
 		       page_pools.epp_st_max_wait,
-		       msecs_to_jiffies(MSEC_PER_SEC));
+		       msecs_to_jiffies(MSEC_PER_SEC),
+		       page_pools.epp_st_outofmem);
 	}
 }
 
@@ -885,6 +932,7 @@ int sptlrpc_get_bulk_checksum(struct ptlrpc_bulk_desc *desc, __u8 alg,
 	unsigned int			bufsize;
 	int				i, err;
 
+	LASSERT(ptlrpc_is_bulk_desc_kiov(desc->bd_type));
 	LASSERT(alg > BULK_HASH_ALG_NULL && alg < BULK_HASH_ALG_MAX);
 	LASSERT(buflen >= 4);
 
@@ -898,9 +946,11 @@ int sptlrpc_get_bulk_checksum(struct ptlrpc_bulk_desc *desc, __u8 alg,
 	hashsize = cfs_crypto_hash_digestsize(cfs_hash_alg_id[alg]);
 
 	for (i = 0; i < desc->bd_iov_count; i++) {
-		cfs_crypto_hash_update_page(hdesc, desc->bd_iov[i].kiov_page,
-				  desc->bd_iov[i].kiov_offset & ~CFS_PAGE_MASK,
-				  desc->bd_iov[i].kiov_len);
+		cfs_crypto_hash_update_page(hdesc,
+				  BD_GET_KIOV(desc, i).kiov_page,
+				  BD_GET_KIOV(desc, i).kiov_offset &
+					      ~PAGE_MASK,
+				  BD_GET_KIOV(desc, i).kiov_len);
 	}
 
 	if (hashsize > buflen) {

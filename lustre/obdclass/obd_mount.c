@@ -395,6 +395,9 @@ int lustre_start_mgc(struct super_block *sb)
 
         /* Random uuid for MGC allows easier reconnects */
         OBD_ALLOC_PTR(uuid);
+	if (uuid == NULL)
+		GOTO(out_free, rc = -ENOMEM);
+
         ll_generate_random_uuid(uuidc);
         class_uuid_unparse(uuidc, uuid);
 
@@ -452,7 +455,8 @@ int lustre_start_mgc(struct super_block *sb)
 	/* We connect to the MGS at setup, and don't disconnect until cleanup */
 	data->ocd_connect_flags = OBD_CONNECT_VERSION | OBD_CONNECT_AT |
 				  OBD_CONNECT_FULL20 | OBD_CONNECT_IMP_RECOV |
-				  OBD_CONNECT_LVB_TYPE;
+				  OBD_CONNECT_LVB_TYPE | OBD_CONNECT_BARRIER |
+				  OBD_CONNECT_BULK_MBITS;
 
 #if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(3, 0, 53, 0)
 	data->ocd_connect_flags |= OBD_CONNECT_MNE_SWAB;
@@ -590,32 +594,35 @@ static struct lustre_sb_info *lustre_init_lsi(struct super_block *sb)
 
 static int lustre_free_lsi(struct super_block *sb)
 {
-        struct lustre_sb_info *lsi = s2lsi(sb);
-        ENTRY;
+	struct lustre_sb_info *lsi = s2lsi(sb);
+	ENTRY;
 
-        LASSERT(lsi != NULL);
-        CDEBUG(D_MOUNT, "Freeing lsi %p\n", lsi);
+	LASSERT(lsi != NULL);
+	CDEBUG(D_MOUNT, "Freeing lsi %p\n", lsi);
 
-        /* someone didn't call server_put_mount. */
+	/* someone didn't call server_put_mount. */
 	LASSERT(atomic_read(&lsi->lsi_mounts) == 0);
 
-        if (lsi->lsi_lmd != NULL) {
-                if (lsi->lsi_lmd->lmd_dev != NULL)
-                        OBD_FREE(lsi->lsi_lmd->lmd_dev,
-                                 strlen(lsi->lsi_lmd->lmd_dev) + 1);
-                if (lsi->lsi_lmd->lmd_profile != NULL)
-                        OBD_FREE(lsi->lsi_lmd->lmd_profile,
-                                 strlen(lsi->lsi_lmd->lmd_profile) + 1);
-                if (lsi->lsi_lmd->lmd_mgssec != NULL)
-                        OBD_FREE(lsi->lsi_lmd->lmd_mgssec,
-                                 strlen(lsi->lsi_lmd->lmd_mgssec) + 1);
-                if (lsi->lsi_lmd->lmd_opts != NULL)
-                        OBD_FREE(lsi->lsi_lmd->lmd_opts,
-                                 strlen(lsi->lsi_lmd->lmd_opts) + 1);
-                if (lsi->lsi_lmd->lmd_exclude_count)
-                        OBD_FREE(lsi->lsi_lmd->lmd_exclude,
-                                 sizeof(lsi->lsi_lmd->lmd_exclude[0]) *
-                                 lsi->lsi_lmd->lmd_exclude_count);
+	if (lsi->lsi_lmd != NULL) {
+		if (lsi->lsi_lmd->lmd_dev != NULL)
+			OBD_FREE(lsi->lsi_lmd->lmd_dev,
+				strlen(lsi->lsi_lmd->lmd_dev) + 1);
+		if (lsi->lsi_lmd->lmd_profile != NULL)
+			OBD_FREE(lsi->lsi_lmd->lmd_profile,
+				strlen(lsi->lsi_lmd->lmd_profile) + 1);
+		if (lsi->lsi_lmd->lmd_fileset != NULL)
+			OBD_FREE(lsi->lsi_lmd->lmd_fileset,
+				strlen(lsi->lsi_lmd->lmd_fileset) + 1);
+		if (lsi->lsi_lmd->lmd_mgssec != NULL)
+			OBD_FREE(lsi->lsi_lmd->lmd_mgssec,
+				strlen(lsi->lsi_lmd->lmd_mgssec) + 1);
+		if (lsi->lsi_lmd->lmd_opts != NULL)
+			OBD_FREE(lsi->lsi_lmd->lmd_opts,
+				strlen(lsi->lsi_lmd->lmd_opts) + 1);
+		if (lsi->lsi_lmd->lmd_exclude_count)
+			OBD_FREE(lsi->lsi_lmd->lmd_exclude,
+				sizeof(lsi->lsi_lmd->lmd_exclude[0]) *
+				lsi->lsi_lmd->lmd_exclude_count);
 		if (lsi->lsi_lmd->lmd_mgs != NULL)
 			OBD_FREE(lsi->lsi_lmd->lmd_mgs,
 				 strlen(lsi->lsi_lmd->lmd_mgs) + 1);
@@ -625,14 +632,14 @@ static int lustre_free_lsi(struct super_block *sb)
 		if (lsi->lsi_lmd->lmd_params != NULL)
 			OBD_FREE(lsi->lsi_lmd->lmd_params, 4096);
 
-                OBD_FREE(lsi->lsi_lmd, sizeof(*lsi->lsi_lmd));
-        }
+		OBD_FREE_PTR(lsi->lsi_lmd);
+	}
 
-        LASSERT(lsi->lsi_llsbi == NULL);
-        OBD_FREE(lsi, sizeof(*lsi));
-        s2lsi_nocast(sb) = NULL;
+	LASSERT(lsi->lsi_llsbi == NULL);
+	OBD_FREE_PTR(lsi);
+	s2lsi_nocast(sb) = NULL;
 
-        RETURN(0);
+	RETURN(0);
 }
 
 /* The lsi has one reference for every server that is using the disk -
@@ -1036,6 +1043,89 @@ static int lmd_parse_mgs(struct lustre_mount_data *lmd, char **ptr)
 	return 0;
 }
 
+/**
+ * Find the first delimiter (comma or colon) from the specified \a buf and
+ * make \a *endh point to the string starting with the delimiter. The commas
+ * in expression list [...] will be skipped.
+ *
+ * \param[in] buf	a delimiter-separated string
+ * \param[in] endh	a pointer to a pointer that will point to the string
+ *			starting with the delimiter
+ *
+ * \retval 0		if delimiter is found
+ * \retval 1		if delimiter is not found
+ */
+static int lmd_find_delimiter(char *buf, char **endh)
+{
+	char *c = buf;
+	int   skip = 0;
+
+	if (buf == NULL)
+		return 1;
+
+	while (*c != '\0') {
+		if (*c == '[')
+			skip++;
+		else if (*c == ']')
+			skip--;
+
+		if ((*c == ',' || *c == ':') && skip == 0) {
+			if (endh != NULL)
+				*endh = c;
+			return 0;
+		}
+
+		c++;
+	}
+
+	return 1;
+}
+
+/**
+ * Find the first valid string delimited by comma or colon from the specified
+ * \a buf and parse it to see whether it's a valid nid list. If yes, \a *endh
+ * will point to the next string starting with the delimiter.
+ *
+ * \param[in] buf	a delimiter-separated string
+ * \param[in] endh	a pointer to a pointer that will point to the string
+ *			starting with the delimiter
+ *
+ * \retval 0		if the string is a valid nid list
+ * \retval 1		if the string is not a valid nid list
+ */
+static int lmd_parse_nidlist(char *buf, char **endh)
+{
+	struct list_head nidlist;
+	char		*endp = buf;
+	char		 tmp;
+	int		 rc = 0;
+
+	if (buf == NULL)
+		return 1;
+	while (*buf == ',' || *buf == ':')
+		buf++;
+	if (*buf == ' ' || *buf == '/' || *buf == '\0')
+		return 1;
+
+	if (lmd_find_delimiter(buf, &endp) != 0)
+		endp = buf + strlen(buf);
+
+	tmp = *endp;
+	*endp = '\0';
+
+	INIT_LIST_HEAD(&nidlist);
+	if (cfs_parse_nidlist(buf, strlen(buf), &nidlist) <= 0)
+		rc = 1;
+	cfs_free_nidlist(&nidlist);
+
+	*endp = tmp;
+	if (rc != 0)
+		return rc;
+	if (endh != NULL)
+		*endh = endp;
+	return 0;
+}
+
 /** Parse mount line options
  * e.g. mount -v -t lustre -o abort_recov uml1:uml2:/lustre-client /mnt/lustre
  * dev is passed as device=uml1:/lustre by mount.lustre
@@ -1108,6 +1198,9 @@ static int lmd_parse(char *options, struct lustre_mount_data *lmd)
 		} else if (strncmp(s1, "noscrub", 7) == 0) {
 			lmd->lmd_flags |= LMD_FLG_NOSCRUB;
 			clear++;
+		} else if (strncmp(s1, "rdonly_dev", 10) == 0) {
+			lmd->lmd_flags |= LMD_FLG_DEV_RDONLY;
+			clear++;
 		} else if (strncmp(s1, PARAM_MGSNODE,
 				   sizeof(PARAM_MGSNODE) - 1) == 0) {
 			s2 = s1 + sizeof(PARAM_MGSNODE) - 1;
@@ -1152,16 +1245,14 @@ static int lmd_parse(char *options, struct lustre_mount_data *lmd)
 			clear++;
 		} else if (strncmp(s1, "param=", 6) == 0) {
 			size_t length, params_length;
-			char *tail = strchr(s1 + 6, ',');
-			if (tail == NULL) {
+			char  *tail = s1;
+			if (lmd_find_delimiter(s1 + 6, &tail) != 0)
 				length = strlen(s1);
-			} else {
-				lnet_nid_t nid;
-				char      *param_str = tail + 1;
-				int        supplementary = 1;
-
-				while (class_parse_nid_quiet(param_str, &nid,
-							     &param_str) == 0) {
+			else {
+				char *param_str = tail + 1;
+				int   supplementary = 1;
+				while (lmd_parse_nidlist(param_str,
+							 &param_str) == 0) {
 					supplementary = 0;
 				}
 				length = param_str - s1 - supplementary;
@@ -1211,18 +1302,39 @@ static int lmd_parse(char *options, struct lustre_mount_data *lmd)
                 goto invalid;
         }
 
-        s1 = strstr(devname, ":/");
-        if (s1) {
-                ++s1;
-                lmd->lmd_flags |= LMD_FLG_CLIENT;
-                /* Remove leading /s from fsname */
-                while (*++s1 == '/') ;
-                /* Freed in lustre_free_lsi */
-                OBD_ALLOC(lmd->lmd_profile, strlen(s1) + 8);
-                if (!lmd->lmd_profile)
-                        RETURN(-ENOMEM);
-                sprintf(lmd->lmd_profile, "%s-client", s1);
-        }
+	s1 = strstr(devname, ":/");
+	if (s1) {
+		++s1;
+		lmd->lmd_flags |= LMD_FLG_CLIENT;
+		/* Remove leading /s from fsname */
+		while (*++s1 == '/')
+			;
+		s2 = s1;
+		while (*s2 != '/' && *s2 != '\0')
+			s2++;
+		/* Freed in lustre_free_lsi */
+		OBD_ALLOC(lmd->lmd_profile, s2 - s1 + 8);
+		if (!lmd->lmd_profile)
+			RETURN(-ENOMEM);
+
+		strncat(lmd->lmd_profile, s1, s2 - s1);
+		strncat(lmd->lmd_profile, "-client", 7);
+
+		s1 = s2;
+		s2 = s1 + strlen(s1) - 1;
+		/* Remove padding /s from fileset */
+		while (*s2 == '/')
+			s2--;
+		if (s2 > s1) {
+			OBD_ALLOC(lmd->lmd_fileset, s2 - s1 + 2);
+			if (lmd->lmd_fileset == NULL) {
+				OBD_FREE(lmd->lmd_profile,
+					strlen(lmd->lmd_profile) + 1);
+				RETURN(-ENOMEM);
+			}
+			strncat(lmd->lmd_fileset, s1, s2 - s1 + 1);
+		}
+	}
 
         /* Freed in lustre_free_lsi */
         OBD_ALLOC(lmd->lmd_dev, strlen(devname) + 1);
@@ -1277,12 +1389,6 @@ static int lustre_fill_super(struct super_block *sb, void *data, int silent)
                 RETURN(-ENOMEM);
         lmd = lsi->lsi_lmd;
 
-	/*
-	 * Disable lockdep during mount, because mount locking patterns are
-	 * `special'.
-	 */
-	lockdep_off();
-
         /*
          * LU-639: the obd cleanup of last mount may not finish yet, wait here.
          */
@@ -1294,28 +1400,28 @@ static int lustre_fill_super(struct super_block *sb, void *data, int silent)
                 GOTO(out, rc = -EINVAL);
         }
 
-        if (lmd_is_client(lmd)) {
-                CDEBUG(D_MOUNT, "Mounting client %s\n", lmd->lmd_profile);
+	if (lmd_is_client(lmd)) {
+		CDEBUG(D_MOUNT, "Mounting client %s\n", lmd->lmd_profile);
 		if (client_fill_super == NULL)
 			request_module("lustre");
 		if (client_fill_super == NULL) {
-                        LCONSOLE_ERROR_MSG(0x165, "Nothing registered for "
-                                           "client mount! Is the 'lustre' "
-                                           "module loaded?\n");
-                        lustre_put_lsi(sb);
-                        rc = -ENODEV;
-                } else {
-                        rc = lustre_start_mgc(sb);
-                        if (rc) {
-                                lustre_put_lsi(sb);
-                                GOTO(out, rc);
-                        }
-                        /* Connect and start */
-                        /* (should always be ll_fill_super) */
-                        rc = (*client_fill_super)(sb, lmd2->lmd2_mnt);
-                        /* c_f_s will call lustre_common_put_super on failure */
-                }
-        } else {
+			LCONSOLE_ERROR_MSG(0x165, "Nothing registered for "
+					   "client mount! Is the 'lustre' "
+					   "module loaded?\n");
+			lustre_put_lsi(sb);
+			rc = -ENODEV;
+		} else {
+			rc = lustre_start_mgc(sb);
+			if (rc) {
+				lustre_put_lsi(sb);
+				GOTO(out, rc);
+			}
+			/* Connect and start */
+			/* (should always be ll_fill_super) */
+			rc = (*client_fill_super)(sb, lmd2->lmd2_mnt);
+			/* c_f_s will call lustre_common_put_super on failure */
+		}
+	} else {
 #ifdef HAVE_SERVER_SUPPORT
 		CDEBUG(D_MOUNT, "Mounting server from %s\n", lmd->lmd_dev);
 		rc = server_fill_super(sb);
@@ -1328,7 +1434,7 @@ static int lustre_fill_super(struct super_block *sb, void *data, int silent)
 		       "cannot handle server mount.\n");
 		rc = -EINVAL;
 #endif
-        }
+	}
 
         /* If error happens in fill_super() call, @lsi will be killed there.
          * This is why we do not put it here. */
@@ -1341,7 +1447,6 @@ out:
                 CDEBUG(D_SUPER, "Mount %s complete\n",
                        lmd->lmd_dev);
         }
-	lockdep_on();
 	return rc;
 }
 
@@ -1401,8 +1506,7 @@ static struct file_system_type lustre_fs_type = {
         .get_sb       = lustre_get_sb,
 #endif
         .kill_sb      = lustre_kill_super,
-	.fs_flags     = FS_BINARY_MOUNTDATA | FS_REQUIRES_DEV |
-			FS_HAS_FIEMAP | FS_RENAME_DOES_D_MOVE,
+	.fs_flags     = FS_REQUIRES_DEV | FS_HAS_FIEMAP | FS_RENAME_DOES_D_MOVE,
 };
 MODULE_ALIAS_FS("lustre");
 

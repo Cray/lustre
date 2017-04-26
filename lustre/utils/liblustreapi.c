@@ -1056,21 +1056,21 @@ out:
  */
 int get_root_path(int want, char *fsname, int *outfd, char *path, int index)
 {
-        struct mntent mnt;
-        char buf[PATH_MAX], mntdir[PATH_MAX];
-        char *ptr;
-        FILE *fp;
-        int idx = 0, len = 0, mntlen, fd;
-        int rc = -ENODEV;
+	struct mntent mnt;
+	char buf[PATH_MAX], mntdir[PATH_MAX];
+	char *ptr, *ptr_end;
+	FILE *fp;
+	int idx = 0, len = 0, mntlen, fd;
+	int rc = -ENODEV;
 
-        /* get the mount point */
-        fp = setmntent(MOUNTED, "r");
-        if (fp == NULL) {
-                rc = -EIO;
-                llapi_error(LLAPI_MSG_ERROR, rc,
-                            "setmntent(%s) failed", MOUNTED);
-                return rc;
-        }
+	/* get the mount point */
+	fp = setmntent(PROC_MOUNTS, "r");
+	if (fp == NULL) {
+		rc = -EIO;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "setmntent(%s) failed", PROC_MOUNTS);
+		return rc;
+	}
         while (1) {
                 if (getmntent_r(fp, &mnt, buf, sizeof(buf)) == NULL)
                         break;
@@ -1082,58 +1082,71 @@ int get_root_path(int want, char *fsname, int *outfd, char *path, int index)
                         continue;
 
                 mntlen = strlen(mnt.mnt_dir);
-                ptr = strrchr(mnt.mnt_fsname, '/');
+		ptr = strchr(mnt.mnt_fsname, '/');
+		while (ptr && *ptr == '/')
+			ptr++;
 		/* thanks to the call to llapi_is_lustre_mnt() above,
 		 * we are sure that mnt.mnt_fsname contains ":/",
 		 * so ptr should never be NULL */
 		if (ptr == NULL)
 			continue;
-                ptr++;
+		ptr_end = ptr;
+		while (*ptr_end != '/' && *ptr_end != '\0')
+			ptr_end++;
 
-                /* Check the fsname for a match, if given */
+		/* Check the fsname for a match, if given */
                 if (!(want & WANT_FSNAME) && fsname != NULL &&
-                    (strlen(fsname) > 0) && (strcmp(ptr, fsname) != 0))
+		    (strlen(fsname) > 0) &&
+		    (strncmp(ptr, fsname, ptr_end - ptr) != 0))
                         continue;
 
                 /* If the path isn't set return the first one we find */
-                if (path == NULL || strlen(path) == 0) {
-                        strcpy(mntdir, mnt.mnt_dir);
-                        if ((want & WANT_FSNAME) && fsname != NULL)
-                                strcpy(fsname, ptr);
-                        rc = 0;
-                        break;
-                /* Otherwise find the longest matching path */
-                } else if ((strlen(path) >= mntlen) && (mntlen >= len) &&
-                           (strncmp(mnt.mnt_dir, path, mntlen) == 0)) {
-                        strcpy(mntdir, mnt.mnt_dir);
-                        len = mntlen;
-                        if ((want & WANT_FSNAME) && fsname != NULL)
-                                strcpy(fsname, ptr);
-                        rc = 0;
-                }
-        }
-        endmntent(fp);
+		if (path == NULL || strlen(path) == 0) {
+			strncpy(mntdir, mnt.mnt_dir, strlen(mnt.mnt_dir));
+			mntdir[strlen(mnt.mnt_dir)] = '\0';
+			if ((want & WANT_FSNAME) && fsname != NULL) {
+				strncpy(fsname, ptr, ptr_end - ptr);
+				fsname[ptr_end - ptr] = '\0';
+			}
+			rc = 0;
+			break;
+		/* Otherwise find the longest matching path */
+		} else if ((strlen(path) >= mntlen) && (mntlen >= len) &&
+			   (strncmp(mnt.mnt_dir, path, mntlen) == 0)) {
+			strncpy(mntdir, mnt.mnt_dir, strlen(mnt.mnt_dir));
+			mntdir[strlen(mnt.mnt_dir)] = '\0';
+			len = mntlen;
+			if ((want & WANT_FSNAME) && fsname != NULL) {
+				strncpy(fsname, ptr, ptr_end - ptr);
+				fsname[ptr_end - ptr] = '\0';
+			}
+			rc = 0;
+		}
+	}
+	endmntent(fp);
 
-        /* Found it */
-        if (rc == 0) {
-                if ((want & WANT_PATH) && path != NULL)
-                        strcpy(path, mntdir);
-                if (want & WANT_FD) {
-                        fd = open(mntdir, O_RDONLY | O_DIRECTORY | O_NONBLOCK);
-                        if (fd < 0) {
-                                rc = -errno;
-                                llapi_error(LLAPI_MSG_ERROR, rc,
-                                            "error opening '%s'", mntdir);
+	/* Found it */
+	if (rc == 0) {
+		if ((want & WANT_PATH) && path != NULL) {
+			strncpy(path, mntdir, strlen(mntdir));
+			path[strlen(mntdir)] = '\0';
+		}
+		if (want & WANT_FD) {
+			fd = open(mntdir, O_RDONLY | O_DIRECTORY | O_NONBLOCK);
+			if (fd < 0) {
+				rc = -errno;
+				llapi_error(LLAPI_MSG_ERROR, rc,
+					    "error opening '%s'", mntdir);
 
-                        } else {
-                                *outfd = fd;
-                        }
-                }
-        } else if (want & WANT_ERROR)
-                llapi_err_noerrno(LLAPI_MSG_ERROR,
-                                  "can't find fs root for '%s': %d",
-                                  (want & WANT_PATH) ? fsname : path, rc);
-        return rc;
+			} else {
+				*outfd = fd;
+			}
+		}
+	} else if (want & WANT_ERROR)
+		llapi_err_noerrno(LLAPI_MSG_ERROR,
+				  "can't find fs root for '%s': %d",
+				  (want & WANT_PATH) ? fsname : path, rc);
+	return rc;
 }
 
 /*
@@ -1616,17 +1629,13 @@ static DIR *opendir_parent(char *path)
 
 static int cb_get_dirstripe(char *path, DIR *d, struct find_param *param)
 {
-	struct lmv_user_md *lmv = (struct lmv_user_md *)param->fp_lmv_md;
-	int ret = 0;
-
-	lmv->lum_stripe_count = param->fp_lmv_stripe_count;
+	param->fp_lmv_md->lum_stripe_count = param->fp_lmv_stripe_count;
 	if (param->fp_get_default_lmv)
-		lmv->lum_magic = LMV_USER_MAGIC;
+		param->fp_lmv_md->lum_magic = LMV_USER_MAGIC;
 	else
-		lmv->lum_magic = LMV_MAGIC_V1;
-	ret = ioctl(dirfd(d), LL_IOC_LMV_GETSTRIPE, lmv);
+		param->fp_lmv_md->lum_magic = LMV_MAGIC_V1;
 
-	return ret;
+	return ioctl(dirfd(d), LL_IOC_LMV_GETSTRIPE, param->fp_lmv_md);
 }
 
 static int get_lmd_info(char *path, DIR *parent, DIR *dir,
@@ -1878,7 +1887,7 @@ enum tgt_type {
 /*
  * If uuidp is NULL, return the number of available obd uuids.
  * If uuidp is non-NULL, then it will return the uuids of the obds. If
- * there are more OSTs then allocated to uuidp, then an error is returned with
+ * there are more OSTs than allocated to uuidp, then an error is returned with
  * the ost_count set to number of available obd uuids.
  */
 static int llapi_get_target_uuids(int fd, struct obd_uuid *uuidp,
@@ -2994,49 +3003,43 @@ static int cb_find_init(char *path, DIR *parent, DIR **dirp,
 	if (decision == 0) {
 		ret = get_lmd_info(path, parent, dir, param->fp_lmd,
 				   param->fp_lum_size);
-                if (ret == 0) {
-                        if (dir) {
+		if (ret == 0 && param->fp_mdt_uuid != NULL) {
+			if (dir != NULL) {
 				ret = llapi_file_fget_mdtidx(dirfd(dir),
-						&param->fp_file_mdt_index);
-                        } else {
-                                int fd;
-                                lstat_t tmp_st;
-
-                                ret = lstat_f(path, &tmp_st);
-                                if (ret) {
-                                        ret = -errno;
-                                        llapi_error(LLAPI_MSG_ERROR, ret,
-                                                    "error: %s: lstat failed"
-                                                    "for %s", __func__, path);
-                                        return ret;
-                                }
-                                if (S_ISREG(tmp_st.st_mode)) {
-                                        fd = open(path, O_RDONLY);
-                                        if (fd > 0) {
-                                                ret = llapi_file_fget_mdtidx(fd,
 						     &param->fp_file_mdt_index);
-                                                close(fd);
-                                        } else {
-                                                ret = fd;
-                                        }
-                                } else {
-                                        /* For special inode, it assumes to
-                                         * reside on the same MDT with the
-                                         * parent */
-                                        fd = dirfd(parent);
+			} else if (S_ISREG(st->st_mode)) {
+				int fd;
+
+				/* FIXME: we could get the MDT index from the
+				 * file's FID in lmd->lmd_lmm.lmm_oi without
+				 * opening the file, once we are sure that
+				 * LFSCK2 (2.6) has fixed up pre-2.0 LOV EAs.
+				 * That would still be an ioctl() to map the
+				 * FID to the MDT, but not an open RPC. */
+				fd = open(path, O_RDONLY);
+				if (fd > 0) {
 					ret = llapi_file_fget_mdtidx(fd,
 						     &param->fp_file_mdt_index);
-                                }
-                        }
-                }
-                if (ret) {
-                        if (ret == -ENOTTY)
-                                lustre_fs = 0;
-                        if (ret == -ENOENT)
-                                goto decided;
-                        return ret;
-                }
-        }
+					close(fd);
+				} else {
+					ret = -errno;
+				}
+			} else {
+				/* For a special file, we assume it resides on
+				 * the same MDT as the parent directory. */
+				ret = llapi_file_fget_mdtidx(dirfd(parent),
+						     &param->fp_file_mdt_index);
+			}
+		}
+		if (ret != 0) {
+			if (ret == -ENOTTY)
+				lustre_fs = 0;
+			if (ret == -ENOENT)
+				goto decided;
+
+			return ret;
+		}
+	}
 
 	if (param->fp_type && !checked_type) {
 		if ((st->st_mode & S_IFMT) == param->fp_type) {
@@ -3362,64 +3365,58 @@ int llapi_file_fget_mdtidx(int fd, int *mdtidx)
 static int cb_get_mdt_index(char *path, DIR *parent, DIR **dirp, void *data,
 			    struct dirent64 *de)
 {
-        struct find_param *param = (struct find_param *)data;
+	struct find_param *param = (struct find_param *)data;
 	DIR *d = dirp == NULL ? NULL : *dirp;
-        int ret = 0;
-        int mdtidx;
+	int ret;
+	int mdtidx;
 
-        LASSERT(parent != NULL || d != NULL);
+	LASSERT(parent != NULL || d != NULL);
 
-        if (d) {
-                ret = llapi_file_fget_mdtidx(dirfd(d), &mdtidx);
-        } else if (parent) {
-                int fd;
+	if (d != NULL) {
+		ret = llapi_file_fget_mdtidx(dirfd(d), &mdtidx);
+	} else /* if (parent) */ {
+		int fd;
 
-                fd = open(path, O_RDONLY);
-                if (fd > 0) {
-                        ret = llapi_file_fget_mdtidx(fd, &mdtidx);
-                        close(fd);
-                } else {
-                        ret = -errno;
-                }
-        }
+		fd = open(path, O_RDONLY | O_NOCTTY);
+		if (fd > 0) {
+			ret = llapi_file_fget_mdtidx(fd, &mdtidx);
+			close(fd);
+		} else {
+			ret = -errno;
+		}
+	}
 
-        if (ret) {
-                if (ret == -ENODATA) {
+	if (ret != 0) {
+		if (ret == -ENODATA) {
 			if (!param->fp_obd_uuid)
-                                llapi_printf(LLAPI_MSG_NORMAL,
-                                             "%s has no stripe info\n", path);
-                        goto out;
-                } else if (ret == -ENOENT) {
-                        llapi_error(LLAPI_MSG_WARN, ret,
-                                    "warning: %s: %s does not exist",
-                                    __func__, path);
-                        goto out;
-                } else if (ret == -ENOTTY) {
-                        llapi_error(LLAPI_MSG_ERROR, ret,
-                                    "%s: '%s' not on a Lustre fs?",
-                                    __func__, path);
-                } else {
-                        llapi_error(LLAPI_MSG_ERROR, ret,
-                                    "error: %s: LL_IOC_GET_MDTIDX failed for %s",
-                                    __func__, path);
-                }
-                return ret;
-        }
+				llapi_printf(LLAPI_MSG_NORMAL,
+					     "'%s' has no stripe info\n", path);
+			goto out;
+		} else if (ret == -ENOENT) {
+			llapi_error(LLAPI_MSG_WARN, ret,
+				    "warning: %s: '%s' does not exist",
+				    __func__, path);
+			goto out;
+		} else if (ret == -ENOTTY) {
+			llapi_error(LLAPI_MSG_ERROR, ret,
+				    "%s: '%s' not on a Lustre fs",
+				    __func__, path);
+		} else {
+			llapi_error(LLAPI_MSG_ERROR, ret,
+				    "error: %s: '%s' failed get_mdtidx",
+				    __func__, path);
+		}
+		return ret;
+	}
 
-	/* The 'LASSERT(parent != NULL || d != NULL);' guarantees
-	 * that either 'd' or 'parent' is not null.
-	 * So in all cases llapi_file_fget_mdtidx() is called,
-	 * thus initializing 'mdtidx'. */
 	if (param->fp_quiet || !(param->fp_verbose & VERBOSE_DETAIL))
-		/* coverity[uninit_use_in_call] */
-                llapi_printf(LLAPI_MSG_NORMAL, "%d\n", mdtidx);
-        else
-		/* coverity[uninit_use_in_call] */
-                llapi_printf(LLAPI_MSG_NORMAL, "%s\nmdt_index:\t%d\n",
-                             path, mdtidx);
+		llapi_printf(LLAPI_MSG_NORMAL, "%d\n", mdtidx);
+	else
+		llapi_printf(LLAPI_MSG_NORMAL, "%s\nmdt_index:\t%d\n",
+			     path, mdtidx);
 
 out:
-	/* Do not get down anymore? */
+	/* Do not go down anymore? */
 	if (param->fp_depth == param->fp_max_depth)
 		return 1;
 
@@ -3552,11 +3549,9 @@ int llapi_getstripe(char *path, struct find_param *param)
                               cb_common_fini, param);
 }
 
-int llapi_obd_statfs(char *path, __u32 type, __u32 index,
-                     struct obd_statfs *stat_buf,
-                     struct obd_uuid *uuid_buf)
+int llapi_obd_fstatfs(int fd, __u32 type, __u32 index,
+		      struct obd_statfs *stat_buf, struct obd_uuid *uuid_buf)
 {
-        int fd;
         char raw[OBD_MAX_IOCTL_BUFFER] = {'\0'};
         char *rawbuf = raw;
         struct obd_ioctl_data data = { 0 };
@@ -3578,23 +3573,31 @@ int llapi_obd_statfs(char *path, __u32 type, __u32 index,
                 return rc;
         }
 
-        fd = open(path, O_RDONLY);
-        if (errno == EISDIR)
-                fd = open(path, O_DIRECTORY | O_RDONLY);
+	rc = ioctl(fd, IOC_OBD_STATFS, (void *)rawbuf);
 
+	return rc < 0 ? -errno : 0;
+}
+
+int llapi_obd_statfs(char *path, __u32 type, __u32 index,
+		     struct obd_statfs *stat_buf, struct obd_uuid *uuid_buf)
+{
+	int fd;
+	int rc;
+
+	fd = open(path, O_RDONLY);
 	if (fd < 0) {
-		rc = errno ? -errno : -EBADF;
+		rc = -errno;
 		llapi_error(LLAPI_MSG_ERROR, rc, "error: %s: opening '%s'",
 			    __func__, path);
 		/* If we can't even open a file on the filesystem (e.g. with
 		 * -ESHUTDOWN), force caller to exit or it will loop forever. */
 		return -ENODEV;
 	}
-	rc = ioctl(fd, IOC_OBD_STATFS, (void *)rawbuf);
-	if (rc)
-		rc = errno ? -errno : -EINVAL;
+
+	rc = llapi_obd_fstatfs(fd, type, index, stat_buf, uuid_buf);
 
 	close(fd);
+
 	return rc;
 }
 
@@ -3897,9 +3900,6 @@ int root_ioctl(const char *mdtname, int opc, void *data, int *mdtidxp,
                 rc = -errno;
         else
                 rc = 0;
-        if (rc && want_error)
-                llapi_error(LLAPI_MSG_ERROR, rc, "ioctl %d err %d", opc, rc);
-
         close(fd);
         return rc;
 }
@@ -4143,7 +4143,7 @@ int llapi_fid2path(const char *device, const char *fidstr, char *buf,
                 if (rc != -ENOENT)
                         llapi_error(LLAPI_MSG_ERROR, rc, "ioctl err %d", rc);
         } else {
-		memcpy(buf, gf->gf_path, gf->gf_pathlen);
+		memcpy(buf, gf->gf_u.gf_path, gf->gf_pathlen);
 		if (buf[0] == '\0') { /* ROOT path */
 			buf[0] = '/';
 			buf[1] = '\0';
