@@ -511,6 +511,10 @@ struct ldlm_namespace {
 	 * recalculation of LDLM pool statistics should be skipped.
 	 */
 	unsigned		ns_stopping:1;
+	/**
+	 * Flag to indicate a process is already doing ELC in this namespace.
+	 */
+	unsigned		ns_in_elc:1;
 
 	/**
 	 * Which bucket should we start with the lock reclaim.
