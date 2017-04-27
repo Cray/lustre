@@ -35,7 +35,7 @@ Name: %{namespace}-%{intranamespace_name}-lnet
 Release: %{release}
 Requires: module-init-tools
 Summary: Lustre networking for Aries Service Nodes running CLE Rhine
-Version: %{_version}_%{kernel_version}_%{kernel_release}
+Version: %{_version}_%{kernel_version}
 Source0: %{source_name}.tar.bz2
 Source1: %{cray-lustre-lnet-ari_s-rhine.spec}-switch-%{_version}.tar.bz2
 URL: %url
@@ -44,6 +44,8 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 %description
 Kernel modules and user-space tools for Lustre networking on XC SLES-based
 service nodes running the CLE Rhine release.
+kernel_version: %{kernel_version}
+kernel_release: %{kernel_release}
 
 %prep
 # using source_name here results in too deep of a macro stack, so use
