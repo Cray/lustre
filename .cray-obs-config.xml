@@ -84,6 +84,11 @@
             </file>
             <file>
                 <name>
+                    cray-lustre-default.spec
+                </name>
+            </file>
+            <file>
+                <name>
                     cray-lustre-ari_c-rhine.spec
                 </name>
             </file>
