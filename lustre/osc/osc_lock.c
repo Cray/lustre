@@ -308,12 +308,11 @@ static int osc_lock_upcall(void *cookie, struct lustre_handle *lockh,
 	struct osc_lock         *oscl  = cookie;
 	struct cl_lock_slice    *slice = &oscl->ols_cl;
 	struct lu_env           *env;
-	__u16			refcheck;
 	int			rc;
 
 	ENTRY;
 
-	env = cl_env_get(&refcheck);
+	env = cl_env_percpu_get();
 	/* should never happen, similar to osc_ldlm_blocking_ast(). */
 	LASSERT(!IS_ERR(env));
 
@@ -352,7 +351,7 @@ static int osc_lock_upcall(void *cookie, struct lustre_handle *lockh,
 
 	if (oscl->ols_owner != NULL)
 		cl_sync_io_note(env, oscl->ols_owner, rc);
-	cl_env_put(env, &refcheck);
+	cl_env_percpu_put(env);
 
 	RETURN(rc);
 }
