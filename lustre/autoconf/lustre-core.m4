@@ -2719,6 +2719,8 @@ lustre/quota/autoMakefile
 lustre/scripts/Makefile
 lustre/tests/Makefile
 lustre/tests/mpi/Makefile
+lustre/tests/kinode/Makefile
+lustre/tests/kinode/autoMakefile
 lustre/utils/Makefile
 lustre/utils/gss/Makefile
 lustre/osp/Makefile
