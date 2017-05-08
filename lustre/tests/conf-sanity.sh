@@ -6217,6 +6217,26 @@ test_104() { # LU-6952
 }
 run_test 104 "Make sure user defined options are reflected in mount"
 
+test_107() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.10.50) ]] ||
+		{ skip "Need MDS version > 2.10.50"; return; }
+
+	start_mgsmds || error "start_mgsmds failed"
+	start_ost || error "unable to start OST"
+
+	# add unknown configuration parameter.
+	local PARAM="$FSNAME-OST0000.ost.unknown_param=50"
+	do_facet mgs "$LCTL conf_param $PARAM"
+	cleanup_nocli || error "cleanup_nocli failed with $?"
+	load_modules
+
+	# unknown param should be ignored while mounting.
+	start_ost || error "unable to start OST after unknown param set"
+
+	cleanup || error "cleanup failed with $?"
+}
+run_test 107 "Unknown config param should not fail target mounting"
+
 if ! combined_mgs_mds ; then
 	stop mgs
 fi
