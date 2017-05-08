@@ -307,7 +307,7 @@ void tgt_mod_exit(void)
 {
 	barrier_fini();
 	if (tgt_page_to_corrupt != NULL)
-		page_cache_release(tgt_page_to_corrupt);
+		put_page(tgt_page_to_corrupt);
 
 	lu_context_key_degister(&tgt_thread_key);
 	lu_context_key_degister(&tgt_session_key);

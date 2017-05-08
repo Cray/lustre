@@ -2148,6 +2148,48 @@ inode_lock, [
 ]) # LC_HAVE_INODE_LOCK
 
 #
+# LC_DIRECTIO_2ARGS
+#
+# Kernel version 4.7 commit c8b8e32d700fe943a935e435ae251364d016c497
+# direct-io: eliminate the offset argument to ->direct_IO
+#
+AC_DEFUN([LC_DIRECTIO_2ARGS], [
+LB_CHECK_COMPILE([if '->direct_IO()' taken 2 arguments],
+direct_io_2args, [
+	#include <linux/fs.h>
+],[
+	struct address_space_operations ops;
+	struct iov_iter *iter = NULL;
+	struct kiocb *iocb = NULL;
+	int rc;
+	rc = ops.direct_IO(iocb, iter);
+],[
+	AC_DEFINE(HAVE_DIRECTIO_2ARGS, 1,
+		[direct_IO need 2 arguments])
+])
+]) # LC_DIRECTIO_2ARGS
+
+#
+# LC_GENERIC_WRITE_SYNC_2ARGS
+#
+# Kernel version 4.7 commit c8b8e32d700fe943a935e435ae251364d016c497
+# direct-io: eliminate the offset argument to ->direct_IO
+#
+AC_DEFUN([LC_GENERIC_WRITE_SYNC_2ARGS], [
+LB_CHECK_COMPILE([if 'generic_write_sync()' taken 2 arguments],
+generic_write_sync_2args, [
+	#include <linux/fs.h>
+],[
+	struct kiocb *iocb = NULL;
+	ssize_t rc;
+	rc = generic_write_sync(iocb, 0);
+],[
+	AC_DEFINE(HAVE_GENERIC_WRITE_SYNC_2ARGS, 1,
+		[generic_write_sync need 2 arguments])
+])
+]) # LC_GENERIC_WRITE_SYNC_2ARGS
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -2160,7 +2202,6 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_CONFIG_CHECKSUM
 	LC_CONFIG_HEALTH_CHECK_WRITE
 	LC_CONFIG_LRU_RESIZE
-	LC_LLITE_LLOOP_MODULE
 
 	LC_GLIBC_SUPPORT_FHANDLES
 	LC_CAPA_CRYPTO
@@ -2325,6 +2366,10 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 4.5
 	LC_HAVE_INODE_LOCK
 
+	# 4.7
+	LC_DIRECTIO_2ARGS
+	LC_GENERIC_WRITE_SYNC_2ARGS
+
 	#
 	AS_IF([test "x$enable_server" != xno], [
 		LC_FUNC_DEV_SET_RDONLY
@@ -2438,25 +2483,6 @@ AS_IF([test "x$enable_nodemap_proc_debug" != xno],
 	[AC_DEFINE(NODEMAP_PROC_DEBUG, 1,
 		[enable nodemap proc debug support])])
 ]) # LC_NODEMAP_PROC_DEBUG
-
-#
-# LC_LLITE_LLOOP_MODULE
-#
-# lloop_llite.ko does not currently work with page sizes
-# of 64k or larger.
-#
-AC_DEFUN([LC_LLITE_LLOOP_MODULE], [
-LB_CHECK_COMPILE([whether to enable 'llite_lloop' module],
-enable_llite_lloop_module, [
-	#include <asm/page.h>
-],[
-	#if PAGE_SIZE >= 65536
-	#error "PAGE_SIZE >= 65536"
-	#endif
-],
-	[enable_llite_lloop_module="yes"],
-	[enable_llite_lloop_module="no"])
-]) # LC_LLITE_LLOOP_MODULE
 
 #
 # LC_OSD_ADDON
@@ -2637,7 +2663,6 @@ AM_CONDITIONAL(GSS, test x$enable_gss = xyes)
 AM_CONDITIONAL(GSS_KEYRING, test x$enable_gss_keyring = xyes)
 AM_CONDITIONAL(GSS_PIPEFS, test x$enable_gss_pipefs = xyes)
 AM_CONDITIONAL(LIBPTHREAD, test x$enable_libpthread = xyes)
-AM_CONDITIONAL(LLITE_LLOOP, test x$enable_llite_lloop_module = xyes)
 AM_CONDITIONAL(LDAP_BUILD, test x$LDAP != x)
 AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
 ]) # LC_CONDITIONALS
