@@ -843,6 +843,8 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 			spin_lock(&request->rq_lock);
 			/* ...but the MD attach didn't succeed... */
 			request->rq_receiving_reply = 0;
+			request->rq_reply_unlinked = 1;
+			request->rq_req_unlinked = 1;
 			spin_unlock(&request->rq_lock);
                         GOTO(cleanup_me, rc = -ENOMEM);
                 }
