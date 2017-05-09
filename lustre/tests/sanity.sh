@@ -14866,6 +14866,26 @@ test_408() {
 }
 run_test 408 "drop_caches should not hang due to page leaks"
 
+test_410()
+{
+	# Create a file, and stat it from the kernel
+	local testfile=$DIR/$tfile
+	touch $testfile
+
+	local run_id=$RANDOM
+	local my_ino=$(stat --format "%i" $testfile)
+
+	# Try to insert the module. This will always fail as the
+	# module is designed to not be inserted.
+	insmod $LUSTRE/tests/kinode/kinode.ko run_id=$run_id fname=$testfile &> /dev/null
+
+	# Anything but success is a test failure
+	dmesg | grep -q \
+	    "lustre kinode $run_id: inode numbers are identical: $my_ino" || \
+	    error "no inode match"
+}
+run_test 410 "Test inode number returned from kernel thread"
+
 [[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.7.11.1) ]] ||
 	do_nodes $(comma_list $(facet_active_host mgs) $(mdts_nodes)) \
 	$LCTL set_param debug=-snapshot
