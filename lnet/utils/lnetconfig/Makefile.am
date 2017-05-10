@@ -41,7 +41,7 @@ CYAML := $(top_builddir)/lnet/utils/cyaml/cyaml.c \
 	 $(top_builddir)/lnet/utils/cyaml/cyaml.h
 
 liblnetconfigtmp_a_SOURCES := liblnetconfig.c liblnetconfig.h \
-			      liblnetconfig_lnd.c $(CYAML)
+			      liblnetconfig_lnd.c liblnd.h $(CYAML)
 liblnetconfigtmp_a_CPPFLAGS := $(AM_CPPFLAGS)
 
 # build static and share lib lnet config library
