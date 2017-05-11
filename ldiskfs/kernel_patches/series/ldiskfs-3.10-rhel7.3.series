@@ -17,3 +17,5 @@ rhel7/ext4-max-dir-size.patch
 rhel7/ext4-remove-truncate-warning.patch
 rhel7.2/ext4-remove-i_data_sem-from-xattr.patch
 rhel7/ext4-optimize-ext4_find_delalloc_range-in-nodelalloc.patch
+rhel6.3/ext4-dont-check-in-ro.patch
+rhel7.2/ext4-dont-check-before-replay.patch
