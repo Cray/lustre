@@ -6567,6 +6567,12 @@ test_101g() {
 		echo "remount client to enable large RPC size"
 		remount_client $MOUNT || error "remount_client failed"
 
+		local client_version=$(lustre_version_code)
+		if [[ $client_version -eq $(version_code 2.7.2) ]]; then
+			# Client defaults to 1MB RPC in Cray's 2.7.2
+			$LCTL set_param -n osc.*.max_pages_per_rpc=16M
+		fi
+
 		for mp in $($LCTL get_param -n osc.*.max_pages_per_rpc); do
 			[ "$mp" -eq 4096 ] ||
 				error "max_pages_per_rpc not correctly set"
