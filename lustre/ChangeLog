@@ -20,7 +20,7 @@
          3.10.0-514.21.1.el7 (RHEL7.3)
          3.0.101-0.47.71     (SLES11 SP3)
          3.0.101-100         (SLES11 SP4)
-         3.12.69-60.64.35    (SLES12 SP1)
+         3.12.74-60.64.40    (SLES12 SP1)
          4.4.59-92.17        (SLES12 SP2)
        * Recommended e2fsprogs version: 1.42.13.wc4 or newer
        * Recommended ZFS / SPL version: 0.6.5.7
