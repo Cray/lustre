@@ -1413,7 +1413,8 @@ test_57() {
     touch $DIR/$tfile
     replay_barrier $SINGLEMDS
     fail $SINGLEMDS
-    sleep 1
+    wait_recovery_complete $SINGLEMDS || error "MDS recovery is not done"
+    wait_mds_ost_sync || error "wait_mds_ost_sync failed"
     $CHECKSTAT -t file $DIR/$tfile || return 1
     do_facet $SINGLEMDS "lctl set_param fail_loc=0x0"
     rm $DIR/$tfile
