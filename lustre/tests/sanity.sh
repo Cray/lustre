@@ -14500,13 +14500,15 @@ test_401a() {
 	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.11.1) ]] ||
 		{ skip "Need MDS version at least 2.7.11.1"; return 0; }
 
+	echo "Start barrier_freeze at: $(date)"
 	#define OBD_FAIL_BARRIER_DELAY		0x2202
-	do_facet mgs $LCTL set_param fail_val=3 fail_loc=0x2202
+	do_facet mgs $LCTL set_param fail_val=5 fail_loc=0x2202
 	do_facet mgs $LCTL barrier_freeze $FSNAME 30 &
 
-	sleep 1
+	sleep 2
 	local barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
 			       awk '/The barrier for/ { print $7 }')
+	echo "Got barrier status at: $(date)"
 	[ "$barrier_status" = "'freezing_p1'" ] ||
 		error "(1) unexpected barrier status $barrier_status"
 
@@ -14535,13 +14537,15 @@ test_401a() {
 	[ "$barrier_status" = "'frozen'" ] ||
 		error "(5) unexpected barrier status $barrier_status"
 
+	echo "Start barrier_thaw at: $(date)"
 	#define OBD_FAIL_BARRIER_DELAY		0x2202
-	do_facet mgs $LCTL set_param fail_val=3 fail_loc=0x2202
+	do_facet mgs $LCTL set_param fail_val=5 fail_loc=0x2202
 	do_facet mgs $LCTL barrier_thaw $FSNAME &
 
-	sleep 1
+	sleep 2
 	barrier_status=$(do_facet mgs $LCTL barrier_stat $FSNAME |
 			 awk '/The barrier for/ { print $7 }')
+	echo "Got barrier status at: $(date)"
 	[ "$barrier_status" = "'thawing'" ] ||
 		error "(6) unexpected barrier status $barrier_status"
 
