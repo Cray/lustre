@@ -210,6 +210,10 @@ static int to_reconn_disable;
 CFS_MODULE_PARM(to_reconn_disable, "i", int, 0644,
 		"Timed out connection waits for peer before reconnecting");
 
+static int vzalloc_no_retry = GNILND_VZALLOC_RETRY;
+CFS_MODULE_PARM(vzalloc_no_retry, "i", int, 0644,
+		"Should we pass the no_retry flag to vmalloc 1: no_retry 0: normal");
+
 kgn_tunables_t kgnilnd_tunables = {
 	.kgn_min_reconnect_interval = &min_reconnect_interval,
 	.kgn_max_reconnect_interval = &max_reconnect_interval,
@@ -253,7 +257,8 @@ kgn_tunables_t kgnilnd_tunables = {
 	.kgn_thread_safe	    = &thread_safe,
 	.kgn_reg_fail_timeout	    = &reg_fail_timeout,
 	.kgn_to_reconn_disable	    = &to_reconn_disable,
-	.kgn_max_purgatory	    = &max_conn_purg
+	.kgn_max_purgatory	    = &max_conn_purg,
+	.kgn_vzalloc_noretry	    = &vzalloc_no_retry
 };
 
 #if CONFIG_SYSCTL && !CFS_SYSFS_MODULE_PARM
