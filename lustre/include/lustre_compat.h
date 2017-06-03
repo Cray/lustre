@@ -426,4 +426,11 @@ static inline void truncate_inode_pages_final(struct address_space *map)
 #endif
 #endif
 
+#ifndef MS_NOSEC
+static inline void inode_has_no_xattr(struct inode *inode)
+{
+	return;
+}
+#endif
+
 #endif /* _LUSTRE_COMPAT_H */
