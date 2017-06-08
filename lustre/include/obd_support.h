@@ -332,6 +332,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_OST_NODESTROY		 0x233
 #define OBD_FAIL_OST_LADVISE_NET	 0x235
 #define OBD_FAIL_OST_PAUSE_PUNCH         0x236
+#define OBD_FAIL_OST_LIST_ASSERT         0x239
 #define OBD_FAIL_OST_GL_WORK_ALLOC	 0x240
 
 #define OBD_FAIL_LDLM                    0x300
