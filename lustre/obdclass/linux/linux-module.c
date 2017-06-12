@@ -325,6 +325,15 @@ static ssize_t obd_proc_jobid_name_seq_write(struct file *file,
 	if (count == 0 || count > LUSTRE_JOBID_SIZE)
 		return -EINVAL;
 
+	if (strcmp(obd_jobid_var, JOBSTATS_NODELOCAL) != 0) {
+		char jobid[LUSTRE_JOBID_SIZE + 1];
+		if (copy_from_user(jobid, buffer, count))
+			return -EFAULT;
+
+		lustre_jobid_clear(jobid);
+		return count;
+	}
+
 	/* clear previous value */
 	memset(obd_jobid_node, 0, LUSTRE_JOBID_SIZE);
 
@@ -466,6 +475,10 @@ int class_procfs_init(void)
 		GOTO(out_proc, rc);
 	}
 
+	rc = jobid_cache_init();
+	if (rc)
+		GOTO(out_proc, rc);
+
 	RETURN(rc);
 
 out_proc:
@@ -477,6 +490,8 @@ out_proc:
 int class_procfs_clean(void)
 {
         ENTRY;
+	jobid_cache_fini();
+
         if (proc_lustre_root) {
                 lprocfs_remove(&proc_lustre_root);
         }
