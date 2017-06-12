@@ -1188,11 +1188,16 @@ int ll_readpage(struct file *file, struct page *vmpage)
 
 		cp = cl2vvp_page(cl_object_page_slice(page->cp_obj, page));
 		if (cp->vpg_defer_uptodate) {
+			enum ras_update_flags flags = LL_RAS_HIT;
+
+			if (lcc->lcc_type == LCC_MMAP)
+				flags |= LL_RAS_MMAP;
+
 			/* For fast read, it updates read ahead state only
 			 * if the page is hit in cache because non cache page
 			 * case will be handled by slow read later. */
 			ras_update(ll_i2sbi(inode), inode, ras, vvp_index(cp),
-				   LL_RAS_HIT | LL_RAS_MMAP);
+				   flags);
 			/* avoid duplicate ras_update() call */
 			cp->vpg_ra_updated = 1;
 
