@@ -197,7 +197,7 @@ Obsoletes: %{name}-headers
 %if %{with build_kmod}
 Requires: kmod-%{name} = %{version}
 %else
-Requires: %{name}-modules = %{version}
+Requires: %{requires_kmod_name} = %{requires_kmod_version}
 %endif
 Requires: %{name} = %{version}
 

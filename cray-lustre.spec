@@ -74,31 +74,28 @@ BuildConflicts: post-build-checks
 %define flavor cray_gem_s
 %endif
 
-%define _prefix    /
+%define _prefix          /usr
+%define _pkgconfigdir    %{_prefix}/lib64/pkgconfig/%{flavor}
 %define version_path %(basename %url)
 %define date %(date +%%F-%%R)
 %define lustre_version %{branch}-%{release}-%{build_user}-%{version_path}-%{date}
 %define branch trunk
 %define vendor_name lustre
 %define pc_files cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc cray-lustre-ptlctl-devel.pc
-%if %{with SLES12}
-%define intranamespace_name %{vendor_name}-%{flavor}_rhine
-%else
 %define intranamespace_name %{vendor_name}-%{flavor}
-%endif
 %define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 
-Requires: liblustreapi.so()(64bit) 
+Requires: liblustreapi.so()(64bit)
 
 %if %{without elogin}
-%define gni --enable-gni 
+%define gni --enable-gni
 %else
-%define gni %{nil} 
+%define gni %{nil}
 %endif
 
 %if %{with service} || %{with compute} || %{with elogin}
-%define disable_server --disable-server --enable-client 
+%define disable_server --disable-server --enable-client
 %else
 %define disable_server %{nil}
 %endif
@@ -113,7 +110,7 @@ Requires: liblustreapi.so()(64bit)
 
 %define node_type %(echo %{distribution} | awk '{print $1}' | awk -F: '{print $NF}')
 
-Name:       cray-lustre-%{node_type}-module 
+Name:       cray-lustre-%{node_type}-module
 Version:    %{_version}
 Release:    %{release}
 Source:     %{source_name}.tar.bz2
@@ -122,28 +119,62 @@ Group:      System/Filesystems
 License:    Cray Software License Agreement
 Packager:   sps@cray.com
 URL:        %url
-BuildRoot:  %{_tmppath}/%{name}-%{version}-root 
+BuildRoot:  %{_tmppath}/%{name}-%{version}-root
 
 %description
-A package that contains pc files and a lustre module file. 
- 
+A package that contains pc files and a lustre module file.
+
 %prep
 %setup -n %{source_name}
- 
+
 %build
+## Set the version of the lustre build to the git tag
 echo "LUSTRE_VERSION = %{_tag}" > LUSTRE-VERSION-FILE
-sed -i '1i%%define _prefix /' lustre.spec.in
-sed -i '1i%%define _includedir /usr/include' lustre.spec.in
-sed -i '/Requires: kernel = %{krequires}/d' lustre.spec.in
-sed -i '/Release.*/c\Release: %{release}' lustre.spec.in
-%if %{with dal}
-sed -i '/%%global requires_kmod_name kmod-%%{lustre_name}/c\%%global requires_kmod_name %%{lustre_name}-kmp' lustre.spec.in
-sed -i "/%%global requires_kmod_version %%{version}/c\%%global requires_kmod_version %%{version}_%%(echo %%{krequires} | sed -r 'y\/-\/_\/;')" lustre.spec.in
-%endif
-%if %{with service} || %{with compute} || %{with dal}
-sed -i 's/kernel_module_package /cray_kernel_module_package /g' lustre.spec.in
+
+## Set the sysconfig dir to /etc. It is set by default to %{_prefix}/etc which means
+## that in this case it would be /usr/etc which is not waht we want.
+%{__sed} -i '1i%%define _sysconfdir /etc' lustre.spec.in
+
+## Set the overall prefix to /usr.
+%{__sed} -i '1i%%define _prefix /usr' lustre.spec.in
+
+## Set the release version of the lustre rpms to the release version of the metaspec build.
+## If this is not done the versions between the lustre rpms and the metaspec rpms will differ.
+%{__sed} -i '/Release.*/c\Release: %{release}' lustre.spec.in
+
+## This is a sles quirk which did not carry over to our cray sles kernel. Thus it must be changed
+## for the build to work. When the sles kernel went from version 11 to 12 they decided to add this
+## "k" to the beginning of the release string. Our version of the kernel doesnt do that.
+%{__sed} -i 's/{version}_k/{version}_/g' lustre.spec.in
+
+## Set the version of the lustre rpms to the version of the metaspec rpm.
+%{__sed} -i 's/%%{version}/%{version}/g' lustre.spec.in
+
+## This is required because we want the lustre version in the config.h file to contain
+## the githash of the build whereas we dont want the version of the lustre rpm to contain
+## the githash. This is because the githash is included in the release and we dont want it
+## in there twice.
+%{__sed} -i 's/lustre-%{version}/lustre-%{_tag}/g' lustre.spec.in
+
+## This allows the Module.symvers file to be packaged in the way that DVS expects
+%if %{with service} || %{with compute}
+%{__sed} -i 's,destfil=usr/src/lustre-%{_tag}-headers/Module.symvers,destfil=usr/src/lustre-%{_tag}-headers/Module.symvers; %%{__install} -D -m 0644 $f %{buildroot}/usr/src/lustre-%{_tag}-headers/%{_target_cpu}/%{flavor}/Module.symvers,g' lustre.spec.in
 %endif
 
+## This is necessary because our centos kernel is "SLESified" which means that it contains
+## some of the versioning characteristics of the sles kernels.
+%if %{with dal}
+%{__sed} -i '/%%global requires_kmod_name kmod-%%{lustre_name}/c\%%global requires_kmod_name %%{lustre_name}-kmp' lustre.spec.in
+%{__sed} -i "/%%global requires_kmod_version %{version}$/c\%%global requires_kmod_version %{version}_%%(echo %%{krequires} | sed -r 'y\/-\/_\/;')" lustre.spec.in
+%endif
+
+## We want to use our cray_kernel_module_package macro instead of the upstream
+## kernel_module_package macro.
+%if %{with service} || %{with compute} || %{with dal}
+%{__sed} -i 's/kernel_module_package /cray_kernel_module_package /g' lustre.spec.in
+%endif
+
+## A hack to set the correct version in the .version file for the lustre modulefile.
 %{__sed} -e 's/@VERSION@/%{version}-%{release}/g' version.in > .version
 
 export LUSTRE_VERS=%{lustre_version}
@@ -187,12 +218,25 @@ fi
 O2IBPATH=no
 %endif
 
+cat << EOF > cray-lnet.pc
+includedir=/usr/src/lustre-%{_tag}-headers
+symversdir=/usr/src/lustre-%{_tag}-headers
+
+Cflags: \
+-I\${includedir}/libcfs/include \
+-I\${includedir}/lnet/include \
+-I\${includedir}/lustre/include
+
+Description: Lustre Lnet
+Name: cray-lnet
+Version: %{_tag}
+EOF
 
 sh autogen.sh
-%configure --includedir=/usr/include --with-rpmsubname=%{node_type} --with-extra-symbols="$syms" --with-o2ib=${O2IBPATH} %{config_args}
-%{__make} %_smp_mflags rpms 
+%configure --with-rpmsubname=%{node_type} --with-extra-symbols="$syms" --with-pkgconfigdir=%{_pkgconfigdir} --with-o2ib=${O2IBPATH} %{config_args}
+%{__make} %_smp_mflags rpms
 
-%if %{with SLES11} 
+%if %{with SLES11}
 %{__cp} *x86_64.rpm /usr/src/packages/RPMS/x86_64/
 %{__cp} *src.rpm /usr/src/packages/SRPMS/
 
@@ -233,16 +277,25 @@ sh autogen.sh
 for f in %{pc_files}
 do
     eval "sed -i 's,^prefix=.*$,prefix=/usr,' %{_sourcedir}/${f}"
+    eval "sed -i 's,^includedir=.*$,includedir=/usr/src/lustre-%{_tag}-headers,' %{_sourcedir}/${f}"
     install -D -m 0644  %{_sourcedir}/${f} %{buildroot}/%{_pkgconfigdir}/${f}
     %{__rm} -f %{_sourcedir}/${f}
 done
 
+%{__install} -D -m 0644 cray-lnet.pc %{buildroot}/%{_pkgconfigdir}/cray-lnet.pc
+%{__install} -D -m 0644 config.h %{buildroot}/usr/src/lustre-%{_tag}-headers/%{_arch}/%{flavor}/config.h
+
 %{__install} -D -m 0644 .version %{buildroot}/%{_name_modulefiles_prefix}/.version
 %{__install} -D -m 0644 module %{buildroot}/%{_release_modulefile}
- 
+
 %files
 %defattr(-, root, root)
-/
+%{_pkgconfigdir}/*
+/opt/cray/modulefiles/*
+/usr/src/lustre-%{_tag}-headers/%{_arch}/%{flavor}/config.h
+%if %{with service} || %{with compute}
+%attr(0755, root, root) /usr/src/lustre-%{_tag}-headers/%{_target_cpu}/%{flavor}/Module.symvers
+%endif
 
 %post
 %{__ln_s} -f %{_sbindir}/ko2iblnd-probe /usr/sbin
