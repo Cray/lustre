@@ -502,6 +502,8 @@ echo '%{_sbindir}/wiretest' >>lustre-tests.files
 %files source
 %defattr(-,root,root)
 %{_prefix}/src/lustre-%{version}
+%exclude %{_prefix}/src/lustre-%{version}/lustre.spec
+%exclude %{_prefix}/src/lustre-%{version}/lustre.spec.in
 
 %files devel -f lustre-devel.files
 
