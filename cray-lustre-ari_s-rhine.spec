@@ -118,6 +118,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
         %configure --disable-checksum \
            --enable-gni \
            --disable-server \
+           --disable-dlc \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-o2ib=${O2IBPATH} \
            --with-extra-symbols="$syms" \
