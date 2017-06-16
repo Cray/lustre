@@ -3546,6 +3546,7 @@ AM_CONDITIONAL(HAVE_SYSTEMD, test "x$with_systemdsystemunitdir" != "xno")
 AM_CONDITIONAL(XATTR_HANDLER, test "x$lb_cv_compile_xattr_handler_flags" = xyes)
 AM_CONDITIONAL(LDAP_BUILD, test x$enable_ldap != x)
 AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
+AM_CONDITIONAL(SELINUX, test "$SELINUX" = "-lselinux")
 ]) # LC_CONDITIONALS
 
 #

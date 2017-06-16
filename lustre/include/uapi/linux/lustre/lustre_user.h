@@ -951,6 +951,7 @@ static inline char *qtype_name(int qtype)
 }
 
 #define IDENTITY_DOWNCALL_MAGIC 0x6d6dd629
+#define SEPOL_DOWNCALL_MAGIC 0x8b8bb842
 
 /* permission */
 #define N_PERMS_MAX      64
@@ -970,6 +971,13 @@ struct identity_downcall_data {
 	__u32                            idd_ngroups;
 	struct perm_downcall_data idd_perms[N_PERMS_MAX];
 	__u32                            idd_groups[0];
+};
+
+struct sepol_downcall_data {
+	__u32	       sdd_magic;
+	time_t	       sdd_sepol_mtime;
+	__u16	       sdd_sepol_len;
+	char	       sdd_sepol[0];
 };
 
 #ifdef NEED_QUOTA_DEFS
