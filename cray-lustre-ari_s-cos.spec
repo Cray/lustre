@@ -65,13 +65,6 @@ if [ "%reconfigure" == "1" -o ! -x %_builddir/%{source_name}/configure ];then
 fi
 
 export GNICPPFLAGS=`pkg-config --cflags cray-gni cray-gni-headers cray-krca lsb-cray-hss`
-if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
-    O2IBPATH=/usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}
-elif [ -d /usr/src/ofed/%{_target_cpu}/%{flavor} ]; then
-    O2IBPATH=/usr/src/ofed/%{_target_cpu}/%{flavor}
-else
-    O2IBPATH=no
-fi
 
 HSS_FLAGS=`pkg-config --cflags lsb-cray-hss`
 CFLAGS="%{optflags} -Werror -fno-stack-protector $HSS_FLAGS"
@@ -79,7 +72,6 @@ CFLAGS="%{optflags} -Werror -fno-stack-protector $HSS_FLAGS"
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
         %configure --disable-checksum \
            --enable-gni \
-           --with-o2ib=$O2IBPATH \
            --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
            --with-obd-buffer-size=16384
 fi
