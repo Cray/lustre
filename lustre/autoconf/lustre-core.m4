@@ -1307,6 +1307,23 @@ file_f_inode, [
 ]) # LC_HAVE_FILE_F_INODE
 
 #
+# LC_HAVE_FILE_INODE
+#
+# 3.8 has introduced inline function file_inode
+#
+AC_DEFUN([LC_HAVE_FILE_INODE], [
+LB_CHECK_COMPILE([if file_inode() exists],
+file_inode, [
+	#include <linux/fs.h>
+],[
+	file_inode(NULL);
+],[
+	AC_DEFINE(HAVE_FILE_INODE, 1,
+		[file_inode() has been defined])
+])
+]) # LC_HAVE_FILE_INODE
+
+#
 # LC_HAVE_SUNRPC_UPCALL_HAS_3ARGS
 #
 AC_DEFUN([LC_HAVE_SUNRPC_UPCALL_HAS_3ARGS], [
@@ -1745,6 +1762,29 @@ iter_init, [
 ])
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_IOV_ITER_INIT_DIRECTION
+
+#
+# LC_HAVE_IOV_ITER_TRUNCATE
+#
+#
+# 3.16 introduces a new API iov_iter_truncate()
+#
+AC_DEFUN([LC_HAVE_IOV_ITER_TRUNCATE], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'iov_iter_truncate' exists ],
+iter_truncate, [
+	#include <linux/uio.h>
+	#include <linux/fs.h>
+],[
+	struct iov_iter *i = NULL;
+
+	iov_iter_truncate(i, 0);
+],[
+	AC_DEFINE(HAVE_IOV_ITER_TRUNCATE, 1, [iov_iter_truncate exists])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_HAVE_IOV_ITER_TRUNCATE
 
 #
 # LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
@@ -2286,6 +2326,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 3.8
 	LC_HAVE_FILE_F_INODE
+	LC_HAVE_FILE_INODE
 	LC_HAVE_SUNRPC_UPCALL_HAS_3ARGS
 
 	# 3.9
@@ -2325,6 +2366,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 3.16
 	LC_DIRECTIO_USE_ITER
 	LC_HAVE_IOV_ITER_INIT_DIRECTION
+	LC_HAVE_IOV_ITER_TRUNCATE
 	LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER
 	LC_HAVE_SMP_MB__BEFORE_ATOMIC
 

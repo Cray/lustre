@@ -13515,6 +13515,64 @@ test_247() {
 }
 run_test 247 "Check that watchdog causes kernel log dump"
 
+test_248() {
+	local my_error=error
+
+	local fast_read_sav=$($LCTL get_param -n llite.*.fast_read 2>/dev/null)
+	[ -z "$fast_read_sav" ] && skip "no fast read support" && return
+
+	# This test case is time sensitive and Maloo uses KVM to run autotest.
+	# Therefore the complete time of I/O task is unreliable and depends on
+	# the workload on the host machine when the task is running.
+	local virt=$(running_in_vm)
+	[ -n "$virt" ] && echo "running in VM '$virt', ignore error" &&
+		  my_error="error_ignore env=$virt"
+
+	# create a large file for fast read verification
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=128 > /dev/null 2>&1
+
+	# make sure the file is created correctly
+	$CHECKSTAT -s $((128*1024*1024)) $DIR/$tfile ||
+		{ rm -f $DIR/$tfile; skip "file creation error" && return; }
+
+	echo "Test 1: verify that fast read is 4 times faster on cache read"
+
+	# small read with fast read enabled
+	$LCTL set_param -n llite.*.fast_read=1
+	local t_fast=$(dd if=$DIR/$tfile of=/dev/null bs=4k 2>&1 |
+		awk '/copied/ { print $6 }')
+
+	# small read with fast read disabled
+	$LCTL set_param -n llite.*.fast_read=0
+	local t_slow=$(dd if=$DIR/$tfile of=/dev/null bs=4k 2>&1 |
+		awk '/copied/ { print $6 }')
+
+	# verify that fast read is 4 times faster for cache read
+	[ $(bc <<< "4 * $t_fast < $t_slow") -eq 1 ] ||
+		$my_error "fast read was not 4 times faster: $t_fast vs $t_slow"
+
+	echo "Test 2: verify the performance between big and small read"
+	$LCTL set_param -n llite.*.fast_read=1
+
+	# 1k non-cache read
+	cancel_lru_locks osc
+	local t_1k=$(dd if=$DIR/$tfile of=/dev/null bs=1k 2>&1 |
+		awk '/copied/ { print $6 }')
+
+	# 1M non-cache read
+	cancel_lru_locks osc
+	local t_1m=$(dd if=$DIR/$tfile of=/dev/null bs=1k 2>&1 |
+		awk '/copied/ { print $6 }')
+
+	# verify that big IO is not 4 times faster than small IO
+	[ $(bc <<< "4 * $t_1k >= $t_1m") -eq 1 ] ||
+		$my_error "bigger IO is way too fast: $t_1k vs $t_1m"
+
+	$LCTL set_param -n llite.*.fast_read=$fast_read_sav
+	rm -f $DIR/$tfile
+}
+run_test 248 "fast read verification"
+
 test_249() { # LU-7890
 	rm -f $DIR/$tfile
 	$SETSTRIPE -c 1 $DIR/$tfile
