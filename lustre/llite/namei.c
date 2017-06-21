@@ -134,6 +134,9 @@ struct inode *ll_iget(struct super_block *sb, ino_t hash,
 		} else {
 			unlock_new_inode(inode);
 		}
+	} else if (is_bad_inode(inode)) {
+		iput(inode);
+		inode = ERR_PTR(-ESTALE);
 	} else if (!(inode->i_state & (I_FREEING | I_CLEAR))) {
 		rc = ll_update_inode(inode, md);
 		CDEBUG(D_VFSTRACE, "got inode: "DFID"(%p): rc = %d\n",
