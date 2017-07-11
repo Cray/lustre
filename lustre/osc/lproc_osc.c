@@ -440,6 +440,38 @@ static ssize_t osc_checksum_type_seq_write(struct file *file,
 }
 LPROC_SEQ_FOPS(osc_checksum_type);
 
+static int osc_checksum_dump_seq_show(struct seq_file *m, void *v)
+{
+	struct obd_device *obd = m->private;
+
+	if (obd == NULL)
+		return 0;
+
+	seq_printf(m, "%d\n", obd->u.cli.cl_checksum_dump ? 1 : 0);
+	return 0;
+}
+
+static ssize_t osc_checksum_dump_seq_write(struct file *file,
+					   const char __user *buffer,
+					   size_t count, loff_t *off)
+{
+	struct obd_device *obd;
+	int val, rc;
+
+	obd = ((struct seq_file *)file->private_data)->private;
+	if (obd == NULL)
+		return 0;
+
+	rc = lprocfs_write_helper(buffer, count, &val);
+	if (rc)
+		return rc;
+
+	obd->u.cli.cl_checksum_dump = (val ? 1 : 0);
+
+	return count;
+}
+LPROC_SEQ_FOPS(osc_checksum_dump);
+
 static int osc_resend_count_seq_show(struct seq_file *m, void *v)
 {
 	struct obd_device *obd = m->private;
@@ -646,6 +678,8 @@ struct lprocfs_vars lprocfs_osc_obd_vars[] = {
 	  .fops	=	&osc_checksum_fops		},
 	{ .name	=	"checksum_type",
 	  .fops	=	&osc_checksum_type_fops		},
+	{ .name	=	"checksum_dump",
+	  .fops	=	&osc_checksum_dump_fops		},
 	{ .name	=	"resend_count",
 	  .fops	=	&osc_resend_count_fops		},
 	{ .name	=	"timeouts",
