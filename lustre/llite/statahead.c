@@ -966,6 +966,7 @@ static int ll_agl_thread(void *arg)
 			list_del_init(&clli->lli_agl_list);
 			spin_unlock(&plli->lli_agl_lock);
 			ll_agl_trigger(&clli->lli_vfs_inode, sai);
+			cond_resched();
 		} else {
 			spin_unlock(&plli->lli_agl_lock);
 		}
@@ -1152,7 +1153,7 @@ static int ll_statahead_thread(void *arg)
 
 					ll_agl_trigger(&clli->lli_vfs_inode,
 							sai);
-
+					cond_resched();
 					spin_lock(&lli->lli_agl_lock);
 				}
 				spin_unlock(&lli->lli_agl_lock);
