@@ -1733,6 +1733,8 @@ refill:
 		goto refill;
 	}
 
+	ctx->lc_version = key_set_version;
+
 	atomic_dec(&lu_key_initing_cnt);
 	read_unlock(&lu_keys_guard);
 	return 0;
