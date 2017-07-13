@@ -1165,7 +1165,7 @@ refresh:
  * \retval >= 0		amount of grant space allocated to the precreate request
  * \retval -ENOSPC	on failure
  */
-long ofd_grant_create(const struct lu_env *env, struct obd_export *exp, int *nr)
+long ofd_grant_create(const struct lu_env *env, struct obd_export *exp, s64 *nr)
 {
 	struct ofd_device		*ofd = ofd_exp(exp);
 	struct filter_export_data	*fed = &exp->exp_filter_data;

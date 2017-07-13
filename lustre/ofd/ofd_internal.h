@@ -484,7 +484,7 @@ void ofd_grant_commit(struct obd_export *exp, unsigned long grant_used, int rc);
 int ofd_grant_commit_cb_add(struct thandle *th, struct obd_export *exp,
 			    unsigned long grant);
 long ofd_grant_create(const struct lu_env *env, struct obd_export *exp,
-		      int *nr);
+		      s64 *nr);
 
 /* ofd_fmd.c */
 int ofd_fmd_init(void);
