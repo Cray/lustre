@@ -4696,6 +4696,11 @@ int llapi_set_request_only(int fd)
 	return ioctl(fd, LL_IOC_REQUEST_ONLY);
 }
 
+/* This is #if'ed out to remove pthreads from liblustreapi to fix build
+ * problems.  When we want to use this code again, we will need to move it to
+ * another file to avoid contaminating liblustreapi with pthreads. */
+#if 0
+
 /* A work queue for pinging Lustre server targets */
 struct pingq {
 	/* The current index into procfs ping files */
@@ -5006,3 +5011,5 @@ int llapi_jobaction(int action, char *fsname)
 	}
 	return rc;
 }
+
+#endif
