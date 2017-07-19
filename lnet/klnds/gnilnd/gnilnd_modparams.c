@@ -25,7 +25,7 @@
 
 #include "gnilnd.h"
 
-static int credits = 256;
+static int credits = GNILND_DEFAULT_CREDITS;
 CFS_MODULE_PARM(credits, "i", int, 0444,
 		"# concurrent sends");
 
