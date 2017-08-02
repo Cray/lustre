@@ -5948,15 +5948,6 @@ cleanup_77c() {
 	trap 0
 	set_checksums 0
 	$LCTL set_param osc.*osc-[^mM]*.checksum_dump=0
-	$check_ost && do_facet ost1 $LCTL set_param obdfilter.*-OST*.checksum_dump=0
-	rm -f /tmp/checksum_dump-*
-	do_facet ost1 rm -f /tmp/checksum_dump-*
-}
-
-cleanup_77c() {
-	trap 0
-	set_checksums 0
-	$LCTL set_param osc.*osc-[^mM]*.checksum_dump=0
 	$check_ost &&
 		do_facet ost1 $LCTL set_param obdfilter.*-OST*.checksum_dump=0
 	[ -n $osc_file_prefix ] && rm -f ${osc_file_prefix}*
