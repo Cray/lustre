@@ -39,7 +39,6 @@
 #include <libcfs/libcfs.h>
 #include <libcfs/libcfs_hash.h>
 #include <obd_support.h>
-#include <lustre_net.h>
 #include <lustre_export.h>
 #include <obd.h>
 #include <lprocfs_status.h>
