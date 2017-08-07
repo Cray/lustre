@@ -3158,6 +3158,9 @@ test_61() {
 run_test 61 "Release stripeless file with non-zero size"
 
 test_62() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.15) ]] ||
+		{ skip "Need MDS version 2.7.15+"; return; }
+
 	local facet=$SINGLEAGT
 	local agents=${1:-$(facet_active_host $facet)}
 	local default_maxrequest=$(get_hsm_param max_requests)
