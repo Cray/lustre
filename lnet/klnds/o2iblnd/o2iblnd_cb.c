@@ -1372,9 +1372,9 @@ kiblnd_reconnect_peer(kib_peer_t *peer)
 		goto no_reconnect;
 	}
 
-	LASSERT(!peer->ibp_accepting && !peer->ibp_connecting &&
-		list_empty(&peer->ibp_conns));
-	peer->ibp_reconnecting = 0;
+	if (peer->ibp_accepting)
+		CNETERR("Detecting race between accepting and reconnecting\n");
+	peer->ibp_reconnecting--;
 
 	if (!kiblnd_peer_active(peer)) {
 		list_splice_init(&peer->ibp_tx_queue, &txs);
