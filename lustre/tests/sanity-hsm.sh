@@ -3266,6 +3266,8 @@ test_61() {
 run_test 61 "Release stripeless file with non-zero size"
 
 test_62() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.15) ]] ||
+		{ skip "Need MDS version 2.7.15+"; return; }
 	local agent=$(facet_active_host $SINGLEAGT)
 
 	copytool_setup
