@@ -65,9 +65,13 @@ extern int failover;
 #define MO_DRYRUN		0x08
 #define MO_QUOTA		0x10
 #define MO_RENAME		0x20
+#define MO_ERASE_ALL		0x80
 
 #define MAX_LOOP_DEVICES	16
 #define INDEX_UNASSIGNED	0xFFFF
+
+/* Maximum length of on-disk parameters in the form key=<value> */
+#define PARAM_MAX		4096
 
 /* used to describe the options to format the lustre disk, not persistent */
 struct mkfs_opts {
@@ -139,6 +143,8 @@ int loop_cleanup(struct mkfs_opts *mop);
 /* generic target support */
 int osd_write_ldd(struct mkfs_opts *mop);
 int osd_read_ldd(char *dev, struct lustre_disk_data *ldd);
+int osd_erase_ldd(struct mkfs_opts *mop, char *param);
+void osd_print_ldd_params(struct mkfs_opts *mop);
 int osd_is_lustre(char *dev, unsigned *mount_type);
 int osd_make_lustre(struct mkfs_opts *mop);
 int osd_prepare_lustre(struct mkfs_opts *mop,
@@ -156,6 +162,8 @@ struct module_backfs_ops {
 	void	(*fini)(void);
 	int	(*read_ldd)(char *ds,  struct lustre_disk_data *ldd);
 	int	(*write_ldd)(struct mkfs_opts *mop);
+	int	(*erase_ldd)(struct mkfs_opts *mop, char *param);
+	void	(*print_ldd_params)(struct mkfs_opts *mop);
 	int	(*is_lustre)(char *dev, enum ldd_mount_type *mount_type);
 	int	(*make_lustre)(struct mkfs_opts *mop);
 	int	(*prepare_lustre)(struct mkfs_opts *mop,

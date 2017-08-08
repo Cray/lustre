@@ -158,6 +158,7 @@ void usage(FILE *out)
 		"\t\t--replace: replace an old target with the same index\n"
 		"\t\t--stripe-count-hint=#N: for optimizing MDT inode size\n"
 #else
+		"\t\t--erase-param <key>: erase all instances of a parameter\n"
 		"\t\t--erase-params: erase all old parameter settings\n"
 		"\t\t--writeconf: erase all config logs for this fs.\n"
 		"\t\t--quota: enable space accounting on old 2.x device.\n"
@@ -175,8 +176,10 @@ void usage(FILE *out)
 
 /* ==================== Lustre config functions =============*/
 
-void print_ldd(char *str, struct lustre_disk_data *ldd)
+void print_ldd(char *str, struct mkfs_opts *mop)
 {
+	struct lustre_disk_data *ldd = &mop->mo_ldd;
+
         printf("\n   %s:\n", str);
         printf("Target:     %s\n", ldd->ldd_svname);
         if (ldd->ldd_svindex == INDEX_UNASSIGNED)
@@ -199,7 +202,7 @@ void print_ldd(char *str, struct lustre_disk_data *ldd)
                ldd->ldd_flags & LDD_F_NO_PRIMNODE? "no_primnode ":"",
                ldd->ldd_flags & LDD_F_UPGRADE14  ? "upgrade1.4 ":"");
         printf("Persistent mount opts: %s\n", ldd->ldd_mount_opts);
-        printf("Parameters:%s\n", ldd->ldd_params);
+	osd_print_ldd_params(mop);
         if (ldd->ldd_userdata[0])
                 printf("Comment: %s\n", ldd->ldd_userdata);
         printf("\n");
@@ -227,6 +230,71 @@ static inline void badopt(const char *opt, char *type)
                 progname, opt, type);
         usage(stderr);
 }
+
+#ifdef TUNEFS
+/**
+ * Removes all existing instances of the parameter passed in \a param,
+ * which are in the form of "key=<value>", from the buffer at \a buf.
+ *
+ * The parameter can be either in the form of "key" when passed by option
+ * "--erase-param", or in the form of "key=<value>" when passed by option
+ * "--param".
+ *
+ * \param buf	  the buffer holding on-disk server parameters.
+ * \param param	  the parameter whose instances are to be removed from \a buf.
+ * \param withval true means the parameter is in the form of "key=<value>"
+ *		  false means the parameter is in the form of "key"
+ *
+ * \retval 0	  success, parameter was erased,
+ * \retval 1	  success, parameter was not found, don't need to do erase_ldd,
+ * \retval EINVAL failure, invalid input parameter.
+ */
+static int erase_param(const char *const buf, const char *const param,
+		       bool withval)
+{
+	char	search[PARAM_MAX + 1] = "";
+	char	*buffer = (char *)buf;
+	bool	found = false;
+
+	if (strlen(param) > PARAM_MAX) {
+		fprintf(stderr, "%s: param to erase is too long-\n%s\n",
+			progname, param);
+		return EINVAL;
+	}
+
+	/* add_param() writes a space as the first character in ldd_params */
+	search[0] = ' ';
+
+	/* "key" or "key=<value>" */
+	if (withval) {
+		char *keyend;
+
+		keyend = strchr(param, '=');
+		if (!keyend)
+			return EINVAL;
+		strncpy(&search[1], param, keyend - param + 1);
+	} else {
+		strncpy(&search[1], param, strlen(param));
+		strncat(search, "=", 1);
+	}
+
+	while (1) {
+		char	*space;
+
+		buffer = strstr(buffer, search);
+		if (!buffer)
+			return found == true ? 0 : 1;
+		found = true;
+		space = strchr(buffer + 1, ' ');
+		if (space) {
+			memmove(buffer, space, strlen(space) + 1);
+		} else {
+			*buffer = '\0';
+			return 0;
+		}
+	}
+}
+#endif
 
 /* from mount_lustre */
 /* Get rid of symbolic hostnames for tcp, since kernel can't do lookups */
@@ -309,6 +377,7 @@ int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
 		{ "reformat",		no_argument,		NULL, 'r' },
 		{ "replace",		no_argument,		NULL, 'R' },
 #else
+		{ "erase-param",	required_argument,	NULL, 'E' },
 		{ "erase-params",	no_argument,		NULL, 'e' },
 		{ "quota",		no_argument,		NULL, 'Q' },
 		{ "rename",		optional_argument,	NULL, 'R' },
@@ -320,7 +389,7 @@ int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
 #ifndef TUNEFS
 			  "b:c:d:k:MOrR";
 #else
-			  "eQR::w";
+			  "E:eQR::w";
 #endif
 	struct lustre_disk_data *ldd = &mop->mo_ldd;
 	char new_fsname[16] = "";
@@ -329,6 +398,26 @@ int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
 	int failnode_set = 0, servicenode_set = 0;
 	int replace = 0;
 
+#ifdef TUNEFS
+	/* For the right semantics, if '-e'/'--erase-params' is specified,
+	 * it must be picked out and all old parameters should be erased
+	 * before any other changes are done. */
+	while ((opt = getopt_long(argc, argv, optstring, long_opt, &longidx)) !=
+	       EOF) {
+		switch (opt) {
+		case 'e':
+			ldd->ldd_params[0] = '\0';
+			mop->mo_flags |= MO_ERASE_ALL;
+			ldd->ldd_flags |= LDD_F_UPDATE;
+			break;
+		default:
+			break;
+		}
+		if (mop->mo_flags & MO_ERASE_ALL)
+			break;
+	}
+	optind = 0;
+#endif
 	while ((opt = getopt_long(argc, argv, optstring, long_opt, &longidx)) !=
 	       EOF) {
 		switch (opt) {
@@ -434,10 +523,17 @@ int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
 			*mountopts = optarg;
 			break;
 		case 'p':
+#ifdef TUNEFS
+			/* Removes all existing instances of the parameter
+			 * before adding new values.
+			 */
+			rc = erase_param(ldd->ldd_params, optarg, true);
+			if (rc > 1)
+				return rc;
+#endif
 			rc = add_param(ldd->ldd_params, NULL, optarg);
 			if (rc != 0)
 				return rc;
-
 			/* Must update the mgs logs */
 			ldd->ldd_flags |= LDD_F_UPDATE;
 			break;
@@ -527,11 +623,23 @@ int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
 		case 'R':
 			replace = 1;
 			break;
-#else /* !TUNEFS */
-		case 'e':
-			ldd->ldd_params[0] = '\0';
+#else /* TUNEFS */
+		case 'E':
+			rc = erase_param(ldd->ldd_params, optarg, false);
+			/* (rc == 1) means not found, so don't need to
+			 * call osd_erase_ldd(). */
+			if (rc > 1)
+				return rc;
+			if (!rc) {
+				rc = osd_erase_ldd(mop, optarg);
+				if (rc)
+					return rc;
+			}
 			/* Must update the mgs logs */
 			ldd->ldd_flags |= LDD_F_UPDATE;
+			break;
+		case 'e':
+			/* Already done in the beginning */
 			break;
 		case 'Q':
 			mop->mo_flags |= MO_QUOTA;
@@ -709,7 +817,7 @@ int main(int argc, char *const argv[])
 		mop.mo_mgs_failnodes++;
 
 	if (verbose > 0)
-		print_ldd("Read previous values", ldd);
+		print_ldd("Read previous values", &mop);
 #endif /* TUNEFS */
 
 	ret = parse_opts(argc, argv, &mop, &mountopts, old_fsname);
@@ -761,7 +869,14 @@ int main(int argc, char *const argv[])
 		ldd->ldd_flags &= ~LDD_F_NEED_INDEX;
 		ldd->ldd_svindex = 0;
 	}
+#ifndef TUNEFS
 	if (!IS_MGS(ldd) && (mop.mo_mgs_failnodes == 0)) {
+#else
+	/* Don't check --mgs or --mgsnode if print_only is set or
+	 * --erase-params is set. */
+	if (!IS_MGS(ldd) && (mop.mo_mgs_failnodes == 0) && !print_only &&
+	    !(mop.mo_flags & MO_ERASE_ALL)) {
+#endif
 		fatal();
 		if (IS_MDT(ldd))
 			fprintf(stderr, "Must specify --mgs or --mgsnode\n");
@@ -811,7 +926,7 @@ int main(int argc, char *const argv[])
 			ldd->ldd_fsname, ldd->ldd_svname);
 
 	if (verbose >= 0)
-		print_ldd("Permanent disk data", ldd);
+		print_ldd("Permanent disk data", &mop);
 
 	if (print_only) {
 		printf("exiting before disk write.\n");
@@ -896,7 +1011,6 @@ int main(int argc, char *const argv[])
 		fprintf(stderr, "failed to write local files\n");
 		goto out;
 	}
-
 out:
 	osd_fini();
 	ret2 = loop_cleanup(&mop);
