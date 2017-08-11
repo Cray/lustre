@@ -21,7 +21,7 @@
          3.0.101-0.47.71     (SLES11 SP3)
          3.0.101-107         (SLES11 SP4)
          3.12.74-60.64.40    (SLES12 SP1)
-         4.4.74-92.32        (SLES12 SP2)
+         4.4.74-92.35        (SLES12 SP2)
        * Recommended e2fsprogs version: 1.42.13.wc4 or newer
        * Recommended ZFS / SPL version: 0.6.5.7
        * Tested with ZFS / SPL version: 0.6.5.7
