@@ -328,11 +328,13 @@ static ssize_t lprocfs_lru_size_seq_write(struct file *file,
                 if (ns_connect_lru_resize(ns)) {
                         /* Try to cancel all @ns_nr_unused locks. */
 			ldlm_cancel_lru(ns, ns->ns_nr_unused, 0,
-					LDLM_LRU_FLAG_PASSED);
+					LDLM_LRU_FLAG_PASSED |
+					LDLM_LRU_FLAG_CLEANUP);
                 } else {
                         tmp = ns->ns_max_unused;
                         ns->ns_max_unused = 0;
-			ldlm_cancel_lru(ns, 0, 0, LDLM_LRU_FLAG_PASSED);
+			ldlm_cancel_lru(ns, 0, 0, LDLM_LRU_FLAG_PASSED |
+					LDLM_LRU_FLAG_CLEANUP);
                         ns->ns_max_unused = tmp;
                 }
                 return count;
