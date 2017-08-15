@@ -36,7 +36,6 @@
 #ifdef HAVE_UIDGID_HEADER
 #include <linux/uidgid.h>
 #endif
-#include <linux/timer.h>
 
 #include <obd_support.h>
 #include <obd_class.h>
@@ -44,7 +43,6 @@
 
 static struct cfs_hash *jobid_hash;
 static struct cfs_hash_ops jobid_hash_ops;
-static struct timer_list jobid_timer;
 spinlock_t jobid_hash_lock;
 
 #define RESCAN_INTERVAL cfs_time_seconds(30)
@@ -128,11 +126,11 @@ static int jobid_should_free_item(void *obj, void *data)
 	spin_lock(&pidmap->jp_lock);
 	if (jobid == NULL)
 		rc = 1;
-	else if (strlen(jobid) == 0)
-		rc = 1;
-	else if (strcmp(pidmap->jp_jobid, jobid) == 0)
+	else if (jobid[0] == 0)
 		rc = 1;
 	else if (cfs_time_current() - pidmap->jp_time > DELETE_INTERVAL)
+		rc = 1;
+	else if (strcmp(pidmap->jp_jobid, jobid) == 0)
 		rc = 1;
 	spin_unlock(&pidmap->jp_lock);
 
@@ -263,21 +261,6 @@ out:
 }
 
 /*
- * Timer callback, is called every DELETE_INTERVAL seconds and
- * refreshes itself.  Pokes the cache to see what needs to be
- * purged
- */
-void jobid_timer_cb(unsigned long data)
-{
-	if (jobid_hash != NULL) {
-		cfs_hash_cond_del(jobid_hash, jobid_should_free_item,
-				  "intentionally_bad_jobid");
-	}
-	mod_timer(&jobid_timer,
-		  msecs_to_jiffies(DELETE_INTERVAL * MSEC_PER_SEC)
-		  + cfs_time_current());
-}
-/*
  * These are some hash bucket values, their function is mysterious and
  * for the most part, undocumented.
  */
@@ -305,10 +288,6 @@ int jobid_cache_init(void)
 	spin_lock(&jobid_hash_lock);
 	if (jobid_hash == NULL) {
 		jobid_hash = tmp_jobid_hash;
-		setup_timer(&jobid_timer, jobid_timer_cb, 0);
-		mod_timer(&jobid_timer,
-			  msecs_to_jiffies(DELETE_INTERVAL * MSEC_PER_SEC) +
-			  cfs_time_current());
 		spin_unlock(&jobid_hash_lock);
 	} else {
 		spin_unlock(&jobid_hash_lock);
@@ -334,7 +313,6 @@ void jobid_cache_fini(void)
 	spin_unlock(&jobid_hash_lock);
 
 	if (tmp_hash != NULL) {
-		del_timer(&jobid_timer);
 		cfs_hash_cond_del(tmp_hash, jobid_should_free_item, NULL);
 		cfs_hash_putref(tmp_hash);
 	}
@@ -427,9 +405,22 @@ static struct cfs_hash_ops jobid_hash_ops = {
 int lustre_get_jobid(char *jobid)
 {
 	int rc = 0;
+	int clear = 0;
+	static cfs_time_t last_delete = 0;
 	ENTRY;
 
 	LASSERT(jobid_hash != NULL);
+
+	spin_lock(&jobid_hash_lock);
+	if (last_delete + DELETE_INTERVAL <= get_seconds()) {
+		clear = 1;
+		last_delete = get_seconds();
+	}
+	spin_unlock(&jobid_hash_lock);
+
+	if (clear)
+		cfs_hash_cond_del(jobid_hash, jobid_should_free_item,
+				  "intentionally_bad_jobid");
 
 	if (strcmp(obd_jobid_var, JOBSTATS_DISABLE) == 0)
 		/* Jobstats isn't enabled */
