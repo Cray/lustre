@@ -871,6 +871,7 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 	struct req_format     *req_fmt;
 	int                    rc;
 	int		       saved_rc = 0;
+	int		       tag = -1;
 	ENTRY;
 
 	if (op_data->op_bias & MDS_HSM_RELEASE) {
@@ -903,8 +904,15 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 			 "POISONED open %p!\n", mod->mod_open_req);
 
 		mod->mod_close_req = req;
+		/*
+		 * tag is the modifying rpc slot assigned to the matching
+		 * open; it is 0 when the open was read-only and no mod
+		 * rpc slot was assigned.
+		 */
+		if (obd_scan_only)
+			tag = lustre_msg_get_tag(mod->mod_open_req->rq_reqmsg);
 
-		DEBUG_REQ(D_HA, mod->mod_open_req, "matched open");
+		DEBUG_REQ(D_HA, mod->mod_open_req, "matched open; tag %d", tag);
 		/* We no longer want to preserve this open for replay even
 		 * though the open was committed. b=3632, b=3633 */
 		spin_lock(&mod->mod_open_req->rq_lock);
@@ -947,9 +955,11 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 
         ptlrpc_request_set_replen(req);
 
-	mdc_get_mod_rpc_slot(req, NULL);
+	if (tag != 0)
+		mdc_get_mod_rpc_slot(req, NULL);
 	rc = ptlrpc_queue_wait(req);
-	mdc_put_mod_rpc_slot(req, NULL);
+	if (tag != 0)
+		mdc_put_mod_rpc_slot(req, NULL);
 
         if (req->rq_repmsg == NULL) {
                 CDEBUG(D_RPCTRACE, "request failed to send: %p, %d\n", req,

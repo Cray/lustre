@@ -113,6 +113,13 @@ EXPORT_SYMBOL(at_early_margin);
 int at_extra = 30;
 EXPORT_SYMBOL(at_extra);
 
+/*
+ * If scan_only=1, read-only OPENs, matching CLOSEs, and GETXATTR are
+ * not treated as modifying rpcs
+ */
+unsigned int obd_scan_only;
+EXPORT_SYMBOL(obd_scan_only);
+
 atomic_long_t obd_dirty_transit_pages;
 EXPORT_SYMBOL(obd_dirty_transit_pages);
 
