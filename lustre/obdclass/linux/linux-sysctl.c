@@ -397,6 +397,14 @@ static struct ctl_table obd_table[] = {
 		.mode		= 0644,
 		.proc_handler	= &proc_dointvec
 	},
+	{
+		INIT_CTL_NAME
+		.procname	= "scan_only",
+		.data		= &obd_scan_only,
+		.maxlen		= sizeof(int),
+		.mode		= 0644,
+		.proc_handler	= &proc_dointvec
+	},
 	{ 0 }
 };
 
