@@ -433,8 +433,8 @@ static int llapi_hsm_log_ct_progress(struct hsm_copyaction_private **phcp,
 	if (progress_type == CT_RUNNING)
 		rc = llapi_json_add_item(&json_items, "current_bytes",
 					 LLAPI_JSON_BIGNUM, &current);
-		if (rc < 0)
-			goto err;
+	if (rc < 0)
+		goto err;
 
 cancel:
 	rc = llapi_json_add_item(&json_items, "event_type", LLAPI_JSON_STRING,
