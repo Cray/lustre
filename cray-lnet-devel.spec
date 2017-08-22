@@ -14,7 +14,7 @@
 
 # This package is a build requirement for DVS. Changing the name of this package
 # requires a corresponding change to the DVS package.
-%define lnet_version master
+%define lnet_version 2.10
 %define pkgbase %{namespace}-%{intranamespace_name}
 %define pkgname %{pkgbase}-%{lnet_version}-devel
 
