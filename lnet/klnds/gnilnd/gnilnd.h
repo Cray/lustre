@@ -68,6 +68,15 @@
 #include <gni_pub.h>
 #include "gnilnd_version.h"
 
+#ifdef CONFIG_SLAB
+#define GNILND_MBOX_SIZE	KMALLOC_MAX_SIZE
+#else
+#define GNILND_SHIFT_HIGH	((MAX_ORDER + PAGE_SHIFT - 1) <= 25 ? \
+				(MAX_ORDER + PAGE_SHIFT - 1) : 25)
+#define GNILND_SHIFT_MAX	GNILND_SHIFT_HIGH
+#define GNILND_MBOX_SIZE	(1UL << GNILND_SHIFT_MAX)
+#endif
+
 
 /* tunables determined at compile time */
 #define GNILND_MIN_TIMEOUT	5		/* minimum timeout interval (seconds) */
@@ -86,6 +95,13 @@
 #define GNILND_MAP_TIMEOUT         \
 	(cfs_time_seconds(*kgnilnd_tunables.kgn_timeout * \
 	 *kgnilnd_tunables.kgn_timeout))
+
+/* Should we use the no_retry flag with vzalloc */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+#define GNILND_VZALLOC_RETRY 0
+#else
+#define GNILND_VZALLOC_RETRY 1
+#endif
 
 /* reaper thread wakup interval */
 #define GNILND_REAPER_THREAD_WAKE  1
@@ -114,11 +130,13 @@
 #define GNILND_SCHED_NICE         0		/* default nice value for scheduler threads */
 #define GNILND_COMPUTE            1             /* compute image */
 #define GNILND_FAST_RECONNECT     1             /* Fast Reconnect option */
+#define GNILND_DEFAULT_CREDITS    64            /* Default number of simultaneous transmits */
 #else
 #define GNILND_FMABLK             1024          /* default number of mboxes per fmablk */
 #define GNILND_SCHED_NICE         -20		/* default nice value for scheduler threads */
 #define GNILND_COMPUTE            0             /* service image */
 #define GNILND_FAST_RECONNECT     0             /* Fast Reconnect option */
+#define GNILND_DEFAULT_CREDITS    256           /* Default number of simultaneous transmits */
 #endif
 
 /* EXTRA_BITS are there to allow us to hide NOOP/CLOSE and anything else out of band */
@@ -490,6 +508,7 @@ typedef struct kgn_tunables {
 	int     *kgn_thread_affinity;  /* bind scheduler threads to cpus */
 	int     *kgn_to_reconn_disable;/* disable reconnect after timeout */
 	int     *kgn_thread_safe;      /* use thread safe kgni API */
+	int     *kgn_vzalloc_noretry;  /* Should we pass the noretry flag */
 } kgn_tunables_t;
 
 typedef struct kgn_mbox_info {
@@ -982,8 +1001,15 @@ static inline int kgnilnd_trylock(struct mutex *cq_lock,
 
 static inline void *kgnilnd_vzalloc(int size)
 {
-	void *ret = __vmalloc(size, __GFP_HIGHMEM | GFP_NOIO | __GFP_NORETRY | __GFP_ZERO,
-			      PAGE_KERNEL);
+	void *ret;
+	if (*kgnilnd_tunables.kgn_vzalloc_noretry)
+		ret = __vmalloc(size, __GFP_HIGHMEM | GFP_NOIO | __GFP_NORETRY |
+				      __GFP_ZERO,
+				PAGE_KERNEL);
+	else
+		ret = __vmalloc(size, __GFP_HIGHMEM | GFP_NOIO | __GFP_ZERO,
+				PAGE_KERNEL);
+
 	LIBCFS_ALLOC_POST(ret, size);
 	return ret;
 }
