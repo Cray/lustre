@@ -1,5 +1,6 @@
 #!/bin/bash
-# vim: expandtab tabstop=4 softtabstop=4 shiftwidth=4 textwidth=80
+# -*- mode: Bash; tab-width: 4; indent-tabs-mode: t; -*-
+# vim:shiftwidth=4:softtabstop=4:tabstop=4:
 #
 # NAME
 #
@@ -33,17 +34,8 @@
 #   -u SECONDS
 #       Define a duration for the test. 86400 seconds if not specified.
 #
-#   -p SECONDS
-#       Define a max failover period. 10 minutes if not set.
-#
 #   -w
 #       Only run the workloads; no failure will be introduced.
-#       -v, -s are ignored in this case.
-#   -r
-#       Workloads dry run for several seconds; no failures will be introduced.
-#       This option is useful to verify the loads.
-#       -u is ignored in this case
-#
 #
 # ASSUMPTIONS
 #
@@ -92,19 +84,6 @@
 #   IPC is done by files in the temporary directory.
 #
 
-#set -x
-
-MPILIB=${MPILIB:-mpich2}
-SIMUL=${SIMUL:-/test-tools/mpich2/simul-1.14/simul}
-IOR=${IOR:-/test-tools/mpich2/ior-2.10.3/src/C/IOR}
-
-ior_blockSize=${ior_blockSize:-6g}
-mpi_threads_per_client=${mpi_threads_per_client:-2}
-
-iozone_SIZE=${iozone_SIZE:-262144} # 256m
-
-mpirun=$(which mpirun)
-
 ha_info()
 {
     echo "$0: $(date +%s):" "$@"
@@ -136,37 +115,34 @@ declare     ha_fail_file=$ha_tmp_dir/fail
 declare     ha_status_file_prefix=$ha_tmp_dir/status
 declare -a  ha_status_files
 declare     ha_machine_file=$ha_tmp_dir/machine_file
-declare     ha_power_down_cmd=${POWER_DOWN:-"pm -0"}
-declare     ha_power_up_cmd=${POWER_UP:-"pm -1"}
+declare     ha_power_down_cmd=${POWER_DOWN:-pm -0}
+declare     ha_power_up_cmd=${POWER_UP:-pm -1}
 declare -a  ha_clients
 declare -a  ha_servers
 declare -a  ha_victims
 declare     ha_test_dir=/mnt/lustre/$(basename $0)-$$
 declare     ha_start_time=$(date +%s)
 declare     ha_expected_duration=$((60 * 60 * 24))
-declare     ha_max_failover_period=10
 declare     ha_nr_loops=0
 declare     ha_stop_signals="SIGINT SIGTERM SIGHUP"
 declare     ha_load_timeout=$((60 * 10))
 declare     ha_workloads_only=false
-declare     ha_workloads_dry_run=false
 declare -a  ha_mpi_load_tags=(
     ior
     simul
 )
 declare -a  ha_mpi_load_cmds=(
-    "$IOR -b $ior_blockSize -o {}/f.ior -t 2m -w -W -T 1"
-    "$SIMUL -n 10 -d {}"
+    "/testsuite/tests/x86_64/rhel5/IOR/src/C/IOR -b 256m -o {}/f.ior -t 2m
+                                                 -w -W -T 1"
+    "/testsuite/tests/x86_64/rhel5/simul/simul -d {}"
 )
 declare -a  ha_nonmpi_load_tags=(
     dd
     tar
-    iozone
 )
 declare -a  ha_nonmpi_load_cmds=(
     "dd if=/dev/zero of={}/f.dd bs=1M count=256"
-    "tar cf - /etc | tar xf - -C {}"
-    "iozone -a -e -+d -s $iozone_SIZE {}/f.iozone"
+    "tar cf - /etc/fonts | tar xf - -C {}"
 )
 
 ha_usage()
@@ -179,7 +155,7 @@ ha_process_arguments()
 {
     local opt
 
-    while getopts hc:s:v:d:p:u:wr opt; do
+    while getopts hc:s:v:d:u:w opt; do
         case $opt in
         h)
             ha_usage
@@ -200,14 +176,8 @@ ha_process_arguments()
         u)
             ha_expected_duration=$OPTARG
             ;;
-        p)
-            ha_max_failover_period=$OPTARG
-            ;;
         w)
             ha_workloads_only=true
-            ;;
-        r)
-            ha_workloads_dry_run=true
             ;;
         \?)
             ha_usage
@@ -216,16 +186,10 @@ ha_process_arguments()
         esac
     done
 
-    if [ -z "${ha_clients[*]}" ]; then
-        ha_error "-c is mandatory"
-        ha_usage
-        exit 1
-    fi
-    if ! ($ha_workloads_dry_run ||
-          $ha_workloads_only) &&
-       ([ -z "${ha_servers[*]}" ] ||
-       [ -z "${ha_victims[*]}" ]); then
-        ha_error "-s, and -v are all mandatory"
+    if [ -z "${ha_clients[*]}" ] ||                                         \
+       [ -z "${ha_servers[*]}" ] ||                                         \
+       [ -z "${ha_victims[*]}" ]; then
+        ha_error "-c, -s, and -v are all mandatory"
         ha_usage
         exit 1
     fi
@@ -237,26 +201,18 @@ ha_on()
     local rc=0
 
     shift
-
-    #
-    # -S is to be used here to track the
-    # remote command return values
-    #
-    pdsh -S -w $nodes PATH=/usr/kerberos/sbin:/usr/kerberos/bin:/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin "$@" ||
-        rc=$?
+    pdsh -w $nodes PATH=/usr/kerberos/sbin:/usr/kerberos/bin:/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin "$@" || rc=$?
     return $rc
 }
 
 ha_trap_exit()
 {
-    touch "$ha_stop_file"
-    trap 0
     if [ -e "$ha_fail_file" ]; then
         ha_info "Test directory $ha_test_dir not removed"
         ha_info "Temporary directory $ha_tmp_dir not removed"
     else
         ha_on ${ha_clients[0]} rm -rf "$ha_test_dir"
-        ha_info "Please find all results in the temporary directory $ha_tmp_dir !!"
+        rm -rf "$ha_tmp_dir"
     fi
 }
 
@@ -301,13 +257,7 @@ ha_dump_logs()
 
     ha_lock "$lock"
     ha_info "Dumping lctl log to $file"
-
-    #
-    # some nodes could crash, so
-    # do not exit with error if not all logs are dumped
-    #
-    ha_on $nodes "lctl dk >$file" ||
-       ha_error "not all logs are dumped! Some nodes are unreachable."
+    ha_on $nodes "lctl dk >$file" || true
     ha_unlock "$lock"
 }
 
@@ -327,33 +277,27 @@ ha_repeat_mpi_load()
 
     ha_info "Starting $tag"
 
-    local machines=""
-    if ! [ "$MPILIB" == mpich2 ]; then
-        machines="-machinefile $ha_machine_file"
-    fi
-    while [ ! -e "$ha_stop_file" ] && ((rc == 0)); do
-        {
-            ha_on ${ha_clients[0]} mkdir -p "$dir" &&
-            ha_on ${ha_clients[0]} chmod a+xwr $dir &&
-            ha_on ${ha_clients[0]} "su mpiuser sh -c \" $mpirun -np $((${#ha_clients[@]} * mpi_threads_per_client )) $machines $cmd \" " &&
-            ha_on ${ha_clients[0]} rm -rf "$dir";
-        } >>"$log" 2>&1 || rc=$?
+	while [ ! -e "$ha_stop_file" ] && ((rc == 0)); do
+		{
+			ha_on ${ha_clients[0]} mkdir -p "$dir" &&	   \
+			mpirun ${MACHINEFILE_OPTION} "$ha_machine_file"    \
+				-np ${#ha_clients[@]} $cmd &&	           \
+			ha_on ${ha_clients[0]} rm -rf "$dir"
+		} >>"$log" 2>&1 || rc=$?
 
-        ha_info rc=$rc
+		if ((rc != 0)); then
+			ha_dump_logs "${ha_clients[*]} ${ha_servers[*]}"
+			touch "$ha_fail_file"
+			touch "$ha_stop_file"
+		fi
+		echo $rc >"$status"
 
-        if ((rc != 0)); then
-            touch "$ha_fail_file"
-            touch "$ha_stop_file"
-            ha_dump_logs "${ha_clients[*]} ${ha_servers[*]}"
-        fi
-        echo $rc >"$status"
+		nr_loops=$((nr_loops + 1))
+	done
 
-        nr_loops=$((nr_loops + 1))
-    done
+	avg_loop_time=$((($(date +%s) - start_time) / nr_loops))
 
-    avg_loop_time=$((($(date +%s) - start_time) / nr_loops))
-
-    ha_info "$tag stopped: rc $rc avg loop time $avg_loop_time"
+	ha_info "$tag stopped: rc $rc avg loop time $avg_loop_time"
 }
 
 ha_start_mpi_loads()
@@ -363,17 +307,9 @@ ha_start_mpi_loads()
     local tag
     local status
 
-    if ! [ "$MPILIB" == mpich2 ]; then
-        for client in ${ha_clients[@]}; do
-            ha_info ha_machine_file=$ha_machine_file
-            echo $client >> $ha_machine_file
-        done
-        local dirname=$(dirname $ha_machine_file)
-        for client in ${ha_clients[@]}; do
-            pdsh -S -w $client mkdir -p $dirname
-            scp $ha_machine_file $client:$ha_machine_file
-        done
-    fi
+    for client in ${ha_clients[@]}; do
+        echo $client >>"$ha_machine_file"
+    done
 
     for ((load = 0; load < ${#ha_mpi_load_tags[@]}; load++)); do
         tag=${ha_mpi_load_tags[$load]}
@@ -459,18 +395,14 @@ ha_wait_loads()
 
     ha_info "Waiting for workload status"
     rm -f "${ha_status_files[@]}"
-
-    #
-    # return immediately if ha_stop_file exists,
-    # all status_files not needed to be checked
-    #
     for file in "${ha_status_files[@]}"; do
-        if [ -e "$ha_stop_file" ]; then
-              ha_info "$ha_stop_file found! Stop."
-              break
-        fi
-        until [ -e "$file" ] ||
-              (($(date +%s) >= end)); do
+        until [ -e "$ha_stop_file" ] ||
+              [ -e "$file" ]; do
+            if (($(date +%s) >= end)); then
+                ha_info "Timed out while waiting for load status file $file"
+                touch "$ha_fail_file"
+                return 1
+            fi
             ha_sleep 1 >/dev/null
         done
     done
@@ -543,30 +475,28 @@ ha_killer()
           [ ! -e "$ha_stop_file" ]; do
         ha_info "---------------8<---------------"
 
-        $ha_workloads_only || node=$(ha_aim)
+        node=$(ha_aim)
 
         ha_info "Failing $node"
-        $ha_workloads_only && ha_info "    is skipped: workload only..."
-
-        ha_sleep $(ha_rand $ha_max_failover_period)
-        $ha_workloads_only || ha_power_down $node
+        ha_sleep $(ha_rand 10)
+        ha_power_down $node
         ha_sleep 10
-        ha_wait_loads || return
+        ha_wait_loads || break
 
         if [ -e $ha_stop_file ]; then
-            $ha_workloads_only || ha_power_up $node
-            break;
+            ha_power_up $node
+            break
         fi
 
         ha_info "Bringing $node back"
         ha_sleep $(ha_rand 10)
-        $ha_workloads_only || ha_power_up $node
-        $ha_workloads_only || ha_wait_node $node
+        ha_power_up $node
+        ha_wait_node $node
         #
         # Wait for the failback to start.
         #
         ha_sleep 60
-        ha_wait_loads || return
+        ha_wait_loads || break
 
         ha_sleep $(ha_rand 20)
 
@@ -585,15 +515,14 @@ ha_main()
     ha_on ${ha_clients[0]} mkdir "$ha_test_dir"
 
     ha_start_loads
-    ha_wait_loads
-
-    if $ha_workloads_dry_run; then
-         ha_sleep 5
-    else
-        ha_killer
-        ha_dump_logs "${ha_clients[*]} ${ha_servers[*]}"
+    if ha_wait_loads; then
+        if $ha_workloads_only; then
+            ha_sleep $((60 * 60))
+        else
+            ha_killer
+        fi
     fi
-
+    ha_dump_logs "${ha_clients[*]} ${ha_servers[*]}"
     ha_stop_loads
 
     if [ -e "$ha_fail_file" ]; then
