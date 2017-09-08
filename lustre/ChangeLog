@@ -10,7 +10,7 @@
          2.6.32-696.10.2.el6 (RHEL6.9)
          3.10.0-693.2.2.el7  (RHEL7.4)
          3.0.101-0.47.71     (SLES11 SP3)
-         3.0.101-107         (SLES11 SP4)
+         3.0.101-108.7       (SLES11 SP4)
        * Client known to build on unpatched kernels:
          2.6.32-431.29.2.el6 (RHEL6.5)
          2.6.32-504.30.3.el6 (RHEL6.6)
@@ -19,7 +19,7 @@
          2.6.32-696.10.2.el6 (RHEL6.9)
          3.10.0-693.2.2.el7  (RHEL7.4)
          3.0.101-0.47.71     (SLES11 SP3)
-         3.0.101-107         (SLES11 SP4)
+         3.0.101-108.7       (SLES11 SP4)
          3.12.74-60.64.40    (SLES12 SP1)
          4.4.74-92.35        (SLES12 SP2)
        * Recommended e2fsprogs version: 1.42.13.wc4 or newer
