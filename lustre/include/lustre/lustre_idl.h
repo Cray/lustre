@@ -1375,13 +1375,15 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 							 RPCs in parallel */
 #define OBD_CONNECT_DIR_STRIPE	 0x400000000000000ULL /* striped DNE dir */
 #define OBD_CONNECT_SUBTREE	 0x800000000000000ULL /* fileset mount */
-#define OBD_CONNECT_LOCK_AHEAD	 0x1000000000000000ULL /* lock ahead */
+#define OBD_CONNECT_LOCKAHEAD_OLD 0x1000000000000000ULL /* Old Cray lockahead */
+
 /** bulk matchbits is sent within ptlrpc_body */
 #define OBD_CONNECT_BULK_MBITS	 0x2000000000000000ULL
 #define OBD_CONNECT_OBDOPACK	 0x4000000000000000ULL /* compact OUT obdo */
 #define OBD_CONNECT_FLAGS2	 0x8000000000000000ULL /* second flags word */
 /* ocd_connect_flags2 flags */
 #define OBD_CONNECT2_FILE_SECCTX	0x1ULL /* set file security context at create */
+#define OBD_CONNECT2_LOCKAHEAD	0x2ULL /* ladvise lockahead v2 */
 
 /* XXX README XXX:
  * Please DO NOT add flag values here before first ensuring that this same
@@ -1452,9 +1454,10 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 				OBD_CONNECT_LIGHTWEIGHT | OBD_CONNECT_LVB_TYPE|\
 				OBD_CONNECT_LAYOUTLOCK | OBD_CONNECT_FID | \
 				OBD_CONNECT_PINGLESS | OBD_CONNECT_LFSCK | \
-				OBD_CONNECT_BULK_MBITS | OBD_CONNECT_GRANT_PARAM)
+				OBD_CONNECT_BULK_MBITS | OBD_CONNECT_GRANT_PARAM | \
+				OBD_CONNECT_FLAGS2)
 
-#define OST_CONNECT_SUPPORTED2 0
+#define OST_CONNECT_SUPPORTED2 OBD_CONNECT2_LOCKAHEAD
 
 #define ECHO_CONNECT_SUPPORTED 0
 #define ECHO_CONNECT_SUPPORTED2 0
@@ -3065,6 +3068,12 @@ static inline int ldlm_extent_contain(const struct ldlm_extent *ex1,
 	return ex1->start <= ex2->start && ex1->end >= ex2->end;
 }
 
+static inline bool ldlm_extent_equal(const struct ldlm_extent *ex1,
+				    const struct ldlm_extent *ex2)
+{
+	return ex1->start == ex2->start && ex1->end == ex2->end;
+}
+
 struct ldlm_inodebits {
         __u64 bits;
 };
@@ -4302,6 +4311,8 @@ struct lu_ladvise {
 	__u32 lla_value4;
 };
 
+void lustre_swab_ladvise(struct lu_ladvise *ladvise);
+
 /* This is the ladvise_hdr which goes on the wire, corresponds to the userspace
  * arg llapi_ladvise_hdr.
  * value[1-3] are unspecified fields, used differently by different advices */
@@ -4314,6 +4325,8 @@ struct ladvise_hdr {
 	__u64			lah_value3;	/* unused */
 	struct lu_ladvise	lah_advise[0];	/* advices in this header */
 };
+
+void lustre_swab_ladvise_hdr(struct ladvise_hdr *ladvise_hdr);
 
 #endif
 /** @} lustreidl */

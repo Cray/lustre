@@ -81,6 +81,7 @@ noinst_PROGRAMS += listxattr_size_check check_fhandle_syscalls badarea_io
 noinst_PROGRAMS += llapi_layout_test orphan_linkea_check llapi_hsm_test
 noinst_PROGRAMS += group_lock_test mmap_cat llapi_fid_test
 noinst_PROGRAMS += sendfile_grouplock hsm_remove_by_fid
+noinst_PROGRAMS += lockahead_test
 
 bin_PROGRAMS = mcreate munlink
 testdir = $(libdir)/lustre/tests
@@ -102,6 +103,7 @@ sendfile_grouplock_LDADD=$(LIBLUSTREAPI)
 it_test_LDADD=$(LIBCFS)
 rwv_LDADD=$(LIBCFS)
 hsm_remove_by_fid_LDADD=$(LIBLUSTREAPI)
+lockahead_test_LDADD=$(LIBLUSTREAPI)
 
 ll_dirstripe_verify_SOURCES= ll_dirstripe_verify.c
 ll_dirstripe_verify_LDADD= -L$(top_builddir)/lustre/utils $(PTHREAD_LIBS) $(LIBLUSTREAPI) $(LIBCFS)

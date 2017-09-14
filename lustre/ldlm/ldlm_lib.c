@@ -616,6 +616,7 @@ int client_connect_import(const struct lu_env *env,
 			 ocd->ocd_connect_flags, "old "LPX64", new "LPX64"\n",
 			 data->ocd_connect_flags, ocd->ocd_connect_flags);
 		data->ocd_connect_flags = ocd->ocd_connect_flags;
+		data->ocd_connect_flags2 = ocd->ocd_connect_flags2;
 	}
 
 	ptlrpc_pinger_add_import(imp);

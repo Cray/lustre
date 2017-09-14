@@ -588,6 +588,8 @@ static int vvp_io_rw_lock(const struct lu_env *env, struct cl_io *io,
 
 	if (io->u.ci_rw.crw_nonblock)
 		ast_flags |= CEF_NONBLOCK;
+	if (io->ci_lock_no_expand)
+		ast_flags |= CEF_LOCK_NO_EXPAND;
 
 	result = vvp_mmap_locks(env, vio, io);
 	if (result == 0)
