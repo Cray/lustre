@@ -762,8 +762,13 @@ map:
 			if (pblock != 0) {
 				/* unmap any possible underlying metadata from
 				 * the block device mapping.  bug 6998. */
+#ifndef HAVE_CLEAN_BDEV_ALIASES
 				unmap_underlying_metadata(inode->i_sb->s_bdev,
 							  *(bp->blocks));
+#else
+				clean_bdev_aliases(inode->i_sb->s_bdev,
+						   *(bp->blocks), 1);
+#endif
 			}
 			bp->blocks++;
 			bp->num--;
@@ -952,9 +957,15 @@ cont_map:
 					 * mapping.  bug 6998. */
 					if ((map.m_flags & LDISKFS_MAP_NEW) &&
 					    create)
+#ifndef HAVE_CLEAN_BDEV_ALIASES
 						unmap_underlying_metadata(
 							inode->i_sb->s_bdev,
 							map.m_pblk + c);
+#else
+						clean_bdev_aliases(
+							inode->i_sb->s_bdev,
+							map.m_pblk + c, 1);
+#endif
 				}
 			}
 			rc = 0;
