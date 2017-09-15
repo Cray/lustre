@@ -1718,6 +1718,24 @@ kiocb_ki_left, [
 ]) # LC_KIOCB_KI_LEFT
 
 #
+# LC_HAVE_CLEAN_BDEV_ALIASES
+#
+# 4.4 unmap_underlying_metadata was replaced by clean_bdev_aliases
+#
+AC_DEFUN([LC_HAVE_CLEAN_BDEV_ALIASES], [
+LB_CHECK_COMPILE([if kernel has clean_bdev_aliases],
+have_clean_bdev_aliases, [
+	#include <linux/buffer_head.h>
+],[
+	struct block_device bdev;
+	clean_bdev_aliases(&bdev,1,1);
+], [
+	AC_DEFINE(HAVE_CLEAN_BDEV_ALIASES, 1,
+		[kernel has clean_bdev_aliases])
+])
+]) # LC_HAVE_CLEAN_BDEV_ALIASES
+
+#
 # LC_VFS_RENAME_5ARGS
 #
 # 3.13 has vfs_rename with 5 args
@@ -2817,6 +2835,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_QC_MAKE_REQUEST_FN
 	LC_HAVE_KEY_PAYLOAD_DATA_ARRAY
 	LC_HAVE_BI_CNT
+	LC_HAVE_CLEAN_BDEV_ALIASES
 
 	# 4.5
 	LC_HAVE_FILE_DENTRY
