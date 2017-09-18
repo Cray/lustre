@@ -326,18 +326,9 @@ static ssize_t lprocfs_lru_size_seq_write(struct file *file,
                        "dropping all unused locks from namespace %s\n",
                        ldlm_ns_name(ns));
                 if (ns_connect_lru_resize(ns)) {
-                        int canceled, unused  = ns->ns_nr_unused;
-
                         /* Try to cancel all @ns_nr_unused locks. */
-			canceled = ldlm_cancel_lru(ns, unused, 0,
-						   LDLM_CANCEL_PASSED);
-                        if (canceled < unused) {
-                                CDEBUG(D_DLMTRACE,
-                                       "not all requested locks are canceled, "
-                                       "requested: %d, canceled: %d\n", unused,
-                                       canceled);
-                                return -EINVAL;
-                        }
+			ldlm_cancel_lru(ns, ns->ns_nr_unused, 0,
+					LDLM_CANCEL_PASSED);
                 } else {
                         tmp = ns->ns_max_unused;
                         ns->ns_max_unused = 0;
