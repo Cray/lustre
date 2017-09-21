@@ -244,10 +244,17 @@ static void record_start_io(struct osd_iobuf *iobuf, int size)
 static void osd_submit_bio(int rw, struct bio *bio)
 {
         LASSERTF(rw == 0 || rw == 1, "%x\n", rw);
+#ifdef HAVE_SUBMIT_BIO_2ARGS
         if (rw == 0)
                 submit_bio(READ, bio);
         else
                 submit_bio(WRITE, bio);
+#else
+        if (rw == 0)
+                submit_bio(bio);
+        else
+                submit_bio(bio);
+#endif
 }
 
 static int can_be_merged(struct bio *bio, sector_t sector)

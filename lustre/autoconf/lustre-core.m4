@@ -1828,6 +1828,24 @@ have_bi_cnt, [
 ]) # LC_HAVE_BI_CNT
 
 #
+# LC_HAVE_SUBMIT_BIO_2ARGS
+#
+# 4.4 removed an argument from submit_bio
+#
+AC_DEFUN([LC_HAVE_SUBMIT_BIO_2ARGS], [
+LB_CHECK_COMPILE([if submit_bio takes two arguments],
+have_submit_bio_2args, [
+	#include <linux/bio.h>
+],[
+	struct bio bio;
+	submit_bio(READ, &bio);
+], [
+	AC_DEFINE(HAVE_SUBMIT_BIO_2ARGS, 1,
+		[submit_bio takes two arguments])
+])
+]) # LC_HAVE_SUBMIT_BIO_2_ARGS
+
+#
 # LC_HAVE_TRUNCATE_IPAGE_FINAL
 #
 # 3.14 bring truncate_inode_pages_final for evict_inode
@@ -2836,6 +2854,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_KEY_PAYLOAD_DATA_ARRAY
 	LC_HAVE_BI_CNT
 	LC_HAVE_CLEAN_BDEV_ALIASES
+	LC_HAVE_SUBMIT_BIO_2ARGS
 
 	# 4.5
 	LC_HAVE_FILE_DENTRY
