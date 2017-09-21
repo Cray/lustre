@@ -137,8 +137,10 @@ void osd_fini_iobuf(struct osd_device *d, struct osd_iobuf *iobuf)
         }
 }
 
+#ifndef HAVE_BI_RW
 #ifndef REQ_WRITE /* pre-2.6.35 */
 #define __REQ_WRITE BIO_RW
+#endif
 #endif
 
 #ifdef HAVE_BIO_ENDIO_USES_ONE_ARG
@@ -165,11 +167,21 @@ static void dio_complete_routine(struct bio *bio, int error)
 		       "(like SCSI errors, perhaps).  Because bi_private is "
 		       "NULL, I can't wake up the thread that initiated this "
 		       "IO - you will probably have to reboot this node.\n");
-		CERROR("bi_next: %p, bi_flags: %lx, bi_rw: %lu, bi_vcnt: %d, "
-		       "bi_idx: %d, bi->size: %d, bi_end_io: %p, bi_cnt: %d, "
-		       "bi_private: %p\n", bio->bi_next,
+		CERROR("bi_next: %p, bi_flags: %lx, "
+#ifdef HAVE_BI_RW
+		       "bi_rw: %lu,"
+#else
+		       "bi_opf: %u,"
+#endif
+		       "bi_vcnt: %d, bi_idx: %d, bi->size: %d, bi_end_io: %p,"
+		       "bi_cnt: %d, bi_private: %p\n", bio->bi_next,
 			(unsigned long)bio->bi_flags,
-			bio->bi_rw, bio->bi_vcnt, bio_idx(bio),
+#ifdef HAVE_BI_RW
+			bio->bi_rw,
+#else
+			bio->bi_opf,
+#endif
+			bio->bi_vcnt, bio_idx(bio),
 			bio_sectors(bio) << 9, bio->bi_end_io,
 #ifdef HAVE_BI_CNT
 			atomic_read(&bio->bi_cnt),
@@ -181,7 +193,11 @@ static void dio_complete_routine(struct bio *bio, int error)
 	}
 
 	/* the check is outside of the cycle for performance reason -bzzz */
+#ifdef HAVE_BI_RW
 	if (!test_bit(__REQ_WRITE, &bio->bi_rw)) {
+#else
+	if (bio_op(bio) == REQ_OP_WRITE) {
+#endif
 		bio_for_each_segment_all(bvl, bio, iter) {
 			if (likely(error == 0))
 				SetPageUptodate(bvl_to_page(bvl));
@@ -362,7 +378,11 @@ static int osd_do_bio(struct osd_device *osd, struct inode *inode,
 
 			bio->bi_bdev = inode->i_sb->s_bdev;
 			bio_set_sector(bio, sector);
+#ifdef HAVE_BI_RW
 			bio->bi_rw = (iobuf->dr_rw == 0) ? READ : WRITE;
+#else
+			bio->bi_opf = (iobuf->dr_rw == 0) ? READ : WRITE;
+#endif
 			bio->bi_end_io = dio_complete_routine;
 			bio->bi_private = iobuf;
 
