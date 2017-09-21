@@ -57,26 +57,6 @@
                 </name>
                 <extract group="1" name="version" pattern="(.*)"/>
             </gitcmd>
-            <file>
-                <name>
-                  devel/cray-lustre-api-devel.pc
-                </name>
-            </file>
-            <file>
-                <name>
-                  devel/cray-lustre-cfsutil-devel.pc
-                </name>
-            </file>
-            <file>
-                <name>
-                  devel/cray-lustre-ptlctl-devel.pc
-                </name>
-            </file>
-            <file>
-                <name>
-                  devel/cray-lustre.conf
-                </name>
-            </file>
             <tarfile compression="bz2">
                 <name>
                     cray-lustre-
