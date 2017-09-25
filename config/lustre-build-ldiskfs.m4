@@ -13,6 +13,7 @@ esac
 AS_IF([test -z "$LDISKFS_SERIES"], [
 AS_IF([test x$RHEL_KERNEL = xyes], [
 	case $RHEL_RELEASE_NO in
+	74)	LDISKFS_SERIES="3.10-rhel7.4.series"	;;
 	73)	LDISKFS_SERIES="3.10-rhel7.3.series"	;;
 	72)	LDISKFS_SERIES="3.10-rhel7.2.series"	;;
 	71)	LDISKFS_SERIES="3.10-rhel7.series"	;;
@@ -321,11 +322,21 @@ AS_IF([test -e "$linux_src/fs/ext4/super.c"], [
 	EXT4_SRC_DIR="$linux_src/fs/ext4"
 ], [
 	# Kernel ext source provided by kernel-debuginfo-common package
-	linux_src=$(ls -1d /usr/src/debug/*/linux-${LINUXRELEASE%.*}* \
+	# that extracted to $LINUX
+	linux_src=$(ls -1d $linux_src/../../debug/*/linux-${LINUXRELEASE%.*}* \
 		2>/dev/null | tail -1)
-	AS_IF([test -e "$linux_src/fs/ext4/super.c"],
-		[EXT4_SRC_DIR="$linux_src/fs/ext4"],
-		[EXT4_SRC_DIR=""])
+	AS_IF([test -e "$linux_src/fs/ext4/super.c"], [
+		EXT4_SRC_DIR="$linux_src/fs/ext4"
+	], [
+		# Kernel ext source provided by kernel-debuginfo-common package
+		linux_src=$(ls -1d /usr/src/debug/*/linux-${LINUXRELEASE%.*}* \
+			2>/dev/null | tail -1)
+		AS_IF([test -e "$linux_src/fs/ext4/super.c"], [
+			EXT4_SRC_DIR="$linux_src/fs/ext4"
+		], [
+			EXT4_SRC_DIR=""
+		])
+	])
 ])
 AC_MSG_RESULT([$EXT4_SRC_DIR])
 AC_SUBST(EXT4_SRC_DIR)

@@ -3817,7 +3817,8 @@ static int osd_xattr_get(const struct lu_env *env, struct dt_object *dt,
 		struct filter_fid *ff;
 		struct ost_layout *ol;
 
-		LASSERT(osd_dev(dt->do_lu.lo_dev)->od_is_ost);
+		if (!osd_dev(dt->do_lu.lo_dev)->od_is_ost)
+			goto cache;
 
 		rc = osd_get_lma(info, inode, &info->oti_obj_dentry, loa);
 		if (rc)
@@ -7209,10 +7210,13 @@ static int osd_process_config(const struct lu_env *env,
 		LASSERT(&o->od_dt_dev);
 		rc = class_process_proc_param(PARAM_OSD, lprocfs_osd_obd_vars,
 					      cfg, &o->od_dt_dev);
-		if (rc > 0 || rc == -ENOSYS)
+		if (rc > 0 || rc == -ENOSYS) {
 			rc = class_process_proc_param(PARAM_OST,
 						      lprocfs_osd_obd_vars,
 						      cfg, &o->od_dt_dev);
+			if (rc > 0)
+				rc = 0;
+		}
 		break;
 	default:
 		rc = -ENOSYS;

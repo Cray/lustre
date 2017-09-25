@@ -290,19 +290,6 @@ static inline int ll_namei_to_lookup_intent_flag(int flag)
 	return flag;
 }
 
-#ifdef HAVE_QC_MAKE_REQUEST_FN
-# define ll_mrf_ret blk_qc_t
-# define LL_MRF_RETURN(rc) RETURN(BLK_QC_T_NONE)
-#else
-# ifdef HAVE_VOID_MAKE_REQUEST_FN
-#  define ll_mrf_ret void
-#  define LL_MRF_RETURN(rc)
-# else
-#  define ll_mrf_ret int
-#  define LL_MRF_RETURN(rc) RETURN(rc)
-# endif
-#endif
-
 #include <linux/fs.h>
 #ifndef HAVE_PROTECT_I_NLINK
 static inline void set_nlink(struct inode *inode, unsigned int nlink)
@@ -626,5 +613,11 @@ static inline void __user *get_vmf_address(struct vm_fault *vmf)
 	return vmf->virtual_address;
 #endif
 }
+
+#ifdef HAVE_VM_OPS_USE_VM_FAULT_ONLY
+# define ll_filemap_fault(vma, vmf) filemap_fault(vmf)
+#else
+# define ll_filemap_fault(vma, vmf) filemap_fault(vma, vmf)
+#endif
 
 #endif /* _LUSTRE_COMPAT_H */

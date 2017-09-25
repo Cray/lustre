@@ -1101,6 +1101,13 @@ static int osd_mount(const struct lu_env *env,
 		GOTO(err, rc);
 	}
 
+#ifdef HAVE_DMU_USEROBJ_ACCOUNTING
+	if (!osd_dmu_userobj_accounting_available(o))
+		CWARN("%s: dnode accounting not enabled: "
+		      "enable feature@userobj_accounting in pool\n",
+		      o->od_mntdev);
+#endif
+
 	/* parse mount option "noacl", and enable ACL by default */
 	opts = lustre_cfg_string(cfg, 3);
 	if (opts == NULL || strstr(opts, "noacl") == NULL)
@@ -1294,10 +1301,13 @@ static int osd_process_config(const struct lu_env *env,
 		LASSERT(&o->od_dt_dev);
 		rc = class_process_proc_param(PARAM_OSD, lprocfs_osd_obd_vars,
 					      cfg, &o->od_dt_dev);
-		if (rc > 0 || rc == -ENOSYS)
+		if (rc > 0 || rc == -ENOSYS) {
 			rc = class_process_proc_param(PARAM_OST,
 						      lprocfs_osd_obd_vars,
 						      cfg, &o->od_dt_dev);
+			if (rc > 0)
+				rc = 0;
+		}
 		break;
 	}
 	default:
