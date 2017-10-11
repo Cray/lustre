@@ -223,6 +223,8 @@ int llog_cancel_rec(const struct lu_env *env, struct llog_handle *loghandle,
 	    (llh->llh_count == 1) &&
 	    (loghandle->lgh_last_idx == (LLOG_BITMAP_BYTES * 8) - 1)) {
 		spin_unlock(&loghandle->lgh_hdr_lock);
+		/* never try to destroy it again */
+		llh->llh_flags &= ~LLOG_F_ZAP_WHEN_EMPTY;
 		rc = llog_destroy(env, loghandle);
 		if (rc < 0) {
 			CERROR("%s: can't destroy empty llog #"DOSTID
