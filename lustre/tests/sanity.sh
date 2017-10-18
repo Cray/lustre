@@ -13,8 +13,8 @@ ALWAYS_EXCEPT="                42a  42b  42c  42d  45   51d   68b   $SANITY_EXCE
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
 # with LOD/OSP landing
-# bug number for skipped tests: LU-2036
-ALWAYS_EXCEPT="                 76      $ALWAYS_EXCEPT"
+# bug number for skipped tests:
+ALWAYS_EXCEPT="                 $ALWAYS_EXCEPT"
 
 # SOM doesn't function properly
 ALWAYS_EXCEPT="132 $ALWAYS_EXCEPT"
@@ -5770,21 +5770,9 @@ num_inodes() {
 	awk '/lustre_inode_cache/ {print $2; exit}' /proc/slabinfo
 }
 
-get_inode_slab_tunables() {
-	awk '/lustre_inode_cache/ {print $9," ",$10," ",$11; exit}' /proc/slabinfo
-}
-
-set_inode_slab_tunables() {
-	echo "lustre_inode_cache $1" > /proc/slabinfo
-}
-
 test_76() { # Now for bug 20433, added originally in bug 1443
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
-	local SLAB_SETTINGS=`get_inode_slab_tunables`
 	local CPUS=`getconf _NPROCESSORS_ONLN`
-	# we cannot set limit below 1 which means 1 inode in each
-	# per-cpu cache is still allowed
-	set_inode_slab_tunables "1 1 0"
 	cancel_lru_locks osc
 	BEFORE_INODES=$(num_inodes)
 	echo "before inodes: $BEFORE_INODES"
@@ -5807,7 +5795,6 @@ test_76() { # Now for bug 20433, added originally in bug 1443
 			error "inode slab grew from $BEFORE_INODES to $AFTER_INODES"
 		fi
 	done
-	set_inode_slab_tunables "$SLAB_SETTINGS"
 }
 run_test 76 "confirm clients recycle inodes properly ===="
 
