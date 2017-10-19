@@ -231,7 +231,7 @@ echo '%exclude %{_libdir}/lustre/tests' >> lustre.files
 %define ari_client_files %{nil}
 %endif
 
-%if %{with server} && %{with ari}
+%if (%{with server} && %{with ari}) || %{with clevm}
 %define lnet_devel_files -f lnet-devel.files
 :> lnet-devel.files
 # Install headers needed for lnet-devel subpackage
@@ -315,7 +315,7 @@ done
 %files lnet-devel %{lnet_devel_files}
 %defattr(-,root,root)
 %{lnetincludedir}
-%if %{with server} && %{with ari}
+%if (%{with server} && %{with ari}) || %{with clevm}
 %{_pkgconfigdir}/cray-lnet.pc
 %else
 %exclude %{_pkgconfigdir}/cray-lnet.pc
