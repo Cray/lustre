@@ -104,6 +104,9 @@ Group: Development/Libraries
 License: GPL
 Summary: Cray LNet Header files
 Provides: cray-lustre-%{flavor}-%{lnet_version}-devel
+%if %{with clevm}
+Provides: cray-lnet-%{lnet_version}-devel
+%endif
 
 %description lnet-devel
 Development files for building against LNet
