@@ -1,0 +1,8 @@
+
+includedir=@lnetincludedir@
+symversdir=@symversdir@
+
+Cflags: -I${includedir}/libcfs/include -I${includedir}/lnet/include -I${includedir}/lustre/include
+Description: Lustre Lnet
+Name: cray-lnet
+Version: @PACKAGE_VERSION@

@@ -1,8 +1,8 @@
 #%Module
 #
-# cray-lustre module
+# lustre-cray_ari_s module
 #
-# Copyright 2016 Cray Inc. All Rights Reserved.
+# Copyright 2017 Cray Inc. All Rights Reserved.
 
 prepend-path PE_PKGCONFIG_PRODUCTS lustre_api
 
@@ -12,3 +12,8 @@ prepend-path PE_PKGCONFIG_LIBS cray-lustre-ptlctl-devel
 
 prepend-path PKG_CONFIG_PATH @pkgconfigdir@
 
+setenv lustre_api_MODULE_NAME lustre-cray_ari_s
+
+prepend-path lustre_api_PKGCONFIG_LIBS cray-lustre-api-devel
+prepend-path lustre_api_PKGCONFIG_LIBS cray-lustre-cfsutil-devel
+prepend-path lustre_api_PKGCONFIG_LIBS cray-lustre-ptlctl-devel
