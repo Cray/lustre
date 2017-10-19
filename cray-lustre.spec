@@ -4,6 +4,13 @@
 # Override prefix to avoid isntalling under /opt/cray
 %define _prefix /usr
 
+# Build project CRAY:Network:VM has 'define clevm 1' rather
+# than 'with_clevm 1'
+%bcond_with clevm
+%if 0%{?clevm}
+%define with_clevm 1
+%endif
+
 %if %{with server}
 %define _config_server --enable-server
 %if %{with ari}
