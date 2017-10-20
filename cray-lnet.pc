@@ -2,7 +2,7 @@
 includedir=@lnetincludedir@
 symversdir=@symversdir@
 
-Cflags: -I${includedir}/libcfs/include -I${includedir}/lnet/include -I${includedir}/lustre/include
-Description: Lustre Lnet
+Cflags: -include @cfgdir@/config.h -I${includedir}/libcfs/include -I${includedir}/lnet/include
+Description: Cray Lustre Network
 Name: cray-lnet
 Version: @PACKAGE_VERSION@

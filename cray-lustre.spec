@@ -180,6 +180,7 @@ export SVN_CODE_REV=%{kgnilnd_version}
 make DESTDIR=${RPM_BUILD_ROOT} install
 
 %define lnetincludedir /usr/src/lustre-%{_tag}-headers
+%define cfgdir %{lnetincludedir}/%{_arch}/%{flavor}
 for f in cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc \
          cray-lustre-ptlctl-devel.pc cray-lnet.pc
 do
@@ -188,6 +189,7 @@ do
     eval "sed -i 's,@symversdir@,%{lnetincludedir},' %{_sourcedir}/${f}"
     eval "sed -i 's,@lnetincludedir@,%{lnetincludedir},' %{_sourcedir}/${f}"
     eval "sed -i 's,@PACKAGE_VERSION@,%{_version},' %{_sourcedir}/${f}"
+    eval "sed -i 's,@cfgdir@,%{cfgdir},' %{_sourcedir}/${f}"
     install -D -m 0644  %{_sourcedir}/${f} $RPM_BUILD_ROOT%{_pkgconfigdir}/${f}
 done
 
@@ -198,7 +200,7 @@ sed -e 's/@VERSION@/%{version}-%{release}/g' version.in > .version
 
 # Module.symvers and config.h are for the DVS build
 %{__install} -D -m 0644 ${PWD}/Module.symvers $RPM_BUILD_ROOT%{lnetincludedir}/%{_arch}/%{flavor}/Module.symvers
-%{__install} -D -m 0644 config.h $RPM_BUILD_ROOT%{lnetincludedir}/%{_arch}/%{flavor}/config.h
+%{__install} -D -m 0644 config.h $RPM_BUILD_ROOT%{cfgdir}/config.h
 
 rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 rm -f $RPM_BUILD_ROOT%{_libdir}/lustre/mount_osd_ldiskfs.la
