@@ -4,6 +4,13 @@
 # Override prefix to avoid isntalling under /opt/cray
 %define _prefix /usr
 
+# Build project CRAY:Network:VM has 'define clevm 1' rather
+# than 'with_clevm 1'
+%bcond_with clevm
+%if 0%{?clevm}
+%define with_clevm 1
+%endif
+
 %if %{with server}
 %define _config_server --enable-server
 %if %{with ari}
@@ -97,6 +104,9 @@ Group: Development/Libraries
 License: GPL
 Summary: Cray LNet Header files
 Provides: cray-lustre-%{flavor}-%{lnet_version}-devel
+%if %{with clevm}
+Provides: cray-lnet-%{lnet_version}-devel
+%endif
 
 %description lnet-devel
 Development files for building against LNet
@@ -170,6 +180,7 @@ export SVN_CODE_REV=%{kgnilnd_version}
 make DESTDIR=${RPM_BUILD_ROOT} install
 
 %define lnetincludedir /usr/src/lustre-%{_tag}-headers
+%define cfgdir %{lnetincludedir}/%{_arch}/%{flavor}
 for f in cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc \
          cray-lustre-ptlctl-devel.pc cray-lnet.pc
 do
@@ -178,6 +189,7 @@ do
     eval "sed -i 's,@symversdir@,%{lnetincludedir},' %{_sourcedir}/${f}"
     eval "sed -i 's,@lnetincludedir@,%{lnetincludedir},' %{_sourcedir}/${f}"
     eval "sed -i 's,@PACKAGE_VERSION@,%{_version},' %{_sourcedir}/${f}"
+    eval "sed -i 's,@cfgdir@,%{cfgdir},' %{_sourcedir}/${f}"
     install -D -m 0644  %{_sourcedir}/${f} $RPM_BUILD_ROOT%{_pkgconfigdir}/${f}
 done
 
@@ -188,7 +200,7 @@ sed -e 's/@VERSION@/%{version}-%{release}/g' version.in > .version
 
 # Module.symvers and config.h are for the DVS build
 %{__install} -D -m 0644 ${PWD}/Module.symvers $RPM_BUILD_ROOT%{lnetincludedir}/%{_arch}/%{flavor}/Module.symvers
-%{__install} -D -m 0644 config.h $RPM_BUILD_ROOT%{lnetincludedir}/%{_arch}/%{flavor}/config.h
+%{__install} -D -m 0644 config.h $RPM_BUILD_ROOT%{cfgdir}/config.h
 
 rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 rm -f $RPM_BUILD_ROOT%{_libdir}/lustre/mount_osd_ldiskfs.la
@@ -221,7 +233,7 @@ echo '%exclude %{_libdir}/lustre/tests' >> lustre.files
 %define ari_client_files %{nil}
 %endif
 
-%if %{with server} && %{with ari}
+%if (%{with server} && %{with ari}) || %{with clevm}
 %define lnet_devel_files -f lnet-devel.files
 :> lnet-devel.files
 # Install headers needed for lnet-devel subpackage
@@ -305,7 +317,7 @@ done
 %files lnet-devel %{lnet_devel_files}
 %defattr(-,root,root)
 %{lnetincludedir}
-%if %{with server} && %{with ari}
+%if (%{with server} && %{with ari}) || %{with clevm}
 %{_pkgconfigdir}/cray-lnet.pc
 %else
 %exclude %{_pkgconfigdir}/cray-lnet.pc
