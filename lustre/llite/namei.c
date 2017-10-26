@@ -1369,24 +1369,21 @@ out:
 	return rc;
 }
 
-/* ll_unlink() doesn't update the inode with the new link count.
- * Instead, ll_ddelete() and ll_d_iput() will update it based upon if
- * there is any lock existing. They will recycle dentries and inodes
- * based upon locks too. b=20433 */
 static int ll_unlink(struct inode *dir, struct dentry *dchild)
 {
 	struct qstr *name = &dchild->d_name;
-        struct ptlrpc_request *request = NULL;
-        struct md_op_data *op_data;
-        int rc;
-        ENTRY;
+	struct ptlrpc_request *request = NULL;
+	struct md_op_data *op_data;
+	struct mdt_body *body;
+	int rc;
+	ENTRY;
 	CDEBUG(D_VFSTRACE, "VFS Op:name=%.*s, dir="DFID"(%p)\n",
 	       name->len, name->name, PFID(ll_inode2fid(dir)), dir);
 
-        /*
-         * XXX: unlink bind mountpoint maybe call to here,
-         * just check it as vfs_unlink does.
-         */
+	/*
+	 * XXX: unlink bind mountpoint maybe call to here,
+	 * just check it as vfs_unlink does.
+	 */
 	if (unlikely(d_mountpoint(dchild)))
 		RETURN(-EBUSY);
 
@@ -1395,8 +1392,7 @@ static int ll_unlink(struct inode *dir, struct dentry *dchild)
 	if (IS_ERR(op_data))
 		RETURN(PTR_ERR(op_data));
 
-	if (dchild->d_inode != NULL)
-		op_data->op_fid3 = *ll_inode2fid(dchild->d_inode);
+	op_data->op_fid3 = *ll_inode2fid(dchild->d_inode);
 
 	op_data->op_fid2 = op_data->op_fid3;
 	rc = md_unlink(ll_i2sbi(dir)->ll_md_exp, op_data, &request);
@@ -1404,13 +1400,22 @@ static int ll_unlink(struct inode *dir, struct dentry *dchild)
 	if (rc)
 		GOTO(out, rc);
 
-        ll_update_times(request, dir);
-        ll_stats_ops_tally(ll_i2sbi(dir), LPROC_LL_UNLINK, 1);
+	ll_update_times(request, dir);
+	ll_stats_ops_tally(ll_i2sbi(dir), LPROC_LL_UNLINK, 1);
 
-        rc = ll_objects_destroy(request, dir);
- out:
-        ptlrpc_req_finished(request);
-        RETURN(rc);
+	rc = ll_objects_destroy(request, dir);
+
+	/*
+	 * The server puts attributes in on the last unlink, use them to update
+	 * the link count so the inode can be freed immediately.
+	 */
+	body = req_capsule_server_get(&request->rq_pill, &RMF_MDT_BODY);
+	if (body->mbo_valid & OBD_MD_FLNLINK)
+		set_nlink(dchild->d_inode, body->mbo_nlink);
+
+out:
+	ptlrpc_req_finished(request);
+	RETURN(rc);
 }
 
 static int ll_rename(struct inode *src, struct dentry *src_dchild,
