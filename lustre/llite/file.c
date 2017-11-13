@@ -1048,7 +1048,10 @@ int ll_merge_attr(const struct lu_env *env, struct inode *inode)
 	ctime = LTIME_S(inode->i_ctime);
 
 	cl_object_attr_lock(obj);
-	rc = cl_object_attr_get(env, obj, attr);
+	if (OBD_FAIL_CHECK(OBD_FAIL_MDC_MERGE))
+		rc = -EINVAL;
+	else
+		rc = cl_object_attr_get(env, obj, attr);
 	cl_object_attr_unlock(obj);
 
 	if (rc != 0)
