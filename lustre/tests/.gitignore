@@ -32,6 +32,7 @@
 /ll_sparseness_write
 /llverdev
 /llverfs
+/lockahead_test
 /logs
 /lovstripe
 /mcreate
