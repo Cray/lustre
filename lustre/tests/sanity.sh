@@ -14725,6 +14725,15 @@ test_313() {
 }
 run_test 313 "io should fail after last_rcvd update fail"
 
+test_314() {
+	$SETSTRIPE -c 2 -i 0 $DIR/$tfile || error "setstripe failed"
+	do_facet ost1 "$LCTL set_param fail_loc=0x720"
+	rm -f $DIR/$tfile
+	wait_delete_completed
+	do_facet ost1 "$LCTL set_param fail_loc=0"
+}
+run_test 314 "OSP shouldn't fail after last_rcvd update failure"
+
 test_261() {
 	local file=$DIR/$tfile
 	touch $file || return 1
