@@ -1292,6 +1292,11 @@ restart:
 		case IO_NORMAL:
 			vio->vui_iter = args->u.normal.via_iter;
 			vio->vui_iocb = args->u.normal.via_iocb;
+#ifdef HAVE_GENERIC_WRITE_SYNC_2ARGS
+			if (iot == CIT_WRITE &&
+			    vio->vui_iocb->ki_flags & IOCB_DSYNC)
+				io->u.ci_wr.wr_sync = 1;
+#endif
 
 			/* Direct IO reads must also take range lock,
 			 * or multiple reads will try to work on the same pages
