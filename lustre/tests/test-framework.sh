@@ -6004,7 +6004,7 @@ convert_facet2label() {
 }
 
 get_clientosc_proc_path() {
-	echo "${1}-osc-*"
+	echo "${1}-osc-f*"
 }
 
 # If the 2.0 MDS was mounted on 1.8 device, then the OSC and LOV names
@@ -6189,6 +6189,19 @@ wait_osc_import_state() {
 	else
 		_wait_osc_import_state "$facet" "$ost_facet" "$expected"
 	fi
+}
+
+reconnect_ost() {
+	local ostidx=$1
+	local ostname=$($LFS osts | grep -e "^$ostidx:" |
+		  awk '{sub("_UUID", "", $2); print $2;}')
+	#assume one client
+	local ostcli=$($LCTL dl | grep "${ostname}-osc-f" | awk '{print $4;}')
+	local conn_uuid=$($LCTL get_param -n osc.${ostcli}.ost_conn_uuid)
+	local oscpath="osc.${ostcli}.import=connection=${conn_uuid}"
+
+	$LCTL set_param "${oscpath}"
+	wait_osc_import_state client ost$((ostidx + 1)) FULL
 }
 
 get_clientmdc_proc_path() {
