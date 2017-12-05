@@ -149,6 +149,19 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 }
 EXPORT_SYMBOL(obd_alloc_fail);
 
+bool do_dump_on_eviction(struct obd_device* exp_obd)
+{
+	if (obd_lbug_on_eviction &&
+	    strncmp(exp_obd->obd_type->typ_name, LUSTRE_MGC_NAME,
+		    strlen(LUSTRE_MGC_NAME))) {
+		CERROR("LBUG upon eviction\n");
+		LBUG();
+	}
+
+	return obd_dump_on_eviction;
+}
+EXPORT_SYMBOL(do_dump_on_eviction);
+
 static int class_resolve_dev_name(__u32 len, const char *name)
 {
         int rc;

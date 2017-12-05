@@ -998,4 +998,5 @@ do {                                                                          \
         (ptr) = (void *)0xdeadbeef;                                           \
 } while (0)
 
+bool do_dump_on_eviction(struct obd_device* exp_obd);
 #endif
