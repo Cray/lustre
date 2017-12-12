@@ -196,19 +196,36 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 
 %files
 %defattr(-,root,root)
-%{_prefix}
-%exclude %dir %{_prefix}
-%exclude %dir /lib/modules
-%exclude %dir /etc
-%exclude %dir /opt
-%exclude %dir /usr
-%exclude %dir %{_bindir}
-%exclude %dir %{_includedir}
-%exclude %dir %{_libdir}
-%exclude %dir %{_libexecdir}
-%exclude %dir %{_mandir}
-%exclude %dir %{_sbindir}
-%exclude %dir %{_datadir}
+/sbin/mount.lustre
+/etc/udev
+/etc/ld.so.conf.d
+/etc/modprobe.d
+/etc/lustre
+/lib/modules/%{cray_kernel_version}
+/share/lustre
+%dir /usr/share
+/usr/include/libcfs
+/usr/include/lnet
+/usr/include/lustre
+/usr/lib64
+/usr/lib64/libptlctl.a
+/usr/lib64/libcfsutil.a
+/usr/lib64/liblustreapi.a
+/usr/lib64/liblustreapi.so
+/opt/cray
+%{_libdir}/libptlctl.a
+%{_libdir}/libcfsutil.a
+%{_libdir}/liblustreapi.a
+%{_libdir}/liblustreapi.so
+%{_libdir}/liblnetconfig.a
+%{_libdir}/liblnetconfig.so
+%{_pkgconfigdir}
+%{_sbindir}/*
+%{_bindir}/*
+%{_mandir}/*
+%dir %{_libdir}/lustre
+%{_libdir}/lustre/tests
+%{_modulefiles_prefix}
 %exclude %{_sysconfdir}/lustre/perm.conf
 %exclude /opt/cray/%{name}/%{version}/symvers/%{flavor}
 %exclude %dir /opt/cray/%{name}
