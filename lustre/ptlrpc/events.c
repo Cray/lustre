@@ -119,7 +119,7 @@ void reply_in_callback(lnet_event_t *ev)
                 goto out_wake;
         }
 
-	if (req->rq_xid != ev->match_bits) {
+	if (req->rq_bulk && req->rq_resend) {
 		DEBUG_REQ(D_NET, req, "late reply");
 		goto out_wake;
 	}
