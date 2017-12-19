@@ -400,6 +400,7 @@ int ptlrpc_register_bulk(struct ptlrpc_request *req)
 		LASSERT(desc->bd_md_count >= 0);
 		mdunlink_iterate_helper(desc->bd_mds, desc->bd_md_max_brw);
 		req->rq_status = -ENOMEM;
+		desc->bd_registered = 0;
 		RETURN(-ENOMEM);
 	}
 
@@ -781,7 +782,7 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
         if (request->rq_bulk != NULL) {
                 rc = ptlrpc_register_bulk (request);
                 if (rc != 0)
-                        GOTO(out, rc);
+                        GOTO(cleanup_bulk, rc);
         }
 
         if (!noreply) {
