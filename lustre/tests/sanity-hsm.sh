@@ -248,38 +248,6 @@ copytool_monitor_cleanup() {
 	fi
 }
 
-copytool_start() {
-	local facet=${1:-$SINGLEAGT}
-	local lustre_mntpnt=${2:-$MOUNT2}
-	local arc_id=$3
-	local hsm_root=${4:-$(copytool_device $facet)}
-	local agent=$(facet_active_host $facet)
-
-	# bandwidth is limited to 1MB/s so the copy time is known and
-	# independent of hardware
-	local cmd="$HSMTOOL $HSMTOOL_VERBOSE --daemon"
-	cmd+=" --hsm-root $hsm_root/$HSMTMP"
-	[[ -z "$arc_id" ]] || cmd+=" --archive $arc_id"
-	[[ -z "$HSMTOOL_UPDATE_INTERVAL" ]] ||
-		cmd+=" --update-interval $HSMTOOL_UPDATE_INTERVAL"
-	[[ -z "$HSMTOOL_EVENT_FIFO" ]] ||
-		cmd+=" --event-fifo $HSMTOOL_EVENT_FIFO"
-	cmd+=" --bandwidth 1 $lustre_mntpnt"
-
-	# Redirect the standard output and error to a log file which
-	# can be uploaded to Maloo.
-	local prefix=$TESTLOG_PREFIX
-	[[ -z "$TESTNAME" ]] || prefix=$prefix.$TESTNAME
-	local copytool_log=$prefix.copytool${arc_id}_log.$agent.log
-
-	do_facet $facet "$cmd < /dev/null > $copytool_log 2>&1"
-	if [[ $? !=  0 ]]; then
-		[[ $HSMTOOL_NOERROR == true ]] ||
-			error "start copytool $facet on $agent failed"
-		echo "start copytool $facet on $agent failed"
-	fi
-}
-
 copytool_setup() {
 	local facet=${1:-$SINGLEAGT}
 	# Use MOUNT2 by default if defined
@@ -305,7 +273,29 @@ copytool_setup() {
 	echo "Starting copytool $facet on $agent"
 	do_facet $facet "mkdir -p $hsm_root/$HSMTMP/" ||
 			error "mkdir '$hsm_root/$HSMTMP' failed"
-	copytool_start $facet $lustre_mntpnt "$arc_id" $hsm_root
+	# bandwidth is limited to 1MB/s so the copy time is known and
+	# independent of hardware
+	local cmd="$HSMTOOL $HSMTOOL_VERBOSE --daemon"
+	cmd+=" --hsm-root $hsm_root/$HSMTMP"
+	[[ -z "$arc_id" ]] || cmd+=" --archive $arc_id"
+	[[ -z "$HSMTOOL_UPDATE_INTERVAL" ]] ||
+		cmd+=" --update-interval $HSMTOOL_UPDATE_INTERVAL"
+	[[ -z "$HSMTOOL_EVENT_FIFO" ]] ||
+		cmd+=" --event-fifo $HSMTOOL_EVENT_FIFO"
+	cmd+=" --bandwidth 1 $lustre_mntpnt"
+
+	# Redirect the standard output and error to a log file which
+	# can be uploaded to Maloo.
+	local prefix=$TESTLOG_PREFIX
+	[[ -z "$TESTNAME" ]] || prefix=$prefix.$TESTNAME
+	local copytool_log=$prefix.copytool${arc_id}_log.$agent.log
+
+	do_facet $facet "$cmd < /dev/null > $copytool_log 2>&1"
+	if [[ $? !=  0 ]]; then
+		[[ $HSMTOOL_NOERROR == true ]] ||
+			error "start copytool $facet on $agent failed"
+		echo "start copytool $facet on $agent failed"
+	fi
 
 	trap cleanup EXIT
 }
@@ -3204,54 +3194,6 @@ test_61() {
 	copytool_cleanup
 }
 run_test 61 "Release stripeless file with non-zero size"
-
-test_62() {
-	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.7.15) ]] ||
-		{ skip "Need MDS version 2.7.15+"; return; }
-
-	local facet=$SINGLEAGT
-	local agents=${1:-$(facet_active_host $facet)}
-	local default_maxrequest=$(get_hsm_param max_requests)
-
-	copytool_setup
-
-	set_hsm_param max_requests 1
-	mkdir -p $DIR/$tdir
-	local f=$DIR/$tdir/$tfile
-	local fid
-	fid=$(make_custom_file_for_progress $f 20)
-	[ $? != 0 ] && skip "not enough free space" && return
-
-	local file_hash_before_archive=$(md5sum $f)
-	$LFS hsm_archive $f
-	wait_request_state $fid ARCHIVE SUCCEED
-	$LFS hsm_release $f
-
-	# Run md5sum in the back ground
-	md5sum $f &
-	wait_request_state $fid RESTORE STARTED
-
-	# Kill copytool while md5sum is running
-	kill_copytools $agents
-	wait_copytools $agents || error "copytools failed to stop"
-
-	echo "Copytool is stopped on $agents"
-
-	wait_request_state $fid RESTORE CANCELED
-
-	copytool_start
-	# md5sum triggers hsm_restore action
-	local file_hash_after_archive=$(md5sum $f)
-	wait_request_state $fid RESTORE SUCCEED
-
-	[ "$file_hash_before_archive" = \
-		"$file_hash_after_archive" ] ||
-			error "Restore incomplete"
-
-	set_hsm_param max_requests $default_maxrequest
-	copytool_cleanup
-}
-run_test 62 "Stopping a copytool should cancel its requests"
 
 test_70() {
 	# test needs a new running copytool
