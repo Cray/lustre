@@ -5863,6 +5863,208 @@ test_99()
 }
 run_test 99 "Adding meta_bg option"
 
+test_101() {
+	local createmany_oid
+	local dev=$FSNAME-OST0000-osc-MDT0000
+	setup
+
+	createmany -o $DIR1/$tfile-%d 50000 &
+	createmany_oid=$!
+	# MDT->OST reconnection causes MDT<->OST last_id synchornisation
+	# via osp_precreate_cleanup_orphans.
+	for ((i = 0; i < 100; i++)); do
+		for ((k = 0; k < 10; k++)); do
+			do_facet $SINGLEMDS "$LCTL --device $dev deactivate;" \
+					    "$LCTL --device $dev activate"
+		done
+
+		ls -asl $MOUNT | grep '???' &&
+			(kill -9 $createmany_oid &>/dev/null; \
+			 error "File hasn't object on OST")
+
+		kill -s 0 $createmany_oid || break
+	done
+	wait $createmany_oid
+	cleanup
+}
+run_test 101 "Race MDT->OST reconnection with create"
+
+test_102() { # LU-7131
+	local server_version=$(lustre_version_code $SINGLEMDS)
+
+	[[ $server_version -ge $(version_code 2.9.54) ]] ||
+	[[ $server_version -ge $(version_code 2.7.19.12) &&
+	   $server_version -lt $(version_code 2.7.50) ]] ||
+		{ skip "Need MDT version 2.7.19.12+ or 2.9.54+" && return 0; }
+
+	local key=failover.node
+	local val1=192.0.2.254@tcp0 # Reserved IPs, see RFC 5735
+	local val2=192.0.2.255@tcp0
+	local mdsdev=$(mdsdevname 1)
+	local params
+
+	stopall
+
+	[ $(facet_fstype mds1) == zfs ] && import_zpool mds1
+	# Check that parameters are added correctly
+	echo "tunefs --param $key=$val1"
+	do_facet mds "$TUNEFS --param $key=$val1 $mdsdev >/dev/null" ||
+		error "tunefs --param $key=$val1 failed"
+	params=$(do_facet mds $TUNEFS --dryrun $mdsdev) ||
+		error "tunefs --dryrun failed"
+	params=${params##*Parameters:}
+	params=${params%%exiting*}
+	[ $(echo $params | tr ' ' '\n' | grep -c $key=$val1) = "1" ] ||
+		error "on-disk parameter not added correctly via tunefs"
+
+	# Check that parameters replace existing instances when added
+	echo "tunefs --param $key=$val2"
+	do_facet mds "$TUNEFS --param $key=$val2 $mdsdev >/dev/null" ||
+		error "tunefs --param $key=$val2 failed"
+	params=$(do_facet mds $TUNEFS --dryrun $mdsdev) ||
+		error "tunefs --dryrun failed"
+	params=${params##*Parameters:}
+	params=${params%%exiting*}
+	[ $(echo $params | tr ' ' '\n' | grep -c $key=) = "1" ] ||
+		error "on-disk parameter not replaced via tunefs"
+	[ $(echo $params | tr ' ' '\n' | grep -c $key=$val2) = "1" ] ||
+		error "on-disk parameter not replaced correctly via tunefs"
+
+	# Check that a parameter is erased properly
+	echo "tunefs --erase-param $key"
+	do_facet mds "$TUNEFS --erase-param $key $mdsdev >/dev/null" ||
+		error "tunefs --erase-param $key failed"
+	params=$(do_facet mds $TUNEFS --dryrun $mdsdev) ||
+		error "tunefs --dryrun failed"
+	params=${params##*Parameters:}
+	params=${params%%exiting*}
+	[ $(echo $params | tr ' ' '\n' | grep -c $key=) = "0" ] ||
+		error "on-disk parameter not erased correctly via tunefs"
+
+	# Check that all the parameters are erased
+	echo "tunefs --erase-params"
+	do_facet mds "$TUNEFS --erase-params $mdsdev >/dev/null" ||
+		error "tunefs --erase-params failed"
+	params=$(do_facet mds $TUNEFS --dryrun $mdsdev) ||
+		error "tunefs --dryrun failed"
+	params=${params##*Parameters:}
+	params=${params%%exiting*}
+	[ -z $params ] ||
+		error "all on-disk parameters not erased correctly via tunefs"
+
+	# Check the order of options --erase-params and --param
+	echo "tunefs --param $key=$val1 --erase-params"
+	do_facet mds \
+		"$TUNEFS --param $key=$val1 --erase-params $mdsdev >/dev/null"||
+		error "tunefs --param $key=$val1 --erase-params failed"
+	params=$(do_facet mds $TUNEFS --dryrun $mdsdev) ||
+		error "tunefs --dryrun failed"
+	params=${params##*Parameters:}
+	params=${params%%exiting*}
+	[ $(echo $params | tr ' ' '\n') == "$key=$val1" ] ||
+		error "on-disk param not added correctly with --erase-params"
+
+	reformat
+}
+run_test 102 "check tunefs --param and --erase-param{s} options"
+
+test_104() { # LU-6952
+	local mds_mountopts=$MDS_MOUNT_OPTS
+	local ost_mountopts=$OST_MOUNT_OPTS
+	local mds_mountfsopts=$MDS_MOUNT_FS_OPTS
+	local lctl_ver=$(do_facet $SINGLEMDS $LCTL --version |
+			awk '{ print $2 }')
+
+	[[ $(version_code $lctl_ver) -lt $(version_code 2.9.55) ]] &&
+		{ skip "this test needs utils above 2.9.55" && return 0; }
+
+	# specify "acl" in mount options used by mkfs.lustre
+	if [ -z "$MDS_MOUNT_FS_OPTS" ]; then
+		MDS_MOUNT_FS_OPTS="acl,user_xattr"
+	else
+
+		MDS_MOUNT_FS_OPTS="${MDS_MOUNT_FS_OPTS},acl,user_xattr"
+	fi
+
+	echo "mountfsopt: $MDS_MOUNT_FS_OPTS"
+
+	#reformat/remount the MDT to apply the MDT_MOUNT_FS_OPT options
+	formatall
+	if [ -z "$MDS_MOUNT_OPTS" ]; then
+		MDS_MOUNT_OPTS="-o noacl"
+	else
+		MDS_MOUNT_OPTS="${MDS_MOUNT_OPTS},noacl"
+	fi
+
+	for num in $(seq $MDSCOUNT); do
+		start mds$num $(mdsdevname $num) $MDS_MOUNT_OPTS ||
+			error "Failed to start MDS"
+	done
+
+	for num in $(seq $OSTCOUNT); do
+		start ost$num $(ostdevname $num) $OST_MOUNT_OPTS ||
+			error "Failed to start OST"
+	done
+
+	mount_client $MOUNT
+	setfacl -m "d:$RUNAS_ID:rwx" $MOUNT &&
+		error "ACL is applied when FS is mounted with noacl."
+
+	MDS_MOUNT_OPTS=$mds_mountopts
+	OST_MOUNT_OPTS=$ost_mountopts
+	MDS_MOUNT_FS_OPTS=$mds_mountfsopts
+
+	formatall
+	setupall
+}
+run_test 104 "Make sure user defined options are reflected in mount"
+
+test_106() {
+	local repeat=3
+
+	reformat
+	setupall
+	mkdir -p $DIR/$tdir || error "create $tdir failed"
+	lfs setstripe -c 1 -i 0 $DIR/$tdir
+#define OBD_FAIL_CAT_RECORDS                        0x1312
+	do_facet mds1 $LCTL set_param fail_loc=0x1312 fail_val=$repeat
+
+	for ((i = 0; i <= $repeat; i++)); do
+
+		#one full plain llog
+		createmany -o $DIR/$tdir/f- 64768
+
+		createmany -u $DIR/$tdir/f- 64768
+	done
+	wait_delete_completed $((TIMEOUT * 7))
+#ASSERTION osp_sync_thread() ( thread->t_flags != SVC_RUNNING ) failed
+#shows that osp code is buggy
+	do_facet mds1 $LCTL set_param fail_loc=0 fail_val=0
+
+	cleanupall
+}
+run_test 106 "check osp llog processing when catalog is wrapped"
+
+test_107() {
+	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.10.50) ]] ||
+		{ skip "Need MDS version > 2.10.50"; return; }
+
+	start_mgsmds || error "start_mgsmds failed"
+	start_ost || error "unable to start OST"
+
+	# add unknown configuration parameter.
+	local PARAM="$FSNAME-OST0000.ost.unknown_param=50"
+	do_facet mgs "$LCTL conf_param $PARAM"
+	cleanup_nocli || error "cleanup_nocli failed with $?"
+	load_modules
+
+	# unknown param should be ignored while mounting.
+	start_ost || error "unable to start OST after unknown param set"
+
+	cleanup || error "cleanup failed with $?"
+}
+run_test 107 "Unknown config param should not fail target mounting"
+
 #
 # set number of permanent parameters
 #
@@ -6092,208 +6294,6 @@ test_124()
 	stopall
 }
 run_test 124 "test ost registration failure after writeconf"
-
-test_101() {
-	local createmany_oid
-	local dev=$FSNAME-OST0000-osc-MDT0000
-	setup
-
-	createmany -o $DIR1/$tfile-%d 50000 &
-	createmany_oid=$!
-	# MDT->OST reconnection causes MDT<->OST last_id synchornisation
-	# via osp_precreate_cleanup_orphans.
-	for ((i = 0; i < 100; i++)); do
-		for ((k = 0; k < 10; k++)); do
-			do_facet $SINGLEMDS "$LCTL --device $dev deactivate;" \
-					    "$LCTL --device $dev activate"
-		done
-
-		ls -asl $MOUNT | grep '???' &&
-			(kill -9 $createmany_oid &>/dev/null; \
-			 error "File hasn't object on OST")
-
-		kill -s 0 $createmany_oid || break
-	done
-	wait $createmany_oid
-	cleanup
-}
-run_test 101 "Race MDT->OST reconnection with create"
-
-test_104() { # LU-6952
-	local mds_mountopts=$MDS_MOUNT_OPTS
-	local ost_mountopts=$OST_MOUNT_OPTS
-	local mds_mountfsopts=$MDS_MOUNT_FS_OPTS
-	local lctl_ver=$(do_facet $SINGLEMDS $LCTL --version |
-			awk '{ print $2 }')
-
-	[[ $(version_code $lctl_ver) -lt $(version_code 2.9.55) ]] &&
-		{ skip "this test needs utils above 2.9.55" && return 0; }
-
-	# specify "acl" in mount options used by mkfs.lustre
-	if [ -z "$MDS_MOUNT_FS_OPTS" ]; then
-		MDS_MOUNT_FS_OPTS="acl,user_xattr"
-	else
-
-		MDS_MOUNT_FS_OPTS="${MDS_MOUNT_FS_OPTS},acl,user_xattr"
-	fi
-
-	echo "mountfsopt: $MDS_MOUNT_FS_OPTS"
-
-	#reformat/remount the MDT to apply the MDT_MOUNT_FS_OPT options
-	formatall
-	if [ -z "$MDS_MOUNT_OPTS" ]; then
-		MDS_MOUNT_OPTS="-o noacl"
-	else
-		MDS_MOUNT_OPTS="${MDS_MOUNT_OPTS},noacl"
-	fi
-
-	for num in $(seq $MDSCOUNT); do
-		start mds$num $(mdsdevname $num) $MDS_MOUNT_OPTS ||
-			error "Failed to start MDS"
-	done
-
-	for num in $(seq $OSTCOUNT); do
-		start ost$num $(ostdevname $num) $OST_MOUNT_OPTS ||
-			error "Failed to start OST"
-	done
-
-	mount_client $MOUNT
-	setfacl -m "d:$RUNAS_ID:rwx" $MOUNT &&
-		error "ACL is applied when FS is mounted with noacl."
-
-	MDS_MOUNT_OPTS=$mds_mountopts
-	OST_MOUNT_OPTS=$ost_mountopts
-	MDS_MOUNT_FS_OPTS=$mds_mountfsopts
-
-	formatall
-	setupall
-}
-run_test 104 "Make sure user defined options are reflected in mount"
-
-test_106() {
-	local repeat=3
-
-	reformat
-	setupall
-	mkdir -p $DIR/$tdir || error "create $tdir failed"
-	lfs setstripe -c 1 -i 0 $DIR/$tdir
-#define OBD_FAIL_CAT_RECORDS                        0x1312
-	do_facet mds1 $LCTL set_param fail_loc=0x1312 fail_val=$repeat
-
-	for ((i = 0; i <= $repeat; i++)); do
-
-		#one full plain llog
-		createmany -o $DIR/$tdir/f- 64768
-
-		createmany -u $DIR/$tdir/f- 64768
-	done
-	wait_delete_completed $((TIMEOUT * 7))
-#ASSERTION osp_sync_thread() ( thread->t_flags != SVC_RUNNING ) failed
-#shows that osp code is buggy
-	do_facet mds1 $LCTL set_param fail_loc=0 fail_val=0
-
-	cleanupall
-}
-run_test 106 "check osp llog processing when catalog is wrapped"
-
-test_107() {
-	[[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.10.50) ]] ||
-		{ skip "Need MDS version > 2.10.50"; return; }
-
-	start_mgsmds || error "start_mgsmds failed"
-	start_ost || error "unable to start OST"
-
-	# add unknown configuration parameter.
-	local PARAM="$FSNAME-OST0000.ost.unknown_param=50"
-	do_facet mgs "$LCTL conf_param $PARAM"
-	cleanup_nocli || error "cleanup_nocli failed with $?"
-	load_modules
-
-	# unknown param should be ignored while mounting.
-	start_ost || error "unable to start OST after unknown param set"
-
-	cleanup || error "cleanup failed with $?"
-}
-run_test 107 "Unknown config param should not fail target mounting"
-
-test_102() { # LU-7131
-	local server_version=$(lustre_version_code $SINGLEMDS)
-
-	[[ $server_version -ge $(version_code 2.9.54) ]] ||
-	[[ $server_version -ge $(version_code 2.7.19.12) &&
-	   $server_version -lt $(version_code 2.7.50) ]] ||
-		{ skip "Need MDT version 2.7.19.12+ or 2.9.54+" && return 0; }
-
-	local key=failover.node
-	local val1=192.0.2.254@tcp0 # Reserved IPs, see RFC 5735
-	local val2=192.0.2.255@tcp0
-	local mdsdev=$(mdsdevname 1)
-	local params
-
-	stopall
-
-	[ $(facet_fstype mds1) == zfs ] && import_zpool mds1
-	# Check that parameters are added correctly
-	echo "tunefs --param $key=$val1"
-	do_facet mds "$TUNEFS --param $key=$val1 $mdsdev >/dev/null" ||
-		error "tunefs --param $key=$val1 failed"
-	params=$(do_facet mds $TUNEFS --dryrun $mdsdev) ||
-		error "tunefs --dryrun failed"
-	params=${params##*Parameters:}
-	params=${params%%exiting*}
-	[ $(echo $params | tr ' ' '\n' | grep -c $key=$val1) = "1" ] ||
-		error "on-disk parameter not added correctly via tunefs"
-
-	# Check that parameters replace existing instances when added
-	echo "tunefs --param $key=$val2"
-	do_facet mds "$TUNEFS --param $key=$val2 $mdsdev >/dev/null" ||
-		error "tunefs --param $key=$val2 failed"
-	params=$(do_facet mds $TUNEFS --dryrun $mdsdev) ||
-		error "tunefs --dryrun failed"
-	params=${params##*Parameters:}
-	params=${params%%exiting*}
-	[ $(echo $params | tr ' ' '\n' | grep -c $key=) = "1" ] ||
-		error "on-disk parameter not replaced via tunefs"
-	[ $(echo $params | tr ' ' '\n' | grep -c $key=$val2) = "1" ] ||
-		error "on-disk parameter not replaced correctly via tunefs"
-
-	# Check that a parameter is erased properly
-	echo "tunefs --erase-param $key"
-	do_facet mds "$TUNEFS --erase-param $key $mdsdev >/dev/null" ||
-		error "tunefs --erase-param $key failed"
-	params=$(do_facet mds $TUNEFS --dryrun $mdsdev) ||
-		error "tunefs --dryrun failed"
-	params=${params##*Parameters:}
-	params=${params%%exiting*}
-	[ $(echo $params | tr ' ' '\n' | grep -c $key=) = "0" ] ||
-		error "on-disk parameter not erased correctly via tunefs"
-
-	# Check that all the parameters are erased
-	echo "tunefs --erase-params"
-	do_facet mds "$TUNEFS --erase-params $mdsdev >/dev/null" ||
-		error "tunefs --erase-params failed"
-	params=$(do_facet mds $TUNEFS --dryrun $mdsdev) ||
-		error "tunefs --dryrun failed"
-	params=${params##*Parameters:}
-	params=${params%%exiting*}
-	[ -z $params ] ||
-		error "all on-disk parameters not erased correctly via tunefs"
-
-	# Check the order of options --erase-params and --param
-	echo "tunefs --param $key=$val1 --erase-params"
-	do_facet mds \
-		"$TUNEFS --param $key=$val1 --erase-params $mdsdev >/dev/null"||
-		error "tunefs --param $key=$val1 --erase-params failed"
-	params=$(do_facet mds $TUNEFS --dryrun $mdsdev) ||
-		error "tunefs --dryrun failed"
-	params=${params##*Parameters:}
-	params=${params%%exiting*}
-	[ $(echo $params | tr ' ' '\n') == "$key=$val1" ] ||
-		error "on-disk param not added correctly with --erase-params"
-
-	reformat
-}
-run_test 102 "check tunefs --param and --erase-param{s} options"
 
 if ! combined_mgs_mds ; then
 	stop mgs
