@@ -129,11 +129,18 @@ lfsck_create_nfiles() {
 
 build_test_filter
 
+format_start_mgs () {
+	do_rpc_nodes $(facet_active_host mgs) load_modules_local
+	format_mgs
+	start mgs $(mgsdevname) $MGS_MOUNT_OPTS
+}
+
 test_0() {
 	local BCOUNT=0
 	local i
 
 	stopall
+	combined_mgs_mds || format_start_mgs
 	do_rpc_nodes $(facet_active_host $SINGLEMDS) load_modules_local
 	format_mdt $(facet_number $SINGLEMDS)
 
@@ -165,6 +172,7 @@ test_0() {
 		echo "lfsck_namespace speed is ${SPEED}/sec"
 		stop ${SINGLEMDS} > /dev/null || error "Fail to stop MDS!"
 	done
+	combined_mgs_mds || stop mgs
 }
 run_test 0 "lfsck namespace performance (routine case) without load"
 
@@ -176,6 +184,7 @@ test_1() {
 	local i
 
 	stopall
+	combined_mgs_mds || format_start_mgs
 	do_rpc_nodes $(facet_active_host $SINGLEMDS) load_modules_local
 	format_mdt $(facet_number $SINGLEMDS)
 
@@ -218,6 +227,7 @@ test_1() {
 		echo "lfsck_namespace speed is ${SPEED}/sec"
 		stop ${SINGLEMDS} > /dev/null || error "Fail to stop MDS!"
 	done
+	combined_mgs_mds || stop mgs
 }
 run_test 1 "lfsck namespace performance (backup/restore) without load"
 
@@ -227,6 +237,7 @@ test_2() {
 	for ((i = $MINCOUNT_REPAIR; i <= $MAXCOUNT_REPAIR;
 	      i = $((i * FACTOR)))); do
 		stopall
+		combined_mgs_mds || format_start_mgs
 		do_rpc_nodes $(facet_active_host $SINGLEMDS) load_modules_local
 		format_mdt $(facet_number $SINGLEMDS)
 
@@ -254,6 +265,7 @@ test_2() {
 		echo "lfsck_namespace speed is ${SPEED}/sec"
 		stop ${SINGLEMDS} > /dev/null || error "Fail to stop MDS!"
 	done
+	combined_mgs_mds || stop mgs
 }
 run_test 2 "lfsck namespace performance (upgrade from 1.8) without load"
 
@@ -265,6 +277,7 @@ test_3() {
 	local i
 
 	stopall
+	combined_mgs_mds || format_start_mgs
 	do_rpc_nodes $(facet_active_host $SINGLEMDS) load_modules_local
 	format_mdt $(facet_number $SINGLEMDS)
 
@@ -336,6 +349,7 @@ test_3() {
 	lfsck_create_nfiles ${nfiles} ${BCOUNT} ${NTHREADS} ||
 		error "Fail to create files!"
 	echo "+++ end to create for ${i} files set at: $(date) +++"
+	combined_mgs_mds || stop mgs
 }
 run_test 3 "lfsck namespace impact on create performance"
 
