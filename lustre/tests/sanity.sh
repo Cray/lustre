@@ -19837,7 +19837,8 @@ test_273b() {
 
 	$MULTIOP $DIR/$tdir/$tfile Ow2097152c
 
-	do_facet mds1 $LCTL set_param fail_loc=0x80000169
+#define OBD_FAIL_MDS_COMMITRW_DELAY      0x16b
+	do_facet mds1 $LCTL set_param fail_loc=0x8000016b
 
 	# first multiop is needed so that there were no layout change
 	# and cl_object_prune when second multiop's write crosses
@@ -21096,8 +21097,8 @@ test_318() {
 	cancel_lru_locks mdc
 	ls $mdir_parent
 
-#define OBD_FAIL_MDS_LINKEA_DELAY 	 0x168
-	do_facet mds1 $LCTL set_param fail_loc=0x168
+#define OBD_FAIL_MDS_LINKEA_DELAY 	 0x16e
+	do_facet mds1 $LCTL set_param fail_loc=0x16e
 	$LFS mv -m1 $mdir &
 
 	sleep 1
