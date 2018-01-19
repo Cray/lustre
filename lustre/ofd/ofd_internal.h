@@ -43,6 +43,7 @@
 #include <md_object.h>
 #include <lustre_fid.h>
 #include <lustre_capa.h>
+#include "../llite/range_lock.h"
 
 #define OFD_INIT_OBJID	0
 #define OFD_PRECREATE_BATCH_DEFAULT (OBJ_SUBDIR_COUNT * 4)
@@ -220,6 +221,7 @@ struct ofd_object {
 	struct lu_fid		ofo_pfid;
 	unsigned int		ofo_pfid_checking:1,
 				ofo_pfid_verified:1;
+	struct range_lock_tree	ofo_write_tree;
 };
 
 static inline struct ofd_object *ofd_obj(struct lu_object *o)
@@ -330,6 +332,7 @@ struct ofd_thread_info {
 		struct lfsck_request	 fti_lr;
 		struct obd_connect_data	 fti_ocd;
 	};
+	struct range_lock		 fti_write_range;
 };
 
 extern void target_recovery_fini(struct obd_device *obd);
