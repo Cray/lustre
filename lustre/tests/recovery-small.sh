@@ -2627,6 +2627,60 @@ test_133() {
 }
 run_test 133 "don't fail on flock resend"
 
+test_134() {
+	local at_max=$($LCTL get_param -n at_max)
+	local timeout=$($LCTL get_param -n timeout)
+	local test_at="$LCTL get_param -n at_max"
+	local param_at="$FSNAME.sys.at_max"
+	local test_timeout="$LCTL get_param -n timeout"
+	local param_timeout="$FSNAME.sys.timeout"
+	local wce_param="obdfilter.$FSNAME-OST0000.writethrough_cache_enable"
+	local rce_param="obdfilter.$FSNAME-OST0000.read_cache_enable"
+	local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
+
+	# set timeout to 5 seconds
+	set_conf_param_and_check client "$test_at" "$param_at" 0 ||
+		error "conf_param at_max=0 failed"
+	set_conf_param_and_check client "$test_timeout" "$param_timeout" 5 ||
+		error "conf_param timeout=5 failed"
+
+	# save old r/o cache settings
+	save_lustre_params ost1 $wce_param > $p
+	save_lustre_params ost1 $rce_param >> $p
+
+	# disable r/o cache
+	do_facet ost1 "$LCTL set_param -n $wce_param=0"
+	do_facet ost1 "$LCTL set_param -n $rce_param=0"
+
+	$LFS setstripe -i 0 -c 1 $DIR/$tfile
+	dd if=/dev/zero of=$DIR/$tfile bs=4096 count=1 oflag=direct
+	cp $DIR/$tfile $TMP/$tfile
+
+	#define OBD_FAIL_OST_BRW_PAUSE_BULK2     0x227
+	do_facet ost1 $LCTL set_param fail_loc=0x80000227
+	do_facet ost1 $LCTL set_param fail_val=10
+	dd if=/dev/urandom of=$DIR/$tfile bs=4096 count=1 conv=notrunc
+	sync &
+	sleep 1
+	dd if=/dev/zero of=$DIR/$tfile bs=4096 count=1 conv=notrunc
+	sync
+	sleep 9
+	cancel_lru_locks osc
+	cmp -b $DIR/$tfile $TMP/$tfile || error "wrong data"
+
+	rm -f $DIR/$tfile $TMP/$tfile
+
+	# restore initial r/o cache settings
+	restore_lustre_params < $p
+
+	# restore timeouts
+	set_conf_param_and_check client "$test_at" "$param_at" $at_max ||
+		error "conf_param at_max=$at_max failed"
+	set_conf_param_and_check client "$test_timeout" "$param_timeout" \
+		$timeout || error "conf_param timeout=$timeout failed"
+}
+run_test 134 "data corruption through resend"
+
 complete $SECONDS
 check_and_cleanup_lustre
 exit_status
