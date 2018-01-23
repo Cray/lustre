@@ -1549,6 +1549,10 @@ repeat:
 		if (msl == NULL)
 			GOTO(out, rc = -ENOMEM);
 
+		CFS_FAIL_TIMEOUT_RESET(OBD_FAIL_MDS_LINKEA_DELAY,
+				       OBD_FAIL_MDS_STAT_DELAY|OBD_FAIL_ONCE,
+				       5);
+
 		/*
 		 * we can't follow parent-child lock order like other MD
 		 * operations, use lock_try here to avoid deadlock, if the lock
@@ -1557,6 +1561,7 @@ repeat:
 		 * the end of the loop restart from beginning.
 		 */
 		mdt_lock_pdo_init(&msl->msl_lh, LCK_PW, lname);
+
 		ibits = 0;
 		rc = mdt_object_lock_try(info, lnkp, &msl->msl_lh, &ibits,
 					 MDS_INODELOCK_UPDATE, true);
