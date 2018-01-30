@@ -97,14 +97,13 @@ struct ldlm_namespace *ldlm_namespace_first_locked(ldlm_side_t);
 
 /* ldlm_request.c */
 /* Cancel lru flag, it indicates we cancel aged locks. */
-enum {
-	LDLM_CANCEL_AGED   = 1 << 0, /* Cancel aged locks (non lru resize). */
-	LDLM_CANCEL_PASSED = 1 << 1, /* Cancel passed number of locks. */
-	LDLM_CANCEL_SHRINK = 1 << 2, /* Cancel locks from shrinker. */
-	LDLM_CANCEL_LRUR   = 1 << 3, /* Cancel locks from lru resize. */
-	LDLM_CANCEL_NO_WAIT = 1 << 4,/* Cancel locks w/o blocking (neither
-                                      * sending nor waiting for any rpcs) */
-	LDLM_CANCEL_LRUR_NO_WAIT = 1 << 5, /* LRUR + NO_WAIT */
+enum ldlm_lru_flags {
+	LDLM_LRU_FLAG_AGED      = 0x01, /* Cancel aged locks (non LRU resize) */
+	LDLM_LRU_FLAG_PASSED    = 0x02, /* Cancel passed number of locks */
+	LDLM_LRU_FLAG_SHRINK    = 0x04, /* Cancel locks from shrinker */
+	LDLM_LRU_FLAG_LRUR      = 0x08, /* Cancel locks from lru resize */
+	LDLM_LRU_FLAG_NO_WAIT   = 0x10, /* Cancel locks w/o blocking (neither
+					 * sending nor waiting for any RPCs) */
 };
 
 int ldlm_cancel_lru(struct ldlm_namespace *ns, int nr,
