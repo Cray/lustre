@@ -111,6 +111,7 @@ make DESTDIR=${RPM_BUILD_ROOT} install
 %{_prefix}/libexec/*
 %{_prefix}/include/*
 %{_prefix}/etc/*
+%{_mandir}
 %else
 %{_prefix}
 %endif
