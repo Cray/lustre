@@ -2701,12 +2701,8 @@ kgnilnd_startup(lnet_ni_t *ni)
 	INIT_LIST_HEAD(&net->gnn_list);
 	ni->ni_data = net;
 	net->gnn_ni = ni;
-	if (!ni->ni_net->net_tunables_set) {
-		ni->ni_net->net_tunables.lct_max_tx_credits =
-			*kgnilnd_tunables.kgn_credits;
-		ni->ni_net->net_tunables.lct_peer_tx_credits =
-			*kgnilnd_tunables.kgn_peer_credits;
-	}
+	ni->ni_maxtxcredits = *kgnilnd_tunables.kgn_credits;
+	ni->ni_peertxcredits = *kgnilnd_tunables.kgn_peer_credits;
 
 	if (*kgnilnd_tunables.kgn_peer_health) {
 		int     fudge;
@@ -2716,10 +2712,9 @@ kgnilnd_startup(lnet_ni_t *ni)
 		fudge = (GNILND_TO2KA(*kgnilnd_tunables.kgn_timeout) / GNILND_REAPER_NCHECKS);
 		timeout = *kgnilnd_tunables.kgn_timeout + fudge;
 
-		if (*kgnilnd_tunables.kgn_peer_timeout >= timeout) {
-			ni->ni_net->net_tunables.lct_peer_timeout =
-				 *kgnilnd_tunables.kgn_peer_timeout;
-		} else if (*kgnilnd_tunables.kgn_peer_timeout > -1) {
+		if (*kgnilnd_tunables.kgn_peer_timeout >= timeout)
+			ni->ni_peertimeout = *kgnilnd_tunables.kgn_peer_timeout;
+		else if (*kgnilnd_tunables.kgn_peer_timeout > -1) {
 			LCONSOLE_ERROR("Peer_timeout is set to %d but needs to be >= %d\n",
 					*kgnilnd_tunables.kgn_peer_timeout,
 					timeout);
@@ -2727,10 +2722,10 @@ kgnilnd_startup(lnet_ni_t *ni)
 			LIBCFS_FREE(net, sizeof(*net));
 			GOTO(failed, rc = -EINVAL);
 		} else
-			ni->ni_net->net_tunables.lct_peer_timeout = timeout;
+			ni->ni_peertimeout = timeout;
 
 		LCONSOLE_INFO("Enabling LNet peer health for gnilnd, timeout %ds\n",
-			      ni->ni_net->net_tunables.lct_peer_timeout);
+			      ni->ni_peertimeout);
 	}
 
 	atomic_set(&net->gnn_refcount, 1);
