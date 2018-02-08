@@ -403,6 +403,7 @@ int osc_page_init(const struct lu_env *env, struct cl_object *obj,
 	opg->ops_to   = PAGE_CACHE_SIZE;
 
 	INIT_LIST_HEAD(&opg->ops_lru);
+	INIT_LIST_HEAD(&opg->ops_inflight);
 
 	result = osc_prep_async_page(osc, opg, page->cp_vmpage,
 				     cl_offset(obj, index));
