@@ -137,12 +137,6 @@ void osd_fini_iobuf(struct osd_device *d, struct osd_iobuf *iobuf)
         }
 }
 
-#ifndef HAVE_BI_RW
-#ifndef REQ_WRITE /* pre-2.6.35 */
-#define __REQ_WRITE BIO_RW
-#endif
-#endif
-
 #ifdef HAVE_BIO_ENDIO_USES_ONE_ARG
 static void dio_complete_routine(struct bio *bio)
 {
@@ -193,11 +187,7 @@ static void dio_complete_routine(struct bio *bio, int error)
 	}
 
 	/* the check is outside of the cycle for performance reason -bzzz */
-#ifdef HAVE_BI_RW
-	if (!test_bit(__REQ_WRITE, &bio->bi_rw)) {
-#else
-	if (bio_op(bio) == REQ_OP_WRITE) {
-#endif
+	if (!bio_data_dir(bio)) {
 		bio_for_each_segment_all(bvl, bio, iter) {
 			if (likely(error == 0))
 				SetPageUptodate(bvl_to_page(bvl));
@@ -266,10 +256,8 @@ static void osd_submit_bio(int rw, struct bio *bio)
         else
                 submit_bio(WRITE, bio);
 #else
-        if (rw == 0)
-                submit_bio(bio);
-        else
-                submit_bio(bio);
+        bio->bi_opf |= rw;
+        submit_bio(bio);
 #endif
 }
 
@@ -1179,7 +1167,9 @@ static int osd_declare_write_commit(const struct lu_env *env,
 		    lnb[i - 1].lnb_file_offset + lnb[i - 1].lnb_len)
 			extents++;
 
-		if (!osd_is_mapped(dt, lnb[i].lnb_file_offset, &extent))
+		if (osd_is_mapped(dt, lnb[i].lnb_file_offset, &extent))
+			lnb[i].lnb_flags |= OBD_BRW_MAPPED;
+		else
 			quota_space += PAGE_SIZE;
 
 		/* ignore quota for the whole request if any page is from
@@ -1272,7 +1262,6 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
         struct osd_device  *osd = osd_obj2dev(osd_dt_obj(dt));
         loff_t isize;
         int rc = 0, i;
-	struct osd_fextent extent = { 0 };
 
         LASSERT(inode);
 
@@ -1285,7 +1274,7 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
 
         for (i = 0; i < npages; i++) {
 		if (lnb[i].lnb_rc == -ENOSPC &&
-		    osd_is_mapped(dt, lnb[i].lnb_file_offset, &extent)) {
+		    (lnb[i].lnb_flags & OBD_BRW_MAPPED)) {
 			/* Allow the write to proceed if overwriting an
 			 * existing block */
 			lnb[i].lnb_rc = 0;

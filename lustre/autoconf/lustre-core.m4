@@ -1771,6 +1771,24 @@ have_bi_cnt, [
 ]) # LC_HAVE_BI_CNT
 
 #
+# LC_HAVE_BI_RW
+#
+# 4.4 redefined bi_rw as bi_opf
+#
+AC_DEFUN([LC_HAVE_BI_RW], [
+LB_CHECK_COMPILE([if Linux kernel has bi_rw in struct bio],
+have_bi_rw, [
+	#include <linux/bio.h>
+],[
+	struct bio bio;
+	bio.bi_rw;
+], [
+	AC_DEFINE(HAVE_BI_RW, 1,
+		[struct bio has bi_rw])
+])
+]) # LC_HAVE_BI_RW
+
+#
 # LC_HAVE_SUBMIT_BIO_2ARGS
 #
 # 4.4 removed an argument from submit_bio
@@ -1789,22 +1807,22 @@ have_submit_bio_2args, [
 ]) # LC_HAVE_SUBMIT_BIO_2_ARGS
 
 #
-# LC_HAVE_BI_RW
+# LC_HAVE_CLEAN_BDEV_ALIASES
 #
-# 4.4 redefined bi_rw as bi_opf
+# 4.4 unmap_underlying_metadata was replaced by clean_bdev_aliases
 #
-AC_DEFUN([LC_HAVE_BI_RW], [
-LB_CHECK_COMPILE([if Linux kernel has bi_rw in struct bio],
-have_bi_rw, [
-	#include <linux/bio.h>
+AC_DEFUN([LC_HAVE_CLEAN_BDEV_ALIASES], [
+LB_CHECK_COMPILE([if kernel has clean_bdev_aliases],
+have_clean_bdev_aliases, [
+	#include <linux/buffer_head.h>
 ],[
-	struct bio bio;
-	bio.bi_rw;
+	struct block_device bdev;
+	clean_bdev_aliases(&bdev,1,1);
 ], [
-	AC_DEFINE(HAVE_BI_RW, 1,
-		[struct bio has bi_rw])
+	AC_DEFINE(HAVE_CLEAN_BDEV_ALIASES, 1,
+		[kernel has clean_bdev_aliases])
 ])
-]) # LC_HAVE_BI_RW
+]) # LC_HAVE_CLEAN_BDEV_ALIASES
 
 #
 # LC_HAVE_TRUNCATE_IPAGE_FINAL
@@ -2572,6 +2590,25 @@ vfs_setxattr, [
 ]) # LC_VFS_SETXATTR
 
 #
+# LC_POSIX_ACL_UPDATE_MODE
+#
+# Kernel version 4.9 commit 073931017b49d9458aa351605b43a7e34598caef
+# posix_acl: Clear SGID bit when setting file permissions
+#
+AC_DEFUN([LC_POSIX_ACL_UPDATE_MODE], [
+LB_CHECK_COMPILE([if 'posix_acl_update_mode' exists],
+posix_acl_update_mode, [
+	#include <linux/fs.h>
+	#include <linux/posix_acl.h>
+],[
+	posix_acl_update_mode(NULL, NULL, NULL);
+],[
+	AC_DEFINE(HAVE_POSIX_ACL_UPDATE_MODE, 1,
+		['posix_acl_update_mode' is available])
+])
+]) # LC_POSIX_ACL_UPDATE_MODE
+
+#
 # LC_IOP_GENERIC_READLINK
 #
 # Kernel version 4.10 commit dfeef68862edd7d4bafe68ef7aeb5f658ef24bb5
@@ -2608,6 +2645,26 @@ vm_fault_address, [
 		[virtual_address has been replaced by address field])
 ])
 ]) # LC_HAVE_VM_FAULT_ADDRESS
+
+#
+# LC_INODEOPS_ENHANCED_GETATTR
+#
+# Kernel version 4.11 commit a528d35e8bfcc521d7cb70aaf03e1bd296c8493f
+# expanded getattr to be able to get more stat information.
+#
+AC_DEFUN([LC_INODEOPS_ENHANCED_GETATTR], [
+LB_CHECK_COMPILE([if 'inode_operations' getattr member can gather advance stats],
+getattr_path, [
+	#include <linux/fs.h>
+],[
+	struct path path;
+
+	((struct inode_operations *)1)->getattr(&path, NULL, 0, 0);
+],[
+	AC_DEFINE(HAVE_INODEOPS_ENHANCED_GETATTR, 1,
+		[inode_operations .getattr member function can gather advance stats])
+])
+]) # LC_INODEOPS_ENHANCED_GETATTR
 
 #
 # LC_VM_OPERATIONS_REMOVE_VMF_ARG
@@ -2842,12 +2899,14 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 4.9
 	LC_GROUP_INFO_GID
 	LC_VFS_SETXATTR
+	LC_POSIX_ACL_UPDATE_MODE
 
 	# 4.10
 	LC_IOP_GENERIC_READLINK
 	LC_HAVE_VM_FAULT_ADDRESS
 
 	# 4.11
+	LC_INODEOPS_ENHANCED_GETATTR
 	LC_VM_OPERATIONS_REMOVE_VMF_ARG
 
 	#
@@ -3173,6 +3232,7 @@ lustre/kernel_patches/targets/3.0-sles11sp3.target
 lustre/kernel_patches/targets/3.0-sles11sp4.target
 lustre/kernel_patches/targets/3.12-sles12.target
 lustre/kernel_patches/targets/4.4-sles12.target
+lustre/kernel_patches/targets/4.4-sles12sp3.target
 lustre/kernel_patches/targets/2.6-fc11.target
 lustre/kernel_patches/targets/2.6-fc12.target
 lustre/kernel_patches/targets/2.6-fc15.target

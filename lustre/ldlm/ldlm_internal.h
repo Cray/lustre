@@ -103,7 +103,11 @@ enum ldlm_lru_flags {
 	LDLM_LRU_FLAG_LRUR	= 0x08, /* Cancel locks from lru resize */
 	LDLM_LRU_FLAG_NO_WAIT	= 0x10, /* Cancel locks w/o blocking (neither
 					 * sending nor waiting for any RPCs) */
-	LDLM_LRU_FLAG_LRUR_NO_WAIT = 0x20, /* LRUR + NO_WAIT */
+	LDLM_LRU_FLAG_CLEANUP	= 0x20, /* Used when clearing lru, tells
+					 * prepare_lru_list to set discard flag
+					 * on PR extent locks so we don't waste
+					 * time saving pages that will be
+					 * discarded momentarily */
 };
 
 int ldlm_cancel_lru(struct ldlm_namespace *ns, int nr,
@@ -158,9 +162,9 @@ void ldlm_discard_bl_list(struct list_head *bl_list);
 int ldlm_run_ast_work(struct ldlm_namespace *ns, struct list_head *rpc_list,
                       ldlm_desc_ast_t ast_type);
 int ldlm_work_gl_ast_lock(struct ptlrpc_request_set *rqset, void *opaq);
-int ldlm_lock_remove_from_lru_check(struct ldlm_lock *lock,
-				    cfs_time_t last_use);
-#define ldlm_lock_remove_from_lru(lock) ldlm_lock_remove_from_lru_check(lock, 0)
+int ldlm_lock_remove_from_lru_check(struct ldlm_lock *lock, ktime_t last_use);
+#define ldlm_lock_remove_from_lru(lock) \
+		ldlm_lock_remove_from_lru_check(lock, ktime_set(0, 0))
 int ldlm_lock_remove_from_lru_nolock(struct ldlm_lock *lock);
 void ldlm_lock_add_to_lru_nolock(struct ldlm_lock *lock);
 void ldlm_lock_add_to_lru(struct ldlm_lock *lock);

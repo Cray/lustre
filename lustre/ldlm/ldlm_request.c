@@ -809,8 +809,8 @@ int ldlm_prep_elc_req(struct obd_export *exp, struct ptlrpc_request *req,
 		req_capsule_filled_sizes(pill, RCL_CLIENT);
 		avail = ldlm_capsule_handles_avail(pill, RCL_CLIENT, canceloff);
 
-		lru_flags = ns_connect_lru_resize(ns) ?
-			LDLM_LRU_FLAG_LRUR_NO_WAIT : LDLM_LRU_FLAG_AGED;
+		lru_flags = LDLM_LRU_FLAG_NO_WAIT | (ns_connect_lru_resize(ns) ?
+			LDLM_LRU_FLAG_LRUR : LDLM_LRU_FLAG_AGED);
 		to_free = !ns_connect_lru_resize(ns) &&
 			opc == LDLM_ENQUEUE ? 1 : 0;
 
@@ -1511,10 +1511,10 @@ static enum ldlm_policy_res ldlm_cancel_lrur_policy(struct ldlm_namespace *ns,
 						    int unused, int added,
 						    int count)
 {
-	cfs_time_t cur = cfs_time_current();
+	ktime_t cur = ktime_get();
 	struct ldlm_pool *pl = &ns->ns_pool;
-	__u64 slv, lvf, lv;
-	cfs_time_t la;
+	u64 slv, lvf, lv;
+	s64 la;
 
 	/* Stop LRU processing when we reach past @count or have checked all
 	 * locks in LRU. */
@@ -1522,15 +1522,15 @@ static enum ldlm_policy_res ldlm_cancel_lrur_policy(struct ldlm_namespace *ns,
 		return LDLM_POLICY_KEEP_LOCK;
 
 	/* Despite of the LV, It doesn't make sense to keep the lock which
-	 * is unused for ns_max_age time. */
-	if (cfs_time_after(cfs_time_current(),
-			   cfs_time_add(lock->l_last_used, ns->ns_max_age)))
+	 * is unused for ns_max_age time.
+	 */
+	if (ktime_after(ktime_get(),
+			ktime_add(lock->l_last_used, ns->ns_max_age)))
 		return LDLM_POLICY_CANCEL_LOCK;
 
 	slv = ldlm_pool_get_slv(pl);
 	lvf = ldlm_pool_get_lvf(pl);
-	la = cfs_duration_sec(cfs_time_sub(cur,
-			      lock->l_last_used));
+	la = ktime_to_ns(ktime_sub(cur, lock->l_last_used)) / NSEC_PER_SEC;
 	lv = lvf * la * unused;
 
 	/* Inform pool about current CLV to see it via proc. */
@@ -1594,11 +1594,25 @@ static enum ldlm_policy_res ldlm_cancel_aged_policy(struct ldlm_namespace *ns,
 						    int count)
 {
 	if ((added >= count) &&
-	    cfs_time_before(cfs_time_current(),
-			    cfs_time_add(lock->l_last_used, ns->ns_max_age)))
+	    ktime_before(ktime_get(),
+			 ktime_add(lock->l_last_used, ns->ns_max_age)))
 		return LDLM_POLICY_KEEP_LOCK;
 
 	return LDLM_POLICY_CANCEL_LOCK;
+}
+
+static enum ldlm_policy_res
+ldlm_cancel_aged_no_wait_policy(struct ldlm_namespace *ns,
+				struct ldlm_lock *lock,
+				int unused, int added, int count)
+{
+	enum ldlm_policy_res result;
+
+	result = ldlm_cancel_aged_policy(ns, lock, unused, added, count);
+	if (result == LDLM_POLICY_KEEP_LOCK)
+		return result;
+
+	return ldlm_cancel_no_wait_policy(ns, lock, unused, added, count);
 }
 
 /**
@@ -1629,23 +1643,28 @@ typedef enum ldlm_policy_res
 static ldlm_cancel_lru_policy_t
 ldlm_cancel_lru_policy(struct ldlm_namespace *ns, enum ldlm_lru_flags lru_flags)
 {
-	if (lru_flags & LDLM_LRU_FLAG_NO_WAIT)
-		return ldlm_cancel_no_wait_policy;
-
 	if (ns_connect_lru_resize(ns)) {
 		if (lru_flags & LDLM_LRU_FLAG_SHRINK)
 			/* We kill passed number of old locks. */
 			return ldlm_cancel_passed_policy;
-		if (lru_flags & LDLM_LRU_FLAG_LRUR)
-			return ldlm_cancel_lrur_policy;
+		if (lru_flags & LDLM_LRU_FLAG_LRUR) {
+			if (lru_flags & LDLM_LRU_FLAG_NO_WAIT)
+				return ldlm_cancel_lrur_no_wait_policy;
+			else
+				return ldlm_cancel_lrur_policy;
+		}
 		if (lru_flags & LDLM_LRU_FLAG_PASSED)
 			return ldlm_cancel_passed_policy;
-		else if (lru_flags & LDLM_LRU_FLAG_LRUR_NO_WAIT)
-			return ldlm_cancel_lrur_no_wait_policy;
 	} else {
-		if (lru_flags & LDLM_LRU_FLAG_AGED)
-			return ldlm_cancel_aged_policy;
+		if (lru_flags & LDLM_LRU_FLAG_AGED) {
+			if (lru_flags & LDLM_LRU_FLAG_NO_WAIT)
+				return ldlm_cancel_aged_no_wait_policy;
+			else
+				return ldlm_cancel_aged_policy;
+		}
 	}
+	if (lru_flags & LDLM_LRU_FLAG_NO_WAIT)
+		return ldlm_cancel_no_wait_policy;
 
 	return ldlm_cancel_default_policy;
 }
@@ -1682,6 +1701,10 @@ ldlm_cancel_lru_policy(struct ldlm_namespace *ns, enum ldlm_lru_flags lru_flags)
  *				(typically before replaying locks) w/o
  *				sending any RPCs or waiting for any
  *				outstanding RPC to complete.
+ *
+ * flags & LDLM_CANCEL_CLEANUP - when cancelling read locks, do not check for
+ * 				other read locks covering the same pages, just
+ * 				discard those pages.
  */
 static int ldlm_prepare_lru_list(struct ldlm_namespace *ns,
 				 struct list_head *cancels, int count, int max,
@@ -1690,8 +1713,7 @@ static int ldlm_prepare_lru_list(struct ldlm_namespace *ns,
 	ldlm_cancel_lru_policy_t pf;
 	struct ldlm_lock *lock, *next;
 	int added = 0, unused, remained;
-	int no_wait = lru_flags & (LDLM_LRU_FLAG_NO_WAIT |
-				   LDLM_LRU_FLAG_LRUR_NO_WAIT);
+	int no_wait = lru_flags & LDLM_LRU_FLAG_NO_WAIT;
 	ENTRY;
 
 	spin_lock(&ns->ns_lock);
@@ -1706,7 +1728,7 @@ static int ldlm_prepare_lru_list(struct ldlm_namespace *ns,
 
 	while (!list_empty(&ns->ns_unused_list)) {
 		enum ldlm_policy_res result;
-		cfs_time_t last_use = 0;
+		ktime_t last_use = ktime_set(0, 0);
 
 		/* all unused locks */
 		if (remained-- <= 0)
@@ -1726,13 +1748,11 @@ static int ldlm_prepare_lru_list(struct ldlm_namespace *ns,
 				continue;
 
 			last_use = lock->l_last_used;
-			if (last_use == cfs_time_current())
-				continue;
 
 			/* Somebody is already doing CANCEL. No need for this
 			 * lock in LRU, do not traverse it again. */
 			if (!ldlm_is_canceling(lock))
-                                break;
+				break;
 
 			ldlm_lock_remove_from_lru_nolock(lock);
 		}
@@ -1804,6 +1824,11 @@ static int ldlm_prepare_lru_list(struct ldlm_namespace *ns,
 		 * already zero here, ldlm_lock_decref() won't see
 		 * this flag and call l_blocking_ast */
 		lock->l_flags |= LDLM_FL_CBPENDING | LDLM_FL_CANCELING;
+
+		if ((lru_flags & LDLM_LRU_FLAG_CLEANUP) &&
+		    lock->l_resource->lr_type == LDLM_EXTENT &&
+		    lock->l_granted_mode == LCK_PR)
+			ldlm_set_discard_data(lock);
 
 		/* We can't re-add to l_lru as it confuses the
 		 * refcounting in ldlm_lock_remove_from_lru() if an AST

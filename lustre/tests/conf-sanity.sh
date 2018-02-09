@@ -78,8 +78,8 @@ if [[ "$LDISKFS_MKFS_OPTS" != *lazy_itable_init* ]]; then
 fi
 
 [ $(facet_fstype $SINGLEMDS) = "zfs" ] &&
-# bug number for skipped test:        LU-9826
-	ALWAYS_EXCEPT="$ALWAYS_EXCEPT 32b"
+# bug number for skipped test:
+	ALWAYS_EXCEPT="$ALWAYS_EXCEPT"
 
 init_logging
 
@@ -255,7 +255,9 @@ cleanup_nocli() {
 }
 
 cleanup() {
-	umount_client $MOUNT || return 200
+	local force=""
+	[ "x$1" != "x" ] && force='-f'
+	umount_client $MOUNT $force|| return 200
 	cleanup_nocli || return $?
 }
 
@@ -960,9 +962,10 @@ test_24a() {
 	local fs2ostdev=$(ostdevname 1_2)
 	local fs2mdsvdev=$(mdsvdevname 1_2)
 	local fs2ostvdev=$(ostvdevname 1_2)
+	local cl_user
 
-	# test 8-char fsname as well
-	local FSNAME2=test1234
+	# LU-9733 test fsname started with numbers as well
+	local FSNAME2=969362ae
 
 	add fs2mds $(mkfs_opts mds1 ${fs2mdsdev} ) --nomgs --mgsnode=$MGSNID \
 		--fsname=${FSNAME2} --reformat $fs2mdsdev $fs2mdsvdev || exit 10
@@ -975,6 +978,15 @@ test_24a() {
 	start fs2ost $fs2ostdev $OST_MOUNT_OPTS
 	mkdir -p $MOUNT2 || error "mkdir $MOUNT2 failed"
 	$MOUNT_CMD $MGSNID:/${FSNAME2} $MOUNT2 || error "$MOUNT_CMD failed"
+
+	# LU-9733 test fsname started with numbers
+	cl_user=$(do_facet $SINGLEMDS lctl --device $FSNAME2-MDT0000 \
+			changelog_register -n) ||
+				error "register changelog failed"
+
+	do_facet $SINGLEMDS lctl --device $FSNAME2-MDT0000 \
+			changelog_deregister $cl_user ||
+				error "deregister changelog failed"
 	# 1 still works
 	check_mount || error "check_mount failed"
 	# files written on 1 should not show up on 2
@@ -2880,7 +2892,7 @@ test_41b() {
 	echo "blah blah" > $MOUNT/$tfile
 	cat $MOUNT/$tfile || error "cat $MOUNT/$tfile failed"
 
-	umount_client $MOUNT || error "umount_client $MOUNT failed"
+	umount_client $MOUNT -f || error "umount_client $MOUNT failed"
 	stop_ost || error "Unable to stop OST1"
 	stop_mds || error "Unable to stop MDS"
 	stop_mds || error "Unable to stop MDS on second try"
@@ -5012,6 +5024,7 @@ test_70e() {
 	soc=$(do_facet mds1 "$LCTL get_param -n \
 		mdt.*MDT0000.sync_lock_cancel")
 	[ $soc == "never" ] || error "SoC enabled on single MDS"
+	umount_client $MOUNT -f > /dev/null
 
 	cleanup || error "cleanup failed with $?"
 }
@@ -7421,7 +7434,7 @@ error_and_umount() {
 }
 
 test_105() {
-	cleanup
+	cleanup -f
 	reformat
 	setup
 	mkdir -p $TMP/$tdir

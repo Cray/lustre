@@ -3971,7 +3971,7 @@ format_ost() {
 }
 
 formatall() {
-	stopall
+	stopall -f
 	# Set hostid for ZFS/SPL zpool import protection
 	# (Assumes MDS version is also OSS version)
 	if [ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.8.54) ];
@@ -6247,16 +6247,17 @@ calc_osc_kbytes () {
 save_lustre_params() {
 	local facets=$1
 	local facet
-	local nodes
-	local node
+	local facet_svc
 
 	for facet in ${facets//,/ }; do
-		node=$(facet_active_host $facet)
-		[[ *\ $node\ * = " $nodes " ]] && continue
-		nodes="$nodes $node"
-
-		do_node $node "$LCTL get_param $2 |
-			while read s; do echo $facet \\\$s; done"
+		facet_svc=$(facet_svc $facet)
+		do_facet $facet \
+			"params=\\\$($LCTL get_param $2);
+			 [[ -z \\\"$facet_svc\\\" ]] && param= ||
+			 param=\\\$(grep $facet_svc <<< \\\"\\\$params\\\");
+			 [[ -z \\\$param ]] && param=\\\"\\\$params\\\";
+			 while read s; do echo $facet \\\$s;
+			 done <<< \\\"\\\$param\\\""
 	done
 }
 
