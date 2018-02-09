@@ -1732,7 +1732,7 @@ check_llog_changelog_user_rec(void)
 	CHECK_STRUCT(llog_changelog_user_rec);
 	CHECK_MEMBER(llog_changelog_user_rec, cur_hdr);
 	CHECK_MEMBER(llog_changelog_user_rec, cur_id);
-	CHECK_MEMBER(llog_changelog_user_rec, cur_padding);
+	CHECK_MEMBER(llog_changelog_user_rec, cur_time);
 	CHECK_MEMBER(llog_changelog_user_rec, cur_endrec);
 	CHECK_MEMBER(llog_changelog_user_rec, cur_tail);
 }
@@ -1989,7 +1989,9 @@ check_posix_acl_xattr_header(void)
 	printf("#ifdef CONFIG_FS_POSIX_ACL\n");
 	CHECK_STRUCT_TYPEDEF(posix_acl_xattr_header);
 	CHECK_MEMBER_TYPEDEF(posix_acl_xattr_header, a_version);
+	printf("#ifndef HAVE_STRUCT_POSIX_ACL_XATTR\n");
 	CHECK_MEMBER_TYPEDEF(posix_acl_xattr_header, a_entries);
+	printf("#endif /* HAVE_STRUCT_POSIX_ACL_XATTR */\n");
 	printf("#endif /* CONFIG_FS_POSIX_ACL */\n");
 }
 

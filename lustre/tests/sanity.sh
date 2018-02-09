@@ -6895,13 +6895,15 @@ test_101g() {
 	local list=$(comma_list $(osts_nodes))
 	local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
 	local brw_size="obdfilter.*.brw_size"
+	local ostver=$(lustre_version_code ost1)
 
 	$LFS setstripe -i 0 -c 1 $DIR/$tfile
 
 	local orig_mb=$(do_facet ost1 $LCTL get_param -n $brw_size | head -n 1)
-	if [ $(lustre_version_code ost1) -ge $(version_code 2.8.52) ]; then
-		[ $(lustre_version_code ost1) -ge $(version_code 2.9.52) ] &&
-			suffix="M"
+	if [ $ostver -ge $(version_code 2.8.52) ] ||
+	   [ $ostver -ge $(version_code 2.7.17) -a \
+	     $ostver -lt $(version_code 2.7.50) ]; then
+		[ $ostver -ge $(version_code 2.9.52) ] && suffix="M"
 		if [[ $orig_mb -lt 16 ]]; then
 			save_lustre_params $osts "$brw_size" > $p
 			do_nodes $list $LCTL set_param -n $brw_size=16$suffix ||
@@ -9225,7 +9227,7 @@ test_129() {
 			check_mds_dmesg '"has reached"' ||
 				error_exit "reached message should be output"
 
-			[ $has_warning -eq 0 ] &&
+			[ $has_warning = "false" ] &&
 				error_exit "warning message should be output"
 
 			dirsize=$(stat -c%s "$DIR/$tdir")
@@ -11273,6 +11275,186 @@ test_160e() {
 	fi
 }
 run_test 160e "changelog negative testing"
+
+cleanup_160f() {
+	trap 0
+	do_facet $SINGLEMDS $LCTL set_param fail_loc=0 fail_val=0
+	echo "Deregistering changelog client $CL_USER"
+	do_facet $SINGLEMDS $LCTL --device $MDT0 changelog_deregister $CL_USER
+	echo "Deregistering changelog client $CL_USER2"
+	do_facet $SINGLEMDS $LCTL --device $MDT0 changelog_deregister $CL_USER2
+	restore_lustre_params < $save_params
+	rm -f $save_params
+}
+
+test_160f() {
+	# do_facet $SINGLEMDS $LCTL set_param mdd.$MDT0.changelog_gc=1
+	# should be set by default
+
+	local CL_USERS="mdd.$MDT0.changelog_users"
+	local GET_CL_USERS="do_facet $SINGLEMDS $LCTL get_param -n $CL_USERS"
+	local save_params="$TMP/sanity-$TESTNAME.parameters"
+
+	save_lustre_params $SINGLEMDS \
+		"mdd.$MDT0.changelog_max_idle_time" > $save_params
+	save_lustre_params $SINGLEMDS \
+		"mdd.$MDT0.changelog_min_gc_interval" >> $save_params
+	save_lustre_params $SINGLEMDS \
+		"mdd.$MDT0.changelog_min_free_cat_entries" >> $save_params
+
+	trap cleanup_160f EXIT
+
+	# Create a user
+	CL_USER=$(do_facet $SINGLEMDS $LCTL --device $MDT0 \
+		changelog_register -n)
+	echo "Registered as changelog user $CL_USER"
+	CL_USER2=$(do_facet $SINGLEMDS $LCTL --device $MDT0 \
+		changelog_register -n)
+	echo "Registered as changelog user $CL_USER2"
+	$GET_CL_USERS | grep -q $CL_USER ||
+		error "User $CL_USER not found in changelog_users"
+	$GET_CL_USERS | grep -q $CL_USER2 ||
+		error "User $CL_USER2 not found in changelog_users"
+
+	# generate some changelogs to accumulate
+	mkdir -p $DIR/$tdir || error "mkdir $tdir failed"
+	touch $DIR/$tdir/$tfile || error "touch $DIR/$tdir/$tfile failed"
+	touch $DIR/$tdir/${tfile}2 || error "touch $DIR/$tdir/${tfile}2 failed"
+	rm -f $DIR/$tdir/$tfile || error "rm -f $tfile failed"
+
+	# check changelogs have been generated
+	nbcl=$($LFS changelog $MDT0 | wc -l)
+	[[ $nbcl -eq 0 ]] && error "no changelogs found"
+
+	do_facet $SINGLEMDS $LCTL set_param \
+		mdd.$MDT0.changelog_max_idle_time=10
+	do_facet $SINGLEMDS $LCTL set_param \
+		mdd.$MDT0.changelog_min_gc_interval=2
+	do_facet $SINGLEMDS $LCTL set_param \
+		mdd.$MDT0.changelog_min_free_cat_entries=3
+
+	# simulate changelog catalog almost full
+#define OBD_FAIL_CAT_FREE_RECORDS                  0x1313
+	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x1313
+	do_facet $SINGLEMDS $LCTL set_param fail_val=3
+
+	sleep 6
+	USER_REC1=$($GET_CL_USERS | awk "\$1 == \"$CL_USER\" {print \$2}")
+	$LFS changelog_clear $MDT0 $CL_USER $(($USER_REC1 + 2))
+	USER_REC2=$($GET_CL_USERS | awk "\$1 == \"$CL_USER\" {print \$2}")
+	echo "verifying user clear: $(( $USER_REC1 + 2 )) == $USER_REC2"
+	[ $USER_REC2 == $(($USER_REC1 + 2)) ] ||
+		error "user index expected $(($USER_REC1 + 2)) is $USER_REC2"
+	sleep 5
+
+	# generate one more changelog to trigger fail_loc
+	rm -rf $DIR/$tdir || error "rm -rf $tdir failed"
+
+	# ensure gc thread is done
+	wait_update_facet $SINGLEMDS \
+			  "ps -e -o comm= | grep chlg_gc_thread" "" 20
+
+	# check user still registered
+	$GET_CL_USERS | grep -q $CL_USER ||
+		error "User $CL_USER not found in changelog_users"
+	# check user2 unregistered
+	$GET_CL_USERS | grep -q $CL_USER2 &&
+		error "User $CL_USER2 still found in changelog_users"
+
+	# check changelogs are present and starting at $USER_REC2 + 1
+	FIRST_REC=$($LFS changelog $MDT0 | head -n1 | awk '{print $1}')
+	echo "verifying min purge: $(( $USER_REC2 + 1 )) == $FIRST_REC"
+	[ $FIRST_REC == $(($USER_REC2 + 1)) ] ||
+		error "first index should be $(($USER_REC2 + 1)) is $FIRST_REC"
+
+	cleanup_160f
+}
+run_test 160f "changelog garbage collect (timestamped users)"
+
+test_160g() {
+	# do_facet $SINGLEMDS $LCTL set_param mdd.$MDT0.changelog_gc=1
+	# should be set by default
+
+	local CL_USERS="mdd.$MDT0.changelog_users"
+	local GET_CL_USERS="do_facet $SINGLEMDS $LCTL get_param -n $CL_USERS"
+	local save_params="$TMP/sanity-$TESTNAME.parameters"
+
+	save_lustre_params $SINGLEMDS \
+		"mdd.$MDT0.changelog_max_idle_indexes" > $save_params
+	save_lustre_params $SINGLEMDS \
+		"mdd.$MDT0.changelog_min_gc_interval" >> $save_params
+	save_lustre_params $SINGLEMDS \
+		"mdd.$MDT0.changelog_min_free_cat_entries" >> $save_params
+
+	trap cleanup_160f EXIT
+
+#define OBD_FAIL_TIME_IN_CHLOG_USER                 0x1314
+	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x1314
+
+	# Create a user
+	CL_USER=$(do_facet $SINGLEMDS $LCTL --device $MDT0 \
+		changelog_register -n)
+	echo "Registered as changelog user $CL_USER"
+	CL_USER2=$(do_facet $SINGLEMDS $LCTL --device $MDT0 \
+		changelog_register -n)
+	echo "Registered as changelog user $CL_USER2"
+	$GET_CL_USERS | grep -q $CL_USER ||
+		error "User $CL_USER not found in changelog_users"
+	$GET_CL_USERS | grep -q $CL_USER2 ||
+		error "User $CL_USER2 not found in changelog_users"
+
+	# generate some changelogs to accumulate
+	mkdir -p $DIR/$tdir || error "mkdir $tdir failed"
+	touch $DIR/$tdir/$tfile || error "touch $DIR/$tdir/$tfile failed"
+	touch $DIR/$tdir/${tfile}2 || error "touch $DIR/$tdir/${tfile}2 failed"
+	rm -f $DIR/$tdir/$tfile || error "rm -f $tfile failed"
+
+	# check changelogs have been generated
+	nbcl=$($LFS changelog $MDT0 | wc -l)
+	[[ $nbcl -eq 0 ]] && error "no changelogs found"
+
+	do_facet $SINGLEMDS $LCTL set_param \
+		mdd.$MDT0.changelog_max_idle_indexes=$((nbcl - 1))
+	do_facet $SINGLEMDS $LCTL set_param \
+		mdd.$MDT0.changelog_min_gc_interval=2
+	do_facet $SINGLEMDS $LCTL set_param \
+		mdd.$MDT0.changelog_min_free_cat_entries=3
+
+	# simulate changelog catalog almost full
+#define OBD_FAIL_CAT_FREE_RECORDS                  0x1313
+	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x1313
+	do_facet $SINGLEMDS $LCTL set_param fail_val=3
+
+	USER_REC1=$($GET_CL_USERS | awk "\$1 == \"$CL_USER\" {print \$2}")
+	$LFS changelog_clear $MDT0 $CL_USER $(($USER_REC1 + 3))
+	USER_REC2=$($GET_CL_USERS | awk "\$1 == \"$CL_USER\" {print \$2}")
+	echo "verifying user clear: $(( $USER_REC1 + 3 )) == $USER_REC2"
+	[ $USER_REC2 == $(($USER_REC1 + 3)) ] ||
+		error "user index expected $(($USER_REC1 + 3)) is $USER_REC2"
+
+	# generate one more changelog to trigger fail_loc
+	rm -rf $DIR/$tdir || error "rm -rf $tdir failed"
+
+	# ensure gc thread is done
+	wait_update_facet $SINGLEMDS \
+			  "ps -e -o comm= | grep chlg_gc_thread" "" 20
+
+	# check user still registered
+	$GET_CL_USERS | grep -q $CL_USER ||
+		error "User $CL_USER not found in changelog_users"
+	# check user2 unregistered
+	$GET_CL_USERS | grep -q $CL_USER2 &&
+		error "User $CL_USER2 still found in changelog_users"
+
+	# check changelogs are present and starting at $USER_REC2 + 1
+	FIRST_REC=$($LFS changelog $MDT0 | head -n1 | awk '{print $1}')
+	echo "verifying min purge: $(( $USER_REC2 + 1 )) == $FIRST_REC"
+	[ $FIRST_REC == $(($USER_REC2 + 1)) ] ||
+		error "first index should be $(($USER_REC2 + 1)) is $FIRST_REC"
+
+	cleanup_160f
+}
+run_test 160g "changelog garbage collect (old users)"
 
 test_161a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
@@ -14294,12 +14476,13 @@ test_248() {
 	# small read with fast read enabled
 	$LCTL set_param -n llite.*.fast_read=1
 	local t_fast=$(dd if=$DIR/$tfile of=/dev/null bs=4k 2>&1 |
-		awk '/copied/ { print $6 }')
-
+		egrep -o '([[:digit:]\.\,e-]+) s' | cut -d's' -f1 |
+		sed -e 's/,/./' -e 's/[eE]+*/\*10\^/')
 	# small read with fast read disabled
 	$LCTL set_param -n llite.*.fast_read=0
 	local t_slow=$(dd if=$DIR/$tfile of=/dev/null bs=4k 2>&1 |
-		awk '/copied/ { print $6 }')
+		egrep -o '([[:digit:]\.\,e-]+) s' | cut -d's' -f1 |
+		sed -e 's/,/./' -e 's/[eE]+*/\*10\^/')
 
 	# verify that fast read is 4 times faster for cache read
 	[ $(bc <<< "4 * $t_fast < $t_slow") -eq 1 ] ||
@@ -14312,12 +14495,14 @@ test_248() {
 	# 1k non-cache read
 	cancel_lru_locks osc
 	local t_1k=$(dd if=$DIR/$tfile of=/dev/null bs=1k 2>&1 |
-		awk '/copied/ { print $6 }')
+		egrep -o '([[:digit:]\.\,e-]+) s' | cut -d's' -f1 |
+		sed -e 's/,/./' -e 's/[eE]+*/\*10\^/')
 
 	# 1M non-cache read
 	cancel_lru_locks osc
 	local t_1m=$(dd if=$DIR/$tfile of=/dev/null bs=1k 2>&1 |
-		awk '/copied/ { print $6 }')
+		egrep -o '([[:digit:]\.\,e-]+) s' | cut -d's' -f1 |
+		sed -e 's/,/./' -e 's/[eE]+*/\*10\^/')
 
 	# verify that big IO is not 4 times faster than small IO
 	[ $(bc <<< "4 * $t_1k >= $t_1m") -eq 1 ] ||
@@ -15985,6 +16170,24 @@ test_313() {
 	rm -f $file
 }
 run_test 313 "io should fail after last_rcvd update fail"
+
+test_315() { # LU-618
+	local file=$DIR/$tfile
+	rm -f $file
+
+	$MULTIOP $file oO_CREAT:O_DIRECT:O_RDWR:w4096000c
+	$MULTIOP $file oO_RDONLY:r4096000_c &
+	PID=$!
+
+	sleep 2
+
+	local rbytes=$(awk '/read_bytes/ { print $2 }' /proc/$PID/io)
+	kill -USR1 $PID
+
+	[ $rbytes -gt 4000000 ] || error "read is not accounted ($rbytes)"
+	rm -f $file
+}
+run_test 315 "read should be accounted"
 
 test_fake_rw() {
 	local read_write=$1

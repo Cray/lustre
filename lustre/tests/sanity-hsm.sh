@@ -286,14 +286,13 @@ copytool_setup() {
 	[[ -z "$TESTNAME" ]] || prefix=$prefix.$TESTNAME
 	local copytool_log=$prefix.copytool${arc_id}_log.$agent.log
 
+	stack_trap cleanup EXIT
 	do_facet $facet "$cmd < /dev/null > $copytool_log 2>&1"
 	if [[ $? !=  0 ]]; then
 		[[ $HSMTOOL_NOERROR == true ]] ||
 			error "start copytool $facet on $agent failed"
 		echo "start copytool $facet on $agent failed"
 	fi
-
-	trap cleanup EXIT
 }
 
 get_copytool_event_log() {
@@ -608,8 +607,7 @@ get_hsm_archive_id() {
 	st=$($LFS hsm_state $f)
 	[[ $? == 0 ]] || error "$LFS hsm_state $f failed"
 
-	local ar=$(echo $st | grep "archive_id" | cut -f5 -d" " |
-		   cut -f2 -d:)
+	local ar=$(echo $st | grep -oP '(?<=archive_id:).*')
 	echo $ar
 }
 
@@ -926,7 +924,7 @@ test_1b() {
 	local f=$DIR/$tdir/$tfile
 	rm -f $f
 
-	dd if=/dev/random of=$f bs=1M count=1 conv=sync ||
+	dd if=/dev/urandom of=$f bs=1M count=1 conv=sync ||
 		error "failed to create file"
 	local fid=$(path2fid $f)
 
@@ -950,6 +948,50 @@ test_1b() {
 	copytool_cleanup
 }
 run_test 1b "Archive, Release & Restore composite file"
+
+test_1c() {
+	mkdir -p $DIR/$tdir
+	chmod 777 $DIR/$tdir
+
+	local f=$DIR/$tdir/$tfile
+	$RUNAS touch $f
+
+	# Test whether we can set the maximum archive number.
+	local LOCAL_HSM_ARCHIVE_NUMBER=32
+	$LFS hsm_set --exists --archive-id $LOCAL_HSM_ARCHIVE_NUMBER $f ||
+		error "root could not change hsm flags"
+	check_hsm_flags_user $f "0x00000001"
+	echo "verifying archive number is $LOCAL_HSM_ARCHIVE_NUMBER"
+	local st=$(get_hsm_archive_id $f)
+	[[ $st == $LOCAL_HSM_ARCHIVE_NUMBER ]] ||
+		error "wrong archive number, $st != $LOCAL_HSM_ARCHIVE_NUMBER"
+
+	# Test whether setting archive number 0 results in no change.
+	$LFS hsm_set --exists --archive-id 0 $f ||
+		error "root could not change hsm flags"
+	check_hsm_flags_user $f "0x00000001"
+	echo "verifying archive number is still $LOCAL_HSM_ARCHIVE_NUMBER"
+	st=$(get_hsm_archive_id $f)
+	[[ $st == $LOCAL_HSM_ARCHIVE_NUMBER ]] ||
+		error "wrong archive number, $st != $LOCAL_HSM_ARCHIVE_NUMBER"
+
+	# Test whether setting archive number > 32 results in error.
+	$LFS hsm_set --exists --archive-id 33 $f &&
+		error "archive number is larger than 32"
+	check_hsm_flags_user $f "0x00000001"
+
+	# Test whether setting archive number 16 and archived flag.
+	LOCAL_HSM_ARCHIVE_NUMBER=16
+	$LFS hsm_set --exists --archived \
+	     --archive-id $LOCAL_HSM_ARCHIVE_NUMBER $f ||
+	    error "root could not change hsm flags"
+	check_hsm_flags_user $f "0x00000009"
+	echo "verifying archive number is $LOCAL_HSM_ARCHIVE_NUMBER"
+	st=$(get_hsm_archive_id $f)
+	[[ $st == $LOCAL_HSM_ARCHIVE_NUMBER ]] ||
+		error "wrong archive number, $st != $LOCAL_HSM_ARCHIVE_NUMBER"
+}
+run_test 1c "Check setting archive-id in lfs hsm_set"
 
 test_2() {
 	mkdir -p $DIR/$tdir
@@ -2174,7 +2216,6 @@ test_24c() {
 run_test 24c "check that user,group,other request masks work"
 
 cleanup_test_24d() {
-	trap 0
 	mount -o remount,rw $MOUNT2
 	zconf_umount $(facet_host $SINGLEAGT) "$MOUNT3"
 }
@@ -2201,7 +2242,6 @@ test_24d() {
 	mount -o remount,ro $MOUNT2
 
 	do_nodes $(comma_list $(nodes_list)) $LCTL clear
-	start_full_debug_logging
 
 	fid2=$(path2fid $file2)
 	[ "$fid1" == "$fid2" ] ||
@@ -2214,8 +2254,6 @@ test_24d() {
 	$LFS hsm_archive $file1 || error "Fail to archive $file1"
 	wait_request_state $fid1 ARCHIVE SUCCEED
 
-	stop_full_debug_logging
-
 	$LFS hsm_release $file1
 	$LFS hsm_restore $file2
 	wait_request_state $fid1 RESTORE SUCCEED
@@ -2226,8 +2264,7 @@ test_24d() {
 	$LFS hsm_release $file2 &&
 		error "release should fail on read-only mount"
 
-	copytool_cleanup
-	cleanup_test_24d
+	return 0
 }
 run_test 24d "check that read-only mounts are respected"
 
