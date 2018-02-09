@@ -51,7 +51,7 @@
 #include <linux/aio.h>
 
 #include "vvp_internal.h"
-#include "range_lock.h"
+#include <range_lock.h>
 
 #ifndef FMODE_EXEC
 #define FMODE_EXEC 0

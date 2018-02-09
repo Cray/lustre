@@ -96,4 +96,5 @@ EXTRA_DIST = \
 	obd_class.h \
 	obd.h \
 	obd_support.h \
-	obd_target.h
+	obd_target.h \
+	range_lock.h

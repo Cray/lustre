@@ -43,7 +43,7 @@
 #include <md_object.h>
 #include <lustre_fid.h>
 #include <lustre_capa.h>
-#include "../llite/range_lock.h"
+#include <range_lock.h>
 
 #define OFD_INIT_OBJID	0
 #define OFD_PRECREATE_BATCH_DEFAULT (OBJ_SUBDIR_COUNT * 4)
