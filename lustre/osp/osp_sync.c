@@ -166,16 +166,36 @@ static inline int osp_sync_inflight_conflict(struct osp_device *d,
 	list_for_each_entry(jra, &d->opd_syn_inflight_list, jra_inflight_link) {
 		struct ptlrpc_request	*req;
 		struct ost_body		*body;
+		struct ost_id		 unlink64_ostid;
+		struct ost_id		 *cur_ostid;
 
 		LASSERT(jra->jra_magic == OSP_JOB_MAGIC);
 
 		req = container_of((void *)jra, struct ptlrpc_request,
 				   rq_async_args);
-		body = req_capsule_client_get(&req->rq_pill,
-					      &RMF_OST_BODY);
-		LASSERT(body);
+		if (d->opd_connect_mdt) {
+			struct object_update_request *ureq;
+			struct object_update *update;
+			ureq = req_capsule_client_get(&req->rq_pill,
+						      &RMF_OUT_UPDATE);
+			LASSERT(ureq != NULL &&
+				ureq->ourq_magic == UPDATE_REQUEST_MAGIC);
 
-		if (memcmp(&ostid, &body->oa.o_oi, sizeof(ostid)) == 0) {
+			/* 1st/2nd is for decref . and .., 3rd one is for
+			 * destroy, where the log cookie is stored.
+			 * See osp_prep_unlink_update_req */
+			update = object_update_request_get(ureq, 2, NULL);
+			LASSERT(update != NULL);
+			cur_ostid = &unlink64_ostid;
+			fid_to_ostid(&update->ou_fid, cur_ostid);
+		} else {
+			body = req_capsule_client_get(&req->rq_pill,
+						      &RMF_OST_BODY);
+			LASSERT(body);
+			cur_ostid = &body->oa.o_oi;
+		}
+
+		if (memcmp(&ostid, cur_ostid, sizeof(ostid)) == 0) {
 			conflict = 1;
 			break;
 		}
