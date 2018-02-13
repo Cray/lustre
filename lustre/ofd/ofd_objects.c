@@ -254,7 +254,6 @@ int ofd_precreate_objects(const struct lu_env *env, struct ofd_device *ofd,
 			break;
 		}
 
-		ofd_write_lock(env, fo);
 		batch[i] = fo;
 	}
 	info->fti_buf.lb_buf = &tmp;
@@ -332,6 +331,8 @@ int ofd_precreate_objects(const struct lu_env *env, struct ofd_device *ofd,
 		fo = batch[i];
 		LASSERT(fo);
 
+		ofd_write_lock(env, fo);
+
 		/* Only the new created objects need to be recorded. */
 		if (ofd->ofd_osd->dd_record_fid_accessed) {
 			struct lfsck_req_local *lrl = &ofd_info(env)->fti_lrl;
@@ -348,6 +349,7 @@ int ofd_precreate_objects(const struct lu_env *env, struct ofd_device *ofd,
 
 			rc = dt_create(env, next, &info->fti_attr, NULL,
 				       &info->fti_dof, th);
+			ofd_write_unlock(env, fo);
 			if (rc < 0) {
 				if (i == 0)
 					GOTO(trans_stop, rc);
@@ -356,7 +358,10 @@ int ofd_precreate_objects(const struct lu_env *env, struct ofd_device *ofd,
 				break;
 			}
 			LASSERT(ofd_object_exists(fo));
+		} else {
+			ofd_write_unlock(env, fo);
 		}
+
 		ofd_seq_last_oid_set(oseq, id + i);
 	}
 
@@ -389,10 +394,9 @@ trans_stop:
 out:
 	for (i = 0; i < nr_saved; i++) {
 		fo = batch[i];
-		if (fo) {
-			ofd_write_unlock(env, fo);
-			ofd_object_put(env, fo);
-		}
+		if (!fo)
+			continue;
+		ofd_object_put(env, fo);
 	}
 	OBD_FREE(batch, nr_saved * sizeof(struct ofd_object *));
 
@@ -593,9 +597,8 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
 
 	ENTRY;
 
-	ofd_write_lock(env, fo);
 	if (!ofd_object_exists(fo))
-		GOTO(unlock, rc = -ENOENT);
+		GOTO(out, rc = -ENOENT);
 
 	if (la->la_valid & (LA_ATIME | LA_MTIME | LA_CTIME))
 		tgt_fmd_update(info->fti_exp, &fo->ofo_header.loh_fid,
@@ -604,50 +607,50 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
 	/* VBR: version recovery check */
 	rc = ofd_version_get_check(info, fo);
 	if (rc)
-		GOTO(unlock, rc);
+		GOTO(out, rc);
 
 	rc = ofd_attr_handle_id(env, fo, la, 1 /* is_setattr */);
 	if (rc != 0)
+		GOTO(out, rc);
+
+	th = ofd_trans_create(env, ofd);
+	if (IS_ERR(th))
+		GOTO(out, rc = PTR_ERR(th));
+
+	rc = dt_declare_attr_set(env, ofd_object_child(fo), la, th);
+	if (rc)
+		GOTO(stop, rc);
+
+	info->fti_buf.lb_buf = ff;
+	info->fti_buf.lb_len = sizeof(*ff);
+	rc = dt_declare_xattr_set(env, ofd_object_child(fo), &info->fti_buf,
+				  XATTR_NAME_FID, 0, th);
+	if (rc)
+		GOTO(stop, rc);
+
+	rc = ofd_trans_start(env, ofd, la->la_valid & LA_SIZE ? fo : NULL, th);
+	if (rc)
+		GOTO(stop, rc);
+
+	ofd_write_lock(env, fo);
+	if (!ofd_object_exists(fo))
+		GOTO(unlock, rc = -ENOENT);
+
+	rc = dt_attr_set(env, ofd_object_child(fo), la, th);
+	if (rc)
 		GOTO(unlock, rc);
 
 	fl = ofd_object_ff_update(env, fo, oa, ff);
 	if (fl < 0)
 		GOTO(unlock, rc = fl);
 
-	th = ofd_trans_create(env, ofd);
-	if (IS_ERR(th))
-		GOTO(unlock, rc = PTR_ERR(th));
-
-	rc = dt_declare_attr_set(env, ofd_object_child(fo), la, th);
-	if (rc)
-		GOTO(stop, rc);
-
 	if (fl) {
 		if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_UNMATCHED_PAIR1))
 			ff->ff_parent.f_oid = cpu_to_le32(1UL << 31);
 		else if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_UNMATCHED_PAIR2))
 			le32_add_cpu(&ff->ff_parent.f_oid, -1);
-
-		info->fti_buf.lb_buf = ff;
-		info->fti_buf.lb_len = sizeof(*ff);
-		rc = dt_declare_xattr_set(env, ofd_object_child(fo),
-					  &info->fti_buf, XATTR_NAME_FID, fl,
-					  th);
-		if (rc)
-			GOTO(stop, rc);
-	}
-
-	rc = ofd_trans_start(env, ofd, la->la_valid & LA_SIZE ? fo : NULL, th);
-	if (rc)
-		GOTO(stop, rc);
-
-	rc = dt_attr_set(env, ofd_object_child(fo), la, th);
-	if (rc)
-		GOTO(stop, rc);
-
-	if (fl) {
-		if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_NOPFID))
-			GOTO(stop, rc);
+		else if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_NOPFID))
+			GOTO(unlock, rc);
 
 		info->fti_buf.lb_buf = ff;
 		info->fti_buf.lb_len = sizeof(*ff);
@@ -657,8 +660,10 @@ int ofd_attr_set(const struct lu_env *env, struct ofd_object *fo,
 			filter_fid_le_to_cpu(&fo->ofo_ff, ff, sizeof(*ff));
 	}
 
-	GOTO(stop, rc);
+	GOTO(unlock, rc);
 
+unlock:
+	ofd_write_unlock(env, fo);
 stop:
 	rc2 = ofd_trans_stop(env, ofd, th, rc);
 	if (rc2)
@@ -666,10 +671,7 @@ stop:
 		       ofd_name(ofd), rc2);
 	if (!rc)
 		rc = rc2;
-
-unlock:
-	ofd_write_unlock(env, fo);
-
+out:
 	return rc;
 }
 
@@ -707,19 +709,55 @@ int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
 	/* we support truncate, not punch yet */
 	LASSERT(end == OBD_OBJECT_EOF);
 
+	if (!ofd_object_exists(fo))
+		GOTO(out, rc = -ENOENT);
+
+	if (ofd->ofd_lfsck_verify_pfid && oa->o_valid & OBD_MD_FLFID) {
+		rc = ofd_verify_ff(env, fo, oa);
+		if (rc != 0)
+			GOTO(out, rc);
+	}
+
+	/* VBR: version recovery check */
+	rc = ofd_version_get_check(info, fo);
+	if (rc)
+		GOTO(out, rc);
+
+	rc = ofd_attr_handle_id(env, fo, la, 0 /* !is_setattr */);
+	if (rc != 0)
+		GOTO(out, rc);
+
+	th = ofd_trans_create(env, ofd);
+	if (IS_ERR(th))
+		GOTO(out, rc = PTR_ERR(th));
+
+	rc = dt_declare_attr_set(env, dob, la, th);
+	if (rc)
+		GOTO(stop, rc);
+
+	rc = dt_declare_punch(env, dob, start, OBD_OBJECT_EOF, th);
+	if (rc)
+		GOTO(stop, rc);
+
+	info->fti_buf.lb_buf = ff;
+	info->fti_buf.lb_len = sizeof(*ff);
+	rc = dt_declare_xattr_set(env, ofd_object_child(fo), &info->fti_buf,
+				  XATTR_NAME_FID, 0, th);
+	if (rc)
+		GOTO(stop, rc);
+
+	rc = ofd_trans_start(env, ofd, fo, th);
+	if (rc)
+		GOTO(stop, rc);
+
 	ofd_write_lock(env, fo);
+
 	if (la->la_valid & (LA_ATIME | LA_MTIME | LA_CTIME))
 		tgt_fmd_update(info->fti_exp, &fo->ofo_header.loh_fid,
 			       info->fti_xid);
 
 	if (!ofd_object_exists(fo))
 		GOTO(unlock, rc = -ENOENT);
-
-	if (ofd->ofd_lfsck_verify_pfid && oa->o_valid & OBD_MD_FLFID) {
-		rc = ofd_verify_ff(env, fo, oa);
-		if (rc != 0)
-			GOTO(unlock, rc);
-	}
 
 	/* need to verify layout version */
 	if (oa->o_valid & OBD_MD_LAYOUT_VERSION) {
@@ -730,70 +768,38 @@ int ofd_object_punch(const struct lu_env *env, struct ofd_object *fo,
 		oa->o_valid &= ~OBD_MD_LAYOUT_VERSION;
 	}
 
-	/* VBR: version recovery check */
-	rc = ofd_version_get_check(info, fo);
+	rc = dt_punch(env, dob, start, OBD_OBJECT_EOF, th);
 	if (rc)
-		GOTO(unlock, rc);
-
-	rc = ofd_attr_handle_id(env, fo, la, 0 /* !is_setattr */);
-	if (rc != 0)
 		GOTO(unlock, rc);
 
 	fl = ofd_object_ff_update(env, fo, oa, ff);
 	if (fl < 0)
 		GOTO(unlock, rc = fl);
 
-	th = ofd_trans_create(env, ofd);
-	if (IS_ERR(th))
-		GOTO(unlock, rc = PTR_ERR(th));
-
-	rc = dt_declare_attr_set(env, dob, la, th);
+	rc = dt_attr_set(env, dob, la, th);
 	if (rc)
-		GOTO(stop, rc);
-
-	rc = dt_declare_punch(env, dob, start, OBD_OBJECT_EOF, th);
-	if (rc)
-		GOTO(stop, rc);
+		GOTO(unlock, rc);
 
 	if (fl) {
 		if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_UNMATCHED_PAIR1))
 			ff->ff_parent.f_oid = cpu_to_le32(1UL << 31);
 		else if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_UNMATCHED_PAIR2))
 			le32_add_cpu(&ff->ff_parent.f_oid, -1);
+		else if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_NOPFID))
+			GOTO(unlock, rc);
 
 		info->fti_buf.lb_buf = ff;
 		info->fti_buf.lb_len = sizeof(*ff);
-		rc = dt_declare_xattr_set(env, ofd_object_child(fo),
-					  &info->fti_buf, XATTR_NAME_FID, fl,
-					  th);
-		if (rc)
-			GOTO(stop, rc);
-	}
-
-	rc = ofd_trans_start(env, ofd, fo, th);
-	if (rc)
-		GOTO(stop, rc);
-
-	rc = dt_punch(env, dob, start, OBD_OBJECT_EOF, th);
-	if (rc)
-		GOTO(stop, rc);
-
-	rc = dt_attr_set(env, dob, la, th);
-	if (rc)
-		GOTO(stop, rc);
-
-	if (fl) {
-		if (OBD_FAIL_CHECK(OBD_FAIL_LFSCK_NOPFID))
-			GOTO(stop, rc);
-
 		rc = dt_xattr_set(env, ofd_object_child(fo), &info->fti_buf,
 				  XATTR_NAME_FID, fl, th);
 		if (!rc)
 			filter_fid_le_to_cpu(&fo->ofo_ff, ff, sizeof(*ff));
 	}
 
-	GOTO(stop, rc);
+	GOTO(unlock, rc);
 
+unlock:
+	ofd_write_unlock(env, fo);
 stop:
 	rc2 = ofd_trans_stop(env, ofd, th, rc);
 	if (rc2 != 0)
@@ -801,9 +807,7 @@ stop:
 		       ofd_name(ofd), rc2);
 	if (!rc)
 		rc = rc2;
-unlock:
-	ofd_write_unlock(env, fo);
-
+out:
 	return rc;
 }
 
@@ -831,13 +835,12 @@ int ofd_destroy(const struct lu_env *env, struct ofd_object *fo,
 
 	ENTRY;
 
-	ofd_write_lock(env, fo);
 	if (!ofd_object_exists(fo))
-		GOTO(unlock, rc = -ENOENT);
+		GOTO(out, rc = -ENOENT);
 
 	th = ofd_trans_create(env, ofd);
 	if (IS_ERR(th))
-		GOTO(unlock, rc = PTR_ERR(th));
+		GOTO(out, rc = PTR_ERR(th));
 
 	rc = dt_declare_ref_del(env, ofd_object_child(fo), th);
 	if (rc < 0)
@@ -854,10 +857,16 @@ int ofd_destroy(const struct lu_env *env, struct ofd_object *fo,
 	if (rc)
 		GOTO(stop, rc);
 
+	ofd_write_lock(env, fo);
+	if (!ofd_object_exists(fo))
+		GOTO(stop, rc = -ENOENT);
+
 	tgt_fmd_drop(ofd_info(env)->fti_exp, &fo->ofo_header.loh_fid);
 
 	dt_ref_del(env, ofd_object_child(fo), th);
 	dt_destroy(env, ofd_object_child(fo), th);
+	ofd_write_unlock(env, fo);
+
 stop:
 	rc2 = ofd_trans_stop(env, ofd, th, rc);
 	if (rc2)
@@ -865,8 +874,7 @@ stop:
 		       ofd_name(ofd), rc2);
 	if (!rc)
 		rc = rc2;
-unlock:
-	ofd_write_unlock(env, fo);
+out:
 	RETURN(rc);
 }
 
