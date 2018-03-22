@@ -992,6 +992,7 @@ lnet_return_tx_credits_locked(lnet_msg_t *msg)
 
 			LASSERT(msg2->msg_txpeer->lp_ni == ni);
 			LASSERT(msg2->msg_tx_delayed);
+			LASSERT(msg2->msg_tx_cpt == msg->msg_tx_cpt);
 
                         (void) lnet_post_send_locked(msg2, 1);
                 }
@@ -1005,7 +1006,7 @@ lnet_return_tx_credits_locked(lnet_msg_t *msg)
 			!list_empty(&txpeer->lp_txq));
 
                 txpeer->lp_txqnob -= msg->msg_len + sizeof(lnet_hdr_t);
-                LASSERT (txpeer->lp_txqnob >= 0);
+		LASSERT(txpeer->lp_txqnob >= 0);
 
                 txpeer->lp_txcredits++;
                 if (txpeer->lp_txcredits <= 0) {
@@ -1016,7 +1017,15 @@ lnet_return_tx_credits_locked(lnet_msg_t *msg)
 			LASSERT(msg2->msg_txpeer == txpeer);
 			LASSERT(msg2->msg_tx_delayed);
 
-                        (void) lnet_post_send_locked(msg2, 1);
+			if (msg2->msg_tx_cpt != msg->msg_tx_cpt) {
+				lnet_net_unlock(msg->msg_tx_cpt);
+				lnet_net_lock(msg2->msg_tx_cpt);
+			}
+			(void) lnet_post_send_locked(msg2, 1);
+			if (msg2->msg_tx_cpt != msg->msg_tx_cpt) {
+				lnet_net_unlock(msg2->msg_tx_cpt);
+				lnet_net_lock(msg->msg_tx_cpt);
+			}
                 }
         }
 
