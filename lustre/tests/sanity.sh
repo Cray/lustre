@@ -14258,6 +14258,34 @@ test_275() {
 }
 run_test 275 "Read on a canceled duplicate lock"
 
+test_280() {
+	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
+	remote_ost_nodsh && skip "remote OST with nodsh" && return
+	local file=$DIR/$tfile
+	local oss
+	local pid
+
+	oss=$(comma_list $(osts_nodes))
+
+	dd if=/dev/urandom of=$file bs=1M count=2
+	cancel_lru_locks osc
+
+	#lock 1
+	dd if=$file of=/dev/null bs=1M count=1
+
+#define OBD_FAIL_LDLM_BL_AST_PAUSE      0x32c
+	do_nodes $oss $LCTL set_param fail_loc=0x0000032c fail_val=3
+
+	dd if=/dev/zero of=$file bs=1M count=1 &
+	pid=$!
+	sleep 1
+
+	cancel_lru_locks osc
+	#Client eviction fail the dd and test
+	wait $pid
+}
+run_test  280 "Evict client when race between blocking ast and ldlm cancel"
+
 cleanup_test_300() {
 	trap 0
 	umask $SAVE_UMASK
