@@ -85,12 +85,6 @@
  */
 #define ALLOC_ATOMIC_TRY   GFP_ATOMIC
 
-#define DECL_MMSPACE                mm_segment_t __oldfs
-#define MMSPACE_OPEN \
-        do { __oldfs = get_fs(); set_fs(get_ds());} while(0)
-#define MMSPACE_CLOSE               set_fs(__oldfs)
-
-
 extern void *cfs_cpt_malloc(struct cfs_cpt_table *cptab, int cpt,
 			    size_t nr_bytes, gfp_t flags);
 extern void *cfs_cpt_vzalloc(struct cfs_cpt_table *cptab, int cpt,
