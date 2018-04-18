@@ -1543,7 +1543,10 @@ static int kiblnd_alloc_freg_pool(kib_fmr_poolset_t *fps, kib_fmr_pool_t *fpo)
 			goto out_middle;
 		}
 
-		frd->frd_valid = true;
+		/* There appears to be a bug in MLX5 code where you must
+		 * invalidate the rkey of a new FastReg pool before first
+		 * using it. Thus, I am marking the FRD invalid here. */
+		frd->frd_valid = false;
 
 		list_add_tail(&frd->frd_list, &fpo->fast_reg.fpo_pool_list);
 		fpo->fast_reg.fpo_pool_size++;
@@ -1941,7 +1944,7 @@ again:
 				return 0;
 			}
 			spin_unlock(&fps->fps_lock);
-			rc = -EBUSY;
+			rc = -EAGAIN;
 		}
 
 		spin_lock(&fps->fps_lock);
