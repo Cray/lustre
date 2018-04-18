@@ -488,11 +488,17 @@ t4_test()
 }
 
 test_4a() {
+	[ $(lustre_version_code $SINGLEMDS) -le $(version_code 2.6.57) ] &&
+		skip "LFSCK < 2.6.57 doesn't support async updates RPC flow control" && return
+
 	t4_test
 }
 run_test 4a "Single MDS lfsck layout performance (routine case) without load"
 
 test_4b() {
+        [ $(lustre_version_code $SINGLEMDS) -le $(version_code 2.6.57) ] &&
+                skip "LFSCK < 2.6.57 doesn't support async updates RPC flow control" && return
+
 	echo "Inject failure stub to simulate dangling reference"
 	#define OBD_FAIL_LFSCK_DANGLING 0x1610
 	do_nodes $(comma_list $(osts_nodes)) $LCTL set_param fail_loc=0x1610
@@ -552,11 +558,17 @@ t5_test()
 }
 
 test_5a() {
+	[ $(lustre_version_code $SINGLEMDS) -le $(version_code 2.6.57) ] &&
+		skip "LFSCK < 2.6.57 doesn't support async updates RPC flow control" && return
+
 	t5_test
 }
 run_test 5a "lfsck layout performance (routine case) without load for DNE"
 
 test_5b() {
+	[ $(lustre_version_code $SINGLEMDS) -le $(version_code 2.6.57) ] &&
+		skip "LFSCK < 2.6.57 doesn't support async updates RPC flow control" && return
+
 	echo "Inject failure stub to simulate dangling reference"
 	#define OBD_FAIL_LFSCK_DANGLING 0x1610
 	do_nodes $(comma_list $(osts_nodes)) $LCTL set_param fail_loc=0x1610
@@ -598,6 +610,9 @@ lfsck_detach_error()
 }
 
 test_6() {
+	[ $(lustre_version_code $SINGLEMDS) -le $(version_code 2.6.57) ] &&
+		skip "LFSCK < 2.6.57 doesn't support async updates RPC flow control" && return
+
 	[ $INCFACTOR -gt 25 ] && INCFACTOR=25
 
 	echo "stopall"
