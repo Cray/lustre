@@ -203,7 +203,7 @@ BuildRequires: openldap2-devel
 BuildRequires: krb5-devel openssl-devel
 %endif
 %if %{with servers}
-Requires: %{name}-osd
+Requires: lustre-osd
 Requires: lustre-osd-mount
 Obsoletes: lustre-client < %{version}
 Provides: lustre-client = %{version}-%{release}
