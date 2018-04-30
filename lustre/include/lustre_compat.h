@@ -698,4 +698,8 @@ static inline struct timespec current_time(struct inode *inode)
 #define __GFP_COLD 0
 #endif
 
+#ifndef READ_ONCE
+#define READ_ONCE ACCESS_ONCE
+#endif
+
 #endif /* _LUSTRE_COMPAT_H */
