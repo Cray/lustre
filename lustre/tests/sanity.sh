@@ -23,8 +23,8 @@ fi
 if [[ $(uname -m) = aarch64 ]]; then
 	# bug number:	 LU-11596 (all below)
 	ALWAYS_EXCEPT+=" 42d 42e 63a 63b 64a 64b 64c"
-	# bug number:	 LU-11671 LU-11665 LU-11594 LU-11667 LU-11729
-	ALWAYS_EXCEPT+=" 45	  101c	   103a	    317      810"
+	# bug number:	 LU-11671 LU-11665 LU-11594 LU-11667 LU-11729 LU-4398
+	ALWAYS_EXCEPT+=" 45	  101c	   103a	    317      810      817"
 fi
 
 # Check Grants after these tests
@@ -21272,6 +21272,30 @@ test_816() {
 	[ $before == $now ] || error "lru_size changed $before != $now"
 }
 run_test 816 "do not reset lru_resize on idle reconnect"
+
+cleanup_817() {
+	umount $tmpdir
+	exportfs -u localhost:$DIR/nfsexp
+	rm -rf $DIR/nfsexp
+}
+
+test_817() {
+	systemctl restart nfs-server.service || skip "failed to restart nfsd"
+
+	mkdir -p $DIR/nfsexp
+	exportfs -orw,no_root_squash localhost:$DIR/nfsexp ||
+		error "failed to export nfs"
+
+	tmpdir=$(mktemp -d /tmp/nfs-XXXXXX)
+	stack_trap cleanup_817 EXIT
+
+	mount -t nfs -orw localhost:$DIR/nfsexp $tmpdir ||
+		error "failed to mount nfs to $tmpdir"
+
+	cp /bin/true $tmpdir
+	$DIR/nfsexp/true || error "failed to execute 'true' command"
+}
+run_test 817 "nfsd won't cache write lock for exec file"
 
 test_819a() {
 	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1
