@@ -19117,6 +19117,30 @@ test_814()
 }
 run_test 814 "sparse cp works as expected (LU-12361)"
 
+cleanup_817() {
+	umount $tmpdir
+	exportfs -u localhost:$DIR/nfsexp
+	rm -rf $DIR/nfsexp
+}
+
+test_817() {
+	systemctl restart nfs-server.service || skip "failed to restart nfsd"
+
+	mkdir -p $DIR/nfsexp
+	exportfs -orw,no_root_squash localhost:$DIR/nfsexp ||
+		error "failed to export nfs"
+
+	tmpdir=$(mktemp -d /tmp/nfs-XXXXXX)
+	stack_trap cleanup_817 EXIT
+
+	mount -t nfs -orw localhost:$DIR/nfsexp $tmpdir ||
+		error "failed to mount nfs to $tmpdir"
+
+	cp /bin/true $tmpdir
+	$DIR/nfsexp/true || error "failed to execute 'true' command"
+}
+run_test 817 "nfsd won't cache write lock for exec file"
+
 #
 # tests that do cleanup/setup should be run at the end
 #
