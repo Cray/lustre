@@ -3109,42 +3109,45 @@ test_61() {
 run_test 61 "Release stripeless file with non-zero size"
 
 test_62() {
-	local facet=$SINGLEAGT
-	local agents=${1:-$(facet_active_host $facet)}
+	local agent=$(facet_active_host $SINGLEAGT)
 
 	copytool_setup
 
 	mkdir -p $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
 	local fid
-	fid=$(make_custom_file_for_progress $f 39)
+	fid=$(make_custom_file_for_progress $f 20)
 	[ $? != 0 ] && skip "not enough free space" && return
 
-	local FILE_HASH_BEFORE_ARCHIVE=$(md5sum $f)
+	local file_hash_before_archive=$(md5sum $f)
 	$LFS hsm_archive $f
 	wait_request_state $fid ARCHIVE SUCCEED
 	$LFS hsm_release $f
 
 	# Run md5sum in the back ground
 	md5sum $f &
+	wait_request_state $fid RESTORE STARTED
 
 	# Kill copytool while md5sum is running
-	do_nodesv $agents "pkill -INT -x $HSMTOOL_BASE" ||
-		error "failed to kill the copy tool" || return
-	sleep 1
-	echo "Copytool is stopped on $agents"
+	kill_copytools $agent
+	wait_copytools $agent || error "copytools failed to stop"
+
+	echo "Copytool is stopped on $agent"
 
 	wait_request_state $fid RESTORE CANCELED
 
-	local FILE_HASH_AFTER_ARCHIVE=$(md5sum $f)
+	HSM_ARCHIVE_PURGE=false copytool_setup
+	# md5sum triggers hsm_restore action
+	local file_hash_after_archive=$(md5sum $f)
+	wait_request_state $fid RESTORE SUCCEED
 
-	[ "$FILE_HASH_AFTER_ARCHIVE" = \
-		"$FILE_HASH_BEFORE_ARCHIVE" ] ||
+	[ "$file_hash_before_archive" = \
+		"$file_hash_after_archive" ] ||
 			error "Restore incomplete"
 
 	copytool_cleanup
 }
-run_test 62 "md5sum should return after killing the copy tool"
+run_test 62 "Stopping a copytool should cancel its requests"
 
 test_70() {
 	# test needs a new running copytool
