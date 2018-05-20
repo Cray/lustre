@@ -79,8 +79,11 @@ static int g_n_nss_modules = 0;
 struct nss_module {
 	char name[NSS_MODULE_NAME_SIZE];
 	int  (*getpwuid)(struct nss_module *mod, uid_t, struct passwd *pwd);
+	int  (*setgrent)(struct nss_module *mod);
 	int  (*getgrent)(struct nss_module *mod, struct group *result);
-	void  (*endgrent)(struct nss_module *mod);
+	void (*endgrent)(struct nss_module *mod);
+	void (*grouplist)(struct nss_module *mod, const char*, gid_t, gid_t*,
+			unsigned*, unsigned);
 	void (*fini)(struct nss_module*);
 
 	union {
@@ -88,9 +91,12 @@ struct nss_module {
 			void *l_ptr;
 			int  (*l_getpwuid)(uid_t, struct passwd *pwd,
 					char *buffer, size_t buflen, int *errnop);
-			int  (*l_getgrent)(struct group *result, char *buffer, size_t buflen,
-					int *errnop);
-			int  (*l_endgrent)(void);
+			int  (*l_setgrent)(int);
+			int  (*l_getgrent)(struct group *result, char *buffer,
+					size_t buflen, int *errnop);
+			void (*l_endgrent)(void);
+			int  (*l_initgroups_dyn)(const char*, gid_t, long*, long*,
+					gid_t**, long, int*);
 		} lib;
 		struct {
 			FILE *f_passwd;
@@ -143,39 +149,6 @@ static struct passwd *getpwuid_nss(uid_t uid)
 	return NULL;
 }
 
-static int grent_mod_no = -1;
-/** getgrent() replacement.
- * simulate getgrent(3) across nss modules */
-static struct group *getgrent_nss(void)
-{
-	static struct group grp;
-
-	if (grent_mod_no < 0)
-		grent_mod_no = 0;
-
-	while (grent_mod_no < g_n_nss_modules) {
-		struct nss_module *mod = g_nss_modules + grent_mod_no;
-
-		if (mod->getgrent(mod, &grp) == 0)
-			return &grp;
-		mod->endgrent(mod);
-		grent_mod_no++;
-	}
-	return NULL;
-}
-
-/** endgrent() replacement */
-static void endgrent_nss(void)
-{
-	if (grent_mod_no < g_n_nss_modules
-		&& grent_mod_no >= 0) {
-		struct nss_module *mod = g_nss_modules+grent_mod_no;
-
-		mod->endgrent(mod);
-	}
-	grent_mod_no = -1;
-}
-
 #define NSS_SYMBOL_NAME_LEN_MAX 256
 
 /** lookup symbol in dynamically loaded nss module */
@@ -186,7 +159,7 @@ static void *get_nss_sym(struct nss_module *mod, const char *op)
 	char symbuf[NSS_SYMBOL_NAME_LEN_MAX];
 
 	bytes = snprintf(symbuf, NSS_SYMBOL_NAME_LEN_MAX - 1, "_nss_%s_%s",
-			mod->name, op);
+			 mod->name, op);
 	if (bytes >= NSS_SYMBOL_NAME_LEN_MAX - 1) {
 		errlog("symbol name too long\n");
 		return NULL;
@@ -194,7 +167,7 @@ static void *get_nss_sym(struct nss_module *mod, const char *op)
 	res = dlsym(mod->u.lib.l_ptr, symbuf);
 	if (res == NULL)
 		errlog("cannot find symbol %s in nss module \"%s\": %s\n",
-			symbuf, mod->name, dlerror());
+		       symbuf, mod->name, dlerror());
 	return res;
 }
 
@@ -206,12 +179,18 @@ static void enlarge_nss_buffer(void **buf, int *bufsize)
 	*buf = malloc(*bufsize);
 	if (*buf == NULL) {
 		errlog("no memory to allocate bigger buffer of %d bytes\n",
-				*bufsize);
+		       *bufsize);
 		exit(-1);
 	}
 }
 
-static int getpwuid_nss_lib(struct nss_module *nss, uid_t uid, struct passwd *pw)
+static int setgrent_nss_lib(struct nss_module *mod)
+{
+	return mod->u.lib.l_setgrent(1);
+}
+
+static int getpwuid_nss_lib(struct nss_module *nss, uid_t uid,
+		struct passwd *pw)
 {
 	int tmp_errno, err;
 
@@ -260,6 +239,61 @@ static void endgrent_nss_lib(struct nss_module *mod)
 	mod->u.lib.l_endgrent();
 }
 
+static void grouplist_plain(
+		struct nss_module *mod, const char *user, gid_t skipgroup,
+		gid_t *groups, unsigned int *ngroups, unsigned int maxgroups)
+{
+	struct group gr;
+
+	mod->setgrent(mod);
+
+	while (mod->getgrent(mod, &gr) == 0 && *ngroups < maxgroups) {
+		int i;
+
+		if (gr.gr_gid == skipgroup)
+		      continue;
+		if (!gr.gr_mem)
+			continue;
+		for (i = 0; gr.gr_mem[i]; i++) {
+			if (!strcmp(gr.gr_mem[i], user)) {
+				groups[*ngroups] = gr.gr_gid;
+				(*ngroups)++;
+				break;
+			}
+		}
+	}
+
+	mod->endgrent(mod);
+}
+
+static void grouplist_nss_lib(
+		struct nss_module *mod, const char *user, gid_t skipgroup,
+		gid_t *groups, unsigned int *ngroups, unsigned int maxgroups)
+{
+	long int start_groups = *ngroups;
+	long int size_groups = maxgroups;
+	gid_t *groups_array = groups;
+	int err;
+	int ret;
+
+	ret = mod->u.lib.l_initgroups_dyn(user, skipgroup, &start_groups,
+			&size_groups, &groups_array, maxgroups, &err);
+	if (ret != NSS_STATUS_SUCCESS) {
+		if (ret == NSS_STATUS_UNAVAIL) /* failback to plain search */
+			grouplist_plain(mod, user, skipgroup, groups, ngroups,
+					maxgroups);
+		else if (err != 0)
+			errlog("%s: initgroups() lookup failed, rc = %d, "
+					"err = %d\n", mod->name, ret, err);
+		return;
+	}
+	if (groups != groups_array) {
+		errlog("Array was reallocated\n");
+		exit(-1);
+	}
+	*ngroups = (unsigned int)start_groups;
+}
+
 #define NSS_LIB_NAME_PATTERN "libnss_%s.so.2"
 
 /** destroy a "shared lib" nss module */
@@ -285,8 +319,10 @@ static int init_nss_lib_module(struct nss_module *mod, char *name)
 	sprintf(lib_file_name, NSS_LIB_NAME_PATTERN, name);
 
 	mod->getpwuid = getpwuid_nss_lib;
+	mod->setgrent = setgrent_nss_lib;
 	mod->getgrent = getgrent_nss_lib;
 	mod->endgrent = endgrent_nss_lib;
+	mod->grouplist = grouplist_nss_lib;
 	mod->fini = fini_nss_lib_module;
 
 	mod->u.lib.l_ptr = dlopen(lib_file_name, RTLD_NOW);
@@ -295,15 +331,23 @@ static int init_nss_lib_module(struct nss_module *mod, char *name)
 		exit(1);
 	}
 	mod->u.lib.l_getpwuid = get_nss_sym(mod, "getpwuid_r");
-	if (mod->getpwuid == NULL) {
+	if (mod->u.lib.l_getpwuid == NULL) {
+		exit(1);
+	}
+	mod->u.lib.l_initgroups_dyn = get_nss_sym(mod, "initgroups_dyn");
+	if (mod->u.lib.l_initgroups_dyn == NULL) {
+		exit(1);
+	}
+	mod->u.lib.l_setgrent = get_nss_sym(mod, "setgrent");
+	if (mod->u.lib.l_setgrent == NULL) {
 		exit(1);
 	}
 	mod->u.lib.l_getgrent = get_nss_sym(mod, "getgrent_r");
-	if (mod->getgrent == NULL) {
+	if (mod->u.lib.l_getgrent == NULL) {
 		exit(1);
 	}
 	mod->u.lib.l_endgrent = get_nss_sym(mod, "endgrent");
-	if (mod->endgrent == NULL) {
+	if (mod->u.lib.l_endgrent == NULL) {
 		exit(1);
 	}
 
@@ -331,6 +375,11 @@ static int getpwuid_files(struct nss_module *mod, uid_t uid, struct passwd *pw)
 	return -1;
 }
 
+static int setgrent_files(struct nss_module *mod)
+{
+	return 0;
+}
+
 static int getgrent_files(struct nss_module *mod, struct group *gr)
 {
 	struct group *pos;
@@ -340,7 +389,7 @@ static int getgrent_files(struct nss_module *mod, struct group *gr)
 		*gr = *pos;
 		return 0;
 	}
-	return 1;
+	return -ENOENT;
 }
 
 static void endgrent_files(struct nss_module *mod)
@@ -352,8 +401,10 @@ static int init_files_module(struct nss_module *mod)
 {
 	mod->fini = fini_files_module;
 	mod->getpwuid = getpwuid_files;
+	mod->setgrent = setgrent_files;
 	mod->getgrent = getgrent_files;
 	mod->endgrent = endgrent_files;
+	mod->grouplist = grouplist_plain;
 
 	mod->u.files.f_passwd = fopen(LUSTRE_PASSWD, "r");
 	if (mod->u.files.f_passwd == NULL) {
@@ -408,12 +459,36 @@ static void fini_nss(void)
 	free(nss_grent_buf);
 }
 
+
+/**
+ * Remove dups and skipgroup from given group array
+ */
+void remove_dups(gid_t *groups, gid_t skipgroup, unsigned int *ngroups)
+{
+	gid_t *dst = groups;
+	gid_t *src = groups;
+	gid_t * const end = groups + *ngroups;
+
+	while (src < end) {
+		if (*src == skipgroup) {
+			src++;
+			continue;
+		}
+		if (dst > groups && *src == *(dst - 1)) {
+			src++;
+			continue;
+		}
+		*dst++ = *src++;
+	}
+
+	*ngroups = dst - groups;
+}
+
 /** get supplementary group info and fill downcall data */
 static int get_groups_nss(struct identity_downcall_data *data,
 		unsigned int maxgroups)
 {
 	struct passwd *pw;
-	struct group *gr;
 	gid_t *groups;
 	unsigned int ngroups = 0;
 	char *pw_name;
@@ -443,23 +518,16 @@ static int get_groups_nss(struct identity_downcall_data *data,
 	strncpy(pw_name, pw->pw_name, namelen - 1);
 	groups = data->idd_groups;
 
-	while ((gr = getgrent_nss()) != NULL && ngroups < maxgroups) {
-		if (gr->gr_gid == pw->pw_gid)
-		      continue;
-		if (!gr->gr_mem)
-			continue;
-		for (i = 0; gr->gr_mem[i]; i++) {
-			if (!strcmp(gr->gr_mem[i], pw_name)) {
-				groups[ngroups++] = gr->gr_gid;
-				break;
-			}
-		}
-	}
+	for (i = 0; i < g_n_nss_modules; i++) {
+		struct nss_module *mod = g_nss_modules + i;
 
-	endgrent_nss();
+		mod->grouplist(mod, pw_name, pw->pw_gid, groups, &ngroups,
+				maxgroups);
+	}
 
 	if (ngroups > 0)
 		qsort(groups, ngroups, sizeof(*groups), compare_gids);
+	remove_dups(groups, pw->pw_gid, &ngroups);
 	data->idd_ngroups = ngroups;
 
 	free(pw_name);
