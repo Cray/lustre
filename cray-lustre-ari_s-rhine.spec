@@ -194,6 +194,11 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 %{__install} -D -m 0644 .version %{buildroot}/%{_name_modulefiles_prefix}/.version
 %{__install} -D -m 0644 module %{buildroot}/%{_release_modulefile}
 
+mkdir -p $RPM_BUILD_ROOT/usr/sbin
+# Use '-f' here for incremental builds
+%{__ln_s} -f %{_sbindir}/lctl $RPM_BUILD_ROOT/usr/sbin
+%{__ln_s} -f %{_sbindir}/ko2iblnd-probe $RPM_BUILD_ROOT/usr/sbin
+
 %files
 %defattr(-,root,root)
 /sbin/mount.lustre
@@ -226,6 +231,8 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 %dir %{_libdir}/lustre
 %{_libdir}/lustre/tests
 %{_modulefiles_prefix}
+/usr/sbin/lctl
+/usr/sbin/ko2iblnd-probe
 %exclude %{_sysconfdir}/lustre/perm.conf
 %exclude /opt/cray/%{name}/%{version}/symvers/%{flavor}
 %exclude %dir /opt/cray/%{name}
@@ -253,9 +260,6 @@ install -D -m 0644 %{_sourcedir}/cray-lustre.conf %{buildroot}/etc/ld.so.conf.d/
 /usr/lib64/*
 
 %post
-%{__ln_s} -f %{_sbindir}/ko2iblnd-probe /usr/sbin
-%{__ln_s} -f %{_prefix}/sbin/lctl /usr/sbin
-
 /sbin/ldconfig
 
 DEPMOD_OPTS=""
@@ -264,10 +268,6 @@ if [ -f /boot/System.map-%{cray_kernel_version} ]; then
 fi
 
 depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
-
-%preun
-%{__rm} -f /usr/sbin/lctl
-%{__rm} -f /usr/sbin/ko2iblnd-probe
 
 %postun
 if [ "$1" = "0" ]; then
