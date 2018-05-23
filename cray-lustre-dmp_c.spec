@@ -119,25 +119,23 @@ done
 %{__install} -D -m 0644 .version %{buildroot}/%{_name_modulefiles_prefix}/.version
 %{__install} -D -m 0644 module %{buildroot}/%{_release_modulefile}
 
-%post
-%{__ln_s} -f %{_sbindir}/ko2iblnd-probe /usr/sbin
-%{__ln_s} -f /sbin/lctl /usr/sbin
+mkdir -p $RPM_BUILD_ROOT/usr/sbin
+# Use '-f' here for incremental builds
+%{__ln_s} -f %{_sbindir}/lctl $RPM_BUILD_ROOT/usr/sbin
+%{__ln_s} -f %{_sbindir}/ko2iblnd-probe $RPM_BUILD_ROOT/usr/sbin
 
+%files
+%defattr(-,root,root)
+%{_prefix}
+%exclude %{_sysconfdir}/lustre/perm.conf
+
+%post
 DEPMOD_OPTS=""
 if [ -f /boot/System.map-%{cray_kernel_version} ]; then
     DEPMOD_OPTS="-F /boot/System.map-%{cray_kernel_version}"
 fi
 
 depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
-
-%preun
-%{__rm} -f /usr/sbin/ko2iblnd-probe
-%{__rm} -f /usr/sbin/lctl
-
-%files
-%defattr(-,root,root)
-%{_prefix}
-%exclude %{_sysconfdir}/lustre/perm.conf
 
 %clean
 %clean_build_root
