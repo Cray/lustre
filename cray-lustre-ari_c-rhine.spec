@@ -164,6 +164,10 @@ find %{buildroot}%{_sbindir} -print | egrep -v '/lctl$' > install_files2
 find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' > install_files3
 find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' | xargs rm -fv
 
+mkdir -p $RPM_BUILD_ROOT/usr/sbin
+# Use '-f' here for incremental builds
+%{__ln_s} -f %{_sbindir}/lctl $RPM_BUILD_ROOT/usr/sbin
+
 %files 
 %defattr(-,root,root)
 %{_libdir}
@@ -171,6 +175,7 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 /lib/modules/*
 /sbin/mount.lustre
 /sbin/lctl
+/usr/sbin/lctl
 %{_bindir}
 %exclude %dir %{_bindir}
 %{_mandir}
@@ -192,8 +197,6 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 %{_includedir}/lustre/%{flavor}/config.h
 
 %post
-%{__ln_s} -f /sbin/lctl /usr/sbin
-
 DEPMOD_OPTS=""
 if [ -f /boot/System.map-%{cray_kernel_version} ]; then
     DEPMOD_OPTS="-F /boot/System.map-%{cray_kernel_version}"
@@ -202,7 +205,6 @@ fi
 depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
 
 %postun
-
 DEPMOD_OPTS=""
 if [ -f /boot/System.map-%{cray_kernel_version} ]; then
     DEPMOD_OPTS="-F /boot/System.map-%{cray_kernel_version}"
@@ -218,10 +220,6 @@ if [ -f /boot/System.map-%{cray_kernel_version} ]; then
 fi
 
 depmod -a ${DEPMOD_OPTS} %{cray_kernel_version}
-
-%preun
-%{__rm} -f /usr/sbin/lctl
-
 
 %postun lnet
 
