@@ -338,21 +338,13 @@ unsigned int lustre_errno_hton(unsigned int h)
 {
 	unsigned int n;
 
-	if (h == 0) {
-		n = 0;
-	} else if (h < ARRAY_SIZE(lustre_errno_hton_mapping)) {
+	/* Returns original errno if h is not found in mapping table */
+	n = h;
+	if (h > 0 && h < ARRAY_SIZE(lustre_errno_hton_mapping)) {
 		n = lustre_errno_hton_mapping[h];
 		if (n == 0)
-			goto generic;
-	} else {
-generic:
-		/*
-		 * A generic errno is better than the unknown one that could
-		 * mean anything to a different host.
-		 */
-		n = LUSTRE_EIO;
+			n = h;
 	}
-
 	return n;
 }
 EXPORT_SYMBOL(lustre_errno_hton);
@@ -361,22 +353,13 @@ unsigned int lustre_errno_ntoh(unsigned int n)
 {
 	unsigned int h;
 
-	if (n == 0) {
-		h = 0;
-	} else if (n < ARRAY_SIZE(lustre_errno_ntoh_mapping)) {
+	/* Returns original errno if n is not found in mapping table */
+	h = n;
+	if (n > 0 && n < ARRAY_SIZE(lustre_errno_ntoh_mapping)) {
 		h = lustre_errno_ntoh_mapping[n];
 		if (h == 0)
-			goto generic;
-	} else {
-generic:
-		/*
-		 * Similar to the situation in lustre_errno_hton(), an unknown
-		 * network errno could coincide with anything.  Hence, it is
-		 * better to return a generic errno.
-		 */
-		h = EIO;
+			h = n;
 	}
-
 	return h;
 }
 EXPORT_SYMBOL(lustre_errno_ntoh);
