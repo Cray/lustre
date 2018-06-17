@@ -474,6 +474,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_TGT_CLIENT_DEL          0x718
 #define OBD_FAIL_TGT_SLUGGISH_NET	 0x719
 #define OBD_FAIL_TGT_RCVD_EIO		 0x720
+#define OBD_FAIL_TGT_REPLY_DATA_RACE	 0x721
 
 #define OBD_FAIL_MDC_REVALIDATE_PAUSE    0x800
 #define OBD_FAIL_MDC_ENQUEUE_PAUSE       0x801
