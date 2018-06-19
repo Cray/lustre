@@ -540,12 +540,13 @@ static void mdt_hsm_cdt_cleanup(struct mdt_device *mdt)
  * valid transition, cdt_transition[CDT_INIT][CDT_RUNNING] is true.
  */
 static bool cdt_transition[CDT_STATES_COUNT][CDT_STATES_COUNT] = {
-	/* from -> to:    stopped init   running disable stopping */
-	/* stopped */	{ true,   true,  false,  false,  false },
-	/* init */	{ true,   false, true,   false,  false },
-	/* running */	{ false,  false, true,   true,   true },
-	/* disable */	{ false,  false, true,   true,   true },
-	/* stopping */	{ true,   false, false,  false,  false }
+	/* from -> to:    stopped init   running disable stopping external*/
+	/* stopped */	{ true,   true,  false,  false,  false, true },
+	/* init */	{ true,   false, true,   false,  false, false },
+	/* running */	{ false,  false, true,   true,   true, false },
+	/* disable */	{ false,  false, true,   true,   true, true },
+	/* stopping */	{ true,   false, false,  false,  false, false },
+	/* external */  { true,   false, false,  false,  true, false }
 };
 
 /**
@@ -970,7 +971,7 @@ static int mdt_hsm_pending_restore(struct mdt_thread_info *mti)
 	RETURN(rc);
 }
 
-static int hsm_init_ucred(struct lu_ucred *uc)
+int hsm_init_ucred(struct lu_ucred *uc)
 {
 	ENTRY;
 
@@ -1193,14 +1194,18 @@ static int mdt_hsm_cdt_start(struct mdt_device *mdt)
 int mdt_hsm_cdt_stop(struct mdt_device *mdt)
 {
 	struct coordinator *cdt = &mdt->mdt_coordinator;
+	bool external = is_cdt_external(cdt);
 	int rc;
 
 	ENTRY;
-	/* stop coordinator thread */
 	rc = set_cdt_state(cdt, CDT_STOPPING);
 	if (rc == 0) {
-		kthread_stop(cdt->cdt_task);
-		cdt->cdt_task = NULL;
+		if (external)
+			cdt_external_stop();
+		else {
+			kthread_stop(cdt->cdt_task);
+			cdt->cdt_task = NULL;
+		}
 		set_cdt_state(cdt, CDT_STOPPED);
 	}
 
@@ -1324,9 +1329,9 @@ out:
  * \param dfid [IN]
  * \param mh_common [IN] MD HSM
  */
-static int hsm_swap_layouts(struct mdt_thread_info *mti,
-			    struct mdt_object *obj, const struct lu_fid *dfid,
-			    struct md_hsm *mh_common)
+int hsm_swap_layouts(struct mdt_thread_info *mti,
+		     struct mdt_object *obj, const struct lu_fid *dfid,
+		     struct md_hsm *mh_common)
 {
 	struct mdt_object	*dobj;
 	struct mdt_lock_handle	*dlh;
@@ -1380,6 +1385,35 @@ out_dobj:
 	mdt_object_unlock_put(mti, dobj, dlh, 1);
 out:
 	RETURN(rc);
+}
+
+static int hsm_cdt_complete_update_record(struct mdt_thread_info *mti,
+					  struct hsm_progress_kernel_v2 *pgs,
+					  enum agent_req_status status)
+{
+	const struct lu_env *env = mti->mti_env;
+	struct mdt_device *mdt = mti->mti_mdt;
+	struct coordinator *cdt = &mdt->mdt_coordinator;
+	struct hsm_record_update update;
+	int rc;
+
+	/* update record first (LU-9075) */
+	update.cookie = pgs->hpk_cookie;
+	update.status = status;
+
+	rc = mdt_agent_record_update(env, mdt, &update, 1);
+	if (rc)
+		CERROR("%s: mdt_agent_record_update() failed,"
+		       " rc=%d, cannot update status to %s"
+		       " for cookie %#llx\n",
+		       mdt_obd_name(mdt), rc,
+		       agent_req_status2name(status),
+		       pgs->hpk_cookie);
+
+	/* then remove request from memory list (LU-9075) */
+	mdt_cdt_remove_request(cdt, pgs->hpk_cookie);
+
+	return rc;
 }
 
 /**
@@ -1575,11 +1609,16 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 		if (*status == ARS_WAITING)
 			GOTO(out, rc);
 
-		/* restore special case, need to create ChangeLog record
-		 * before to give back layout lock to avoid concurrent
-		 * file updater to post out of order ChangeLog */
+		/*
+		 * Restore needs to create a ChangeLog record and update
+		 * the status before releasing the layout lock. This avoids
+		 * concurrent file updates, preserves changelog order and
+		 * allows for implicit restores to retry on failure while
+		 * waiting on the layout lock
+		 */
 		mo_changelog(env, CL_HSM, clf_flags, mdt->mdt_child,
 			     &car->car_hai->hai_fid);
+		rc = hsm_cdt_complete_update_record(mti, pgs, *status);
 		need_changelog = false;
 
 		cdt_restore_handle_del(mti, cdt, &car->car_hai->hai_fid);
@@ -1596,9 +1635,11 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 
 out:
 	/* always add a ChangeLog record */
-	if (need_changelog)
+	if (need_changelog) {
 		mo_changelog(env, CL_HSM, clf_flags, mdt->mdt_child,
 			     &car->car_hai->hai_fid);
+		rc = hsm_cdt_complete_update_record(mti, pgs, *status);
+	}
 
 	if (!IS_ERR(obj))
 		mdt_object_put(mti->mti_env, obj);
@@ -1754,8 +1795,6 @@ int mdt_hsm_update_request_state(struct mdt_thread_info *mti,
 
 	if (pgs->hpk_flags & HP_FLAG_COMPLETED) {
 		enum agent_req_status status;
-		struct hsm_record_update update;
-		int rc1;
 
 		rc = hsm_cdt_request_completed(mti, pgs, car, &status);
 		CDEBUG(D_HSM, "updating record: fid="DFID" cookie=%#llx action=%s "
@@ -1763,24 +1802,6 @@ int mdt_hsm_update_request_state(struct mdt_thread_info *mti,
 		       PFID(&pgs->hpk_fid), pgs->hpk_cookie,
 		       hsm_copytool_action2name(car->car_hai->hai_action),
 		       agent_req_status2name(status));
-
-		/* update record first (LU-9075) */
-		update.cookie = pgs->hpk_cookie;
-		update.status = status;
-
-		rc1 = mdt_agent_record_update(mti->mti_env, mdt,
-					      &update, 1);
-		if (rc1)
-			CERROR("%s: mdt_agent_record_update() failed,"
-			       " rc=%d, cannot update status to %s"
-			       " for cookie %#llx\n",
-			       mdt_obd_name(mdt), rc1,
-			       agent_req_status2name(status),
-			       pgs->hpk_cookie);
-		rc = (rc != 0 ? rc : rc1);
-
-		/* then remove request from memory list (LU-9075) */
-		mdt_cdt_remove_request(cdt, pgs->hpk_cookie);
 
 		/* ct has completed a request, so a slot is available,
 		 * signal the coordinator to find new work */
@@ -2235,6 +2256,7 @@ GENERATE_PROC_METHOD(cdt_default_archive_id)
  */
 #define CDT_ENABLE_CMD   "enabled"
 #define CDT_STOP_CMD     "shutdown"
+#define CDT_EXTERNAL_CMD "external"
 #define CDT_DISABLE_CMD  "disabled"
 #define CDT_PURGE_CMD    "purge"
 #define CDT_HELP_CMD     "help"
@@ -2289,8 +2311,21 @@ mdt_hsm_cdt_control_seq_write(struct file *file, const char __user *buffer,
 		} else {
 			rc = set_cdt_state(cdt, CDT_DISABLE);
 		}
+	} else if (strcmp(kernbuf, CDT_EXTERNAL_CMD) == 0) {
+		if (is_cdt_external(cdt)) {
+			CERROR("%s: External Coordinator is already started\n",
+			       mdt_obd_name(mdt));
+		} else if (set_cdt_state(cdt, CDT_EXTERNAL) == 0) {
+			rc = cdt_external_start();
+			if (!rc)
+				CERROR("%s: External Coordinator started\n",
+				       mdt_obd_name(mdt));
+		}
 	} else if (strcmp(kernbuf, CDT_PURGE_CMD) == 0) {
-		rc = hsm_cancel_all_actions(mdt);
+		if (is_cdt_external(cdt))
+			rc = ext_cdt_cancel_all_actions();
+		else
+			rc = hsm_cancel_all_actions(mdt);
 	} else if (strcmp(kernbuf, CDT_HELP_CMD) == 0) {
 		usage = 1;
 	} else {
@@ -2300,9 +2335,9 @@ mdt_hsm_cdt_control_seq_write(struct file *file, const char __user *buffer,
 
 	if (usage == 1)
 		CERROR("%s: Valid coordinator control commands are: "
-		       "%s %s %s %s %s\n", mdt_obd_name(mdt),
+		       "%s %s %s %s %s %s\n", mdt_obd_name(mdt),
 		       CDT_ENABLE_CMD, CDT_STOP_CMD, CDT_DISABLE_CMD,
-		       CDT_PURGE_CMD, CDT_HELP_CMD);
+		       CDT_PURGE_CMD, CDT_EXTERNAL_CMD, CDT_HELP_CMD);
 
 	if (rc)
 		RETURN(rc);
@@ -2317,7 +2352,6 @@ int mdt_hsm_cdt_control_seq_show(struct seq_file *m, void *data)
 	ENTRY;
 
 	cdt = &(mdt_dev(obd->obd_lu_dev)->mdt_coordinator);
-
 	seq_printf(m, "%s\n", cdt_mdt_state2str(cdt->cdt_state));
 
 	RETURN(0);
@@ -2367,25 +2401,6 @@ mdt_hsm_other_request_mask_seq_show(struct seq_file *m, void *data)
 	struct coordinator *cdt = &mdt->mdt_coordinator;
 
 	return mdt_hsm_request_mask_show(m, cdt->cdt_other_request_mask);
-}
-
-static inline enum hsm_copytool_action
-hsm_copytool_name2action(const char *name)
-{
-	if (strcasecmp(name, "NOOP") == 0)
-		return HSMA_NONE;
-	else if (strcasecmp(name, "ARCHIVE") == 0)
-		return HSMA_ARCHIVE;
-	else if (strcasecmp(name, "RESTORE") == 0)
-		return HSMA_RESTORE;
-	else if (strcasecmp(name, "REMOVE") == 0)
-		return HSMA_REMOVE;
-	else if (strcasecmp(name, "CANCEL") == 0)
-		return HSMA_CANCEL;
-	else if (strcasecmp(name, "MIGRATE") == 0)
-		return HSMA_MIGRATE;
-	else
-		return -1;
 }
 
 static ssize_t

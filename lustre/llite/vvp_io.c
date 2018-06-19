@@ -299,6 +299,7 @@ static void vvp_io_fini(const struct lu_env *env, const struct cl_io_slice *ios)
 	struct vvp_io    *vio = cl2vvp_io(env, ios);
 	struct inode     *inode = vvp_object_inode(obj);
 	__u32		  gen = 0;
+	int retries = 0;
 	int rc;
 	ENTRY;
 
@@ -311,7 +312,7 @@ static void vvp_io_fini(const struct lu_env *env, const struct cl_io_slice *ios)
 	       vio->vui_layout_gen, io->ci_need_write_intent,
 	       io->ci_restore_needed);
 
-	if (io->ci_restore_needed) {
+	while (io->ci_restore_needed) {
 		/* file was detected release, we need to restore it
 		 * before finishing the io
 		 */
@@ -328,7 +329,9 @@ static void vvp_io_fini(const struct lu_env *env, const struct cl_io_slice *ios)
 		 * ci_verify_layout so that it will check layout at the end
 		 * of this function.
 		 */
-		if (rc) {
+		if ((retries++ < 10) && rc)
+			continue;
+		if (rc || retries >= 10) {
 			io->ci_restore_needed = 1;
 			io->ci_need_restart = 0;
 			io->ci_verify_layout = 0;
@@ -336,26 +339,24 @@ static void vvp_io_fini(const struct lu_env *env, const struct cl_io_slice *ios)
 			GOTO(out, rc);
 		}
 
-		io->ci_restore_needed = 0;
-
 		/* Even if ll_layout_restore() returns zero, it doesn't mean
 		 * that restore has been successful. Therefore it should verify
 		 * if there was layout change and restart I/O correspondingly.
 		 */
 		ll_layout_refresh(inode, &gen);
 		io->ci_need_restart = vio->vui_layout_gen != gen;
+		/* Successful restore is indicate by the layout gen changing */
 		if (io->ci_need_restart) {
 			CDEBUG(D_VFSTRACE,
 			       DFID" layout changed from %d to %d.\n",
 			       PFID(lu_object_fid(&obj->co_lu)),
 			       vio->vui_layout_gen, gen);
-			/* today successful restore is the only possible
-			 * case */
 			/* restore was done, clear restoring state */
+			io->ci_restore_needed = 0;
 			ll_file_clear_flag(ll_i2info(vvp_object_inode(obj)),
 					   LLIF_FILE_RESTORING);
+			GOTO(out, 0);
 		}
-		GOTO(out, 0);
 	}
 
 	/**

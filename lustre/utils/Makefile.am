@@ -39,7 +39,7 @@ endif # TESTS
 
 if SERVER
 sbin_PROGRAMS += mkfs.lustre tunefs.lustre llverdev lr_reader lshowmount \
-		 ll_decode_filter_fid llog_reader l_tunedisk
+		 ll_decode_filter_fid llog_reader lhsmtool_cdt l_tunedisk
 endif
 if GETIDENTITY_NSS_BUILD
 sbin_PROGRAMS += l_getidentity_nss
@@ -245,6 +245,10 @@ lhsmtool_posix_DEPENDENCIES := liblustreapi.la
 l_getsepol_SOURCES = l_getsepol.c
 l_getsepol_LDADD := liblustreapi.la -lcrypto $(SELINUX)
 l_getsepol_DEPENDENCIES := liblustreapi.la
+
+lhsmtool_cdt_SOURCES = lhsmtool_cdt.c
+lhsmtool_cdt_LDADD := liblustreapi.la
+lhsmtool_cdt_DEPENDENCIES := liblustreapi.la
 
 wirecheck_SOURCES = wirecheck.c
 wirecheck_CPPFLAGS := -DCC="\"$(CC)\""

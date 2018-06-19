@@ -1186,6 +1186,7 @@ static int ct_restore(const struct hsm_action_item *hai, const long hal_flags)
 	int				 open_flags = 0;
 	bool				 set_lovea;
 	struct lu_fid			 dfid;
+
 	/* we fill lustre so:
 	 * source = lustre FID in the backend
 	 * destination = data FID = volatile file

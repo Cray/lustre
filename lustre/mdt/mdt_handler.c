@@ -6805,6 +6805,7 @@ mds_fini:
 
 static void __exit mdt_exit(void)
 {
+	cdt_external_stop();
 	class_unregister_type(LUSTRE_MDT_NAME);
 	mds_mod_exit();
 	lu_kmem_fini(mdt_caches);

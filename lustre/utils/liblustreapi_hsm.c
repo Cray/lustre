@@ -58,6 +58,8 @@
 #include <unistd.h>
 #endif
 
+#include <sys/socket.h>
+#include <linux/netlink.h>
 #include <linux/lnet/lnetctl.h>
 #include <lustre/lustreapi.h>
 #include <lustre/include/uapi/linux/lustre/lustre_fid.h>
@@ -695,8 +697,8 @@ int llapi_hsm_copytool_register(struct hsm_copytool_private **priv,
 				const char *mnt, int archive_count,
 				int *archives, int rfd_flags)
 {
-	struct hsm_copytool_private	*ct;
-	int				 rc;
+	struct hsm_copytool_private *ct;
+	int rc;
 
 	if (archive_count > 0 && archives == NULL) {
 		llapi_err_noerrno(LLAPI_MSG_ERROR,
@@ -1143,6 +1145,9 @@ int llapi_hsm_action_begin(struct hsm_copyaction_private **phcp,
 				    O_RDONLY | O_NOATIME | O_NOFOLLOW | O_NONBLOCK);
 		if (fd < 0) {
 			rc = fd;
+			llapi_error(LLAPI_MSG_ERROR, rc,
+				    "ct_open_by_fid failed\n");
+
 			goto err_out;
 		}
 
@@ -1193,6 +1198,9 @@ int llapi_hsm_action_begin(struct hsm_copyaction_private **phcp,
 	rc = ioctl(ct->mnt_fd, LL_IOC_HSM_COPY_START, &hcp->copy);
 	if (rc < 0) {
 		rc = -errno;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "LL_IOC_HSM_COPY_START failed\n");
+
 		goto err_out;
 	}
 
@@ -1632,3 +1640,157 @@ int llapi_hsm_request(const char *path, const struct hsm_user_request *request)
 	return rc;
 }
 
+int llapi_hsm_cdt_send(struct hsm_cdt_private *hcp,  enum ext_hsm_cmd cmd,
+		       void *data, size_t data_sz)
+{
+	struct nlmsghdr *nlh;
+	struct sockaddr_nl dest_addr;
+	struct iovec iov;
+	struct msghdr msg;
+	void *msg_buf;
+	int len = NLMSG_SPACE(data_sz);
+
+	nlh = hcp->hcp_send_buf;
+	if (hcp->hcp_sock == 0)
+		return -EINVAL;
+
+	if (!nlh)
+		return -EINVAL;
+
+	memset(nlh, '\0', len);
+	memset(&dest_addr, '\0', sizeof(dest_addr));
+	memset(&iov, '\0', sizeof(struct iovec));
+	memset(&msg, '\0', sizeof(struct msghdr));
+
+	nlh->nlmsg_len = len;
+	nlh->nlmsg_pid = 12345;
+	nlh->nlmsg_flags = 0;
+	nlh->nlmsg_type = cmd;
+
+	msg_buf = NLMSG_DATA(nlh);
+	memcpy(msg_buf, data, data_sz);
+
+	iov.iov_base = (void *)nlh;
+	iov.iov_len = nlh->nlmsg_len;
+
+	dest_addr.nl_family = AF_NETLINK;
+	dest_addr.nl_pid = 0; /* For Linux Kernel */
+	dest_addr.nl_groups = 0; /* unicast */
+
+	msg.msg_name = (void *)&dest_addr;
+	msg.msg_namelen = sizeof(dest_addr);
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+
+	return sendmsg(hcp->hcp_sock, &msg, 0);
+}
+
+enum ext_hsm_cmd llapi_hsm_cdt_recv(struct hsm_cdt_private *hcp,
+					 void *data, size_t data_sz)
+{
+	struct sockaddr_nl dest_addr;
+	struct nlmsghdr *nlh;
+	struct iovec iov;
+	struct msghdr msg;
+	ssize_t rc;
+
+	nlh = (struct nlmsghdr *)hcp->hcp_recv_buf;
+	memset(nlh, 0, NLMSG_SPACE(hcp->hcp_recv_buf_sz));
+	memset(&dest_addr, '\0', sizeof(dest_addr));
+	memset(&iov, '\0', sizeof(struct iovec));
+	memset(&msg, '\0', sizeof(struct msghdr));
+
+	dest_addr.nl_family = AF_NETLINK;
+	dest_addr.nl_pid = 0;
+	dest_addr.nl_groups = 0;
+	nlh->nlmsg_len = NLMSG_SPACE(hcp->hcp_recv_buf_sz);
+	nlh->nlmsg_pid = nlh->nlmsg_flags = 0;
+
+	iov.iov_base = (void *)nlh;
+	iov.iov_len = nlh->nlmsg_len;
+	msg.msg_name = (void *)&dest_addr;
+	msg.msg_namelen = sizeof(dest_addr);
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+
+	rc = recvmsg(hcp->hcp_sock, &msg, 0);
+	if (rc < 0 || data_sz < NLMSG_PAYLOAD(nlh, 0))
+		return EXT_HSM_FAIL;
+
+	if (nlh->nlmsg_type <= EXT_HSM_FAIL ||
+	    nlh->nlmsg_type >= EXT_HSM_LAST_OPC)
+		return EXT_HSM_FAIL;
+
+	memcpy(data, NLMSG_DATA(nlh), NLMSG_PAYLOAD(nlh, 0));
+	return nlh->nlmsg_type;
+}
+
+struct hsm_cdt_private *llapi_hsm_cdt_connect(size_t bufsz)
+{
+#define NETLINK_USER 31
+
+	struct sockaddr_nl src_addr;
+	struct hsm_cdt_private *hcp;
+	int rc;
+
+	hcp = malloc(sizeof(struct hsm_cdt_private));
+	if (!hcp)
+		return NULL;
+
+	hcp->hcp_recv_buf_sz = bufsz;
+	hcp->hcp_send_buf_sz = bufsz;
+	hcp->hcp_recv_buf = malloc(NLMSG_SPACE(hcp->hcp_recv_buf_sz));
+	if (!hcp->hcp_recv_buf)
+		goto err_out;
+
+	hcp->hcp_send_buf = malloc(NLMSG_SPACE(hcp->hcp_send_buf_sz));
+	if (!hcp->hcp_send_buf)
+		goto err_out;
+
+	memset(&src_addr, '\0', sizeof(src_addr));
+	src_addr.nl_family = AF_NETLINK;
+	src_addr.nl_pid = 12345;
+
+	while (true) {
+		hcp->hcp_sock = socket(PF_NETLINK, SOCK_RAW, NETLINK_USER);
+		if (hcp->hcp_sock >= 0)
+			break;
+		sleep(1);
+	}
+
+	rc = bind(hcp->hcp_sock, (struct sockaddr *)&src_addr,
+		  sizeof(src_addr));
+	if (rc) {
+		rc = -errno;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "Failed to bind external coordinator socket\n");
+		goto err_out;
+	}
+
+	return hcp;
+
+err_out:
+	llapi_hsm_cdt_disconnect(hcp);
+	return NULL;
+}
+
+int llapi_hsm_cdt_disconnect(struct hsm_cdt_private *hcp)
+{
+	if (!hcp)
+		return 0;
+
+	if (hcp->hcp_sock)
+		close(hcp->hcp_sock);
+
+	hcp->hcp_sock = 0;
+
+	if (hcp->hcp_recv_buf)
+		free(hcp->hcp_recv_buf);
+	if (hcp->hcp_send_buf)
+		free(hcp->hcp_send_buf);
+
+	free(hcp);
+	hcp = NULL;
+
+	return 0;
+}

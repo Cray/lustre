@@ -24,6 +24,7 @@
  * Use is subject to license terms.
  *
  * Copyright (c) 2011, 2017, Intel Corporation.
+ * Copyright 2015, 2019 Cray Inc. All rights reserved.
  */
 /*
  * This file is part of Lustre, http://www.lustre.org/

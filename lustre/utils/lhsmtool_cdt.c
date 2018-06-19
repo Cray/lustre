@@ -1,0 +1,842 @@
+/*
+ * GPL HEADER START
+ *
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 only,
+ * as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License version 2 for more details (a copy is included
+ * in the LICENSE file that accompanied this code).
+ *
+ * You should have received a copy of the GNU General Public License
+ * version 2 along with this program; If not, see
+ * http://www.gnu.org/licenses/gpl-2.0.htm
+ *
+ * GPL HEADER END
+ */
+/*
+ * Copyright 2018 Cray Inc, all rights reserved.
+ * Author: Ben Evans.
+ */
+/*
+ * Lustre external HSM coordinator
+ *
+ * An HSM coordinator daemon acts on action requests from Lustre.
+ * It moves them from WAIT->RUNNING->Done (SUCCESS, FAILED, CANCELED)
+ * It handles the registration and unregistration of copytools
+ *
+ * This is provided as a demonstration, data is not persisted across failures
+ */
+
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <time.h>
+#include <unistd.h>
+#include <errno.h>
+
+#include <lustre/lustreapi.h>
+#include <uapi/linux/lustre/lustre_idl.h>
+#include <uapi/linux/lustre/lustre_fid.h>
+
+#define MAX_PAYLOAD 1024 /* maximum payload size*/
+
+FILE *fp;
+
+struct hsm_queue_item {
+	struct hsm_queue_item *next;
+	int state[20];
+	struct hsm_action_list hal;
+};
+
+struct hsm_queue {
+	struct hsm_queue_item *head;
+	struct hsm_queue_item *tail;
+	int count;
+};
+
+struct active_ct {
+	struct obd_uuid uuid;
+	int registered;
+	struct hsm_queue active;
+	__u32 archives;
+};
+
+#define MAX_COPYTOOLS 20
+
+struct hsm_queues {
+	struct hsm_queue waitq;
+	struct active_ct copytools[MAX_COPYTOOLS];
+	struct hsm_queue doneq;
+	struct hsm_queue cancelq;
+	struct hsm_queue failq;
+	struct hsm_cdt_private *hcp;
+};
+
+bool is_empty_fid(struct lu_fid *a)
+{
+	const struct lu_fid fid_zero = {0, 0, 0};
+
+	return !lu_fid_eq(a, &fid_zero);
+}
+
+struct hsm_queue_item *create_queue(struct hsm_action_list *hal)
+{
+	struct hsm_queue_item *new = NULL;
+	int len;
+
+	len = hal_size(hal) + sizeof(struct hsm_queue_item) + MAX_COPYTOOLS;
+	new = malloc(len);
+	bzero(new, len);
+
+	memcpy(&new->hal, hal, hal_size(hal));
+
+	return new;
+}
+
+void hsmq_enqueue(struct hsm_queue *queue,
+		  struct hsm_queue_item *item)
+{
+	item->next = NULL;
+	if (queue->head == NULL)
+		queue->tail = queue->head = item;
+	else
+		queue->tail = queue->tail->next = item;
+
+	queue->count++;
+}
+
+struct hsm_queue_item *hsmq_dequeue(struct hsm_queue *queue)
+{
+	struct hsm_queue_item *next = NULL;
+	struct hsm_queue_item *tmp = queue->head;
+
+	if (queue->head == NULL)
+		return NULL;
+
+	next = queue->head->next;
+	queue->head = next;
+	if (queue->head == NULL)
+		queue->tail = NULL;
+
+	queue->count--;
+
+	tmp->next = NULL;
+
+	return tmp;
+}
+
+struct hsm_queue_item *remove_from_queue(struct hsm_queue_item *item,
+					 struct hsm_queue_item *last,
+					 struct hsm_queue *queue)
+{
+	if (item == queue->tail)
+		queue->tail = queue->tail->next;
+	else
+		last->next = item->next;
+
+	if (queue->tail == NULL)
+		queue->head = NULL;
+
+	queue->count--;
+	item->next = NULL;
+	return item->next;
+}
+
+int nlmsg_send_to_ct(struct hsm_cdt_private *hcp,
+		     struct obd_uuid uuid,
+		     struct hsm_action_list *hal)
+{
+	struct hsm_send_to_ct_kernel *hct;
+	int len = sizeof(struct hsm_send_to_ct_kernel) + hal_size(hal);
+
+	hct = (struct hsm_send_to_ct_kernel *)malloc(len);
+	memcpy(&hct->uuid, &uuid, sizeof(struct obd_uuid));
+	memcpy(&hct->hal, hal, hal_size(hal));
+
+	llapi_hsm_cdt_send(hcp, EXT_HSM_SEND_TO_CT, hct, len);
+	return 0;
+}
+
+int nlmsg_send_progress_item(struct hsm_cdt_private *hcp,
+			     struct hsm_action_item *hai,
+			     struct hsm_progress_kernel_v2 *hpk)
+{
+	struct hsm_progress_item *hpi;
+	int len = sizeof(struct hsm_progress_kernel_v2) + hai->hai_len;
+
+	hpi = (struct hsm_progress_item *)malloc(len);
+	memcpy(&hpi->hpi_hai, hai, hai->hai_len);
+	memcpy(&hpi->hpi_hpk, hpk, sizeof(struct hsm_progress_kernel_v2));
+
+	llapi_hsm_cdt_send(hcp, EXT_HSM_PROGRESS, hpi, len);
+	return 0;
+}
+
+int nlmsg_send_request_list(struct hsm_cdt_private *hcp,
+			    __u64 compound_id,
+			    enum agent_req_status status,
+			    struct hsm_action_list *hal)
+{
+	struct hsm_request_item *hri;
+	int len;
+
+	/* hri is two 32 bit integers and a HAL */
+	len = hal_size(hal) + 8;
+
+	hri = (struct hsm_request_item *)malloc(len);
+	hri->hri_compound_id = compound_id;
+	hri->hri_status = status;
+	memcpy(&hri->hri_hal, hal, hal_size(hal));
+
+	llapi_hsm_cdt_send(hcp, EXT_HSM_REQUEST_LIST_REP, hri, len);
+	return 0;
+}
+
+int hsm_action(void *msg, struct hsm_queues *queues)
+{
+	struct hsm_action_list *hal = msg;
+	struct hsm_action_list *tmphal = NULL;
+	struct hsm_action_item *hai;
+	struct hsm_action_item *tmphai = NULL;
+	struct hsm_queue_item *hqi;
+	bool found = false;
+	enum agent_req_status status;
+	int i = 0;
+	int j = 0;
+
+	fprintf(fp, "------\n");
+	fprintf(fp, "Action HAL: version %d count %d compound_id %llu flags %llu "
+	       "archive_id %d\n\tpadding %d fsname %s\n",
+	       hal->hal_version, hal->hal_count, hal->hal_compound_id,
+	       hal->hal_flags, hal->hal_archive_id, hal->padding1,
+	       hal->hal_fsname);
+
+	/* hal_count should always be 1 for this request */
+	hai = hai_first(hal);
+	for (hqi = queues->waitq.head; hqi && !found; hqi = hqi->next) {
+		tmphal = &hqi->hal;
+		i = 0;
+		for (tmphai = hai_first(tmphal); i < tmphal->hal_count;
+		     tmphai = hai_next(tmphai)) {
+			if (lu_fid_eq(&tmphai->hai_fid, &hai->hai_fid)) {
+				found = true;
+				status = ARS_WAITING;
+				break;
+			}
+			i++;
+		}
+	}
+	for (hqi = queues->doneq.head; hqi && !found; hqi = hqi->next) {
+		tmphal = &hqi->hal;
+		i = 0;
+		for (tmphai = hai_first(tmphal); i < tmphal->hal_count;
+		     tmphai = hai_next(tmphai)) {
+			if (lu_fid_eq(&tmphai->hai_fid, &hai->hai_fid)) {
+				found = true;
+				status = ARS_SUCCEED;
+				break;
+			}
+			i++;
+		}
+	}
+	for (j = 0; i < MAX_COPYTOOLS && !found; j++) {
+		for (hqi = queues->copytools[j].active.head; hqi && !found;
+		     hqi = hqi->next) {
+			tmphal = &hqi->hal;
+			i = 0;
+			for (tmphai = hai_first(tmphal); i < tmphal->hal_count;
+			     tmphai = hai_next(tmphai)) {
+				if (lu_fid_eq(&tmphai->hai_fid,
+					     &hai->hai_fid)) {
+					found = true;
+					status = ARS_STARTED;
+					break;
+				}
+				i++;
+			}
+		}
+	}
+
+	if (found && tmphai != NULL) {
+		nlmsg_send_request_list(queues->hcp, tmphai->hai_cookie,
+					status,	tmphal);
+	}
+
+	for (hai = hai_first(hal); i < hal->hal_count; hai = hai_next(hai)) {
+		i++;
+		fprintf(fp, "Action HAI: len %d action %s fid "DFID" dfid "DFID"\n"
+		       "\textent: %llu %llu cookie %llu gid %llu data %s\n",
+		       hai->hai_len, hsm_copytool_action2name(hai->hai_action),
+		       PFID(&hai->hai_fid),
+		       PFID(&hai->hai_dfid), hai->hai_extent.offset,
+		       hai->hai_extent.length, hai->hai_cookie, hai->hai_gid,
+		       hai->hai_data);
+	}
+	fprintf(fp, "------\n");
+	return 0;
+}
+
+int hsm_progress(void *msg, struct hsm_queues *queues)
+{
+	struct hsm_progress_kernel_v2 *hpk = msg;
+	struct hsm_queue_item *hqi;
+	struct hsm_queue *runq;
+	struct hsm_action_list *hal;
+	struct hsm_action_item *hai;
+	int i = 0;
+	int j = 0;
+
+	fprintf(fp, "Progress: FID "DFID" cookie %llu\n"
+	       "\textent: %llu %llu flags %d errval %d action %d\n"
+	       "\tdata_version %llu padding %d\n",
+	       PFID(&hpk->hpk_fid), hpk->hpk_cookie, hpk->hpk_extent.offset,
+	       hpk->hpk_extent.length, hpk->hpk_flags, hpk->hpk_errval,
+	       hpk->hpk_action, hpk->hpk_data_version, hpk->hpk_version);
+
+	/* print out progress, but we don't care unless it's a begin or end*/
+	if (hpk->hpk_flags == 0)
+		goto out;
+
+	for (j = 0; j < MAX_COPYTOOLS; j++) {
+		runq = &queues->copytools[j].active;
+		if (runq->count == 0)
+			continue;
+
+		for (hqi = runq->head; hqi; hqi = hqi->next) {
+			hal = &hqi->hal;
+			for (hai = hai_first(hal), i = 0; i < hal->hal_count;
+			     hai = hai_next(hai), i++) {
+				if (hai->hai_cookie == hpk->hpk_cookie)
+					goto found;
+			}
+		}
+	}
+
+	goto out;
+
+found:
+	fprintf(fp, "Found "DFID"\n", PFID(&hai->hai_fid));
+	hai->hai_dfid = hpk->hpk_dfid;
+out:
+	return 0;
+}
+
+int cancel_hai(struct hsm_action_item *haia, struct hsm_queues *queues)
+{
+	struct hsm_queue *queue;
+	struct hsm_queue_item *item;
+	struct hsm_queue_item *last;
+	struct hsm_action_list *hal;
+	struct hsm_action_item *hai;
+
+	bool found = false;
+	int i = 0;
+	int j = 0;
+
+	/*
+	 * First, search the waitq
+	 */
+	queue = &queues->waitq;
+	do {
+		last = NULL;
+		for (item = queue->head; item != NULL && !found;
+		     item = item->next) {
+			hal = &item->hal;
+			for (hai = hai_first(hal), j = 0; j < hal->hal_count;
+			     hai = hai_next(hai), j++) {
+				if (!haia &&
+				    !lu_fid_eq(&hai->hai_fid, &haia->hai_fid))
+					continue;
+
+				/* for NULL haia we clear everything */
+				if (haia)
+					found = true;
+
+				fprintf(fp, "Cancelling: "DFID"\n",
+					PFID(&hai->hai_fid));
+				remove_from_queue(item, last, queue);
+
+				if (queue != &queues->waitq) {
+					fprintf(fp, "send_to_ct %d %p\n",
+						 i, hal);
+					enum hsm_copytool_action action = hai->hai_action;
+					hai->hai_action = HSMA_CANCEL;
+					nlmsg_send_to_ct(queues->hcp,
+							 queues->copytools[i].uuid,
+							 hal);
+							 hai->hai_action = action;
+				}
+
+				hsmq_enqueue(&queues->cancelq, item);
+
+				if (found)
+					break;
+			}
+			last = item;
+		}
+
+		/*
+		 * Then search the active queues
+		 */
+		queue = &queues->copytools[i++].active;
+	} while (!found && i < MAX_COPYTOOLS);
+
+	return 0;
+}
+
+/**
+ * Clear everything out of the queues
+ */
+int hsm_cancel_all(struct hsm_queues *queues)
+{
+	struct hsm_queue_item *hqi;
+
+	/* Clear the wait queue */
+	fprintf(fp, "clear wait and run queues\n");
+	cancel_hai(NULL, queues);
+
+	fprintf(fp, "clear doneq\n");
+	/* flush out the done and failed queues */
+	do {
+		hqi = hsmq_dequeue(&queues->doneq);
+		if (!hqi)
+			break;
+
+		free(hqi);
+		hqi = NULL;
+	} while (true);
+
+	fprintf(fp, "clear failq\n");
+	do {
+		hqi = hsmq_dequeue(&queues->failq);
+		if (!hqi)
+			break;
+
+		free(hqi);
+		hqi = NULL;
+	} while (true);
+
+	return 0;
+}
+
+int clear_one_queue(struct hsm_action_item *hai, struct hsm_queue *queue)
+{
+	struct hsm_queue_item *last = NULL;
+	struct hsm_queue_item *hqi;
+	struct hsm_action_list *tmphal;
+	struct hsm_action_item *tmphai;
+	int i;
+
+	for (hqi = queue->head; hqi; hqi = hqi->next) {
+		tmphal = &hqi->hal;
+		for (tmphai = hai_first(tmphal), i = 0; i < tmphal->hal_count;
+		     tmphai = hai_next(tmphai), i++) {
+			if (lu_fid_eq(&tmphai->hai_fid, &hai->hai_fid) &&
+			    tmphai->hai_action == hai->hai_action) {
+				fprintf(fp, "Clearing instance\n");
+				remove_from_queue(hqi, last, queue);
+				free(hqi);
+				last = NULL;
+				hqi = queue->head;
+				break;
+			} else {
+				last = hqi;
+			}
+		}
+		if (hqi == NULL)
+			break;
+	}
+	return 0;
+}
+
+int clear_finished(struct hsm_action_item *hai, struct hsm_queues *queues)
+{
+	fprintf(fp, "Clearing duplicates of: "DFID" %llx\n",
+		PFID(&hai->hai_fid),
+		hai->hai_cookie);
+
+	clear_one_queue(hai, &queues->waitq);
+	clear_one_queue(hai, &queues->doneq);
+	clear_one_queue(hai, &queues->cancelq);
+	clear_one_queue(hai, &queues->failq);
+
+	return 0;
+}
+
+int hsm_request(void *msg, struct hsm_queues *queues)
+{
+	struct hsm_action_list *hal = msg;
+	struct hsm_action_item *hai;
+	bool cancel = false;
+	int i = 0;
+
+	fprintf(fp, "------\n");
+	fprintf(fp, "Request HAL: version %d count %d compound_id %llu flags %llu "
+	       "archive_id %d\n\tpadding %d fsname %s\n",
+	       hal->hal_version, hal->hal_count, hal->hal_compound_id,
+	       hal->hal_flags, hal->hal_archive_id, hal->padding1,
+	       hal->hal_fsname);
+
+	for (hai = hai_first(hal); i < hal->hal_count;
+	     i++, hai = hai_next(hai)) {
+		if (hai->hai_action == HSMA_CANCEL) {
+			cancel = true;
+			cancel_hai(hai, queues);
+		}
+
+		clear_finished(hai, queues);
+
+		/* Data fid is initially set to Lustre FID */
+		if (hai->hai_action == HSMA_ARCHIVE)
+			hai->hai_dfid = hai->hai_fid;
+
+		fprintf(fp, "Request HAI: len %d action %s fid "DFID" dfid "DFID"\n"
+		       "\textent: %llu %llu cookie %llu gid %llu data %s\n",
+		       hai->hai_len, hsm_copytool_action2name(hai->hai_action),
+		       PFID(&hai->hai_fid),
+		       PFID(&hai->hai_dfid), hai->hai_extent.offset,
+		       hai->hai_extent.length, hai->hai_cookie, hai->hai_gid,
+		       hai->hai_data);
+	}
+	fprintf(fp, "------\n");
+
+	if (!cancel)
+		hsmq_enqueue(&queues->waitq, create_queue(hal));
+
+	return 0;
+}
+
+int hsm_list_requests(void *msg, struct hsm_queues *queues)
+{
+	struct hsm_queue_item *hqi;
+	struct hsm_action_list hal;
+	int wait = 0;
+	int active = 0;
+	int done = 0;
+	int failed = 0;
+	int canceled = 0;
+	int i;
+
+	for (hqi = queues->waitq.head; hqi; hqi = hqi->next) {
+		nlmsg_send_request_list(queues->hcp,
+					hai_first(&hqi->hal)->hai_cookie,
+					ARS_WAITING, &hqi->hal);
+		wait++;
+	}
+
+	for (i = 0; i < MAX_COPYTOOLS; i++) {
+		if (queues->copytools[i].active.count == 0)
+			continue;
+
+		for (hqi = queues->copytools[i].active.head; hqi;
+		     hqi = hqi->next) {
+			nlmsg_send_request_list(queues->hcp,
+						hai_first(&hqi->hal)->hai_cookie,
+						ARS_STARTED,
+						&hqi->hal);
+			active++;
+		}
+	}
+
+	for (hqi = queues->doneq.head; hqi; hqi = hqi->next) {
+		nlmsg_send_request_list(queues->hcp,
+					hai_first(&hqi->hal)->hai_cookie,
+					ARS_SUCCEED,
+					&hqi->hal);
+		done++;
+	}
+
+	for (hqi = queues->failq.head; hqi; hqi = hqi->next) {
+		nlmsg_send_request_list(queues->hcp,
+					hai_first(&hqi->hal)->hai_cookie,
+					ARS_FAILED,
+					&hqi->hal);
+		failed++;
+	}
+
+	for (hqi = queues->cancelq.head; hqi; hqi = hqi->next) {
+		nlmsg_send_request_list(queues->hcp,
+					hai_first(&hqi->hal)->hai_cookie,
+					ARS_CANCELED,
+					&hqi->hal);
+		canceled++;
+	}
+
+	fprintf(fp, "Send request list wait: %d active %d done %d failed %d "
+	       "canceled %d\n", wait, active, done, failed, canceled);
+	bzero(&hal, sizeof(struct hsm_action_list));
+	/* send list-done message */
+	nlmsg_send_request_list(queues->hcp, 0, ARS_CANCELED, &hal);
+
+	return 0;
+}
+
+int hsm_register(void *msg, struct hsm_queues *queues)
+{
+	struct hsm_register_kernel *hrk = msg;
+	int i = 0;
+	int empty = -1;
+
+	fprintf(fp, "Register: %s %d\n", hrk->uuid.uuid, hrk->archives);
+	for (i = 0; i < MAX_COPYTOOLS; i++) {
+		if (memcmp(&queues->copytools[i].uuid, &hrk->uuid,
+			   sizeof(struct obd_uuid)) == 0) {
+			fprintf(fp, "registered %d\n", i);
+			queues->copytools[i].registered++;
+			empty = i;
+			break;
+		}
+		if ((empty == -1) && (queues->copytools[i].registered == 0))
+			empty = i;
+	}
+	if (empty != -1) {
+		memcpy(&queues->copytools[empty].uuid, &hrk->uuid,
+		       sizeof(struct obd_uuid));
+		queues->copytools[empty].archives = hrk->archives;
+		fprintf(fp, "registerd %s in slot %d\n", hrk->uuid.uuid, empty);
+	} else {
+		fprintf(fp, "could not register %s\n", hrk->uuid.uuid);
+	}
+
+	return 0;
+}
+
+int fail_queue(struct hsm_queue *queue, struct hsm_queue *failq)
+{
+	struct hsm_queue_item *hqi = NULL;
+
+	hqi = hsmq_dequeue(queue);
+	while (hqi != NULL) {
+		hsmq_enqueue(failq, hqi);
+		hqi = hsmq_dequeue(queue);
+	}
+
+	return 0;
+}
+
+int hsm_unregister(void *msg, struct hsm_queues *queues)
+{
+	struct hsm_unregister_kernel *huk = msg;
+
+	int i = 0;
+
+	fprintf(fp, "Unregister: %s\n", huk->uuid.uuid);
+
+	for (i = 0; i < MAX_COPYTOOLS; i++) {
+		if (memcmp(&queues->copytools[i].uuid.uuid, &huk->uuid.uuid,
+			   sizeof(struct obd_uuid)) == 0) {
+			fprintf(fp, "Unregistered %d\n", i);
+			queues->copytools[i].registered--;
+			if (queues->copytools[i].registered <= 0) {
+				fail_queue(&queues->copytools[i].active,
+					   &queues->failq);
+				queues->copytools[i].registered = 0;
+				queues->copytools[i].archives = 0;
+				bzero(&queues->copytools[i].uuid,
+				      sizeof(struct obd_uuid));
+			}
+			break;
+		}
+	}
+
+	return 0;
+}
+
+int start_action(struct hsm_queues *queues)
+{
+	struct hsm_queue_item *tmp = NULL;
+	int rc = -1;
+	int i = 0;
+
+	for (i = 0; i < MAX_COPYTOOLS && rc == -1; i++) {
+		if (queues->waitq.count == 0) {
+			rc = 0;
+			break;
+		}
+
+		if ((queues->copytools[i].registered == 0) ||
+		    (queues->copytools[i].active.count != 0))
+			continue;
+
+		/* Archive 0 handles everything */
+		if ((queues->copytools[i].archives != 0) &&
+		    (queues->copytools[i].archives !=
+		     queues->waitq.head->hal.hal_archive_id))
+			continue;
+
+		tmp = hsmq_dequeue(&queues->waitq);
+
+		if (tmp == NULL)
+			break;
+
+		fprintf(fp, "send_to_ct %d %p\n", i, &tmp->hal);
+		hsmq_enqueue(&queues->copytools[i].active, tmp);
+		nlmsg_send_to_ct(queues->hcp,
+				 queues->copytools[i].uuid, &tmp->hal);
+		rc = 0;
+	}
+
+	return rc;
+}
+
+int clear_done(struct hsm_record_update *hru, struct hsm_queues *queues)
+{
+	struct hsm_queue_item *hqi;
+	struct hsm_queue_item *last = NULL;
+	struct hsm_action_list *hal;
+	struct hsm_action_item *hai;
+	struct hsm_queue *runq;
+	int i = 0;
+	int j = 0;
+	bool trim = true;
+
+	for (j = 0; j < MAX_COPYTOOLS; j++) {
+		runq = &queues->copytools[j].active;
+
+		for (hqi = runq->head; hqi != NULL; hqi = hqi->next) {
+			hal = &hqi->hal;
+			trim = true;
+			i = 0;
+			for (hai = hai_first(hal); i < hal->hal_count;
+			     hai = hai_next(hai)) {
+				if (hai->hai_cookie == hru->cookie)
+					hqi->state[i] = hru->status;
+				else if (hqi->state[i] == 0) {
+					trim = false;
+					break;
+				}
+				i++;
+			}
+
+			if (trim) {
+				hai = hai_first(hal);
+				remove_from_queue(hqi, last, runq);
+				switch (hru->status) {
+				case ARS_SUCCEED:
+					clear_one_queue(hai, &queues->doneq);
+					hsmq_enqueue(&queues->doneq, hqi);
+					break;
+				case ARS_FAILED:
+					clear_one_queue(hai, &queues->failq);
+					hsmq_enqueue(&queues->failq, hqi);
+					break;
+				case ARS_CANCELED:
+					clear_one_queue(hai, &queues->cancelq);
+					hsmq_enqueue(&queues->cancelq, hqi);
+					break;
+				default:
+					fprintf(fp, "Bad State %d\n",
+					       hru->status);
+					break;
+				};
+
+				fprintf(fp, "Moving to %s: "DFID" %llx\n",
+					agent_req_status2name(hru->status),
+					PFID(&hai->hai_fid),
+					hru->cookie);
+
+				if (queues->doneq.count > MAX_COPYTOOLS) {
+					struct hsm_queue_item *hqia;
+
+					hqia = hsmq_dequeue(&queues->doneq);
+					hai = hai_first(&hqia->hal);
+					fprintf(fp, "removing item from doneq "
+					       DFID"\n",
+					       PFID(&hai->hai_fid));
+					if (hqia != NULL)
+						free(hqia);
+					hqia = NULL;
+				}
+			} else
+				last = hqi;
+		}
+	}
+	return 0;
+}
+
+void init_queue(struct hsm_queue *queue)
+{
+	queue->head = NULL;
+	queue->tail = NULL;
+	queue->count = 0;
+}
+
+int main(int argc, char **argv)
+{
+	struct hsm_queues queues;
+	enum ext_hsm_cmd cmd;
+	void *msg;
+	int i = 0;
+
+	fp = stdout;
+	if (argc == 2) {
+		fprintf(fp, "argv[1] = %s\n", argv[1]);
+		fp = fopen(argv[1], "w+");
+	}
+
+	init_queue(&queues.waitq);
+	init_queue(&queues.doneq);
+	init_queue(&queues.failq);
+	init_queue(&queues.cancelq);
+
+	for (i = 0; i < MAX_COPYTOOLS; i++) {
+		init_queue(&queues.copytools[i].active);
+		queues.copytools[i].registered = 0;
+		queues.copytools[i].archives = 0;
+		bzero(&queues.copytools[i].uuid, sizeof(struct obd_uuid));
+	}
+
+	msg = malloc(MAX_PAYLOAD);
+	queues.hcp = llapi_hsm_cdt_connect(MAX_PAYLOAD);
+
+	fprintf(fp, "Waiting for message from kernel\n");
+/* Read message from kernel */
+	while (true) {
+		cmd = llapi_hsm_cdt_recv(queues.hcp, msg, MAX_PAYLOAD);
+
+		switch (cmd) {
+		case EXT_HSM_FAIL:
+			break;
+		case EXT_HSM_ACTION:
+			hsm_action(msg, &queues);
+			break;
+		case EXT_HSM_PROGRESS:
+			hsm_progress(msg, &queues);
+			break;
+		case EXT_HSM_COMPLETE:
+			clear_done(msg, &queues);
+			break;
+		case EXT_HSM_REQUEST:
+			hsm_request(msg, &queues);
+			break;
+		case EXT_HSM_REQUEST_LIST_REQ:
+			hsm_list_requests(msg, &queues);
+			break;
+		case EXT_HSM_CT_REGISTER:
+			hsm_register(msg, &queues);
+			break;
+		case EXT_HSM_CT_UNREGISTER:
+			hsm_unregister(msg, &queues);
+			break;
+		case EXT_HSM_CANCEL_ALL:
+			hsm_cancel_all(&queues);
+			break;
+		default:
+			fprintf(fp, "Unknown msg type %d\n", cmd);
+			break;
+		}
+
+		start_action(&queues);
+		fflush(fp);
+	}
+	llapi_hsm_cdt_disconnect(queues.hcp);
+	queues.hcp = NULL;
+
+	return 0;
+}

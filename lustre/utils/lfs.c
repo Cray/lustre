@@ -7650,9 +7650,10 @@ static int lfs_hsm_request(int argc, char **argv, int action)
 	 * from command line. */
 	hur = llapi_hsm_user_request_alloc(nbfile, opaque_len);
 	if (hur == NULL) {
+		rc = -ENOMEM;
 		fprintf(stderr, "Cannot create the request: %s\n",
-			strerror(errno));
-		return -ENOMEM;
+			strerror(-rc));
+		return rc;
 	}
 	nbfile_alloc = nbfile;
 

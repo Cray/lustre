@@ -1638,7 +1638,6 @@ enum mds_cmd {
 
 #define MDS_FIRST_OPC    MDS_GETATTR
 
-
 /* opcodes for object update */
 enum update_cmd {
 	OUT_UPDATE	= 1000,
@@ -2873,6 +2872,11 @@ static inline const char *agent_req_status2name(enum agent_req_status ars)
 	}
 }
 
+struct hsm_record_update {
+	__u64 cookie;
+	enum agent_req_status status;
+};
+
 struct llog_agent_req_rec {
 	struct llog_rec_hdr	arr_hdr;	/**< record header */
 	__u32			arr_status;	/**< status of the request */
@@ -3382,6 +3386,25 @@ struct hsm_progress_kernel_v2 {
 	__u32			hpk_padding1;
 	struct lu_fid		hpk_dfid;
 } __attribute__((packed));
+
+struct hsm_register_kernel {
+	struct obd_uuid uuid;
+	__u32 archives;
+};
+
+struct hsm_unregister_kernel {
+	struct obd_uuid uuid;
+};
+
+struct hsm_send_to_ct_kernel {
+	struct obd_uuid uuid;
+	struct hsm_action_list hal;
+};
+
+struct hsm_progress_item {
+	struct hsm_progress_kernel_v2 hpi_hpk;
+	struct hsm_action_item hpi_hai;
+};
 
 /**
  * OUT_UPDATE RPC Format

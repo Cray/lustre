@@ -127,23 +127,29 @@ int mdt_hsm_progress(struct tgt_session_info *tsi)
 
 	hpk->hpk_errval = lustre_errno_ntoh(hpk->hpk_errval);
 
-	CDEBUG(D_HSM, "Progress on "DFID": len=%llu : rc = %d\n",
-	       PFID(&hpk->hpk_fid), hpk->hpk_extent.length, hpk->hpk_errval);
+	CDEBUG(D_HSM, "Progress on "DFID": len=%llu : Flags=0x%x Data 0x%llx : rc = %d\n",
+	       PFID(&hpk->hpk_fid), hpk->hpk_extent.length,
+	       hpk->hpk_flags, hpk->hpk_data_version, hpk->hpk_errval);
 
 	if (hpk->hpk_errval)
-		CDEBUG(D_HSM, "Copytool progress on "DFID" failed : rc = %d; %s.\n",
+		CDEBUG(D_HSM, "Copytool progress on "DFID
+		       " failed : rc = %d; %s.\n",
 		       PFID(&hpk->hpk_fid), hpk->hpk_errval,
 		       hpk->hpk_flags & HP_FLAG_RETRY ? "will retry" : "fatal");
 
 	if (hpk->hpk_flags & HP_FLAG_COMPLETED)
-		CDEBUG(D_HSM, "Finished "DFID" : rc = %d; cancel cookie=%#llx\n",
+		CDEBUG(D_HSM, "Finished "DFID
+		       " : rc = %d; cancel cookie=%#llx\n",
 		       PFID(&hpk->hpk_fid), hpk->hpk_errval, hpk->hpk_cookie);
 
 	info = tsi2mdt_info(tsi);
 	if (!mdt_hsm_is_admin(info))
 		GOTO(out, rc = -EPERM);
 
-	rc = mdt_hsm_update_request_state(info, hpk);
+	if (is_cdt_external(&info->mti_mdt->mdt_coordinator))
+		rc = ext_cdt_send_hsm_progress(info, hpk);
+	else
+		rc = mdt_hsm_update_request_state(info, hpk);
 out:
 	mdt_thread_info_fini(info);
 	RETURN(rc);
@@ -154,10 +160,12 @@ int mdt_hsm_ct_register(struct tgt_session_info *tsi)
 	struct mdt_thread_info *info = tsi2mdt_info(tsi);
 	struct ptlrpc_request *req = mdt_info_req(info);
 	struct obd_export *exp = req->rq_export;
+	struct obd_uuid	*uuid;
 	size_t archives_size;
 	__u32 *archives;
 	int archive_count;
 	int rc;
+
 	ENTRY;
 
 	if (!mdt_hsm_is_admin(info))
@@ -170,15 +178,19 @@ int mdt_hsm_ct_register(struct tgt_session_info *tsi)
 	archives_size = req_capsule_get_size(tsi->tsi_pill,
 					     &RMF_MDS_HSM_ARCHIVE, RCL_CLIENT);
 
+	uuid = &tsi->tsi_exp->exp_client_uuid;
+
 	/* compatibility check for the old clients */
 	if (!exp_connect_archive_id_array(exp)) {
 		if (archives_size != sizeof(*archives))
 			GOTO(out, rc = err_serious(-EPROTO));
 
 		/* XXX: directly include this function here? */
-		rc = mdt_hsm_agent_register_mask(info,
-						 &tsi->tsi_exp->exp_client_uuid,
-						 *archives);
+		if (is_cdt_external(&info->mti_mdt->mdt_coordinator))
+			rc = ext_cdt_copytool_register(uuid, *archives);
+		else
+			rc = mdt_hsm_agent_register_mask(info, uuid,
+							 *archives);
 		GOTO(out, rc);
 	}
 
@@ -191,8 +203,12 @@ int mdt_hsm_ct_register(struct tgt_session_info *tsi)
 		archives = NULL;
 	}
 
-	rc = mdt_hsm_agent_register(info, &tsi->tsi_exp->exp_client_uuid,
-				    archive_count, archives);
+	rc = mdt_hsm_agent_register(info, uuid, archive_count, archives);
+
+	if (is_cdt_external(&info->mti_mdt->mdt_coordinator))
+		rc = ext_cdt_copytool_register(uuid, 0);
+	else
+		rc = mdt_hsm_agent_register_mask(info, uuid, 0);
 
 out:
 	mdt_thread_info_fini(info);
@@ -202,6 +218,7 @@ out:
 int mdt_hsm_ct_unregister(struct tgt_session_info *tsi)
 {
 	struct mdt_thread_info	*info;
+	struct obd_uuid		*uuid;
 	int			 rc;
 	ENTRY;
 
@@ -212,8 +229,11 @@ int mdt_hsm_ct_unregister(struct tgt_session_info *tsi)
 	if (!mdt_hsm_is_admin(info))
 		GOTO(out, rc = -EPERM);
 
-	/* XXX: directly include this function here? */
-	rc = mdt_hsm_agent_unregister(info, &tsi->tsi_exp->exp_client_uuid);
+	uuid = &tsi->tsi_exp->exp_client_uuid;
+	if (is_cdt_external(&info->mti_mdt->mdt_coordinator))
+		rc = ext_cdt_copytool_unregister(uuid);
+	else
+		rc = mdt_hsm_agent_unregister(info, uuid);
 out:
 	mdt_thread_info_fini(info);
 	RETURN(rc);
@@ -621,7 +641,10 @@ int mdt_hsm_request(struct tgt_session_info *tsi)
 		hal->hal_count++;
 	}
 
-	rc = mdt_hsm_add_actions(info, hal);
+	if (is_cdt_external(&info->mti_mdt->mdt_coordinator))
+		rc = ext_cdt_send_request(info, hal);
+	else
+		rc = mdt_hsm_add_actions(info, hal);
 
 	MDT_HSM_FREE(hal, hal_size);
 
@@ -633,3 +656,4 @@ out:
 	mdt_thread_info_fini(info);
 	return rc;
 }
+

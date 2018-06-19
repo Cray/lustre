@@ -1942,6 +1942,20 @@ static inline const char *hsm_copytool_action2name(enum hsm_copytool_action  a)
 	}
 }
 
+static inline enum hsm_copytool_action hsm_copytool_name2action(char *name)
+{
+	if (!strncasecmp(name, "ARCHIVE", strlen("ARCHIVE")))
+		return HSMA_ARCHIVE;
+	else if (!strncasecmp(name, "RESTORE", strlen("RESTORE")))
+		return HSMA_RESTORE;
+	else if (!strncasecmp(name, "REMOVE", strlen("REMOVE")))
+		return HSMA_REMOVE;
+	else if (!strncasecmp(name, "CANCEL", strlen("CANCEL")))
+		return HSMA_CANCEL;
+
+	return HSMA_NONE;
+}
+
 /* Copytool item action description */
 struct hsm_action_item {
 	__u32      hai_len;     /* valid size of this struct */
@@ -2048,6 +2062,7 @@ struct hsm_user_import {
 /* Copytool progress reporting */
 #define HP_FLAG_COMPLETED 0x01
 #define HP_FLAG_RETRY     0x02
+#define HP_FLAG_BEGIN     0x04
 
 struct hsm_progress {
 	struct lu_fid		hp_fid;
@@ -2064,6 +2079,12 @@ struct hsm_copy {
 	__u16			hc_errval; /* positive val */
 	__u32			padding;
 	struct hsm_action_item	hc_hai;
+};
+
+struct hsm_request_item {
+	__u32 hri_compound_id;
+	__u32 hri_status;
+	struct hsm_action_list hri_hal;
 };
 
 /* JSON objects */
@@ -2191,6 +2212,24 @@ enum lockahead_results {
 	LLA_RESULT_SENT = 0,
 	LLA_RESULT_DIFFERENT,
 	LLA_RESULT_SAME,
+};
+
+/*
+ * External HSM Coordinator commands
+ */
+enum ext_hsm_cmd {
+	EXT_HSM_FAIL = 0,
+	EXT_HSM_REQUEST_LIST_REQ = 1,
+	EXT_HSM_REQUEST_LIST_REP = 2,
+	EXT_HSM_ACTION = 3,
+	EXT_HSM_PROGRESS = 4,
+	EXT_HSM_COMPLETE = 5,
+	EXT_HSM_SEND_TO_CT = 6,
+	EXT_HSM_REQUEST = 7,
+	EXT_HSM_CT_REGISTER = 8,
+	EXT_HSM_CT_UNREGISTER = 9,
+	EXT_HSM_CANCEL_ALL = 10,
+	EXT_HSM_LAST_OPC
 };
 
 #if defined(__cplusplus)

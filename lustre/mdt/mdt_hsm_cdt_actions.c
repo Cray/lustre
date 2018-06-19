@@ -593,9 +593,13 @@ static int mdt_hsm_actions_proc_show(struct seq_file *s, void *v)
 		RETURN(0);
 
 	down_read(&cdt->cdt_llog_lock);
-	rc = llog_cat_process(&aai->aai_env, aai->aai_ctxt->loc_handle,
-			      hsm_actions_show_cb, s,
-			      aai->aai_cat_index, aai->aai_index);
+	if (is_cdt_external(cdt))
+		rc = mdt_ext_hsm_request_list(s);
+	else
+		rc = llog_cat_process(&aai->aai_env, aai->aai_ctxt->loc_handle,
+				      hsm_actions_show_cb, s,
+				      aai->aai_cat_index, aai->aai_index);
+
 	up_read(&cdt->cdt_llog_lock);
 	if (rc == 0) /* all llog parsed */
 		aai->aai_eof = true;

@@ -96,7 +96,7 @@ enum cdt_states { CDT_STOPPED = 0,
 		  CDT_RUNNING,
 		  CDT_DISABLE,
 		  CDT_STOPPING,
-
+		  CDT_EXTERNAL,
 		  CDT_STATES_COUNT
 };
 
@@ -113,6 +113,8 @@ static inline char *cdt_mdt_state2str(int state)
 		return "stopped";
 	case CDT_DISABLE:
 		return "disabled";
+	case CDT_EXTERNAL:
+		return "external";
 	default:
 		return "unknown";
 	}
@@ -573,11 +575,6 @@ struct cdt_restore_handle {
 };
 extern struct kmem_cache *mdt_hsm_cdt_kmem;	/** restore handle slab cache */
 
-struct hsm_record_update {
-	__u64 cookie;
-	enum agent_req_status status;
-};
-
 static inline const struct md_device_operations *
 mdt_child_ops(struct mdt_device * m)
 {
@@ -954,6 +951,17 @@ int mdt_hsm_ct_register(struct tgt_session_info *tsi);
 int mdt_hsm_ct_unregister(struct tgt_session_info *tsi);
 int mdt_hsm_request(struct tgt_session_info *tsi);
 
+static inline bool is_cdt_external(struct coordinator *cdt)
+{
+	if (!cdt)
+		return false;
+	return cdt->cdt_state == CDT_EXTERNAL;
+}
+
+int mdt_ext_hsm_request_list(struct seq_file *s);
+int cdt_external_start(void);
+int cdt_external_stop(void);
+
 /* mdt/mdt_hsm_cdt_actions.c */
 extern const struct file_operations mdt_hsm_actions_fops;
 void dump_llog_agent_req_rec(const char *prefix,
@@ -1000,6 +1008,11 @@ int mdt_hsm_get_action(struct mdt_thread_info *mti,
 		       struct hsm_extent *extent);
 bool mdt_hsm_restore_is_running(struct mdt_thread_info *mti,
 				const struct lu_fid *fid);
+bool hsm_action_is_needed(struct hsm_action_item *hai, int hal_an,
+			  __u64 rq_flags, struct md_hsm *hsm);
+int hsm_action_permission(struct mdt_thread_info *mti, struct mdt_object *obj,
+			  enum hsm_copytool_action hsma);
+
 /* mdt/mdt_hsm_cdt_requests.c */
 extern struct cfs_hash_ops cdt_request_cookie_hash_ops;
 extern struct cfs_hash_ops cdt_agent_record_hash_ops;
@@ -1020,13 +1033,31 @@ int mdt_cdt_remove_request(struct coordinator *cdt, __u64 cookie);
 /* mdt/mdt_coordinator.c */
 void mdt_hsm_dump_hal(int level, const char *prefix,
 		      struct hsm_action_list *hal);
-int cdt_restore_handle_add(struct mdt_thread_info *mti, struct coordinator *cdt,
+int cdt_restore_handle_add(struct mdt_thread_info *mti,
+			   struct coordinator *cdt,
 			   const struct lu_fid *fid,
 			   const struct hsm_extent *he);
 struct cdt_restore_handle *cdt_restore_handle_find(struct coordinator *cdt,
 						   const struct lu_fid *fid);
 void cdt_restore_handle_del(struct mdt_thread_info *mti,
 			    struct coordinator *cdt, const struct lu_fid *fid);
+int hsm_swap_layouts(struct mdt_thread_info *mti, struct mdt_object *obj,
+		     const struct lu_fid *dfid, struct md_hsm *mh_common);
+
+int hsm_init_ucred(struct lu_ucred *uc);
+
+/* mdt/mdt_ext_cdt.c */
+int ext_cdt_copytool_register(struct obd_uuid *uuid, __u32 archives);
+int ext_cdt_copytool_unregister(struct obd_uuid *uuid);
+int ext_cdt_send_hsm_progress(struct mdt_thread_info *mti,
+			      struct hsm_progress_kernel_v2 *hpk);
+int ext_cdt_hsm_action(struct hsm_action_list *hal);
+int ext_cdt_send_request(struct mdt_thread_info *mti,
+			 struct hsm_action_list *hal);
+bool ext_cdt_is_restore_running(struct mdt_thread_info *mti,
+				const struct lu_fid *fid);
+int ext_cdt_cancel_all_actions(void);
+
 /* coordinator management */
 int mdt_hsm_cdt_init(struct mdt_device *mdt);
 int mdt_hsm_cdt_stop(struct mdt_device *mdt);

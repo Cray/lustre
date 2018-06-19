@@ -916,6 +916,13 @@ static int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
 	 * initialized if copy_end was called with copy == NULL.
 	 */
 
+	CDEBUG(D_HSM, "copy_end hai: len %d action %d fid "DFID" dfid "DFID"\n"
+	       "\textent: %llu %llu cookie %llu gid %llu data %s\n",
+	       hai->hai_len, hai->hai_action, PFID(&hai->hai_fid),
+	       PFID(&hai->hai_dfid), hai->hai_extent.offset,
+	       hai->hai_extent.length, hai->hai_cookie, hai->hai_gid,
+	       hai->hai_data);
+
 	/* Forge a hsm_progress based on data from copy. */
 	hpk.hpk_fid = hai->hai_fid;
 	hpk.hpk_dfid = hai->hai_dfid;
@@ -938,12 +945,13 @@ static int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
 	     hai->hai_action == HSMA_MIGRATE) &&
 	    (copy->hc_errval == 0)) {
 		struct inode *inode;
-		struct lu_fid *fid = &hai->hai_fid;
+		struct lu_fid *fid;
 		__u64 data_version = 0;
-
 
 		if (hpk.hpk_action == HSMA_RESTORE)
 			fid = &hai->hai_dfid;
+		else
+			fid = &hai->hai_fid;
 
 		/* Get lsm for the appropriate fid */
 		inode = search_inode_for_lustre(sb, fid);
@@ -1871,6 +1879,7 @@ out_hur:
 		OBD_ALLOC_PTR(copy);
 		if (copy == NULL)
 			RETURN(-ENOMEM);
+
 		if (copy_from_user(copy, (char __user *)arg, sizeof(*copy))) {
 			OBD_FREE_PTR(copy);
 			RETURN(-EFAULT);

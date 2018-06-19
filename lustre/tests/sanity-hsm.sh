@@ -10,6 +10,13 @@ set +o monitor
 SRCDIR=$(dirname $0)
 export PATH=$PWD/$SRCDIR:$SRCDIR:$PWD/$SRCDIR/utils:$PATH:/sbin:/usr/sbin
 
+if [ "$COORDINATOR" = "external" ]; then
+	echo "cdt is external"
+else
+	echo "cdt is internal"
+	COORDINATOR="enabled"
+fi
+
 ONLY=${ONLY:-"$*"}
 # bug number for skipped test:
 ALWAYS_EXCEPT="$SANITY_HSM_EXCEPT"
@@ -611,6 +618,10 @@ cdt_set_mount_state() {
 	# MGC_TIMEOUT_MIN_SECONDS + MGC_TIMEOUT_RAND_CENTISEC(5 + 5)
 	# and 10 seconds to retrieve config from server.
 	sleep 20
+
+	if [[ "$COORDINATOR" == "external" ]]; then
+		cdt_enable
+	fi
 }
 
 cdt_check_state() {
@@ -622,15 +633,26 @@ cdt_disable() {
 }
 
 cdt_enable() {
-	set_test_state enabled enabled
+	set_test_state $COORDINATOR $COORDINATOR
+	if [[ "$COORDINATOR" == "external" ]]; then
+	    # Kill the running coordinator if any
+	    do_facet $SINGLEMDS killall -q -15 lhsmtool_cdt || true
+	    local logfile=$TESTLOG_PREFIX
+	    [ -n "$TESTNAME" ] && logfile+=.$TESTNAME.
+	    logfile+=.lhsmtool_cdt_log.${SINGLEMDS}.log
+	    do_facet $SINGLEMDS lhsmtool_cdt ${logfile} &
+	fi
 }
 
 cdt_shutdown() {
 	set_test_state shutdown stopped
+	if [[ "$COORDINATOR" == "external" ]]; then
+	    do_facet $SINGLEMDS killall -q -15 lhsmtool_cdt || true
+	fi
 }
 
 cdt_purge() {
-	set_test_state purge enabled
+	set_test_state purge $COORDINATOR
 }
 
 cdt_restart() {
@@ -740,7 +762,8 @@ wait_request_state() {
 	local mds=mds$(($mdtidx + 1))
 
 	local cmd="$LCTL get_param -n ${MDT_PREFIX}${mdtidx}.hsm.actions"
-	cmd+=" | awk '/'$fid'.*action='$request'/ {print \\\$13}' | cut -f2 -d="
+	cmd+=" | awk '/'$fid'.*action='$request'/ {print \\\$13}' | tail -n1"
+	cmd+=" | cut -f2 -d="
 
 	wait_result $mds "$cmd" "$state" 200 ||
 		error "request on $fid is not $state on $mds"
@@ -878,8 +901,8 @@ kill_copytools
 # so force it
 # the lustre conf must be without hsm on (like for sanity.sh)
 echo "Set HSM on and start"
-cdt_set_mount_state enabled
-cdt_check_state enabled
+cdt_set_mount_state $COORDINATOR
+cdt_check_state $COORDINATOR
 
 echo "Set sanity-hsm HSM policy"
 cdt_set_sanity_policy
@@ -4072,6 +4095,9 @@ test_200() {
 run_test 200 "Register/Cancel archive"
 
 test_201() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not support enable/disable"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4311,6 +4337,9 @@ test_223a() {
 run_test 223a "Changelog for restore canceled (import case)"
 
 test_223b() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not support enable/disable"
+
 	local f=$DIR/$tdir/$tfile
 	local fid=$(create_empty_file "$f")
 
@@ -4537,6 +4566,9 @@ test_228() {
 run_test 228 "On released file, return extend to FIEMAP. For [cp,tar] --sparse"
 
 test_250() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "Internal coordinator only"
+
 	local file="$DIR/$tdir/$tfile"
 
 	# set max_requests to allow one request of each type to be started (3)
@@ -5056,14 +5088,14 @@ test_300() {
 	cdt_check_state stopped
 
 	echo "Set coordinator start at mount, and start coordinator"
-	cdt_set_mount_state enabled
+	cdt_set_mount_state $COORDINATOR
 
 	# check cdt is on
-	cdt_check_state enabled
+	cdt_check_state $COORDINATOR
 
 	# check cdt still on after umount/remount
 	fail $SINGLEMDS
-	cdt_check_state enabled
+	cdt_check_state $COORDINATOR
 
 	# we are back to original state (cdt started at mount)
 }
@@ -5103,7 +5135,7 @@ test_302() {
 	done
 
 	# check cdt is on
-	cdt_check_state enabled
+	cdt_check_state $COORDINATOR
 
 	local res=$(get_hsm_param default_archive_id)
 
@@ -5792,6 +5824,7 @@ test_606() {
 }
 run_test 606 "llog_reader groks changelog fields"
 
+cdt_shutdown
 complete $SECONDS
 check_and_cleanup_lustre
 exit_status

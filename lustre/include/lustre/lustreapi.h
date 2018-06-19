@@ -1009,6 +1009,23 @@ ssize_t llapi_mirror_copy_many(int fd, unsigned int src,
 int llapi_mirror_copy(int fd, unsigned int src, unsigned int dst,
 		       off_t pos, size_t count);
 
+/**
+ * External HSM coordinator functions
+ */
+struct hsm_cdt_private {
+	int hcp_sock;
+	size_t hcp_recv_buf_sz;
+	size_t hcp_send_buf_sz;
+	void *hcp_recv_buf;
+	void *hcp_send_buf;
+};
+
+int llapi_hsm_cdt_send(struct hsm_cdt_private *cdt, enum ext_hsm_cmd cmd,
+		       void *data, size_t data_sz);
+enum ext_hsm_cmd llapi_hsm_cdt_recv(struct hsm_cdt_private *cdt,
+					 void *data, size_t data_sz);
+struct hsm_cdt_private *llapi_hsm_cdt_connect(size_t max_bufsize);
+int llapi_hsm_cdt_disconnect(struct hsm_cdt_private *cdt);
 /** @} llapi */
 
 #if defined(__cplusplus)

@@ -149,7 +149,7 @@ static int hsm_find_compatible(const struct lu_env *env, struct mdt_device *mdt,
  * \param hsm [IN] file HSM metadata
  * \retval boolean
  */
-static bool hsm_action_is_needed(struct hsm_action_item *hai, int hal_an,
+bool hsm_action_is_needed(struct hsm_action_item *hai, int hal_an,
 				 __u64 rq_flags, struct md_hsm *hsm)
 {
 	bool	 is_needed = false;
@@ -230,10 +230,9 @@ static bool hal_is_sane(struct hsm_action_list *hal)
 	RETURN(true);
 }
 
-static int
-hsm_action_permission(struct mdt_thread_info *mti,
-		      struct mdt_object *obj,
-		      enum hsm_copytool_action hsma)
+int hsm_action_permission(struct mdt_thread_info *mti,
+			  struct mdt_object *obj,
+			  enum hsm_copytool_action hsma)
 {
 	struct coordinator *cdt = &mti->mti_mdt->mdt_coordinator;
 	struct lu_ucred *uc = mdt_ucred(mti);
@@ -466,11 +465,16 @@ bool mdt_hsm_restore_is_running(struct mdt_thread_info *mti,
 {
 	struct coordinator *cdt = &mti->mti_mdt->mdt_coordinator;
 	bool is_running;
+
 	ENTRY;
 
-	mutex_lock(&cdt->cdt_restore_lock);
-	is_running = (cdt_restore_handle_find(cdt, fid) != NULL);
-	mutex_unlock(&cdt->cdt_restore_lock);
+	if (is_cdt_external(cdt)) {
+		is_running = ext_cdt_is_restore_running(mti, fid);
+	} else {
+		mutex_lock(&cdt->cdt_restore_lock);
+		is_running = (cdt_restore_handle_find(cdt, fid) != NULL);
+		mutex_unlock(&cdt->cdt_restore_lock);
+	}
 
 	RETURN(is_running);
 }
