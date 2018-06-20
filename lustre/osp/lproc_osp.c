@@ -785,7 +785,7 @@ osp_reserved_mb_high_seq_write(struct file *file, const char __user *buffer,
 	__u64			val;
 	int			rc;
 
-	if (osp == NULL)
+	if (osp == NULL || osp->opd_pre == NULL)
 		return -EINVAL;
 
 	rc = lprocfs_write_frac_u64_helper(buffer, count, &val, 1 << 20);
@@ -846,7 +846,7 @@ osp_reserved_mb_low_seq_write(struct file *file, const char __user *buffer,
 	__u64			val;
 	int			rc;
 
-	if (osp == NULL)
+	if (osp == NULL || osp->opd_pre == NULL)
 		return -EINVAL;
 
 	rc = lprocfs_write_frac_u64_helper(buffer, count, &val, 1 << 20);
