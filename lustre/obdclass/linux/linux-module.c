@@ -331,7 +331,7 @@ static ssize_t obd_proc_jobid_name_seq_write(struct file *file,
 		if (copy_from_user(jobid, buffer, count))
 			return -EFAULT;
 
-		lustre_jobid_clear(buffer);
+		lustre_jobid_clear(jobid);
 		return count;
 	}
 
