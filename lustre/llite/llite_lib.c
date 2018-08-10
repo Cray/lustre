@@ -242,7 +242,7 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 				  OBD_CONNECT_SUBTREE |
 				  OBD_CONNECT_FLAGS2 | OBD_CONNECT_MULTIMODRPCS;
 
-	data->ocd_connect_flags2 = 0;
+	data->ocd_connect_flags2 = OBD_CONNECT2_INC_XID;
 
         if (sbi->ll_flags & LL_SBI_SOM_PREVIEW)
                 data->ocd_connect_flags |= OBD_CONNECT_SOM;
@@ -493,7 +493,8 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt,
 	data->ocd_connect_flags |= OBD_CONNECT_LOCKAHEAD_OLD;
 #endif
 
-	data->ocd_connect_flags2 = OBD_CONNECT2_LOCKAHEAD;
+	data->ocd_connect_flags2 = OBD_CONNECT2_LOCKAHEAD |
+				   OBD_CONNECT2_INC_XID;
 
 	if (!OBD_FAIL_CHECK(OBD_FAIL_OSC_CONNECT_GRANT_PARAM))
 		data->ocd_connect_flags |= OBD_CONNECT_GRANT_PARAM;

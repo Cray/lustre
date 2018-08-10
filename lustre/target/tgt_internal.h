@@ -224,6 +224,6 @@ int tgt_txn_stop_cb(const struct lu_env *env, struct thandle *th,
 void barrier_init(void);
 void barrier_fini(void);
 int tgt_handle_received_xid(struct obd_export *exp, __u64 rcvd_xid);
-int tgt_handle_tag(struct obd_export *exp, __u16 tag);
+int tgt_handle_tag(struct ptlrpc_request *req);
 
 #endif /* _TG_INTERNAL_H */

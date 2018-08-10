@@ -1384,6 +1384,7 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 /* ocd_connect_flags2 flags */
 #define OBD_CONNECT2_FILE_SECCTX	0x1ULL /* set file security context at create */
 #define OBD_CONNECT2_LOCKAHEAD	0x2ULL /* ladvise lockahead v2 */
+#define OBD_CONNECT2_INC_XID	0x40ULL /* Increasing xid */
 
 /* XXX README XXX:
  * Please DO NOT add flag values here before first ensuring that this same
@@ -1435,7 +1436,7 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 				OBD_CONNECT_BULK_MBITS | OBD_CONNECT_SUBTREE | \
 				OBD_CONNECT_FLAGS2)
 
-#define MDT_CONNECT_SUPPORTED2 OBD_CONNECT2_FILE_SECCTX
+#define MDT_CONNECT_SUPPORTED2 (OBD_CONNECT2_FILE_SECCTX | OBD_CONNECT2_INC_XID)
 
 #define OST_CONNECT_SUPPORTED  (OBD_CONNECT_SRVLOCK | OBD_CONNECT_GRANT | \
                                 OBD_CONNECT_REQPORTAL | OBD_CONNECT_VERSION | \
@@ -1457,7 +1458,7 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 				OBD_CONNECT_BULK_MBITS | OBD_CONNECT_GRANT_PARAM | \
 				OBD_CONNECT_FLAGS2)
 
-#define OST_CONNECT_SUPPORTED2 OBD_CONNECT2_LOCKAHEAD
+#define OST_CONNECT_SUPPORTED2 (OBD_CONNECT2_LOCKAHEAD | OBD_CONNECT2_INC_XID)
 
 #define ECHO_CONNECT_SUPPORTED (OBD_CONNECT_FID)
 #define ECHO_CONNECT_SUPPORTED2 0

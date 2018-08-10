@@ -273,6 +273,10 @@ static inline bool tgt_is_multimodrpcs_client(struct obd_export *exp)
 	return exp_connect_flags(exp) & OBD_CONNECT_MULTIMODRPCS;
 }
 
+static inline bool tgt_is_increasing_xid_client(struct obd_export *exp)
+{
+	return exp_connect_flags2(exp) & OBD_CONNECT2_INC_XID;
+}
 
 /* target/tgt_handler.c */
 int tgt_request_handle(struct ptlrpc_request *req);
@@ -324,7 +328,7 @@ void tgt_register_lfsck_in_notify(int (*notify)(const struct lu_env *,
 void tgt_register_lfsck_query(int (*query)(const struct lu_env *,
 					   struct dt_device *,
 					   struct lfsck_request *));
-bool req_can_reconstruct(struct ptlrpc_request *req, struct tg_reply_data *trd);
+int req_can_reconstruct(struct ptlrpc_request *req, struct tg_reply_data *trd);
 
 extern struct tgt_handler tgt_sec_ctx_handlers[];
 extern struct tgt_handler tgt_lfsck_handlers[];
@@ -361,7 +365,9 @@ int tgt_server_data_update(const struct lu_env *env, struct lu_target *tg,
 int tgt_truncate_last_rcvd(const struct lu_env *env, struct lu_target *tg,
 			   loff_t off);
 int tgt_reply_data_init(const struct lu_env *env, struct lu_target *tgt);
-bool tgt_lookup_reply(struct ptlrpc_request *req, struct tg_reply_data *trd);
+void tgt_add_reply_data(struct tg_export_data *ted, struct tg_reply_data *trd,
+			struct ptlrpc_request *req);
+int tgt_lookup_reply(struct ptlrpc_request *req, struct tg_reply_data *trd);
 
 enum {
 	ESERIOUS = 0x0001000
