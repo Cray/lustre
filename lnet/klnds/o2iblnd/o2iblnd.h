@@ -707,6 +707,8 @@ typedef struct kib_conn
 	struct list_head	ibc_tx_queue_rsrvd;
 	/* active tx awaiting completion */
 	struct list_head	ibc_active_txs;
+	/* zombie tx awaiting done */
+	struct list_head	ibc_zombie_txs;
 	/* serialise */
 	spinlock_t		ibc_lock;
 	/* the rx descs */
@@ -1180,6 +1182,7 @@ static inline void kiblnd_dma_sync_single_for_device(struct ib_device *dev,
 
 struct ib_mr *kiblnd_find_rd_dma_mr(struct lnet_ni *ni, kib_rdma_desc_t *rd,
 				    int negotiated_nfrags);
+void kiblnd_abort_txs(kib_conn_t *conn, struct list_head *txs);
 void kiblnd_map_rx_descs(kib_conn_t *conn);
 void kiblnd_unmap_rx_descs(kib_conn_t *conn);
 void kiblnd_pool_free_node(kib_pool_t *pool, struct list_head *node);
