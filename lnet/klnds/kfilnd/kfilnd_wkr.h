@@ -13,7 +13,8 @@ typedef void (*kfilnd_wkr_func)(void *devctx, void *context, int status);
 
 /* Use this call after init and start to post work to the Workqueue */
 int kfilnd_wkr_post(unsigned int cpt, kfilnd_wkr_func work_func,
-		    void *dev_context, void *work_context, int status);
+		    void *dev_context,
+		    void *work_context, int status);
 
 /* Called when this API will no longer be used */
 void kfilnd_wkr_cleanup(void);

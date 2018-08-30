@@ -1,0 +1,12 @@
+MODULES := kkfilnd
+
+kkfilnd-objs := \
+	kfilnd.o \
+	kfilnd_modparams.o \
+	kfilnd_wkr.o \
+	kfilnd_fab.o \
+	kfilnd_mem.o
+
+EXTRA_POST_CFLAGS += @KFICPPFLAGS@
+
+@INCLUDE_RULES@
