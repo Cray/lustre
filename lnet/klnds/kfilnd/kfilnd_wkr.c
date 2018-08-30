@@ -12,9 +12,8 @@
 #include <linux/list.h>
 #include <linux/wait.h>
 #define DEBUG_SUBSYSTEM S_LND
-#include "../lustre/include/linux/libcfs/libcfs.h"
-#include "../lustre/include/linux/lnet/lnet.h"
-#include "../lustre/include/linux/lnet/lib-lnet.h"
+#include <libcfs/libcfs.h>
+#include <lnet/lib-lnet.h>
 #include "kfilnd_wkr.h"
 
 #define KFI_THREAD_SHIFT		16
@@ -181,7 +180,8 @@ static void kfilnd_wkr_work(struct work_struct *work)
 
 /* This Post routine is used for both WorkQueues and our own threads */
 int kfilnd_wkr_post(unsigned int cpt, kfilnd_wkr_func work_func,
-		    void *dev_context, void *work_context, int status)
+		    void *dev_context,
+		    void *work_context, int status)
 {
 	int i;
 	struct kfilnd_wkr_pools *pool;
@@ -193,7 +193,6 @@ int kfilnd_wkr_post(unsigned int cpt, kfilnd_wkr_func work_func,
 	if (!pool)
 		return -EINVAL;
 
-	
 	/*  Find an available work item */
 	spin_lock_irqsave(&pool->pool_lock, flags);
 	if (pool->pool_nthreads) {
