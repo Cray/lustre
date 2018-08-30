@@ -28,5 +28,4 @@ int kfilnd_fab_post_immed_rx(struct kfilnd_dev *dev, unsigned int nrx,
 
 int kfilnd_fab_event_handler(struct kfilnd_transaction *tn,
 			     enum tn_events event);
-
 #endif /* _KFILND_FAB_ */
