@@ -681,6 +681,45 @@ AC_SUBST(GNILND)
 ]) # LN_CONFIG_GNILND
 
 #
+# LN_CONFIG_KFILND
+#
+# check whether to use the kfabric Network Interface lnd
+#
+AC_DEFUN([LN_CONFIG_KFILND], [
+AC_MSG_CHECKING([whether to enable KFI lnd])
+AC_ARG_ENABLE([kfi],
+	AC_HELP_STRING([--enable-kfi],
+		[enable KFI lnd]),
+	[], [enable_kfi="no"])
+AC_MSG_RESULT([$enable_kfi])
+
+AS_IF([test "x$enable_kfi" = xyes], [
+	# KFICPPFLAGS was set in spec file
+	KFICPPFLAGS="-I$LUSTRE/../../kfabric/include"
+	EXTRA_KCFLAGS_save="$EXTRA_KCFLAGS"
+	EXTRA_KCFLAGS="$EXTRA_KCFLAGS $KFICPPFLAGS"
+	LB_CHECK_COMPILE([if kfabric headers are present],
+	KFI_header, [
+		#include <kfi_endpoint.h>
+	],[
+		struct kfi_info *hints;
+
+		hints = kfi_allocinfo();
+	],[
+		KFILND="kfilnd"
+		AC_MSG_NOTICE([adding $LUSTRE/../../kfabric/Module.symvers to Symbol Path])
+		EXTRA_SYMBOLS="$EXTRA_SYMBOLS $LUSTRE/../../kfabric/Module.symvers"
+	],[
+		AC_MSG_ERROR([can't compile kfilnd with given KFICPPFLAGS: $KFICPPFLAGS])
+	])
+	EXTRA_KCFLAGS="$EXTRA_KCFLAGS_save"
+])
+AC_SUBST(KFICPPFLAGS)
+AC_SUBST(KFILND)
+AC_SUBST(EXTRA_SYMBOLS)
+]) # LN_CONFIG_KFILND
+
+#
 # LN_CONFIG_SK_SLEEP
 #
 # 2.6.35 kernel has sk_sleep function
@@ -899,6 +938,7 @@ LN_CONFIG_AFFINITY
 LN_CONFIG_BACKOFF
 LN_CONFIG_O2IB
 LN_CONFIG_GNILND
+LN_CONFIG_KFILND
 # 2.6.35
 LN_CONFIG_SK_SLEEP
 # 2.6.36
@@ -975,6 +1015,7 @@ AC_MSG_NOTICE([LNet core checks
 AC_DEFUN([LN_CONDITIONALS], [
 AM_CONDITIONAL(BUILD_O2IBLND,    test x$O2IBLND = "xo2iblnd")
 AM_CONDITIONAL(BUILD_GNILND,     test x$GNILND  = "xgnilnd")
+AM_CONDITIONAL(BUILD_KFILND,     test x$KFILND  = "xkfilnd")
 ]) # LN_CONDITIONALS
 
 #
@@ -999,6 +1040,8 @@ lnet/klnds/gnilnd/Makefile
 lnet/klnds/gnilnd/autoMakefile
 lnet/klnds/socklnd/Makefile
 lnet/klnds/socklnd/autoMakefile
+lnet/klnds/kfilnd/Makefile
+lnet/klnds/kfilnd/autoMakefile
 lnet/lnet/Makefile
 lnet/lnet/autoMakefile
 lnet/selftest/Makefile

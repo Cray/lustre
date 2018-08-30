@@ -42,9 +42,8 @@
 
 #define DEBUG_SUBSYSTEM S_LND
 
-#include "../lustre/include/linux/libcfs/libcfs.h"
-#include "../lustre/include/linux/lnet/lnet.h"
-#include "../lustre/include/linux/lnet/lib-lnet.h"
+#include <libcfs/libcfs.h>
+#include <lnet/lib-lnet.h>
 #include "kfi_endpoint.h"
 #include "kfi_errno.h"
 #include "kfi_rma.h"
@@ -70,6 +69,19 @@ enum kfilnd_object_states {
 	KFILND_STATE_INITIALIZED,
 	KFILND_STATE_SHUTTING_DOWN
 };
+
+struct kfilnd_tunables {
+	unsigned int	*kfilnd_service;	/* PROCID number */
+	int		*kfilnd_cksum;		/* checksum kfilnd_msg? */
+	int		*kfilnd_timeout;	/* comms timeout (seconds) */
+	char		**kfilnd_default_ipif;	/* default CXI interface */
+	int		*kfilnd_nscheds;	/* # threads on each CPT */
+};
+
+extern struct kfilnd_tunables  kfilnd_tunable_vals;
+
+int kfilnd_tunables_setup(struct lnet_ni *ni);
+int kfilnd_tunables_init(void);
 
 struct kfilnd_transaction;
 struct kfilnd_endpoints;
@@ -186,8 +198,7 @@ struct kfilnd_msg
 	} WIRE_ATTR kfm_u;
 } WIRE_ATTR;
 
-/* TODO: Give a unique magic to kfilnd when in NEO repo */
-#define KFILND_MSG_MAGIC LNET_PROTO_IB_MAGIC	/* unique magic */
+#define KFILND_MSG_MAGIC LNET_PROTO_KFI_MAGIC	/* unique magic */
 
 #define KFILND_MSG_VERSION_1	0x11
 #define KFILND_MSG_VERSION	KFILND_MSG_VERSION_1
@@ -249,7 +260,7 @@ struct kfilnd_transaction			/* Both send and receive */
 	unsigned int		tn_num_iovec;
 	unsigned int		tn_nob_iovec;
 	unsigned int		tn_offset_iovec;
-	struct bio_vec		*tn_kiov;
+	lnet_kiov_t		*tn_kiov;
 	struct kvec		*tn_iov;
 	struct kfid_mr		*tn_mr;
 };
