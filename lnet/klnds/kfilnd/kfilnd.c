@@ -152,7 +152,8 @@ static void kfilnd_shutdown(struct lnet_ni *ni)
 		spin_lock(&lnd_data.kfid_global_lock);
 		if (net->kfn_dev->kfd_nnets <= 0) {
 			spin_unlock(&lnd_data.kfid_global_lock);
-			CERROR("Bad number of nets on NI: %d\n", net->kfn_dev->kfd_nnets);
+			CERROR("Bad number of nets on NI: %d\n",
+			       net->kfn_dev->kfd_nnets);
 			return;
 		}
 		net->kfn_state = KFILND_STATE_SHUTTING_DOWN;
@@ -269,8 +270,8 @@ static struct kfilnd_dev *kfilnd_dev_search(char *ifname)
 }
 
 static unsigned int kfilnd_init_proto(struct kfilnd_msg *msg, int type,
-				    int body_nob,
-				    struct lnet_ni *ni)
+				      int body_nob,
+				      struct lnet_ni *ni)
 {
 	msg->kfm_type = type;
 	msg->kfm_nob  = offsetof(struct kfilnd_msg, kfm_u) + body_nob;
@@ -370,7 +371,6 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		tn->tn_kiov = msg->msg_kiov;
 		tn->tn_iov = msg->msg_iov;
 		break;
-
 	case KFILND_MSG_PUT_REQ:
 		/* Copy over the LNet header */
 		kfmsg->kfm_u.putreq.kfprm_hdr = *hdr;
@@ -442,15 +442,21 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 }
 
 static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
-		    int delayed, struct iov_iter *to,
-		    unsigned int rlen)
+		       int delayed, unsigned int niov,
+		       struct kvec *iov, lnet_kiov_t *kiov,
+		       unsigned int offset, unsigned int mlen,
+		       unsigned int rlen)
 {
 	struct kfilnd_transaction *tn = private;
 	struct kfilnd_msg *rxmsg = tn->tn_msg;
-	int		nob;
-	int		rc = 0;
+	int nob;
+	int rc = 0;
 
-	if (iov_iter_count(to) > rlen)
+	if (mlen > rlen)
+		return -EINVAL;
+
+	/* Either all pages or all vaddrs */
+	if (kiov && iov)
 		return -EINVAL;
 
 	/* Transaction must be in receive state */
@@ -465,18 +471,24 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 			       kfm_u.immed.kfim_payload[rlen]);
 		if (nob > tn->tn_msgsz) {
 			CERROR("Immediate message from %s too big: %d(%d)\n",
-			    libcfs_nid2str(rxmsg->kfm_u.immed.kfim_hdr.src_nid),
-			    nob, tn->tn_msgsz);
+			       libcfs_nid2str(rxmsg->kfm_u.immed.kfim_hdr.src_nid),
+			       nob, tn->tn_msgsz);
 			rc = -EPROTO;
 			break;
 		}
 
-		rc = copy_to_iter(&rxmsg->kfm_u.immed.kfim_payload, rlen,
-				  to);
-		if (rc != rlen) {
-			rc = -EFAULT;
-			break;
-		}
+		if (kiov)
+			lnet_copy_flat2kiov(niov, kiov, offset,
+					    KFILND_IMMEDIATE_MSG_SIZE, rxmsg,
+					    offsetof(struct kfilnd_msg,
+						     kfm_u.immed.kfim_payload),
+					    mlen);
+		else
+			lnet_copy_flat2iov(niov, iov, offset,
+					   KFILND_IMMEDIATE_MSG_SIZE, rxmsg,
+					   offsetof(struct kfilnd_msg,
+						    kfm_u.immed.kfim_payload),
+					   mlen);
 
 		tn->tn_status = 0;
 		kfilnd_fab_event_handler(tn, TN_EVENT_RX_OK);
@@ -487,22 +499,11 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 
 		/* Post the buffer given us as a sink  */
 		tn->tn_flags |= KFILND_TN_FLAG_SINK;
-		switch (to->type) {
-		case ITER_KVEC:
-			tn->tn_iov = to->kvec;
-			tn->tn_kiov = NULL;
-			break;
-		case ITER_BVEC:
-			tn->tn_kiov = to->bvec;
-			tn->tn_iov = NULL;
-			break;
-		default:
-			CERROR("Invalid iov_iter type: %d\n", to->type);
-			return -EINVAL;
-		}
-		tn->tn_num_iovec = to->nr_segs;
-		tn->tn_nob_iovec = rlen;
-		tn->tn_offset_iovec = to->iov_offset;
+		tn->tn_num_iovec = niov;
+		tn->tn_nob_iovec = mlen;
+		tn->tn_offset_iovec = offset;
+		tn->tn_kiov = kiov;
+		tn->tn_iov = iov;
 		tn->tn_cookie = rxmsg->kfm_u.putreq.kfprm_match_bits;
 
 		rc = kfilnd_fab_event_handler(tn, TN_EVENT_RMA_PREP);
@@ -555,7 +556,7 @@ static int kfilnd_startup(struct lnet_ni *ni)
 	if (!ni)
 		return -EINVAL;
 
-	if (ni->ni_lnd != &lnd) {
+	if (ni->ni_net->net_lnd != &lnd) {
 		CERROR("kfilnd_startup passed wrong lnd type\n");
 		return -EINVAL;
 	}
@@ -573,10 +574,7 @@ static int kfilnd_startup(struct lnet_ni *ni)
 
 	net->kfn_incarnation = ktime_get_real_ns() / NSEC_PER_USEC;
 
-	ni->ni_peertimeout    = 0;
-	ni->ni_maxtxcredits   = KFILND_MAX_TX;
-	ni->ni_peertxcredits  = 8;
-	ni->ni_peerrtrcredits = 0;
+	kfilnd_tunables_setup(ni);
 
 	if (ni->ni_interfaces[0] != NULL) {
 		/* Use the IP interface specified in 'networks=' */
@@ -636,7 +634,11 @@ static void __exit kfilnd_exit(void)
 
 static int __init kfilnd_init(void)
 {
-	/* TODO: Here we would initialize the tunables when we add them. */
+	int rc;
+
+	rc = kfilnd_tunables_init();
+	if (rc != 0)
+		return rc;
 
 	lnet_register_lnd(&lnd);
 	return 0;
