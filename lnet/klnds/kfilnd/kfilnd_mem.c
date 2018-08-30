@@ -106,38 +106,31 @@ void kfilnd_mem_release_tn(struct kfilnd_transaction *tn)
 		kfilnd_mem_free_buffer(tn->tn_msg, KFILND_IMMEDIATE_MSG_SIZE,
 				       1);
 
-	/* If an MR has been registered for the Tn, release it */
+	/* If an MR has been registered for the TN, release it */
 	if (tn->tn_mr)
 		kfi_close(&tn->tn_mr->fid);
-
 	kmem_cache_free(tn_cache, tn);
 }
 
 int kfilnd_mem_setup_immed(struct kfilnd_transaction *tn)
 {
-	struct iov_iter from;
-	size_t rc;
-
-	if (tn->tn_kiov) {
-		iov_iter_bvec(&from, ITER_BVEC | WRITE,
-			      tn->tn_kiov, tn->tn_num_iovec,
-			      tn->tn_nob_iovec + tn->tn_offset_iovec);
-	} else {
-		iov_iter_kvec(&from, ITER_KVEC | WRITE,
-			      tn->tn_iov, tn->tn_num_iovec,
-			      tn->tn_nob_iovec + tn->tn_offset_iovec);
-	}
-
-	iov_iter_advance(&from, tn->tn_offset_iovec);
-	rc = copy_from_iter(&tn->tn_msg->kfm_u.immed.kfim_payload,
-			    tn->tn_nob_iovec, &from);
-	if (rc != tn->tn_nob_iovec) {
-		/* Some bytes were not copied */
-		CERROR("Did not copy %lu bytes to immediate message\n",
-		       rc - tn->tn_nob_iovec);
-		return -EFAULT;
-	}
-	return KFILND_MEM_DONE_SYNC;
+	if (tn->tn_kiov)
+		lnet_copy_kiov2flat(KFILND_IMMEDIATE_MSG_SIZE,
+				    tn->tn_msg,
+				    offsetof(struct kfilnd_msg,
+					     kfm_u.immed.kfim_payload),
+				    tn->tn_num_iovec, tn->tn_kiov,
+				    tn->tn_offset_iovec,
+				    tn->tn_nob_iovec);
+	else
+		lnet_copy_iov2flat(KFILND_IMMEDIATE_MSG_SIZE,
+				   tn->tn_msg,
+				   offsetof(struct kfilnd_msg,
+					    kfm_u.immed.kfim_payload),
+				   tn->tn_num_iovec, tn->tn_iov,
+				   tn->tn_offset_iovec,
+				   tn->tn_nob_iovec);
+	return 0;
 }
 
 int kfilnd_mem_setup_rma(struct kfilnd_transaction *tn, bool am_initiator)
