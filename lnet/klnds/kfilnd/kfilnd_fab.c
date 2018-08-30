@@ -125,7 +125,7 @@ static int kfilnd_fab_unpack_msg(struct kfilnd_msg *msg, int nob)
 	/*
 	 * Checksum must be computed with kfm_cksum zero and BEFORE anything
 	 * gets flipped.
-	 */
+	 */ 
 	msg_cksum = flip ? __swab32(msg->kfm_cksum) : msg->kfm_cksum;
 	msg->kfm_cksum = 0;
 	if (msg_cksum != 0 &&
@@ -151,8 +151,8 @@ static int kfilnd_fab_unpack_msg(struct kfilnd_msg *msg, int nob)
 
 	if (msg_nob < kfilnd_fab_msgtype2size(msg->kfm_type)) {
 		CWARN("Short %s: %d(%d)\n",
-		       kfilnd_fab_msgtype2str(msg->kfm_type),
-		       msg_nob, kfilnd_fab_msgtype2size(msg->kfm_type));
+		      kfilnd_fab_msgtype2str(msg->kfm_type),
+		      msg_nob, kfilnd_fab_msgtype2size(msg->kfm_type));
 		return -EPROTO;
 	}
 
@@ -277,8 +277,7 @@ static int kfilnd_fab_post_rma_tx(struct kfilnd_transaction *tn)
 	if (tn->tn_kiov)
 		rc = kfi_writebv(use_endp->end_tx,
 				 (struct bio_vec *) tn->tn_kiov, NULL,
-				 tn->tn_num_iovec,
-				 tn->tn_dev->kfd_addr,
+				 tn->tn_num_iovec, tn->tn_dev->kfd_addr,
 				 0, tn->tn_cookie, tn);
 	else
 		rc = kfi_writev(use_endp->end_tx, tn->tn_iov, NULL,
@@ -369,12 +368,12 @@ static int kfilnd_fab_post_rx(struct kfilnd_transaction *tn)
 
 	if (tn->tn_kiov)
 		rc = kfi_readbv(use_endp->end_tx, (struct bio_vec *)tn->tn_kiov,
-				NULL, tn->tn_num_iovec, tn->tn_dev->kfd_addr,
-				0, tn->tn_cookie, tn);
+			        NULL, tn->tn_num_iovec, tn->tn_dev->kfd_addr,
+			        0, tn->tn_cookie, tn);
 	else
 		rc = kfi_readv(use_endp->end_tx, tn->tn_iov, NULL,
-			       tn->tn_num_iovec, tn->tn_dev->kfd_addr, 0,
-			       tn->tn_cookie, tn);
+			       tn->tn_num_iovec, tn->tn_dev->kfd_addr,
+			       0, tn->tn_cookie, tn);
 
 	if (rc == 0)
 		tn->tn_flags |= KFILND_TN_FLAG_RX_POSTED;
@@ -531,6 +530,7 @@ static void kfilnd_fab_rx_cq_handler(struct kfid_cq *cq, void *context)
 				struct kfi_cq_err_entry err_event;
 
 				err_rc = kfi_cq_readerr(cq, &err_event, 0);
+
 				if (err_rc != 1)
 					break;
 				buf = err_event.op_context;
@@ -544,8 +544,8 @@ static void kfilnd_fab_rx_cq_handler(struct kfid_cq *cq, void *context)
 					atomic_dec(&buf->immed_ref);
 				} else
 					CERROR(
-					    "Unexpected Rx error event = %d\n",
-					    err_event.err);
+					     "Unexpected Rx error event = %d\n",
+					     err_event.err);
 			}
 
 			/* Processed error events, back to normal events */
@@ -947,8 +947,8 @@ static int kfilnd_fab_initialize_endpoint(struct kfilnd_dev *dev,
 	}
 
 	/* Bind these two contexts to the CPT's CQ */
-	rc = kfi_ep_bind(endpoint->end_rx, &endpoint->end_rx_cq->fid, KFI_RECV
-			 | KFI_SELECTIVE_COMPLETION);
+	rc = kfi_ep_bind(endpoint->end_rx, &endpoint->end_rx_cq->fid, KFI_RECV |
+			 KFI_SELECTIVE_COMPLETION);
 	if (rc) {
 		CERROR("Could not bind Rx endpoint on CPT %d, rc = %d\n", cpt,
 		       rc);
@@ -998,10 +998,9 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 		goto out_err;
 	}
 
-	hints->caps = (KFI_MSG | KFI_RMA | KFI_SEND | KFI_RECV |
-		       KFI_READ | KFI_WRITE | KFI_REMOTE_READ |
-		       KFI_REMOTE_WRITE | KFI_MULTI_RECV |
-		       KFI_RMA_EVENT | KFI_REMOTE_COMM);
+	hints->caps = (KFI_MSG | KFI_RMA | KFI_SEND | KFI_RECV | KFI_READ |
+		       KFI_WRITE | KFI_REMOTE_READ | KFI_REMOTE_WRITE |
+		       KFI_MULTI_RECV | KFI_RMA_EVENT | KFI_REMOTE_COMM);
 	hints->domain_attr->mr_iov_limit = 256; /* 1 MiB LNet message */
 	hints->domain_attr->mr_cnt = 1024; /* Max LNet credits */
 	hints->ep_attr->max_msg_size = LNET_MAX_PAYLOAD;
@@ -1188,9 +1187,9 @@ static int kfilnd_fab_tn_idle(struct kfilnd_transaction *tn,
 			break;
 		}
 
-		/*
+		/* 
 		 * Pass message up to LNet
-		 * The TN will be reused in this call chain so we need to
+		 * The TN will be reused in this call chain so we need to 
 		 * release the lock on the TN before proceeding.
 		 */
 		tn->tn_state = TN_STATE_IMM_RECV;
@@ -1235,8 +1234,7 @@ static int kfilnd_fab_tn_imm_send(struct kfilnd_transaction *tn,
 	case TN_EVENT_FAIL:
 		/*  Finalize the message */
 		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_dev->kfd_ni, tn->tn_lntmsg,
-				      tn->tn_status);
+			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
 			tn->tn_lntmsg = NULL;
 		}
 		tn->tn_state = TN_STATE_IDLE;
@@ -1263,8 +1261,7 @@ static int kfilnd_fab_tn_rma_send(struct kfilnd_transaction *tn,
 	case TN_EVENT_FAIL:
 		/*  Finalize the message */
 		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_dev->kfd_ni, tn->tn_lntmsg,
-				      tn->tn_status);
+			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
 			tn->tn_lntmsg = NULL;
 		}
 		tn->tn_state = TN_STATE_IDLE;
@@ -1320,8 +1317,7 @@ static int kfilnd_fab_tn_imm_recv(struct kfilnd_transaction *tn,
 	case TN_EVENT_FAIL:
 	case TN_EVENT_RX_OK:
 		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_dev->kfd_ni, tn->tn_lntmsg,
-				      tn->tn_status);
+			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
 			tn->tn_lntmsg = NULL;
 		}
 
@@ -1357,8 +1353,7 @@ static int kfilnd_fab_tn_reg_mem(struct kfilnd_transaction *tn,
 		tn->tn_status = kfilnd_fab_post_msg_tx(tn, true);
 		if (tn->tn_status) {
 			if (tn->tn_lntmsg) {
-				lnet_finalize(tn->tn_dev->kfd_ni, tn->tn_lntmsg,
-					      tn->tn_status);
+				lnet_finalize(tn->tn_lntmsg, tn->tn_status);
 				tn->tn_lntmsg = NULL;
 			}
 
@@ -1380,8 +1375,7 @@ static int kfilnd_fab_tn_reg_mem(struct kfilnd_transaction *tn,
 
 	case TN_EVENT_FAIL:
 		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_dev->kfd_ni, tn->tn_lntmsg,
-				      tn->tn_status);
+			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
 			tn->tn_lntmsg = NULL;
 		}
 
@@ -1416,8 +1410,7 @@ static int kfilnd_fab_tn_rma_start(struct kfilnd_transaction *tn,
 		/* On failure, fallthrough */
 	case TN_EVENT_FAIL:
 		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_dev->kfd_ni, tn->tn_lntmsg,
-				      tn->tn_status);
+			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
 			tn->tn_lntmsg = NULL;
 		}
 
@@ -1449,15 +1442,13 @@ static int kfilnd_fab_tn_wait_rma(struct kfilnd_transaction *tn,
 		/* Fallthrough */
 	case TN_EVENT_FAIL:
 		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_dev->kfd_ni, tn->tn_lntmsg,
-				      tn->tn_status);
+			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
 			tn->tn_lntmsg = NULL;
 		}
 		if (tn->tn_getreply) {
 			lnet_set_reply_msg_len(tn->tn_dev->kfd_ni,
 					       tn->tn_getreply, tn->tn_nob);
-			lnet_finalize(tn->tn_dev->kfd_ni, tn->tn_getreply,
-				      tn->tn_status);
+			lnet_finalize(tn->tn_getreply, tn->tn_status);
 			tn->tn_getreply = NULL;
 			tn->tn_nob = 0;
 		}
