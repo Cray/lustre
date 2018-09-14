@@ -6108,7 +6108,7 @@ test_83() {
 run_test 83 "ENOSPACE on OST doesn't cause message VFS: \
 Busy inodes after unmount ..."
 
-test_84() {
+test_84a() {
 	local facet=$SINGLEMDS
 	local num=$(echo $facet | tr -d "mds")
 	local dev=$(mdsdevname $num)
@@ -6170,7 +6170,36 @@ test_84() {
 	stop_ost2
 	stop_mds
 }
-run_test 84 "check recovery_hard_time"
+run_test 84a "check recovery_hard_time"
+
+test_84b() {
+	setup
+
+	#define OBD_FAIL_TGT_STOP_REC_RACE 0x723
+	do_facet $SINGLEMDS \
+		"$LCTL set_param fail_loc=0x80000723 fail_val=30"
+
+	facet_failover $SINGLEMDS || error "failover: $?"
+
+	# It will wait until obd->obd_recovering is 0,
+	# which is set after replay lock stage but before
+	# sleeping on OBD_FAIL_TGT_STOP_REC_RACE
+	wait_recovery_complete $SINGLEMDS
+
+	do_facet $SINGLEMDS \
+		"$LCTL get_param -n mdt.$FSNAME-MDT0000.recovery_status"
+	do_facet $SINGLEMDS \
+		"$LCTL --device $FSNAME-MDT0000 abort_recovery"&
+	local ar_pid=$!
+
+	# umount mds to race with abort recovery
+	stop_mds || error "Unable to stop MDS"
+	wait $ar_pid
+	start_mds
+
+	stopall
+}
+run_test 84b "Check race between umount and abort_recovery"
 
 test_85() {
 	[[ $(lustre_version_code ost1) -ge $(version_code 2.7.55) ]] ||
