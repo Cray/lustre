@@ -73,6 +73,17 @@ script which is used to provide extra functionality when migrating file
 data between OSTs and has a separate man page.  See
 .BR lfs_migrate (1)
 for details.
+
+.BR --hsm
+Use HSM to migrate data. If set, HSM must be enabled and at least one
+copytool must be running. The request will be forwarded to HSM, and
+the copytool will perform the copy asynchronously. If the
+.B -a
+option is set, the copytool that has registered for this archive will
+be used for the transfer, else the default copytool will be used
+(if one is set).  archive_idx is a positive integer with 0 being
+the default.
+
 .SH MDT MIGRATE OPTIONS
 .TP
 .BR -m , --mdt-index=\fIstart_mdt_index\fR
@@ -130,6 +141,9 @@ This migrates the file into a three component composite layout.
 .B $ lfs migrate -m 0,2 ./testremote
 Move the inodes contained in directory ./testremote from their current
 MDT to the MDT with index 0 and 2.
+.TP
+.B $ lfs migrate --hsm -i 3 -a 0 /mnt/lustre/file1
+Migrate the file onto OST 3 using the default HSM copytools.
 .SH AUTHOR
 The lfs command is part of the Lustre filesystem.
 .SH SEE ALSO

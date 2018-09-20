@@ -1253,7 +1253,7 @@ enum hsm_event {
 	HE_RELEASE      = 3,
 	HE_REMOVE       = 4,
 	HE_STATE        = 5,
-	HE_SPARE1       = 6,
+	HE_MIGRATE      = 6,
 	HE_SPARE2       = 7,
 };
 
@@ -1751,10 +1751,11 @@ enum hsm_states {
 	HS_NORELEASE	= 0x00000010,
 	HS_NOARCHIVE	= 0x00000020,
 	HS_LOST		= 0x00000040,
+	HS_NOMIGRATE	= 0x00000080,
 };
 
 /* HSM user-setable flags. */
-#define HSM_USER_MASK   (HS_NORELEASE | HS_NOARCHIVE | HS_DIRTY)
+#define HSM_USER_MASK   (HS_NORELEASE | HS_NOARCHIVE | HS_DIRTY | HS_NOMIGRATE)
 
 /* Other HSM flags. */
 #define HSM_STATUS_MASK (HS_EXISTS | HS_LOST | HS_RELEASED | HS_ARCHIVED)
@@ -1834,7 +1835,8 @@ enum hsm_user_action {
 	HUA_RESTORE = 11, /* prestage */
 	HUA_RELEASE = 12, /* drop ost objects */
 	HUA_REMOVE  = 13, /* remove from archive */
-	HUA_CANCEL  = 14  /* cancel a request */
+	HUA_CANCEL  = 14, /* cancel a request */
+	HUA_MIGRATE = 15, /* migrate a file between OSTs */
 };
 
 static inline const char *hsm_user_action2name(enum hsm_user_action  a)
@@ -1846,6 +1848,7 @@ static inline const char *hsm_user_action2name(enum hsm_user_action  a)
 	case HUA_RELEASE: return "RELEASE";
 	case HUA_REMOVE:  return "REMOVE";
 	case HUA_CANCEL:  return "CANCEL";
+	case HUA_MIGRATE: return "MIGRATE";
 	default:          return "UNKNOWN";
 	}
 }
@@ -1856,6 +1859,7 @@ static inline const char *hsm_user_action2name(enum hsm_user_action  a)
 #define HSM_FORCE_ACTION 0x0001
 /* used by CT, cannot be set by user */
 #define HSM_GHOST_COPY   0x0002
+#define HSM_MIGRATION_BLOCKS 0x0004
 
 /**
  * Contains all the fixed part of struct hsm_user_request.
@@ -1863,7 +1867,7 @@ static inline const char *hsm_user_action2name(enum hsm_user_action  a)
  */
 struct hsm_request {
 	__u32 hr_action;	/* enum hsm_user_action */
-	__u32 hr_archive_id;	/* archive id, used only with HUA_ARCHIVE */
+	__u32 hr_archive_id;	/* used only with HUA_ARCHIVE and HUA_MIGRATE */
 	__u64 hr_flags;		/* request flags */
 	__u32 hr_itemcount;	/* item count in hur_user_item vector */
 	__u32 hr_data_len;
@@ -1921,7 +1925,8 @@ enum hsm_copytool_action {
 	HSMA_ARCHIVE = 20, /* arbitrary offset */
 	HSMA_RESTORE = 21,
 	HSMA_REMOVE  = 22,
-	HSMA_CANCEL  = 23
+	HSMA_CANCEL  = 23,
+	HSMA_MIGRATE = 24,
 };
 
 static inline const char *hsm_copytool_action2name(enum hsm_copytool_action  a)
@@ -1932,6 +1937,7 @@ static inline const char *hsm_copytool_action2name(enum hsm_copytool_action  a)
 	case HSMA_RESTORE: return "RESTORE";
 	case HSMA_REMOVE:  return "REMOVE";
 	case HSMA_CANCEL:  return "CANCEL";
+	case HSMA_MIGRATE: return "MIGRATE";
 	default:           return "UNKNOWN";
 	}
 }

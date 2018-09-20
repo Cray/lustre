@@ -79,7 +79,9 @@ lfs \- client utility for Lustre-specific file layout and other attributes
             [\fB-o | --ost-list <ost_indices>\fR]
             [\fB-b | --block\fR]
             [\fB-n | --non-block\fR]
-.IR file|directory
+            [\fB--hsm\fR [\fB-a | --archive <archive_idx>\fR]]
+            <\fIdirname\fR|\fIfilename\fR> ...
+.br
 .br
 .B lfs migrate <\fB-E | --component-end comp_end1\fR> [\fBSTRIPE_OPTIONS\fR]
             <\fB-E | --component-end comp_end2\fR> [\fBSTRIPE_OPTIONS\fR]
@@ -189,6 +191,7 @@ List all the OSTs for all mounted filesystems. If a \fBpath\fR is provided
 that is located on a lustre mounted file system then only the OSTs belonging
 to that filesystem are displayed.
 .TP
+
 .B fid2path [--link <linkno>] <fsname|rootpath> <fid> ...
 Print out the pathname(s) for the specified \fIfid\fR(s) from the filesystem
 mounted at \fBrootpath\fR or named \fBfsname\fR.  If a file has multiple

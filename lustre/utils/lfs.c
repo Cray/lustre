@@ -24,6 +24,7 @@
  * Use is subject to license terms.
  *
  * Copyright (c) 2011, 2017, Intel Corporation.
+ * Copyright 2015, 2019 Cray Inc. All rights reserved.
  */
 /*
  * This file is part of Lustre, http://www.lustre.org/
@@ -234,15 +235,19 @@ static inline int lfs_mirror_split(int argc, char **argv)
 
 #define MIGRATE_USAGE							\
 	SSM_CMD_COMMON("migrate  ")					\
-	"                 [--block|-b]\n"				\
-	"                 [--non-block|-n]\n"				\
-	"                 [--non-direct|-D]\n"				\
+	"                 [--block|-b] [--non-block|-n]\n"		\
+	"                 [--non-direct|-D]"				\
+	"                 [--hsm [--archive|-a NUM]]\n"			\
 	"                 <filename>\n"					\
 	SSM_HELP_COMMON							\
 	"\n"								\
 	"\tblock:        Block file access during data migration (default)\n" \
 	"\tnon-block:    Abort migrations if concurrent access is detected\n" \
-	"\tnon-direct:   Do not use direct I/O to copy file contents\n" \
+	"\tnon-direct:   Do not use direct I/O to copy file contents\n"	\
+	"\thsm:          Use the HSM copytool for the data migration\n"	\
+	"\tarchive:      HSM archive index number to use for the data " \
+	"                migration,\n"					\
+	"\t              only valid with --hsm\n"
 
 #define SETDIRSTRIPE_USAGE						\
 	"		[--mdt-count|-c stripe_count>\n"		\
@@ -505,12 +510,13 @@ command_t cmdlist[] = {
 	{"hsm_state", lfs_hsm_state, 0, "Display the HSM information (states, "
 	 "undergoing actions) for given files.\n usage: hsm_state <file> ..."},
 	{"hsm_set", lfs_hsm_set, 0, "Set HSM user flag on specified files.\n"
-	 "usage: hsm_set [--norelease] [--noarchive] [--dirty] [--exists] "
-	 "[--archived] [--lost] [--archive-id NUM] <file> ..."},
+	 "usage: hsm_set [--norelease] [--noarchive] [--nomigrate] [--dirty] "
+	 "[--exists] [--archived] [--lost] [--archive-id <archive_id>] "
+	 "<file> ..."},
 	{"hsm_clear", lfs_hsm_clear, 0, "Clear HSM user flag on specified "
 	 "files.\n"
-	 "usage: hsm_clear [--norelease] [--noarchive] [--dirty] [--exists] "
-	 "[--archived] [--lost] <file> ..."},
+	 "usage: hsm_clear [--norelease] [--noarchive] [--nomigrate] "
+	 "[--dirty] [--exists] [--archived] [--lost] <file> ..."},
 	{"hsm_action", lfs_hsm_action, 0, "Display current HSM request for "
 	 "given files.\n" "usage: hsm_action <file> ..."},
 	{"hsm_archive", lfs_hsm_archive, 0,
@@ -544,7 +550,8 @@ command_t cmdlist[] = {
 	 "usage: migrate [--mdt|-m] <start_mdt_index>\n"
 	 "               [--mdt-count|-c] <stripe_count>\n"
 	 "		 [--mdt-hash|-H] <hash_type>\n"
-	 "		 [--verbose|-v]\n"
+	 "		 [--mdt-index|-m] <start_mdt_index>\n"
+	 "		 [--hsm [--archive|-a <archive_id>]\n"
 	 "		 <directory>\n"
 	 "\tmdt:	MDTs to stripe over, if only one MDT is specified\n"
 	 "			it's the MDT index of first stripe\n"
@@ -628,6 +635,7 @@ enum {
 	MIGRATION_NONBLOCK	= 1 << 0,
 	MIGRATION_MIRROR	= 1 << 1,
 	MIGRATION_NONDIRECT	= 1 << 2,
+	MIGRATION_HSM		= 1 << 3,
 };
 
 static int lfs_component_create(char *fname, int open_flags, mode_t open_mode,
@@ -636,19 +644,21 @@ static int lfs_component_create(char *fname, int open_flags, mode_t open_mode,
 static int
 migrate_open_files(const char *name, __u64 migration_flags,
 		   const struct llapi_stripe_param *param,
-		   struct llapi_layout *layout, int *fd_src, int *fd_tgt)
+		   struct llapi_layout *layout, int *fd_src, int *fd_tgt,
+		   char *volatile_file)
 {
-	int			 fd = -1;
-	int			 fdv = -1;
-	int			 rflags;
-	int			 mdt_index;
-	int                      random_value;
-	char			 parent[PATH_MAX];
-	char			 volatile_file[PATH_MAX];
-	char			*ptr;
-	int			 rc;
-	struct stat		 st;
-	struct stat		 stv;
+	int fd = -1;
+	int fdv = -1;
+	int rflags;
+	int mdt_index;
+	int random_value;
+	char parent[PATH_MAX];
+	char *volatile_name;
+	char vf[PATH_MAX];
+	char *ptr;
+	int rc;
+	struct stat st;
+	struct stat stv;
 
 	if (param == NULL && layout == NULL) {
 		error_loc = "layout information";
@@ -660,6 +670,14 @@ migrate_open_files(const char *name, __u64 migration_flags,
 		error_loc = "source file name";
 		return -ERANGE;
 	}
+
+	if (volatile_file == NULL)
+		volatile_file = vf;
+
+	if (migration_flags & MIGRATION_HSM)
+		volatile_name = ".HSM";
+	else
+		volatile_name = LUSTRE_VOLATILE_HDR;
 
 	strncpy(parent, name, sizeof(parent));
 	ptr = strrchr(parent, '/');
@@ -698,10 +716,10 @@ migrate_open_files(const char *name, __u64 migration_flags,
 		mode_t open_mode = S_IRUSR | S_IWUSR;
 
 		random_value = random();
-		rc = snprintf(volatile_file, sizeof(volatile_file),
-			      "%s/%s:%.4X:%.4X", parent, LUSTRE_VOLATILE_HDR,
+		rc = snprintf(volatile_file, PATH_MAX,
+			      "%s/%s:%.4X:%.4X", parent, volatile_name,
 			      mdt_index, random_value);
-		if (rc >= sizeof(volatile_file)) {
+		if (rc > strlen(volatile_file)) {
 			rc = -ENAMETOOLONG;
 			break;
 		}
@@ -722,7 +740,8 @@ migrate_open_files(const char *name, __u64 migration_flags,
 
 	/* In case the MDT does not support creation of volatile files
 	 * we should try to unlink it. */
-	(void)unlink(volatile_file);
+	if (!(migration_flags & MIGRATION_HSM))
+		(void)unlink(volatile_file);
 
 	/* Not-owner (root?) special case.
 	 * Need to set owner/group of volatile file like original.
@@ -914,6 +933,105 @@ out_unlock:
 	return rc;
 }
 
+
+static int lfs_hsm_prepare_file(const char *file, struct lu_fid *fid,
+				dev_t *last_dev);
+
+/**
+ * Tell the HSM API to migrate a file
+ *
+ * \param name [IN] name of file to be migrated
+ * \param migration_flags [IN] flags
+ * \param param [IN] user provided param to define the migration destination
+ * \param layout [IN] layout generated from arguments to lfs
+ * \param archive_id [IN] archive group to be used to migrate data
+ *
+ * \retval 0 success
+ * \retval negative errno on error
+ */
+static int lfs_hsm_migrate(char *name, uint64_t migration_flags,
+			   struct llapi_stripe_param *param,
+			   struct llapi_layout *layout,
+			   int archive_id)
+{
+	struct hsm_user_request *hur;
+	char fullpath[PATH_MAX];
+	char volatile_file[PATH_MAX];
+	int fd_src = -1;
+	int fd_tgt = -1;
+	struct lu_fid dfid;
+	dev_t last_dev = 0;
+	int rc;
+
+	/* Allocate the request structure */
+	hur = llapi_hsm_user_request_alloc(1, FID_LEN + 1);
+	if (!hur) {
+		fprintf(stderr, "Cannot create the migrate request: %s\n",
+			strerror(ENOMEM));
+		return -ENOMEM;
+	}
+
+	rc = migrate_open_files(name, migration_flags, param, layout,
+				&fd_src, &fd_tgt, volatile_file);
+	if (rc) {
+		fprintf(stderr,
+			"Cannot create the temporary file for HSM migration %s\n",
+			strerror(-rc));
+		goto out_free;
+	}
+
+	hur->hur_request.hr_action = HUA_MIGRATE;
+	hur->hur_request.hr_archive_id = archive_id;
+
+	hur->hur_request.hr_flags = (migration_flags & MIGRATION_NONBLOCK) ?
+		0 : HSM_MIGRATION_BLOCKS;
+	hur->hur_request.hr_itemcount = 1;
+	hur->hur_request.hr_data_len = FID_LEN + 1;
+	hur->hur_user_item[0].hui_extent.offset = 0;
+	hur->hur_user_item[0].hui_extent.length = -1;
+	rc = lfs_hsm_prepare_file(name,
+				  &hur->hur_user_item[0].hui_fid,
+				  &last_dev);
+	if (rc)
+		goto out_free;
+
+	rc = llapi_fd2fid(fd_tgt, &dfid);
+	if (rc)
+		goto out_free;
+
+	rc = snprintf(hur_data(hur), FID_LEN + 1, DFID, PFID(&dfid));
+	if (rc < 0)
+		goto out_free;
+
+	/* Send the HSM request */
+	if (realpath(name, fullpath) == NULL) {
+		rc = -errno;
+		fprintf(stderr, "Could not find path '%s': %s\n",
+			name, strerror(-rc));
+		goto out_free;
+	}
+
+	rc = llapi_hsm_request(fullpath, hur);
+	if (rc)
+		fprintf(stderr, "Cannot send HSM request (use of %s): %s\n",
+			name, strerror(-rc));
+
+out_free:
+	if (fd_src > 0)
+		close(fd_src);
+	if (fd_tgt > 0)
+		close(fd_tgt);
+
+	free(hur);
+
+	if (!rc)
+		return 0;
+
+	/* Something has failed, and we need to unlink the target file */
+	unlink(volatile_file);
+	return rc;
+}
+
 /**
  * Internal helper for migrate_copy_data(). Check lease and report error if
  * need be.
@@ -1085,7 +1203,7 @@ static int lfs_migrate(char *name, __u64 migration_flags,
 	int rc;
 
 	rc = migrate_open_files(name, migration_flags, param, layout,
-				&fd, &fdv);
+				&fd, &fdv, NULL);
 	if (rc < 0)
 		goto out;
 
@@ -1632,7 +1750,7 @@ static int mirror_extend_layout(char *name, struct llapi_layout *layout)
 	int fdv = -1;
 	int rc;
 
-	rc = migrate_open_files(name, 0, NULL, layout, &fd, &fdv);
+	rc = migrate_open_files(name, 0, NULL, layout, &fd, &fdv, NULL);
 	if (rc < 0)
 		goto out;
 
@@ -2251,7 +2369,6 @@ static int build_component(struct llapi_layout **layout,
 
 	return rc;
 }
-
 static int build_layout_from_yaml_node(struct cYAML *node,
 				       struct llapi_layout **layout,
 				       struct lfs_setstripe_args *lsa,
@@ -2550,6 +2667,7 @@ enum {
 	LFS_MIRROR_STATE_OPT,
 	LFS_LAYOUT_COPY,
 	LFS_MIRROR_INDEX_OPT,
+	LFS_HSM_MIGRATE_OPT,
 };
 
 /* functions */
@@ -2588,6 +2706,7 @@ static int lfs_setstripe_internal(int argc, char **argv,
 	struct mirror_args		*last_mirror = NULL;
 	__u16				 mirror_id = 0;
 	char				 cmd[PATH_MAX];
+	__u32 archive_id = 0;
 	bool from_yaml = false;
 	bool from_copy = false;
 	char *template = NULL;
@@ -2595,6 +2714,7 @@ static int lfs_setstripe_internal(int argc, char **argv,
 	struct option long_opts[] = {
 /* find { .val = '0',	.name = "null",		.has_arg = no_argument }, */
 /* find	{ .val = 'A',	.name = "atime",	.has_arg = required_argument }*/
+	{ .val = 'a',	.name = "archive",	.has_arg = required_argument },
 	/* --block is only valid in migrate mode */
 	{ .val = 'b',	.name = "block",	.has_arg = no_argument },
 	{ .val = LFS_COMP_ADD_OPT,
@@ -2638,16 +2758,15 @@ static int lfs_setstripe_internal(int argc, char **argv,
 /* find	{ .val = 'F',	.name = "fid",		.has_arg = no_argument }, */
 /* find	{ .val = 'g',	.name = "gid",		.has_arg = no_argument }, */
 /* find	{ .val = 'G',	.name = "group",	.has_arg = required_argument }*/
-/* find	{ .val = 'h',	.name = "help",		.has_arg = no_argument }, */
+	{ .val = LFS_HSM_MIGRATE_OPT,
+			.name = "hsm",		.has_arg = no_argument },
 	{ .val = 'H',	.name = "mdt-hash",	.has_arg = required_argument},
 	{ .val = 'i',	.name = "stripe-index",	.has_arg = required_argument},
 	{ .val = 'i',	.name = "stripe_index",	.has_arg = required_argument},
 	{ .val = 'I',	.name = "comp-id",	.has_arg = required_argument},
 	{ .val = 'I',	.name = "component-id",	.has_arg = required_argument},
 	{ .val = 'L',	.name = "layout",	.has_arg = required_argument },
-	{ .val = 'm',	.name = "mdt",		.has_arg = required_argument},
 	{ .val = 'm',	.name = "mdt-index",	.has_arg = required_argument},
-	{ .val = 'm',	.name = "mdt_index",	.has_arg = required_argument},
 	/* --non-block is only valid in migrate mode */
 	{ .val = 'n',	.name = "non-block",	.has_arg = no_argument },
 	{ .val = 'N',	.name = "mirror-count",	.has_arg = optional_argument},
@@ -2680,11 +2799,19 @@ static int lfs_setstripe_internal(int argc, char **argv,
 	snprintf(cmd, sizeof(cmd), "%s %s", progname, argv[0]);
 	progname = cmd;
 	while ((c = getopt_long(argc, argv,
-				"bc:dDE:f:H:i:I:m:N::no:p:L:s:S:vy:", long_opts,
-				NULL)) >= 0) {
+				"a:bc:dDE:f:hH:i:I:m:N::no:p:L:s:S:vy:",
+				long_opts, NULL)) >= 0) {
 		switch (c) {
 		case 0:
 			/* Long options. */
+			break;
+		case 'a':
+			if (!migrate_mode) {
+				fprintf(stderr,
+					"archive number is only valid with migrate\n");
+				return CMD_HELP;
+			}
+			archive_id = atoi(optarg);
 			break;
 		case LFS_COMP_ADD_OPT:
 			comp_add = 1;
@@ -2829,6 +2956,14 @@ static int lfs_setstripe_internal(int argc, char **argv,
 					goto usage_error;
 				}
 			}
+			break;
+		case LFS_HSM_MIGRATE_OPT:
+			if (!migrate_mode) {
+				fprintf(stderr,
+					"--hsm is only valid with migrate\n\n");
+				return CMD_HELP;
+			}
+			migration_flags |= MIGRATION_HSM;
 			break;
 		case 'H':
 			if (!migrate_mode) {
@@ -3060,6 +3195,13 @@ static int lfs_setstripe_internal(int argc, char **argv,
 			progname);
 		result = -EINVAL;
 		goto error;
+	}
+
+	if (archive_id != 0 && !(migration_flags & MIGRATION_HSM)) {
+		fprintf(stderr,
+			"error: %s: --archive / -a has been specified without --hsm\n",
+			argv[0]);
+		return CMD_HELP;
 	}
 
 	if (mirror_mode) {
@@ -3316,8 +3458,14 @@ static int lfs_setstripe_internal(int argc, char **argv,
 		if (migrate_mdt_mode) {
 			result = llapi_migrate_mdt(fname, &migrate_mdt_param);
 		} else if (migrate_mode) {
-			result = lfs_migrate(fname, migration_flags, param,
-					     layout);
+			if (migration_flags & MIGRATION_HSM)
+				result = lfs_hsm_migrate(fname,
+							 migration_flags,
+							 param, layout,
+							 archive_id);
+			else
+				result = lfs_migrate(fname, migration_flags,
+						     param, layout);
 		} else if (comp_set != 0) {
 			result = lfs_component_set(fname, comp_id,
 						   lsa.lsa_comp_flags,
@@ -7160,6 +7308,8 @@ static int lfs_hsm_state(int argc, char **argv)
 			printf(" never_release");
 		if (hus.hus_states & HS_NOARCHIVE)
 			printf(" never_archive");
+		if (hus.hus_states & HS_NOMIGRATE)
+			printf(" never_migrate");
 		if (hus.hus_states & HS_LOST)
 			printf(" lost_from_hsm");
 
@@ -7189,10 +7339,11 @@ static int lfs_hsm_change_flags(int argc, char **argv, int mode)
 	{ .val = 'd',	.name = "dirty",	.has_arg = no_argument },
 	{ .val = 'e',	.name = "exists",	.has_arg = no_argument },
 	{ .val = 'l',	.name = "lost",		.has_arg = no_argument },
+	{ .val = 'm',	.name = "nomigrate",	.has_arg = no_argument },
 	{ .val = 'r',	.name = "norelease",	.has_arg = no_argument },
 	{ .val = 'i',	.name = "archive-id",	.has_arg = required_argument },
 	{ .name = NULL } };
-	char short_opts[] = "lraAdei:";
+	char short_opts[] = "lraAdei:m";
 	__u64 mask = 0;
 	int c, rc;
 	char *path;
@@ -7230,6 +7381,9 @@ static int lfs_hsm_change_flags(int argc, char **argv, int mode)
 					end);
 				return CMD_HELP;
 			}
+			break;
+		case 'm':
+			mask |= HS_NOMIGRATE;
 			break;
 		case '?':
 			return CMD_HELP;
@@ -7302,7 +7456,9 @@ static int lfs_hsm_action(int argc, char **argv)
 		printf(" %s ", hsm_progress_state2name(hps));
 
 		if ((hps == HPS_RUNNING) &&
-		    (hua == HUA_ARCHIVE || hua == HUA_RESTORE))
+		    (hua == HUA_ARCHIVE ||
+		     hua == HUA_RESTORE ||
+		     hua == HUA_MIGRATE))
 			printf("(%llu bytes moved)\n",
 			       (unsigned long long)he.length);
 		else if ((he.offset + he.length) == LUSTRE_EOF)
@@ -7344,9 +7500,10 @@ static int lfs_hsm_prepare_file(const char *file, struct lu_fid *fid,
 	int		rc;
 
 	rc = lstat(file, &st);
-	if (rc) {
-		fprintf(stderr, "Cannot stat %s: %s\n", file, strerror(errno));
-		return -errno;
+	if (rc == -1) {
+		rc = -errno;
+		fprintf(stderr, "Cannot stat %s: %s\n", file, strerror(-rc));
+		return rc;
 	}
 	/* Checking for regular file as archiving as posix copytool
 	 * rejects archiving files other than regular files
@@ -7495,7 +7652,7 @@ static int lfs_hsm_request(int argc, char **argv, int action)
 	if (hur == NULL) {
 		fprintf(stderr, "Cannot create the request: %s\n",
 			strerror(errno));
-		return errno;
+		return -ENOMEM;
 	}
 	nbfile_alloc = nbfile;
 

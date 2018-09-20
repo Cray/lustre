@@ -7,6 +7,7 @@
  *     alternatives
  *
  * Copyright (c) 2013, 2017, Intel Corporation.
+ * Copyright 2015, 2019 Cray Inc. All rights reserved.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the GNU Lesser General Public License
@@ -59,7 +60,9 @@
 
 #include <linux/lnet/lnetctl.h>
 #include <lustre/lustreapi.h>
+#include <lustre/include/uapi/linux/lustre/lustre_fid.h>
 #include "lustreapi_internal.h"
+#include <cyaml.h>
 
 #define OPEN_BY_FID_PATH dot_lustre_name"/fid"
 
@@ -76,12 +79,12 @@ struct hsm_copytool_private {
 
 #define CP_PRIV_MAGIC 0x19880429
 struct hsm_copyaction_private {
-	__u32					 magic;
-	__u32					 source_fd;
-	__s32					 data_fd;
-	const struct hsm_copytool_private	*ct_priv;
-	struct hsm_copy				 copy;
-	lstat_t					 stat;
+	__u32                                    magic;
+	__u32                                    source_fd;
+	__s32                                    data_fd;
+	const struct hsm_copytool_private       *ct_priv;
+	struct hsm_copy                          copy;
+	lstat_t                                  stat;
 };
 
 enum ct_progress_type {
@@ -110,6 +113,11 @@ enum ct_event {
 	CT_REMOVE_FINISH	= HSMA_REMOVE + CT_FINISH,
 	CT_REMOVE_CANCEL	= HSMA_REMOVE + CT_CANCEL,
 	CT_REMOVE_ERROR		= HSMA_REMOVE + CT_ERROR,
+	CT_MIGRATE_START	= HSMA_MIGRATE,
+	CT_MIGRATE_RUNNING	= HSMA_MIGRATE + CT_RUNNING,
+	CT_MIGRATE_FINISH	= HSMA_MIGRATE + CT_FINISH,
+	CT_MIGRATE_CANCEL	= HSMA_MIGRATE + CT_CANCEL,
+	CT_MIGRATE_ERROR	= HSMA_MIGRATE + CT_ERROR,
 	CT_EVENT_MAX
 };
 
@@ -154,6 +162,16 @@ static inline const char *llapi_hsm_ct_ev2str(int type)
 		return "REMOVE_CANCEL";
 	case CT_REMOVE_ERROR:
 		return "REMOVE_ERROR";
+	case CT_MIGRATE_START:
+		return "MIGRATE_START";
+	case CT_MIGRATE_RUNNING:
+		return "MIGRATE_RUNNING";
+	case CT_MIGRATE_FINISH:
+		return "MIGRATE_FINISH";
+	case CT_MIGRATE_CANCEL:
+		return "MIGRATE_CANCEL";
+	case CT_MIGRATE_ERROR:
+		return "MIGRATE_ERROR";
 	default:
 		llapi_err_noerrno(LLAPI_MSG_ERROR,
 				  "Unknown event type: %d", type);
@@ -1122,7 +1140,7 @@ int llapi_hsm_action_begin(struct hsm_copyaction_private **phcp,
 
 	if (hai->hai_action == HSMA_ARCHIVE) {
 		fd = ct_open_by_fid(hcp->ct_priv, &hai->hai_dfid,
-				O_RDONLY | O_NOATIME | O_NOFOLLOW | O_NONBLOCK);
+				    O_RDONLY | O_NOATIME | O_NOFOLLOW | O_NONBLOCK);
 		if (fd < 0) {
 			rc = fd;
 			goto err_out;
@@ -1142,6 +1160,34 @@ int llapi_hsm_action_begin(struct hsm_copyaction_private **phcp,
 		/* Since remove is atomic there is no need to send an
 		 * initial MDS_HSM_PROGRESS RPC. */
 		goto out_log;
+	} else if (hai->hai_action == HSMA_MIGRATE) {
+		if (!fid_is_sane(&hai->hai_fid) ||
+		    !fid_is_sane(&hai->hai_dfid)) {
+			rc = -EINVAL;
+			goto err_out;
+		}
+		fd = ct_open_by_fid(hcp->ct_priv, &hai->hai_fid,
+				    O_RDONLY | O_NOATIME |
+				    O_NOFOLLOW | O_NONBLOCK);
+		if (fd < 0) {
+			rc = fd;
+			llapi_error(LLAPI_MSG_ERROR, rc,
+				    "ct_open_by_fid failed\n");
+
+			goto err_out;
+		}
+		hcp->source_fd = fd;
+		fd = ct_open_by_fid(hcp->ct_priv, &hai->hai_dfid,
+				    O_WRONLY | O_NOATIME |
+				    O_NOFOLLOW | O_NONBLOCK);
+		if (fd < 0) {
+			rc = fd;
+			llapi_error(LLAPI_MSG_ERROR, rc,
+				    "ct_open_by_fid failed\n");
+
+			goto err_out;
+		}
+		hcp->data_fd = fd;
 	}
 
 	rc = ioctl(ct->mnt_fd, LL_IOC_HSM_COPY_START, &hcp->copy);
@@ -1283,8 +1329,13 @@ int llapi_hsm_action_progress(struct hsm_copyaction_private *hcp,
 	hp.hp_cookie = hai->hai_cookie;
 	hp.hp_flags  = hp_flags;
 
-	/* Progress is made on the data fid */
-	hp.hp_fid = hai->hai_dfid;
+	if (hai->hai_action == HSMA_RESTORE) {
+		/* Progress is made on the dfid */
+		hp.hp_fid = hai->hai_dfid;
+	} else {
+		/* Progress is made on the fid */
+		hp.hp_fid = hai->hai_fid;
+	}
 	hp.hp_extent = *he;
 
 	rc = ioctl(hcp->ct_priv->mnt_fd, LL_IOC_HSM_PROGRESS, &hp);
@@ -1307,7 +1358,9 @@ int llapi_hsm_action_get_dfid(const struct hsm_copyaction_private *hcp,
 	if (hcp->magic != CP_PRIV_MAGIC)
 		return -EINVAL;
 
-	if (hai->hai_action != HSMA_RESTORE && hai->hai_action != HSMA_ARCHIVE)
+	if (hai->hai_action != HSMA_RESTORE &&
+	    hai->hai_action != HSMA_ARCHIVE &&
+	    hai->hai_action != HSMA_MIGRATE)
 		return -EINVAL;
 
 	*fid = hai->hai_dfid;
@@ -1333,7 +1386,8 @@ int llapi_hsm_action_get_fd(const struct hsm_copyaction_private *hcp)
 	if (hai->hai_action == HSMA_ARCHIVE) {
 		fd = dup(hcp->source_fd);
 		return fd < 0 ? -errno : fd;
-	} else if (hai->hai_action == HSMA_RESTORE) {
+	} else if (hai->hai_action == HSMA_RESTORE ||
+		   hai->hai_action == HSMA_MIGRATE) {
 		fd = dup(hcp->data_fd);
 		return fd < 0 ? -errno : fd;
 	} else {

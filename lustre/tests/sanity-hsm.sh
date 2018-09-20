@@ -3984,6 +3984,69 @@ test_113() {
 }
 run_test 113 "wrong stat after restore"
 
+helper_test_114() {
+	local optcmd=$1				# -i or -o
+	local req_ss=$2				# requested stripe size
+	local start_obdidx=1
+	local target_obdidx=0
+	# Migrate a file with HSM
+
+	# test needs a running copytool
+	copytool setup
+
+	# Create the file
+	mkdir -p $DIR/$tdir
+	local file=$DIR/$tdir/migr_1_ost
+	lfs setstripe -i $start_obdidx $file
+	dd bs=5M count=1 if=/dev/urandom of=$file >/dev/null 2>&1 ||
+		error "write data into $file failed"
+	local start_md5=$(md5sum $file)
+	local start_ss=$($LFS getstripe --stripe-size $file)
+
+	# Migrate it
+	cmd="$LFS migrate --hsm $optcmd $target_obdidx --stripe-size $req_ss $file"
+	echo $cmd
+	eval $cmd || error "$cmd failed"
+
+	# Wait for migration to happen
+	wait_request_state MIGRATE SUCCEED
+
+	sleep 1
+
+	# Ensure it is migrated, and that the content is correct
+	local end_obdidx=$($LFS getstripe -i $file)
+	local end_ss=$($LFS getstripe --stripe-size $file)
+	local end_md5=$(md5sum $file)
+	[[ $target_obdidx -eq $end_obdidx ]] ||
+		error "unexpected new OST (was=$start_obdidx, "\
+			"wanted=$target_obdidx, got=$end_obdidx)"
+	[[ $req_ss -eq $end_ss ]] ||
+		error "unexpected new stripe size" \
+			"(was=$start_ss, wanted=$req_ss, got=$end_ss)"
+	[[ "$start_md5" == "$end_md5" ]] ||
+		error "md5sums differ: $start_md5, $end_md5"
+}
+
+test_114a() {
+	helper_test_114 "-i" "1048576"
+}
+run_test 114a "HSM migrate test with -i, stripe size of 1MiB"
+
+test_114b() {
+	helper_test_114 "-i" "2097152"
+}
+run_test 114b "HSM migrate test with -o, stripe size of 2MiB"
+
+test_114c() {
+	helper_test_114 "-o" "4194304"
+}
+run_test 114c "HSM migrate test with -o, stripe size of 4MiB"
+
+test_114d() {
+	helper_test_114 "-o" "65536"
+}
+run_test 114d "HSM migrate test with -o, stripe size of 64KiB"
+
 test_200() {
 	local f=$DIR/$tdir/$tfile
 	local fid=$(create_empty_file "$f")

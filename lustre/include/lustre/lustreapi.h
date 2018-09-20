@@ -486,7 +486,7 @@ struct hsm_user_request *llapi_hsm_user_request_alloc(int itemcount,
 int llapi_hsm_request(const char *path, const struct hsm_user_request *request);
 int llapi_hsm_current_action(const char *path, struct hsm_current_action *hca);
 
-/* JSON handling */
+/* JSON/YAML handling */
 int llapi_json_init_list(struct llapi_json_item_list **item_list);
 int llapi_json_destroy_list(struct llapi_json_item_list **item_list);
 int llapi_json_add_item(struct llapi_json_item_list **item_list, char *key,

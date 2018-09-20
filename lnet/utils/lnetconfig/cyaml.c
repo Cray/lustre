@@ -460,6 +460,7 @@ static int assign_type_value(struct cYAML *obj, const char *value)
  * else state = VALUE
  *
  */
+
 static enum cYAML_handler_error yaml_parse_error(yaml_token_t *token,
 						 struct cYAML_tree_node *tree)
 {
@@ -1207,7 +1208,7 @@ struct cYAML *cYAML_build_tree(char *yaml_file,
 			snprintf(err_str, sizeof(err_str),
 				"Failed to handle token:%d "
 				"[state=%d, rc=%d]",
-				token.type, tree.state, rc);
+				 token.type, tree.state, rc);
 			cYAML_build_error(-1, -1, "yaml", "builder",
 					  err_str,
 					  err_rc);

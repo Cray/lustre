@@ -180,6 +180,9 @@ static bool hsm_action_is_needed(struct hsm_action_item *hai, int hal_an,
 	case HSMA_CANCEL:
 		is_needed = true;
 		break;
+	case HSMA_MIGRATE:
+		is_needed = true;
+		break;
 	}
 	CDEBUG(D_HSM, "fid="DFID" action=%s rq_flags=%#llx"
 		      " extent=%#llx-%#llx hsm_flags=%X %s\n",
@@ -218,6 +221,7 @@ static bool hal_is_sane(struct hsm_action_list *hal)
 		case HSMA_RESTORE:
 		case HSMA_REMOVE:
 		case HSMA_CANCEL:
+		case HSMA_MIGRATE:
 			break;
 		default:
 			RETURN(false);
@@ -284,10 +288,13 @@ static int mdt_hsm_register_hal(struct mdt_thread_info *mti,
 		archive_id = hal->hal_archive_id;
 		flags = hal->hal_flags;
 
-		/* by default, data FID is same as Lustre FID */
+		/* by default, data FID is same as Lustre FID
+		 * For MIGRATE dfid is the target file to migrate to
+		 */
 		/* the volatile data FID will be created by copy tool and
 		 * send from the agent through the progress call */
-		hai->hai_dfid = hai->hai_fid;
+		if (hai->hai_action != HSMA_MIGRATE)
+			hai->hai_dfid = hai->hai_fid;
 
 		/* done here to manage first and redundant requests cases */
 		if (hai->hai_action == HSMA_RESTORE)

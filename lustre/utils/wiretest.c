@@ -4938,6 +4938,14 @@ void lustre_assert_wire_constants(void)
 		 (long long)(int)offsetof(struct hsm_state_set, hss_clearmask));
 	LASSERTF((int)sizeof(((struct hsm_state_set *)0)->hss_clearmask) == 8, "found %lld\n",
 		 (long long)(int)sizeof(((struct hsm_state_set *)0)->hss_clearmask));
+	LASSERTF(HS_NORELEASE == 0x00000010UL, "found 0x%.8xUL\n",
+		(unsigned)HS_NORELEASE);
+	LASSERTF(HS_NOARCHIVE == 0x00000020UL, "found 0x%.8xUL\n",
+		(unsigned)HS_NOARCHIVE);
+	LASSERTF(HS_LOST == 0x00000040UL, "found 0x%.8xUL\n",
+		(unsigned)HS_LOST);
+	LASSERTF(HS_NOMIGRATE == 0x00000080UL, "found 0x%.8xUL\n",
+		(unsigned)HS_NOMIGRATE);
 
 	/* Checks for struct hsm_current_action */
 	LASSERTF((int)sizeof(struct hsm_current_action) == 24, "found %lld\n",
@@ -4982,6 +4990,46 @@ void lustre_assert_wire_constants(void)
 		(unsigned)HSM_FORCE_ACTION);
 	LASSERTF(HSM_GHOST_COPY == 0x00000002UL, "found 0x%.8xUL\n",
 		(unsigned)HSM_GHOST_COPY);
+	LASSERTF(HSM_MIGRATION_BLOCKS == 0x00000004UL, "found 0x%.8xUL\n",
+		(unsigned)HSM_MIGRATION_BLOCKS);
+	LASSERTF(HUA_ARCHIVE == 10, "found %lld\n",
+		 (long long)HUA_ARCHIVE);
+	LASSERTF(HUA_RESTORE == 11, "found %lld\n",
+		 (long long)HUA_RESTORE);
+	LASSERTF(HUA_RELEASE == 12, "found %lld\n",
+		 (long long)HUA_RELEASE);
+	LASSERTF(HUA_REMOVE == 13, "found %lld\n",
+		 (long long)HUA_REMOVE);
+	LASSERTF(HUA_CANCEL == 14, "found %lld\n",
+		 (long long)HUA_CANCEL);
+	LASSERTF(HUA_MIGRATE == 15, "found %lld\n",
+		 (long long)HUA_MIGRATE);
+	LASSERTF(HE_ARCHIVE == 0, "found %lld\n",
+		 (long long)HE_ARCHIVE);
+	LASSERTF(HE_RESTORE == 1, "found %lld\n",
+		 (long long)HE_RESTORE);
+	LASSERTF(HE_CANCEL == 2, "found %lld\n",
+		 (long long)HE_CANCEL);
+	LASSERTF(HE_RELEASE == 3, "found %lld\n",
+		 (long long)HE_RELEASE);
+	LASSERTF(HE_REMOVE == 4, "found %lld\n",
+		 (long long)HE_REMOVE);
+	LASSERTF(HE_STATE == 5, "found %lld\n",
+		 (long long)HE_STATE);
+	LASSERTF(HE_MIGRATE == 6, "found %lld\n",
+		 (long long)HE_MIGRATE);
+	LASSERTF(HSMA_NONE == 10, "found %lld\n",
+		 (long long)HSMA_NONE);
+	LASSERTF(HSMA_ARCHIVE == 20, "found %lld\n",
+		 (long long)HSMA_ARCHIVE);
+	LASSERTF(HSMA_RESTORE == 21, "found %lld\n",
+		 (long long)HSMA_RESTORE);
+	LASSERTF(HSMA_REMOVE == 22, "found %lld\n",
+		 (long long)HSMA_REMOVE);
+	LASSERTF(HSMA_CANCEL == 23, "found %lld\n",
+		 (long long)HSMA_CANCEL);
+	LASSERTF(HSMA_MIGRATE == 24, "found %lld\n",
+		 (long long)HSMA_MIGRATE);
 
 	/* Checks for struct hsm_user_request */
 	LASSERTF((int)sizeof(struct hsm_user_request) == 24, "found %lld\n",
