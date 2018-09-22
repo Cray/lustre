@@ -437,6 +437,7 @@ int obd_alloc_fail(const void *ptr, const char *name, const char *type,
 #define OBD_FAIL_PTLRPC_BULK_ATTACH      0x521
 #define OBD_FAIL_PTLRPC_DELAY_INTR       0x522
 #define OBD_FAIL_PTLRPC_BULK_REPLY	 0x524
+#define OBD_FAIL_PTLRPC_RESEND_RACE	 0x525
 #define OBD_FAIL_PTLRPC_CONNECT_RACE	 0x531
 
 #define OBD_FAIL_OBD_PING_NET            0x600
