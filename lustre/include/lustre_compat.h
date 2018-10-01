@@ -240,6 +240,13 @@ static inline void ll_set_fs_pwd(struct fs_struct *fs, struct vfsmount *mnt,
 #define DECLARE_LL_D_HLIST_NODE_PTR(name) /* nothing */
 #endif /* !DATA_FOR_LLITE_IS_LIST */
 
+#ifndef HAVE_D_IN_LOOKUP
+static inline int d_in_lookup(struct dentry *dentry)
+{
+	return false;
+}
+#endif
+
 #ifndef QUOTA_OK
 # define QUOTA_OK 0
 #endif
