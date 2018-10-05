@@ -54,6 +54,7 @@ extern unsigned int libcfs_console_min_delay;
 extern unsigned int libcfs_console_backoff;
 extern unsigned int libcfs_debug_binary;
 extern char *libcfs_debug_file_path;
+extern unsigned int libcfs_experimental_flag;
 
 struct task_struct;
 
