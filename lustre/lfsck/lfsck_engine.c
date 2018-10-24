@@ -1802,8 +1802,6 @@ cleanup:
 	}
 	spin_unlock(&lad->lad_lock);
 
-	LASSERTF(lad->lad_prefetched == 0, "unmatched prefeteched objs %d\n",
-		 lad->lad_prefetched);
 
 	memset(lr, 0, sizeof(*lr));
 	if (rc > 0) {
