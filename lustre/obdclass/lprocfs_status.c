@@ -784,6 +784,7 @@ static const char *obd_connect_names[] = {
 	"archive_id_array",	/* 0x100 */
 	"selinux_policy",	/* 0x200 */
 	"lsom",			/* 0x800 */
+	"async_discard",	/* 0x4000 */
 	NULL
 };
 
