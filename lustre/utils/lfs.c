@@ -2757,6 +2757,7 @@ static int lfs_setstripe_internal(int argc, char **argv,
 	{ .val = 'i',	.name = "stripe_index",	.has_arg = required_argument},
 	{ .val = 'I',	.name = "comp-id",	.has_arg = required_argument},
 	{ .val = 'I',	.name = "component-id",	.has_arg = required_argument},
+/* find { .val = 'l',	.name = "lazy",		.has_arg = no_argument }, */
 	{ .val = 'L',	.name = "layout",	.has_arg = required_argument },
 	{ .val = 'm',	.name = "mdt-index",	.has_arg = required_argument},
 	/* --non-block is only valid in migrate mode */
@@ -3686,6 +3687,7 @@ static int lfs_find(int argc, char **argv)
 	{ .val = 'i',	.name = "stripe-index",	.has_arg = required_argument },
 	{ .val = 'i',	.name = "stripe_index",	.has_arg = required_argument },
 /* getstripe { .val = 'I', .name = "comp-id",	.has_arg = required_argument }*/
+	{ .val = 'l',	.name = "lazy",		.has_arg = no_argument },
 	{ .val = 'L',	.name = "layout",	.has_arg = required_argument },
 	{ .val = 'm',	.name = "mdt",		.has_arg = required_argument },
 	{ .val = 'm',	.name = "mdt-index",	.has_arg = required_argument },
@@ -3953,6 +3955,9 @@ static int lfs_find(int argc, char **argv)
 			param.fp_check_hash_type = 1;
 			param.fp_exclude_hash_type = !!neg_opt;
 			break;
+		case 'l':
+			param.fp_lazy = 1;
+			break;
 		case 'L':
 			ret = name2layout(&param.fp_layout, optarg);
 			if (ret)
@@ -4208,21 +4213,21 @@ err_free:
 			param.fp_check_mdt_count = 1;
 			param.fp_exclude_mdt_count = !!neg_opt;
 			break;
-                default:
-                        ret = CMD_HELP;
-                        goto err;
-                };
-        }
+		default:
+			ret = CMD_HELP;
+			goto err;
+		};
+	}
 
-        if (pathstart == -1) {
-                fprintf(stderr, "error: %s: no filename|pathname\n",
-                        argv[0]);
-                ret = CMD_HELP;
-                goto err;
-        } else if (pathend == -1) {
-                /* no options */
-                pathend = argc;
-        }
+	if (pathstart == -1) {
+		fprintf(stderr, "error: %s: no filename|pathname\n",
+			argv[0]);
+		ret = CMD_HELP;
+		goto err;
+	} else if (pathend == -1) {
+		/* no options */
+		pathend = argc;
+	}
 
 	do {
 		rc = llapi_find(argv[pathstart], &param);
@@ -4280,6 +4285,7 @@ static int lfs_getstripe_internal(int argc, char **argv,
 	{ .val = 'i',	.name = "stripe_index",	.has_arg = no_argument },
 	{ .val = 'I',	.name = "comp-id",	.has_arg = optional_argument },
 	{ .val = 'I',	.name = "component-id",	.has_arg = optional_argument },
+/* find { .val = 'l',	.name = "lazy",		.has_arg = no_argument }, */
 	{ .val = 'L',	.name = "layout",	.has_arg = no_argument },
 	{ .val = 'm',	.name = "mdt",		.has_arg = no_argument },
 	{ .val = 'm',	.name = "mdt-index",	.has_arg = no_argument },
@@ -5110,6 +5116,7 @@ static int lfs_setdirstripe(int argc, char **argv)
 	{ .val = 'D',	.name = "default",	.has_arg = no_argument },
 	{ .val = 'D',	.name = "default_stripe", .has_arg = no_argument },
 	{ .val = 'H',	.name = "mdt-hash",	.has_arg = required_argument },
+/* find { .val = 'l',	.name = "lazy",		.has_arg = no_argument }, */
 	{ .val = 'i',	.name = "mdt-index",	.has_arg = required_argument },
 #if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(3, 0, 53, 0)
 	{ .val = 'i',	.name = "index",	.has_arg = required_argument },
