@@ -598,7 +598,7 @@ int osc_ldlm_glimpse_ast(struct ldlm_lock *dlmlock, void *data)
 			cl_object_get(obj);
 		}
 		unlock_res_and_lock(dlmlock);
-		LDLM_LOCK_PUT(dlmlock);
+		LDLM_LOCK_RELEASE(dlmlock);
 
 		if (obj == NULL && res->lr_type == LDLM_EXTENT) {
 			if (OBD_FAIL_CHECK(OBD_FAIL_OSC_NO_SIZE_DATA))
