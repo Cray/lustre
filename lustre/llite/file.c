@@ -4910,7 +4910,6 @@ int ll_migrate(struct inode *parent, struct file *file, struct lmv_user_md *lum,
 	if (IS_ERR(op_data))
 		GOTO(out_iput, rc = PTR_ERR(op_data));
 
-	inode_lock(child_inode);
 	op_data->op_fid3 = *ll_inode2fid(child_inode);
 	if (!fid_is_sane(&op_data->op_fid3)) {
 		CERROR("%s: migrate %s, but FID "DFID" is insane\n",
@@ -4991,7 +4990,6 @@ out_close:
 	if (!rc)
 		clear_nlink(child_inode);
 out_unlock:
-	inode_unlock(child_inode);
 	ll_finish_md_op_data(op_data);
 out_iput:
 	iput(child_inode);
