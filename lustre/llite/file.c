@@ -4277,7 +4277,12 @@ int ll_migrate(struct inode *parent, struct file *file, int mdtidx,
 	if (child_inode == parent->i_sb->s_root->d_inode)
 		GOTO(out_iput, rc = -EINVAL);
 
-	inode_lock(child_inode);
+	/* We need to prevent multiple threads from doing concurrent
+	 * migrates. For regular files a lease is taken which is exclusive,
+	 * for other cases take a inode lock. */
+	if (!S_ISREG(child_inode->i_mode))
+		inode_lock(child_inode);
+
 	op_data->op_fid3 = *ll_inode2fid(child_inode);
 	if (!fid_is_sane(&op_data->op_fid3)) {
 		CERROR("%s: migrate %s, but FID "DFID" is insane\n",
@@ -4357,7 +4362,8 @@ out_close:
 	if (rc == 0)
 		clear_nlink(child_inode);
 out_unlock:
-	inode_unlock(child_inode);
+	if (!S_ISREG(child_inode->i_mode))
+		inode_unlock(child_inode);
 out_iput:
 	iput(child_inode);
 out_free:
