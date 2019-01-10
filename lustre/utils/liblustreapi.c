@@ -4300,7 +4300,7 @@ obd_matches:
 		if (ret)
 			goto out;
 		if (projid == param->fp_projid) {
-			if (param->fp_exclude_uid)
+			if (param->fp_exclude_projid)
 				goto decided;
 		} else {
 			if (!param->fp_exclude_projid)
