@@ -2747,7 +2747,7 @@ test_27J() {
 	$LFS getstripe -v $DIR/$tdir/${tfile}2 |
 		grep "lfm_flags:.*0x0000DA08" ||
 		error "$DIR/$tdir/${tfile}2: invalid LOV EA foreign flags"
-	$LFS getstripe -v $DIR/$tdir/${tfile}2 |
+	$LFS getstripe $DIR/$tdir/${tfile}2 |
 		grep "lfm_value:.*${uuid1}@${uuid2}" ||
 		error "$DIR/$tdir/${tfile}2: invalid LOV EA foreign value"
 
@@ -2792,15 +2792,104 @@ test_27J() {
 }
 run_test 27J "basic ops on file with foreign LOV"
 
-test_27N() {
-	combined_mgs_mds && skip "needs separate MGS/MDT"
+test_27K() {
+	[[ $(lustre_version_code $SINGLEMDS) -le $(version_code 2.12.49) ]] &&
+		skip "Need MDS version newer than 2.12.49"
 
-	pool_add $TESTNAME || error "pool_add failed"
-	do_facet mgs "$LCTL pool_list $FSNAME" |
-		grep -Fx "${FSNAME}.${TESTNAME}" ||
-		error "lctl pool_list on MGS failed"
+	test_mkdir $DIR/$tdir
+	local uuid1=$(cat /proc/sys/kernel/random/uuid)
+	local uuid2=$(cat /proc/sys/kernel/random/uuid)
+
+	# create foreign dir (raw way)
+	create_foreign_dir -d $DIR/$tdir/$tdir -x "${uuid1}@${uuid2}" -t 1 ||
+		error "create_foreign_dir FAILED"
+
+	# verify foreign dir (raw way)
+	parse_foreign_dir -d $DIR/$tdir/$tdir |
+		grep "lmv_foreign_magic:.*0xcd50cd0" ||
+		error "$DIR/$tdir/$tfile: invalid LMV EA magic"
+	parse_foreign_dir -d $DIR/$tdir/$tdir | grep "lmv_xattr_size:.*89$" ||
+		error "$DIR/$tdir/$tdir: invalid LMV EA size"
+	parse_foreign_dir -d $DIR/$tdir/$tdir | grep "lmv_foreign_type: 1$" ||
+		error "$DIR/$tdir/$tdir: invalid LMV EA type"
+	parse_foreign_dir -d $DIR/$tdir/$tdir | grep "lmv_foreign_flags: 0$" ||
+		error "$DIR/$tdir/$tdir: invalid LMV EA flags"
+	local lmv=$(parse_foreign_dir -d $DIR/$tdir/$tdir |
+		grep "lmv_foreign_value: 0x" |
+		sed 's/lmv_foreign_value: 0x//')
+	local lmv2=$(echo -n "${uuid1}@${uuid2}" | od -A n -t x1 -w160 |
+		sed 's/ //g')
+	[[ $lmv == $lmv2 ]] || error "$DIR/$tdir/$tdir: invalid LMV EA value"
+
+	# create foreign dir (lfs + API)
+	$LFS mkdir --foreign=daos --xattr="${uuid1}@${uuid2}" --flags=0xda05 \
+		$DIR/$tdir/${tdir}2 ||
+		error "$DIR/$tdir/${tdir}2: create failed"
+
+	$LFS getdirstripe -v $DIR/$tdir/${tdir}2 |
+		grep "lfm_magic:.*0x0CD50CD0" ||
+		error "$DIR/$tdir/${tdir}2: invalid LMV EA magic"
+	# lfm_length is LMV EA size - sizeof(lfm_magic) - sizeof(lfm_length)
+	# - sizeof(lfm_type) - sizeof(lfm_flags)
+	$LFS getdirstripe -v $DIR/$tdir/${tdir}2 | grep "lfm_length:.*73" ||
+		error "$DIR/$tdir/${tdir}2: invalid LMV EA size"
+	$LFS getdirstripe -v $DIR/$tdir/${tdir}2 | grep "lfm_type:.*daos" ||
+		error "$DIR/$tdir/${tdir}2: invalid LMV EA type"
+	$LFS getdirstripe -v $DIR/$tdir/${tdir}2 |
+		grep "lfm_flags:.*0x0000DA05" ||
+		error "$DIR/$tdir/${tdir}2: invalid LMV EA flags"
+	$LFS getdirstripe $DIR/$tdir/${tdir}2 |
+		grep "lfm_value.*${uuid1}@${uuid2}" ||
+		error "$DIR/$tdir/${tdir}2: invalid LMV EA value"
+
+	# file create in dir should fail
+	touch $DIR/$tdir/$tdir/$tfile && "$DIR/$tdir: file create should fail"
+	touch $DIR/$tdir/${tdir}2/$tfile &&
+		"$DIR/${tdir}2: file create should fail"
+
+	# chmod should work
+	chmod 777 $DIR/$tdir/$tdir ||
+		error "$DIR/$tdir: chmod failed"
+	chmod 777 $DIR/$tdir/${tdir}2 ||
+		error "$DIR/${tdir}2: chmod failed"
+
+	# chown should work
+	chown $RUNAS_ID:$RUNAS_GID $DIR/$tdir/$tdir ||
+		error "$DIR/$tdir: chown failed"
+	chown $RUNAS_ID:$RUNAS_GID $DIR/$tdir/${tdir}2 ||
+		error "$DIR/${tdir}2: chown failed"
+
+	# rename should work
+	mv $DIR/$tdir/$tdir $DIR/$tdir/${tdir}.new ||
+		error "$DIR/$tdir/$tdir: rename of foreign dir has failed"
+	mv $DIR/$tdir/${tdir}2 $DIR/$tdir/${tdir}2.new ||
+		error "$DIR/$tdir/${tdir}2: rename of foreign dir has failed"
+
+	#remove foreign dir
+	rmdir $DIR/$tdir/${tdir}.new ||
+		error "$DIR/$tdir/${tdir}.new: remove of foreign dir has failed"
+	rmdir $DIR/$tdir/${tdir}2.new ||
+		error "$DIR/$tdir/${tdir}2.new: remove of foreign dir has failed"
 }
-run_test 27N "lctl pool_list on separate MGS gives correct pool name"
+run_test 27K "basic ops on dir with foreign LMV"
+
+test_27L() {
+	remote_mds_nodsh && skip "remote MDS with nodsh"
+
+	local POOL=${POOL:-$TESTNAME}
+
+	if ! combined_mgs_mds ; then
+		mount_mgs_client
+		trap umount_mgs_client EXIT
+	fi
+
+	pool_add $POOL || error "pool_add failed"
+
+	lfs pool_list $MOUNT | grep -Fx "${FSNAME}.${POOL}" ||
+		 error "pool_list does not contain ${FSNAME}.${POOL}:" \
+		       "$(lfs pool_list $MOUNT | grep -F "${POOL}")"
+}
+run_test 27L "lfs pool_list gives correct pool name"
 
 test_27M() {
 	[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.12.57) ]] &&
@@ -2938,6 +3027,16 @@ test_27M() {
 }
 run_test 27M "test O_APPEND striping"
 
+test_27N() {
+	combined_mgs_mds && skip "needs separate MGS/MDT"
+
+	pool_add $TESTNAME || error "pool_add failed"
+	do_facet mgs "$LCTL pool_list $FSNAME" |
+		grep -Fx "${FSNAME}.${TESTNAME}" ||
+		error "lctl pool_list on MGS failed"
+}
+run_test 27N "lctl pool_list on separate MGS gives correct pool name"
+
 test_27O() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 	[ "$mds1_FSTYPE" != "ldiskfs" ] && skip_env "ldiskfs only test"
@@ -2955,24 +3054,6 @@ test_27O() {
 	rm -rf $DIR/d
 }
 run_test 27O "restriping of an empty dir should not corrupt fs"
-
-test_27L() {
-	remote_mds_nodsh && skip "remote MDS with nodsh"
-
-	local POOL=${POOL:-$TESTNAME}
-
-	if ! combined_mgs_mds ; then
-		mount_mgs_client
-		trap umount_mgs_client EXIT
-	fi
-
-	pool_add $POOL || error "pool_add failed"
-
-	lfs pool_list $MOUNT | grep -Fx "${FSNAME}.${POOL}" ||
-		 error "pool_list does not contain ${FSNAME}.${POOL}:" \
-		       "$(lfs pool_list $MOUNT | grep -F "${POOL}")"
-}
-run_test 27L "lfs pool_list gives correct pool name"
 
 # createtest also checks that device nodes are created and
 # then visible correctly (#2091)
