@@ -1384,7 +1384,7 @@ extern void lustre_swab_ptlrpc_body(struct ptlrpc_body *pb);
 /* ocd_connect_flags2 flags */
 #define OBD_CONNECT2_FILE_SECCTX	0x1ULL /* set file security context at create */
 #define OBD_CONNECT2_LOCKAHEAD	0x2ULL /* ladvise lockahead v2 */
-#define OBD_CONNECT2_INC_XID	0x40ULL /* Increasing xid */
+#define OBD_CONNECT2_INC_XID	0x200ULL /* Increasing xid */
 
 /* XXX README XXX:
  * Please DO NOT add flag values here before first ensuring that this same
