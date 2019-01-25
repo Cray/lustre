@@ -306,21 +306,25 @@ int llapi_ioctl_pack(struct obd_ioctl_data *data, char **pbuf, int max_len)
 
 	ptr = overlay->ioc_bulk;
 	if (data->ioc_inlbuf1) {
+		overlay->ioc_inlbuf1 = ptr;
 		memcpy(ptr, data->ioc_inlbuf1, data->ioc_inllen1);
 		ptr += __ALIGN_KERNEL(data->ioc_inllen1, 8);
 	}
 
 	if (data->ioc_inlbuf2) {
+		overlay->ioc_inlbuf2 = ptr;
 		memcpy(ptr, data->ioc_inlbuf2, data->ioc_inllen2);
 		ptr += __ALIGN_KERNEL(data->ioc_inllen2, 8);
 	}
 
 	if (data->ioc_inlbuf3) {
+		overlay->ioc_inlbuf3 = ptr;
 		memcpy(ptr, data->ioc_inlbuf3, data->ioc_inllen3);
 		ptr += __ALIGN_KERNEL(data->ioc_inllen3, 8);
 	}
 
 	if (data->ioc_inlbuf4) {
+		overlay->ioc_inlbuf4 = ptr;
 		memcpy(ptr, data->ioc_inlbuf4, data->ioc_inllen4);
 		ptr += __ALIGN_KERNEL(data->ioc_inllen4, 8);
 	}
