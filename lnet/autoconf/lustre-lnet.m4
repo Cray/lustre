@@ -74,13 +74,11 @@ AS_IF([test "x$enable_backoff" = xyes], [
 ]) # LN_CONFIG_BACKOFF
 
 #
-# LN_CONFIG_DLC
-#
-# Configure dlc
+# LN_CONFIG_YAML
 #
 # fail to build if libyaml is not installed
 #
-AC_DEFUN([LN_CONFIG_DLC], [
+AC_DEFUN([LN_CONFIG_YAML], [
 	AC_CHECK_LIB([yaml], [yaml_parser_initialize],
 		     [LIBYAML="libyaml"],
 		     [AC_MSG_ERROR([YAML development libraries not not installed])],
@@ -749,13 +747,9 @@ LN_CONFIG_SOCK_ACCEPT
 AC_DEFUN([LN_PATH_DEFAULTS], [
 ]) # LN_PATH_DEFAULTS
 
-#
-# LN_CONFIGURE
-#
-# other configure checks
-#
-AC_DEFUN([LN_CONFIGURE], [
-AC_MSG_NOTICE([LNet core checks
+# LN_CONFIGURE_UTILS
+AC_DEFUN([LN_CONFIGURE_UTILS], [
+AC_MSG_NOTICE([LNet utils checks
 ==============================================================================])
 
 # lnet/utils/portals.c
@@ -782,7 +776,18 @@ AS_IF([test "$enable_efence" = yes], [
 ])
 AC_SUBST(LIBEFENCE)
 
-LN_CONFIG_DLC
+LN_CONFIG_YAML
+])
+
+#
+# LN_CONFIGURE
+#
+# other configure checks
+#
+AC_DEFUN([LN_CONFIGURE], [
+AC_MSG_NOTICE([LNet core checks
+==============================================================================])
+LN_CONFIG_MAX_PAYLOAD
 ]) # LN_CONFIGURE
 
 #

@@ -3393,15 +3393,9 @@ AC_SUBST(OSDADDON)
 #
 # other configure checks
 #
-AC_DEFUN([LC_CONFIGURE], [
-AC_MSG_NOTICE([Lustre core checks
+AC_DEFUN([LC_CONFIGURE_UTILS], [
+AC_MSG_NOTICE([Lustre utils checks
 ==============================================================================])
-
-AS_IF([test $target_cpu == "i686" -o $target_cpu == "x86_64"],
-	[CFLAGS="$CFLAGS -Wall -Werror"])
-
-# maximum MDS thread count
-LC_MDS_MAX_THREADS
 
 # lustre/utils/gss/gss_util.c
 # lustre/utils/gss/gssd_proc.c
@@ -3450,6 +3444,18 @@ AC_ARG_ENABLE([getidentity_nss],
       AC_HELP_STRING([--enable-getidentity-nss],
                       [Compile l_getidentity_nss utility with NSS modules support]),
       [],[enable_getidentity_nss=yes])
+
+]) #LC_CONFIGURE_UTILS
+
+AC_DEFUN([LC_CONFIGURE], [
+AC_MSG_NOTICE([Lustre core checks
+==============================================================================])
+
+AS_IF([test $target_cpu == "i686" -o $target_cpu == "x86_64"],
+	[CFLAGS="$CFLAGS -Wall -Werror"])
+
+# maximum MDS thread count
+LC_MDS_MAX_THREADS
 
 # Super safe df
 AC_MSG_CHECKING([whether to report minimum OST free space])
