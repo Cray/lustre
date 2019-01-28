@@ -3267,24 +3267,6 @@ AC_CHECK_LIB([z], [crc32], [
 zlib library not found. Please install zlib development package.])
 ])
 
-SELINUX=""
-AC_CHECK_LIB([selinux], [is_selinux_enabled],
-	[AC_CHECK_HEADERS([selinux/selinux.h],
-			[SELINUX="-lselinux"
-			AC_DEFINE([HAVE_SELINUX], 1,
-				[support for selinux ])],
-			[AC_MSG_WARN([
-
-No libselinux-devel package found, unable to build selinux enabled tools
-])
-])],
-	[AC_MSG_WARN([
-
-No selinux package found, unable to build selinux enabled tools
-])
-])
-AC_SUBST(SELINUX)
-
 LDAP=""
 AC_ARG_ENABLE([ldap],
       AC_HELP_STRING([--enable-ldap],

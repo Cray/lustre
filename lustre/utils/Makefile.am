@@ -172,13 +172,13 @@ if LDISKFS_ENABLED
 noinst_LIBRARIES += libmount_utils_ldiskfs.a
 
 libmount_utils_ldiskfs_a_SOURCES = libmount_utils_ldiskfs.c
-libmount_utils_ldiskfs_a_CPPFLAGS := $(SELINUX)
+libmount_utils_ldiskfs_a_CPPFLAGS :=
 
 if PLUGINS
 lib_LTLIBRARIES += libmount_utils_ldiskfs.la
 libmount_utils_ldiskfs.la : libmount_utils_ldiskfs.a
 	$(CC) $(LDFLAGS) $(MNTMODLDFLAGS) -shared -export-dynamic \
-			 $(SELINUX) -o mount_osd_ldiskfs.so \
+			 -o mount_osd_ldiskfs.so \
 			 `$(AR) -t libmount_utils_ldiskfs.a`
 else
 PLUGIN_LIB += libmount_utils_ldiskfs.a
