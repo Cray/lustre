@@ -1323,6 +1323,19 @@ out:
 	RETURN(rc);
 }
 
+static void hsm_flush_update_lock(struct mdt_thread_info *mti,
+				  const struct lu_fid *fid)
+{
+	struct mdt_object *obj;
+	struct mdt_lock_handle *lh;
+
+	lh = &mti->mti_lh[MDT_LH_OLD];
+	mdt_lock_reg_init(lh, LCK_EX);
+	obj = mdt_object_find_lock(mti, fid, lh, MDS_INODELOCK_UPDATE);
+	if (!IS_ERR(obj))
+		mdt_object_unlock_put(mti, obj, lh, 1);
+}
+
 /**
  * update status of a completed request
  * \param mti [IN] context
@@ -1528,6 +1541,9 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 
 		if (crh != NULL)
 			OBD_SLAB_FREE_PTR(crh, mdt_hsm_cdt_kmem);
+
+		/* flush UPDATE lock so attributes are upadated */
+		hsm_flush_update_lock(mti, &car->car_hai->hai_fid);
 	}
 
 	GOTO(out, rc);
