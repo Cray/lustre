@@ -52,7 +52,9 @@ sbin_PROGRAMS += l_adsidentity
 endif
 
 if SELINUX
+if GETSEPOL
 sbin_PROGRAMS += l_getsepol
+endif
 endif
 endif # UTILS
 
