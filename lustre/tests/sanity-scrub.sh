@@ -100,7 +100,7 @@ scrub_prep() {
 	echo "preparing... $(date)"
 	for n in $(seq $MDSCOUNT); do
 		echo "creating $nfiles files on mds$n"
-		test_mkdir -i $((n - 1)) $DIR/$tdir/mds$n ||
+		test_mkdir -i $((n - 1)) -c1 $DIR/$tdir/mds$n ||
 			error "Failed to create directory mds$n"
 		cp $LUSTRE/tests/*.sh $DIR/$tdir/mds$n ||
 			error "Failed to copy files to mds$n"
