@@ -1,7 +1,7 @@
 %define vendor_name lustre
 %define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define flavor cray_ari_c
-%define intranamespace_name %{vendor_name}-%{flavor}_rhine
+%define intranamespace_name %{vendor_name}-%{flavor}
 %define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 %define branch trunk
 %define _lnet_version %(echo "%{_version}" | awk -F . '{printf("%s.%s", $1, $2)}')
@@ -28,11 +28,12 @@ License: GPL
 Name: %{namespace}-%{intranamespace_name}
 Release: %{release}
 Requires: module-init-tools
-Summary: Lustre File System for CNL running CLE Rhine
+Summary: Lustre File System for CNL running CLE
 Version: %{_version}
 Source: %{source_name}.tar.bz2
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
+Provides: %{name}_rhine
 
 %package -n cray-lustre-cray_ari_c-%{_lnet_version}-devel
 Summary: The lnet development package
@@ -149,6 +150,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_sbindir}/*
 %{_bindir}/*
 %{_unitdir}/lnet.service
+%{_unitdir}/lustre.service
 %{_includedir}/lustre
 %{_includedir}/linux/lnet
 %{_includedir}/linux/lustre

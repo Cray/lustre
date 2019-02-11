@@ -69,27 +69,17 @@
             </file>
             <file>
                 <name>
-                    cray-obs/cray-lustre.spec
-                </name>
-            </file>
-            <file>
-                <name>
                     cray-obs/cray-lustre-client.spec
                 </name>
             </file>
             <file>
                 <name>
-                    cray-obs/cray-lustre-ari_s-rhine.spec
+                    cray-obs/cray-lustre-ari_s.spec
                 </name>
             </file>
             <file>
                 <name>
-                    cray-obs/cray-lustre-ari_c-rhine.spec
-                </name>
-            </file>
-            <file>
-                <name>
-                    cray-obs/cray-lustre-ari_s-cos.spec
+                    cray-obs/cray-lustre-ari_c.spec
                 </name>
             </file>
             <file>
