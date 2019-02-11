@@ -1786,8 +1786,8 @@ test_101b()
 
         local OST1_IMP=$(get_osc_import_name client ost1)
 
-#define OBD_FAIL_OST_PREPARE_DELAY	 0x245
-	do_facet ost1 "$LCTL set_param fail_loc=0x245"
+#define OBD_FAIL_OST_PREPARE_DELAY	 0x247
+	do_facet ost1 "$LCTL set_param fail_loc=0x247"
         # disable pinger recovery
         $LCTL set_param -n osc.$OST1_IMP.pinger_recov=0
 
