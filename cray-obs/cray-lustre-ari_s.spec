@@ -1,7 +1,7 @@
 %define vendor_name lustre
 %define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define flavor cray_ari_s
-%define intranamespace_name %{vendor_name}-%{flavor}_rhine
+%define intranamespace_name %{vendor_name}-%{flavor}
 %define source_name %{vendor_namespace}-%{vendor_name}-%{_version}
 %define branch trunk
 %define _lnet_version %(echo "%{_version}" | awk -F . '{printf("%s.%s", $1, $2)}')
@@ -40,16 +40,17 @@ License: GPL
 Name: %{namespace}-%{intranamespace_name}
 Release: %{release}
 Requires: module-init-tools
-Summary: Lustre File System for Aries Service Nodes running CLE Rhine
+Summary: Lustre File System for Aries Service Nodes running CLE
 Version: %{_version}
 Source: %{source_name}.tar.bz2
 Source99: cray-lustre-rpmlintrc
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
+Provides: %{name}_rhine
 
 %description
 Kernel modules and userspace tools needed for a Lustre client on XC SLES-based
-service nodes running the CLE Rhine release.
+service nodes running the CLE release.
 Compiled for kernel: %{kversion}
 
 %package -n cray-lustre-cray_ari_s-%{_lnet_version}-devel
@@ -62,6 +63,17 @@ Provides: cray-lnet-%{_lnet_version}-devel
 Development files for building against Lustre library.
 Includes headers, dynamic, and static libraries.
 Compiled for kernel: %{kversion}
+
+%if %{with server}
+%package resource-agents
+Summary: HA Resuable Cluster Resource Scripts for Lustre
+Group: System Environment/Base
+Requires: resource-agents
+
+%description resource-agents
+A set of scripts to operate Lustre resources in a High Availablity
+environment for both Pacemaker and rgmanager.
+%endif
 
 %prep
 %incremental_setup -q -n %{source_name}
@@ -127,7 +139,7 @@ do
 done
 
 for header in libcfs.h util/list.h curproc.h bitmap.h libcfs_private.h libcfs_cpu.h \
-	      libcfs_prim.h libcfs_time.h libcfs_string.h libcfs_workitem.h \
+	      libcfs_prim.h libcfs_string.h libcfs_workitem.h \
 	      libcfs_hash.h libcfs_heap.h libcfs_fail.h libcfs_debug.h range_lock.h
 do
 	%{__install} -D -m 0644 libcfs/include/libcfs/${header} %{buildroot}/%{_includedir}/libcfs/${header}
@@ -175,6 +187,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_bindir}/*
 %{_mandir}/*
 %{_unitdir}/lnet.service
+%{_unitdir}/lustre.service
 %{_includedir}/lustre
 %{_includedir}/linux/lnet
 %{_includedir}/linux/lustre
@@ -211,6 +224,12 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %attr (644,root,root) %{_datadir}/symvers/%{_arch}/%{flavor}/Module.symvers
 %{_pkgconfigdir}/cray-lnet.pc
 %{_includedir}/*
+
+%if %{with server}
+%files resource-agents
+%defattr(0755,root,root)
+%{_prefix}/lib/ocf/resource.d/lustre/
+%endif
 
 %post
 DEPMOD_OPTS=""

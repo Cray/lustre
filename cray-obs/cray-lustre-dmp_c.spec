@@ -102,6 +102,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_bindir}/*
 %{_mandir}/*
 %{_unitdir}/lnet.service
+%{_unitdir}/lustre.service
 %{_includedir}/lustre
 %{_includedir}/linux/lnet
 %{_includedir}/linux/lustre

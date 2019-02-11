@@ -144,7 +144,7 @@ do
 done
 
 for header in libcfs.h util/list.h curproc.h bitmap.h libcfs_private.h libcfs_cpu.h \
-	      libcfs_prim.h libcfs_time.h libcfs_string.h libcfs_workitem.h \
+	      libcfs_prim.h libcfs_string.h libcfs_workitem.h \
 	      libcfs_hash.h libcfs_heap.h libcfs_fail.h libcfs_debug.h range_lock.h
 do
 	%{__install} -D -m 0644 libcfs/include/libcfs/${header} %{buildroot}/%{_includedir}/libcfs/${header}
@@ -195,6 +195,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_bindir}/*
 %{_mandir}
 %{_unitdir}/lnet.service
+%{_unitdir}/lustre.service
 %dir %{_libdir}/lustre
 %{_libdir}/lustre/tests
 # The versioned shared library files for liblnetconfig are needed for
