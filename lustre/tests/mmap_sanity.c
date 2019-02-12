@@ -757,6 +757,56 @@ out:
         return rc;
 }
 
+static int mmap_tst9(char *mnt)
+{
+        char  fname[256];
+        char *buf = MAP_FAILED;
+        int fd = -1;
+        int rc = 0;
+
+	if (snprintf(fname, 256, "%s/mmap_tst9", mnt) >= 256) {
+		fprintf(stderr, "dir name too long\n");
+		rc = -ENAMETOOLONG;
+		goto out;
+	}
+	if (unlink(fname) == -1 && errno != ENOENT) {
+		perror("unlink");
+		rc = -errno;
+		goto out;
+	}
+	fd = open(fname, O_RDWR | O_CREAT, 0644);
+	if (fd == -1) {
+		perror("open");
+		rc = -errno;
+		goto out;
+        }
+	buf = mmap(NULL, page_size * 2,
+		   PROT_READ , MAP_PRIVATE, fd, (loff_t)(-10 * page_size));
+	if (buf == MAP_FAILED) {
+		perror("mmap");
+		rc = -errno;
+		goto out;
+	}
+	rc = write(STDOUT_FILENO, buf, 2 * page_size);
+	if (rc != -1) {
+		fprintf(stderr, "write succeded with %d instead of failing\n", rc);
+		rc = -EINVAL;
+		goto out;
+	} else if (errno != EFAULT) {
+		fprintf(stderr, "write failed with %d instead of EFAULT(%d)\n",
+			errno, EFAULT);
+		rc = -errno;
+		goto out;
+	}
+	rc = 0;
+out:
+	if (buf != MAP_FAILED)
+		munmap(buf, page_size * 2);
+	if (fd != -1)
+		close(fd);
+	return rc;
+}
+
 static int remote_tst(int tc, char *mnt)
 {
         int rc = 0;
@@ -795,6 +845,12 @@ struct test_case tests[] = {
                 mmap_tst6, 2 },
         { 7, "mmap test7: file i/o with an unmapped buffer", mmap_tst7, 1},
         { 8, "mmap test8: SIGBUS for beyond file size", mmap_tst8, 1 },
+	{
+		.tc		= 9,
+		.desc		= "mmap test9: SIGBUS for negative file offset",
+		.test_fn	= mmap_tst9,
+		.node_cnt	= 1
+	},
         { 0, NULL, 0, 0 }
 };
 
