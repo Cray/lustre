@@ -961,6 +961,7 @@ struct ldlm_match_data {
 	union ldlm_policy_data	*lmd_policy;
 	__u64			 lmd_flags;
 	int			 lmd_unref;
+	__u64			 lmd_skip_flags;
 	bool			 lmd_has_ast_data;
 };
 
@@ -1532,10 +1533,27 @@ void ldlm_lock_fail_match_locked(struct ldlm_lock *lock);
 void ldlm_lock_fail_match(struct ldlm_lock *lock);
 void ldlm_lock_allow_match(struct ldlm_lock *lock);
 void ldlm_lock_allow_match_locked(struct ldlm_lock *lock);
-enum ldlm_mode ldlm_lock_match(struct ldlm_namespace *ns, __u64 flags,
-			       const struct ldlm_res_id *, enum ldlm_type type,
-			       union ldlm_policy_data *, enum ldlm_mode mode,
-			       struct lustre_handle *, int unref);
+enum ldlm_mode ldlm_lock_match_with_skip(struct ldlm_namespace *ns,
+					 __u64 flags, __u64 skip_flags,
+					 const struct ldlm_res_id *res_id,
+					 enum ldlm_type type,
+					 union ldlm_policy_data *policy,
+					 enum ldlm_mode mode,
+					 struct lustre_handle *lh,
+					 int unref);
+static inline enum ldlm_mode ldlm_lock_match(struct ldlm_namespace *ns,
+					     __u64 flags,
+					     const struct ldlm_res_id *res_id,
+					     enum ldlm_type type,
+					     union ldlm_policy_data *policy,
+					     enum ldlm_mode mode,
+					     struct lustre_handle *lh,
+					     int unref)
+{
+	return ldlm_lock_match_with_skip(ns, flags, 0, res_id, type, policy,
+					 mode, lh, unref);
+}
+
 struct ldlm_lock *search_itree(struct ldlm_resource *res,
 			       struct ldlm_match_data *data);
 enum ldlm_mode ldlm_revalidate_lock_handle(const struct lustre_handle *lockh,
