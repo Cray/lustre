@@ -382,6 +382,9 @@ struct lnet_net {
 	/* priority of the network */
 	__u32			net_prio;
 
+	/* round robin selection */
+	__u32			net_seq;
+
 	/* total number of CPTs in the array */
 	__u32			net_ncpts;
 
