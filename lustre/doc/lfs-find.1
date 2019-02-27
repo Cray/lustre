@@ -15,6 +15,7 @@ lfs-find \- Lustre client utility to list files with specific attributes
       [[\fB!\fR] \fB--mirror-state\fR <[^]\fIstate\fR>]
       [[\fB!\fR] \fB--gid\fR|\fB-g\fR|\fB--group\fR|\fB-G\fR <\fIgname\fR>|<\fIgid\fR>]
       [[\fB!\fR] \fB--layout\fR|\fB-L mdt\fR,\fBraid0\fR,\fBreleased\fR] [\fB--lazy\fR]
+      [[\fB!\fR] \fB--foreign\fR [<\fItype\fR>]]
 [\fB--maxdepth\fR|\fB-D\fI n\fR]
       [[\fB!\fR] \fB--mdt\fR|\fB--mdt-index\fR|\fB-m\fR <\fIuuid\fR|\fIindex\fR,...>]
       [[\fB!\fR] \fB--mdt-count\fR|\fB-T\fR [\fB+-\fR]\fIn\fR]
@@ -121,7 +122,7 @@ File has specified numeric group ID.
 .BR --group | -G
 File belongs to specified group, numeric group ID allowed.
 .TP
-.BR --layout
+.BR --layout | -L
 File has a layout of the given type, one of:
 .RS 1.2i
 .TP
@@ -136,6 +137,11 @@ Files that have the first data component on an MDT.
 .RE
 .BR --lazy
 Use file size and blocks from MDT, if available, to avoid extra RPCs.
+.TP
+.BR --foreign[=<type>]
+File is foreign (non-Lustre layout) and is of type if specified.
+Presently only none or daos are defined types.
+.RE
 .TP
 .BR --maxdepth
 Limits find to decend at most \fIn\fR levels of directory tree.
@@ -286,6 +292,9 @@ Recursively list all mirrored files that have more than 2 mirrors.
 .TP
 .B $ lfs find ! --mirror-state=ro /mnt/lustre
 Recursively list all out-of-sync mirrored files.
+.TP
+.B $ lfs find ! --foreign=daos /mnt/lustre
+Recursively list all but foreign files of daos type.
 .SH BUGS
 The
 .B lfs find

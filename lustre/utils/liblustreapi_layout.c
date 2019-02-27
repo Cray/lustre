@@ -2978,6 +2978,12 @@ int lov_comp_md_size(struct lov_comp_md_v1 *lcm)
 		return lov_user_md_size(lum->lmm_stripe_count, lum->lmm_magic);
 	}
 
+	if (lcm->lcm_magic == LOV_MAGIC_FOREIGN) {
+		struct lov_foreign_md *lfm = (void *)lcm;
+
+		return lfm->lfm_length;
+	}
+
 	if (lcm->lcm_magic != LOV_MAGIC_COMP_V1)
 		return -EOPNOTSUPP;
 

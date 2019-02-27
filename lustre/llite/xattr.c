@@ -535,6 +535,7 @@ static ssize_t ll_getxattr_lov(struct inode *inode, void *buf, size_t buf_size)
 			((struct lov_mds_md *)buf)->lmm_layout_gen = 0;
 			break;
 		case LOV_MAGIC_COMP_V1:
+		case LOV_MAGIC_FOREIGN:
 			goto out_env;
 		default:
 			CERROR("Invalid LOV magic %08x\n",

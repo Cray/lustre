@@ -131,6 +131,8 @@ __u32 llapi_pattern_to_lov(uint64_t pattern);
 
 int llapi_file_open_param(const char *name, int flags, mode_t mode,
 			  const struct llapi_stripe_param *param);
+int llapi_file_create_foreign(const char *name, mode_t mode, __u32 type,
+			      __u32 flags, char *foreign_lov);
 int llapi_file_create(const char *name, unsigned long long stripe_size,
 		      int stripe_offset, int stripe_count, int stripe_pattern);
 int llapi_file_open(const char *name, int flags, int mode,
@@ -275,6 +277,8 @@ struct find_param {
 				 fp_yaml:1,	/* output layout in YAML */
 				 fp_check_blocks:1,
 				 fp_exclude_blocks:1,
+				 fp_check_foreign:1,
+				 fp_exclude_foreign:1,
 				 fp_check_ext_size:1, /* extension size */
 				 fp_exclude_ext_size:1,
 				 fp_lazy:1,
@@ -340,6 +344,7 @@ struct find_param {
 				 fp_obds_printed:1;
 	unsigned int		 fp_depth;
 	unsigned int		 fp_hash_type;
+	__u32			 fp_foreign_type;
 	unsigned long long	 fp_ext_size;
 	unsigned long long	 fp_ext_size_units;
 };
