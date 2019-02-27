@@ -2448,6 +2448,16 @@ void lustre_swab_lov_user_md(struct lov_user_md *lum, size_t size)
 	case LOV_USER_MAGIC_COMP_V1:
 		lustre_swab_lov_comp_md_v1((struct lov_comp_md_v1 *)lum);
 		break;
+	case __swab32(LOV_MAGIC_FOREIGN):
+	case LOV_USER_MAGIC_FOREIGN:
+	{
+		lfm = (struct lov_foreign_md *)lum;
+		__swab32s(&lfm->lfm_magic);
+		__swab32s(&lfm->lfm_length);
+		__swab32s(&lfm->lfm_type);
+		__swab32s(&lfm->lfm_flags);
+		break;
+	}
 	default:
 		CDEBUG(D_IOCTL, "Invalid LOV magic %08x\n", lum->lmm_magic);
 	}
