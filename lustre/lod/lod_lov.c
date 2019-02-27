@@ -949,7 +949,7 @@ int lod_generate_lovea(const struct lu_env *env, struct lod_object *lo,
 	struct lov_comp_md_v1 *lcm;
 	struct lod_layout_component *comp_entries;
 	__u16 comp_cnt, mirror_cnt;
-	bool is_composite;
+	bool is_composite, is_foreign = false;
 	int i, rc = 0, offset;
 	ENTRY;
 
@@ -964,9 +964,27 @@ int lod_generate_lovea(const struct lu_env *env, struct lod_object *lo,
 		mirror_cnt = lo->ldo_mirror_count;
 		comp_entries = lo->ldo_comp_entries;
 		is_composite = lo->ldo_is_composite;
+		is_foreign = lo->ldo_is_foreign;
 	}
 
 	LASSERT(lmm_size != NULL);
+
+	if (is_foreign) {
+		struct lov_foreign_md *lfm;
+
+		lfm = (struct lov_foreign_md *)lmm;
+		memcpy(lfm, lo->ldo_foreign_lov, lo->ldo_foreign_lov_size);
+		/* need to store little-endian */
+		if (cpu_to_le32(LOV_MAGIC_FOREIGN) != LOV_MAGIC_FOREIGN) {
+			__swab32s(&lfm->lfm_magic);
+			__swab32s(&lfm->lfm_length);
+			__swab32s(&lfm->lfm_type);
+			__swab32s(&lfm->lfm_flags);
+		}
+		*lmm_size = lo->ldo_foreign_lov_size;
+		RETURN(0);
+	}
+
 	LASSERT(comp_cnt != 0 && comp_entries != NULL);
 
 	if (!is_composite) {
@@ -1244,6 +1262,7 @@ int lod_parse_striping(const struct lu_env *env, struct lod_object *lo,
 {
 	struct lov_mds_md_v1	*lmm;
 	struct lov_comp_md_v1	*comp_v1 = NULL;
+	struct lov_foreign_md	*foreign = NULL;
 	struct lov_ost_data_v1	*objs;
 	__u32	magic, pattern;
 	int	i, rc = 0;
@@ -1260,11 +1279,14 @@ int lod_parse_striping(const struct lu_env *env, struct lod_object *lo,
 	magic = le32_to_cpu(lmm->lmm_magic);
 
 	if (magic != LOV_MAGIC_V1 && magic != LOV_MAGIC_V3 &&
-	    magic != LOV_MAGIC_COMP_V1 &&
+	    magic != LOV_MAGIC_COMP_V1 && magic != LOV_MAGIC_FOREIGN &&
 	    magic != LOV_MAGIC_SEL)
 		GOTO(out, rc = -EINVAL);
 
-	lod_free_comp_entries(lo);
+	if (lo->ldo_is_foreign)
+		lod_free_foreign_lov(lo);
+	else
+		lod_free_comp_entries(lo);
 
 	if (magic == LOV_MAGIC_COMP_V1 || magic == LOV_MAGIC_SEL) {
 		comp_v1 = (struct lov_comp_md_v1 *)lmm;
@@ -1276,6 +1298,25 @@ int lod_parse_striping(const struct lu_env *env, struct lod_object *lo,
 		lo->ldo_flr_state = le16_to_cpu(comp_v1->lcm_flags) &
 					LCM_FL_FLR_MASK;
 		mirror_cnt = le16_to_cpu(comp_v1->lcm_mirror_count) + 1;
+	} else if (magic == LOV_MAGIC_FOREIGN) {
+		size_t length;
+
+		foreign = (struct lov_foreign_md *)buf->lb_buf;
+		length = offsetof(typeof(*foreign), lfm_value);
+		if (buf->lb_len < length ||
+		    buf->lb_len < (length + le32_to_cpu(foreign->lfm_length))) {
+			CDEBUG(D_LAYOUT,
+			       "buf len %zu too small for lov_foreign_md\n",
+			       buf->lb_len);
+			GOTO(out, rc = -EINVAL);
+		}
+
+		/* just cache foreign LOV EA raw */
+		rc = lod_alloc_foreign_lov(lo, length);
+		if (rc)
+			GOTO(out, rc);
+		memcpy(lo->ldo_foreign_lov, buf->lb_buf, length);
+		GOTO(out, rc);
 	} else {
 		comp_cnt = 1;
 		lo->ldo_layout_gen = le16_to_cpu(lmm->lmm_layout_gen);
@@ -1831,7 +1872,40 @@ int lod_verify_striping(struct lod_device *d, struct lod_object *lo,
 	int     rc = 0;
 	ENTRY;
 
+	if (buf->lb_len < sizeof(lum->lmm_magic)) {
+		CDEBUG(D_LAYOUT, "invalid buf len %zu\n", buf->lb_len);
+		RETURN(-EINVAL);
+	}
+
 	lum = buf->lb_buf;
+
+	magic = le32_to_cpu(lum->lmm_magic) & ~LOV_MAGIC_DEFINED;
+	/* treat foreign LOV EA/object case first
+	 * XXX is it expected to try setting again a foreign?
+	 * XXX should we care about different current vs new layouts ?
+	 */
+	if (unlikely(magic == LOV_USER_MAGIC_FOREIGN)) {
+		struct lov_foreign_md *lfm = buf->lb_buf;
+
+		if (buf->lb_len < offsetof(typeof(*lfm), lfm_value)) {
+			CDEBUG(D_LAYOUT,
+			       "buf len %zu < min lov_foreign_md size (%zu)\n",
+			       buf->lb_len, offsetof(typeof(*lfm),
+			       lfm_value));
+			RETURN(-EINVAL);
+		}
+
+		if (foreign_size_le(lfm) > buf->lb_len) {
+			CDEBUG(D_LAYOUT,
+			       "buf len %zu < this lov_foreign_md size (%zu)\n",
+			       buf->lb_len, foreign_size_le(lfm));
+			RETURN(-EINVAL);
+		}
+		/* Don't do anything with foreign layouts */
+		RETURN(0);
+	}
+
+	/* normal LOV/layout cases */
 
 	if (buf->lb_len < sizeof(*lum)) {
 		CDEBUG(D_LAYOUT, "buf len %zu too small for lov_user_md\n",
@@ -1839,7 +1913,6 @@ int lod_verify_striping(struct lod_device *d, struct lod_object *lo,
 		RETURN(-EINVAL);
 	}
 
-	magic = le32_to_cpu(lum->lmm_magic) & ~LOV_MAGIC_DEFINED;
 	if (magic != LOV_USER_MAGIC_V1 &&
 	    magic != LOV_USER_MAGIC_V3 &&
 	    magic != LOV_USER_MAGIC_SPECIFIC &&

@@ -2075,7 +2075,8 @@ int ll_lov_getstripe_ea_info(struct inode *inode, const char *filename,
 
 	if (lmm->lmm_magic != cpu_to_le32(LOV_MAGIC_V1) &&
 	    lmm->lmm_magic != cpu_to_le32(LOV_MAGIC_V3) &&
-	    lmm->lmm_magic != cpu_to_le32(LOV_MAGIC_COMP_V1))
+	    lmm->lmm_magic != cpu_to_le32(LOV_MAGIC_COMP_V1) &&
+	    lmm->lmm_magic != cpu_to_le32(LOV_MAGIC_FOREIGN))
 		GOTO(out, rc = -EPROTO);
 
 	/*

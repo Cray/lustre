@@ -182,6 +182,28 @@ ssize_t lov_lsm_pack_v1v3(const struct lov_stripe_md *lsm, void *buf,
 	RETURN(lmm_size);
 }
 
+ssize_t lov_lsm_pack_foreign(const struct lov_stripe_md *lsm, void *buf,
+			     size_t buf_size)
+{
+	struct lov_foreign_md *lfm = buf;
+	size_t lfm_size;
+
+	lfm_size = lsm->lsm_foreign_size;
+
+	if (buf_size == 0)
+		RETURN(lfm_size);
+
+	if (buf_size < lfm_size)
+		RETURN(-ERANGE);
+
+	/* full foreign LOV is already avail in its cache
+	 * no need to translate format fields to little-endian
+	 */
+	memcpy(lfm, lsm_foreign(lsm), lsm->lsm_foreign_size);
+
+	RETURN(lfm_size);
+}
+
 ssize_t lov_lsm_pack(const struct lov_stripe_md *lsm, void *buf,
 		     size_t buf_size)
 {
@@ -198,6 +220,9 @@ ssize_t lov_lsm_pack(const struct lov_stripe_md *lsm, void *buf,
 
 	if (lsm->lsm_magic == LOV_MAGIC_V1 || lsm->lsm_magic == LOV_MAGIC_V3)
 		return lov_lsm_pack_v1v3(lsm, buf, buf_size);
+
+	if (lsm->lsm_magic == LOV_MAGIC_FOREIGN)
+		return lov_lsm_pack_foreign(lsm, buf, buf_size);
 
 	lmm_size = lov_comp_md_size(lsm);
 	if (buf_size == 0)
@@ -361,6 +386,7 @@ int lov_getstripe(const struct lu_env *env, struct lov_object *obj,
 {
 	/* we use lov_user_md_v3 because it is larger than lov_user_md_v1 */
 	struct lov_mds_md *lmmk, *lmm;
+	struct lov_foreign_md *lfm;
 	struct lov_user_md_v1 lum;
 	size_t lmmk_size, lum_size = 0;
 	ssize_t lmm_size;
@@ -369,7 +395,8 @@ int lov_getstripe(const struct lu_env *env, struct lov_object *obj,
 	ENTRY;
 
 	if (lsm->lsm_magic != LOV_MAGIC_V1 && lsm->lsm_magic != LOV_MAGIC_V3 &&
-	    lsm->lsm_magic != LOV_MAGIC_COMP_V1) {
+	    lsm->lsm_magic != LOV_MAGIC_COMP_V1 &&
+	    lsm->lsm_magic != LOV_MAGIC_FOREIGN) {
 		CERROR("bad LSM MAGIC: 0x%08X != 0x%08X nor 0x%08X\n",
 		       lsm->lsm_magic, LOV_MAGIC_V1, LOV_MAGIC_V3);
 		GOTO(out, rc = -EIO);
@@ -395,6 +422,12 @@ int lov_getstripe(const struct lu_env *env, struct lov_object *obj,
 		} else if (lmmk->lmm_magic == cpu_to_le32(LOV_MAGIC_COMP_V1)) {
 			lustre_swab_lov_comp_md_v1(
 					(struct lov_comp_md_v1 *)lmmk);
+		} else if (lmmk->lmm_magic == cpu_to_le32(LOV_MAGIC_FOREIGN)) {
+			lfm = (struct lov_foreign_md *)lmmk;
+			__swab32s(&lfm->lfm_magic);
+			__swab32s(&lfm->lfm_length);
+			__swab32s(&lfm->lfm_type);
+			__swab32s(&lfm->lfm_flags);
 		}
 	}
 
@@ -402,8 +435,9 @@ int lov_getstripe(const struct lu_env *env, struct lov_object *obj,
 	 * Legacy appication passes limited buffer, we need to figure out
 	 * the user buffer size by the passed in lmm_stripe_count.
 	 */
-	if (copy_from_user(&lum, lump, sizeof(struct lov_user_md_v1)))
-		GOTO(out_free, rc = -EFAULT);
+	if (lsm->lsm_magic != LOV_MAGIC_FOREIGN)
+		if (copy_from_user(&lum, lump, sizeof(struct lov_user_md_v1)))
+			GOTO(out_free, rc = -EFAULT);
 
 	if (lum.lmm_magic == LOV_USER_MAGIC_V1 ||
 	    lum.lmm_magic == LOV_USER_MAGIC_V3)
