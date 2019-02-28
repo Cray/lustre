@@ -803,6 +803,7 @@ static const char *obd_connect_names[] = {
 	/* flags2 names */
 	"file_secctx",
 	"lockaheadv2",
+	"lsom",			/* 0x800 */
 	NULL
 };
 
