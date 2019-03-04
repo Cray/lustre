@@ -77,6 +77,7 @@ enum ct_action {
 	CA_IMPORT = 1,
 	CA_REBIND,
 	CA_MAXSEQ,
+	CA_FILE,
 };
 
 struct options {
@@ -95,6 +96,7 @@ struct options {
 	size_t			 o_chunk_size;
 	enum ct_action		 o_action;
 	char			*o_event_fifo;
+	char			*o_workfile;
 	char			*o_mnt;
 	int			 o_mnt_fd;
 	char			*o_hsm_root;
@@ -198,6 +200,7 @@ static void usage(const char *name, int rc)
 	"   -c, --chunk-size <sz>     I/O size used during data copy\n"
 	"                             (unit can be used, default is MB)\n"
 	"   -f, --event-fifo <path>   Write events stream to fifo\n"
+	"   -F, --File <path>         Input file for work\n"
 	"   -p, --hsm-root <path>     Target HSM mount point\n"
 	"   -q, --quiet               Produce less verbose output\n"
 	"   -u, --update-interval <s> Interval between progress reports sent\n"
@@ -223,6 +226,7 @@ static int ct_parseopts(int argc, char * const *argv)
 	  .flag = &opt.o_daemonize },
 	{ .val = 'f',	.name = "event-fifo",	.has_arg = required_argument },
 	{ .val = 'f',	.name = "event_fifo",	.has_arg = required_argument },
+	{ .val = 'F',	.name = "file", 	.has_arg = required_argument },
 	{ .val = 1,	.name = "dry-run",	.has_arg = no_argument,
 	  .flag = &opt.o_dry_run },
 	{ .val = 'h',	.name = "help",		.has_arg = no_argument },
@@ -265,7 +269,7 @@ static int ct_parseopts(int argc, char * const *argv)
 	if (opt.o_archive_id == NULL)
 		return -ENOMEM;
 repeat:
-	while ((c = getopt_long(argc, argv, "A:b:c:f:hiMp:qru:v",
+	while ((c = getopt_long(argc, argv, "A:b:c:f:F:hiMp:qru:v",
 				long_opts, NULL)) != -1) {
 		switch (c) {
 		case 'A': {
@@ -331,6 +335,10 @@ repeat:
 			break;
 		case 'f':
 			opt.o_event_fifo = optarg;
+			break;
+		case 'F':
+			opt.o_workfile = optarg;
+			opt.o_action = CA_FILE;
 			break;
 		case 'h':
 			usage(argv[0], 0);
@@ -1512,6 +1520,420 @@ fini:
 	return rc;
 }
 
+/**
+ * ct_copy_data_v2
+ *
+ * cookie: cookie returned by Lustre for this operation
+ * tgt_fd: the target file in Lustre that we're operating on
+ *         For all operations this is the fd for fid
+ * src_fd: the fd where the data is being read from
+ *         For most operations this is the same as tgt_fd
+ *         For restore, this is the fd pointing to the archive
+ * dst_fd: the fd where the data is being written to
+ *         This is different for all operations
+ */
+int ct_copy_data_v2(__u64 cookie, enum hsm_copytool_action action, int tgt_fd,
+		    int src_fd, int dst_fd)
+{
+	ssize_t	rsize;
+	ssize_t	wsize;
+	ssize_t write_total = 0;
+	ssize_t offset = 0;
+	char *buf;
+	int chunk = 1024 * 1024;
+	int rc = 0;
+
+	buf = alloca(chunk);
+	if (!buf)
+		return -ENOMEM;
+
+	while (true) {
+		rsize = pread(src_fd, buf, chunk, offset);
+		if (rsize == 0)
+			/* EOF */
+			break;
+
+		if (rsize < 0) {
+			rc = -errno;
+			CT_ERROR(rc, "cannot read from source file\n");
+			break;
+		}
+
+		wsize = pwrite(dst_fd, buf, rsize, offset);
+		if (wsize < 0) {
+			rc = -errno;
+			CT_ERROR(rc, "cannot write to destination file\n");
+			break;
+		}
+
+		write_total += wsize;
+		offset += wsize;
+		rc = llapi_hsm_progress(tgt_fd, cookie, action, offset,
+					write_total);
+		if (rc) {
+			CT_ERROR(rc, "Progress failed\n");
+			break;
+		}
+	}
+
+	if (rc < 0) {
+		CT_ERROR(rc, "data copy failed\n");
+		goto out;
+	}
+
+	/* flush data */
+	rc = fsync(dst_fd);
+	if (rc < 0) {
+		CT_ERROR(errno, "fsync on copy failed\n");
+		rc = -errno;
+	}
+
+out:
+
+	return rc;
+}
+
+static int ct_restore_v2(struct lu_fid *fid, struct lu_fid *dfid)
+{
+	char dst_path[PATH_MAX];
+	char archive_path[PATH_MAX];
+	char lov_buf[XATTR_SIZE_MAX];
+	size_t lov_size = sizeof(lov_buf);
+	__u64 cookie = 0;
+	__u64 data_version = 0;
+	int src_fd = -1;
+	int dst_fd = -1;
+	int archive_fd = -1;
+	bool set_stripe = true;
+	int rc;
+
+	/* we fill lustre so:
+	 * source = lustre FID in the backend
+	 * destination = data FID = volatile file
+	 */
+
+	/* build backend file name from released file FID */
+	ct_path_archive(archive_path, sizeof(archive_path),
+			opt.o_hsm_root, fid);
+
+	/* restore loads and sets the LOVEA w/o interpreting it to avoid
+	 * dependency on the structure format. */
+	rc = ct_load_stripe(archive_path, lov_buf, &lov_size);
+	if (rc < 0) {
+		CT_WARN("cannot get stripe rules for '%s' (%s), use default",
+			archive_path, strerror(-rc));
+		set_stripe = false;
+	}
+
+	rc = llapi_hsm_open_files(HSMA_RESTORE, opt.o_mnt, fid, dfid,
+				  &src_fd, &dst_fd);
+	if (rc < 0)
+		goto fini;
+
+	ct_path_lustre(dst_path, sizeof(dst_path), opt.o_mnt, dfid);
+	CT_TRACE("restoring data from '%s' ("DFID") to '"DFID"'", archive_path,
+		 PFID(fid), PFID(dfid));
+
+	if (opt.o_dry_run) {
+		rc = 0;
+		goto fini;
+	}
+
+	archive_fd = open(archive_path, O_RDONLY | O_NOATIME | O_NOFOLLOW);
+	if (archive_fd < 0) {
+		rc = -errno;
+		CT_ERROR(rc, "cannot open '%s' for read", archive_path);
+		goto fini;
+	}
+
+	if (set_stripe) {
+		/* the layout cannot be allocated through .fid so we have to
+		 * restore a layout */
+		rc = ct_restore_stripe(archive_path, dst_path, dst_fd,
+				       lov_buf, lov_size);
+		if (rc < 0) {
+			CT_ERROR(rc, "cannot restore file striping info"
+				 " for '%s' from '%s'", dst_path, archive_path);
+			err_major++;
+			goto fini;
+		}
+	}
+	/* Begin migration. */
+	rc = llapi_hsm_start(HSMA_RESTORE, src_fd, &cookie,
+			     dfid, &data_version);
+	if (rc < 0)
+		goto fini;
+
+	rc = ct_copy_data_v2(cookie, HSMA_RESTORE, src_fd, archive_fd, dst_fd);
+	if (rc < 0) {
+		CT_ERROR(rc, "cannot copy data from '%s' to '%s'",
+			 archive_path, dst_path);
+		goto fini;
+	}
+
+	CT_TRACE("data restore from '%s' to '%s' done", archive_path, dst_path);
+
+fini:
+	rc = llapi_hsm_end(HSMA_RESTORE, src_fd, cookie,
+			   dfid, data_version, rc);
+
+	if (!(src_fd <= 0))
+		close(src_fd);
+
+	if (!(dst_fd <= 0))
+		close(dst_fd);
+
+	if (!(archive_fd <= 0))
+		close(archive_fd);
+
+	return rc;
+}
+
+static int ct_archive_v2(struct lu_fid *fid, struct lu_fid *dfid)
+{
+	char src_name[PATH_MAX];
+	char dst_name[PATH_MAX] = "";
+	__u64 cookie = 0;
+	__u64 data_version = 0;
+	int rcf = 0;
+	int src_fd = -1;
+	int dst_fd = -1;
+	int rc;
+
+	/*
+	 * For archive, fid and dfid are the same.
+	 * Create the lustre and archive paths based on FID.
+	 */
+	ct_path_lustre(src_name, sizeof(src_name), opt.o_mnt, fid);
+	ct_path_archive(dst_name, sizeof(dst_name), opt.o_hsm_root, fid);
+
+	CT_TRACE("archiving '%s' to '%s'", src_name, dst_name);
+
+	if (opt.o_dry_run)
+		return 0;
+
+	rc = llapi_hsm_open_files(HSMA_ARCHIVE, opt.o_mnt, fid, dfid,
+				  &src_fd, &dst_fd);
+	if (rc < 0) {
+		CT_ERROR(rc, "open files failed %s\n", strerror(rc));
+		goto fini_major;
+	}
+
+	rc = ct_mkdir_p(dst_name);
+	if (rc < 0) {
+		CT_ERROR(rc, "mkdir_p '%s' failed", dst_name);
+		goto fini_major;
+	}
+
+	dst_fd = open(dst_name, O_WRONLY | O_NOFOLLOW | O_CREAT | O_TRUNC,
+		      FILE_PERM);
+	if (dst_fd == -1) {
+		rc = -errno;
+		CT_ERROR(rc, "cannot open '%s' for write", dst_name);
+		goto fini_major;
+	}
+
+	/* saving stripe is not critical */
+	rc = ct_save_stripe(src_fd, src_name, dst_name);
+	if (rc < 0)
+		CT_ERROR(rc, "cannot save file striping info of '%s' in '%s'",
+			 src_name, dst_name);
+
+	/* Begin migration. */
+	rc = llapi_hsm_start(HSMA_ARCHIVE, src_fd, &cookie,
+			     dfid, &data_version);
+	CT_ERROR(rc, "return from start cookie %llx dv %llx\n",
+		 cookie, data_version);
+	if (rc < 0)
+		goto fini_major;
+
+	rc = ct_copy_data_v2(cookie, HSMA_ARCHIVE, src_fd, src_fd, dst_fd);
+	if (rc < 0) {
+		CT_ERROR(rc, "data copy failed from '%s' to '%s'",
+			 src_name, dst_name);
+		goto fini_major;
+	}
+
+	rc = fsync(dst_fd);
+	if (rc < 0) {
+		rc = -errno;
+		CT_ERROR(rc, "cannot flush '%s' archive file '%s'",
+			 src_name, dst_name);
+		goto fini_major;
+	}
+
+	CT_TRACE("data archiving for '%s' to '%s' done", src_name, dst_name);
+
+	/* attrs will remain on the MDS; no need to copy them, except possibly
+	  for disaster recovery */
+	if (opt.o_copy_attrs) {
+		rc = ct_copy_attr(src_name, dst_name, src_fd, dst_fd);
+		if (rc < 0) {
+			CT_ERROR(rc, "cannot copy attr of '%s' to '%s'",
+				 src_name, dst_name);
+			rcf = rc;
+		}
+		CT_TRACE("attr file for '%s' saved to archive '%s'",
+			 src_name, dst_name);
+	}
+
+	/* xattrs will remain on the MDS; no need to copy them, except possibly
+	 for disaster recovery */
+	if (opt.o_copy_xattrs) {
+		rc = ct_copy_xattr(src_name, dst_name, src_fd, dst_fd, false);
+		if (rc < 0) {
+			CT_ERROR(rc, "cannot copy xattr of '%s' to '%s'",
+				 src_name, dst_name);
+			rcf = rcf ? rcf : rc;
+		}
+		CT_TRACE("xattr file for '%s' saved to archive '%s'",
+			 src_name, dst_name);
+	}
+
+	if (rcf)
+		err_minor++;
+	goto out;
+
+
+fini_major:
+	err_major++;
+
+	unlink(dst_name);
+	rcf = rc;
+
+out:
+	rc = llapi_hsm_end(HSMA_ARCHIVE, src_fd, cookie, dfid, data_version,
+			   rc);
+
+	if (rc) {
+		CT_ERROR(rc, "llapi_hsm_end failed\n");
+		rcf = rcf ? rcf : rc;
+	}
+
+	if (!(src_fd <= 0))
+		close(src_fd);
+
+	if (!(dst_fd <= 0))
+		close(dst_fd);
+
+	return rcf;
+}
+
+static int ct_migrate_v2(struct lu_fid *fid, struct lu_fid *dfid)
+{
+	int src_fd = -1;
+	int dst_fd = -1;
+	struct stat src_stbuf;
+	struct stat dst_stbuf;
+	__u64 cookie = 0;
+	__u64 data_version;
+	int rc1;
+	int rc;
+
+	if (opt.o_dry_run)
+		return 0;
+
+	rc = llapi_hsm_open_files(HSMA_MIGRATE, opt.o_mnt, fid, dfid, &src_fd,
+				  &dst_fd);
+	if (rc)
+		goto fini;
+
+	rc = llapi_get_data_version(src_fd, &data_version, LL_DV_RD_FLUSH);
+	if (rc)
+		goto fini;
+
+	/* Begin migration. */
+	rc = llapi_hsm_start(HSMA_MIGRATE, src_fd, &cookie, dfid,
+			     &data_version);
+	if (rc < 0)
+		goto fini;
+
+	/* Not-owner (root?) special case.
+	 * Need to set owner/group of volatile file like original.
+	 * This will allow to pass related check during layout_swap.
+	 */
+	rc = fstat(src_fd, &src_stbuf);
+	if (rc != 0) {
+		rc = -errno;
+		CT_ERROR(rc, "cannot stat '"DFID"'", PFID(fid));
+		goto fini;
+	}
+	rc = fstat(dst_fd, &dst_stbuf);
+	if (rc != 0) {
+		rc = -errno;
+		CT_ERROR(rc, "cannot stat '"DFID"'", PFID(dfid));
+		goto fini;
+	}
+	if (src_stbuf.st_uid != dst_stbuf.st_uid ||
+	    src_stbuf.st_gid != dst_stbuf.st_gid) {
+		rc = fchown(dst_fd, src_stbuf.st_uid, src_stbuf.st_gid);
+		if (rc != 0) {
+			rc = -errno;
+			CT_ERROR(rc, "cannot chown '"DFID"'", PFID(dfid));
+			goto fini;
+		}
+	}
+
+	rc = ct_copy_data_v2(cookie, HSMA_MIGRATE, src_fd, src_fd, dst_fd);
+	if (rc) {
+		CT_ERROR(rc, "Error in ct_copy_data_v2\n");
+		goto fini;
+	}
+
+	/*
+	 * swap layouts
+	 * for a migration we need to:
+	 * - check data version on file did not change
+	 * - keep file mtime
+	 * - keep file atime
+	 */
+	rc = llapi_fswap_layouts(src_fd, dst_fd, data_version, 0,
+				 SWAP_LAYOUTS_CHECK_DV1 |
+				 SWAP_LAYOUTS_KEEP_MTIME |
+				 SWAP_LAYOUTS_KEEP_ATIME);
+
+	if (rc != 0)
+		CT_ERROR(rc, "swap layout to new file failed");
+
+	CT_TRACE("data migration done");
+
+fini:
+	if (!(dst_fd <= -1)) {
+		char tmp_name[PATH_MAX];
+		char dest_file[PATH_MAX];
+		long long recno = -1;
+		int linkno = 0;
+
+		close(dst_fd);
+		snprintf(dest_file, FID_LEN, DFID, PFID(dfid));
+		rc1 = llapi_fid2path(opt.o_mnt, dest_file, tmp_name,
+				     sizeof(tmp_name), &recno, &linkno);
+
+		if (!rc1) {
+			snprintf(dest_file, PATH_MAX, "%s/%s", opt.o_mnt,
+				 tmp_name);
+			rc1 = unlink(dest_file);
+		}
+
+		if (rc1)
+			CT_ERROR(rc1, "Unlink failed on %s\n", dest_file);
+
+		rc = rc ? rc : rc1;
+	}
+
+	rc1 = llapi_hsm_end(HSMA_MIGRATE, src_fd, cookie, dfid, data_version,
+			    rc);
+	if (rc1) {
+		CT_ERROR(rc1, "Migrate end failed\n");
+		rc = rc ? rc : rc1;
+	}
+
+	if (!(src_fd <= 0))
+		close(src_fd);
+
+	return rc;
+}
+
 static int ct_process_item(struct hsm_action_item *hai, const long hal_flags)
 {
 	int	rc = 0;
@@ -2030,6 +2452,58 @@ static void handler(int signal)
 	_exit(1);
 }
 
+/**
+ * Do work listed in a file
+ *
+ * Format: ACTION [FID] [DFID]
+ */
+static int ct_process_file(void)
+{
+	FILE *workfile;
+	char action_str[10];
+	enum hsm_copytool_action action;
+	struct lu_fid fid;
+	struct lu_fid dfid;
+
+	workfile = fopen(opt.o_workfile, "r");
+	if (!workfile) {
+		CT_ERROR(errno, "Bad file to process jobs %s\n",
+			 opt.o_workfile);
+		return -errno;
+	}
+
+	while (fscanf(workfile, "%s ["SFID"] ["SFID"]\n",
+		      action_str, RFID(&fid), RFID(&dfid)) > 0) {
+		action = hsm_copytool_name2action(action_str);
+
+		if (!fid_is_sane(&fid)) {
+			printf("Bad fid "DFID"\n", PFID(&fid));
+			continue;
+		}
+		switch(action) {
+		case HSMA_ARCHIVE:
+			ct_archive_v2(&fid, &dfid);
+			break;
+		case HSMA_RESTORE:
+			ct_restore_v2(&fid, &dfid);
+			break;
+		case HSMA_MIGRATE:
+			ct_migrate_v2(&fid, &dfid);
+		case HSMA_REMOVE:
+		case HSMA_CANCEL:
+		case HSMA_NONE:
+		default:
+			printf("Invalid action %d %s\n", action,
+			       action_str);
+			break;
+		}
+	}
+
+	fclose(workfile);
+
+	return 0;
+}
+
 /* Daemon waits for messages from the kernel; run it in the background. */
 static int ct_run(void)
 {
@@ -2223,6 +2697,9 @@ int main(int argc, char **argv)
 		break;
 	case CA_MAXSEQ:
 		rc = ct_max_sequence();
+		break;
+	case CA_FILE:
+		rc = ct_process_file();
 		break;
 	default:
 		rc = ct_run();

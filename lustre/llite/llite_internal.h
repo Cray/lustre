@@ -813,6 +813,9 @@ struct page *ll_get_dir_page(struct inode *dir, struct md_op_data *op_data,
 			     __u64 offset, struct ll_dir_chain *chain);
 void ll_release_page(struct inode *inode, struct page *page, bool remove);
 
+int ll_ioc_copy_start(struct super_block *sb, struct hsm_copy *copy);
+int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy);
+
 /* llite/namei.c */
 extern const struct inode_operations ll_special_inode_operations;
 

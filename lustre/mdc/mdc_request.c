@@ -1695,6 +1695,9 @@ static int mdc_ioc_hsm_progress(struct obd_export *exp,
 	rc = ptlrpc_queue_wait(req);
 	ptlrpc_put_mod_rpc_slot(req);
 
+	if (hpk->hpk_cookie == 0)
+		hpk->hpk_cookie = req_hpk->hpk_cookie;
+
 	GOTO(out, rc);
 out:
 	ptlrpc_req_finished(req);

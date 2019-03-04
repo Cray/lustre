@@ -111,6 +111,7 @@ int mdt_hsm_progress(struct tgt_session_info *tsi)
 	struct mdt_thread_info		*info;
 	struct hsm_progress_kernel_v2	*hpk;
 	int				 rc;
+
 	ENTRY;
 
 	if (tsi->tsi_mdt_body == NULL)
@@ -151,6 +152,7 @@ int mdt_hsm_progress(struct tgt_session_info *tsi)
 	else
 		rc = mdt_hsm_update_request_state(info, hpk);
 out:
+
 	mdt_thread_info_fini(info);
 	RETURN(rc);
 }

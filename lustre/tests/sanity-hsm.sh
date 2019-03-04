@@ -5824,6 +5824,46 @@ test_606() {
 }
 run_test 606 "llog_reader groks changelog fields"
 
+test_700() {
+	[[ "$COORDINATOR" != "external" ]] &&
+		skip "New Copytool interface only supported on external CDT"
+
+	local $fid
+
+	mkdir -p $DIR/$tdir
+	mkdir -p $(hsm_root)
+
+	for (( i = 0; i < 10; i++)); do
+		fid=$(create_small_file "$DIR/$tdir/file-$i")
+		echo "ARCHIVE [${fid}] [${fid}]" >> $DIR/$tdir/actions
+	done
+
+	echo "Archive files"
+	lhsmtool_posix -F $DIR/$tdir/actions --hsm-root=$(hsm_root) $DIR
+
+	for (( i = 0; i < 10; i++ )); do
+		check_hsm_flags $DIR/$tdir/file-$i "0x00000009"
+	done
+
+	echo "Release files"
+	for (( i = 0; i < 10; i++ )); do
+		lfs hsm_release $DIR/$tdir/file-$i
+	done
+
+	for (( i = 0; i < 10; i++ )); do
+		check_hsm_flags $DIR/$tdir/file-$i "0x0000000d"
+	done
+
+	echo "Restore files"
+	sed -i 's/ARCHIVE/RESTORE/g' $DIR/$tdir/actions
+
+	lhsmtool_posix -F $DIR/$tdir/actions --hsm-root=$(hsm_root) $DIR
+	for (( i = 0; i < 10; i++ )); do
+		check_hsm_flags $DIR/$tdir/file-$i "0x00000009"
+	done
+}
+run_test 700 "Use coordinator to start jobs"
+
 cdt_shutdown
 complete $SECONDS
 check_and_cleanup_lustre

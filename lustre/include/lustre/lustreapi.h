@@ -480,6 +480,17 @@ int llapi_hsm_import(const char *dst, int archive, const struct stat *st,
 		     int stripe_count, int stripe_pattern, char *pool_name,
 		     struct lu_fid *newfid);
 
+/* HSM Copytool interface v2 */
+int llapi_hsm_open_files(enum hsm_copytool_action, const char *mnt,
+			 struct lu_fid *fid, struct lu_fid *dfid, int *fid_fd,
+			 int *dfid_fd);
+int llapi_hsm_start(enum hsm_copytool_action action, int fd, __u64 *cookie,
+		    struct lu_fid *dfid, __u64 *data_version);
+int llapi_hsm_end(enum hsm_copytool_action action, int fd, __u64 cookie,
+		  struct lu_fid *dfid, __u64 data_version, int errval);
+int llapi_hsm_progress(int fd, __u64 cookie, enum hsm_copytool_action action,
+		       ssize_t offset, ssize_t length);
+
 /* HSM user interface */
 struct hsm_user_request *llapi_hsm_user_request_alloc(int itemcount,
 						      int data_len);

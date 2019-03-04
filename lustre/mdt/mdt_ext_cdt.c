@@ -766,7 +766,6 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 	fid = &pgs->hpk_fid;
 	dfid = &pgs->hpk_dfid;
 
-// might need this
 	hsm_init_ucred(mdt_ucred(mti));
 
 	obj = mdt_hsm_get_md_hsm(mti, fid, &mh);

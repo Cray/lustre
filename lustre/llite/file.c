@@ -3469,6 +3469,56 @@ out:
 		OBD_FREE_PTR(hca);
 		RETURN(rc);
 	}
+	case LL_IOC_HSM_COPY_START:
+	case LL_IOC_HSM_COPY_END: {
+		struct hsm_copy	*copy;
+		int rc;
+
+		OBD_ALLOC_PTR(copy);
+		if (copy == NULL)
+			RETURN(-ENOMEM);
+		if (copy_from_user(copy, (char __user *)arg, sizeof(*copy))) {
+			OBD_FREE_PTR(copy);
+			RETURN(-EFAULT);
+		}
+
+		if (cmd == LL_IOC_HSM_COPY_START)
+			rc = ll_ioc_copy_start(inode->i_sb, copy);
+		else
+			rc = ll_ioc_copy_end(inode->i_sb, copy);
+
+		if (copy_to_user((char __user *)arg, copy, sizeof(*copy)))
+			rc = -EFAULT;
+
+		OBD_FREE_PTR(copy);
+		RETURN(rc);
+	}
+	case LL_IOC_HSM_PROGRESS: {
+		struct hsm_progress_kernel_v2 hpk;
+		struct hsm_progress hp;
+		struct ll_sb_info *sbi = ll_i2sbi(inode);
+
+		if (copy_from_user(&hp, (void __user *)arg, sizeof(hp)))
+			RETURN(-EFAULT);
+
+		hpk.hpk_fid = hp.hp_fid;
+		fid_zero(&hpk.hpk_dfid);
+		hpk.hpk_action = hp.hp_action;
+		hpk.hpk_cookie = hp.hp_cookie;
+		hpk.hpk_extent = hp.hp_extent;
+		hpk.hpk_flags = hp.hp_flags;
+		hpk.hpk_errval = hp.hp_errval;
+		hpk.hpk_version = HPK_V2;
+		hpk.hpk_data_version = 0;
+
+		/*
+		 * File may not exist in Lustre; all progress
+		 * reported to Lustre root
+		 */
+		rc = obd_iocontrol(cmd, sbi->ll_md_exp, sizeof(hpk), &hpk,
+				   NULL);
+		RETURN(rc);
+	}
 	case LL_IOC_SET_LEASE_OLD: {
 		struct ll_ioc_lease ioc = { .lil_mode = (__u32)arg };
 

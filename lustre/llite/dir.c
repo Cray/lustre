@@ -820,7 +820,7 @@ int ll_get_mdt_idx(struct inode *inode)
  *
  * \return 0 on success.
  */
-static int ll_ioc_copy_start(struct super_block *sb, struct hsm_copy *copy)
+int ll_ioc_copy_start(struct super_block *sb, struct hsm_copy *copy)
 {
 	struct ll_sb_info		*sbi = ll_s2sbi(sb);
 	struct hsm_action_item		*hai = &copy->hc_hai;
@@ -830,19 +830,19 @@ static int ll_ioc_copy_start(struct super_block *sb, struct hsm_copy *copy)
 	ENTRY;
 
 	/* Forge a hsm_progress based on data from copy. */
-	hpk.hpk_fid = copy->hc_hai.hai_fid;
-	hpk.hpk_dfid = copy->hc_hai.hai_dfid;
-	hpk.hpk_cookie = copy->hc_hai.hai_cookie;
+	hpk.hpk_fid = hai->hai_fid;
+	hpk.hpk_dfid = hai->hai_dfid;
+	hpk.hpk_cookie = hai->hai_cookie;
 	hpk.hpk_action = hai->hai_action;
-	hpk.hpk_extent.offset = copy->hc_hai.hai_extent.offset;
+	hpk.hpk_extent.offset = hai->hai_extent.offset;
 	hpk.hpk_extent.length = 0;
 	hpk.hpk_flags = 0;
 	hpk.hpk_errval = 0;
 	hpk.hpk_data_version = 0;
 	hpk.hpk_version = HPK_V2;
 
-	/* For archive requests, we need to read the current file version. */
-	if (copy->hc_hai.hai_action == HSMA_ARCHIVE) {
+	/* For archive request, we need to read the current file version. */
+	if (hpk.hpk_action == HSMA_ARCHIVE) {
 		struct inode	*inode;
 		__u64		 data_version = 0;
 
@@ -879,9 +879,12 @@ progress:
 	/* On error, the request should be considered as completed */
 	if (hpk.hpk_errval > 0)
 		hpk.hpk_flags |= HP_FLAG_COMPLETED;
-
+	hpk.hpk_flags |= HP_FLAG_BEGIN;
 	rc2 = obd_iocontrol(LL_IOC_HSM_PROGRESS, sbi->ll_md_exp, sizeof(hpk),
 			    &hpk, NULL);
+
+	if (hpk.hpk_flags & HP_FLAG_BEGIN)
+		hai->hai_cookie = hpk.hpk_cookie;
 
 	/* Return first error */
 	RETURN(rc != 0 ? rc : rc2);
@@ -902,7 +905,7 @@ progress:
  *
  * \return 0 on success.
  */
-static int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
+int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
 {
 	struct ll_sb_info		*sbi = ll_s2sbi(sb);
 	struct hsm_progress_kernel_v2	 hpk;

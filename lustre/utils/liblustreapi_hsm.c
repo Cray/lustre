@@ -1794,3 +1794,211 @@ int llapi_hsm_cdt_disconnect(struct hsm_cdt_private *hcp)
 
 	return 0;
 }
+
+/**
+ * Open/Create files on Lustre depending on action,
+ * fid, dfid, etc.
+ */
+int llapi_hsm_open_files(enum hsm_copytool_action action,
+			 const char *mount, struct lu_fid *fid,
+			 struct lu_fid *dfid, int *fid_fd, int *dfid_fd)
+{
+	char path[PATH_MAX];
+	int rc = 0;
+
+	if (!mount || !fid || !dfid || !fid_fd || !fid_is_sane(fid) ||
+	    (!dfid_fd && action != HSMA_ARCHIVE)) {
+		rc = -EINVAL;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "Illegal arguments to llapi_hsm_open_files\n");
+		return rc;
+	}
+
+	switch(action) {
+	case HSMA_ARCHIVE:
+		/*
+		 * Only the file specified by fid is on Lustre, copytool
+		 * needs to open the destination
+		 */
+		*fid_fd = llapi_open_by_fid(mount, fid,
+					    O_RDWR | O_NOATIME |
+					    O_NONBLOCK | O_NOFOLLOW);
+		if (*fid_fd < 0) {
+			rc = -errno;
+			break;
+		}
+		break;
+	case HSMA_RESTORE:
+		/*
+		 * Create a volatile file for dfid_fd, get the dfid.
+		 * Don't touch fid, as it's assumed to be released
+		 */
+		*fid_fd = llapi_open_by_fid(mount, fid,
+					    O_RDONLY | O_NOATIME |
+					    O_NOFOLLOW | O_NONBLOCK);
+		if (*fid_fd < 0) {
+			rc = -errno;
+			break;
+		}
+
+		rc = fid_parent(mount, fid, path, sizeof(path));
+		if (rc < 0)
+			break;
+
+		*dfid_fd = llapi_create_volatile_idx(path, -1,
+						     O_LOV_DELAY_CREATE);
+		if (*dfid_fd < 0) {
+			rc = *dfid_fd;
+			*dfid_fd = 0;
+			break;
+		}
+		rc = llapi_fd2fid(*dfid_fd, dfid);
+		break;
+	case HSMA_MIGRATE:
+		/*
+		 * Open source file in read/write mode because we need to do
+		 * the layout swap later.
+		 */
+		if (!dfid_fd) {
+			rc = -EINVAL;
+			llapi_error(LLAPI_MSG_ERROR, rc,
+				    "No destinition file specified for llapi_hsm_open_files\n");
+		}
+		*fid_fd = llapi_open_by_fid(mount, fid,
+					    O_RDWR | O_NOATIME |
+					    O_NONBLOCK | O_NOFOLLOW);
+		if (*fid_fd < 0) {
+			rc = -errno;
+			break;
+		}
+
+		/* Destination has been created by ct_begin */
+		*dfid_fd = llapi_open_by_fid(mount, dfid,
+					     O_RDWR | O_NOATIME |
+					     O_NONBLOCK | O_NOFOLLOW);
+		if (*dfid_fd < 0) {
+			rc = -errno;
+			break;
+		}
+		break;
+	case HSMA_REMOVE:
+	case HSMA_CANCEL:
+	case HSMA_NONE:
+	default:
+		/* You really shouldn't be here, so just zero the fd's */
+		rc = -EINVAL;
+		*fid_fd = 0;
+		*dfid_fd = 0;
+		break;
+	}
+	return rc;
+}
+
+/**
+ * Copytool tells the kernel that the action is starting
+ *
+ * Data out: data_verion, cookie (if not already assigned)
+ */
+int llapi_hsm_start(enum hsm_copytool_action action, int fd, __u64 *cookie,
+		    struct lu_fid *dfid, __u64 *data_version)
+{
+	struct hsm_copy copy;
+	int rc = 0;
+
+	copy.hc_data_version = 0;
+	copy.hc_flags = 0;
+	copy.hc_errval = 0;
+	copy.padding = 0;
+
+	if (!*cookie) {
+		*cookie = rand();
+		*cookie = *cookie << 32;
+		*cookie += rand();
+	}
+
+	copy.hc_hai.hai_len = sizeof(struct hsm_action_item);
+	copy.hc_hai.hai_action = action;
+	rc = llapi_fd2fid(fd, &copy.hc_hai.hai_fid);
+	if (rc) {
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "fd2fid failed\n");
+		return rc;
+	}
+
+	copy.hc_hai.hai_dfid = *dfid;
+	copy.hc_hai.hai_extent.offset = 0;
+	copy.hc_hai.hai_extent.length = -1ULL;
+	copy.hc_hai.hai_cookie = *cookie;
+	copy.hc_hai.hai_gid = 0;
+
+	rc = ioctl(fd, LL_IOC_HSM_COPY_START, &copy);
+	if (rc)
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "ioctl failed\n");
+	if (!*data_version)
+		*data_version = copy.hc_data_version;
+	if (!*cookie)
+		*cookie = copy.hc_hai.hai_cookie;
+
+	return rc;
+}
+
+/**
+ * Copytool tells the kernel that the action is complete
+ *
+ * Data out: rc
+ */
+int llapi_hsm_end(enum hsm_copytool_action action, int fd, __u64 cookie,
+		  struct lu_fid *dfid, __u64 data_version, int errval)
+{
+	struct hsm_copy copy;
+	int rc = 0;
+
+	copy.hc_data_version = data_version;
+	copy.hc_flags = HP_FLAG_COMPLETED;
+	copy.hc_errval = abs(errval);
+	copy.padding = 0;
+
+	copy.hc_hai.hai_len = sizeof(struct hsm_action_item);
+	copy.hc_hai.hai_action = action;
+
+	/* For restore, at END dfid and fid are backwards
+	 * so the kernel can perform the layout swap
+	 */
+	rc = llapi_fd2fid(fd, &copy.hc_hai.hai_fid);
+	copy.hc_hai.hai_dfid = *dfid;
+
+	if (rc)
+		return rc;
+
+	copy.hc_hai.hai_extent.offset = 0;
+	copy.hc_hai.hai_extent.length = -1ULL;
+	copy.hc_hai.hai_cookie = cookie;
+	copy.hc_hai.hai_gid = 0;
+
+	rc = ioctl(fd, LL_IOC_HSM_COPY_END, &copy);
+
+	return rc;
+}
+
+/**
+ * Copytool reports progress to the kernel
+ *
+ */
+int llapi_hsm_progress(int fd, __u64 cookie, enum hsm_copytool_action action,
+		       ssize_t offset, ssize_t length)
+{
+	struct hsm_progress prog;
+	int rc;
+
+	rc = llapi_fd2fid(fd, &prog.hp_fid);
+	prog.hp_cookie = cookie;
+	prog.hp_extent.offset = offset;
+	prog.hp_extent.length = length;
+	prog.hp_flags = 0;
+	prog.hp_errval = 0;
+	prog.hp_action = action;
+
+	rc = ioctl(fd, LL_IOC_HSM_PROGRESS, &prog);
+	return rc;
+}
