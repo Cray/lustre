@@ -5747,6 +5747,9 @@ run_test 51b "exceed 64k subdirectory nlink limit on create, verify unlink"
 test_51d() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 	[[ $OSTCOUNT -lt 3 ]] && skip_env "needs >= 3 OSTs"
+	[ $($LFS getstripe -i $MOUNT) -ne -1 -o \
+	  $($LFS getstripe -i $DIR/$tdir) -ne -1 ] &&
+		skip "stripe offset is not -1" && return
 	local qos_old
 
 	test_mkdir $DIR/$tdir
@@ -5775,21 +5778,21 @@ test_51d() {
 	for ((n = 0; n < $OSTCOUNT; n++)); do
 		(( ${objs[$n]} > ${objs[$nlast]} * 4 / 5 )) ||
 			{ $LFS df && $LFS df -i &&
-			error "OST $n has fewer objects vs. OST $nlast" \
-			      " (${objs[$n]} < ${objs[$nlast]}"; }
+			error "OST $n has more objects vs. OST $nlast" \
+			      " (${objs[$n]} < ${objs[$nlast]})"; }
 		(( ${objs[$n]} < ${objs[$nlast]} * 5 / 4 )) ||
 			{ $LFS df && $LFS df -i &&
 			error "OST $n has fewer objects vs. OST $nlast" \
-			      " (${objs[$n]} < ${objs[$nlast]}"; }
+			      " (${objs[$n]} < ${objs[$nlast]})"; }
 
 		(( ${objs0[$n]} > ${objs0[$nlast]} * 4 / 5 )) ||
 			{ $LFS df && $LFS df -i &&
-			error "OST $n has fewer #0 objects vs. OST $nlast" \
-			      " (${objs0[$n]} < ${objs0[$nlast]}"; }
+			error "OST $n has more #0 objects vs. OST $nlast" \
+			      " (${objs0[$n]} < ${objs0[$nlast]})"; }
 		(( ${objs0[$n]} < ${objs0[$nlast]} * 5 / 4 )) ||
 			{ $LFS df && $LFS df -i &&
 			error "OST $n has fewer #0 objects vs. OST $nlast" \
-			      " (${objs0[$n]} < ${objs0[$nlast]}"; }
+			      " (${objs0[$n]} < ${objs0[$nlast]})"; }
 		nlast=$n
 	done
 }
