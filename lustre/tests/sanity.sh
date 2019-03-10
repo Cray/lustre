@@ -4374,6 +4374,10 @@ test_51d() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	[[ $OSTCOUNT -lt 3 ]] && skip_env "needs >= 3 OSTs" && return
 	test_mkdir $DIR/$tdir
+	[ $($LFS getstripe -i $MOUNT) -ne -1 -o \
+	  $($LFS getstripe -i $DIR/$tdir) -ne -1 ] &&
+		skip "stripe offset is not -1" && return
+
 	createmany -o $DIR/$tdir/t- 1000
 	$LFS getstripe $DIR/$tdir > $TMP/$tfile
 	for N in $(seq 0 $((OSTCOUNT - 1))); do
@@ -4390,17 +4394,17 @@ test_51d() {
 	for N in $(seq 1 $((OSTCOUNT - 1))); do
 		[[ ${OBJS[$N]} -lt $((${OBJS[$NLAST]} - 20)) ]] &&
 			error "OST $N has less objects vs OST $NLAST" \
-			      " (${OBJS[$N]} < ${OBJS[$NLAST]}"
+			      " (${OBJS[$N]} < ${OBJS[$NLAST]})"
 		[[ ${OBJS[$N]} -gt $((${OBJS[$NLAST]} + 20)) ]] &&
-			error "OST $N has less objects vs OST $NLAST" \
-			      " (${OBJS[$N]} < ${OBJS[$NLAST]}"
+			error "OST $N has more objects vs OST $NLAST" \
+			      " (${OBJS[$N]} > ${OBJS[$NLAST]})"
 
 		[[ ${OBJS0[$N]} -lt $((${OBJS0[$NLAST]} - 20)) ]] &&
 			error "OST $N has less #0 objects vs OST $NLAST" \
-			      " (${OBJS0[$N]} < ${OBJS0[$NLAST]}"
+			      " (${OBJS0[$N]} < ${OBJS0[$NLAST]})"
 		[[ ${OBJS0[$N]} -gt $((${OBJS0[$NLAST]} + 20)) ]] &&
-			error "OST $N has less #0 objects vs OST $NLAST" \
-			      " (${OBJS0[$N]} < ${OBJS0[$NLAST]}"
+			error "OST $N has more #0 objects vs OST $NLAST" \
+			      " (${OBJS0[$N]} > ${OBJS0[$NLAST]})"
 		NLAST=$N
 	done
 	rm -f $TMP/$tfile
