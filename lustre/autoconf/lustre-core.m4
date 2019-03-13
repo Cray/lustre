@@ -3292,15 +3292,21 @@ No selinux package found, unable to build selinux enabled tools
 AC_SUBST(SELINUX)
 
 LDAP=""
-AC_CHECK_LIB([ldap],
+AC_ARG_ENABLE([ldap],
+      AC_HELP_STRING([--enable-ldap],
+                      [Compile l_getidentity_nss utility with NSS modules support]),
+      [],
+      [AC_CHECK_LIB([ldap],
              [ldap_sasl_bind_s],
              [AC_CHECK_HEADERS([ldap.h],
                                [LDAP="-lldap"
+                               enable_ldap="yes"
                                 AC_DEFINE([HAVE_LDAP], 1,
-                                          [support alder32 checksum type])],
+                                          [support ldap upcall ype])],
                                [AC_MSG_WARN([No ldap-devel package found])])],
-             [AC_MSG_WARN([No ldap package found])]
-)
+             [AC_MSG_WARN([No ldap package found])] )
+
+    ])
 AC_SUBST(LDAP)
 
 # l_getidenity_nss
@@ -3396,7 +3402,7 @@ AM_CONDITIONAL(GSS_SSK, test x$enable_ssk = xyes)
 AM_CONDITIONAL(LIBPTHREAD, test x$enable_libpthread = xyes)
 AM_CONDITIONAL(HAVE_SYSTEMD, test "x$with_systemdsystemunitdir" != "xno")
 AM_CONDITIONAL(XATTR_HANDLER, test "x$lb_cv_compile_xattr_handler_flags" = xyes)
-AM_CONDITIONAL(LDAP_BUILD, test x$LDAP != x)
+AM_CONDITIONAL(LDAP_BUILD, test x$enable_ldap != x)
 AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
 ]) # LC_CONDITIONALS
 
