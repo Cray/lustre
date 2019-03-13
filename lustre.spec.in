@@ -18,6 +18,7 @@
 %bcond_with mofed
 %bcond_without mpi
 %bcond_with kabi
+%bcond_without ldap
 
 # LUTF Turn off brp-python-precompile script as we don't want the python files
 # to be compiled on installation
@@ -194,6 +195,15 @@ Requires: python3 >= 3.6.0
 BuildRequires: python3-devel >= 3.6.0, swig
 %endif
 BuildRequires: libtool libyaml-devel zlib-devel libnl3-devel
+%if %{with ldap}
+%if %{_vendor} == "redhat" || %{_vendor}=="fedora"
+BuildRequires: openldap-devel
+Requires: openldap
+%else
+BuildRequires: openldap2-devel
+Requires: openldap2
+%endif
+%endif
 %if %{_vendor}=="redhat"
 BuildRequires: redhat-rpm-config
 BuildRequires: pkgconfig
