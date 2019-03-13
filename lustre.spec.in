@@ -30,6 +30,7 @@
 %bcond_with kfi
 %bcond_with gni
 %bcond_without l_getsepol
+%bcond_without ldap
 
 %if %{with multiple_lnds}
 %global enable_multi_lnds 1
@@ -257,6 +258,15 @@ Requires: python3 >= 3.6.0
 BuildRequires: python3-devel >= 3.6.0, swig
 %endif
 BuildRequires: libtool pkgconfig(yaml-0.1) pkgconfig(zlib) pkgconfig(libnl-3.0) flex bison
+%if %{with ldap}
+%if %{_vendor} == "redhat" || %{_vendor}=="fedora"
+BuildRequires: openldap-devel
+Requires: openldap
+%else
+BuildRequires: openldap2-devel
+Requires: openldap2
+%endif
+%endif
 %if "%{_vendor}" == "redhat"
 BuildRequires: redhat-rpm-config
 BuildRequires: pkgconfig

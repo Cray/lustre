@@ -6,6 +6,7 @@ AM_LDFLAGS := $(UTILS_LDFLAGS)
 
 CONFDIRdir=$(sysconfdir)/lustre
 CONFDIR_DATA =
+EXTRA_DIST =
 
 if UTILS
 
@@ -253,6 +254,7 @@ l_getidentity_LDADD := $(top_builddir)/libcfs/libcfs/libcfs.la
 l_getidentity_LDFLAGS = -ldl
 l_getidentity_DEPENDENCIES := $(top_builddir)/libcfs/libcfs/libcfs.la
 CONFDIR_DATA += configs/perm.conf
+EXTRA_DIST += configs/perm.conf
 
 if LDAP_BUILD
 l_adsidentity_SOURCES = l_adsidentity.c
@@ -261,6 +263,7 @@ l_adsidentity_DEPENDENCIES := liblustreapi.la $(LIBPTLCTL)
 
 CONFDIR_DATA += configs/ads.conf
 endif
+EXTRA_DIST += configs/ads.conf
 
 lhsmtool_posix_SOURCES = lhsmtool_posix.c pid_file.c pid_file.h
 lhsmtool_posix_LDADD := liblustreapi.la $(PTHREAD_LIBS) \
@@ -282,7 +285,7 @@ wirecheck_CPPFLAGS := -DCC="\"$(CC)\""
 
 wiretest_SOURCES = wiretest.c
 
-EXTRA_DIST = llstat llobdstat lljobstat plot-llstat ldlm_debug_upcall liblustreapi.map $(CONFDIR_DATA)
+EXTRA_DIST += llstat llobdstat lljobstat plot-llstat ldlm_debug_upcall liblustreapi.map
 
 # NOTE: this should only be run on i386.
 newwiretest: wirehdr.c wirecheck
