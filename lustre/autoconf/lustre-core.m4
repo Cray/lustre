@@ -2916,15 +2916,21 @@ AS_IF([test "$enable_dist" = "no"], [
 ])
 
 LDAP=""
-AC_CHECK_LIB([ldap],
+AC_ARG_ENABLE([ldap],
+      AC_HELP_STRING([--enable-ldap],
+                      [Compile l_getidentity_nss utility with NSS modules support]),
+      [],
+      [AC_CHECK_LIB([ldap],
              [ldap_sasl_bind_s],
              [AC_CHECK_HEADERS([ldap.h],
                                [LDAP="-lldap"
+                               enable_ldap="yes"
                                 AC_DEFINE([HAVE_LDAP], 1,
-                                          [support alder32 checksum type])],
+                                          [support ldap upcall ype])],
                                [AC_MSG_WARN([No ldap-devel package found])])],
-             [AC_MSG_WARN([No ldap package found])]
-)
+             [AC_MSG_WARN([No ldap package found])] )
+
+    ])
 AC_SUBST(LDAP)
 
 # l_getidenity_nss
@@ -3063,7 +3069,7 @@ AM_CONDITIONAL(SELINUX, test "$SELINUX" = "-lselinux")
 AM_CONDITIONAL(GETSEPOL, test x$enable_getsepol = xyes)
 AM_CONDITIONAL(LLCRYPT, test x$enable_llcrypt = xyes)
 AM_CONDITIONAL(LIBAIO, test x$enable_libaio = xyes)
-AM_CONDITIONAL(LDAP_BUILD, test x$LDAP != x)
+AM_CONDITIONAL(LDAP_BUILD, test x$enable_ldap != x)
 AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
 ]) # LC_CONDITIONALS
 

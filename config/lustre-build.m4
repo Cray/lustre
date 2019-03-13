@@ -553,6 +553,7 @@ for arg; do
 		--enable-utils | --disable-utils ) ;;
 		--enable-iokit | --disable-iokit ) ;;
 		--enable-manpages | --disable-manpages ) ;;
+		--enable-ldap | --disable-ldap ) ;;
 		* ) CONFIGURE_ARGS="$CONFIGURE_ARGS '$arg'" ;;
 	esac
 done
@@ -620,6 +621,10 @@ if test x$enable_static != xyes ; then
 fi
 if test x$enable_mpitests != xyes ; then
 	RPMBINARGS="$RPMBINARGS --without mpi"
+fi
+
+if test x$enable_ldap != xyes ; then
+	RPMBINARGS="$RPMBINARGS --without ldap"
 fi
 
 RPMBUILD_BINARY_ARGS=$RPMBINARGS
