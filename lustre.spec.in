@@ -15,6 +15,7 @@
 %bcond_without shared
 %bcond_without static
 %bcond_with    systemd
+%bcond_without ldap
 
 # By default both gss and gss keyring are disabled.
 # gss keyring requires the gss core. If the builder
@@ -146,6 +147,15 @@ BuildRoot: %{_tmppath}/lustre-%{version}-root
 Requires: %{requires_kmod_name} = %{requires_kmod_version} zlib
 Requires: %{requires_yaml_name}
 BuildRequires: libtool libyaml-devel zlib-devel
+%if %{with ldap}
+%if %{_vendor} == "redhat" || %{_vendor}=="fedora"
+BuildRequires: openldap-devel
+Requires: openldap
+%else
+BuildRequires: openldap2-devel
+Requires: openldap2
+%endif
+%endif
 %if %{with servers}
 Requires: %{name}-osd
 Requires: lustre-osd-mount
