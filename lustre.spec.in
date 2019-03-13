@@ -158,7 +158,7 @@ Requires: openldap2
 %endif
 %if %{with servers}
 Requires: %{name}-osd
-Requires: lustre-osd-mount
+Requires: %{name}-osd-mount
 Obsoletes: lustre-client < %{version}
 Provides: lustre-client = %{version}-%{release}
 %endif
@@ -187,7 +187,7 @@ Userspace tools and files for the Lustre file system.
 %if %{with lustre_utils}
 %package osd-ldiskfs-mount
 Summary: osd-ldiskfs-mount contains mount's ldiskfs specific dso.
-Provides: lustre-osd-mount = %{version}-%{fullrelease}
+Provides: %{name}-osd-mount = %{version}-%{fullrelease}
 Group: System Environment/Kernel
 
 %description osd-ldiskfs-mount
@@ -201,7 +201,7 @@ LDISKFS hooks for mount/mkfs into a dynamic library.
 %if %{with lustre_utils}
 %package osd-zfs-mount
 Summary: osd-zfs-mount contains mount's zfs specific dso.
-Provides: lustre-osd-mount = %{version}-%{fullrelease}
+Provides: %{name}-osd-mount = %{version}-%{fullrelease}
 Group: System Environment/Kernel
 
 %description osd-zfs-mount
@@ -216,7 +216,7 @@ ZFS hooks for mount/mkfs into a dynamic library.
 %package resource-agents
 Summary: HA Resuable Cluster Resource Scripts for Lustre
 Group: System Environment/Base
-Requires: lustre
+Requires: %{name}
 Requires: resource-agents
 
 %description resource-agents
@@ -347,7 +347,7 @@ make install DESTDIR=$RPM_BUILD_ROOT
 # RHEL, we handle this here in the spec file rather than in
 # Lustre's build system.  This is not expected to bother SLES's
 # kernel_module_path macro.
-basemodpath=$RPM_BUILD_ROOT%{modules_fs_path}/%{lustre_name}
+basemodpath=$RPM_BUILD_ROOT%{modules_fs_path}/%{name}
 %if %{with ldiskfs}
 mkdir -p $basemodpath-osd-ldiskfs/fs
 mv $basemodpath/fs/osd_ldiskfs.ko $basemodpath-osd-ldiskfs/fs/osd_ldiskfs.ko
