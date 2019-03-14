@@ -12559,8 +12559,9 @@ test_151() {
 		error "NOT IN CACHE: before: $BEFORE, after: $AFTER"
 	fi
 
-        # the following read invalidates the cache
         cancel_lru_locks osc
+	# invalidates OST cache
+	do_nodes $list "echo 1 > /proc/sys/vm/drop_caches"
 	set_osd_param $list '' read_cache_enable 0
         cat $DIR/$tfile >/dev/null
 
@@ -13205,9 +13206,9 @@ test_156() {
 	cat $file >/dev/null
 	AFTER=$(roc_hit)
 	if ! let "AFTER - BEFORE == CPAGES"; then
-		error "NOT IN CACHE: before: $BEFORE, after: $AFTER"
+		error "NOT IN CACHE (2): before: $BEFORE, after: $AFTER"
 	else
-		log "cache hits:: before: $BEFORE, after: $AFTER"
+		log "cache hits: before: $BEFORE, after: $AFTER"
 	fi
 
 	log "Read again; it should be satisfied from the cache."
@@ -13216,7 +13217,7 @@ test_156() {
 	cat $file >/dev/null
 	AFTER=$(roc_hit)
 	if ! let "AFTER - BEFORE == CPAGES"; then
-		error "NOT IN CACHE: before: $BEFORE, after: $AFTER"
+		error "NOT IN CACHE (3): before: $BEFORE, after: $AFTER"
 	else
 		log "cache hits:: before: $BEFORE, after: $AFTER"
 	fi
@@ -13231,20 +13232,23 @@ test_156() {
 	cat $file >/dev/null
 	AFTER=$(roc_hit)
 	if ! let "AFTER - BEFORE == CPAGES"; then
-		error "NOT IN CACHE: before: $BEFORE, after: $AFTER"
+		error "NOT IN CACHE (4): before: $BEFORE, after: $AFTER"
 	else
 		log "cache hits:: before: $BEFORE, after: $AFTER"
 	fi
 
-	log "Read again; it should not be satisfied from the cache."
-	BEFORE=$AFTER
-	cancel_lru_locks osc
-	cat $file >/dev/null
-	AFTER=$(roc_hit)
-	if ! let "AFTER - BEFORE == 0"; then
-		error "IN CACHE: before: $BEFORE, after: $AFTER"
-	else
-		log "cache hits:: before: $BEFORE, after: $AFTER"
+	if [ $OST1_VERSION -lt $(version_code 2.12.55) ]; then
+		# > 2.12.56 uses pagecache if cached
+		log "Read again; it should not be satisfied from the cache."
+		BEFORE=$AFTER
+		cancel_lru_locks osc
+		cat $file >/dev/null
+		AFTER=$(roc_hit)
+		if ! let "AFTER - BEFORE == 0"; then
+			error "IN CACHE (5): before: $BEFORE, after: $AFTER"
+		else
+			log "cache hits:: before: $BEFORE, after: $AFTER"
+		fi
 	fi
 
 	log "Write data and read it back."
@@ -13255,20 +13259,23 @@ test_156() {
 	cat $file >/dev/null
 	AFTER=$(roc_hit)
 	if ! let "AFTER - BEFORE == CPAGES"; then
-		error "NOT IN CACHE: before: $BEFORE, after: $AFTER"
+		error "NOT IN CACHE (6): before: $BEFORE, after: $AFTER"
 	else
 		log "cache hits:: before: $BEFORE, after: $AFTER"
 	fi
 
-	log "Read again; it should not be satisfied from the cache."
-	BEFORE=$AFTER
-	cancel_lru_locks osc
-	cat $file >/dev/null
-	AFTER=$(roc_hit)
-	if ! let "AFTER - BEFORE == 0"; then
-		error "IN CACHE: before: $BEFORE, after: $AFTER"
-	else
-		log "cache hits:: before: $BEFORE, after: $AFTER"
+	if [ $OST1_VERSION -lt $(version_code 2.12.55) ]; then
+		# > 2.12.56 uses pagecache if cached
+		log "Read again; it should not be satisfied from the cache."
+		BEFORE=$AFTER
+		cancel_lru_locks osc
+		cat $file >/dev/null
+		AFTER=$(roc_hit)
+		if ! let "AFTER - BEFORE == 0"; then
+			error "IN CACHE (7): before: $BEFORE, after: $AFTER"
+		else
+			log "cache hits:: before: $BEFORE, after: $AFTER"
+		fi
 	fi
 
 	log "Turn off read and write cache"
@@ -13284,7 +13291,7 @@ test_156() {
 	cat $file >/dev/null
 	AFTER=$(roc_hit)
 	if ! let "AFTER - BEFORE == 0"; then
-		error_ignore bz20762 "IN CACHE: before: $BEFORE, after: $AFTER"
+		error_ignore bz20762 "IN CACHE (8):before:$BEFORE,after:$AFTER"
 	else
 		log "cache hits:: before: $BEFORE, after: $AFTER"
 	fi
@@ -13302,7 +13309,7 @@ test_156() {
 	cat $file >/dev/null
 	AFTER=$(roc_hit)
 	if ! let "AFTER - BEFORE == 0"; then
-		error_ignore bz20762 "IN CACHE: before: $BEFORE, after: $AFTER"
+		error_ignore bz20762 "IN CACHE (9):before:$BEFORE,after:$AFTER"
 	else
 		log "cache hits:: before: $BEFORE, after: $AFTER"
 	fi
@@ -13313,7 +13320,7 @@ test_156() {
 	cat $file >/dev/null
 	AFTER=$(roc_hit)
 	if ! let "AFTER - BEFORE == CPAGES"; then
-		error "NOT IN CACHE: before: $BEFORE, after: $AFTER"
+		error "NOT IN CACHE (1): before: $BEFORE, after: $AFTER"
 	else
 		log "cache hits:: before: $BEFORE, after: $AFTER"
 	fi
