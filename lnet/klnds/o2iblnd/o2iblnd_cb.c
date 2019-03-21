@@ -871,6 +871,7 @@ __must_hold(&conn->ibc_lock)
 {
 	kib_msg_t *msg = tx->tx_msg;
 	kib_peer_ni_t *peer_ni = conn->ibc_peer;
+	struct lnet_ni *ni = peer_ni->ibp_ni;
 	int ver = conn->ibc_version;
 	int rc;
 	int done;
@@ -887,7 +888,7 @@ __must_hold(&conn->ibc_lock)
 	LASSERT(conn->ibc_credits <= conn->ibc_queue_depth);
 
 	if (conn->ibc_nsends_posted ==
-	    conn->ibc_queue_depth) {
+	    kiblnd_concurrent_sends(ver, ni)) {
 		/* tx completions outstanding... */
 		CDEBUG(D_NET, "%s: posted enough\n",
 		       libcfs_nid2str(peer_ni->ibp_nid));
@@ -1042,7 +1043,7 @@ kiblnd_check_sends_locked(kib_conn_t *conn)
         }
 
 	LASSERT(conn->ibc_nsends_posted <=
-		conn->ibc_queue_depth);
+		kiblnd_concurrent_sends(ver, ni));
         LASSERT (!IBLND_OOB_CAPABLE(ver) ||
                  conn->ibc_noops_posted <= IBLND_OOB_MSGS(ver));
         LASSERT (conn->ibc_reserved_credits >= 0);
