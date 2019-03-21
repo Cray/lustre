@@ -4313,10 +4313,17 @@ int ll_file_flock(struct file *file, int cmd, struct file_lock *file_lock)
 			/* We unlock kernel lock before ldlm one to avoid race
 			 * with reordering of unlock & lock responses from
 			 * server.*/
-			rc = ll_file_flock_lock(file, file_lock);
+			cb_data->fa_flc.fl_flags |= FL_EXISTS;
+			rc = ll_file_flock_lock(file, &cb_data->fa_flc);
 			if (rc) {
-				CDEBUG(D_ERROR,
-				       "local unlock failed rc=%d\n", rc);
+				if (rc == -ENOENT) {
+					if (!(file_lock->fl_type & FL_EXISTS))
+						rc = 0;
+				} else {
+					CDEBUG(D_ERROR,
+					       "local unlock failed rc=%d\n",
+					       rc);
+				}
 				OBD_FREE_PTR(cb_data);
 				GOTO(out, rc);
 			}
