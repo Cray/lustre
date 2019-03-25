@@ -7282,7 +7282,7 @@ test_100() {
 }
 run_test 100 "check lshowmount lists MGS, MDT, OST and 0@lo"
 
-test_101() {
+test_101a() {
 	local createmany_oid
 	local dev=$FSNAME-OST0000-osc-MDT0000
 	setup
@@ -7306,7 +7306,29 @@ test_101() {
 	wait $createmany_oid
 	cleanup
 }
-run_test 101 "Race MDT->OST reconnection with create"
+run_test 101a "Race MDT->OST reconnection with create"
+
+test_101b () {
+	local dev=$FSNAME-OST0000-osc-MDT0000
+	local dir=$DIR1/$tdir
+	setup
+
+	mkdir $dir
+	$LFS setstripe -c 1 -i 0 $dir
+	do_facet $SINGLEMDS "$LCTL --device $dev deactivate;"
+#define OBD_FAIL_OSP_CON_EVENT_DELAY 0x2105
+	do_facet mds1 "$LCTL set_param fail_loc=0x80002105 fail_val=20"
+	do_facet $SINGLEMDS "$LCTL --device $dev activate;"
+	stop_ost
+	sleep 25
+	start_ost
+
+	wait_osc_import_state client ost1 FULL
+	touch $dir/$tfile || error "Can't create file"
+
+	cleanup
+}
+run_test 101b "Race events DISCONNECT and ACTIVE in osp"
 
 test_102() {
 	[[ “$(mdsdevname 1)” != “$(mgsdevname)” ]] &&
