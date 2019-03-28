@@ -4234,30 +4234,34 @@ stopall() {
     local clients=$CLIENTS
     [ -z $clients ] && clients=$(hostname)
 
-    zconf_umount_clients $clients $MOUNT "$*" || true
-    [ -n "$MOUNT2" ] && zconf_umount_clients $clients $MOUNT2 "$*" || true
+	zconf_umount_clients $clients $MOUNT "$*" || true
+	[ -n "$MOUNT2" ] && zconf_umount_clients $clients $MOUNT2 "$*" || true
 
-    [ -n "$CLIENTONLY" ] && return
+	[ -n "$CLIENTONLY" ] && return
 
-    # The add fn does rm ${facet}active file, this would be enough
-    # if we use do_facet <facet> only after the facet added, but
-    # currently we use do_facet mds in local.sh
-    for num in `seq $MDSCOUNT`; do
-        stop mds$num -f
-        rm -f ${TMP}/mds${num}active
-    done
-    combined_mgs_mds && rm -f $TMP/mgsactive
+	# The add fn does rm ${facet}active file, this would be enough
+	# if we use do_facet <facet> only after the facet added, but
+	# currently we use do_facet mds in local.sh
+	for num in `seq $MDSCOUNT`; do
+		stop mds$num -f
+		rm -f ${TMP}/mds${num}active
+	done
+	combined_mgs_mds && rm -f $TMP/mgsactive
 
-    for num in `seq $OSTCOUNT`; do
-        stop ost$num -f
-        rm -f $TMP/ost${num}active
-    done
+	for num in `seq $OSTCOUNT`; do
+		stop ost$num -f
+		rm -f $TMP/ost${num}active
+	done
 
-    if ! combined_mgs_mds ; then
-        stop mgs
-    fi
+	if ! combined_mgs_mds ; then
+		stop mgs
+	fi
 
-    return 0
+	if $SHARED_KEY; then
+		export SK_MOUNTED=false
+	fi
+
+	return 0
 }
 
 cleanup_echo_devs () {
