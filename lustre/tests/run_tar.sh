@@ -31,9 +31,9 @@ do_tar() {
     return ${PIPESTATUS[1]}
 }
 
-CONTINUE=true
-while [ ! -e "$END_RUN_FILE" ] && $CONTINUE; do
+while [ ! -e "$END_RUN_FILE" ]; do
 	echoerr "$(date +'%F %H:%M:%S'): tar run starting"
+	rm -rf $TESTDIR
 	client_load_mkdir $TESTDIR
 	if [ $? -ne 0 ]; then
 		echoerr "$(date +'%F %H:%M:%S'): failed to create $TESTDIR"
@@ -43,17 +43,9 @@ while [ ! -e "$END_RUN_FILE" ] && $CONTINUE; do
 	cd $TESTDIR
 	sync
 
-	USAGE=$(du -s /etc | awk '{print $1}')
 	$LCTL set_param llite.*.lazystatfs=0
 	df $TESTDIR || true
 	sleep 2
-	FREE_SPACE=$(df $TESTDIR | awk '/:/ { print $4 }')
-	AVAIL=$((FREE_SPACE * 9 / 10 / CLIENT_COUNT))
-	if [ $AVAIL -lt $USAGE ]; then
-		echoerr "no enough free disk space: need $USAGE, avail $AVAIL"
-		echo $(hostname) >> $END_RUN_FILE
-		break
-	fi
 
 	do_tar
 	RC=$?
@@ -65,16 +57,14 @@ while [ ! -e "$END_RUN_FILE" ] && $CONTINUE; do
 	if [ $RC -eq 0 ]; then
 		echoerr "$(date +'%F %H:%M:%S'): tar succeeded"
 		cd $TMP
-		rm -rf $TESTDIR
-		echoerr "$(date +'%F %H:%M:%S'): tar run finished"
 	else
+		enospc_detected $DEBUGLOG &&
+			echoerr "$(date +'%F %H:%M:%S'): tar ENOSPC, ignored" &&
+			continue
+
 		echoerr "$(date +'%F %H:%M:%S'): tar failed"
 		if [ -z "$ERRORS_OK" ]; then
 			echo $(hostname) >> $END_RUN_FILE
-		fi
-		if [ $BREAK_ON_ERROR ]; then
-			# break
-			CONTINUE=false
 		fi
 	fi
 done

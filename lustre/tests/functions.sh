@@ -1369,7 +1369,7 @@ client_load_mkdir () {
 	local dir=$1
 	local parent=$(dirname $dir)
 
-	local mdtcount=${MDSCOUNT:-$($LFS df $parent 2> /dev/null | grep -c MDT)}
+	local mdtcount=$($LFS df $parent 2> /dev/null | grep -c MDT)
 	[[ $mdtcount -ne 0 ]] || return 1
 
 	mdt_idx=$((RANDOM % mdtcount))
@@ -1381,10 +1381,22 @@ client_load_mkdir () {
 		stripe_count_opt=""
 	fi
 
-	if $RECOVERY_SCALE_ENABLE_REMOTE_DIRS; then
-		$LFS mkdir -i$mdt_idx $stripe_count_opt $dir 2> /dev/null
+	if $RECOVERY_SCALE_ENABLE_REMOTE_DIRS ||
+	   $RECOVERY_SCALE_ENABLE_STRIPED_DIRS; then
+		$LFS mkdir -i$mdt_idx $stripe_count_opt $dir ||
+			return 1
 	else
-		mkdir -p $dir
+		mkdir $dir || return 1
 	fi
 	$LFS getdirstripe $dir
+
+	if [ -n "$client_load_SETSTRIPEPARAMS" ]; then
+		$LFS setstripe $client_load_SETSTRIPEPARAMS $dir ||
+		return 1
+	fi
+	$LFS getstripe $dir || return 1
+}
+
+enospc_detected () {
+	grep -q "No space left on device" $1
 }

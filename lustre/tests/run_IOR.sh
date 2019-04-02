@@ -37,9 +37,9 @@ echo $$ >$LOAD_PID_FILE
 
 TESTDIR=${TESTDIR:-$MOUNT/d0.ior-$(hostname)}
 
-CONTINUE=true
-while [ ! -e "$END_RUN_FILE" ] && $CONTINUE; do
+while [ ! -e "$END_RUN_FILE" ]; do
 	echoerr "$(date +'%F %H:%M:%S'): IOR run starting"
+	rm -rf $TESTDIR
 	client_load_mkdir $TESTDIR
 	if [ $? -ne 0 ]; then
 		echoerr "$(date +'%F %H:%M:%S'): failed to create $TESTDIR"
@@ -59,16 +59,14 @@ while [ ! -e "$END_RUN_FILE" ] && $CONTINUE; do
 	if [ ${PIPESTATUS[0]} -eq 0 ]; then
         	echoerr "$(date +'%F %H:%M:%S'): IOR succeeded"
         	cd $TMP
-        	rm -rf $TESTDIR
-		echoerr "$(date +'%F %H:%M:%S'): IOR run finished"
 	else
+		enospc_detected $DEBUGLOG &&
+			echoerr "$(date +'%F %H:%M:%S'): IOR ENOSPC, ignored" &&
+			continue
+
 		echoerr "$(date +'%F %H:%M:%S'): IOR failed"
 		if [ -z "$ERRORS_OK" ]; then
 			echo $(hostname) >> $END_RUN_FILE
-		fi
-		if [ $BREAK_ON_ERROR ]; then
-			# break
-			CONTINUE=false
 		fi
 	fi
 done

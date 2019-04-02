@@ -204,18 +204,23 @@ test_fail_client_mds() {
         val=$((${!client_var} + 1))
         eval $client_var=$val
 
-        # load script on failed clients could create END_RUN_FILE
-        # We shuold remove it and ignore the failure if this
-        # file contains the failed client only.
-        # We can not use ERRORS_OK when start all loads at the start of
-        # this script because the application errors allowed for random
-        # failed client only, but not for all clients.
-        if [ -e $END_RUN_FILE ]; then
-            local end_run_node
-            read end_run_node < $END_RUN_FILE
-            [[ $end_run_node = $fail_client ]] &&
-                rm -f $END_RUN_FILE || exit 13
-        fi
+	# load script on failed clients could create END_RUN_FILE
+	# We should remove it and ignore the failure if this
+	# file contains the failed client only.
+	# We can not use ERRORS_OK when start all loads at the start of
+	# this script because the application errors allowed for random
+	# failed client only, but not for all clients.
+	if [ -e $END_RUN_FILE ]; then
+		local end_run_node
+		read end_run_node < $END_RUN_FILE
+		if [[ $end_run_node = $fail_client ]]; then
+			rm -f $END_RUN_FILE
+		else
+			echo "failure is expected on FAIL CLIENT \
+				$fail_client, not on $end_run_node"
+			exit 13
+		fi
+	fi
 
         restart_client_loads $fail_client $ERRORS_OK || exit $?
 
