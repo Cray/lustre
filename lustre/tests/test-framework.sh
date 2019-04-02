@@ -2820,7 +2820,6 @@ start_client_load() {
 	eval export ${var}=$load
 
 	do_node $client "PATH=$PATH MOUNT=$MOUNT ERRORS_OK=$ERRORS_OK \
-			BREAK_ON_ERROR=$BREAK_ON_ERROR \
 			END_RUN_FILE=$END_RUN_FILE \
 			LOAD_PID_FILE=$LOAD_PID_FILE \
 			TESTLOG_PREFIX=$TESTLOG_PREFIX \
@@ -2835,6 +2834,8 @@ start_client_load() {
 			MPIRUN_OPTIONS=\\\"$MPIRUN_OPTIONS\\\" \
 			MACHINEFILE_OPTION=\\\"$MACHINEFILE_OPTION\\\" \
 			num_clients=$(get_node_count ${CLIENTS//,/ }) \
+			RECOVERY_SCALE_ENABLE_REMOTE_DIRS=$RECOVERY_SCALE_ENABLE_REMOTE_DIRS \
+			RECOVERY_SCALE_ENABLE_STRIPED_DIRS=$RECOVERY_SCALE_ENABLE_STRIPED_DIRS \
 			ior_THREADS=$ior_THREADS ior_iteration=$ior_iteration \
 			ior_blockSize=$ior_blockSize \
 			ior_blockUnit=$ior_blockUnit \
@@ -2843,6 +2844,7 @@ start_client_load() {
 			ior_stripe_params=\\\"$ior_stripe_params\\\" \
 			ior_custom_params=\\\"$ior_custom_param\\\" \
 			mpi_ior_custom_threads=$mpi_ior_custom_threads \
+			client_load_SETSTRIPEPARAMS=\\\"$client_load_SETSTRIPEPARAMS\\\" \
 			run_${load}.sh" &
 	local ppid=$!
 	log "Started client load: ${load} on $client"
