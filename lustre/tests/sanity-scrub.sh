@@ -1025,7 +1025,7 @@ test_11() {
 	check_mount_and_prep
 
 	for n in $(seq $MDSCOUNT); do
-		test_mkdir -i $((n - 1)) $DIR/$tdir/mds$n ||
+		test_mkdir -i $((n - 1)) -c1 $DIR/$tdir/mds$n ||
 			error "(1) Fail to mkdir $DIR/$tdir/mds$n"
 
 		createmany -o $DIR/$tdir/mds$n/f $CREATED ||

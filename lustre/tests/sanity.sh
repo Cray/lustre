@@ -9311,7 +9311,7 @@ run_test 119d "The DIO path should try to send a new rpc once one is completed"
 test_120a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return
-	test_mkdir $DIR/$tdir
+	test_mkdir -i0 -c1 $DIR/$tdir
 	$LCTL get_param -n mdc.*.connect_flags | grep -q early_lock_cancel ||
 		{ skip "no early lock cancel on server"; return 0; }
 
@@ -9322,13 +9322,13 @@ test_120a() {
 	cancel_lru_locks osc
 
 	stat $DIR/$tdir > /dev/null
-	can1=$(do_facet $SINGLEMDS \
+	can1=$(do_facet mds1 \
 	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
 	       awk '/ldlm_cancel/ {print $2}')
 	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
 	       awk '/ldlm_bl_callback/ {print $2}')
-	test_mkdir -c1 $DIR/$tdir/d1
-	can2=$(do_facet $SINGLEMDS \
+	test_mkdir -i0 -c1 $DIR/$tdir/d1
+	can2=$(do_facet mds1 \
 	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
 	       awk '/ldlm_cancel/ {print $2}')
 	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
@@ -9371,23 +9371,23 @@ run_test 120b "Early Lock Cancel: create test"
 test_120c() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return
-	test_mkdir -c1 $DIR/$tdir
+	test_mkdir -i0 -c1 $DIR/$tdir
 	$LCTL get_param -n mdc.*.connect_flags | grep -q early_lock_cancel ||
 		{ skip "no early lock cancel on server"; return 0; }
 	lru_resize_disable mdc
 	lru_resize_disable osc
-	test_mkdir -c1 $DIR/$tdir/d1
-	test_mkdir -c1 $DIR/$tdir/d2
+	test_mkdir -i0 -c1 $DIR/$tdir/d1
+	test_mkdir -i0 -c1 $DIR/$tdir/d2
 	touch $DIR/$tdir/d1/f1
 	cancel_lru_locks mdc
 	stat $DIR/$tdir/d1 $DIR/$tdir/d2 $DIR/$tdir/d1/f1 > /dev/null
-	can1=$(do_facet $SINGLEMDS \
+	can1=$(do_facet mds1 \
 	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
 	       awk '/ldlm_cancel/ {print $2}')
 	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
 	       awk '/ldlm_bl_callback/ {print $2}')
 	ln $DIR/$tdir/d1/f1 $DIR/$tdir/d2/f2
-	can2=$(do_facet $SINGLEMDS \
+	can2=$(do_facet mds1 \
 	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
 	       awk '/ldlm_cancel/ {print $2}')
 	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
@@ -9402,7 +9402,7 @@ run_test 120c "Early Lock Cancel: link test"
 test_120d() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return
-	test_mkdir -c1 $DIR/$tdir
+	test_mkdir -i0 -c1 $DIR/$tdir
 	$LCTL get_param -n mdc.*.connect_flags | grep -q early_lock_cancel ||
 		{ skip "no early lock cancel on server"; return 0; }
 	lru_resize_disable mdc
@@ -9410,13 +9410,13 @@ test_120d() {
 	touch $DIR/$tdir
 	cancel_lru_locks mdc
 	stat $DIR/$tdir > /dev/null
-	can1=$(do_facet $SINGLEMDS \
+	can1=$(do_facet mds1 \
 	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
 	       awk '/ldlm_cancel/ {print $2}')
 	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
 	       awk '/ldlm_bl_callback/ {print $2}')
 	chmod a+x $DIR/$tdir
-	can2=$(do_facet $SINGLEMDS \
+	can2=$(do_facet mds1 \
 	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
 	       awk '/ldlm_cancel/ {print $2}')
 	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
@@ -9435,7 +9435,7 @@ test_120e() {
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return
 	local dlmtrace_set=false
 
-	test_mkdir -c1 $DIR/$tdir
+	test_mkdir -i0 -c1 $DIR/$tdir
 	lru_resize_disable mdc
 	lru_resize_disable osc
 	! $LCTL get_param debug | grep -q dlmtrace &&
@@ -9449,14 +9449,14 @@ test_120e() {
 	# during unlink (LU-4206), so cancel osc lock now.
 	sleep 2
 	cancel_lru_locks osc
-	can1=$(do_facet $SINGLEMDS \
+	can1=$(do_facet mds1 \
 	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
 	       awk '/ldlm_cancel/ {print $2}')
 	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
 	       awk '/ldlm_bl_callback/ {print $2}')
 	unlink $DIR/$tdir/f1
 	sleep 5
-	can2=$(do_facet $SINGLEMDS \
+	can2=$(do_facet mds1 \
 	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
 	       awk '/ldlm_cancel/ {print $2}')
 	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
@@ -9476,11 +9476,11 @@ test_120f() {
 	$LCTL get_param -n mdc.*.connect_flags | grep -q early_lock_cancel ||
 		{ skip "no early lock cancel on server"; return 0; }
 	remote_mds_nodsh && skip "remote MDS with nodsh" && return
-	test_mkdir -c1 $DIR/$tdir
+	test_mkdir -i0 -c1 $DIR/$tdir
 	lru_resize_disable mdc
 	lru_resize_disable osc
-	test_mkdir -c1 $DIR/$tdir/d1
-	test_mkdir -c1 $DIR/$tdir/d2
+	test_mkdir -i0 -c1 $DIR/$tdir/d1
+	test_mkdir -i0 -c1 $DIR/$tdir/d2
 	dd if=/dev/zero of=$DIR/$tdir/d1/f1 count=1
 	dd if=/dev/zero of=$DIR/$tdir/d2/f2 count=1
 	cancel_lru_locks mdc
@@ -9492,14 +9492,14 @@ test_120f() {
 	# during rename (LU-4206), so cancel osc lock now.
 	sleep 2
 	cancel_lru_locks osc
-	can1=$(do_facet $SINGLEMDS \
+	can1=$(do_facet mds1 \
 	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
 	       awk '/ldlm_cancel/ {print $2}')
 	blk1=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
 	       awk '/ldlm_bl_callback/ {print $2}')
 	mrename $DIR/$tdir/d1/f1 $DIR/$tdir/d2/f2
 	sleep 5
-	can2=$(do_facet $SINGLEMDS \
+	can2=$(do_facet mds1 \
 	       "$LCTL get_param -n ldlm.services.ldlm_canceld.stats" |
 	       awk '/ldlm_cancel/ {print $2}')
 	blk2=$($LCTL get_param -n ldlm.services.ldlm_cbd.stats |
