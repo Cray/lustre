@@ -18,13 +18,15 @@
 %bcond_without ldap
 %bcond_with mofed
 %bcond_with kabi
+%bcond_without mpi
+
 
 # By default both gss and gss keyring are disabled.
 # gss keyring requires the gss core. If the builder
 # request gss_keyring we must enable gss core even if
 # the builder attempts to disable gss.
 %if %{with gss_keyring}
-    %define with_gss
+    %define with_gss 1
 %endif
 
 %if %{without servers}
@@ -32,6 +34,7 @@
     # so undefine the internal variables set by bcond_*
     %undefine with_ldiskfs
     %undefine with_zfs
+    %undefine with_ldap
 %endif
 
 %if %{without shared} && %{without static}
@@ -119,14 +122,12 @@
 %global krequires %(echo %{kver} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/\.aarch64$//' -e 's/-default$//')
 
 %if %{_vendor}=="redhat" || %{_vendor}=="fedora"
-	%global requires_yaml_name libyaml
 	%global requires_kmod_name kmod-%{lustre_name}
 	%if %{with lustre_tests}
 		%global requires_kmod_tests_name kmod-%{lustre_name}-tests
 	%endif
 	%global requires_kmod_version %{version}
 %else	#for Suse
-	%global requires_yaml_name libyaml-0-2
 	%global requires_kmod_name %{lustre_name}-kmp
 	%if %{with lustre_tests}
 		%global requires_kmod_tests_name %{lustre_name}-tests-kmp
@@ -155,6 +156,8 @@
 %define with_systemd 1
 %endif
 
+%{!?mpi_name: %global mpi_name openmpi}
+
 Summary: Lustre File System
 Name: %{lustre_name}
 Version: %{version}
@@ -171,21 +174,17 @@ Source6: kmp-lustre-osd-zfs.files
 Source7: kmp-lustre-tests.files
 URL: https://wiki.whamcloud.com/
 BuildRoot: %{_tmppath}/lustre-%{version}-root
-Requires: %{requires_kmod_name} = %{requires_kmod_version} zlib
-Requires: %{requires_yaml_name}
+Requires: %{requires_kmod_name} = %{requires_kmod_version}
 BuildRequires: libtool libyaml-devel zlib-devel
 %if %{with ldap}
 %if %{_vendor} == "redhat" || %{_vendor}=="fedora"
 BuildRequires: openldap-devel
-Requires: openldap
 %else
 BuildRequires: openldap2-devel
-Requires: openldap2
 %endif
 %endif
 %if %{with gss}
 BuildRequires: krb5-devel openssl-devel
-Requires: krb5-libs openssl-libs
 %endif
 %if %{with servers}
 Requires: %{name}-osd
@@ -196,7 +195,7 @@ Provides: lustre-client = %{version}-%{release}
 %if %{with lustre_modules}
 %if %{with mofed}
 BuildRequires: mlnx-ofa_kernel-devel
-%if %{_vendor}=="redhat"
+%if %{_vendor} == "redhat"
 Requires: kmod-mlnx-ofa_kernel
 %else
 Requires: mlnx-ofa_kernel-kmp
@@ -251,7 +250,7 @@ echo $TMPFILE
 %if %{with lustre_utils}
 %package osd-ldiskfs-mount
 Summary: osd-ldiskfs-mount contains mount's ldiskfs specific dso.
-Provides: %{name}-osd-mount = %{version}-%{fullrelease}
+Provides: %{name}-osd-mount = %{version}-%{release}
 Group: System Environment/Kernel
 
 %description osd-ldiskfs-mount
@@ -265,7 +264,7 @@ LDISKFS hooks for mount/mkfs into a dynamic library.
 %if %{with lustre_utils}
 %package osd-zfs-mount
 Summary: osd-zfs-mount contains mount's zfs specific dso.
-Provides: %{name}-osd-mount = %{version}-%{fullrelease}
+Provides: %{name}-osd-mount = %{version}-%{release}
 Group: System Environment/Kernel
 
 %description osd-zfs-mount
@@ -301,14 +300,16 @@ Requires: %{name} = %{version}
 Requires: %{requires_kmod_name} = %{requires_kmod_version}
 Requires: %{requires_kmod_tests_name} = %{requires_kmod_version}
 Requires: attr, acl, e2fsprogs, rsync, perl, pdsh, lsof, libtool, /usr/bin/getconf
-%if %{defined mpi}
-%if %{mpi} == "mpich"
+%if %{with mpi}
+%if %{mpi_name} == "mpich"
 BuildRequires: mpich-devel
-Requires: mpich
 %endif
-%if %{mpi} == "openmpi"
+%if %{mpi_name} == "openmpi"
+%if %{_vendor} == "redhat"
 BuildRequires: openmpi-devel
-Requires: openmpi
+%else
+BuildRequires: openmpi2-devel
+%endif
 %endif
 %endif
 
