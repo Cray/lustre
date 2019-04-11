@@ -552,7 +552,7 @@ int get_ads_userinfo(LDAP *ld, struct adspasswd *adspwuid, uid_t uid,
         if (tmp == NULL)
                 return -EINVAL;
         /* Form a filter. */
-        sprintf(str, "(%s=%hu)", tmp->la_name, uid);
+        snprintf(str, sizeof(str), "(%s=%hu)", tmp->la_name, uid);
 
         return ldap_get_info(ld, base, str, ldap_active->ls_attr[SCH_UID],
                              adspwuid);
@@ -565,11 +565,11 @@ int get_ads_userinfo(LDAP *ld, struct adspasswd *adspwuid, uid_t uid,
 int get_ads_groupinfo(LDAP *ld, struct adspasswd *adspwuid, gid_t *gid,
                       char *base)
 {
-        char                 str[STRING_MAX_SIZE];
+        char                 str[2 * STRING_MAX_SIZE];
 
         /* Get the groups info. */
         memset(str, 0, sizeof(str));
-        sprintf(str, "(&(objectClass=Group)(objectCategory=Group)"
+        snprintf(str, sizeof(str), "(&(objectClass=Group)(objectCategory=Group)"
                        "(member=CN=%s, CN=Users,%s))", adspwuid->cn, base);
 
         gid[0] = adspwuid->pw_gid;
