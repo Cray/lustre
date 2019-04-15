@@ -16,6 +16,8 @@
 %bcond_without static
 %bcond_with    systemd
 %bcond_without ldap
+%bcond_with mofed
+%bcond_with kabi
 
 # By default both gss and gss keyring are disabled.
 # gss keyring requires the gss core. If the builder
@@ -33,19 +35,30 @@
 %endif
 
 %{!?version: %global version @VERSION@}
+# if you want a custom kernel version set it variable with $ver.$arch
 %{!?kver:    %global kver    %(uname -r)}
-%{!?kdir:    %global kdir    /lib/modules/%{kver}/source}
-%{!?kobjdir: %global kobjdir %(if [ "%{kdir}" = "/lib/modules/%{kver}/source" ]; then echo "/lib/modules/%{kver}/build"; else echo "%{kdir}"; fi)}
+# cut epoch
+%define _kver %(echo %{kver} | sed -e 's/^.*://')
+# trust version from kdir - can lost 'epoch'
+%if %{defined kdir}
+	%define _take_kver 1
+%endif
+%{!?kdir:    %global kdir    /lib/modules/%{_kver}/source}
+%{!?kobjdir: %global kobjdir %(if [ "%{kdir}" = "/lib/modules/%{_kver}/source" ]; then echo "/lib/modules/%{_kver}/build"; else echo "%{kdir}"; fi)}
 
+%if %{defined _take_kver}
 # as an alternative to this implementation we could simply "make -C $kdir kernelversion"
-%{!?kversion: %global kversion %(files="include/generated/utsrelease.h include/linux/utsrelease.h include/linux/version.h"; for f in $files; do if test -r %{kobjdir}/$f && grep UTS_RELEASE %{kobjdir}/$f >/dev/null; then sed -ne '/^#define UTS_RELEASE/s/.*"\\(.*\\)"$/\\1/p' %{kobjdir}/$f; break; fi; done)}
+%global kver %(files="include/generated/utsrelease.h include/linux/utsrelease.h include/linux/version.h"; for f in $files; do if test -r %{kobjdir}/$f && grep UTS_RELEASE %{kobjdir}/$f >/dev/null; then sed -ne '/^#define UTS_RELEASE/s/.*"\\(.*\\)"$/\\1/p' %{kobjdir}/$f; break; fi; done)
+%define _kver %kver
+%endif
 
 # We set this because kernel_module_package has its own method of identifying
 # which kernel to build against, and it is unlikely that its decision will
 # match with Lustre's method of selecting which kernel to build against.
 # By setting this variable, we override kernel_module_package's kernel
 # selection with our selection.
-%{!?kernel_version: %global kernel_version %kversion}
+# kmodtool failed to take a version if epoch set
+%global kernel_version %_kver
 
 # in order to get kernel symset and/or kernel module dependencies into
 # the RPM, in order to support weak-modules, the internal dependency gen-
@@ -88,7 +101,10 @@
     %endif
 %endif
 
-%global modules_fs_path /lib/modules/%{kversion}/%{kmoddir}
+# must include arch
+%global modules_fs_path /lib/modules/%{_kver}/%{kmoddir}
+# requires want to set a version including epoch
+%global krequires %(echo %{kver} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/\.aarch64$//' -e 's/-default$//')
 
 %if %{_vendor}=="redhat" || %{_vendor}=="fedora"
 	%global requires_yaml_name libyaml
@@ -103,7 +119,6 @@
 	%if %{with lustre_tests}
 		%global requires_kmod_tests_name %{lustre_name}-tests-kmp
 	%endif
-	%define krequires %(echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/\.aarch64$//' -e 's/-default$//')
 	%if 0%{?suse_version} >= 1200
 		%global requires_kmod_version %{version}_k%(echo %{krequires} | sed -r 'y/-/_/; s/^(2\.6\.[0-9]+)_/\\1.0_/;')
 	%else
@@ -156,6 +171,10 @@ BuildRequires: openldap2-devel
 Requires: openldap2
 %endif
 %endif
+%if %{with gss}
+BuildRequires: krb5-devel openssl-devel
+Requires: krb5-libs openssl-libs
+%endif
 %if %{with servers}
 Requires: %{name}-osd
 Requires: %{name}-osd-mount
@@ -163,9 +182,22 @@ Obsoletes: lustre-client < %{version}
 Provides: lustre-client = %{version}-%{release}
 %endif
 %if %{with lustre_modules}
+%if %{with mofed}
+BuildRequires: mlnx-ofa_kernel-devel
+%if %{_vendor}=="redhat"
+Requires: kmod-mlnx-ofa_kernel
+%else
+Requires: mlnx-ofa_kernel-kmp
+%endif
+%endif
 BuildRequires: %kernel_module_package_buildreqs
 %if %{_vendor}=="redhat"
 BuildRequires: redhat-rpm-config
+# need to provide a /usr/lib/${uname -r)/build dir
+BuildRequires: kernel
+%if %{with kabi}
+BuildRequires: kernel-abi-whitelists
+%endif
 %endif
 %endif
 
@@ -257,6 +289,16 @@ Requires: %{name} = %{version}
 Requires: %{requires_kmod_name} = %{requires_kmod_version}
 Requires: %{requires_kmod_tests_name} = %{requires_kmod_version}
 Requires: attr, acl, e2fsprogs, rsync, perl, pdsh, lsof, libtool, /usr/bin/getconf
+%if %{defined mpi}
+%if %{mpi} == "mpich"
+BuildRequires: mpich-devel
+Requires: mpich
+%endif
+%if %{mpi} == "openmpi"
+BuildRequires: openmpi-devel
+Requires: openmpi
+%endif
+%endif
 
 %description tests
 This package contains a set of test binaries and scripts that are intended
@@ -335,6 +377,9 @@ fi
 # kmod tools/scripts require %{name} directory with kernel modules
 %define eval_configure %(echo '%configure' | sed -e 's#\./configure#eval ./configure#' -e 's/--\\(build\\|host\\|target\\)=[^ ][^ ]* //g')
 
+%{?_openmpi_load}
+%{?_mpich_load}
+
 %eval_configure $CONFIGURE_ARGS \
 	%{?with_lustre_tests:--enable-tests}%{!?with_lustre_tests:--disable-tests} \
 	%{?with_lustre_utils:--enable-utils}%{!?with_lustre_utils:--disable-utils} \
@@ -356,6 +401,8 @@ fi
 	--with-kmp-moddir=%{kmoddir}/%{name}
 
 make %{?_smp_mflags} -s %{?make_args}
+%{?_mpich_unload}
+%{?_openmpi_unload}
 
 %install
 make install DESTDIR=$RPM_BUILD_ROOT
