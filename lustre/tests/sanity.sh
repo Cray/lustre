@@ -18901,8 +18901,8 @@ test_318() {
 	cancel_lru_locks mdc
 	ls $mdir_parent
 
-#define OBD_FAIL_MDS_LINKEA_DELAY 	 0x166
-	do_facet mds1 $LCTL set_param fail_loc=0x166
+#define OBD_FAIL_MDS_LINKEA_DELAY 	 0x168
+	do_facet mds1 $LCTL set_param fail_loc=0x168
 	$LFS mv -m1 $mdir &
 
 	sleep 1
