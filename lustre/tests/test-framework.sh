@@ -26,7 +26,6 @@ export SK_SKIPFIRST=${SK_SKIPFIRST:-true}
 export IDENTITY_UPCALL=default
 export QUOTA_AUTO=1
 export FLAKEY=${FLAKEY:-true}
-export ENABLE_EXPERIMENTAL_FEATURES=${ENABLE_EXPERIMENTAL_FEATURES:-yes}
 # specify environment variable containing batch job name for server statistics
 export JOBID_VAR=${JOBID_VAR:-"procname_uid"}  # or "existing" or "disable"
 
@@ -674,8 +673,6 @@ load_modules_local() {
 
 	set_default_debug
 	load_module ../lnet/lnet/lnet
-
-	set_experimental_features_flag
 
 	LNDPATH=${LNDPATH:-"../lnet/klnds"}
 	if [ -z "$LNETLND" ]; then
@@ -1540,34 +1537,6 @@ set_default_debug_facet () {
     set_default_debug_nodes $node
 }
 
-set_experimental_features_flag() {
-	local exp_flag=${1:-"$ENABLE_EXPERIMENTAL_FEATURES"}
-
-	[ "$exp_flag" == "yes" ] && $LCTL set_param enable_experimental_features=1 || true
-	[ "$exp_flag" == "no" ] && $LCTL set_param enable_experimental_features=0 || true
-}
-
-set_experimental_features_flag_nodes() {
-        local nodes="$1"
-
-        if [[ ,$nodes, = *,$HOSTNAME,* ]]; then
-                nodes=$(exclude_items_from_list "$nodes" "$HOSTNAME")
-                set_experimental_features_flag
-        fi
-
-        do_rpc_nodes "$nodes" set_experimental_features_flag \
-		\\\"$ENABLE_EXPERIMENTAL_FEATURES\\\" || true
-}
-
-set_experimental_features_flag_facet () {
-    local facet=$1
-    local node=$(facet_active_host $facet)
-    [ -z "$node" ] && echo "No host defined for facet $facet" && exit 1
-
-    set_experimental_features_flag_nodes $node
-}
-
-
 set_hostid () {
     local hostid=${1:-$(hostid)}
 
@@ -2008,7 +1977,6 @@ mount_facet() {
 	fi
 
 	set_default_debug_facet $facet
-	set_experimental_features_flag_facet $facet
 
 	if [[ $opts =~ .*nosvc.* ]]; then
 		echo "Start $dm_dev without service"
@@ -2284,7 +2252,6 @@ zconf_mount() {
 	fi
 
 	set_default_debug_nodes $client
-	set_experimental_features_flag_nodes $client
 
 	return 0
 }
@@ -2508,7 +2475,7 @@ exit \\\$rc" || return ${PIPESTATUS[0]}
 	do_nodes $clients "mount | grep $mnt' '"
 
 	set_default_debug_nodes $clients
-	set_experimental_features_flag_nodes $clients
+
 	return 0
 }
 
@@ -5189,7 +5156,6 @@ check_and_setup_lustre() {
         init_param_vars
 
         set_default_debug_nodes $(comma_list $(nodes_list))
-	set_experimental_features_flag_nodes $(comma_list $(nodes_list))
     fi
 
 	if [ -z "$CLIENTONLY" -a $(lower $OSD_TRACK_DECLARES_LBUG) == 'yes' ]; then
