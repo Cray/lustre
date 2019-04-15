@@ -1087,7 +1087,6 @@ out:
 	return rc;
 }
 
-
 int llapi_dir_create_pool(const char *name, int mode, int stripe_offset,
 			  int stripe_count, int stripe_pattern,
 			  const char *pool_name)
