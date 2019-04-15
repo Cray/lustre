@@ -1275,7 +1275,7 @@ int llapi_dir_create_foreign(const char *name, mode_t mode, __u32 type,
 	lfm->lfm_length = len;
 	lfm->lfm_type = type;
 	lfm->lfm_flags = flags;
-	strncpy(lfm->lfm_value, value, len);
+	memcpy(lfm->lfm_value, value, len);
 
 	filename = basename(namepath);
 	dir = dirname(dirpath);
