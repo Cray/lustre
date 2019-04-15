@@ -114,7 +114,6 @@ init_agt_vars() {
 	export HSMTOOL_UPDATE_INTERVAL=${HSMTOOL_UPDATE_INTERVAL:=""}
 	export HSMTOOL_EVENT_FIFO=${HSMTOOL_EVENT_FIFO:=""}
 	export HSMTOOL_TESTDIR
-	export HSMTOOL_BASE=$(basename "$HSMTOOL" | cut -f1 -d" ")
 	# $hsm_root/$HSMTMP Makes $hsm_root dir path less generic to ensure
 	# rm -rf $hsm_root/* is safe even if $hsm_root becomes unset to avoid
 	# deleting everything in filesystem, independent of any copytool.
@@ -167,14 +166,14 @@ get_mdt_devices() {
 
 search_copytools() {
 	local hosts=${1:-$(facet_active_host $SINGLEAGT)}
-	do_nodesv $hosts "pgrep -x $HSMTOOL_BASE"
+	do_nodesv $hosts "libtool execute pgrep -x $HSMTOOL"
 }
 
 kill_copytools() {
 	local hosts=${1:-$(facet_active_host $SINGLEAGT)}
 
 	echo "Killing existing copytools on $hosts"
-	do_nodesv $hosts "killall -q $HSMTOOL_BASE" || true
+	do_nodesv $hosts "libtool execute killall -q $HSMTOOL" || true
 }
 
 wait_copytools() {
@@ -281,7 +280,7 @@ __lhsmtool_setup()
 	cmd+=" \"$mountpoint\""
 
 	echo "Starting copytool $facet on $(facet_host $facet)"
-	stack_trap "do_facet $facet \"pkill -x $HSMTOOL_BASE\" || true" EXIT
+	stack_trap "do_facet $facet libtool execute pkill -x '$HSMTOOL' || true" EXIT
 	do_facet $facet "$cmd < /dev/null > \"$(copytool_logfile $facet)\" 2>&1"
 }
 
@@ -477,14 +476,16 @@ copytool_cleanup() {
 copytool_suspend() {
 	local agents=${1:-$(facet_active_host $SINGLEAGT)}
 
-	do_nodesv $agents "pkill -STOP -x $HSMTOOL_BASE" || return 0
+	stack_trap \
+		"do_nodesv $agents libtool execute pkill -CONT -x '$HSMTOOL' || true" EXIT
+	do_nodesv $agents "libtool execute pkill -STOP -x $HSMTOOL" || return 0
 	echo "Copytool is suspended on $agents"
 }
 
 copytool_continue() {
 	local agents=${1:-$(facet_active_host $SINGLEAGT)}
 
-	do_nodesv $agents "pkill -CONT -x $HSMTOOL_BASE" || return 0
+	do_nodesv $agents "libtool execute pkill -CONT -x $HSMTOOL" || return 0
 	echo "Copytool is continued on $agents"
 }
 
@@ -986,7 +987,7 @@ get_agent_uuid() {
 
 	# Lustre mount-point is mandatory and last parameter on
 	# copytool cmd-line.
-	local mntpnt=$(do_rpc_nodes $agent ps -C $HSMTOOL_BASE -o args= |
+	local mntpnt=$(do_rpc_nodes $agent libtool execute ps -C $HSMTOOL -o args= |
 		       awk '{print $NF}')
 	[ -n "$mntpnt" ] || error "Found no Agent or with no mount-point "\
 				  "parameter"

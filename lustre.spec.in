@@ -280,7 +280,7 @@ Requires: %{name} = %{version}
 %endif
 Requires: %{requires_kmod_name} = %{requires_kmod_version}
 Requires: %{requires_kmod_tests_name} = %{requires_kmod_version}
-Requires: attr, acl, e2fsprogs, rsync, perl, pdsh, lsof, /usr/bin/getconf
+Requires: attr, acl, e2fsprogs, rsync, perl, pdsh, lsof, libtool, /usr/bin/getconf
 %if %{defined mpi}
 %if %{mpi} == "mpich"
 BuildRequires: mpich-devel
