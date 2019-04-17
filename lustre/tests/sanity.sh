@@ -2373,6 +2373,28 @@ test_27H() {
 }
 run_test 27H "Set specific OSTs stripe"
 
+test_27I() {
+	[ $PARALLEL == "yes" ] && skip "skip parallel run"
+	[[ $OSTCOUNT -lt 2 ]] && skip_env "needs >= 2 OSTs"
+	local pool=$TESTNAME
+	local ostrange="1 1 1"
+
+	save_layout_restore_at_exit $MOUNT
+	$LFS setstripe -c 2 -i 0 $MOUNT
+	pool_add $pool || error "pool_add failed"
+	pool_add_targets $pool $ostrange || "pool_add_targets failed"
+	test_mkdir $DIR/$tdir
+	$LFS setstripe -p $pool $DIR/$tdir
+	$MULTIOP $DIR/$tdir/$tfile Oc || error "multiop failed"
+	[ $($LFS getstripe -c $DIR/$tdir/$tfile) -eq 1 ] ||
+		error "wrong stripe count"
+	[ $($LFS getstripe -i $DIR/$tdir/$tfile) -eq 1 ] ||
+		error "wrong stripe offset"
+	[ $($LFS getstripe -p $DIR/$tdir/$tfile) = $pool ] ||
+		error "wrong pool"
+}
+run_test 27I "check that root dir striping does not break parent dir one"
+
 # createtest also checks that device nodes are created and
 # then visible correctly (#2091)
 test_28() { # bug 2091
