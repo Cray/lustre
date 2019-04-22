@@ -90,7 +90,10 @@ int mdc_enqueue(struct obd_export *exp, struct ldlm_enqueue_info *einfo,
 int mdc_enqueue_async(struct obd_export *exp, struct ldlm_enqueue_info *einfo,
 		      obd_enqueue_update_f upcall, struct md_op_data *op_data,
 		      const union ldlm_policy_data *policy, __u64 lock_flags);
-
+int mdc_resource_get_unused_res(struct obd_export *exp,
+				struct ldlm_res_id *res_id,
+				struct list_head *cancels,
+				enum ldlm_mode mode, __u64 bits);
 int mdc_resource_get_unused(struct obd_export *exp, const struct lu_fid *fid,
 			    struct list_head *cancels, enum ldlm_mode mode,
                             __u64 bits);
