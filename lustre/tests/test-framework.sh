@@ -5113,6 +5113,10 @@ check_and_setup_lustre() {
 	fi
 
 	init_gss
+
+	if [ -n "$fs_STRIPEPARAMS" ]; then
+		setstripe_getstripe $MOUNT $fs_STRIPEPARAMS
+	fi
 	if $GSS_SK; then
 		set_flavor_all null
 	elif $GSS; then
