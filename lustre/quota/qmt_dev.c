@@ -107,7 +107,8 @@ static struct lu_device *qmt_device_fini(const struct lu_env *env,
 	}
 
 	/* stop rebalance thread */
-	qmt_stop_reba_thread(qmt);
+	if (!qmt->qmt_child->dd_rdonly)
+		qmt_stop_reba_thread(qmt);
 
 	/* disconnect from OSD */
 	if (qmt->qmt_child_exp != NULL) {
