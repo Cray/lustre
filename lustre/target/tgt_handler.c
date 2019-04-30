@@ -660,12 +660,8 @@ static int process_req_last_xid(struct ptlrpc_request *req)
 		 *   exp_last_xid on server;
 		 * - The former RPC got chance to be processed;
 		 */
-		if (!(lustre_msg_get_flags(req->rq_reqmsg) & MSG_REPLAY)) {
-			if (tgt_is_multimodrpcs_client(exp))
-				mutex_unlock(&ted->ted_lcd_lock);
-
-			RETURN(-EPROTO);
-		}
+		if (!(lustre_msg_get_flags(req->rq_reqmsg) & MSG_REPLAY))
+			GOTO(out, rc = -EPROTO);
 	}
 
 	/* The "last_xid" is the minimum xid among unreplied requests,
@@ -679,14 +675,17 @@ static int process_req_last_xid(struct ptlrpc_request *req)
 	 */
 	if (req->rq_export->exp_conn_cnt >
 	    lustre_msg_get_conn_cnt(req->rq_reqmsg))
-		RETURN(-ESTALE);
+		GOTO(out, rc = -ESTALE);
 
 	/* try to release in-memory reply data */
 	if (tgt_is_multimodrpcs_client(exp)) {
 		tgt_handle_received_xid(exp, last_xid);
 		rc = tgt_handle_tag(req);
-		mutex_unlock(&ted->ted_lcd_lock);
 	}
+
+out:
+	if (tgt_is_multimodrpcs_client(exp))
+		mutex_unlock(&ted->ted_lcd_lock);
 
 	RETURN(rc);
 }
