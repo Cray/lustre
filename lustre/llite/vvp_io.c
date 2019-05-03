@@ -708,6 +708,8 @@ static int vvp_io_setattr_start(const struct lu_env *env,
 	struct inode		*inode = vvp_object_inode(io->ci_obj);
 	struct ll_inode_info	*lli   = ll_i2info(inode);
 
+	OBD_FAIL_TIMEOUT(OBD_FAIL_LLITE_TRUNCATE_INODE_PAUSE, cfs_fail_val);
+
 	if (cl_io_is_trunc(io)) {
 		down_write(&lli->lli_trunc_sem);
 		inode_lock(inode);
