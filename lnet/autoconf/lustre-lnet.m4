@@ -738,6 +738,29 @@ EXTRA_KCFLAGS="$tmp_flags"
 ]) # LN_CONFIG_SOCK_ACCEPT
 
 #
+# LN_CHECK_KERNEL_READ_SIGNATURE
+#
+# 4.14 commit bdd1d2d3d251c65b74ac4493e08db18971c09240 changed
+# the signature of kernel_read to match other read/write helpers
+# and place offset last.
+#
+AC_DEFUN([LN_CHECK_KERNEL_READ_SIGNATURE], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'kernel_read()' has loff_t *pos as last parameter],
+kernel_read, [
+	#include <linux/fs.h>
+],[
+	loff_t pos = 0;
+	kernel_read(NULL, NULL, 0, &pos);
+],[
+	AC_DEFINE(HAVE_KERNEL_READ_LAST_POSP, 1,
+		[kernel_read() signature ends with loff_t *pos])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LN_CHECK_KERNEL_READ_SIGNATURE
+
+#
 # LN_PROG_LINUX
 #
 # LNet linux kernel checks
@@ -762,6 +785,8 @@ LN_CONFIG_SK_DATA_READY
 LN_CONFIG_SOCK_CREATE_KERN
 # 4.11
 LN_CONFIG_SOCK_ACCEPT
+# 4.14
+LN_CHECK_KERNEL_READ_SIGNATURE
 ]) # LN_PROG_LINUX
 
 #
