@@ -76,6 +76,7 @@ static struct kfilnd_dev *kfilnd_create_dev(char *ifname, struct lnet_ni *ni)
 
 	/* Initialize the device with the fabric. */
 	dev->kfd_ni = ni;
+	dev->kfd_ifip = ip;
 	if (kfilnd_fab_initialize_dev(dev) != 0) {
 		LIBCFS_FREE(dev, sizeof(*dev));
 		return NULL;
@@ -85,7 +86,6 @@ static struct kfilnd_dev *kfilnd_create_dev(char *ifname, struct lnet_ni *ni)
 	INIT_LIST_HEAD(&dev->kfd_list); /* not yet in kfid_devs */
 	INIT_LIST_HEAD(&dev->kfd_tns);
 	spin_lock_init(&dev->kfd_lock);
-	dev->kfd_ifip = ip;
 	strcpy(&dev->kfd_ifname[0], ifname);
 
 	/* Post a series of immediate receive buffers */
