@@ -987,6 +987,7 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 	struct kfi_eq_attr eq_attr = {};
 	struct kfi_info *hints = NULL;
 	char srvstr[4];
+	char *nodestr = NULL;
 
 	if (!dev || (dev->kfd_state != KFILND_STATE_UNINITIALIZED))
 		return -EINVAL;
@@ -1014,7 +1015,16 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 	snprintf(srvstr, sizeof(srvstr) - 1, "%d",
 		 LNET_NETNUM(LNET_NIDNET(dev->kfd_ni->ni_nid)));
 
-	rc = kfi_getinfo(0, "0", srvstr, KFI_SOURCE, hints, &dev->kfd_fab_info);
+	/* The node value is IPv4 address in string form. */
+	nodestr = kasprintf(GFP_KERNEL, "%pI4h", &dev->kfd_ifip);
+	if (!nodestr) {
+		rc = -ENOMEM;
+		CERROR("Could not allocate node str, rc = %d\n", rc);
+		goto out_err;
+	}
+
+	rc = kfi_getinfo(0, nodestr, srvstr, KFI_SOURCE, hints,
+			 &dev->kfd_fab_info);
 	if (rc) {
 		CERROR("Could not getinfo, rc = %d\n", rc);
 		goto out_err;
@@ -1059,12 +1069,8 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 		goto out_err;
 	}
 
-	/*
-	 * TODO: The node value below should be our own IPv4 address.  Need that
-	 * to be supported in kfabric before updating.
-	 */
-	rc = kfi_av_insertsvc(dev->kfd_av, "0x0", srvstr,
-			      &dev->kfd_addr, 0, dev);
+	rc = kfi_av_insertsvc(dev->kfd_av, nodestr, srvstr, &dev->kfd_addr, 0,
+			      dev);
 	if (rc < 0) {
 		CERROR("Could not insert service to AV, rc = %d\n", rc);
 		goto out_err;
@@ -1107,6 +1113,7 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 			goto out_err;
 	}
 
+	kfree(nodestr);
 	kfi_freeinfo(hints);
 
 	/* Mark that the dev/NI has now been initialized */
@@ -1115,6 +1122,7 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 	return rc;
 
 out_err:
+	kfree(nodestr);
 	if (hints)
 		kfi_freeinfo(hints);
 	kfilnd_fab_cleanup_dev(dev);
