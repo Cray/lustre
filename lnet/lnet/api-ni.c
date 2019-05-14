@@ -232,24 +232,37 @@ static int lnet_ping(struct lnet_process_id id, signed long timeout,
 
 static int lnet_discover(struct lnet_process_id id, __u32 force,
 			 struct lnet_process_id __user *ids, int n_ids);
+
+#ifdef HAVE_KERNEL_READ_LAST_POSP
+static inline ssize_t e_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
+{
+	return kernel_read(file, buf, count, pos);
+}
+#else
+static inline ssize_t e_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
+{
+	ssize_t size = kernel_read(file, *pos, buf, count);
+
+	if (size > 0)
+		*pos += size;
+	return size;
+}
+#endif
+
 static ssize_t
 filp_user_read(struct file *filp, char *buf, size_t count, loff_t *offset)
 {
-	mm_segment_t    fs;
 	ssize_t         ret_size = 0, size = 0;
 
-	fs = get_fs();
-	set_fs(KERNEL_DS);
 	while ((ssize_t)count > 0) {
-		size = vfs_read(filp, (char __user *)buf, count, offset);
+		size = e_kernel_read(filp, buf, count, offset);
 		if (size <= 0)
-	                break;
-	        count -= size;
-	        buf += size;
-	        ret_size += size;
-	        size = 0;
+			break;
+		count -= size;
+		buf += size;
+		ret_size += size;
+		size = 0;
 	}
-	set_fs(fs);
 
 	return (size < 0 ? size : ret_size);
 }
