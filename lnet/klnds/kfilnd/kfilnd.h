@@ -107,13 +107,20 @@ struct kfilnd_endpoints {
 	struct kfid_cq *end_rx_cq;
 
 	/* Specific config values for this endpoint */
-	kfi_addr_t end_addr;
 	struct kfilnd_dev *end_dev;
 	int end_cpt;
 
 	/* Pre-posted immediate buffers */
 	struct kfilnd_immediate_buffer
 		end_immed_bufs[KFILND_NUM_IMMEDIATE_BUFFERS];
+};
+
+struct kfilnd_nid_entry {
+	struct hlist_node node;
+	struct kfilnd_dev *dev;
+	lnet_nid_t nid;
+	kfi_addr_t addr;
+	refcount_t cnt;
 };
 
 struct kfilnd_dev {
@@ -135,8 +142,10 @@ struct kfilnd_dev {
 	struct kfid_domain	*kfd_domain;
 	struct kfid_ep		*kfd_sep;
 	struct kfid_av		*kfd_av;
-	kfi_addr_t		kfd_addr;
 	struct kfilnd_endpoints	**kfd_endpoints;
+
+	/* Hash of LNet NIDs to KFI addresses. */
+	struct cfs_hash *nid_hash;
 };
 
 struct kfilnd_net {
