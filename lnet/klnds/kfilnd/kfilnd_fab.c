@@ -12,6 +12,162 @@
 
 #define KFILND_FAB_RX_CTX_BITS 8  /* 256 Rx contexts max */
 
+/* TODO: Module parameters? */
+#define KFILND_CURRENT_HASH_BITS 7
+#define KFILND_MAX_HASH_BITS 12
+
+static unsigned int kfilnd_nid_hash(struct cfs_hash *hs, const void *key,
+				    unsigned int mask)
+{
+	return cfs_hash_u64_hash(*(lnet_nid_t *)key, mask);
+}
+
+static void *kfilnd_nid_key(struct hlist_node *hnode)
+{
+	struct kfilnd_nid_entry *entry;
+
+	entry = hlist_entry(hnode, struct kfilnd_nid_entry, node);
+	return &entry->nid;
+}
+
+static int kfilnd_nid_keycmp(const void *key, struct hlist_node *hnode)
+{
+	return !memcmp(kfilnd_nid_key(hnode), key, sizeof(lnet_nid_t));
+}
+
+static void *kfilnd_nid_object(struct hlist_node *hnode)
+{
+	return hlist_entry(hnode, struct kfilnd_nid_entry, node);
+}
+
+static void kfilnd_nid_get(struct cfs_hash *hs, struct hlist_node *hnode)
+{
+	struct kfilnd_nid_entry *entry;
+
+	entry = hlist_entry(hnode, struct kfilnd_nid_entry, node);
+	refcount_inc(&entry->cnt);
+}
+
+static void kfilnd_nid_free(struct cfs_hash *hs, struct hlist_node *hnode)
+{
+	struct kfilnd_nid_entry *entry;
+
+	entry = hlist_entry(hnode, struct kfilnd_nid_entry, node);
+	kfi_av_remove(entry->dev->kfd_av, &entry->addr, 1, 0);
+	kfree(entry);
+}
+
+static void kfilnd_nid_put(struct cfs_hash *hs, struct hlist_node *hnode)
+{
+	struct kfilnd_nid_entry *entry;
+
+	entry = hlist_entry(hnode, struct kfilnd_nid_entry, node);
+
+	/* Refcount only reaches zero if the entry has been deleted from the NID
+	 * hash.
+	 */
+	if (refcount_dec_and_test(&entry->cnt))
+		kfilnd_nid_free(hs, hnode);
+}
+
+static struct cfs_hash_ops kfilnd_nid_hash_ops = {
+	.hs_hash = kfilnd_nid_hash,
+	.hs_key = kfilnd_nid_key,
+	.hs_keycmp = kfilnd_nid_keycmp,
+	.hs_object = kfilnd_nid_object,
+	.hs_get = kfilnd_nid_get,
+	.hs_put = kfilnd_nid_put,
+	.hs_put_locked = kfilnd_nid_put,
+	.hs_exit = kfilnd_nid_free,
+};
+
+/**
+ * kfilnd_lookup_peer_address() - Lookup a peer's KFI address.
+ * @dev: KFI LND device.
+ * @nid: Peer LNet NID used to lookup the KFI address.
+ * @addr: Peer KFI address to be set.
+ *
+ * Lookup involves searching the device's NID hash for a matching KFI address.
+ * If an entry is not found, address resolution from LNet NID to KFI address is
+ * done through the KFI address vector (AV). If address resolution is
+ * successful, the device's NID hash is updated with the result for future
+ * lookup requests.
+ *
+ * Return: On success, zero is returned and the addr argument is set to the
+ * matching KFI address for the given LNet NID. On error, negative errno is
+ * returned.
+ */
+static int kfilnd_lookup_peer_address(struct kfilnd_dev *dev, lnet_nid_t nid,
+				      kfi_addr_t *addr)
+{
+	char *node;
+	char *service;
+	int rc;
+	u32 nid_addr = LNET_NIDADDR(nid);
+	u32 net_num = LNET_NETNUM(LNET_NIDNET(nid));
+	struct kfilnd_nid_entry *nid_entry;
+
+again:
+	nid_entry = cfs_hash_lookup(dev->nid_hash, &nid);
+	if (nid_entry) {
+		*addr = nid_entry->addr;
+
+		cfs_hash_put(dev->nid_hash, &nid_entry->node);
+		return 0;
+	}
+
+	nid_entry = kzalloc(sizeof(*nid_entry), GFP_KERNEL);
+	if (!nid_entry) {
+		rc = -ENOMEM;
+		goto err;
+	}
+
+	node = kasprintf(GFP_KERNEL, "%pI4h", &nid_addr);
+	if (!node) {
+		rc = -ENOMEM;
+		goto err_free_nid_entry;
+	}
+
+	service = kasprintf(GFP_KERNEL, "%u", net_num);
+	if (!service) {
+		rc = -ENOMEM;
+		goto err_free_node_str;
+	}
+
+	rc = kfi_av_insertsvc(dev->kfd_av, node, service, addr, 0, dev);
+
+	kfree(service);
+	kfree(node);
+
+	if (rc < 0)
+		goto err_free_nid_entry;
+
+	nid_entry->dev = dev;
+	nid_entry->nid = nid;
+	nid_entry->addr = *addr;
+	refcount_set(&nid_entry->cnt, 0);
+
+	/* We could be racing with another thread to add this entry to the NID
+	 * hash. If so, free this entry and remove the redundant KFI address.
+	 * Then, lookup the unique entry from the NID hash.
+	 */
+	rc = cfs_hash_add_unique(dev->nid_hash, &nid_entry->nid,
+				 &nid_entry->node);
+	if (rc) {
+		kfilnd_nid_free(dev->nid_hash, &nid_entry->node);
+		goto again;
+	}
+
+	return 0;
+
+err_free_node_str:
+	kfree(node);
+err_free_nid_entry:
+	kfree(nid_entry);
+err:
+	return rc;
+}
+
 static __sum16 kfilnd_fab_cksum(void *ptr, int nob)
 {
 	return csum_fold(csum_partial(ptr, nob, 0));
@@ -186,6 +342,7 @@ static int kfilnd_fab_post_msg_tx(struct kfilnd_transaction *tn,
 	void *buf;
 	int rc;
 	struct kfilnd_endpoints *use_endp;
+	kfi_addr_t addr;
 
 	if (!tn->tn_dev || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
 		return -EINVAL;
@@ -204,14 +361,18 @@ static int kfilnd_fab_post_msg_tx(struct kfilnd_transaction *tn,
 	if (tn->tn_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
+	/* Find the peer's address. */
+	rc = kfilnd_lookup_peer_address(tn->tn_dev, tn->tn_target_nid, &addr);
+	if (rc)
+		return rc;
+
 	/*
 	 * TODO: When we get address resolution workoing, update this send to
 	 * use the tn_target_nid to derive the address.  For now, we are sending
 	 * everything to ourself (loopback).
 	 */
 	if (want_event) {
-		rc = kfi_send(use_endp->end_tx, buf, len, NULL,
-			      tn->tn_dev->kfd_addr, tn);
+		rc = kfi_send(use_endp->end_tx, buf, len, NULL, addr, tn);
 	} else {
 		/*
 		 * To avoid getting a Tx event, we need to use
@@ -228,7 +389,7 @@ static int kfilnd_fab_post_msg_tx(struct kfilnd_transaction *tn,
 		msg.msg_iov = &msg_vec;
 		msg.iov_count = 1;
 		msg.context = tn;
-		msg.addr = tn->tn_dev->kfd_addr;
+		msg.addr = addr;
 		rc = kfi_sendmsg(use_endp->end_tx, &msg, 0);
 	}
 
@@ -241,6 +402,7 @@ static int kfilnd_fab_post_rma_tx(struct kfilnd_transaction *tn)
 {
 	int rc;
 	struct kfilnd_endpoints *use_endp;
+	kfi_addr_t addr;
 
 	if (!tn->tn_dev || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
 		return -EINVAL;
@@ -255,6 +417,11 @@ static int kfilnd_fab_post_rma_tx(struct kfilnd_transaction *tn)
 	if (tn->tn_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
+	/* Find the peer's address. */
+	rc = kfilnd_lookup_peer_address(tn->tn_dev, tn->tn_target_nid, &addr);
+	if (rc)
+		return rc;
+
 	/*
 	 * TODO: When we get address resolution workoing, update this send to
 	 * use the tn_target_nid to derive the address.  For now, we are sending
@@ -263,12 +430,10 @@ static int kfilnd_fab_post_rma_tx(struct kfilnd_transaction *tn)
 	if (tn->tn_kiov)
 		rc = kfi_writebv(use_endp->end_tx,
 				 (struct bio_vec *) tn->tn_kiov, NULL,
-				 tn->tn_num_iovec, tn->tn_dev->kfd_addr,
-				 0, tn->tn_cookie, tn);
+				 tn->tn_num_iovec, addr, 0, tn->tn_cookie, tn);
 	else
 		rc = kfi_writev(use_endp->end_tx, tn->tn_iov, NULL,
-				tn->tn_num_iovec, tn->tn_dev->kfd_addr,
-				0, tn->tn_cookie, tn);
+				tn->tn_num_iovec, addr, 0, tn->tn_cookie, tn);
 
 	if (rc == 0)
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
@@ -314,6 +479,7 @@ static int kfilnd_fab_post_rx(struct kfilnd_transaction *tn)
 {
 	struct kfilnd_endpoints *use_endp;
 	int rc;
+	kfi_addr_t addr;
 
 	/* See if this is reposting a multi-use buffer */
 	if (tn->tn_posted_buf && (tn->tn_state != TN_STATE_WAIT_RMA)) {
@@ -352,14 +518,18 @@ static int kfilnd_fab_post_rx(struct kfilnd_transaction *tn)
 	if (tn->tn_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
+	/* Find the peer's address. */
+	rc = kfilnd_lookup_peer_address(tn->tn_dev, tn->tn_target_nid, &addr);
+	if (rc)
+		return rc;
+
 	if (tn->tn_kiov)
 		rc = kfi_readbv(use_endp->end_tx, (struct bio_vec *)tn->tn_kiov,
-			        NULL, tn->tn_num_iovec, tn->tn_dev->kfd_addr,
-			        0, tn->tn_cookie, tn);
+				NULL, tn->tn_num_iovec, addr, 0, tn->tn_cookie,
+				tn);
 	else
 		rc = kfi_readv(use_endp->end_tx, tn->tn_iov, NULL,
-			       tn->tn_num_iovec, tn->tn_dev->kfd_addr,
-			       0, tn->tn_cookie, tn);
+			       tn->tn_num_iovec, addr, 0, tn->tn_cookie, tn);
 
 	if (rc == 0)
 		tn->tn_flags |= KFILND_TN_FLAG_RX_POSTED;
@@ -794,6 +964,9 @@ void kfilnd_fab_cleanup_dev(struct kfilnd_dev *dev)
 	spin_unlock(&dev->kfd_lock);
 	set_current_state(TASK_RUNNING);
 
+	if (dev->nid_hash)
+		cfs_hash_putref(dev->nid_hash);
+
 	/* Deal with RX/TX contexts if there are any */
 	if (dev->kfd_endpoints) {
 		struct kfilnd_endpoints *endpoint;
@@ -862,9 +1035,6 @@ static int kfilnd_fab_initialize_endpoint(struct kfilnd_dev *dev,
 	if (endpoint->end_rx || endpoint->end_tx)
 		return -EINVAL;
 
-	/* Derive the address for this endpoint */
-	endpoint->end_addr = kfi_rx_addr(dev->kfd_addr, cpt,
-					 KFILND_FAB_RX_CTX_BITS);
 	endpoint->end_dev = dev;
 	endpoint->end_cpt = cpt;
 
@@ -974,6 +1144,7 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 	struct kfi_info *hints = NULL;
 	char srvstr[4];
 	char *nodestr = NULL;
+	char *hash_name = NULL;
 
 	if (!dev || (dev->kfd_state != KFILND_STATE_UNINITIALIZED))
 		return -EINVAL;
@@ -1056,13 +1227,6 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 		goto out_err;
 	}
 
-	rc = kfi_av_insertsvc(dev->kfd_av, nodestr, srvstr, &dev->kfd_addr, 0,
-			      dev);
-	if (rc < 0) {
-		CERROR("Could not insert service to AV, rc = %d\n", rc);
-		goto out_err;
-	}
-
 	/* Create a scalable endpont to represent the device. */
 	rc = kfi_scalable_ep(dev->kfd_domain, dev->kfd_fab_info, &dev->kfd_sep,
 			     dev);
@@ -1098,6 +1262,27 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 		rc = kfilnd_fab_initialize_endpoint(dev, i, endpoint);
 		if (rc)
 			goto out_err;
+	}
+
+	/* Hash for LNet NIDs to KFI addresses. */
+	hash_name = kasprintf(GFP_KERNEL, "KFILND_NID_HASH_%s", nodestr);
+	if (!hash_name) {
+		rc = -ENOMEM;
+		goto out_err;
+	}
+
+	dev->nid_hash = cfs_hash_create(hash_name, KFILND_CURRENT_HASH_BITS,
+					KFILND_MAX_HASH_BITS,
+					KFILND_CURRENT_HASH_BITS, 0,
+					CFS_HASH_MIN_THETA, CFS_HASH_MAX_THETA,
+					&kfilnd_nid_hash_ops,
+					CFS_HASH_DEFAULT | CFS_HASH_BIGNAME);
+
+	kfree(hash_name);
+
+	if (!dev->nid_hash) {
+		rc = -ENOMEM;
+		goto out_err;
 	}
 
 	kfree(nodestr);
