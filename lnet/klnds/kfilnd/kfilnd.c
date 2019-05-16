@@ -505,6 +505,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		tn->tn_kiov = kiov;
 		tn->tn_iov = iov;
 		tn->tn_cookie = rxmsg->kfm_u.putreq.kfprm_match_bits;
+		tn->tn_target_nid = msg->msg_initiator;
 
 		rc = kfilnd_fab_event_handler(tn, TN_EVENT_RMA_PREP);
 		break;
@@ -520,7 +521,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		tn->tn_kiov = msg->msg_kiov;
 		tn->tn_iov = msg->msg_iov;
 		tn->tn_cookie = rxmsg->kfm_u.get.kfgm_match_bits;
-		tn->tn_target_nid = msg->msg_target.nid;
+		tn->tn_target_nid = msg->msg_initiator;
 		tn->tn_procid = KFILND_MY_PROCID;
 
 		rc = kfilnd_fab_event_handler(tn, TN_EVENT_RMA_PREP);
