@@ -3540,6 +3540,44 @@ static int lod_get_default_lov_striping(const struct lu_env *env,
 					struct lod_default_striping *lds);
 
 /**
+ * Helper function to convert compound layout to compound layout with
+ * pool
+ *
+ * Copy lcm_entries array of \a src to \a tgt. Replace lov_user_md_v1
+ * components of \a src with lov_user_md_v3 using \a pool.
+ *
+ * \param[in] src	source layout
+ * \param[in] pool	pool to use in \a tgt
+ * \param[out] tgt	target layout
+ */
+static void embed_pool_to_comp_v1(const struct lov_comp_md_v1 *src,
+				  const char *pool,
+				  struct lov_comp_md_v1 *tgt)
+{
+	size_t shift;
+	struct lov_user_md_v1 *lum;
+	struct lov_user_md_v3 *lum3;
+	struct lov_comp_md_entry_v1 *entry;
+	int i;
+	__u32 offset;
+
+	entry = tgt->lcm_entries;
+	for (i = 0; i < le16_to_cpu(src->lcm_entry_count); i++, entry++) {
+		*entry = src->lcm_entries[i];
+		offset = le32_to_cpu(src->lcm_entries[i].lcme_offset);
+		shift = i * (sizeof(*lum3) - sizeof(*lum));
+		entry->lcme_offset = cpu_to_le32(offset + shift);
+
+		lum = (struct lov_user_md_v1 *)((char *)src + offset);
+		lum3 = (struct lov_user_md_v3 *)((char *)tgt + offset + shift);
+		*(struct lov_user_md_v1 *)lum3 = *lum;
+		lum3->lmm_magic = cpu_to_le32(LOV_USER_MAGIC_V3);
+		strlcpy(lum3->lmm_pool_name, pool,
+			sizeof(lum3->lmm_pool_name));
+	}
+}
+
+/**
  * Set default striping on a directory.
  *
  * Sets specified striping on a directory object unless it matches the default
@@ -3621,6 +3659,61 @@ static int lod_xattr_set_default_lov_on_dir(const struct lu_env *env,
 		info->lti_buf.lb_len = sizeof(*v3);
 		rc = lod_xattr_set_lov_on_dir(env, dt, &info->lti_buf,
 					      name, fl, th);
+	} else if (v1->lmm_magic == LOV_USER_MAGIC_COMP_V1 && !is_del && pd) {
+		/*
+		 * try to retain the pool from default layout if the
+		 * specified component layout does not provide pool
+		 * info explicitly
+		 */
+		struct lod_thread_info *info = lod_env_info(env);
+		struct lov_comp_md_v1 *comp_v1 = buf->lb_buf;
+		struct lov_comp_md_v1 *comp_v1p;
+		struct lov_user_md_v1 *lum;
+		int entry_count;
+		int i;
+		__u32 offset;
+		struct lov_comp_md_entry_v1 *entry;
+		int size;
+
+		entry_count = le16_to_cpu(comp_v1->lcm_entry_count);
+		entry = comp_v1->lcm_entries;
+		for (i = 0; i < entry_count; i++, entry++) {
+			offset = le32_to_cpu(entry->lcme_offset);
+			lum = (struct lov_user_md_v1 *)((char *)comp_v1 +
+							offset);
+			if (le32_to_cpu(lum->lmm_magic) != LOV_USER_MAGIC_V1)
+				/* the i-th compoment includes pool info */
+				break;
+		}
+
+		if (i == entry_count) {
+			/*
+			 * re-compose the layout to include the pool for
+			 * each component
+			 */
+			size = sizeof(*comp_v1);
+			size += entry_count * sizeof(comp_v1->lcm_entries[0]);
+			size += entry_count * sizeof(struct lov_user_md_v3);
+
+			if (info->lti_ea_store_size < size)
+				rc = lod_ea_store_resize(info, size);
+
+			if (rc == 0) {
+				comp_v1p = info->lti_ea_store;
+				*comp_v1p = *comp_v1;
+				comp_v1p->lcm_size = cpu_to_le32(size);
+				embed_pool_to_comp_v1(comp_v1, pool, comp_v1p);
+
+				info->lti_buf.lb_buf = comp_v1p;
+				info->lti_buf.lb_len = size;
+				rc = lod_xattr_set_lov_on_dir(env, dt,
+							      &info->lti_buf,
+							      name, fl, th);
+			}
+		} else {
+			rc = lod_xattr_set_lov_on_dir(env, dt, buf, name, fl,
+						      th);
+		}
 	} else {
 		rc = lod_xattr_set_lov_on_dir(env, dt, buf, name, fl, th);
 	}

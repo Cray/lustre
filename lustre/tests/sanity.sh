@@ -6982,6 +6982,14 @@ test_65n() {
 	local dir5_layout=$(get_layout_param $dir5)
 	[[ "$dir4_layout" = "$dir5_layout" ]] ||
 		error "$dir5 should inherit the default layout from $dir4"
+
+	# $dir4 layout includes pool
+	$LFS setstripe -S $((new_def_stripe_size * 2)) $dir4
+	[[ "$pool" = $($LFS getstripe -p -d $dir4) ]] ||
+		error "pool lost on setstripe"
+	$LFS setstripe -E -1 -S $new_def_stripe_size $dir4
+	[[ "$pool" = $($LFS getstripe -p -d $dir4) ]] ||
+		error "pool lost on compound layout setstripe"
 }
 run_test 65n "don't inherit default layout from root for new subdirectories"
 
