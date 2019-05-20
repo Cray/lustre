@@ -299,7 +299,8 @@ struct obd_export {
 	/** highest XID received by export client that has no
 	 * unreceived lower-numbered XID
 	 */
-	__u64			  exp_last_xid;
+	__u64			exp_last_xid;
+	__u16			exp_used_slots;
 };
 
 #define exp_target_data u.eu_target_data
