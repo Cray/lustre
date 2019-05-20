@@ -997,7 +997,8 @@ struct ptlrpc_request {
 	unsigned int
 		rq_hp:1,		/**< high priority RPC */
 		rq_at_linked:1,		/**< link into service's srv_at_array */
-		rq_packed_final:1;	/**< packed final reply */
+		rq_packed_final:1,	/**< packed final reply */
+		rq_obsolete:1;		/* aborted by a signal on a client */
 	/** @} */
 
 	/** one of RQ_PHASE_* */
