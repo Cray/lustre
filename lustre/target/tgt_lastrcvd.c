@@ -1209,6 +1209,12 @@ static int tgt_add_reply_data(const struct lu_env *env, struct lu_target *tgt,
 	if (req != NULL) {
 		int exclude = tgt_is_increasing_xid_client(req->rq_export) ?
 			    MSG_REPLAY : MSG_REPLAY|MSG_RESENT;
+
+		if (req->rq_obsolete) {
+			mutex_unlock(&ted->ted_lcd_lock);
+			RETURN(-EALREADY);
+		}
+
 		if (!(lustre_msg_get_flags(req->rq_reqmsg) & exclude))
 			tgt_clean_by_tag(req->rq_export, req->rq_xid,
 					 trd->trd_tag);
