@@ -110,7 +110,9 @@ static int kfilnd_lookup_peer_address(struct kfilnd_dev *dev, lnet_nid_t nid,
 again:
 	nid_entry = cfs_hash_lookup(dev->nid_hash, &nid);
 	if (nid_entry) {
-		*addr = nid_entry->addr;
+		*addr = kfi_rx_addr(nid_entry->addr,
+				    atomic_read(&nid_entry->rx_context),
+				    KFILND_FAB_RX_CTX_BITS);
 
 		cfs_hash_put(dev->nid_hash, &nid_entry->node);
 		return 0;
@@ -145,6 +147,7 @@ again:
 	nid_entry->dev = dev;
 	nid_entry->nid = nid;
 	nid_entry->addr = *addr;
+	atomic_set(&nid_entry->rx_context, 0);
 	refcount_set(&nid_entry->cnt, 0);
 
 	/* We could be racing with another thread to add this entry to the NID
@@ -165,6 +168,68 @@ err_free_node_str:
 err_free_nid_entry:
 	kfree(nid_entry);
 err:
+	return rc;
+}
+
+/**
+ * _kfilnd_update_peer_address() - Update a peer's receive context.
+ * @dev: KFI LND device.
+ * @nid: Peer LNet NID to be updated.
+ * @rx_context: New RX context for peer LNet NID.
+ *
+ * Return: On success, zero. Else, -EADDRNOTAVAIL if the NID is not found in the
+ * NID hash.
+ */
+static int _kfilnd_update_peer_address(struct kfilnd_dev *dev, lnet_nid_t nid,
+				       unsigned int rx_context)
+{
+	struct kfilnd_nid_entry *nid_entry;
+
+	nid_entry = cfs_hash_lookup(dev->nid_hash, &nid);
+	if (nid_entry) {
+		atomic_set(&nid_entry->rx_context, rx_context);
+
+		cfs_hash_put(dev->nid_hash, &nid_entry->node);
+		return 0;
+	}
+
+	return -EADDRNOTAVAIL;
+}
+
+/**
+ * kfilnd_update_peer_address() - Update a peer's receive context.
+ * @dev: KFI LND device.
+ * @nid: Peer LNet NID to be updated.
+ * @rx_context: New RX context for peer LNet NID.
+ *
+ * Peers send a preferred RX context which the local host should use when
+ * initiating a transaction to that given peer. The RX context is a specific
+ * receive endpoint at the peer.
+ *
+ * Constantly updating this value will only impact the RX context for a future
+ * transaction to a peer. Any in-flight transactions will not be impacted.
+ *
+ * If the NID does not exist in the NID hash, an attempt to allocate the entry
+ * is done. Then, an update is attempted again.
+ *
+ * Return: On success, zero. Else, negative errno.
+ */
+static int kfilnd_update_peer_address(struct kfilnd_dev *dev, lnet_nid_t nid,
+				      unsigned int rx_context)
+{
+	kfi_addr_t addr;
+	int rc;
+
+	rc = _kfilnd_update_peer_address(dev, nid, rx_context);
+	if (!rc)
+		return 0;
+
+	rc = kfilnd_lookup_peer_address(dev, nid, &addr);
+	if (rc)
+		return rc;
+
+	rc = _kfilnd_update_peer_address(dev, nid, rx_context);
+
 	return rc;
 }
 
@@ -1366,6 +1431,14 @@ static int kfilnd_fab_tn_idle(struct kfilnd_transaction *tn,
 			*tn_released = true;
 			break;
 		}
+
+		/* Update the NID address with the new preferred RX context.
+		 * Don't drop the message if this fails.
+		 */
+		rc = kfilnd_update_peer_address(tn->tn_dev, msg->kfm_srcnid,
+						msg->kfm_prefer_rx);
+		if (rc)
+			CWARN("Failed to update KFILND peer address\n");
 
 		/* 
 		 * Pass message up to LNet
