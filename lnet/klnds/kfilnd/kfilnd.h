@@ -177,6 +177,10 @@ struct kfilnd_completion_msg
 	__s32	kfcm_status;
 } WIRE_ATTR;
 
+/* Invalid checksum value is treated as no checksum. */
+/* TODO: Module parameter to disable checksum? */
+#define NO_CHECKSUM 0xFFFF
+
 struct kfilnd_msg
 {
 	/* First 2 fields fixed FOR ALL TIME */
@@ -186,7 +190,7 @@ struct kfilnd_msg
 	__u8	kfm_type;	/* msg type */
 	__u8	kfm_prefer_rx;	/* RX endpoint dest should switch to */
 	__u32	kfm_nob;	/* # bytes in whole message */
-	__u32	kfm_cksum;	/* checksum (0 == no checksum) */
+	__sum16	kfm_cksum;	/* checksum */
 	__u64	kfm_srcnid;	/* sender's NID */
 	__u64	kfm_dstnid;	/* destination's NID */
 
