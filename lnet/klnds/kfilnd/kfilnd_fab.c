@@ -12,14 +12,9 @@
 
 #define KFILND_FAB_RX_CTX_BITS 8  /* 256 Rx contexts max */
 
-static u32 kfilnd_fab_cksum(void *ptr, int nob)
+static __sum16 kfilnd_fab_cksum(void *ptr, int nob)
 {
-	u32  sum = 0;
-
-	sum = csum_partial(ptr, nob, 0);
-
-	/* ensure I don't return 0 (== no checksum) */
-	return (sum == 0) ? 1 : sum;
+	return csum_fold(csum_partial(ptr, nob, 0));
 }
 
 static char *kfilnd_fab_msgtype2str(int type)
@@ -91,7 +86,6 @@ static void kfilnd_fab_pack_msg(struct kfilnd_transaction *tn, u8 prefer_rx)
 static int kfilnd_fab_unpack_msg(struct kfilnd_msg *msg, int nob)
 {
 	const int hdr_size = offsetof(struct kfilnd_msg, kfm_u);
-	u32	msg_cksum;
 	u16	version;
 	int	msg_nob;
 	bool	flip;
@@ -122,19 +116,11 @@ static int kfilnd_fab_unpack_msg(struct kfilnd_msg *msg, int nob)
 		return -EPROTO;
 	}
 
-	/*
-	 * Checksum must be computed with kfm_cksum zero and BEFORE anything
-	 * gets flipped.
-	 */ 
-	msg_cksum = flip ? __swab32(msg->kfm_cksum) : msg->kfm_cksum;
-	msg->kfm_cksum = 0;
-	if (msg_cksum != 0 &&
-	    msg_cksum != kfilnd_fab_cksum(msg, msg_nob)) {
+	/* If kfilnd_fab_cksum() returns a non-zero value, checksum is bad. */
+	if (msg->kfm_cksum != NO_CHECKSUM && kfilnd_fab_cksum(msg, msg_nob)) {
 		CERROR("Bad checksum\n");
 		return -EPROTO;
 	}
-
-	msg->kfm_cksum = msg_cksum;
 
 	if (flip) {
 		/* Leave magic unflipped as a clue to peer endianness */
