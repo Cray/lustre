@@ -120,6 +120,7 @@ struct kfilnd_nid_entry {
 	struct kfilnd_dev *dev;
 	lnet_nid_t nid;
 	kfi_addr_t addr;
+	atomic_t rx_context;
 	refcount_t cnt;
 };
 
