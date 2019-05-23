@@ -203,6 +203,7 @@ struct kfilnd_msg
 	__sum16	kfm_cksum;	/* checksum */
 	__u64	kfm_srcnid;	/* sender's NID */
 	__u64	kfm_dstnid;	/* destination's NID */
+	__u8	kfm_rma_rx;	/* RX endpoint RMA operation should use */
 
 	union {
 		struct kfilnd_immed_msg		immed;
@@ -277,6 +278,9 @@ struct kfilnd_transaction			/* Both send and receive */
 	lnet_kiov_t		*tn_kiov;
 	struct kvec		*tn_iov;
 	struct kfid_mr		*tn_mr;
+
+	/* RX context used for MRs and RMA operations. */
+	u8			rma_rx;
 };
 
 #endif /* _KFILND_ */
