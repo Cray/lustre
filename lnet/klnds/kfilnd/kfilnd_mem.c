@@ -173,6 +173,8 @@ int kfilnd_mem_setup_rma(struct kfilnd_transaction *tn, bool am_initiator)
 		CERROR("kfi_mr_bind failed: rc = %d", rc);
 		goto failed;
 	}
+	tn->rma_rx = tn->tn_cpt;
+
 	rc = kfi_mr_enable(tn->tn_mr);
 	if (rc) {
 		CERROR("kfi_mr_enable failed: rc = %d", rc);
