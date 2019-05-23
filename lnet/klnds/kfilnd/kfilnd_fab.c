@@ -12,6 +12,12 @@
 
 #define KFILND_FAB_RX_CTX_BITS 8  /* 256 Rx contexts max */
 
+/* Get the KFI base address from a KFI RX address. RX context information is
+ * stored in the MSBs of the KFI address.
+ */
+#define KFILND_BASE_ADDR(addr) \
+	((addr) & ((1UL << (64 - KFILND_FAB_RX_CTX_BITS)) - 1))
+
 /* TODO: Module parameters? */
 #define KFILND_CURRENT_HASH_BITS 7
 #define KFILND_MAX_HASH_BITS 12
@@ -289,7 +295,8 @@ static int kfilnd_fab_msgtype2size(int type)
 	}
 }
 
-static void kfilnd_fab_pack_msg(struct kfilnd_transaction *tn, u8 prefer_rx)
+static void kfilnd_fab_pack_msg(struct kfilnd_transaction *tn, u8 prefer_rx,
+				u8 rma_rx)
 {
 	struct kfilnd_msg *msg = tn->tn_msg;
 
@@ -298,6 +305,7 @@ static void kfilnd_fab_pack_msg(struct kfilnd_transaction *tn, u8 prefer_rx)
 	msg->kfm_version  = KFILND_MSG_VERSION;
 	/*  kfm_type */
 	msg->kfm_prefer_rx = prefer_rx;
+	msg->kfm_rma_rx = rma_rx;
 	/*  kfm_nob */
 	/*  kfm_srcnid */
 	msg->kfm_dstnid   = tn->tn_target_nid;
@@ -414,7 +422,8 @@ static int kfilnd_fab_post_msg_tx(struct kfilnd_transaction *tn,
 
 	buf = tn->tn_msg;
 	len = tn->tn_msgsz;
-	kfilnd_fab_pack_msg(tn, kfilnd_fab_prefer_rx(tn->tn_target_nid));
+	kfilnd_fab_pack_msg(tn, kfilnd_fab_prefer_rx(tn->tn_target_nid),
+			    tn->rma_rx);
 
 	/*
 	 * Currently, we are configured for all CPTs.  Later, this needs
@@ -482,10 +491,12 @@ static int kfilnd_fab_post_rma_tx(struct kfilnd_transaction *tn)
 	if (tn->tn_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
-	/* Find the peer's address. */
+	/* Find the peer's address and update to the RMA RX context. */
 	rc = kfilnd_lookup_peer_address(tn->tn_dev, tn->tn_target_nid, &addr);
 	if (rc)
 		return rc;
+	addr = kfi_rx_addr(KFILND_BASE_ADDR(addr), tn->rma_rx,
+			   KFILND_FAB_RX_CTX_BITS);
 
 	/*
 	 * TODO: When we get address resolution workoing, update this send to
@@ -583,10 +594,12 @@ static int kfilnd_fab_post_rx(struct kfilnd_transaction *tn)
 	if (tn->tn_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
-	/* Find the peer's address. */
+	/* Find the peer's address and update to the RMA RX context. */
 	rc = kfilnd_lookup_peer_address(tn->tn_dev, tn->tn_target_nid, &addr);
 	if (rc)
 		return rc;
+	addr = kfi_rx_addr(KFILND_BASE_ADDR(addr), tn->rma_rx,
+			   KFILND_FAB_RX_CTX_BITS);
 
 	if (tn->tn_kiov)
 		rc = kfi_readbv(use_endp->end_tx, (struct bio_vec *)tn->tn_kiov,
@@ -1439,6 +1452,11 @@ static int kfilnd_fab_tn_idle(struct kfilnd_transaction *tn,
 						msg->kfm_prefer_rx);
 		if (rc)
 			CWARN("Failed to update KFILND peer address\n");
+
+		/* RMA RX context is needed to target the correct RX context for
+		 * a future RMA operation.
+		 */
+		tn->rma_rx = msg->kfm_rma_rx;
 
 		/* 
 		 * Pass message up to LNet
