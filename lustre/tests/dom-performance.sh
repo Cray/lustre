@@ -210,11 +210,19 @@ run_IOR() {
 	fi
 
 	local TDIR=${1:-$MOUNT}
-	local bsizes="8"
-	[ "$SLOW" = "yes" ] && bsizes="4 32"
+	# for DoM large files (beyond the DoM size) use
+	# DOM_SIZE=1M :
+	#     bsize="4096 " - 4Mb
+	#     nsegments=$((128 * 1024))
+	# DOM_SIZE=64k :
+	#     bsize="1024 " - 1Mb
+	#     nsegments=$((32 * 1024))
+	local bsizes=${BSIZES:-"4 32"}
+	local nsegments=${NSEGMENTS:-128}
+	[ "$SLOW" = "no" ] && bsizes="8"
 
 	for bsize in $bsizes ; do
-		segments=$((128 / bsize))
+		segments=$((nsegments / bsize))
 
 		dp_run_cmd "mpirun -np $DP_NUM $IOR \
 			-a POSIX -b ${bsize}K -t ${bsize}K -o $TDIR/ -k \
