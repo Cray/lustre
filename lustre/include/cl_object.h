@@ -1910,7 +1910,13 @@ struct cl_io {
 	 * mirror is inaccessible, non-delay RPC would error out quickly so
 	 * that the upper layer can try to access the next mirror.
 	 */
-			     ci_ndelay:1;
+			     ci_ndelay:1,
+	/**
+	 * Set if we've tried all mirrors for this read IO, if it's not set,
+	 * the read IO will check to-be-read OSCs' status, and make fast-switch
+	 * another mirror if some of the OSTs are not healthy.
+	 */
+			     ci_tried_all_mirrors:1;
 	/**
 	 * Bypass quota check
 	 */
