@@ -946,6 +946,7 @@ void ll_lli_init(struct ll_inode_info *lli)
 		lli->lli_def_stripe_offset = -1;
 	} else {
 		mutex_init(&lli->lli_size_mutex);
+		mutex_init(&lli->lli_group_mutex);
 		lli->lli_symlink_name = NULL;
 		init_rwsem(&lli->lli_trunc_sem);
 		range_lock_tree_init(&lli->lli_write_tree);
@@ -954,6 +955,8 @@ void ll_lli_init(struct ll_inode_info *lli)
 		INIT_LIST_HEAD(&lli->lli_agl_list);
 		lli->lli_agl_index = 0;
 		lli->lli_async_rc = 0;
+		lli->lli_group_users = 0;
+		lli->lli_group_gid = 0;
 	}
 	mutex_init(&lli->lli_layout_mutex);
 	memset(lli->lli_jobid, 0, LUSTRE_JOBID_SIZE);
