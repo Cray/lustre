@@ -1001,7 +1001,8 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 
 	hints->caps = (KFI_MSG | KFI_RMA | KFI_SEND | KFI_RECV | KFI_READ |
 		       KFI_WRITE | KFI_REMOTE_READ | KFI_REMOTE_WRITE |
-		       KFI_MULTI_RECV | KFI_RMA_EVENT | KFI_REMOTE_COMM);
+		       KFI_MULTI_RECV | KFI_RMA_EVENT | KFI_REMOTE_COMM |
+		       KFI_NAMED_RX_CTX);
 	hints->domain_attr->mr_iov_limit = 256; /* 1 MiB LNet message */
 	hints->domain_attr->mr_cnt = 1024; /* Max LNet credits */
 	hints->ep_attr->max_msg_size = LNET_MAX_PAYLOAD;
