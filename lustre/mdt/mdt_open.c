@@ -44,7 +44,8 @@
 #include "mdt_internal.h"
 #include <lustre_nodemap.h>
 
-static int mdt_open_by_fid(struct mdt_thread_info *info, struct ldlm_reply *rep);
+static int mdt_open_by_fid(struct mdt_thread_info *info, struct ldlm_reply *rep,
+			   struct mdt_lock_handle *lhc);
 
 /* we do nothing because we do not have refcount now */
 static void mdt_mfd_get(void *mfdp)
@@ -677,7 +678,7 @@ void mdt_reconstruct_open(struct mdt_thread_info *info,
 	if (likely(!fid_is_zero(&info->mti_reply_data->trd_object))) {
 		rr->rr_fid2 = &info->mti_reply_data->trd_object;
 		rr->rr_flags |= MRF_OPEN_RESEND;
-		rc = mdt_open_by_fid(info, ldlm_rep);
+		rc = mdt_open_by_fid(info, ldlm_rep, lhc);
 		if (rc)
 			lustre_msg_set_transno(req->rq_repmsg, 0);
 	} else {
@@ -692,7 +693,8 @@ out:
 	LASSERT(ergo(rc < 0, lustre_msg_get_transno(req->rq_repmsg) == 0));
 }
 
-static int mdt_open_by_fid(struct mdt_thread_info *info, struct ldlm_reply *rep)
+static int mdt_open_by_fid(struct mdt_thread_info *info, struct ldlm_reply *rep,
+			   struct mdt_lock_handle *lhc)
 {
 	u64 open_flags = info->mti_spec.sp_cr_flags;
 	struct mdt_reint_record *rr = &info->mti_rr;
@@ -724,14 +726,18 @@ static int mdt_open_by_fid(struct mdt_thread_info *info, struct ldlm_reply *rep)
 							DISP_LOOKUP_POS));
 			mdt_prep_ma_buf_from_rep(info, o, ma);
 			rc = mdt_attr_get_complex(info, o, ma);
-			if (rc == 0)
-				rc = mdt_finish_open(info, NULL, o, open_flags,
-						     rep);
+			if (rc)
+				GOTO(out, rc);
+			rc = mdt_finish_open(info, NULL, o, open_flags, rep);
+			if (rc)
+				GOTO(out, rc);
+			mdt_pack_size2body(info, rr->rr_fid2, &lhc->mlh_reg_lh);
 		} else {
 			rc = -ENOENT;
 		}
 	}
 
+out:
 	mdt_object_put(info->mti_env, o);
 	RETURN(rc);
 }
@@ -1299,7 +1305,7 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 					ldlm_rep, open_flags);
 		GOTO(out, result);
 	} else if (req_is_replay(req)) {
-		result = mdt_open_by_fid(info, ldlm_rep);
+		result = mdt_open_by_fid(info, ldlm_rep, lhc);
 
 		if (result != -ENOENT)
 			GOTO(out, result);
