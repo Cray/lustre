@@ -18,6 +18,11 @@
 #define KFILND_BASE_ADDR(addr) \
 	((addr) & ((1UL << (64 - KFILND_FAB_RX_CTX_BITS)) - 1))
 
+/* Get the KFI RX context from a KFI RX address. RX context information is
+ * stored in the MSBs of the KFI address.
+ */
+#define KFILND_RX_CONTEXT(addr) ((addr) >> (64 - KFILND_FAB_RX_CTX_BITS))
+
 /* TODO: Module parameters? */
 #define KFILND_CURRENT_HASH_BITS 7
 #define KFILND_MAX_HASH_BITS 12
@@ -86,6 +91,38 @@ static struct cfs_hash_ops kfilnd_nid_hash_ops = {
 	.hs_put_locked = kfilnd_nid_put,
 	.hs_exit = kfilnd_nid_free,
 };
+
+static const char *event_flags_to_str(uint64_t flags)
+{
+	if (flags & KFI_SEND)
+		return "KFI send";
+	else if (flags & KFI_WRITE)
+		return "KFI write";
+	else if (flags & KFI_READ)
+		return "KFI read";
+	else if (flags & KFI_RECV)
+		return "KFI recv";
+	else
+		return "Unhandled KFI operation";
+}
+
+/**
+ * kfilnd_remove_peer_address() - Remove a peer from the NID hash.
+ * @dev: KFI LND device.
+ * @nid: Peer LNet NID to be removed.
+ */
+static void kfilnd_remove_peer_address(struct kfilnd_dev *dev, lnet_nid_t nid)
+{
+	/* cfs_hash_del_key() will call cfs_hash_put() on the entry being
+	 * deleted. This, or an outstanding cfs_hash_put(), will push the
+	 * refcount of this entry to zero causing it to be freed.
+	 *
+	 * cfs_hash_del_key() will also return a pointer to the entry that was
+	 * freed. But, since this entry may have been freed when cfs_hash_put()
+	 * was called, the output from cfs_hash_del_key() is ignored.
+	 */
+	cfs_hash_del_key(dev->nid_hash, &nid);
+}
 
 /**
  * kfilnd_lookup_peer_address() - Lookup a peer's KFI address.
@@ -408,6 +445,55 @@ static u8 kfilnd_fab_prefer_rx(lnet_nid_t dstnid)
 	return 0;
 }
 
+static void kfilnd_fab_process_tn_cq(void *devctx, void *context, int status)
+{
+	struct kfilnd_transaction *tn = context;
+	int rc;
+
+	if (!tn)
+		return;
+
+	/*
+	 * The status parameter has been sent to the transaction's state
+	 * machine event.
+	 */
+	rc = kfilnd_fab_event_handler(tn, status);
+	if (rc)
+		CERROR("Failed to process event, event = %d, rc = %d\n", status,
+		       rc);
+}
+
+/**
+ * kfilnd_progress_tx() - Helper function for progress a TX context transaction.
+ * @tn: Transaction to be progressed.
+ * @event: Transaction event.
+ * @cq_event_flags: KFI CQ event flags.
+ * @cq_errno: Neagtive, CQ errno value.
+ * @cq_prov_errno: CQ provider specific errno value.
+ *
+ * This function will get called when kfi_send(), kfi_read(), or kfi_write(),
+ * CQ events occur. The transaction will be updated based on the transaction
+ * event before being posted to the work queue.
+ */
+static void kfilnd_progress_tx(struct kfilnd_transaction *tn,
+			       enum tn_events event, uint64_t cq_event_flags,
+			       int cq_errno, int cq_prov_errno)
+{
+	if (event == TN_EVENT_FAIL)
+		CERROR("%s failed to %s: rx_ctx=%llu errno=%d prov_errno=%d\n",
+		       event_flags_to_str(cq_event_flags),
+		       libcfs_nid2str(tn->tn_target_nid),
+		       KFILND_RX_CONTEXT(tn->tn_target_addr), cq_errno,
+		       cq_prov_errno);
+	else
+		tn->tn_flags &= ~KFILND_TN_FLAG_TX_POSTED;
+
+	tn->tn_status = cq_errno;
+
+	kfilnd_wkr_post(tn->tn_cpt, kfilnd_fab_process_tn_cq, tn->tn_dev, tn,
+			event);
+}
+
 static int kfilnd_fab_post_msg_tx(struct kfilnd_transaction *tn,
 				  bool want_event)
 {
@@ -439,36 +525,41 @@ static int kfilnd_fab_post_msg_tx(struct kfilnd_transaction *tn,
 	rc = kfilnd_lookup_peer_address(tn->tn_dev, tn->tn_target_nid, &addr);
 	if (rc)
 		return rc;
+	tn->tn_target_addr = addr;
 
-	/*
-	 * TODO: When we get address resolution workoing, update this send to
-	 * use the tn_target_nid to derive the address.  For now, we are sending
-	 * everything to ourself (loopback).
-	 */
-	if (want_event) {
-		rc = kfi_send(use_endp->end_tx, buf, len, NULL, addr, tn);
-	} else {
-		/*
-		 * To avoid getting a Tx event, we need to use
-		 * kfi_sendmsg() with a zero flag parameter.  It also
-		 * means we need to construct a kfi_msg with a kvec to
-		 * hold the message.
-		 */
-		struct kfi_msg msg = {};
-		struct kvec msg_vec;
-
-		msg_vec.iov_base = buf;
-		msg_vec.iov_len = len;
-		msg.type = KFI_KVEC;
-		msg.msg_iov = &msg_vec;
-		msg.iov_count = 1;
-		msg.context = tn;
-		msg.addr = addr;
-		rc = kfi_sendmsg(use_endp->end_tx, &msg, 0);
-	}
-
-	if (rc == 0)
+	/* Progress transaction to failure if send should fail. */
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND)) {
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
+		rc = 0;
+		kfilnd_progress_tx(tn, TN_EVENT_FAIL, KFI_MSG | KFI_SEND, -EIO,
+				   0);
+	} else {
+		if (want_event) {
+			rc = kfi_send(use_endp->end_tx, buf, len, NULL, addr,
+				      tn);
+		} else {
+			/*
+			 * To avoid getting a Tx event, we need to use
+			 * kfi_sendmsg() with a zero flag parameter.  It also
+			 * means we need to construct a kfi_msg with a kvec to
+			 * hold the message.
+			 */
+			struct kfi_msg msg = {};
+			struct kvec msg_vec;
+
+			msg_vec.iov_base = buf;
+			msg_vec.iov_len = len;
+			msg.type = KFI_KVEC;
+			msg.msg_iov = &msg_vec;
+			msg.iov_count = 1;
+			msg.context = tn;
+			msg.addr = addr;
+			rc = kfi_sendmsg(use_endp->end_tx, &msg, 0);
+		}
+
+		if (rc == 0)
+			tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
+	}
 	return rc;
 }
 
@@ -497,22 +588,29 @@ static int kfilnd_fab_post_rma_tx(struct kfilnd_transaction *tn)
 		return rc;
 	addr = kfi_rx_addr(KFILND_BASE_ADDR(addr), tn->rma_rx,
 			   KFILND_FAB_RX_CTX_BITS);
+	tn->tn_target_addr = addr;
 
-	/*
-	 * TODO: When we get address resolution workoing, update this send to
-	 * use the tn_target_nid to derive the address.  For now, we are sending
-	 * everything to ourself (loopback).
-	 */
-	if (tn->tn_kiov)
-		rc = kfi_writebv(use_endp->end_tx,
-				 (struct bio_vec *) tn->tn_kiov, NULL,
-				 tn->tn_num_iovec, addr, 0, tn->tn_cookie, tn);
-	else
-		rc = kfi_writev(use_endp->end_tx, tn->tn_iov, NULL,
-				tn->tn_num_iovec, addr, 0, tn->tn_cookie, tn);
-
-	if (rc == 0)
+	/* Progress transaction to failure if read should fail. */
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE)) {
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
+		rc = 0;
+		kfilnd_progress_tx(tn, TN_EVENT_FAIL, KFI_RMA | KFI_WRITE, -EIO,
+				   0);
+	} else {
+		if (tn->tn_kiov)
+			rc = kfi_writebv(use_endp->end_tx,
+					 (struct bio_vec *) tn->tn_kiov, NULL,
+					 tn->tn_num_iovec, addr, 0,
+					 tn->tn_cookie, tn);
+		else
+			rc = kfi_writev(use_endp->end_tx, tn->tn_iov, NULL,
+					tn->tn_num_iovec, addr, 0,
+					tn->tn_cookie, tn);
+
+		if (rc == 0)
+			tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
+	}
+
 	return rc;
 }
 
@@ -600,17 +698,29 @@ static int kfilnd_fab_post_rx(struct kfilnd_transaction *tn)
 		return rc;
 	addr = kfi_rx_addr(KFILND_BASE_ADDR(addr), tn->rma_rx,
 			   KFILND_FAB_RX_CTX_BITS);
+	tn->tn_target_addr = addr;
 
-	if (tn->tn_kiov)
-		rc = kfi_readbv(use_endp->end_tx, (struct bio_vec *)tn->tn_kiov,
-				NULL, tn->tn_num_iovec, addr, 0, tn->tn_cookie,
-				tn);
-	else
-		rc = kfi_readv(use_endp->end_tx, tn->tn_iov, NULL,
-			       tn->tn_num_iovec, addr, 0, tn->tn_cookie, tn);
-
-	if (rc == 0)
+	/* Progress transaction to failure if read should fail. */
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ)) {
 		tn->tn_flags |= KFILND_TN_FLAG_RX_POSTED;
+		rc = 0;
+		kfilnd_progress_tx(tn, TN_EVENT_FAIL, KFI_RMA | KFI_READ, -EIO,
+				   0);
+	} else {
+		if (tn->tn_kiov)
+			rc = kfi_readbv(use_endp->end_tx,
+					(struct bio_vec *)tn->tn_kiov, NULL,
+					tn->tn_num_iovec, addr, 0,
+					tn->tn_cookie, tn);
+		else
+			rc = kfi_readv(use_endp->end_tx, tn->tn_iov, NULL,
+				       tn->tn_num_iovec, addr, 0, tn->tn_cookie,
+				       tn);
+
+		if (rc == 0)
+			tn->tn_flags |= KFILND_TN_FLAG_RX_POSTED;
+	}
+
 	return rc;
 }
 
@@ -630,24 +740,6 @@ static void kfilnd_fab_process_rpst(void *devctx, void *context, int status)
 	rc = kfilnd_fab_post_buffer(bufdesc);
 	if (rc)
 		CERROR("Could not repost Rx buffer, rc = %d\n", rc);
-}
-
-static void kfilnd_fab_process_tn_cq(void *devctx, void *context, int status)
-{
-	struct kfilnd_transaction *tn = context;
-	int rc;
-
-	if (!tn)
-		return;
-
-	/*
-	 * The status parameter has been sent to the transaction's state
-	 * machine event.
-	 */
-	rc = kfilnd_fab_event_handler(tn, status);
-	if (rc)
-		CERROR("Failed to process event, event = %d, rc = %d\n", status,
-		       rc);
 }
 
 static void kfilnd_fab_process_buf_cq(void *bufctx, void *context, int status)
@@ -689,8 +781,6 @@ static void kfilnd_fab_process_buf_cq(void *bufctx, void *context, int status)
 
 static void kfilnd_fab_tx_cq_handler(struct kfid_cq *cq, void *context)
 {
-	struct kfilnd_dev *dev = context;
-
 	/* Schedule processing of all CQ events */
 	while (1) {
 		struct kfilnd_transaction *tn;
@@ -709,11 +799,10 @@ static void kfilnd_fab_tx_cq_handler(struct kfid_cq *cq, void *context)
 					break;
 				tn = err_event.op_context;
 
-				/* For now, just fail the Tn */
-				if (tn)
-					kfilnd_wkr_post(tn->tn_cpt,
-						       kfilnd_fab_process_tn_cq,
-						       dev, tn, TN_EVENT_FAIL);
+				kfilnd_progress_tx(tn, TN_EVENT_FAIL,
+						   err_event.flags,
+						   -err_event.err,
+						   err_event.prov_errno);
 			}
 
 			/* Processed error events, back to normal events */
@@ -726,25 +815,8 @@ static void kfilnd_fab_tx_cq_handler(struct kfid_cq *cq, void *context)
 		}
 
 		tn = event.op_context;
-		if (tn) {
-			/* There are 3 acceptable flags for events */
-			if (event.flags == (KFI_MSG | KFI_SEND) ||
-			    event.flags == (KFI_RMA | KFI_WRITE) ||
-			    event.flags == (KFI_RMA | KFI_READ)) {
-				tn->tn_flags &= ~KFILND_TN_FLAG_TX_POSTED;
-				kfilnd_wkr_post(tn->tn_cpt,
-						kfilnd_fab_process_tn_cq, dev,
-						tn, TN_EVENT_TX_OK);
-			} else {
-				CERROR("Unexpected Tx event = %llx\n",
-				       event.flags);
-				kfilnd_wkr_post(tn->tn_cpt,
-						kfilnd_fab_process_tn_cq, dev,
-						tn, TN_EVENT_FAIL);
-			}
-		} else
-			CERROR("Bad CQ event, no context, event = %llx\n",
-			       event.flags);
+
+		kfilnd_progress_tx(tn, TN_EVENT_TX_OK, event.flags, 0, 0);
 	}
 }
 
@@ -1495,14 +1567,14 @@ static int kfilnd_fab_tn_imm_send(struct kfilnd_transaction *tn,
 				  enum tn_events event, bool *tn_released)
 {
 	switch (event) {
-	case TN_EVENT_TX_OK:
-		if (tn->tn_status) {
-			CERROR("Successful send but non-zero status: %d\n",
-			       tn->tn_status);
-			tn->tn_status = 0;
-		}
-		/* Fallthrough */
 	case TN_EVENT_FAIL:
+		/* Remove LNet NID from hash if transaction fails. This would
+		 * only get called if the KFI_SEND event has an error.
+		 */
+		kfilnd_remove_peer_address(tn->tn_dev, tn->tn_target_nid);
+
+		/* Fall through. */
+	case TN_EVENT_TX_OK:
 		/*  Finalize the message */
 		if (tn->tn_lntmsg) {
 			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
@@ -1702,16 +1774,16 @@ static int kfilnd_fab_tn_wait_rma(struct kfilnd_transaction *tn,
 				  enum tn_events event, bool *tn_released)
 {
 	switch (event) {
+	case TN_EVENT_FAIL:
+		/* Remove LNet NID from hash only if transaction fails. This
+		 * would only get called if the KFI_RMA or KFI_REMOTE_RMA event
+		 * has an error.
+		 */
+		kfilnd_remove_peer_address(tn->tn_dev, tn->tn_target_nid);
+
+		/* Fall through. */
 	case TN_EVENT_TX_OK:
 	case TN_EVENT_RX_OK:
-		/* Make sure tn_status is zero */
-		if (tn->tn_status) {
-			CWARN("Tn succeeded but status is failure, rc = %d\n",
-			      tn->tn_status);
-			tn->tn_status = 0;
-		}
-		/* Fallthrough */
-	case TN_EVENT_FAIL:
 		if (tn->tn_lntmsg) {
 			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
 			tn->tn_lntmsg = NULL;
