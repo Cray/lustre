@@ -48,6 +48,11 @@
 #include "kfi_errno.h"
 #include "kfi_rma.h"
 
+/* KFILND CFS fail range 0xF100 - 0xF1FF. */
+#define CFS_KFI_FAIL_SEND 0xF100
+#define CFS_KFI_FAIL_READ 0xF101
+#define CFS_KFI_FAIL_WRITE 0xF102
+
 /* Some constants which should be turned into tunables */
 #define KFILND_MAX_BULK_RX 100
 #define KFILND_MAX_TX 100
@@ -265,6 +270,7 @@ struct kfilnd_transaction			/* Both send and receive */
 	struct lnet_msg		*tn_getreply;	/* GET LNet msg to finalize */
 	u64			tn_cookie;	/* unique transaction id */
 	lnet_nid_t		tn_target_nid;	/* NID transaction is with */
+	kfi_addr_t		tn_target_addr;	/* Transaction KFI addr */
 	u32			tn_procid;	/* PROCID transaction is with */
 	int			tn_cpt;		/* CPT we are running under */
 	struct kfilnd_immediate_buffer *tn_posted_buf; /* associated multi-recv
