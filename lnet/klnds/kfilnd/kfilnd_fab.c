@@ -439,10 +439,10 @@ static int kfilnd_fab_unpack_msg(struct kfilnd_msg *msg, int nob)
 	return 0;
 }
 
-static u8 kfilnd_fab_prefer_rx(lnet_nid_t dstnid)
+/* Get a prefer rx (CPT) number from the target NID */
+static u8 kfilnd_fab_prefer_rx(struct kfilnd_transaction *tn)
 {
-	/* TODO: Hash dstnid to get a prefer rx (CPT) number */
-	return 0;
+	return lnet_cpt_of_nid(tn->tn_target_nid, tn->tn_dev->kfd_ni);
 }
 
 static void kfilnd_fab_process_tn_cq(void *devctx, void *context, int status)
@@ -509,8 +509,7 @@ static int kfilnd_fab_post_msg_tx(struct kfilnd_transaction *tn,
 
 	buf = tn->tn_msg;
 	len = tn->tn_msgsz;
-	kfilnd_fab_pack_msg(tn, kfilnd_fab_prefer_rx(tn->tn_target_nid),
-			    tn->rma_rx);
+	kfilnd_fab_pack_msg(tn, kfilnd_fab_prefer_rx(tn));
 
 	context_id = tn->tn_dev->cpt_to_context_id[tn->tn_cpt];
 	use_endp = &tn->tn_dev->kfd_endpoints[context_id];
@@ -1554,9 +1553,9 @@ static int kfilnd_fab_tn_idle(struct kfilnd_transaction *tn,
 		 */
 		tn->rma_rx = msg->kfm_rma_rx;
 
-		/* 
+		/*
 		 * Pass message up to LNet
-		 * The TN will be reused in this call chain so we need to 
+		 * The TN will be reused in this call chain so we need to
 		 * release the lock on the TN before proceeding.
 		 */
 		tn->tn_state = TN_STATE_IMM_RECV;
