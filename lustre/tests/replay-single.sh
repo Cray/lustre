@@ -481,6 +481,7 @@ test_20b() { # bug 10480
 	local n_attempts=1
 
 	sync_all_data
+	save_layout_restore_at_exit $DIR
 	$LFS setstripe -i 0 -c 1 $DIR
 
 	local beforeused=$(df -P $DIR | tail -1 | awk '{ print $3 }')
@@ -4924,7 +4925,8 @@ test_122() {
 
 	replay_barrier mds1
 
-	touch $DIR/$tdir/$tfile
+	$LFS getstripe $DIR || error "$LFS getstripe $DIR failed"
+	touch $DIR/$tdir/$tfile || error "touch failed"
 
 	fail mds1
 
