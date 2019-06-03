@@ -813,7 +813,6 @@ LN_CONFIG_YAML
 AC_DEFUN([LN_CONFIGURE], [
 AC_MSG_NOTICE([LNet core checks
 ==============================================================================])
-LN_CONFIG_MAX_PAYLOAD
 ]) # LN_CONFIGURE
 
 #
