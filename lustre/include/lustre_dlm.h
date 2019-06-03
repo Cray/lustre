@@ -656,11 +656,11 @@ struct ldlm_interval_tree {
  * A lock can be in several liq_waiting lists and it remains in lr_waiting.
  */
 struct ldlm_ibits_queues {
-	struct list_head	liq_waiting[MDS_INODELOCK_MAXSHIFT + 1];
+	struct list_head	liq_waiting[MDS_INODELOCK_NUMBITS + 1];
 };
 
 struct ldlm_ibits_node {
-	struct list_head	lin_link[MDS_INODELOCK_MAXSHIFT + 1];
+	struct list_head	lin_link[MDS_INODELOCK_NUMBITS + 1];
 	struct ldlm_lock	*lock;
 };
 

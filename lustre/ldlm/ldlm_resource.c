@@ -1444,7 +1444,7 @@ static struct ldlm_resource *ldlm_resource_new(enum ldlm_type ldlm_type)
 			OBD_SLAB_FREE_PTR(res, ldlm_resource_slab);
 			return NULL;
 		}
-		for (i = 0; i <= MDS_INODELOCK_MAXSHIFT; i++)
+		for (i = 0; i <= MDS_INODELOCK_NUMBITS; i++)
 			INIT_LIST_HEAD(&res->lr_ibits_queues->liq_waiting[i]);
 	}
 

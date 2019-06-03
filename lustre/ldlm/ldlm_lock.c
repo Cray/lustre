@@ -1693,7 +1693,7 @@ struct ldlm_lock *ldlm_lock_create(struct ldlm_namespace *ns,
 					   ldlm_inodebits_slab);
 			if (lock->l_ibits_node == NULL)
 				GOTO(out, rc = -ENOMEM);
-			for (i = 0; i <= MDS_INODELOCK_MAXSHIFT; i++)
+			for (i = 0; i <= MDS_INODELOCK_NUMBITS; i++)
 				INIT_LIST_HEAD(
 					&lock->l_ibits_node->lin_link[i]);
 			lock->l_ibits_node->lock = lock;

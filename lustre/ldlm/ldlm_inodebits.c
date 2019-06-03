@@ -92,7 +92,7 @@ restart:
 	CDEBUG(D_DLMTRACE, "--- Reprocess resource "DLDLMRES" (%p)\n",
 	       PLDLMRES(res), res);
 
-	for (i = 0; i <= MDS_INODELOCK_MAXSHIFT; i++) {
+	for (i = 0; i <= MDS_INODELOCK_NUMBITS; i++) {
 		struct list_head rpc_list = LIST_HEAD_INIT(rpc_list);
 		struct list_head *head = &queues->liq_waiting[i];
 		struct ldlm_lock *pending;
@@ -516,13 +516,13 @@ void ldlm_inodebits_add_lock(struct ldlm_resource *res, struct list_head *head,
 		return;
 
 	if (head == &res->lr_waiting) {
-		for (i = 0; i <= MDS_INODELOCK_MAXSHIFT; i++) {
+		for (i = 0; i <= MDS_INODELOCK_NUMBITS; i++) {
 			if (lock->l_policy_data.l_inodebits.bits & (1 << i))
 				list_add_tail(&lock->l_ibits_node->lin_link[i],
 					&res->lr_ibits_queues->liq_waiting[i]);
 		}
 	} else if (head == &res->lr_granted && lock->l_ibits_node != NULL) {
-		for (i = 0; i <= MDS_INODELOCK_MAXSHIFT; i++)
+		for (i = 0; i <= MDS_INODELOCK_NUMBITS; i++)
 			LASSERT(list_empty(&lock->l_ibits_node->lin_link[i]));
 		OBD_SLAB_FREE_PTR(lock->l_ibits_node, ldlm_inodebits_slab);
 		lock->l_ibits_node = NULL;
@@ -537,6 +537,6 @@ void ldlm_inodebits_unlink_lock(struct ldlm_lock *lock)
 	if (!ldlm_is_ns_srv(lock))
 		return;
 
-	for (i = 0; i <= MDS_INODELOCK_MAXSHIFT; i++)
+	for (i = 0; i <= MDS_INODELOCK_NUMBITS; i++)
 		list_del_init(&lock->l_ibits_node->lin_link[i]);
 }
