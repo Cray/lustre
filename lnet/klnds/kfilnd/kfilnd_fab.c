@@ -1306,6 +1306,7 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 		       KFI_NAMED_RX_CTX);
 	hints->domain_attr->mr_iov_limit = 256; /* 1 MiB LNet message */
 	hints->domain_attr->mr_cnt = 1024; /* Max LNet credits */
+	hints->domain_attr->mr_mode = KFI_MR_ENDPOINT;
 	hints->ep_attr->max_msg_size = LNET_MAX_PAYLOAD;
 	hints->rx_attr->op_flags = KFI_COMPLETION | KFI_MULTI_RECV;
 	hints->rx_attr->iov_limit = 256; /* 1 MiB LNet message */
@@ -1503,7 +1504,7 @@ static int kfilnd_fab_tn_idle(struct kfilnd_transaction *tn,
 			progression_event = TN_EVENT_RMA_PREP;
 
 			/* A sink or src buffer needs to be setup */
-			rc = kfilnd_mem_setup_rma(tn, true);
+			rc = kfilnd_mem_setup_rma(tn);
 		}
 
 		/*
@@ -1623,30 +1624,20 @@ static int kfilnd_fab_tn_imm_recv(struct kfilnd_transaction *tn,
 
 	switch (event) {
 	case TN_EVENT_RMA_PREP:
-		/* The message received requires a follow-on RMA operation */
-		tn->tn_state = TN_STATE_RMA_START;
-
 		/* Release the buffer we received the request on */
 		rc = kfilnd_fab_post_rx(tn);
 		if (rc < 0)
 			CERROR("Unable to repost Rx buffer, rc = %d\n", rc);
 		reposted = true;
 
-		/* Set up our target RMA buffer */
-		rc = kfilnd_mem_setup_rma(tn, false);
-		if (rc == KFILND_MEM_DONE_SYNC) {
-			/* Initiate the RMA operation */
-			tn->tn_state = TN_STATE_WAIT_RMA;
-			if (tn->tn_flags & KFILND_TN_FLAG_SINK)
-				/* I need to initiate a GET which is a recv */
-				tn->tn_status = kfilnd_fab_post_rx(tn);
-			else
-				/* I need to initiate a PUT which is a tx */
-				tn->tn_status = kfilnd_fab_post_rma_tx(tn);
-		} else if (rc == KFILND_MEM_DONE_ASYNC) {
-			tn->tn_status = 0;
+		/* Initiate the RMA operation */
+		tn->tn_state = TN_STATE_WAIT_RMA;
+		if (tn->tn_flags & KFILND_TN_FLAG_SINK) {
+			/* I need to initiate a GET which is a recv */
+			tn->tn_status = kfilnd_fab_post_rx(tn);
 		} else {
-			tn->tn_status = rc;
+			/* I need to initiate a PUT which is a tx */
+			tn->tn_status = kfilnd_fab_post_rma_tx(tn);
 		}
 
 		if (tn->tn_status == 0)
