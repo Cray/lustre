@@ -23,6 +23,6 @@ struct kfilnd_transaction *kfilnd_mem_get_idle_tn(struct kfilnd_dev *dev,
 						  int cpt, bool alloc_msg);
 void kfilnd_mem_release_tn(struct kfilnd_transaction *tn);
 int kfilnd_mem_setup_immed(struct kfilnd_transaction *tn);
-int kfilnd_mem_setup_rma(struct kfilnd_transaction *tn, bool am_initiator);
+int kfilnd_mem_setup_rma(struct kfilnd_transaction *tn);
 
 #endif /* _KFILND_MEM_ */
