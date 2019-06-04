@@ -560,7 +560,7 @@ static int kfilnd_fab_post_msg_tx(struct kfilnd_transaction *tn,
 	return rc;
 }
 
-static int kfilnd_fab_post_rma_tx(struct kfilnd_transaction *tn)
+static int kfilnd_fab_post_rma(struct kfilnd_transaction *tn)
 {
 	int rc;
 	struct kfilnd_endpoints *use_endp;
@@ -570,12 +570,17 @@ static int kfilnd_fab_post_rma_tx(struct kfilnd_transaction *tn)
 	if (!tn->tn_dev || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
 		return -EINVAL;
 
-	context_id = tn->tn_dev->cpt_to_context_id[tn->tn_cpt];
-	use_endp = &tn->tn_dev->kfd_endpoints[context_id];
+	if (tn->tn_state != TN_STATE_WAIT_RMA) {
+		CERROR("Transaction in bad state for RMA\n");
+		return -EINVAL;
+	}
 
 	/* Make sure the device is not being shut down */
 	if (tn->tn_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
+
+	context_id = tn->tn_dev->cpt_to_context_id[tn->tn_cpt];
+	use_endp = &tn->tn_dev->kfd_endpoints[context_id];
 
 	/* Find the peer's address and update to the RMA RX context. */
 	rc = kfilnd_lookup_peer_address(tn->tn_dev, tn->tn_target_nid, &addr);
@@ -588,9 +593,30 @@ static int kfilnd_fab_post_rma_tx(struct kfilnd_transaction *tn)
 	/* Progress transaction to failure if read should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE)) {
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
-		rc = 0;
-		kfilnd_progress_tx(tn, TN_EVENT_FAIL, KFI_RMA | KFI_WRITE, -EIO,
-				   0);
+
+		if (tn->tn_flags & KFILND_TN_FLAG_SINK)
+			kfilnd_progress_tx(tn, TN_EVENT_FAIL,
+					   KFI_RMA | KFI_READ, -EIO, 0);
+		else
+			kfilnd_progress_tx(tn, TN_EVENT_FAIL,
+					   KFI_RMA | KFI_WRITE, -EIO, 0);
+
+		return 0;
+	}
+
+	/* A sink RMA transaction requires the data to be read from the peer.
+	 * Non-sink RMA transaction requires the data to be written to the peer.
+	 */
+	if (tn->tn_flags & KFILND_TN_FLAG_SINK) {
+		if (tn->tn_kiov)
+			rc = kfi_readbv(use_endp->end_tx,
+					(struct bio_vec *)tn->tn_kiov, NULL,
+					tn->tn_num_iovec, addr, 0,
+					tn->tn_cookie, tn);
+		else
+			rc = kfi_readv(use_endp->end_tx, tn->tn_iov, NULL,
+				       tn->tn_num_iovec, addr, 0, tn->tn_cookie,
+				       tn);
 	} else {
 		if (tn->tn_kiov)
 			rc = kfi_writebv(use_endp->end_tx,
@@ -601,10 +627,10 @@ static int kfilnd_fab_post_rma_tx(struct kfilnd_transaction *tn)
 			rc = kfi_writev(use_endp->end_tx, tn->tn_iov, NULL,
 					tn->tn_num_iovec, addr, 0,
 					tn->tn_cookie, tn);
-
-		if (rc == 0)
-			tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
 	}
+
+	if (rc == 0)
+		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
 
 	return rc;
 }
@@ -646,75 +672,17 @@ static int kfilnd_fab_post_buffer(struct kfilnd_immediate_buffer *buf)
 
 static int kfilnd_fab_post_rx(struct kfilnd_transaction *tn)
 {
-	struct kfilnd_endpoints *use_endp;
-	int rc;
-	kfi_addr_t addr;
-	int context_id;
-
-	/* See if this is reposting a multi-use buffer */
-	if (tn->tn_posted_buf && (tn->tn_state != TN_STATE_WAIT_RMA)) {
-		/*
-		 * Caller is no longer using the buffer so dec the ref counter
-		 * and test if it has become zero.  If so, we need to repost
-		 * it.
-		 */
-		if (atomic_dec_and_test(&tn->tn_posted_buf->immed_ref))
-			return kfilnd_fab_post_buffer(tn->tn_posted_buf);
-		return 0;
-	}
-
-	/* If we get here, we are performing an RMA operation */
-
-	if (!tn->tn_dev || !tn->tn_dev->kfd_endpoints ||
-	    tn->tn_flags & KFILND_TN_FLAG_RX_POSTED)
-		return -EINVAL;
-
-	if (tn->tn_state == TN_STATE_IDLE) {
-		/*
-		 * We are receiving a message.  This should only be done via
-		 * multi-receive buffers so we should never get here.
-		 */
-		CERROR("Trying to receive outside of multi-receive buffer\n");
+	if (!tn->tn_posted_buf) {
+		CERROR("Cannot post NULL RX buffer\n");
 		return -EINVAL;
 	}
 
-	context_id = tn->tn_dev->cpt_to_context_id[tn->tn_cpt];
-	use_endp = &tn->tn_dev->kfd_endpoints[context_id];
-
-	/* Make sure the device is not being shut down */
-	if (tn->tn_dev->kfd_state != KFILND_STATE_INITIALIZED)
-		return -EINVAL;
-
-	/* Find the peer's address and update to the RMA RX context. */
-	rc = kfilnd_lookup_peer_address(tn->tn_dev, tn->tn_target_nid, &addr);
-	if (rc)
-		return rc;
-	addr = kfi_rx_addr(KFILND_BASE_ADDR(addr), tn->rma_rx,
-			   KFILND_FAB_RX_CTX_BITS);
-	tn->tn_target_addr = addr;
-
-	/* Progress transaction to failure if read should fail. */
-	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ)) {
-		tn->tn_flags |= KFILND_TN_FLAG_RX_POSTED;
-		rc = 0;
-		kfilnd_progress_tx(tn, TN_EVENT_FAIL, KFI_RMA | KFI_READ, -EIO,
-				   0);
-	} else {
-		if (tn->tn_kiov)
-			rc = kfi_readbv(use_endp->end_tx,
-					(struct bio_vec *)tn->tn_kiov, NULL,
-					tn->tn_num_iovec, addr, 0,
-					tn->tn_cookie, tn);
-		else
-			rc = kfi_readv(use_endp->end_tx, tn->tn_iov, NULL,
-				       tn->tn_num_iovec, addr, 0, tn->tn_cookie,
-				       tn);
-
-		if (rc == 0)
-			tn->tn_flags |= KFILND_TN_FLAG_RX_POSTED;
-	}
-
-	return rc;
+	/* Caller is no longer using the buffer so dec the ref counter and test
+	 * if it has become zero.  If so, we need to repost it.
+	 */
+	if (atomic_dec_and_test(&tn->tn_posted_buf->immed_ref))
+		return kfilnd_fab_post_buffer(tn->tn_posted_buf);
+	return 0;
 }
 
 /*
@@ -1632,14 +1600,7 @@ static int kfilnd_fab_tn_imm_recv(struct kfilnd_transaction *tn,
 
 		/* Initiate the RMA operation */
 		tn->tn_state = TN_STATE_WAIT_RMA;
-		if (tn->tn_flags & KFILND_TN_FLAG_SINK) {
-			/* I need to initiate a GET which is a recv */
-			tn->tn_status = kfilnd_fab_post_rx(tn);
-		} else {
-			/* I need to initiate a PUT which is a tx */
-			tn->tn_status = kfilnd_fab_post_rma_tx(tn);
-		}
-
+		tn->tn_status = kfilnd_fab_post_rma(tn);
 		if (tn->tn_status == 0)
 			break;
 		/* On any failure, fallthrough */
@@ -1729,12 +1690,7 @@ static int kfilnd_fab_tn_rma_start(struct kfilnd_transaction *tn,
 	case TN_EVENT_MR_OK:
 		/* Initiate the RMA operation */
 		tn->tn_state = TN_STATE_WAIT_RMA;
-		if (tn->tn_flags & KFILND_TN_FLAG_SINK)
-			/* I need to initiate a GET which is a recv */
-			tn->tn_status = kfilnd_fab_post_rx(tn);
-		else
-			/* I need to initiate a PUT which is a tx */
-			tn->tn_status = kfilnd_fab_post_rma_tx(tn);
+		tn->tn_status = kfilnd_fab_post_rma(tn);
 		if (tn->tn_status == 0)
 			break;
 		/* On failure, fallthrough */
