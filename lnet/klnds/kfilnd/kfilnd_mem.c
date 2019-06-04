@@ -142,7 +142,7 @@ int kfilnd_mem_setup_immed(struct kfilnd_transaction *tn)
 	return 0;
 }
 
-int kfilnd_mem_setup_rma(struct kfilnd_transaction *tn, bool am_initiator)
+int kfilnd_mem_setup_rma(struct kfilnd_transaction *tn)
 {
 	int rc;
 	uint64_t access;
@@ -151,10 +151,6 @@ int kfilnd_mem_setup_rma(struct kfilnd_transaction *tn, bool am_initiator)
 
 	if (!tn->tn_nob_iovec || (!tn->tn_kiov && !tn->tn_iov) || !tn->tn_dev)
 		return -EINVAL;
-
-	/* If I am not the initiator, I don't need an MR */
-	if (!am_initiator)
-		return KFILND_MEM_DONE_SYNC;
 
 	/* Lookup the RX context assigned to this CPT. */
 	context_id = tn->tn_dev->cpt_to_context_id[tn->tn_cpt];
