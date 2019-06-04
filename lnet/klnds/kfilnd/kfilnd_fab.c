@@ -1592,33 +1592,6 @@ static int kfilnd_fab_tn_imm_send(struct kfilnd_transaction *tn,
 	return 0;
 }
 
-static int kfilnd_fab_tn_rma_send(struct kfilnd_transaction *tn,
-				  enum tn_events event, bool *tn_released)
-{
-	switch (event) {
-	case TN_EVENT_TX_OK:
-	case TN_EVENT_RX_OK:
-		/*  Now wait for the remote RMA event */
-		tn->tn_state = TN_STATE_WAIT_RMA;
-		break;
-	case TN_EVENT_FAIL:
-		/*  Finalize the message */
-		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
-			tn->tn_lntmsg = NULL;
-		}
-		tn->tn_state = TN_STATE_IDLE;
-		spin_unlock(&tn->tn_lock);
-		kfilnd_mem_release_tn(tn);
-		*tn_released = true;
-		break;
-	default:
-		CERROR("Invalid event for rma send state: %d\n", event);
-		return -EINVAL;
-	}
-	return 0;
-}
-
 static int kfilnd_fab_tn_imm_recv(struct kfilnd_transaction *tn,
 				  enum tn_events event, bool *tn_released)
 {
@@ -1826,9 +1799,6 @@ int kfilnd_fab_event_handler(struct kfilnd_transaction *tn,
 		break;
 	case TN_STATE_IMM_SEND:
 		rc = kfilnd_fab_tn_imm_send(tn, event, &tn_released);
-		break;
-	case TN_STATE_RMA_SEND:
-		rc = kfilnd_fab_tn_rma_send(tn, event, &tn_released);
 		break;
 	case TN_STATE_IMM_RECV:
 		rc = kfilnd_fab_tn_imm_recv(tn, event, &tn_released);
