@@ -1377,6 +1377,11 @@ restart:
 
 		switch (vio->vui_io_subtype) {
 		case IO_NORMAL:
+#ifdef HAVE_GENERIC_WRITE_SYNC_2ARGS
+			if (iot == CIT_WRITE &&
+			    vio->vui_iocb->ki_flags & IOCB_DSYNC)
+				io->u.ci_wr.rw_sync = 1;
+#endif
 			/* Direct IO reads must also take range lock,
 			 * or multiple reads will try to work on the same pages
 			 * See LU-6227 for details. */
