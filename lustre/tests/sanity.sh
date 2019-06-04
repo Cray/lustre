@@ -20584,7 +20584,14 @@ test_814()
 }
 run_test 814 "sparse cp works as expected (LU-12361)"
 
-test_815() {
+test_815()
+{
+	writeme -b 100 $DIR/$tfile || error "write 100 bytes failed"
+	writeme -b 0 $DIR/$tfile || error "write 0 byte failed"
+}
+run_test 815 "zero byte tiny write doesn't hang (LU-12382)"
+
+test_816() {
 	$LFS setstripe -c 1 -i 0 $DIR/$tfile
 	# ensure ost1 is connected
 	stat $DIR/$tfile >/dev/null || error "can't stat"
@@ -20603,7 +20610,7 @@ test_815() {
 	      ldlm.namespaces.$FSNAME-OST0000-osc-[^M]*.lru_size)
 	[ $before == $now ] || error "lru_size changed $before != $now"
 }
-run_test 815 "do not reset lru_resize on idle reconnect"
+run_test 816 "do not reset lru_resize on idle reconnect"
 
 #
 # tests that do cleanup/setup should be run at the end
