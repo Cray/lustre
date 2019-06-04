@@ -234,7 +234,6 @@ struct kfilnd_msg
 enum tn_states {
 	TN_STATE_IDLE = 0,
 	TN_STATE_IMM_SEND,
-	TN_STATE_RMA_SEND,
 	TN_STATE_IMM_RECV,
 	TN_STATE_REG_MEM,
 	TN_STATE_RMA_START,
