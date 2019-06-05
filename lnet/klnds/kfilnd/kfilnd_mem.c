@@ -45,6 +45,15 @@ struct kfilnd_transaction *kfilnd_mem_get_idle_tn(struct kfilnd_dev *dev,
 	if (!dev)
 		return NULL;
 
+	/* If the CPT does not fall into the LNet NI CPT range, force the CPT
+	 * into the LNet NI CPT range. This should never happen.
+	 */
+	if (dev->cpt_to_context_id[cpt] == -1) {
+		CWARN("%s used invalid cpt=%d\n",
+		      libcfs_nid2str(dev->kfd_ni->ni_nid), cpt);
+		cpt = dev->context_id_to_cpt[0];
+	}
+
 	tn = kmem_cache_alloc(tn_cache, GFP_KERNEL);
 	if (!tn)
 		return NULL;
@@ -137,6 +146,8 @@ int kfilnd_mem_setup_rma(struct kfilnd_transaction *tn, bool am_initiator)
 {
 	int rc;
 	uint64_t access;
+	int context_id;
+	struct kfid_ep *end_rx;
 
 	if (!tn->tn_nob_iovec || (!tn->tn_kiov && !tn->tn_iov) || !tn->tn_dev)
 		return -EINVAL;
@@ -144,6 +155,10 @@ int kfilnd_mem_setup_rma(struct kfilnd_transaction *tn, bool am_initiator)
 	/* If I am not the initiator, I don't need an MR */
 	if (!am_initiator)
 		return KFILND_MEM_DONE_SYNC;
+
+	/* Lookup the RX context assigned to this CPT. */
+	context_id = tn->tn_dev->cpt_to_context_id[tn->tn_cpt];
+	end_rx = tn->tn_dev->kfd_endpoints[context_id].end_rx;
 
 	/* Determine access setting based on whether this is a sink or source */
 	access = (tn->tn_flags & KFILND_TN_FLAG_SINK) ? KFI_REMOTE_WRITE :
@@ -166,14 +181,12 @@ int kfilnd_mem_setup_rma(struct kfilnd_transaction *tn, bool am_initiator)
 	}
 
 	/* The MR needs to be bound to the Rx context which owns it */
-	rc = kfi_mr_bind(tn->tn_mr,
-			 &tn->tn_dev->kfd_endpoints[tn->tn_cpt]->end_rx->fid,
-			 0);
+	rc = kfi_mr_bind(tn->tn_mr, &end_rx->fid, 0);
 	if (rc) {
 		CERROR("kfi_mr_bind failed: rc = %d", rc);
 		goto failed;
 	}
-	tn->rma_rx = tn->tn_cpt;
+	tn->rma_rx = context_id;
 
 	rc = kfi_mr_enable(tn->tn_mr);
 	if (rc) {
