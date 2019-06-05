@@ -135,7 +135,6 @@ struct kfilnd_dev {
 	char			kfd_ifname[KFI_IFNAME_SIZE];
 	int			kfd_nnets;	/* # nets extant */
 	struct list_head	kfd_nets;
-	int			kfd_cpt;
 	struct lnet_ni		*kfd_ni;
 	enum kfilnd_object_states kfd_state;
 	struct list_head	kfd_tns;	/* Outstanding transactions */
@@ -148,7 +147,11 @@ struct kfilnd_dev {
 	struct kfid_domain	*kfd_domain;
 	struct kfid_ep		*kfd_sep;
 	struct kfid_av		*kfd_av;
-	struct kfilnd_endpoints	**kfd_endpoints;
+	struct kfilnd_endpoints	*kfd_endpoints;
+
+	/* Map of LNet NI CPTs to context IDs and back. */
+	int			*cpt_to_context_id;
+	int			*context_id_to_cpt;
 
 	/* Hash of LNet NIDs to KFI addresses. */
 	struct cfs_hash *nid_hash;
