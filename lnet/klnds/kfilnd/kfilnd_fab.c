@@ -502,6 +502,7 @@ static int kfilnd_fab_post_msg_tx(struct kfilnd_transaction *tn,
 	int rc;
 	struct kfilnd_endpoints *use_endp;
 	kfi_addr_t addr;
+	int context_id;
 
 	if (!tn->tn_dev || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
 		return -EINVAL;
@@ -511,11 +512,8 @@ static int kfilnd_fab_post_msg_tx(struct kfilnd_transaction *tn,
 	kfilnd_fab_pack_msg(tn, kfilnd_fab_prefer_rx(tn->tn_target_nid),
 			    tn->rma_rx);
 
-	/*
-	 * Currently, we are configured for all CPTs.  Later, this needs
-	 * to change as an NI can be associated with only a subset of CPTs.
-	 */
-	use_endp = tn->tn_dev->kfd_endpoints[tn->tn_cpt];
+	context_id = tn->tn_dev->cpt_to_context_id[tn->tn_cpt];
+	use_endp = &tn->tn_dev->kfd_endpoints[context_id];
 
 	/* Make sure the device is not being shut down */
 	if (tn->tn_dev->kfd_state != KFILND_STATE_INITIALIZED)
@@ -568,15 +566,13 @@ static int kfilnd_fab_post_rma_tx(struct kfilnd_transaction *tn)
 	int rc;
 	struct kfilnd_endpoints *use_endp;
 	kfi_addr_t addr;
+	int context_id;
 
 	if (!tn->tn_dev || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
 		return -EINVAL;
 
-	/*
-	 * Currently, we are configured for all CPTs.  Later, this needs
-	 * to change as an NI can be associated with only a subset of CPTs.
-	 */
-	use_endp = tn->tn_dev->kfd_endpoints[tn->tn_cpt];
+	context_id = tn->tn_dev->cpt_to_context_id[tn->tn_cpt];
+	use_endp = &tn->tn_dev->kfd_endpoints[context_id];
 
 	/* Make sure the device is not being shut down */
 	if (tn->tn_dev->kfd_state != KFILND_STATE_INITIALIZED)
@@ -654,6 +650,7 @@ static int kfilnd_fab_post_rx(struct kfilnd_transaction *tn)
 	struct kfilnd_endpoints *use_endp;
 	int rc;
 	kfi_addr_t addr;
+	int context_id;
 
 	/* See if this is reposting a multi-use buffer */
 	if (tn->tn_posted_buf && (tn->tn_state != TN_STATE_WAIT_RMA)) {
@@ -682,11 +679,8 @@ static int kfilnd_fab_post_rx(struct kfilnd_transaction *tn)
 		return -EINVAL;
 	}
 
-	/*
-	 * Currently, we are configured for all CPTs.  Later, this needs
-	 * to change as an NI can be associated with only a subset of CPTs.
-	 */
-	use_endp = tn->tn_dev->kfd_endpoints[tn->tn_cpt];
+	context_id = tn->tn_dev->cpt_to_context_id[tn->tn_cpt];
+	use_endp = &tn->tn_dev->kfd_endpoints[context_id];
 
 	/* Make sure the device is not being shut down */
 	if (tn->tn_dev->kfd_state != KFILND_STATE_INITIALIZED)
@@ -757,7 +751,7 @@ static void kfilnd_fab_process_buf_cq(void *bufctx, void *context, int status)
 	 * Allocate a Tn structure, set its values, then launch the receive.
 	 */
 	tn = kfilnd_mem_get_idle_tn(bufdesc->immed_end->end_dev,
-				    lnet_cpt_current(), false);
+				    bufdesc->immed_end->end_cpt, false);
 	if (!tn) {
 		CERROR("Can't get receive Tn: Tn descs exhausted\n");
 		return;
@@ -967,12 +961,13 @@ static void kfilnd_fab_clean_immed_rx(struct kfilnd_dev *dev)
 {
 	struct kfilnd_endpoints *end;
 	int i;
+	int j;
 
 	if (!dev->kfd_endpoints)
 		return;
 
-	cfs_percpt_for_each(end, i, dev->kfd_endpoints) {
-		int j;
+	for (i = 0; i < dev->kfd_ni->ni_ncpts; i++) {
+		end = &dev->kfd_endpoints[i];
 
 		/* Unlink all posted buffers for endpoint */
 		for (j = 0; j < KFILND_NUM_IMMEDIATE_BUFFERS; j++) {
@@ -1008,8 +1003,9 @@ int kfilnd_fab_post_immed_rx(struct kfilnd_dev *dev, unsigned int nrx,
 			     unsigned int rx_size)
 {
 	struct kfilnd_endpoints *end;
-	int cpt;
 	int rc = 0;
+	int i;
+	int j;
 
 	if (!dev)
 		return -EINVAL;
@@ -1026,31 +1022,26 @@ int kfilnd_fab_post_immed_rx(struct kfilnd_dev *dev, unsigned int nrx,
 	 * way should be devised in the future.
 	 */
 
-	/*
-	 * Post immediate buffers to each RX context.
-	 * TODO: This assumes we are configuring this device for all CPTs.
-	 * It is possible to have an NI configured for only a subset of CPTs
-	 * so this code needs to be changed to only post for the configured
-	 * CPTs.
-	 */
-	cfs_percpt_for_each(end, cpt, dev->kfd_endpoints) {
-		int i;
+	/* Post immediate buffers to each RX context. */
+	for (i = 0; i < dev->kfd_ni->ni_ncpts; i++) {
+		end = &dev->kfd_endpoints[i];
 
 		/* Allocate multi-receive buffers */
-		for (i = 0; i < KFILND_NUM_IMMEDIATE_BUFFERS; i++) {
-			atomic_set(&end->end_immed_bufs[i].immed_ref, 0);
-			end->end_immed_bufs[i].immed_buf =
-				kfilnd_mem_get_buffer(rx_size, nrx, cpt);
-			if (!end->end_immed_bufs[i].immed_buf) {
+		for (j = 0; j < KFILND_NUM_IMMEDIATE_BUFFERS; j++) {
+			atomic_set(&end->end_immed_bufs[j].immed_ref, 0);
+			end->end_immed_bufs[j].immed_buf =
+				kfilnd_mem_get_buffer(rx_size, nrx,
+						      end->end_cpt);
+			if (!end->end_immed_bufs[j].immed_buf) {
 				CERROR("Cannot allocate Rx buffers\n");
 				rc = -ENOMEM;
 				goto failed;
 			}
-			end->end_immed_bufs[i].immed_buf_size = rx_size * nrx;
-			end->end_immed_bufs[i].immed_end = end;
+			end->end_immed_bufs[j].immed_buf_size = rx_size * nrx;
+			end->end_immed_bufs[j].immed_end = end;
 
 			/* Post buffer */
-			rc = kfilnd_fab_post_buffer(&end->end_immed_bufs[i]);
+			rc = kfilnd_fab_post_buffer(&end->end_immed_bufs[j]);
 			if (rc)
 				goto failed;
 		}
@@ -1119,17 +1110,18 @@ void kfilnd_fab_cleanup_dev(struct kfilnd_dev *dev)
 
 	/* Deal with RX/TX contexts if there are any */
 	if (dev->kfd_endpoints) {
-		struct kfilnd_endpoints *endpoint;
 		int i;
 
-		/* Delete the RX/TX contexts for each CPT */
-		cfs_percpt_for_each(endpoint, i, dev->kfd_endpoints)
-			kfilnd_fab_cleanup_endpoint(endpoint);
+		for (i = 0; i < dev->kfd_ni->ni_ncpts; i++)
+			kfilnd_fab_cleanup_endpoint(&dev->kfd_endpoints[i]);
 
 		/* Free the endpoints structure */
-		cfs_percpt_free(dev->kfd_endpoints);
+		kfree(dev->kfd_endpoints);
 		dev->kfd_endpoints = NULL;
 	}
+
+	kfree(dev->cpt_to_context_id);
+	kfree(dev->context_id_to_cpt);
 
 	/* Next, close the scalable endpoint if there is one */
 	if (dev->kfd_sep) {
@@ -1173,13 +1165,14 @@ void kfilnd_fab_cleanup_dev(struct kfilnd_dev *dev)
 
 static int kfilnd_fab_initialize_endpoint(struct kfilnd_dev *dev,
 					  unsigned int cpt,
+					  unsigned int context_id,
 					  struct kfilnd_endpoints *endpoint)
 {
 	int rc;
 	struct kfi_cq_attr cq_attr = {};
 	struct kfi_rx_attr rx_attr = {};
 	struct kfi_tx_attr tx_attr = {};
-	int ncpts = cfs_cpt_number(lnet_cpt_table());
+	int ncpts = dev->kfd_ni->ni_ncpts;
 	size_t min_multi_recv = KFILND_IMMEDIATE_MSG_SIZE;
 
 	if (endpoint->end_rx || endpoint->end_tx)
@@ -1219,8 +1212,8 @@ static int kfilnd_fab_initialize_endpoint(struct kfilnd_dev *dev,
 	rx_attr.total_buffered_recv = 0;
 	rx_attr.size = (KFILND_MAX_BULK_RX + ncpts - 1) / ncpts;
 	rx_attr.iov_limit = LNET_MAX_IOV;
-	rc = kfi_rx_context(dev->kfd_sep, cpt, &rx_attr, &endpoint->end_rx,
-			    dev);
+	rc = kfi_rx_context(dev->kfd_sep, context_id, &rx_attr,
+			    &endpoint->end_rx, dev);
 	if (rc) {
 		CERROR("Could not create Rx endpoint on CPT %d, rc = %d\n", cpt,
 		       rc);
@@ -1244,8 +1237,8 @@ static int kfilnd_fab_initialize_endpoint(struct kfilnd_dev *dev,
 	tx_attr.size = (KFILND_MAX_TX + ncpts - 1) / ncpts;
 	tx_attr.iov_limit = LNET_MAX_IOV;
 	tx_attr.rma_iov_limit = LNET_MAX_IOV;
-	rc = kfi_tx_context(dev->kfd_sep, cpt, &tx_attr, &endpoint->end_tx,
-			    dev);
+	rc = kfi_tx_context(dev->kfd_sep, context_id, &tx_attr,
+			    &endpoint->end_tx, dev);
 	if (rc) {
 		CERROR("Could not create Tx endpoint on CPT %d, rc = %d\n", cpt,
 		       rc);
@@ -1295,6 +1288,8 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 	char srvstr[4];
 	char *nodestr = NULL;
 	char *hash_name = NULL;
+	int cpt;
+	int lnet_ncpts;
 
 	if (!dev || (dev->kfd_state != KFILND_STATE_UNINITIALIZED))
 		return -EINVAL;
@@ -1399,19 +1394,48 @@ int kfilnd_fab_initialize_dev(struct kfilnd_dev *dev)
 		goto out_err;
 	}
 
-	/* Allocate a TX/RX context per CPT */
-	dev->kfd_endpoints = cfs_percpt_alloc(lnet_cpt_table(),
-					      sizeof(*endpoint));
+	/* Allocate a TX/RX context per LNet NI CPT */
+	dev->kfd_endpoints = kcalloc(dev->kfd_ni->ni_ncpts,
+				     sizeof(*dev->kfd_endpoints), GFP_KERNEL);
 	if (!dev->kfd_endpoints) {
 		rc = -ENOMEM;
 		goto out_err;
 	}
 
-	/* Create RX/TX contexts in kfabric for each CPT */
-	cfs_percpt_for_each(endpoint, i, dev->kfd_endpoints) {
-		rc = kfilnd_fab_initialize_endpoint(dev, i, endpoint);
+	/* Map of all LNet CPTs to context ID. */
+	lnet_ncpts = cfs_cpt_number(lnet_cpt_table());
+	dev->cpt_to_context_id = kcalloc(lnet_ncpts,
+					 sizeof(*dev->cpt_to_context_id),
+					 GFP_KERNEL);
+	if (!dev->cpt_to_context_id) {
+		rc = -ENOMEM;
+		goto out_err;
+	}
+
+	/* CPTs with a -1 are invalid. */
+	for (i = 0; i < lnet_ncpts; i++)
+		dev->cpt_to_context_id[i] = -1;
+
+	/* Map of context IDs to LNet NI CPTs. */
+	dev->context_id_to_cpt = kcalloc(dev->kfd_ni->ni_ncpts,
+					 sizeof(*dev->context_id_to_cpt),
+					 GFP_KERNEL);
+	if (!dev->context_id_to_cpt) {
+		rc = -ENOMEM;
+		goto out_err;
+	}
+
+	/* Create RX/TX contexts in kfabric for each LNet NI CPT. */
+	for (i = 0; i < dev->kfd_ni->ni_ncpts; i++) {
+		cpt = !dev->kfd_ni->ni_cpts ? i : dev->kfd_ni->ni_cpts[i];
+		endpoint = &dev->kfd_endpoints[i];
+
+		rc = kfilnd_fab_initialize_endpoint(dev, cpt, i, endpoint);
 		if (rc)
 			goto out_err;
+
+		dev->cpt_to_context_id[cpt] = i;
+		dev->context_id_to_cpt[i] = cpt;
 	}
 
 	/* Hash for LNet NIDs to KFI addresses. */

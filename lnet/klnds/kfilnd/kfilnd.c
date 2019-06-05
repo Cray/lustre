@@ -279,6 +279,19 @@ static unsigned int kfilnd_init_proto(struct kfilnd_msg *msg, int type,
 	return msg->kfm_nob;
 }
 
+static int kfilnd_send_cpt(struct kfilnd_dev *dev, lnet_nid_t nid)
+{
+	int cpt;
+
+	/* If the current CPT has is within the LNet NI CPTs, use that CPT. */
+	cpt = lnet_cpt_current();
+	if (dev->cpt_to_context_id[cpt] >= 0)
+		return cpt;
+
+	/* Hash to a LNet NI CPT based on target NID. */
+	return  dev->context_id_to_cpt[nid % dev->kfd_ni->ni_ncpts];
+}
+
 static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 {
 	struct lnet_hdr		*hdr = &msg->msg_hdr;
@@ -290,6 +303,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	struct kfilnd_net	*net = ni->ni_data;
 	unsigned int		lnd_msg_type = 0;
 	int			rc = 0;
+	int			cpt;
 
 	/* NB 'private' is different depending on what we're sending.... */
 
@@ -338,14 +352,8 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		break;
 	}
 
-	/*
-	 * Get a transaction structure from the pool.
-	 * Set the transaction's CPT to the CPT we are currently running on.
-	 * This assumes the NI is configured for all CPTs.  This needs to be
-	 * changed later to ensure we only associate the Tn with a configured
-	 * CPT.
-	 */
-	tn = kfilnd_mem_get_idle_tn(net->kfn_dev, lnet_cpt_current(), true);
+	cpt = kfilnd_send_cpt(net->kfn_dev, target.nid);
+	tn = kfilnd_mem_get_idle_tn(net->kfn_dev, cpt, true);
 	if (!tn) {
 		CERROR("Can't send %d to %s: Tn descs exhausted\n",
 		       type, libcfs_nid2str(target.nid));
