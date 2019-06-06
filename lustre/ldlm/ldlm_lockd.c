@@ -3216,11 +3216,17 @@ int ldlm_init(void)
 		goto out_interval;
 
 #ifdef HAVE_SERVER_SUPPORT
+	ldlm_inodebits_slab = kmem_cache_create("ldlm_ibits_node",
+                                        sizeof(struct ldlm_ibits_node),
+					0, SLAB_HWCACHE_ALIGN, NULL);
+	if (ldlm_inodebits_slab == NULL)
+		goto out_interval_tree;
+
 	ldlm_glimpse_work_kmem = kmem_cache_create("ldlm_glimpse_work_kmem",
 					sizeof(struct ldlm_glimpse_work),
 					0, 0, NULL);
 	if (ldlm_glimpse_work_kmem == NULL)
-		goto out_interval_tree;
+		goto out_inodebits;
 #endif
 
 #if LUSTRE_TRACKS_LOCK_EXP_REFS
@@ -3228,6 +3234,8 @@ int ldlm_init(void)
 #endif
 	return 0;
 #ifdef HAVE_SERVER_SUPPORT
+out_inodebits:
+	kmem_cache_destroy(ldlm_inodebits_slab);
 out_interval_tree:
 	kmem_cache_destroy(ldlm_interval_tree_slab);
 #endif
@@ -3254,6 +3262,7 @@ void ldlm_exit(void)
 	kmem_cache_destroy(ldlm_interval_slab);
 	kmem_cache_destroy(ldlm_interval_tree_slab);
 #ifdef HAVE_SERVER_SUPPORT
+	kmem_cache_destroy(ldlm_inodebits_slab);
 	kmem_cache_destroy(ldlm_glimpse_work_kmem);
 #endif
 }

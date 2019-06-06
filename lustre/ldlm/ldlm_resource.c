@@ -44,6 +44,7 @@
 
 struct kmem_cache *ldlm_resource_slab, *ldlm_lock_slab;
 struct kmem_cache *ldlm_interval_tree_slab;
+struct kmem_cache *ldlm_inodebits_slab;
 
 int ldlm_srv_namespace_nr = 0;
 int ldlm_cli_namespace_nr = 0;
@@ -1435,6 +1436,16 @@ static struct ldlm_resource *ldlm_resource_new(enum ldlm_type ldlm_type)
 			res->lr_itree[idx].lit_mode = 1 << idx;
 			res->lr_itree[idx].lit_root = NULL;
 		}
+	} else if (ldlm_type == LDLM_IBITS) {
+		int i;
+
+		OBD_ALLOC_PTR(res->lr_ibits_queues);
+		if (res->lr_ibits_queues == NULL) {
+			OBD_SLAB_FREE_PTR(res, ldlm_resource_slab);
+			return NULL;
+		}
+		for (i = 0; i <= MDS_INODELOCK_MAXSHIFT; i++)
+			INIT_LIST_HEAD(&res->lr_ibits_queues->liq_waiting[i]);
 	}
 
 	INIT_LIST_HEAD(&res->lr_granted);
@@ -1451,6 +1462,20 @@ static struct ldlm_resource *ldlm_resource_new(enum ldlm_type ldlm_type)
 	res->lr_lvb_initialized = false;
 
 	return res;
+}
+
+static void ldlm_resource_free(struct ldlm_resource *res)
+{
+	if (res->lr_type == LDLM_EXTENT) {
+		if (res->lr_itree != NULL)
+			OBD_SLAB_FREE(res->lr_itree, ldlm_interval_tree_slab,
+				      sizeof(*res->lr_itree) * LCK_MODE_NUM);
+	} else if (res->lr_type == LDLM_IBITS) {
+		if (res->lr_ibits_queues != NULL)
+			OBD_FREE_PTR(res->lr_ibits_queues);
+	}
+
+	OBD_SLAB_FREE(res, ldlm_resource_slab, sizeof *res);
 }
 
 /**
@@ -1507,10 +1532,7 @@ ldlm_resource_get(struct ldlm_namespace *ns, struct ldlm_resource *parent,
 		cfs_hash_bd_unlock(ns->ns_rs_hash, &bd, 1);
 		/* Clean lu_ref for failed resource. */
 		lu_ref_fini(&res->lr_reference);
-		if (res->lr_itree != NULL)
-			OBD_SLAB_FREE(res->lr_itree, ldlm_interval_tree_slab,
-				      sizeof(*res->lr_itree) * LCK_MODE_NUM);
-		OBD_SLAB_FREE(res, ldlm_resource_slab, sizeof *res);
+		ldlm_resource_free(res);
 found:
 		res = hlist_entry(hnode, struct ldlm_resource, lr_hash);
 		return res;
@@ -1591,10 +1613,7 @@ int ldlm_resource_putref(struct ldlm_resource *res)
 		cfs_hash_bd_unlock(ns->ns_rs_hash, &bd, 1);
 		if (ns->ns_lvbo && ns->ns_lvbo->lvbo_free)
 			ns->ns_lvbo->lvbo_free(res);
-		if (res->lr_itree != NULL)
-			OBD_SLAB_FREE(res->lr_itree, ldlm_interval_tree_slab,
-				      sizeof(*res->lr_itree) * LCK_MODE_NUM);
-		OBD_SLAB_FREE(res, ldlm_resource_slab, sizeof *res);
+		ldlm_resource_free(res);
 		return 1;
 	}
 	return 0;
@@ -1619,6 +1638,9 @@ void ldlm_resource_add_lock(struct ldlm_resource *res, struct list_head *head,
 	LASSERT(list_empty(&lock->l_res_link));
 
 	list_add_tail(&lock->l_res_link, head);
+
+	if (res->lr_type == LDLM_IBITS)
+		ldlm_inodebits_add_lock(res, head, lock);
 }
 
 /**
@@ -1652,10 +1674,17 @@ void ldlm_resource_unlink_lock(struct ldlm_lock *lock)
         int type = lock->l_resource->lr_type;
 
         check_res_locked(lock->l_resource);
-        if (type == LDLM_IBITS || type == LDLM_PLAIN)
-                ldlm_unlink_lock_skiplist(lock);
-        else if (type == LDLM_EXTENT)
-                ldlm_extent_unlink_lock(lock);
+	switch (type) {
+		case LDLM_PLAIN:
+			ldlm_unlink_lock_skiplist(lock);
+			break;
+		case LDLM_EXTENT:
+			ldlm_extent_unlink_lock(lock);
+			break;
+		case LDLM_IBITS:
+			ldlm_inodebits_unlink_lock(lock);
+			break;
+	}
 	list_del_init(&lock->l_res_link);
 }
 EXPORT_SYMBOL(ldlm_resource_unlink_lock);
