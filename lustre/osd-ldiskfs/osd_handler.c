@@ -3087,7 +3087,7 @@ static int osd_mkfile(struct osd_thread_info *info, struct osd_object *obj,
 	inode = ldiskfs_create_inode(oth->ot_handle,
 				     parent ? osd_dt_obj(parent)->oo_inode :
 					      osd_sb(osd)->s_root->d_inode,
-				     mode, iattr);
+				     mode, NULL, iattr);
 	if (!IS_ERR(inode)) {
 		/* Do not update file c/mtime in ldiskfs. */
 		inode->i_flags |= S_NOCMTIME;
@@ -3804,7 +3804,7 @@ static struct inode *osd_create_local_agent_inode(const struct lu_env *env,
 	}
 
 	local = ldiskfs_create_inode(oh->ot_handle, pobj->oo_inode,
-				     type, piattr);
+				     type, NULL, piattr);
 	if (IS_ERR(local)) {
 		CERROR("%s: create local error %d\n", osd_name(osd),
 		       (int)PTR_ERR(local));
