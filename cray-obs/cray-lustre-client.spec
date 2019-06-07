@@ -195,7 +195,6 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_bindir}/*
 %{_mandir}
 %{_unitdir}/lnet.service
-%{_unitdir}/lustre.service
 %dir %{_libdir}/lustre
 %{_libdir}/lustre/tests
 # The versioned shared library files for liblnetconfig are needed for
