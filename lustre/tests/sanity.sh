@@ -14854,31 +14854,50 @@ run_test 223 "osc reenqueue if without AGL lock granted ======================="
 
 test_224a() { # LU-1039, MRP-303
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
-
 	#define OBD_FAIL_PTLRPC_CLIENT_BULK_CB   0x508
 	$LCTL set_param fail_loc=0x508
-	dd if=/dev/zero of=$DIR/$tfile bs=4096 count=1 conv=fsync
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 conv=fsync
 	$LCTL set_param fail_loc=0
 	df $DIR
 }
 run_test 224a "Don't panic on bulk IO failure"
 
-test_224b() { # LU-1039, MRP-303
+test_224bd_sub() { # LU-1039, MRP-303
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
-
-	dd if=/dev/zero of=$DIR/$tfile bs=4096 count=1
+	local timeout=$1
+	shift
+	dd if=/dev/urandom of=$TMP/$tfile bs=1M count=1
+	$LFS setstripe -c 1 -i 0 $DIR/$tfile
+	dd if=$TMP/$tfile of=$DIR/$tfile bs=1M count=1
 	cancel_lru_locks osc
+	set_checksums 0
+	stack_trap "set_checksums $ORIG_CSUM" EXIT
+	local at_max_saved=0
+	# adaptive timeouts may prevent seeing the issue
+	if at_is_enabled; then
+		at_max_saved=$(at_max_get mds)
+		at_max_set 0 mds client
+		stack_trap "at_max_set $at_max_saved mds client" EXIT
+	fi
+
 	#define OBD_FAIL_PTLRPC_CLIENT_BULK_CB2   0x515
-	$LCTL set_param fail_loc=0x515
-	dd of=/dev/null if=$DIR/$tfile bs=4096 count=1
-	$LCTL set_param fail_loc=0
+	do_facet ost1 $LCTL set_param fail_val=$timeout fail_loc=0x80000515
+	dd of=$TMP/$tfile.new if=$DIR/$tfile bs=1M count=1 || "$@"
+	do_facet ost1 $LCTL set_param fail_loc=0
+	# restore adaptive timeout
+	[ $at_max_saved -ne 0 ] && at_max_set $at_max_saved mds client
+	cmp $TMP/$tfile $TMP/$tfile.new || error "file contents wrong"
 	df $DIR
+}
+
+test_224b() {
+	test_224bd_sub 3 error "dd failed"
 }
 run_test 224b "Don't panic on bulk IO failure"
 
 test_224c() { # LU-6441
-	[ $PARALLEL == "yes" ] && skip "skip parallel run"
-	remote_mds_nodsh && skip "remote MDS with nodsh"
+	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
 
 	local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
 	save_writethrough $p
@@ -14912,8 +14931,14 @@ test_224c() { # LU-6441
 	$LCTL set_param -n $pages_per_rpc
 	restore_lustre_params < $p
 	rm -f $p
+	return 0
 }
 run_test 224c "Don't hang if one of md lost during large bulk RPC"
+
+test_224d() { # LU-11169
+	test_224bd_sub $((TIMEOUT + 2)) return 0
+}
+run_test 224d "Don't corrupt data on bulk IO timeout"
 
 MDSSURVEY=${MDSSURVEY:-$(which mds-survey 2>/dev/null || true)}
 test_225a () {
