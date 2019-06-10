@@ -442,7 +442,7 @@ static int kfilnd_fab_unpack_msg(struct kfilnd_msg *msg, int nob)
 /* Get a prefer rx (CPT) number from the target NID */
 static u8 kfilnd_fab_prefer_rx(struct kfilnd_transaction *tn)
 {
-	return lnet_cpt_of_nid(tn->tn_target_nid, tn->tn_dev->kfd_ni);
+	return tn->tn_target_nid % tn->tn_dev->kfd_ni->ni_ncpts;
 }
 
 static void kfilnd_fab_process_tn_cq(void *devctx, void *context, int status)
@@ -509,7 +509,7 @@ static int kfilnd_fab_post_msg_tx(struct kfilnd_transaction *tn,
 
 	buf = tn->tn_msg;
 	len = tn->tn_msgsz;
-	kfilnd_fab_pack_msg(tn, kfilnd_fab_prefer_rx(tn));
+	kfilnd_fab_pack_msg(tn, kfilnd_fab_prefer_rx(tn), tn->rma_rx);
 
 	context_id = tn->tn_dev->cpt_to_context_id[tn->tn_cpt];
 	use_endp = &tn->tn_dev->kfd_endpoints[context_id];
