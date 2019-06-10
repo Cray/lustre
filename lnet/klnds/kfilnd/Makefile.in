@@ -4,8 +4,9 @@ kkfilnd-objs := \
 	kfilnd.o \
 	kfilnd_modparams.o \
 	kfilnd_wkr.o \
-	kfilnd_fab.o \
-	kfilnd_mem.o
+	kfilnd_tn.o \
+	kfilnd_ep.o \
+	kfilnd_dev.o \
 
 EXTRA_POST_CFLAGS += @KFICPPFLAGS@
 
