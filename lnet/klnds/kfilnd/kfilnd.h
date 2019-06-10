@@ -61,13 +61,6 @@
 
 #define KFILND_MY_PROCID 49152
 
-/* kfilnd can run over aliased interface */
-#ifdef IFALIASZ
-#define KFI_IFNAME_SIZE              IFALIASZ
-#else
-#define KFI_IFNAME_SIZE              256
-#endif
-
 /* States used by all kfilnd structures */
 enum kfilnd_object_states {
 	KFILND_STATE_UNINITIALIZED,
@@ -89,7 +82,7 @@ int kfilnd_tunables_setup(struct lnet_ni *ni);
 int kfilnd_tunables_init(void);
 
 struct kfilnd_transaction;
-struct kfilnd_endpoints;
+struct kfilnd_ep;
 struct kfilnd_dev;
 
 /* Multi-receive buffers for immediate receives */
@@ -99,10 +92,10 @@ struct kfilnd_immediate_buffer {
 	size_t immed_buf_size;
 	atomic_t immed_ref;
 	bool immed_no_repost;
-	struct kfilnd_endpoints *immed_end;
+	struct kfilnd_ep *immed_end;
 };
 
-struct kfilnd_endpoints {
+struct kfilnd_ep {
 	/* The contexts for this CPT */
 	struct kfid_ep *end_tx;
 	struct kfid_ep *end_rx;
@@ -114,6 +107,7 @@ struct kfilnd_endpoints {
 	/* Specific config values for this endpoint */
 	struct kfilnd_dev *end_dev;
 	int end_cpt;
+	int end_context_id;
 
 	/* Pre-posted immediate buffers */
 	struct kfilnd_immediate_buffer
@@ -131,10 +125,6 @@ struct kfilnd_nid_entry {
 
 struct kfilnd_dev {
 	struct list_head	kfd_list;	/* chain on kfid_devs */
-	u32			kfd_ifip;	/* interface IP */
-	char			kfd_ifname[KFI_IFNAME_SIZE];
-	int			kfd_nnets;	/* # nets extant */
-	struct list_head	kfd_nets;
 	struct lnet_ni		*kfd_ni;
 	enum kfilnd_object_states kfd_state;
 	struct list_head	kfd_tns;	/* Outstanding transactions */
@@ -147,28 +137,13 @@ struct kfilnd_dev {
 	struct kfid_domain	*kfd_domain;
 	struct kfid_ep		*kfd_sep;
 	struct kfid_av		*kfd_av;
-	struct kfilnd_endpoints	*kfd_endpoints;
+	struct kfilnd_ep	**kfd_endpoints;
 
-	/* Map of LNet NI CPTs to context IDs and back. */
-	int			*cpt_to_context_id;
-	int			*context_id_to_cpt;
+	/* Map of LNet NI CPTs to endpoints. */
+	struct kfilnd_ep	**cpt_to_endpoint;
 
 	/* Hash of LNet NIDs to KFI addresses. */
 	struct cfs_hash *nid_hash;
-};
-
-struct kfilnd_net {
-	/* Chain on kfilnd_dev.kfd_nets */
-	struct list_head	kfn_list;
-	u64			kfn_incarnation;/* My epoch */
-	enum kfilnd_object_states kfn_state;
-	struct kfilnd_dev	*kfn_dev;	/* Underlying fabric device */
-};
-
-struct kfilnd_data {
-	enum kfilnd_object_states kfid_state;
-	struct list_head	kfid_devs;	/* Fabric devices */
-	spinlock_t		kfid_global_lock;
 };
 
 struct kfilnd_immed_msg
@@ -239,7 +214,6 @@ enum tn_states {
 	TN_STATE_IMM_SEND,
 	TN_STATE_IMM_RECV,
 	TN_STATE_REG_MEM,
-	TN_STATE_RMA_START,
 	TN_STATE_WAIT_RMA
 };
 
@@ -262,7 +236,7 @@ struct kfilnd_transaction			/* Both send and receive */
 	struct list_head	tn_list;	/* chain on kfd_tns */
 	spinlock_t		tn_lock;	/* to serialize events */
 	int			tn_status;	/* return code from ops */
-	struct kfilnd_dev	*tn_dev;	/* device we operate under */
+	struct kfilnd_ep	*tn_ep;		/* endpoint we operate under */
 	struct kfilnd_msg	*tn_msg;	/* immediate message for Tn */
 	unsigned int		tn_msgsz;	/* size of message buffer */
 	int			tn_nob;		/* bytes received into msg */
@@ -274,7 +248,6 @@ struct kfilnd_transaction			/* Both send and receive */
 	lnet_nid_t		tn_target_nid;	/* NID transaction is with */
 	kfi_addr_t		tn_target_addr;	/* Transaction KFI addr */
 	u32			tn_procid;	/* PROCID transaction is with */
-	int			tn_cpt;		/* CPT we are running under */
 	struct kfilnd_immediate_buffer *tn_posted_buf; /* associated multi-recv
 							* buf.
 							*/

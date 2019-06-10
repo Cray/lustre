@@ -8,8 +8,8 @@
 #include <linux/delay.h>
 #include "kfilnd.h"
 #include "kfilnd_wkr.h"
-#include "kfilnd_mem.h"
-#include "kfilnd_fab.h"
+#include "kfilnd_tn.h"
+#include "kfilnd_dev.h"
 
 /* These are temp constants to get stuff to compile */
 #define KFILND_DEFAULT_DEVICE "eth0"
@@ -18,260 +18,15 @@
 #define KFILND_MAX_WORKER_THREADS 4
 #define KFILND_MAX_EVENT_QUEUE 100
 
-/* This is our topmost data structure everything resides under */
-static struct kfilnd_data lnd_data;
-
-static void kfilnd_destroy_dev(struct kfilnd_dev *dev)
-{
-	if (dev->kfd_nnets != 0) {
-		CERROR("Called destroy dev with nets still on it\n");
-		return;
-	}
-	if (!list_empty(&dev->kfd_nets)) {
-		CERROR("Called destroy dev with non-empty nets list\n");
-		return;
-	}
-
-	list_del(&dev->kfd_list);
-
-	/* Clean up the fabric for this dev */
-	kfilnd_fab_cleanup_dev(dev);
-
-	spin_lock(&dev->kfd_lock);
-	if (list_empty(&dev->kfd_tns)) {
-		spin_unlock(&dev->kfd_lock);
-		LIBCFS_FREE(dev, sizeof(*dev));
-	} else {
-		spin_unlock(&dev->kfd_lock);
-		CERROR("Cannot free device due to existing tranactions\n");
-	}
-}
-
-static struct kfilnd_dev *kfilnd_create_dev(char *ifname, struct lnet_ni *ni)
-{
-	struct kfilnd_dev *dev;
-	uint32_t	netmask;
-	uint32_t	ip;
-	int		up;
-	int		rc;
-
-	if (!ifname || !ni)
-		return NULL;
-
-	rc = lnet_ipif_query(ifname, &up, &ip, &netmask);
-	if (rc != 0) {
-		CERROR("Can't query IP interface %s: %d\n",
-			ifname, rc);
-		return NULL;
-	}
-
-	if (!up) {
-		CERROR("Can't query IP interface %s: it's down\n", ifname);
-		return NULL;
-	}
-
-	LIBCFS_ALLOC(dev, sizeof(*dev));
-	if (!dev)
-		return NULL;
-
-	/* Initialize the device with the fabric. */
-	dev->kfd_ni = ni;
-	dev->kfd_ifip = ip;
-	if (kfilnd_fab_initialize_dev(dev) != 0) {
-		LIBCFS_FREE(dev, sizeof(*dev));
-		return NULL;
-	}
-	
-	INIT_LIST_HEAD(&dev->kfd_nets);
-	INIT_LIST_HEAD(&dev->kfd_list); /* not yet in kfid_devs */
-	INIT_LIST_HEAD(&dev->kfd_tns);
-	spin_lock_init(&dev->kfd_lock);
-	strcpy(&dev->kfd_ifname[0], ifname);
-
-	/* Post a series of immediate receive buffers */
-	rc = kfilnd_fab_post_immed_rx(dev, KFILND_NUM_IMMEDIATE_MSG,
-				      KFILND_IMMEDIATE_MSG_SIZE);
-	if (rc) {
-		CERROR("Can't post buffers, rc = %d\n", rc);
-		kfilnd_fab_cleanup_dev(dev);
-		LIBCFS_FREE(dev, sizeof(*dev));
-		return NULL;
-	}
-	
-	/* Add to global list of devices */
-	spin_lock(&lnd_data.kfid_global_lock);
-	list_add_tail(&dev->kfd_list,
-		      &lnd_data.kfid_devs);
-	spin_unlock(&lnd_data.kfid_global_lock);
-
-	return dev;
-}
-
-static void kfilnd_base_shutdown(void)
-{
-	switch (lnd_data.kfid_state) {
-
-	case KFILND_STATE_INITIALIZED:
-		lnd_data.kfid_state = KFILND_STATE_SHUTTING_DOWN;
-
-		/*
-		 * Stop worker threads, clean them up, clean up fabric and
-		 * memory systems
-		 */
-		if (kfilnd_wkr_stop() < 0)
-			CERROR("Cannot stop worker threads\n");
-		kfilnd_wkr_cleanup();
-		kfilnd_fab_cleanup();
-		kfilnd_mem_cleanup();
-
-		/* fall through */
-
-	case KFILND_STATE_SHUTTING_DOWN:
-	case KFILND_STATE_UNINITIALIZED:
-		break;
-
-	default:
-		CERROR("Invalid kfid_state value: %d\n",
-		       lnd_data.kfid_state);
-		return;
-	}
-
-	lnd_data.kfid_state = KFILND_STATE_UNINITIALIZED;
-	module_put(THIS_MODULE);
-}
-
 static void kfilnd_shutdown(struct lnet_ni *ni)
 {
-	struct kfilnd_net *net = ni->ni_data;
+	struct kfilnd_dev *dev = ni->ni_data;
 
-	if (lnd_data.kfid_state != KFILND_STATE_INITIALIZED || !net)
-		goto out;
-
-	switch (net->kfn_state) {
-	case KFILND_STATE_INITIALIZED:
-		spin_lock(&lnd_data.kfid_global_lock);
-		if (net->kfn_dev->kfd_nnets <= 0) {
-			spin_unlock(&lnd_data.kfid_global_lock);
-			CERROR("Bad number of nets on NI: %d\n",
-			       net->kfn_dev->kfd_nnets);
-			return;
-		}
-		net->kfn_state = KFILND_STATE_SHUTTING_DOWN;
-		net->kfn_dev->kfd_nnets--;
-		list_del(&net->kfn_list);
-		spin_unlock(&lnd_data.kfid_global_lock);
-
-		/* fall through */
-
-	case KFILND_STATE_SHUTTING_DOWN:
-	case KFILND_STATE_UNINITIALIZED:
-		if (net->kfn_dev &&
-		    net->kfn_dev->kfd_nnets == 0) {
-			kfilnd_destroy_dev(net->kfn_dev);
-			net->kfn_dev = NULL;
-		}
-		break;
-
-	default:
-		CERROR("Invalid kfn_state value: %d\n", net->kfn_state);
-		return;
-	}
-
-	net->kfn_state = KFILND_STATE_UNINITIALIZED;
-	ni->ni_data = NULL;
-
-	LIBCFS_FREE(net, sizeof(*net));
-
-out:
-	if (list_empty(&lnd_data.kfid_devs))
-		kfilnd_base_shutdown();
-	return;
-}
-
-static int kfilnd_base_startup(void)
-{
-	if (lnd_data.kfid_state != KFILND_STATE_UNINITIALIZED) {
-		CWARN("kfilnd_base_startup called when we have already inited\n");
-		return 0;
-	}
-
-	try_module_get(THIS_MODULE);
-
-	/* Initialize data elements of our global structure */
-	spin_lock_init(&lnd_data.kfid_global_lock);
-	INIT_LIST_HEAD(&lnd_data.kfid_devs);
-	lnd_data.kfid_state = KFILND_STATE_INITIALIZED;
-
-	/* Do any initialization of the memory registration system */
-	if (kfilnd_mem_init() < 0) {
-		CERROR("Cannot initialize memory system\n");
-		goto failed;
-	}
-
-	/* Do any initialization of the fabric */
-	if (kfilnd_fab_init() < 0) {
-		CERROR("Cannot initialize fabric\n");
-		goto failed;
-	}
-
-	/* Initialize and Launch the worker threads */
-	if (kfilnd_wkr_init(KFILND_MAX_WORKER_THREADS, KFILND_MAX_EVENT_QUEUE,
-			    false) < 0) {
-		CERROR("Cannot initialize worker queues\n");
-		goto failed;
-	}
-	if (kfilnd_wkr_start() < 0) {
-		CERROR("Cannot start worker threads\n");
-		goto failed;
-	}
-
-	return 0;
-
-failed:
-	kfilnd_base_shutdown();
-	return -ENETDOWN;
-}
-
-static int kfilnd_ctl(struct lnet_ni *ni, unsigned int cmd, void *arg)
-{
-	return -EINVAL;
-}
-
-static struct kfilnd_dev *kfilnd_dev_search(char *ifname)
-{
-	struct kfilnd_dev *alias = NULL;
-	struct kfilnd_dev *dev;
-	char		*colon;
-	char		*colon2;
-
-	colon = strchr(ifname, ':');
-	list_for_each_entry(dev, &lnd_data.kfid_devs, kfd_list) {
-		if (strcmp(&dev->kfd_ifname[0], ifname) == 0)
-			return dev;
-
-		if (alias != NULL)
-			continue;
-
-		colon2 = strchr(dev->kfd_ifname, ':');
-		if (colon != NULL)
-			*colon = 0;
-		if (colon2 != NULL)
-			*colon2 = 0;
-
-		if (strcmp(&dev->kfd_ifname[0], ifname) == 0)
-			alias = dev;
-
-		if (colon != NULL)
-			*colon = ':';
-		if (colon2 != NULL)
-			*colon2 = ':';
-	}
-	return alias;
+	kfilnd_dev_free(dev);
 }
 
 static unsigned int kfilnd_init_proto(struct kfilnd_msg *msg, int type,
-				      int body_nob,
-				      struct lnet_ni *ni)
+				      int body_nob, struct lnet_ni *ni)
 {
 	msg->kfm_type = type;
 	msg->kfm_nob  = offsetof(struct kfilnd_msg, kfm_u) + body_nob;
@@ -285,25 +40,24 @@ static int kfilnd_send_cpt(struct kfilnd_dev *dev, lnet_nid_t nid)
 
 	/* If the current CPT has is within the LNet NI CPTs, use that CPT. */
 	cpt = lnet_cpt_current();
-	if (dev->cpt_to_context_id[cpt] >= 0)
+	if (dev->cpt_to_endpoint[cpt])
 		return cpt;
 
 	/* Hash to a LNet NI CPT based on target NID. */
-	return  dev->context_id_to_cpt[nid % dev->kfd_ni->ni_ncpts];
+	return  dev->kfd_endpoints[nid % dev->kfd_ni->ni_ncpts]->end_cpt;
 }
 
 static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 {
-	struct lnet_hdr		*hdr = &msg->msg_hdr;
-	int			type = msg->msg_type;
-	struct lnet_process_id	target = msg->msg_target;
-	struct kfilnd_msg	*kfmsg;
+	struct lnet_hdr *hdr = &msg->msg_hdr;
+	int type = msg->msg_type;
+	struct lnet_process_id target = msg->msg_target;
+	struct kfilnd_msg *kfmsg;
 	struct kfilnd_transaction *tn;
-	int			nob;
-	struct kfilnd_net	*net = ni->ni_data;
-	unsigned int		lnd_msg_type = 0;
-	int			rc = 0;
-	int			cpt;
+	int nob;
+	struct kfilnd_dev *dev = ni->ni_data;
+	unsigned int lnd_msg_type = 0;
+	int cpt;
 
 	/* NB 'private' is different depending on what we're sending.... */
 
@@ -352,8 +106,8 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		break;
 	}
 
-	cpt = kfilnd_send_cpt(net->kfn_dev, target.nid);
-	tn = kfilnd_mem_get_idle_tn(net->kfn_dev, cpt, true);
+	cpt = kfilnd_send_cpt(dev, target.nid);
+	tn = kfilnd_tn_alloc(dev, cpt, true);
 	if (!tn) {
 		CERROR("Can't send %d to %s: Tn descs exhausted\n",
 		       type, libcfs_nid2str(target.nid));
@@ -405,7 +159,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		if (!tn->tn_getreply) {
 			CERROR("Can't create reply for GET -> %s\n",
 			       libcfs_nid2str(target.nid));
-			kfilnd_mem_release_tn(tn);
+			kfilnd_tn_free(tn);
 			return -EIO;
 		}
 		/* Copy over the LNet header */
@@ -428,7 +182,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		break;
 
 	default:
-		kfilnd_mem_release_tn(tn);
+		kfilnd_tn_free(tn);
 		return -EIO;
 	}
 
@@ -442,11 +196,9 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	tn->tn_lntmsg = msg;	/* finalise msg on completion */
 
 	/* Start the state machine processing this transaction */
-	rc = kfilnd_fab_event_handler(tn, TN_EVENT_TX_OK);
-	if (rc < 0)
-		/* Was not able to start transaction. Release it. */
-		kfilnd_mem_release_tn(tn);
-	return rc;
+	kfilnd_tn_event_handler(tn, TN_EVENT_TX_OK);
+
+	return 0;
 }
 
 static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
@@ -499,7 +251,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 					   mlen);
 
 		tn->tn_status = 0;
-		kfilnd_fab_event_handler(tn, TN_EVENT_RX_OK);
+		kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK);
 		break;
 
 	case KFILND_MSG_PUT_REQ:
@@ -515,7 +267,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		tn->tn_cookie = rxmsg->kfm_u.putreq.kfprm_match_bits;
 		tn->tn_target_nid = msg->msg_initiator;
 
-		rc = kfilnd_fab_event_handler(tn, TN_EVENT_RMA_PREP);
+		kfilnd_tn_event_handler(tn, TN_EVENT_RMA_PREP);
 		break;
 
 	case KFILND_MSG_GET_REQ:
@@ -532,7 +284,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		tn->tn_target_nid = msg->msg_initiator;
 		tn->tn_procid = KFILND_MY_PROCID;
 
-		rc = kfilnd_fab_event_handler(tn, TN_EVENT_RMA_PREP);
+		kfilnd_tn_event_handler(tn, TN_EVENT_RMA_PREP);
 		break;
 
 	default:
@@ -549,18 +301,18 @@ static struct lnet_lnd lnd = {
 	.lnd_type	= KFILND,
 	.lnd_startup	= kfilnd_startup,
 	.lnd_shutdown	= kfilnd_shutdown,
-	.lnd_ctl	= kfilnd_ctl,
 	.lnd_send	= kfilnd_send,
 	.lnd_recv	= kfilnd_recv,
 };
 
 static int kfilnd_startup(struct lnet_ni *ni)
 {
-	char			*ifname;
-	struct kfilnd_dev	*kfdev = NULL;
-	struct kfilnd_net	*net;
-	int			rc;
-	/* int			node_id; */
+	char *ifname;
+	struct kfilnd_dev *kfdev;
+	int rc;
+	uint32_t netmask;
+	uint32_t ip;
+	int up;
 
 	if (!ni)
 		return -EINVAL;
@@ -570,75 +322,71 @@ static int kfilnd_startup(struct lnet_ni *ni)
 		return -EINVAL;
 	}
 
-	if (lnd_data.kfid_state == KFILND_STATE_UNINITIALIZED) {
-		rc = kfilnd_base_startup();
-		if (rc != 0)
-			return rc;
-	}
-
-	LIBCFS_ALLOC(net, sizeof(*net));
-	ni->ni_data = net;
-	if (!net)
-		goto failed;
-
-	net->kfn_incarnation = ktime_get_real_ns() / NSEC_PER_USEC;
-
 	kfilnd_tunables_setup(ni);
 
+	/* Verify that the Ethernet/IP interface is active. */
 	if (ni->ni_interfaces[0] != NULL) {
 		/* Use the IP interface specified in 'networks=' */
 
 		if (ni->ni_interfaces[1] != NULL) {
+			rc = -EINVAL;
 			CERROR("Multiple interfaces not supported\n");
-			goto failed;
+			goto err;
 		}
 
 		ifname = ni->ni_interfaces[0];
-	} else
+	} else {
 		ifname = KFILND_DEFAULT_DEVICE;
-
-	if (strlen(ifname) >= sizeof(kfdev->kfd_ifname)) {
-		CERROR("IP interface name too long: %s\n", ifname);
-		goto failed;
 	}
 
-	kfdev = kfilnd_dev_search(ifname);
+	rc = lnet_ipif_query(ifname, &up, &ip, &netmask);
+	if (rc) {
+		CERROR("Can't query IP interface %s: %d\n",
+			ifname, rc);
+		goto err;
+	}
 
-	/* Create kfilnd_dev even for alias */
-	if (kfdev == NULL || strcmp(&kfdev->kfd_ifname[0], ifname) != 0)
-		kfdev = kfilnd_create_dev(ifname, ni);
+	if (!up) {
+		CERROR("Can't query IP interface %s: it's down\n", ifname);
+		goto err;
+	}
 
-	if (!kfdev)
-		goto failed;
+	/* TODO: Set physical CPT of KFI LND device in LNet NI. */
+	ni->ni_nid = LNET_MKNID(LNET_NIDNET(ni->ni_nid), ip);
 
-	/* node_id = dev_to_node(kfdev->ibd_hdev->ibh_kfdev->dma_device);
-	ni->ni_dev_cpt = cfs_cpt_of_node(lnet_cpt_table(), node_id); */
+	kfdev = kfilnd_dev_alloc(ni);
+	if (IS_ERR(kfdev)) {
+		rc = PTR_ERR(kfdev);
+		CERROR("Failed to allocate KFI LND device for %s\n", ifname);
+		goto err;
+	}
+	ni->ni_data = kfdev;
 
-	net->kfn_dev = kfdev;
-	ni->ni_nid = LNET_MKNID(LNET_NIDNET(ni->ni_nid), kfdev->kfd_ifip);
-
-	spin_lock(&lnd_data.kfid_global_lock);
-	kfdev->kfd_nnets++;
-	list_add_tail(&net->kfn_list, &kfdev->kfd_nets);
-	spin_unlock(&lnd_data.kfid_global_lock);
-
-	net->kfn_state = KFILND_STATE_INITIALIZED;
+	/* Post a series of immediate receive buffers */
+	rc = kfilnd_dev_post_imm_buffers(kfdev);
+	if (rc) {
+		CERROR("Can't post buffers, rc = %d\n", rc);
+		goto err_free_dev;
+	}
 
         return 0;
 
-failed:
-	if (net && net->kfn_dev == NULL && kfdev)
-		kfilnd_destroy_dev(kfdev);
-
-	kfilnd_shutdown(ni);
-
+err_free_dev:
+	kfilnd_dev_free(kfdev);
+err:
 	CDEBUG(D_NET, "kfilnd_startup failed\n");
-	return -ENETDOWN;
+
+	return rc;
 }
 
 static void __exit kfilnd_exit(void)
 {
 	lnet_unregister_lnd(&lnd);
+
+	if (kfilnd_wkr_stop() < 0)
+		CERROR("Cannot stop worker threads\n");
+	kfilnd_wkr_cleanup();
+	kfilnd_tn_cleanup();
 }
 
 static int __init kfilnd_init(void)
@@ -646,11 +394,40 @@ static int __init kfilnd_init(void)
 	int rc;
 
 	rc = kfilnd_tunables_init();
-	if (rc != 0)
-		return rc;
+	if (rc)
+		goto err;
+
+	/* Do any initialization of the transaction system */
+	rc = kfilnd_tn_init();
+	if (rc) {
+		CERROR("Cannot initialize transaction system\n");
+		goto err;
+	}
+
+	/* Initialize and Launch the worker threads */
+	rc = kfilnd_wkr_init(KFILND_MAX_WORKER_THREADS, KFILND_MAX_EVENT_QUEUE,
+			     false);
+	if (rc) {
+		CERROR("Cannot initialize worker queues\n");
+		goto err_mem_cleanup;
+	}
+
+	rc = kfilnd_wkr_start();
+	if (rc) {
+		CERROR("Cannot start worker threads\n");
+		goto err_wkr_cleanup;
+	}
 
 	lnet_register_lnd(&lnd);
+
 	return 0;
+
+err_wkr_cleanup:
+	kfilnd_wkr_cleanup();
+err_mem_cleanup:
+	kfilnd_tn_cleanup();
+err:
+	return rc;
 }
 
 MODULE_AUTHOR("Cray Inc.");
