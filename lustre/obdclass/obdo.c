@@ -68,31 +68,31 @@ void obdo_from_inode(struct obdo *dst, struct inode *src, u64 valid)
 	u64 newvalid = 0;
 
 	if (valid & (OBD_MD_FLCTIME | OBD_MD_FLMTIME))
-		CDEBUG(D_INODE, "valid %#llx, new time %lu/%lu\n",
-			valid, LTIME_S(src->i_mtime),
-			LTIME_S(src->i_ctime));
+		CDEBUG(D_INODE, "valid %#llx, new time %lld/%lld\n",
+		       valid, (s64) src->i_mtime.tv_sec,
+		       (s64) src->i_ctime.tv_sec);
 
-        if (valid & OBD_MD_FLATIME) {
-                dst->o_atime = LTIME_S(src->i_atime);
-                newvalid |= OBD_MD_FLATIME;
-        }
-        if (valid & OBD_MD_FLMTIME) {
-                dst->o_mtime = LTIME_S(src->i_mtime);
-                newvalid |= OBD_MD_FLMTIME;
-        }
-        if (valid & OBD_MD_FLCTIME) {
-                dst->o_ctime = LTIME_S(src->i_ctime);
-                newvalid |= OBD_MD_FLCTIME;
-        }
-        if (valid & OBD_MD_FLSIZE) {
-                dst->o_size = i_size_read(src);
-                newvalid |= OBD_MD_FLSIZE;
-        }
-        if (valid & OBD_MD_FLBLOCKS) {  /* allocation of space (x512 bytes) */
-                dst->o_blocks = src->i_blocks;
-                newvalid |= OBD_MD_FLBLOCKS;
-        }
-        if (valid & OBD_MD_FLBLKSZ) {   /* optimal block size */
+	if (valid & OBD_MD_FLATIME) {
+		dst->o_atime = src->i_atime.tv_sec;
+		newvalid |= OBD_MD_FLATIME;
+	}
+	if (valid & OBD_MD_FLMTIME) {
+		dst->o_mtime = src->i_mtime.tv_sec;
+		newvalid |= OBD_MD_FLMTIME;
+	}
+	if (valid & OBD_MD_FLCTIME) {
+		dst->o_ctime = src->i_ctime.tv_sec;
+		newvalid |= OBD_MD_FLCTIME;
+	}
+	if (valid & OBD_MD_FLSIZE) {
+		dst->o_size = i_size_read(src);
+		newvalid |= OBD_MD_FLSIZE;
+	}
+	if (valid & OBD_MD_FLBLOCKS) { /* allocation of space (x512 bytes) */
+		dst->o_blocks = src->i_blocks;
+		newvalid |= OBD_MD_FLBLOCKS;
+	}
+	if (valid & OBD_MD_FLBLKSZ) { /* optimal block size */
 		dst->o_blksize = 1U << src->i_blkbits;
                 newvalid |= OBD_MD_FLBLKSZ;
         }
