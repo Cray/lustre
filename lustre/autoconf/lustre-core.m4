@@ -2868,6 +2868,26 @@ pagevec_init, [
 ]) # LC_PAGEVEC_INIT_ONE_PARAM
 
 #
+# LC_I_PAGES
+#
+# kernel 4.17 commit b93b016313b3ba8003c3b8bb71f569af91f19fc7
+#
+AC_DEFUN([LC_I_PAGES], [
+LB_CHECK_COMPILE([if struct address_space has i_pages],
+i_pages, [
+	#include <linux/fs.h>
+],[
+	struct address_space mapping = {};
+	void *i_pages;
+
+	i_pages = &mapping.i_pages;
+],[
+	AC_DEFINE(HAVE_I_PAGES, 1,
+		[struct address_space has i_pages])
+])
+]) # LC_I_PAGES
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -3101,6 +3121,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 4.14
 	LC_PAGEVEC_INIT_ONE_PARAM
+
+	# 4.17
+	LC_I_PAGES
 
 	#
 	AS_IF([test "x$enable_server" != xno], [
