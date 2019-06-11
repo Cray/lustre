@@ -1621,6 +1621,7 @@ static ssize_t ll_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
 	struct lu_env *env;
 	struct vvp_io_args *args;
+	struct file *file = iocb->ki_filp;
 	ssize_t result;
 	ssize_t rc2;
 	__u16 refcheck;
@@ -1642,7 +1643,7 @@ static ssize_t ll_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 	args->u.normal.via_iter = to;
 	args->u.normal.via_iocb = iocb;
 
-	rc2 = ll_file_io_generic(env, args, iocb->ki_filp, CIT_READ,
+	rc2 = ll_file_io_generic(env, args, file, CIT_READ,
 				 &iocb->ki_pos, iov_iter_count(to));
 	if (rc2 > 0)
 		result += rc2;
@@ -1651,6 +1652,11 @@ static ssize_t ll_file_read_iter(struct kiocb *iocb, struct iov_iter *to)
 
 	cl_env_put(env, &refcheck);
 out:
+	if (result > 0)
+		ll_rw_stats_tally(ll_i2sbi(file_inode(file)), current->pid,
+				  LUSTRE_FPRIVATE(file), iocb->ki_pos, result,
+				  READ);
+
 	return result;
 }
 
@@ -1721,6 +1727,7 @@ static ssize_t ll_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	struct vvp_io_args *args;
 	struct lu_env *env;
 	ssize_t rc_tiny = 0, rc_normal;
+	struct file *file = iocb->ki_filp;
 	__u16 refcheck;
 
 	ENTRY;
@@ -1733,8 +1740,8 @@ static ssize_t ll_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	 * pages, and we can't do append writes because we can't guarantee the
 	 * required DLM locks are held to protect file size.
 	 */
-	if (ll_sbi_has_tiny_write(ll_i2sbi(file_inode(iocb->ki_filp))) &&
-	    !(iocb->ki_filp->f_flags & (O_DIRECT | O_SYNC | O_APPEND)))
+	if (ll_sbi_has_tiny_write(ll_i2sbi(file_inode(file))) &&
+	    !(file->f_flags & (O_DIRECT | O_SYNC | O_APPEND)))
 		rc_tiny = ll_do_tiny_write(iocb, from);
 
 	/* In case of error, go on and try normal write - Only stop if tiny
@@ -1751,8 +1758,8 @@ static ssize_t ll_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	args->u.normal.via_iter = from;
 	args->u.normal.via_iocb = iocb;
 
-	rc_normal = ll_file_io_generic(env, args, iocb->ki_filp, CIT_WRITE,
-				    &iocb->ki_pos, iov_iter_count(from));
+	rc_normal = ll_file_io_generic(env, args, file, CIT_WRITE,
+				       &iocb->ki_pos, iov_iter_count(from));
 
 	/* On success, combine bytes written. */
 	if (rc_tiny >= 0 && rc_normal > 0)
@@ -1765,6 +1772,10 @@ static ssize_t ll_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 
 	cl_env_put(env, &refcheck);
 out:
+	if (rc_normal > 0)
+		ll_rw_stats_tally(ll_i2sbi(file_inode(file)), current->pid,
+				  LUSTRE_FPRIVATE(file), iocb->ki_pos,
+				  rc_normal, WRITE);
 	RETURN(rc_normal);
 }
 
@@ -1935,6 +1946,11 @@ static ssize_t ll_file_splice_read(struct file *in_file, loff_t *ppos,
 
         result = ll_file_io_generic(env, args, in_file, CIT_READ, ppos, count);
         cl_env_put(env, &refcheck);
+
+	if (result > 0)
+		ll_rw_stats_tally(ll_i2sbi(file_inode(in_file)), current->pid,
+				  LUSTRE_FPRIVATE(in_file), *ppos, result,
+				  READ);
         RETURN(result);
 }
 
