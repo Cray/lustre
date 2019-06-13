@@ -78,6 +78,7 @@ struct kfilnd_tunables {
 };
 
 extern struct kfilnd_tunables  kfilnd_tunable_vals;
+extern unsigned int sync_mr_reg;
 
 int kfilnd_tunables_setup(struct lnet_ni *ni);
 int kfilnd_tunables_init(void);
