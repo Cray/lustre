@@ -230,12 +230,18 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 		} else {
 			tn->tn_state = TN_STATE_REG_MEM;
 			rc = kfilnd_ep_reg_mr(tn->tn_ep, tn);
-		}
 
-		/* TODO: Currently, the LND is setup of asynchronous MR
-		 * registration. If this changes to synchronous, the event
-		 * handler should be called here.
-		 */
+			/* If synchronous memory registration is used, post an
+			 * immediate message with MR information so peer can
+			 * perform an RMA operation.
+			 */
+			if (sync_mr_reg && !rc) {
+				kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn),
+						   tn->rma_rx);
+				tn->tn_state = TN_STATE_WAIT_RMA;
+				rc = kfilnd_ep_post_send(tn->tn_ep, tn, false);
+			}
+		}
 		break;
 
 	case TN_EVENT_RX_OK:
