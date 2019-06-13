@@ -9,6 +9,10 @@
 
 #define CURRENT_LND_VERSION 1
 
+unsigned int sync_mr_reg;
+module_param(sync_mr_reg, uint, 0444);
+MODULE_PARM_DESC(sync_mr_reg, "Enable synchronous memory registration");
+
 static int service = 49152;
 module_param(service, int, 0444);
 MODULE_PARM_DESC(service, "PROCID number (within kfabric)");
