@@ -406,12 +406,12 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 
 	/* Use the kfabric API to register buffer for RMA target. */
 	if (tn->tn_kiov)
-		rc = kfi_mr_regbv(ep->end_dev->kfd_domain,
+		rc = kfi_mr_regbv(ep->end_dev->dom->domain,
 				  (struct bio_vec *)tn->tn_kiov,
 				  tn->tn_num_iovec, access, tn->tn_offset_iovec,
 				  tn->tn_cookie, 0, &tn->tn_mr, tn);
 	else
-		rc = kfi_mr_regv(ep->end_dev->kfd_domain, tn->tn_iov,
+		rc = kfi_mr_regv(ep->end_dev->dom->domain, tn->tn_iov,
 				 tn->tn_num_iovec, access, tn->tn_offset_iovec,
 				 tn->tn_cookie, 0, &tn->tn_mr, tn);
 	if (rc) {
@@ -722,14 +722,14 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	cq_attr.signaling_vector =
 		cpumask_first(cfs_cpt_cpumask(lnet_cpt_table(), cpt));
 
-	rc = kfi_cq_open(dev->kfd_domain, &cq_attr, &ep->end_rx_cq,
+	rc = kfi_cq_open(dev->dom->domain, &cq_attr, &ep->end_rx_cq,
 			 kfilnd_ep_rx_cq_handler, ep);
 	if (rc) {
 		CERROR("Could not open RX CQ, rc = %d\n", rc);
 		goto err_free_ep;
 	}
 
-	rc = kfi_cq_open(dev->kfd_domain, &cq_attr, &ep->end_tx_cq,
+	rc = kfi_cq_open(dev->dom->domain, &cq_attr, &ep->end_tx_cq,
 			 kfilnd_ep_tx_cq_handler, ep);
 	if (rc) {
 		CERROR("Could not open TX CQ, rc = %d\n", rc);
