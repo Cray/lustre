@@ -19,6 +19,7 @@
 #include <linux/unistd.h>
 #include <linux/uio.h>
 #include <linux/rwsem.h>
+#include <linux/mutex.h>
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -123,18 +124,35 @@ struct kfilnd_nid_entry {
 	refcount_t cnt;
 };
 
+struct kfilnd_fab {
+	struct list_head entry;
+	struct list_head dom_list;
+	struct mutex dom_list_lock;
+	struct kfid_fabric *fabric;
+	struct kref cnt;
+};
+
+struct kfilnd_dom {
+	struct list_head entry;
+	struct list_head dev_list;
+	spinlock_t lock;
+	struct kfilnd_fab *fab;
+	struct kfid_eq *eq;
+	struct kfid_domain *domain;
+	struct kref cnt;
+};
+
 struct kfilnd_dev {
 	struct list_head	kfd_list;	/* chain on kfid_devs */
 	struct lnet_ni		*kfd_ni;
 	enum kfilnd_object_states kfd_state;
 	struct list_head	kfd_tns;	/* Outstanding transactions */
 
+	/* KFI LND domain the device is associated with. */
+	struct kfilnd_dom	*dom;
+
 	/* Fields specific to kfabric operation */
 	spinlock_t		kfd_lock;
-	struct kfi_info		*kfd_fab_info;
-	struct kfid_fabric	*kfd_fabric;
-	struct kfid_eq		*kfd_eq;
-	struct kfid_domain	*kfd_domain;
 	struct kfid_ep		*kfd_sep;
 	struct kfid_av		*kfd_av;
 	struct kfilnd_ep	**kfd_endpoints;
