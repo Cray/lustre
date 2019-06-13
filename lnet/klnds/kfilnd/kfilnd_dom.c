@@ -99,7 +99,8 @@ static void kfilnd_dom_free(struct kref *kref)
 	mutex_unlock(&dom->fab->dom_list_lock);
 
 	kfi_close(&dom->domain->fid);
-	kfi_close(&dom->eq->fid);
+	if (!sync_mr_reg)
+		kfi_close(&dom->eq->fid);
 	LIBCFS_FREE(dom, sizeof(*dom));
 }
 
@@ -137,27 +138,29 @@ static struct kfilnd_dom *kfilnd_dom_alloc(struct kfi_info *dom_info,
 	dom->fab = fab;
 	kref_init(&dom->cnt);
 
-	/* TODO: Verify EQ settings are correct. */
-	eq_attr.size = KFILND_MAX_TX;
-	rc = kfi_eq_open(fab->fabric, &eq_attr, &dom->eq, kfilnd_dom_eq_handler,
-			 dom);
-	if (rc) {
-		CERROR("Failed to create KFI event queue: rc=%d\n", rc);
-		goto err_free_dom;
-	}
-
 	rc = kfi_domain(fab->fabric, dom_info, &dom->domain, dom);
 	if (rc) {
 		CERROR("Failed to create KFI domain: rc=%d\n", rc);
-		goto err_free_eq;
+		goto err_free_dom;
 	}
 
 	/* Bind EQ to domain for asynchronous memory registration. */
-	rc = kfi_domain_bind(dom->domain, &dom->eq->fid, KFI_REG_MR);
-	if (rc) {
-		CERROR("Failed to bind KFI event queue to KFI domain: rc=%d\n",
-		       rc);
-		goto err_free_kfi_dom;
+	if (!sync_mr_reg) {
+		/* TODO: Verify EQ settings are correct. */
+		eq_attr.size = KFILND_MAX_TX;
+		rc = kfi_eq_open(fab->fabric, &eq_attr, &dom->eq,
+				 kfilnd_dom_eq_handler, dom);
+		if (rc) {
+			CERROR("Failed to create KFI event queue: rc=%d\n", rc);
+			goto err_free_kfi_dom;
+		}
+
+		rc = kfi_domain_bind(dom->domain, &dom->eq->fid, KFI_REG_MR);
+		if (rc) {
+			CERROR("Failed to bind KFI event queue to KFI domain: rc=%d\n",
+			       rc);
+			goto err_free_eq;
+		}
 	}
 
 	mutex_lock(&fab->dom_list_lock);
@@ -166,10 +169,10 @@ static struct kfilnd_dom *kfilnd_dom_alloc(struct kfi_info *dom_info,
 
 	return dom;
 
-err_free_kfi_dom:
-	kfi_close(&dom->domain->fid);
 err_free_eq:
 	kfi_close(&dom->eq->fid);
+err_free_kfi_dom:
+	kfi_close(&dom->domain->fid);
 err_free_dom:
 	LIBCFS_FREE(dom, sizeof(*dom));
 err:
