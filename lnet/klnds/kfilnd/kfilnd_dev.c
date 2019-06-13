@@ -5,8 +5,7 @@
  */
 #include "kfilnd_dev.h"
 #include "kfilnd_ep.h"
-#include "kfilnd_wkr.h"
-#include "kfilnd_tn.h"
+#include "kfilnd_dom.h"
 
 static unsigned int kfilnd_nid_hash(struct cfs_hash *hs, const void *key,
 				    unsigned int mask)
@@ -271,82 +270,6 @@ int kfilnd_dev_post_imm_buffers(struct kfilnd_dev *dev)
 }
 
 /**
- * kfilnd_ep_process_transaction() - Process a transaction event.
- */
-static void kfilnd_dev_process_transaction(void *devctx, void *context,
-					   int status)
-{
-	struct kfilnd_transaction *tn = context;
-
-	if (!tn)
-		return;
-
-	/*
-	 * The status parameter has been sent to the transaction's state
-	 * machine event.
-	 */
-	kfilnd_tn_event_handler(tn, status);
-}
-
-/**
- * kfilnd_dev_eq_handler() - Event handler for KFI domain event queue.
- * @eq: KFI event queue handler was raised for.
- * @context: user specific context.
- *
- * One type of event should appear on the event queue: memory registration
- * events. When this event occurs, asynchronous memory registration has
- * completed and the corresponding transaction structure needs to be progressed.
- */
-static void kfilnd_dev_eq_handler(struct kfid_eq *eq, void *context)
-{
-	struct kfilnd_dev *dev = context;
-	struct kfilnd_transaction *tn;
-	uint32_t event_type;
-	struct kfi_eq_entry event;
-	size_t rc;
-	size_t err_rc;
-	struct kfi_eq_err_entry err_event;
-
-	/* Schedule processing of all EQ events */
-	while (1) {
-		rc = kfi_eq_read(eq, &event_type, &event, sizeof(event), 0);
-		if (rc == -KFI_EAVAIL) {
-			/* We have error events */
-			while (1) {
-				err_rc = kfi_eq_readerr(eq, &err_event, 0);
-				if (err_rc != 1)
-					break;
-
-				tn = err_event.context;
-				tn->tn_status = -err_event.err;
-				kfilnd_wkr_post(tn->tn_ep->end_cpt,
-						kfilnd_dev_process_transaction,
-						dev, tn, TN_EVENT_FAIL);
-			}
-
-			/* Processed error events, back to normal events */
-			continue;
-		}
-		if (rc != sizeof(event)) {
-			if (rc != -EAGAIN)
-				CERROR("Unexpected rc = %lu\n", rc);
-			break;
-		}
-
-
-		if (event_type == KFI_MR_COMPLETE) {
-			tn = event.context;
-
-			kfilnd_wkr_post(tn->tn_ep->end_cpt,
-					kfilnd_dev_process_transaction, dev, tn,
-					TN_EVENT_MR_OK);
-		} else {
-			CERROR("Unexpected EQ event = %u\n", event_type);
-		}
-	}
-}
-
-/**
  * kfilnd_dev_free() - Free a KFI LND device.
  *
  * This function will not complete until all underlying KFI LND transactions are
@@ -397,9 +320,8 @@ void kfilnd_dev_free(struct kfilnd_dev *dev)
 
 	kfi_close(&dev->kfd_sep->fid);
 	kfi_close(&dev->kfd_av->fid);
-	kfi_close(&dev->kfd_domain->fid);
-	kfi_close(&dev->kfd_eq->fid);
-	kfi_close(&dev->kfd_fabric->fid);
+
+	kfilnd_dom_put(dev->dom);
 
 	LIBCFS_FREE(dev, sizeof(*dev));
 
@@ -428,16 +350,11 @@ struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni)
 	int i;
 	int rc;
 	struct kfi_av_attr av_attr = {};
-	struct kfi_eq_attr eq_attr = {};
-	struct kfi_info *hints;
-	struct kfi_info *info;
-	char *srvstr;
-	char *nodestr;
+	struct kfi_info *dev_info;
 	char *hash_name;
 	int cpt;
 	int lnet_ncpts;
 	struct kfilnd_dev *dev;
-	uint32_t ni_addr;
 
 	if (!ni) {
 		rc = -EINVAL;
@@ -457,105 +374,32 @@ struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni)
 	INIT_LIST_HEAD(&dev->kfd_tns);
 	spin_lock_init(&dev->kfd_lock);
 
-	hints = kfi_allocinfo();
-	if (!hints) {
-		rc = -ENOMEM;
+	dev->dom = kfilnd_dom_get(ni, &dev_info);
+	if (IS_ERR(dev->dom)) {
+		rc = PTR_ERR(dev->dom);
+		CERROR("Failed to get KFI LND domain: rc=%d\n", rc);
 		goto err_free_dev;
-	}
-
-	hints->caps = (KFI_MSG | KFI_RMA | KFI_SEND | KFI_RECV | KFI_READ |
-		       KFI_WRITE | KFI_REMOTE_READ | KFI_REMOTE_WRITE |
-		       KFI_MULTI_RECV | KFI_RMA_EVENT | KFI_REMOTE_COMM |
-		       KFI_NAMED_RX_CTX);
-	hints->domain_attr->mr_iov_limit = 256; /* 1 MiB LNet message */
-	hints->domain_attr->mr_cnt = 1024; /* Max LNet credits */
-	hints->ep_attr->max_msg_size = LNET_MAX_PAYLOAD;
-	hints->rx_attr->op_flags = KFI_COMPLETION | KFI_MULTI_RECV;
-	hints->rx_attr->iov_limit = 256; /* 1 MiB LNet message */
-	hints->tx_attr->op_flags = KFI_COMPLETION;
-	hints->tx_attr->iov_limit = 256; /* 1 MiB LNet message */
-	hints->tx_attr->rma_iov_limit = 256; /* 1 MiB LNet message */
-
-	/* The service value should match the network number */
-	srvstr = kasprintf(GFP_KERNEL, "%d",
-			   LNET_NETNUM(LNET_NIDNET(ni->ni_nid)));
-	if (!srvstr) {
-		rc = -ENOMEM;
-		CERROR("Could not allocate service str, rc = %d\n", rc);
-		goto err_free_hints;
-	}
-
-	/* The node value is IPv4 address in string form. */
-	ni_addr = LNET_NIDADDR(ni->ni_nid);
-	nodestr = kasprintf(GFP_KERNEL, "%pI4h", &ni_addr);
-	if (!nodestr) {
-		rc = -ENOMEM;
-		CERROR("Could not allocate node str, rc = %d\n", rc);
-		goto err_free_srvstr;
-	}
-
-	rc = kfi_getinfo(0, nodestr, srvstr, KFI_SOURCE, hints, &info);
-	if (rc) {
-		CERROR("Could not getinfo, rc = %d\n", rc);
-		goto err_free_nodestr;
-	}
-
-	/* Done with node string, service string, and hints. */
-	kfree(nodestr);
-	kfree(srvstr);
-	kfi_freeinfo(hints);
-	nodestr = NULL;
-	srvstr = NULL;
-	hints = NULL;
-
-	rc = kfi_fabric(info->fabric_attr, &dev->kfd_fabric, dev);
-	if (rc) {
-		CERROR("Cannot allocate a fabric structure, rc = %d\n", rc);
-		goto err_free_info;
-	}
-
-	eq_attr.size = KFILND_MAX_TX;
-	eq_attr.wait_obj = KFI_WAIT_NONE;
-	rc = kfi_eq_open(dev->kfd_fabric, &eq_attr, &dev->kfd_eq,
-			 kfilnd_dev_eq_handler, dev);
-	if (rc) {
-		CERROR("Failed to create EQ object, rc = %d\n", rc);
-		goto err_free_fabric;
-	}
-
-	/* Create a domain object to represent the device. */
-	rc = kfi_domain(dev->kfd_fabric, info, &dev->kfd_domain, dev);
-	if (rc) {
-		CERROR("Could not create a domain, rc = %d\n", rc);
-		goto err_free_eq;
-	}
-
-	/* Bind this domain to the fabric's EQ for memory regs */
-	rc = kfi_domain_bind(dev->kfd_domain, &dev->kfd_eq->fid, KFI_REG_MR);
-	if (rc) {
-		CERROR("Could not bind domain to EQ, rc = %d\n", rc);
-		goto err_free_domain;
 	}
 
 	/* Create an AV for this device */
 	av_attr.type = KFI_AV_UNSPEC;
 	av_attr.rx_ctx_bits = KFILND_FAB_RX_CTX_BITS;
-	rc = kfi_av_open(dev->kfd_domain, &av_attr, &dev->kfd_av, dev);
+	rc = kfi_av_open(dev->dom->domain, &av_attr, &dev->kfd_av, dev);
 	if (rc) {
 		CERROR("Could not open AV, rc = %d\n", rc);
-		goto err_free_domain;
+		goto err_put_dom;
 	}
 
 	/* Create a scalable endpont to represent the device. */
-	rc = kfi_scalable_ep(dev->kfd_domain, info, &dev->kfd_sep, dev);
+	rc = kfi_scalable_ep(dev->dom->domain, dev_info, &dev->kfd_sep, dev);
 	if (rc) {
 		CERROR("Could not create scalable endpoint, rc = %d\n", rc);
 		goto err_free_av;
 	}
 
 	/* Done with info. */
-	kfi_freeinfo(info);
-	info = NULL;
+	kfi_freeinfo(dev_info);
+	dev_info = NULL;
 
 	/* Bind the endpoint to the AV */
 	rc = kfi_scalable_ep_bind(dev->kfd_sep, &dev->kfd_av->fid, 0);
@@ -604,7 +448,8 @@ struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni)
 	}
 
 	/* Hash for LNet NIDs to KFI addresses. */
-	hash_name = kasprintf(GFP_KERNEL, "KFILND_NID_HASH_%s", nodestr);
+	hash_name = kasprintf(GFP_KERNEL, "KFILND_NID_HASH_%X",
+			      LNET_NIDADDR(ni->ni_nid));
 	if (!hash_name) {
 		rc = -ENOMEM;
 		goto err_free_endpoints;
@@ -644,22 +489,10 @@ err_free_sep:
 	kfi_close(&dev->kfd_sep->fid);
 err_free_av:
 	kfi_close(&dev->kfd_av->fid);
-err_free_domain:
-	kfi_close(&dev->kfd_domain->fid);
-err_free_eq:
-	kfi_close(&dev->kfd_eq->fid);
-err_free_fabric:
-	kfi_close(&dev->kfd_fabric->fid);
-err_free_info:
-	if (info)
-		kfi_freeinfo(info);
-err_free_nodestr:
-	kfree(nodestr);
-err_free_srvstr:
-	kfree(srvstr);
-err_free_hints:
-	if (hints)
-		kfi_freeinfo(hints);
+err_put_dom:
+	kfilnd_dom_put(dev->dom);
+	if (dev_info)
+		kfi_freeinfo(dev_info);
 err_free_dev:
 	LIBCFS_FREE(dev, sizeof(*dev));
 err:
