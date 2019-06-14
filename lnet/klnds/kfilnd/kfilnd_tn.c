@@ -8,10 +8,10 @@
 #include "kfilnd_wkr.h"
 #include "kfilnd_ep.h"
 #include "kfilnd_dev.h"
+#include "kfilnd_dom.h"
 #include <asm/checksum.h>
 
 static struct kmem_cache *tn_cache;
-static atomic_t cookie_count = ATOMIC_INIT(2);
 
 static __sum16 kfilnd_tn_cksum(void *ptr, int nob)
 {
@@ -577,7 +577,7 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 	struct kfilnd_ep *ep;
 
 	if (!dev)
-		return NULL;
+		goto err;
 
 	/* If the CPT does not fall into the LNet NI CPT range, force the CPT
 	 * into the LNet NI CPT range. This should never happen.
@@ -591,46 +591,28 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 
 	tn = kmem_cache_alloc(tn_cache, GFP_KERNEL);
 	if (!tn)
-		return NULL;
+		goto err;
 
 	memset(tn, 0, sizeof(*tn));
 	if (alloc_msg) {
 		LIBCFS_CPT_ALLOC(tn->tn_msg, lnet_cpt_table(), cpt,
 				 KFILND_IMMEDIATE_MSG_SIZE);
-		if (!tn->tn_msg) {
-			kmem_cache_free(tn_cache, tn);
-			return NULL;
-		}
+		if (!tn->tn_msg)
+			goto err_free_tn;
 	}
 
 	INIT_LIST_HEAD(&tn->tn_list);
 	spin_lock_init(&tn->tn_lock);
 
-	/* TODO: This cookie conut is needs to be reworked to avoid integer
-	 * wrapping.
-	 */
-
-	/*
-	 * The cookie is used as an MR key.  That needs to be 64-bit, however,
-	 * the first few bits are reserved for kfabric to use.  So, we are
-	 * deriving the cookie from a 32-bit atomic variable which is
-	 * incremented and wraps.  That leaves the top 32-bits of the
-	 * cookie alone for kfabric to use.
-	 */
-	tn->tn_cookie = (u64)atomic_inc_return(&cookie_count);
-	if (tn->tn_cookie == 0)
-		/* Zero is invalid.  Increment again. */
-		tn->tn_cookie = (u64) atomic_inc_return(&cookie_count);
+	/* Use MR remote key as the transaction cookie. */
+	tn->tn_cookie = kfilnd_dom_get_mr_key(dev->dom);
 
 	spin_lock(&dev->kfd_lock);
 
 	/* Make sure that someone has not uninitialized the device */
 	if (dev->kfd_state != KFILND_STATE_INITIALIZED) {
 		spin_unlock(&dev->kfd_lock);
-		if (tn->tn_msg)
-			LIBCFS_FREE(tn->tn_msg, KFILND_IMMEDIATE_MSG_SIZE);
-		kmem_cache_free(tn_cache, tn);
-		return NULL;
+		goto err_free_tn;
 	}
 	tn->tn_ep = ep;
 
@@ -641,6 +623,13 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 	list_add_tail(&tn->tn_list, &dev->kfd_tns);
 	spin_unlock(&dev->kfd_lock);
 	return tn;
+
+err_free_tn:
+	if (tn->tn_msg)
+		LIBCFS_FREE(tn->tn_msg, KFILND_IMMEDIATE_MSG_SIZE);
+	kmem_cache_free(tn_cache, tn);
+err:
+	return NULL;
 }
 
 /**
