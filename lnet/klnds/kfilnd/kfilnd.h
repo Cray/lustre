@@ -141,6 +141,7 @@ struct kfilnd_dom {
 	struct kfid_eq *eq;
 	struct kfid_domain *domain;
 	struct kref cnt;
+	unsigned int mr_key;
 };
 
 struct kfilnd_dev {

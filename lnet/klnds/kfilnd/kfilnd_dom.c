@@ -137,6 +137,7 @@ static struct kfilnd_dom *kfilnd_dom_alloc(struct kfi_info *dom_info,
 	spin_lock_init(&dom->lock);
 	dom->fab = fab;
 	kref_init(&dom->cnt);
+	dom->mr_key = 1;
 
 	rc = kfi_domain(fab->fabric, dom_info, &dom->domain, dom);
 	if (rc) {
@@ -472,4 +473,28 @@ err_free_node:
 	kfree(node);
 err:
 	return ERR_PTR(rc);
+}
+
+/**
+ * kfilnd_dom_get_mr_key() - Get a MR remote key.
+ * @dom: KFI LND domain MR remote key should come from.
+ *
+ * MR keys need to be unique with a KFI LND domain. Enforcement of unique MR
+ * keys occurs by the KFI domain during MR allocation.
+ *
+ * An MR key of zero should be considered invalid.
+ *
+ * Return: Non-zero, MR key value.
+ */
+unsigned int kfilnd_dom_get_mr_key(struct kfilnd_dom *dom)
+{
+	unsigned int key;
+
+	spin_lock(&dom->lock);
+	key = dom->mr_key;
+	if (++dom->mr_key == 0)
+		dom->mr_key = 1;
+	spin_unlock(&dom->lock);
+
+	return key;
 }
