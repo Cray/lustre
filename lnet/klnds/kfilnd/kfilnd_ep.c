@@ -163,7 +163,7 @@ static void kfilnd_ep_process_imm_recv(void *bufctx, void *context, int status)
 		CERROR("Can't get receive Tn: Tn descs exhausted\n");
 		return;
 	}
-	tn->tn_msg = context;
+	tn->tn_rx_msg = context;
 	tn->tn_msgsz = status;
 	tn->tn_nob = status;
 	tn->tn_posted_buf = bufdesc;
@@ -465,7 +465,7 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
 	if (!ep || !tn || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
 		return -EINVAL;
 
-	buf = tn->tn_msg;
+	buf = tn->tn_tx_msg;
 	len = tn->tn_msgsz;
 
 	/* Make sure the device is not being shut down */
