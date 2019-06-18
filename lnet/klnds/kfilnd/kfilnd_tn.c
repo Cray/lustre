@@ -243,7 +243,7 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 			  bool *tn_released)
 {
 	struct kfilnd_msg *msg;
-	int rc = 0;
+	int rc;
 
 	switch (event) {
 	case TN_EVENT_TX_OK:
@@ -264,22 +264,30 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 			 * entire LNet payload.
 			 */
 			tn->tn_state = TN_STATE_IMM_SEND;
-			tn->tn_status = kfilnd_ep_post_send(tn->tn_ep, tn,
-							    true);
+			rc = kfilnd_ep_post_send(tn->tn_ep, tn, true);
+			if (rc)
+				CERROR("Failed to send to %s: rc=%d\n",
+				       libcfs_nid2str(tn->tn_target_nid), rc);
 		} else {
 			tn->tn_state = TN_STATE_REG_MEM;
-			tn->tn_status = kfilnd_ep_reg_mr(tn->tn_ep, tn);
+			rc = kfilnd_ep_reg_mr(tn->tn_ep, tn);
+			if (rc)
+				CERROR("Failed to register MR for %s: rc=%d\n",
+				       libcfs_nid2str(tn->tn_target_nid), rc);
 
 			/* If synchronous memory registration is used, post an
 			 * immediate message with MR information so peer can
 			 * perform an RMA operation.
 			 */
-			if (sync_mr_reg && !tn->tn_status) {
+			if (sync_mr_reg && !rc) {
 				kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn),
 						   tn->rma_rx);
 				tn->tn_state = TN_STATE_WAIT_RMA;
-				tn->tn_status = kfilnd_ep_post_send(tn->tn_ep,
-								    tn, false);
+				rc = kfilnd_ep_post_send(tn->tn_ep, tn, false);
+				if (rc)
+					CERROR("Failed to send to %s: rc=%d\n",
+					       libcfs_nid2str(tn->tn_target_nid),
+					       rc);
 			}
 		}
 		break;
@@ -288,9 +296,9 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 		msg = tn->tn_rx_msg;
 
 		/* Unpack the message */
-		tn->tn_status = kfilnd_tn_unpack_msg(msg, tn->tn_nob);
-		if (tn->tn_status) {
-			CERROR("Failed to unpack message\n");
+		rc = kfilnd_tn_unpack_msg(msg, tn->tn_nob);
+		if (rc) {
+			CERROR("Failed to unpack message: rc=%d\n", rc);
 			break;
 		}
 
@@ -300,8 +308,11 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 		rc = kfilnd_dev_update_peer_address(tn->tn_ep->end_dev,
 						    msg->kfm_srcnid,
 						    msg->kfm_prefer_rx);
-		if (rc)
-			CWARN("Failed to update KFILND peer address\n");
+		if (rc) {
+			CWARN("Failed to update peer address %s: rc=%d\n",
+			      libcfs_nid2str(msg->kfm_srcnid), rc);
+			rc = 0;
+		}
 
 		/* RMA RX context is needed to target the correct RX context for
 		 * a future RMA operation.
@@ -317,23 +328,26 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 		spin_unlock(&tn->tn_lock);
 		*tn_released = true;
 		if (msg->kfm_type == KFILND_MSG_IMMEDIATE)
-			tn->tn_status = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
-						   &msg->kfm_u.immed.kfim_hdr,
-						   msg->kfm_srcnid, tn, 0);
+			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
+					&msg->kfm_u.immed.kfim_hdr,
+					msg->kfm_srcnid, tn, 0);
 		else
-			tn->tn_status = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
-						   &msg->kfm_u.get.kfgm_hdr,
-						   msg->kfm_srcnid, tn, 1);
-		if (tn->tn_status)
-			CERROR("Failed to parse LNet message\n");
+			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
+					&msg->kfm_u.get.kfgm_hdr,
+					msg->kfm_srcnid, tn, 1);
+		if (rc)
+			CERROR("Failed to parse LNet message from %s: rc=%d\n",
+			       libcfs_nid2str(msg->kfm_srcnid), rc);
 		break;
 
 	default:
-		CERROR("Invalid event for idle state: %d\n", event);
+		CERROR("Invalid event for idle state: event=%d\n", event);
 		rc = -EINVAL;
 	}
 
-	if (tn->tn_status) {
+	if (rc) {
+		tn->tn_status = rc;
+
 		/* Release the transaction if not already done. */
 		if (!*tn_released) {
 			spin_unlock(&tn->tn_lock);
@@ -349,6 +363,8 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 static int kfilnd_tn_imm_send(struct kfilnd_transaction *tn,
 			      enum tn_events event, bool *tn_released)
 {
+	int rc = 0;
+
 	switch (event) {
 	case TN_EVENT_FAIL:
 		/* Remove LNet NID from hash if transaction fails. This would
@@ -359,23 +375,33 @@ static int kfilnd_tn_imm_send(struct kfilnd_transaction *tn,
 
 		/* Fall through. */
 	case TN_EVENT_TX_OK:
-		spin_unlock(&tn->tn_lock);
-		*tn_released = true;
-
-		kfilnd_tn_finalize(tn);
 		break;
 
 	default:
-		CERROR("Invalid event for immediate send state: %d\n", event);
-		return -EINVAL;
+		CERROR("Invalid event for immediate send state: event=%d\n",
+		       event);
+		rc = -EINVAL;
 	}
-	return 0;
+
+	/* Transaction is always finalized when an event occurs in the immediate
+	 * send state.
+	 */
+	if (rc)
+		tn->tn_status = rc;
+
+	spin_unlock(&tn->tn_lock);
+	*tn_released = true;
+
+	kfilnd_tn_finalize(tn);
+
+	return rc;
 }
 
 static int kfilnd_tn_imm_recv(struct kfilnd_transaction *tn,
 			      enum tn_events event, bool *tn_released)
 {
-	int rc;
+	int rc = 0;
+	bool finalize_tn = false;
 
 	switch (event) {
 	case TN_EVENT_RMA_PREP:
@@ -394,33 +420,44 @@ static int kfilnd_tn_imm_recv(struct kfilnd_transaction *tn,
 		/* Initiate the RMA operation to push/pull the LNet payload. */
 		tn->tn_state = TN_STATE_WAIT_RMA;
 		if (tn->tn_flags & KFILND_TN_FLAG_SINK)
-			tn->tn_status = kfilnd_ep_post_read(tn->tn_ep, tn);
+			rc = kfilnd_ep_post_read(tn->tn_ep, tn);
 		else
-			tn->tn_status = kfilnd_ep_post_write(tn->tn_ep, tn);
-		if (tn->tn_status == 0)
+			rc = kfilnd_ep_post_write(tn->tn_ep, tn);
+		if (!rc)
 			break;
-		/* On any failure, fallthrough */
 
+		/* On any failure, fallthrough */
 	case TN_EVENT_FAIL:
 	case TN_EVENT_RX_OK:
+		finalize_tn = true;
+		break;
+
+	default:
+		CERROR("Invalid event for immediate receive state: event=%d\n",
+		       event);
+		rc = -EINVAL;
+		finalize_tn = true;
+	}
+
+	if (finalize_tn) {
+		if (rc)
+			tn->tn_status = rc;
+
 		spin_unlock(&tn->tn_lock);
 		*tn_released = true;
 
 		kfilnd_tn_finalize(tn);
-		break;
-
-	default:
-		CERROR("Invalid event for immediate receive state: %d\n",
-		       event);
-		return -EINVAL;
 	}
 
-	return 0;
+	return rc;
 }
 
 static int kfilnd_tn_reg_mem(struct kfilnd_transaction *tn,
 			     enum tn_events event, bool *tn_released)
 {
+	int rc = 0;
+	bool finalize_tn = false;
+
 	switch (event) {
 	case TN_EVENT_MR_OK:
 		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn), tn->rma_rx);
@@ -430,28 +467,40 @@ static int kfilnd_tn_reg_mem(struct kfilnd_transaction *tn,
 		 * payload.
 		 */
 		tn->tn_state = TN_STATE_WAIT_RMA;
-		tn->tn_status = kfilnd_ep_post_send(tn->tn_ep, tn, false);
-		if (!tn->tn_status)
+		rc = kfilnd_ep_post_send(tn->tn_ep, tn, false);
+		if (!rc)
 			break;
 
 		/* Fall through on bad transaction status. */
 	case TN_EVENT_FAIL:
+		finalize_tn = true;
+		break;
+
+	default:
+		CERROR("Invalid event for reg mem state: event=%d\n", event);
+		rc = -EINVAL;
+		finalize_tn = true;
+	}
+
+	if (finalize_tn) {
+		if (rc)
+			tn->tn_status = rc;
+
 		spin_unlock(&tn->tn_lock);
 		*tn_released = true;
 
 		kfilnd_tn_finalize(tn);
-		break;
-	default:
-		CERROR("Invalid event for reg mem state: %d\n", event);
-		return -EINVAL;
 	}
 
-	return 0;
+	return rc;
 }
 
 static int kfilnd_tn_wait_rma(struct kfilnd_transaction *tn,
 			      enum tn_events event, bool *tn_released)
 {
+	int rc = 0;
+	bool finalize_tn = true;
+
 	switch (event) {
 	case TN_EVENT_FAIL:
 		/* Remove LNet NID from hash only if transaction fails. This
@@ -464,15 +513,25 @@ static int kfilnd_tn_wait_rma(struct kfilnd_transaction *tn,
 		/* Fall through. */
 	case TN_EVENT_TX_OK:
 	case TN_EVENT_RX_OK:
+		finalize_tn = true;
+		break;
+
+	default:
+		CERROR("Invalid event for wait RMA state: event=%d\n", event);
+		rc = -EINVAL;
+		finalize_tn = true;
+	}
+
+	if (finalize_tn) {
+		if (rc)
+			tn->tn_status = rc;
+
 		spin_unlock(&tn->tn_lock);
 		*tn_released = true;
 
 		kfilnd_tn_finalize(tn);
-		break;
-	default:
-		CERROR("Invalid event for wait RMA state: %d\n", event);
-		return -EINVAL;
 	}
+
 	return 0;
 }
 
