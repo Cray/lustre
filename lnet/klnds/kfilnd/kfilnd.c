@@ -114,7 +114,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		return -ENOMEM;
 	}
 
-	kfmsg = tn->tn_msg;
+	kfmsg = tn->tn_tx_msg;
 
 	switch (lnd_msg_type) {
 	case KFILND_MSG_IMMEDIATE:
@@ -187,7 +187,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	}
 
 	/* Initialize the protocol header */
-	tn->tn_msgsz = kfilnd_init_proto(tn->tn_msg, lnd_msg_type, nob,
+	tn->tn_msgsz = kfilnd_init_proto(tn->tn_tx_msg, lnd_msg_type, nob,
 					 ni);
 
 	/* Setup remaining transaction fields */
@@ -208,7 +208,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		       unsigned int rlen)
 {
 	struct kfilnd_transaction *tn = private;
-	struct kfilnd_msg *rxmsg = tn->tn_msg;
+	struct kfilnd_msg *rxmsg = tn->tn_rx_msg;
 	int nob;
 	int rc = 0;
 
@@ -230,7 +230,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		nob = offsetof(struct kfilnd_msg,
 			       kfm_u.immed.kfim_payload[rlen]);
 		if (nob > tn->tn_msgsz) {
-			CERROR("Immediate message from %s too big: %d(%d)\n",
+			CERROR("Immediate message from %s too big: %d(%lu)\n",
 			       libcfs_nid2str(rxmsg->kfm_u.immed.kfim_hdr.src_nid),
 			       nob, tn->tn_msgsz);
 			rc = -EPROTO;
