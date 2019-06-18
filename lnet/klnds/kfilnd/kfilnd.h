@@ -257,8 +257,6 @@ struct kfilnd_transaction			/* Both send and receive */
 	spinlock_t		tn_lock;	/* to serialize events */
 	int			tn_status;	/* return code from ops */
 	struct kfilnd_ep	*tn_ep;		/* endpoint we operate under */
-	struct kfilnd_msg	*tn_msg;	/* immediate message for Tn */
-	unsigned int		tn_msgsz;	/* size of message buffer */
 	int			tn_nob;		/* bytes received into msg */
 	enum tn_states		tn_state;	/* current state of Tn */
 	unsigned int		tn_flags;	/* see set of Tn flags above */
@@ -268,9 +266,16 @@ struct kfilnd_transaction			/* Both send and receive */
 	lnet_nid_t		tn_target_nid;	/* NID transaction is with */
 	kfi_addr_t		tn_target_addr;	/* Transaction KFI addr */
 	u32			tn_procid;	/* PROCID transaction is with */
-	struct kfilnd_immediate_buffer *tn_posted_buf; /* associated multi-recv
-							* buf.
-							*/
+
+	/* Transaction send message. */
+	struct kfilnd_msg *tn_tx_msg;
+
+	/* Transaction multi-receive buffer and associated receive message. */
+	struct kfilnd_immediate_buffer *tn_posted_buf;
+	struct kfilnd_msg *tn_rx_msg;
+
+	/* Send or receive message size. */
+	size_t tn_msgsz;
 
 	/* Used to keep track of user's buffers */
 	unsigned int		tn_num_iovec;

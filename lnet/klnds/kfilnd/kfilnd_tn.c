@@ -72,7 +72,7 @@ static int kfilnd_tn_msgtype2size(int type)
 static void kfilnd_tn_pack_msg(struct kfilnd_transaction *tn, u8 prefer_rx,
 			       u8 rma_rx)
 {
-	struct kfilnd_msg *msg = tn->tn_msg;
+	struct kfilnd_msg *msg = tn->tn_tx_msg;
 
 	/* Commented out members should be set already */
 	msg->kfm_magic    = KFILND_MSG_MAGIC;
@@ -186,7 +186,7 @@ static void kfilnd_tn_setup_immed(struct kfilnd_transaction *tn)
 {
 	if (tn->tn_kiov)
 		lnet_copy_kiov2flat(KFILND_IMMEDIATE_MSG_SIZE,
-				    tn->tn_msg,
+				    tn->tn_tx_msg,
 				    offsetof(struct kfilnd_msg,
 					     kfm_u.immed.kfim_payload),
 				    tn->tn_num_iovec, tn->tn_kiov,
@@ -194,7 +194,7 @@ static void kfilnd_tn_setup_immed(struct kfilnd_transaction *tn)
 				    tn->tn_nob_iovec);
 	else
 		lnet_copy_iov2flat(KFILND_IMMEDIATE_MSG_SIZE,
-				   tn->tn_msg,
+				   tn->tn_tx_msg,
 				   offsetof(struct kfilnd_msg,
 					    kfm_u.immed.kfim_payload),
 				   tn->tn_num_iovec, tn->tn_iov,
@@ -202,15 +202,53 @@ static void kfilnd_tn_setup_immed(struct kfilnd_transaction *tn)
 				   tn->tn_nob_iovec);
 }
 
+/**
+ * kfilnd_tn_finalize() - Cleanup resources and finalize LNet operation.
+ *
+ * All state machine functions should call kfilnd_tn_finalize() instead of
+ * kfilnd_tn_free().
+ */
+static void kfilnd_tn_finalize(struct kfilnd_transaction *tn)
+{
+	int rc;
+
+	/* Free memory region before finalizing LNet operation and thus
+	 * releasing the LNet buffer.
+	 */
+	if (tn->tn_mr)
+		kfilnd_ep_dereg_mr(tn->tn_ep, tn);
+
+	/* Release the reference on the multi-receive buffer. */
+	if (tn->tn_posted_buf) {
+		rc = kfilnd_ep_imm_buffer_put(tn->tn_ep, tn->tn_posted_buf);
+		if (rc)
+			CERROR("Failed to repost receive buffer: rc=%d\n", rc);
+	}
+
+	/* Finalize LNet operation. */
+	if (tn->tn_lntmsg)
+		lnet_finalize(tn->tn_lntmsg, tn->tn_status);
+
+	if (tn->tn_getreply) {
+		lnet_set_reply_msg_len(tn->tn_ep->end_dev->kfd_ni,
+				       tn->tn_getreply, tn->tn_nob);
+		lnet_finalize(tn->tn_getreply, tn->tn_status);
+	}
+
+	kfilnd_tn_free(tn);
+}
+
 /*  The following are the state machine routines for the transactions. */
 static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 			  bool *tn_released)
 {
-	struct kfilnd_msg *msg = tn->tn_msg;
+	struct kfilnd_msg *msg;
 	int rc = 0;
 
 	switch (event) {
 	case TN_EVENT_TX_OK:
+		msg = tn->tn_tx_msg;
+
 		/* If the transaction is an immediate message only, pack the
 		 * message and post the buffer. If not an immediate message
 		 * only, register a sink/source memory region. If memory
@@ -226,29 +264,33 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 			 * entire LNet payload.
 			 */
 			tn->tn_state = TN_STATE_IMM_SEND;
-			rc = kfilnd_ep_post_send(tn->tn_ep, tn, true);
+			tn->tn_status = kfilnd_ep_post_send(tn->tn_ep, tn,
+							    true);
 		} else {
 			tn->tn_state = TN_STATE_REG_MEM;
-			rc = kfilnd_ep_reg_mr(tn->tn_ep, tn);
+			tn->tn_status = kfilnd_ep_reg_mr(tn->tn_ep, tn);
 
 			/* If synchronous memory registration is used, post an
 			 * immediate message with MR information so peer can
 			 * perform an RMA operation.
 			 */
-			if (sync_mr_reg && !rc) {
+			if (sync_mr_reg && !tn->tn_status) {
 				kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn),
 						   tn->rma_rx);
 				tn->tn_state = TN_STATE_WAIT_RMA;
-				rc = kfilnd_ep_post_send(tn->tn_ep, tn, false);
+				tn->tn_status = kfilnd_ep_post_send(tn->tn_ep,
+								    tn, false);
 			}
 		}
 		break;
 
 	case TN_EVENT_RX_OK:
+		msg = tn->tn_rx_msg;
+
 		/* Unpack the message */
-		rc = kfilnd_tn_unpack_msg(msg, tn->tn_nob);
-		if (rc) {
-			CWARN("Need to repost on unpack error\n");
+		tn->tn_status = kfilnd_tn_unpack_msg(msg, tn->tn_nob);
+		if (tn->tn_status) {
+			CERROR("Failed to unpack message\n");
 			break;
 		}
 
@@ -275,15 +317,15 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 		spin_unlock(&tn->tn_lock);
 		*tn_released = true;
 		if (msg->kfm_type == KFILND_MSG_IMMEDIATE)
-			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
-					&msg->kfm_u.immed.kfim_hdr,
-					msg->kfm_srcnid, tn, 0);
+			tn->tn_status = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
+						   &msg->kfm_u.immed.kfim_hdr,
+						   msg->kfm_srcnid, tn, 0);
 		else
-			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
-					&msg->kfm_u.get.kfgm_hdr,
-					msg->kfm_srcnid, tn, 1);
-		if (rc)
-			CWARN("Need to repost on parse error\n");
+			tn->tn_status = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
+						   &msg->kfm_u.get.kfgm_hdr,
+						   msg->kfm_srcnid, tn, 1);
+		if (tn->tn_status)
+			CERROR("Failed to parse LNet message\n");
 		break;
 
 	default:
@@ -291,32 +333,14 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 		rc = -EINVAL;
 	}
 
-	if (rc) {
-		if (tn->tn_posted_buf) {
-			/* Always ensure that a reference is returned to the
-			 * multi-receive immediate buffer so that it can be
-			 * reposted if needed.
-			 */
-			rc = kfilnd_ep_imm_buffer_put(tn->tn_ep,
-						      tn->tn_posted_buf);
-			if (rc)
-				CERROR("Unable to repost Rx buffer, rc = %d\n",
-				       rc);
-		}
-
-		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_lntmsg, rc);
-			tn->tn_lntmsg = NULL;
-		}
-
+	if (tn->tn_status) {
 		/* Release the transaction if not already done. */
 		if (!*tn_released) {
 			spin_unlock(&tn->tn_lock);
 			*tn_released = true;
 		}
 
-		tn->tn_state = TN_STATE_IDLE;
-		kfilnd_tn_free(tn);
+		kfilnd_tn_finalize(tn);
 	}
 
 	return rc;
@@ -335,16 +359,12 @@ static int kfilnd_tn_imm_send(struct kfilnd_transaction *tn,
 
 		/* Fall through. */
 	case TN_EVENT_TX_OK:
-		/* Finalize the message. */
-		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
-			tn->tn_lntmsg = NULL;
-		}
-		tn->tn_state = TN_STATE_IDLE;
 		spin_unlock(&tn->tn_lock);
-		kfilnd_tn_free(tn);
 		*tn_released = true;
+
+		kfilnd_tn_finalize(tn);
 		break;
+
 	default:
 		CERROR("Invalid event for immediate send state: %d\n", event);
 		return -EINVAL;
@@ -356,7 +376,6 @@ static int kfilnd_tn_imm_recv(struct kfilnd_transaction *tn,
 			      enum tn_events event, bool *tn_released)
 {
 	int rc;
-	bool reposted = false;
 
 	switch (event) {
 	case TN_EVENT_RMA_PREP:
@@ -367,9 +386,10 @@ static int kfilnd_tn_imm_recv(struct kfilnd_transaction *tn,
 		 * the same transaction.
 		 */
 		rc = kfilnd_ep_imm_buffer_put(tn->tn_ep, tn->tn_posted_buf);
-		if (rc < 0)
-			CERROR("Unable to repost Rx buffer, rc = %d\n", rc);
-		reposted = true;
+		if (rc)
+			CERROR("Failed to repost receive buffer: rc=%d\n", rc);
+		else
+			tn->tn_posted_buf = NULL;
 
 		/* Initiate the RMA operation to push/pull the LNet payload. */
 		tn->tn_state = TN_STATE_WAIT_RMA;
@@ -383,30 +403,12 @@ static int kfilnd_tn_imm_recv(struct kfilnd_transaction *tn,
 
 	case TN_EVENT_FAIL:
 	case TN_EVENT_RX_OK:
-		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
-			tn->tn_lntmsg = NULL;
-		}
-
-		tn->tn_state = TN_STATE_IDLE;
-
-		/* Always ensure that a reference is returned to the
-		 * multi-receive immediate buffer so that it can be reposted if
-		 * needed.
-		 */
-		if (!reposted) {
-			rc = kfilnd_ep_imm_buffer_put(tn->tn_ep,
-						      tn->tn_posted_buf);
-			if (rc < 0)
-				CERROR("Unable to repost Rx buffer, rc = %d\n",
-				       rc);
-		}
-
-		/* Release the Tn */
 		spin_unlock(&tn->tn_lock);
-		kfilnd_tn_free(tn);
 		*tn_released = true;
+
+		kfilnd_tn_finalize(tn);
 		break;
+
 	default:
 		CERROR("Invalid event for immediate receive state: %d\n",
 		       event);
@@ -434,17 +436,11 @@ static int kfilnd_tn_reg_mem(struct kfilnd_transaction *tn,
 
 		/* Fall through on bad transaction status. */
 	case TN_EVENT_FAIL:
-		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
-			tn->tn_lntmsg = NULL;
-		}
-
-		tn->tn_state = TN_STATE_IDLE;
 		spin_unlock(&tn->tn_lock);
-		kfilnd_tn_free(tn);
 		*tn_released = true;
-		break;
 
+		kfilnd_tn_finalize(tn);
+		break;
 	default:
 		CERROR("Invalid event for reg mem state: %d\n", event);
 		return -EINVAL;
@@ -468,23 +464,10 @@ static int kfilnd_tn_wait_rma(struct kfilnd_transaction *tn,
 		/* Fall through. */
 	case TN_EVENT_TX_OK:
 	case TN_EVENT_RX_OK:
-		if (tn->tn_lntmsg) {
-			lnet_finalize(tn->tn_lntmsg, tn->tn_status);
-			tn->tn_lntmsg = NULL;
-		}
-		if (tn->tn_getreply) {
-			lnet_set_reply_msg_len(tn->tn_ep->end_dev->kfd_ni,
-					       tn->tn_getreply, tn->tn_nob);
-			lnet_finalize(tn->tn_getreply, tn->tn_status);
-			tn->tn_getreply = NULL;
-			tn->tn_nob = 0;
-		}
-
-		/* Release the Tn */
-		tn->tn_state = TN_STATE_IDLE;
 		spin_unlock(&tn->tn_lock);
-		kfilnd_tn_free(tn);
 		*tn_released = true;
+
+		kfilnd_tn_finalize(tn);
 		break;
 	default:
 		CERROR("Invalid event for wait RMA state: %d\n", event);
@@ -547,13 +530,10 @@ void kfilnd_tn_free(struct kfilnd_transaction *tn)
 	list_del(&tn->tn_list);
 	spin_unlock(&tn->tn_ep->end_dev->kfd_lock);
 
-	/* If this is not a pre-posted multi-receive buffer, free it */
-	if (!tn->tn_posted_buf)
-		LIBCFS_FREE(tn->tn_msg, KFILND_IMMEDIATE_MSG_SIZE);
+	/* Free send message buffer if needed. */
+	if (tn->tn_tx_msg)
+		LIBCFS_FREE(tn->tn_tx_msg, KFILND_IMMEDIATE_MSG_SIZE);
 
-	/* If an MR has been registered for the TN, release it */
-	if (tn->tn_mr)
-		kfilnd_ep_dereg_mr(tn->tn_ep, tn);
 	kmem_cache_free(tn_cache, tn);
 }
 
@@ -595,9 +575,9 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 
 	memset(tn, 0, sizeof(*tn));
 	if (alloc_msg) {
-		LIBCFS_CPT_ALLOC(tn->tn_msg, lnet_cpt_table(), cpt,
+		LIBCFS_CPT_ALLOC(tn->tn_tx_msg, lnet_cpt_table(), cpt,
 				 KFILND_IMMEDIATE_MSG_SIZE);
-		if (!tn->tn_msg)
+		if (!tn->tn_tx_msg)
 			goto err_free_tn;
 	}
 
@@ -625,8 +605,8 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 	return tn;
 
 err_free_tn:
-	if (tn->tn_msg)
-		LIBCFS_FREE(tn->tn_msg, KFILND_IMMEDIATE_MSG_SIZE);
+	if (tn->tn_tx_msg)
+		LIBCFS_FREE(tn->tn_tx_msg, KFILND_IMMEDIATE_MSG_SIZE);
 	kmem_cache_free(tn_cache, tn);
 err:
 	return NULL;
