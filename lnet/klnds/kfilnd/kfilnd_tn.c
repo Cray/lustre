@@ -18,6 +18,20 @@ static __sum16 kfilnd_tn_cksum(void *ptr, int nob)
 	return csum_fold(csum_partial(ptr, nob, 0));
 }
 
+static const char *event_flags_to_str(uint64_t flags)
+{
+	if (flags & KFI_SEND)
+		return "KFI send";
+	else if (flags & KFI_WRITE)
+		return "KFI write";
+	else if (flags & KFI_READ)
+		return "KFI read";
+	else if (flags & KFI_RECV)
+		return "KFI recv";
+	else
+		return "Unhandled KFI operation";
+}
+
 static const char *kfilnd_tn_msgtype2str(int type)
 {
 	switch (type) {
@@ -200,6 +214,177 @@ static void kfilnd_tn_setup_immed(struct kfilnd_transaction *tn)
 				   tn->tn_num_iovec, tn->tn_iov,
 				   tn->tn_offset_iovec,
 				   tn->tn_nob_iovec);
+}
+
+/**
+ * kfilnd_tn_process_rx_event() - Process an immediate receive event.
+ *
+ * For each immediate receive, a transaction structure needs to be allocated to
+ * process the receive.
+ */
+static void kfilnd_tn_process_rx_event(void *buf_context, void *msg_context,
+				       int msg_size)
+{
+	struct kfilnd_transaction *tn;
+	struct kfilnd_immediate_buffer *bufdesc = buf_context;
+
+	/*
+	 * context points to a received buffer and status is the length.
+	 * Allocate a Tn structure, set its values, then launch the receive.
+	 */
+	tn = kfilnd_tn_alloc(bufdesc->immed_end->end_dev,
+			     bufdesc->immed_end->end_cpt, false);
+	if (!tn) {
+		CERROR("Can't get receive Tn: Tn descs exhausted\n");
+		return;
+	}
+	tn->tn_rx_msg = msg_context;
+	tn->tn_msgsz = msg_size;
+	tn->tn_nob = msg_size;
+	tn->tn_posted_buf = bufdesc;
+
+	/* Move TN from idle to receiving */
+	kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK);
+}
+
+/**
+ * kfilnd_tn_process_unlink_event() - Process unlink of immediate receive
+ * buffer.
+ *
+ * Immediate buffer unlink occurs when all the space in the multi-receive buffer
+ * has been consumed or the buffer is manually unlinked (cancelled). A reference
+ * needs to be returned to the immediate buffer.
+ */
+static void kfilnd_tn_process_unlink_event(void *buf_context, void *context,
+					   int status)
+{
+	struct kfilnd_immediate_buffer *bufdesc = buf_context;
+	int rc;
+
+	rc = kfilnd_ep_imm_buffer_put(bufdesc->immed_end, bufdesc);
+	if (rc)
+		CERROR("Could not repost Rx buffer, rc = %d\n", rc);
+}
+
+/**
+ * kfilnd_tn_process_tx_event() - Process a transmit transaction event.
+ */
+static void kfilnd_tn_process_tx_event(void *tn_context, void *context,
+				       int status)
+{
+	struct kfilnd_transaction *tn = tn_context;
+	enum tn_events event;
+
+	tn->tn_flags &= ~KFILND_TN_FLAG_TX_POSTED;
+	tn->tn_status = status;
+
+	if (tn->tn_status)
+		event = TN_EVENT_FAIL;
+	else
+		event = TN_EVENT_TX_OK;
+
+	/*
+	 * The status parameter has been sent to the transaction's state
+	 * machine event.
+	 */
+	kfilnd_tn_event_handler(tn, event);
+}
+
+/**
+ * kfilnd_tn_process_mr_event() - Process a memory region event.
+ */
+static void kfilnd_tn_process_mr_event(void *ep_context, void *tn_context,
+				       int status)
+{
+	struct kfilnd_transaction *tn = tn_context;
+	enum tn_events event;
+
+	tn->tn_status = status;
+
+	if (tn->tn_status)
+		event = TN_EVENT_FAIL;
+	else
+		event = TN_EVENT_RX_OK;
+
+	kfilnd_tn_event_handler(tn, event);
+}
+
+/**
+ * kfilnd_tn_cq_error() - Process a completion queue error entry.
+ */
+void kfilnd_tn_cq_error(struct kfilnd_ep *ep, struct kfi_cq_err_entry *error)
+{
+	struct kfilnd_immediate_buffer *buf;
+	struct kfilnd_transaction *tn;
+
+	if (error->err == ECANCELED || error->flags & KFI_MULTI_RECV) {
+		buf = error->op_context;
+
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_unlink_event,
+				buf, NULL, 0);
+	} else if (error->flags & (KFI_RMA | KFI_REMOTE_READ) ||
+		   error->flags & (KFI_RMA | KFI_REMOTE_WRITE)) {
+		tn = error->op_context;
+
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_mr_event,
+				ep, tn, -error->err);
+	} else if (error->flags & (KFI_RMA | KFI_READ) ||
+		   error->flags & (KFI_RMA | KFI_WRITE) ||
+		   error->flags & KFI_SEND) {
+		tn = error->op_context;
+
+		CERROR("%s failed to %s: rx_ctx=%llu errno=%d prov_errno=%d\n",
+		       event_flags_to_str(error->flags),
+		       libcfs_nid2str(tn->tn_target_nid),
+		       KFILND_RX_CONTEXT(tn->tn_target_addr), -error->err,
+		       error->prov_errno);
+
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tx_event, tn,
+				NULL, -error->err);
+	} else {
+		CERROR("Dropping error event: flags=%llx\n", error->flags);
+	}
+}
+
+/**
+ * kfilnd_tn_cq_event() - Process a completion queue event entry.
+ */
+void kfilnd_tn_cq_event(struct kfilnd_ep *ep, struct kfi_cq_data_entry *event)
+{
+	struct kfilnd_immediate_buffer *buf;
+	struct kfilnd_tn *tn;
+
+	if (event->flags & KFI_RECV) {
+		buf = event->op_context;
+
+		/* Increment buf ref count for this work */
+		atomic_inc(&buf->immed_ref);
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_rx_event, buf,
+				event->buf, event->len);
+
+		/* If the KFI_MULTI_RECV flag is set, the buffer was
+		 * unlinked.
+		 */
+		if (event->flags & KFI_MULTI_RECV)
+			kfilnd_wkr_post(ep->end_cpt,
+					kfilnd_tn_process_unlink_event, buf,
+					NULL, 0);
+	} else if (event->flags & (KFI_RMA | KFI_REMOTE_READ) ||
+		   event->flags & (KFI_RMA | KFI_REMOTE_WRITE)) {
+		tn = event->op_context;
+
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_mr_event, ep, tn,
+				0);
+	} else if (event->flags & (KFI_RMA | KFI_READ) ||
+		   event->flags & (KFI_RMA | KFI_WRITE) ||
+		   event->flags & KFI_SEND) {
+		tn = event->op_context;
+
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tx_event, tn,
+				NULL, 0);
+	} else {
+		CERROR("Unhandled CQ event: flags=%llx\n", event->flags);
+	}
 }
 
 /**
