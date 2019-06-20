@@ -585,9 +585,9 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
  */
 void kfilnd_tn_free(struct kfilnd_transaction *tn)
 {
-	spin_lock(&tn->tn_ep->end_dev->kfd_lock);
-	list_del(&tn->tn_list);
-	spin_unlock(&tn->tn_ep->end_dev->kfd_lock);
+	spin_lock(&tn->tn_ep->tn_list_lock);
+	list_del(&tn->tn_entry);
+	spin_unlock(&tn->tn_ep->tn_list_lock);
 
 	/* Free send message buffer if needed. */
 	if (tn->tn_tx_msg)
@@ -640,27 +640,18 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 			goto err_free_tn;
 	}
 
-	INIT_LIST_HEAD(&tn->tn_list);
 	spin_lock_init(&tn->tn_lock);
 
 	/* Use MR remote key as the transaction cookie. */
 	tn->tn_cookie = kfilnd_dom_get_mr_key(dev->dom);
-
-	spin_lock(&dev->kfd_lock);
-
-	/* Make sure that someone has not uninitialized the device */
-	if (dev->kfd_state != KFILND_STATE_INITIALIZED) {
-		spin_unlock(&dev->kfd_lock);
-		goto err_free_tn;
-	}
 	tn->tn_ep = ep;
 
-	/*
-	 * Add the transaction to the device.  This is like
+	/* Add the transaction to an endpoint.  This is like
 	 * incrementing a ref counter.
 	 */
-	list_add_tail(&tn->tn_list, &dev->kfd_tns);
-	spin_unlock(&dev->kfd_lock);
+	spin_lock(&ep->tn_list_lock);
+	list_add_tail(&tn->tn_entry, &ep->tn_list);
+	spin_unlock(&ep->tn_list_lock);
 	return tn;
 
 err_free_tn:
