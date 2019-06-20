@@ -114,6 +114,10 @@ struct kfilnd_ep {
 	/* Pre-posted immediate buffers */
 	struct kfilnd_immediate_buffer
 		end_immed_bufs[KFILND_NUM_IMMEDIATE_BUFFERS];
+
+	/* List of transactions. */
+	struct list_head tn_list;
+	spinlock_t tn_list_lock;
 };
 
 struct kfilnd_nid_entry {
@@ -148,7 +152,6 @@ struct kfilnd_dev {
 	struct list_head	kfd_list;	/* chain on kfid_devs */
 	struct lnet_ni		*kfd_ni;
 	enum kfilnd_object_states kfd_state;
-	struct list_head	kfd_tns;	/* Outstanding transactions */
 
 	/* KFI LND domain the device is associated with. */
 	struct kfilnd_dom	*dom;
@@ -253,7 +256,8 @@ enum tn_events {
 
 struct kfilnd_transaction			/* Both send and receive */
 {
-	struct list_head	tn_list;	/* chain on kfd_tns */
+	/* Endpoint list transaction lives on. */
+	struct list_head	tn_entry;
 	spinlock_t		tn_lock;	/* to serialize events */
 	int			tn_status;	/* return code from ops */
 	struct kfilnd_ep	*tn_ep;		/* endpoint we operate under */
