@@ -8,20 +8,6 @@
 #include "kfilnd_dev.h"
 #include "kfilnd_tn.h"
 
-static const char *event_flags_to_str(uint64_t flags)
-{
-	if (flags & KFI_SEND)
-		return "KFI send";
-	else if (flags & KFI_WRITE)
-		return "KFI write";
-	else if (flags & KFI_READ)
-		return "KFI read";
-	else if (flags & KFI_RECV)
-		return "KFI recv";
-	else
-		return "Unhandled KFI operation";
-}
-
 /**
  * kfilnd_ep_post_recv() - Post a single receive buffer.
  * @ep: KFI LND endpoint to have receive buffers posted on.
@@ -121,129 +107,26 @@ void kfilnd_ep_cancel_imm_buffers(struct kfilnd_ep *ep)
 }
 
 /**
- * kfilnd_ep_process_transaction() - Process a transaction event.
- */
-static void kfilnd_ep_process_transaction(void *devctx, void *context,
-					  int status)
-{
-	struct kfilnd_transaction *tn = context;
-
-	if (!tn)
-		return;
-
-	/*
-	 * The status parameter has been sent to the transaction's state
-	 * machine event.
-	 */
-	kfilnd_tn_event_handler(tn, status);
-}
-
-/**
- * kfilnd_ep_process_imm_recv() - Process an immediate receive event.
- *
- * For each immediate receive, a transaction structure needs to be allocated to
- * process the receive.
- */
-static void kfilnd_ep_process_imm_recv(void *bufctx, void *context, int status)
-{
-	struct kfilnd_transaction *tn;
-	struct kfilnd_immediate_buffer *bufdesc = bufctx;
-
-	if (!context || !bufdesc || !bufdesc->immed_end ||
-	    !bufdesc->immed_end->end_dev)
-		return;
-
-	/*
-	 * context points to a received buffer and status is the length.
-	 * Allocate a Tn structure, set its values, then launch the receive.
-	 */
-	tn = kfilnd_tn_alloc(bufdesc->immed_end->end_dev,
-			     bufdesc->immed_end->end_cpt, false);
-	if (!tn) {
-		CERROR("Can't get receive Tn: Tn descs exhausted\n");
-		return;
-	}
-	tn->tn_rx_msg = context;
-	tn->tn_msgsz = status;
-	tn->tn_nob = status;
-	tn->tn_posted_buf = bufdesc;
-
-	/* Move TN from idle to receiving */
-	kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK);
-}
-
-/**
- * kfilnd_ep_process_unlink() - Process unlink of immediate receive buffer.
- *
- * Immediate buffer unlink occurs when all the space in the multi-receive buffer
- * has been consumed or the buffer is manually unlinked (cancelled). A reference
- * needs to be returned to the immediate buffer.
- */
-static void kfilnd_ep_process_unlink(void *devctx, void *context, int status)
-{
-	struct kfilnd_immediate_buffer *bufdesc = devctx;
-	int rc;
-
-	if (!bufdesc)
-		return;
-
-	rc = kfilnd_ep_imm_buffer_put(bufdesc->immed_end, bufdesc);
-	if (rc)
-		CERROR("Could not repost Rx buffer, rc = %d\n", rc);
-}
-
-/**
- * kfilnd_ep_rx_cq_handler() - Event handler for the RX completion queue.
+ * kfilnd_ep_cq_handler() - Completion queue event handler.
  * @cq: KFI completion queue handler was raised for.
  * @context: User specific context.
  *
- * Two types of events appear on the RX completion queue: receive message and
- * remote RMA events. If this is a receive message event, a new transaction
- * structure needs to be allocated to process the receive message. If this is a
- * remote RMA event, the transaction structure just needs to be progressed.
+ * All events are handed off to the transaction system for processing.
  */
-static void kfilnd_ep_rx_cq_handler(struct kfid_cq *cq, void *context)
+static void kfilnd_ep_cq_handler(struct kfid_cq *cq, void *context)
 {
-	struct kfilnd_transaction *tn;
-	struct kfilnd_immediate_buffer *buf;
 	size_t rc;
 	struct kfi_cq_data_entry event;
-	size_t err_rc;
-	struct kfi_cq_err_entry err_event;
+	struct kfi_cq_err_entry error;
+	struct kfilnd_ep *ep = cq->fid.context;
 
-	/* Schedule processing of all CQ events */
+	/* Drain all the events. */
 	while (1) {
 		rc = kfi_cq_read(cq, &event, 1);
 		if (rc == -KFI_EAVAIL) {
 			/* We have error events */
-			while (1) {
-				err_rc = kfi_cq_readerr(cq, &err_event, 0);
-				if (err_rc != 1)
-					break;
-
-				/* Only need to handle manual/automatic unlinks
-				 * and remote RMA events. If a normal receive
-				 * has an error, drop the event.
-				 */
-				if (err_event.err == ECANCELED ||
-				    err_event.flags & KFI_MULTI_RECV) {
-					buf = err_event.op_context;
-
-					kfilnd_wkr_post(buf->immed_end->end_cpt,
-							kfilnd_ep_process_unlink,
-							buf, NULL, 0);
-				} else if (err_event.flags & KFI_RMA) {
-					tn = event.op_context;
-
-					kfilnd_wkr_post(tn->tn_ep->end_cpt,
-							kfilnd_ep_process_transaction,
-							tn->tn_ep->end_dev, tn,
-							TN_EVENT_FAIL);
-				} else {
-					CERROR("Dropping error event: flags=%llx\n",
-					       err_event.flags);
-				}
-			}
+			while (kfi_cq_readerr(cq, &error, 0) == 1)
+				kfilnd_tn_cq_error(ep, &error);
 
 			/* Processed error events, back to normal events */
 			continue;
@@ -255,111 +138,7 @@ static void kfilnd_ep_rx_cq_handler(struct kfid_cq *cq, void *context)
 			break;
 		}
 
-		/* Hand the event off to the worker threads. */
-		if (event.flags & KFI_RECV) {
-			buf = event.op_context;
-
-			/* Increment buf ref count for this work */
-			atomic_inc(&buf->immed_ref);
-			kfilnd_wkr_post(buf->immed_end->end_cpt,
-					kfilnd_ep_process_imm_recv, buf,
-					event.buf, event.len);
-
-			/* If the KFI_MULTI_RECV flag is set, the buffer was
-			 * unlinked.
-			 */
-			if (event.flags & KFI_MULTI_RECV)
-				kfilnd_wkr_post(buf->immed_end->end_cpt,
-						kfilnd_ep_process_unlink, buf,
-						NULL, 0);
-		} else if (event.flags & KFI_RMA) {
-			tn = event.op_context;
-
-			kfilnd_wkr_post(tn->tn_ep->end_cpt,
-					kfilnd_ep_process_transaction,
-					tn->tn_ep->end_dev, tn, TN_EVENT_RX_OK);
-		} else {
-			CERROR("Unhandled CQ event: flags=%llx\n", event.flags);
-		}
-	}
-}
-
-/**
- * kfilnd_ep_progress_tx() - Helper function for progress a TX transaction.
- * @tn: Transaction to be progressed.
- * @event: Transaction event.
- * @cq_event_flags: KFI CQ event flags.
- * @cq_errno: Neagtive, CQ errno value.
- * @cq_prov_errno: CQ provider specific errno value.
- *
- * This function will get called when kfi_send(), kfi_read(), or kfi_write(),
- * CQ events occur. The transaction will be updated based on the transaction
- * event before being posted to the work queue.
- */
-static void kfilnd_ep_progress_tx(struct kfilnd_transaction *tn,
-				  enum tn_events event, uint64_t cq_event_flags,
-				  int cq_errno, int cq_prov_errno)
-{
-	if (event == TN_EVENT_FAIL)
-		CERROR("%s failed to %s: rx_ctx=%llu errno=%d prov_errno=%d\n",
-		       event_flags_to_str(cq_event_flags),
-		       libcfs_nid2str(tn->tn_target_nid),
-		       KFILND_RX_CONTEXT(tn->tn_target_addr), cq_errno,
-		       cq_prov_errno);
-	else
-		tn->tn_flags &= ~KFILND_TN_FLAG_TX_POSTED;
-
-	tn->tn_status = cq_errno;
-
-	kfilnd_wkr_post(tn->tn_ep->end_cpt, kfilnd_ep_process_transaction,
-			tn->tn_ep->end_dev, tn, event);
-}
-
-/**
- * kfilnd_ep_tx_cq_handler() - Event handler for the TX completion queue.
- * @cq: KFI completion queue handler was raised for.
- * @context: User specific context.
- *
- * Two types of events appear on the TX completion queue: send message and RMA
- * events. Each event has an associate transaction structure which is updated.
- */
-static void kfilnd_ep_tx_cq_handler(struct kfid_cq *cq, void *context)
-{
-	struct kfilnd_transaction *tn;
-	size_t rc;
-	struct kfi_cq_data_entry event;
-	size_t err_rc;
-	struct kfi_cq_err_entry err_event;
-
-	/* Schedule processing of all CQ events */
-	while (1) {
-		rc = kfi_cq_read(cq, &event, 1);
-		if (rc == -KFI_EAVAIL) {
-			/* We have error events */
-			while (1) {
-				err_rc = kfi_cq_readerr(cq, &err_event, 0);
-				if (err_rc != 1)
-					break;
-				tn = err_event.op_context;
-
-				kfilnd_ep_progress_tx(tn, TN_EVENT_FAIL,
-						      err_event.flags,
-						      -err_event.err,
-						      err_event.prov_errno);
-			}
-
-			/* Processed error events, back to normal events */
-			continue;
-		}
-		if (rc != 1) {
-			if (rc != -EAGAIN)
-				CERROR("Unexpected rc = %lu\n", rc);
-			break;
-		}
-
-		tn = event.op_context;
-
-		kfilnd_ep_progress_tx(tn, TN_EVENT_TX_OK, event.flags, 0, 0);
+		kfilnd_tn_cq_event(ep, &event);
 	}
 }
 
@@ -461,6 +240,11 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
 	void *buf;
 	int rc;
 	kfi_addr_t addr;
+	struct kfi_cq_err_entry fake_error = {
+		.op_context = tn,
+		.flags = KFI_MSG | KFI_SEND,
+		.err = EIO,
+	};
 
 	if (!ep || !tn || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
 		return -EINVAL;
@@ -483,8 +267,7 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND)) {
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
 		rc = 0;
-		kfilnd_ep_progress_tx(tn, TN_EVENT_FAIL, KFI_MSG | KFI_SEND,
-				      -EIO, 0);
+		kfilnd_tn_cq_error(ep, &fake_error);
 	} else {
 		if (want_event) {
 			rc = kfi_send(ep->end_tx, buf, len, NULL, addr, tn);
@@ -532,6 +315,11 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 {
 	kfi_addr_t addr;
 	int rc;
+	struct kfi_cq_err_entry fake_error = {
+		.op_context = tn,
+		.flags = KFI_RMA | KFI_WRITE,
+		.err = EIO,
+	};
 
 	if (!ep || !tn || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
 		return -EINVAL;
@@ -553,8 +341,7 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE)) {
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
 		rc = 0;
-		kfilnd_ep_progress_tx(tn, TN_EVENT_FAIL, KFI_RMA | KFI_WRITE,
-				      -EIO, 0);
+		kfilnd_tn_cq_error(ep, &fake_error);
 	} else {
 		if (tn->tn_kiov)
 			rc = kfi_writebv(ep->end_tx,
@@ -590,6 +377,11 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 {
 	kfi_addr_t addr;
 	int rc;
+	struct kfi_cq_err_entry fake_error = {
+		.op_context = tn,
+		.flags = KFI_RMA | KFI_READ,
+		.err = EIO,
+	};
 
 	if (!ep || !tn || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
 		return -EINVAL;
@@ -611,8 +403,7 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ)) {
 		tn->tn_flags |= KFILND_TN_FLAG_RX_POSTED;
 		rc = 0;
-		kfilnd_ep_progress_tx(tn, TN_EVENT_FAIL, KFI_RMA | KFI_READ,
-				      -EIO, 0);
+		kfilnd_tn_cq_error(ep, &fake_error);
 	} else {
 		if (tn->tn_kiov)
 			rc = kfi_readbv(ep->end_tx,
@@ -740,14 +531,14 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 		cpumask_first(cfs_cpt_cpumask(lnet_cpt_table(), cpt));
 
 	rc = kfi_cq_open(dev->dom->domain, &cq_attr, &ep->end_rx_cq,
-			 kfilnd_ep_rx_cq_handler, ep);
+			 kfilnd_ep_cq_handler, ep);
 	if (rc) {
 		CERROR("Could not open RX CQ, rc = %d\n", rc);
 		goto err_free_ep;
 	}
 
 	rc = kfi_cq_open(dev->dom->domain, &cq_attr, &ep->end_tx_cq,
-			 kfilnd_ep_tx_cq_handler, ep);
+			 kfilnd_ep_cq_handler, ep);
 	if (rc) {
 		CERROR("Could not open TX CQ, rc = %d\n", rc);
 		goto err_free_rx_cq;
