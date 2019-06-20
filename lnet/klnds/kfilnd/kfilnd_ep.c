@@ -656,10 +656,25 @@ void kfilnd_ep_free(struct kfilnd_ep *ep)
 			       "Waiting for RX buffer %d to release\n", i);
 			schedule_timeout_uninterruptible(HZ);
 		}
+	}
 
+	/* Wait for all transactions to complete. */
+	k = 2;
+	spin_lock(&ep->tn_list_lock);
+	while (!list_empty(&ep->tn_list)) {
+		spin_unlock(&ep->tn_list_lock);
+		k++;
+		CDEBUG(((k & (-k)) == k) ? D_WARNING : D_NET,
+		       "Waiting for transactions to complete\n");
+		schedule_timeout_uninterruptible(HZ);
+		spin_lock(&ep->tn_list_lock);
+	}
+	spin_unlock(&ep->tn_list_lock);
+
+	/* Free all immediate buffers. */
+	for (i = 0; i < KFILND_NUM_IMMEDIATE_BUFFERS; i++)
 		LIBCFS_FREE(ep->end_immed_bufs[i].immed_buf,
 			    ep->end_immed_bufs[i].immed_buf_size);
-	}
 
 	kfi_close(&ep->end_tx->fid);
 	kfi_close(&ep->end_rx->fid);
@@ -710,6 +725,8 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	ep->end_dev = dev;
 	ep->end_cpt = cpt;
 	ep->end_context_id = context_id;
+	INIT_LIST_HEAD(&ep->tn_list);
+	spin_lock_init(&ep->tn_list_lock);
 
 	/* Create a CQ for this CPT */
 	cq_attr.flags = KFI_AFFINITY;
