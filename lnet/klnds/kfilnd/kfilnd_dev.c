@@ -281,7 +281,6 @@ void kfilnd_dev_free(struct kfilnd_dev *dev)
 {
 	int i;
 	int lnet_ncpts;
-	int k = 2;
 
 	if (!dev)
 		return;
@@ -293,23 +292,12 @@ void kfilnd_dev_free(struct kfilnd_dev *dev)
 	for (i = 0; i < dev->kfd_ni->ni_ncpts; i++)
 		kfilnd_ep_cancel_imm_buffers(dev->kfd_endpoints[i]);
 
-	/* Wait for all transactions to complete. */
-	spin_lock(&dev->kfd_lock);
-	while (!list_empty(&dev->kfd_tns)) {
-		spin_unlock(&dev->kfd_lock);
-		k++;
-		CDEBUG(((k & (-k)) == k) ? D_WARNING : D_NET,
-		       "Waiting for transactions to complete\n");
-		schedule_timeout_uninterruptible(HZ);
-		spin_lock(&dev->kfd_lock);
-	}
-	spin_unlock(&dev->kfd_lock);
+	/* Free all endpoints. */
+	for (i = 0; i < dev->kfd_ni->ni_ncpts; i++)
+		kfilnd_ep_free(dev->kfd_endpoints[i]);
 
 	/* Safe to free all resources. */
 	cfs_hash_putref(dev->nid_hash);
-
-	for (i = 0; i < dev->kfd_ni->ni_ncpts; i++)
-		kfilnd_ep_free(dev->kfd_endpoints[i]);
 
 	lnet_ncpts = cfs_cpt_number(lnet_cpt_table());
 	LIBCFS_FREE(dev->cpt_to_endpoint,
@@ -371,7 +359,6 @@ struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni)
 	}
 
 	dev->kfd_ni = ni;
-	INIT_LIST_HEAD(&dev->kfd_tns);
 	spin_lock_init(&dev->kfd_lock);
 
 	dev->dom = kfilnd_dom_get(ni, &dev_info);
