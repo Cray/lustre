@@ -33,10 +33,16 @@ BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
 %if %{with shasta}
 BuildRequires: mlnx-ofa_kernel-devel
+%if %{_vendor} == "redhat"
+Requires: kmod-mlnx-ofa_kernel
+%else
+Requires: mlnx-ofa_kernel-kmp
+%endif
 %endif
 %if %{_vendor}=="redhat"
 BuildRequires: redhat-rpm-config
 %endif
+
 
 # Disable post-build-checks; See LUS-1345
 # Note: build checks can be run manually by first doing an incremental build
@@ -112,9 +118,8 @@ if [ "%reconfigure" == "1" -o ! -x %_builddir/%{name}-%{version}/configure ];the
 	./autogen.sh
 fi
 
-if [ -d /usr/src/ofa_kernel/default ]; then
-	O2IBPATH=/usr/src/ofa_kernel/default
-	export KBUILD_EXTRA_SYMBOLS=/usr/src/ofa_kernel/default/Module.symvers
+if [ -d /usr/src/ofa_kernel/%{flavor} ]; then
+	O2IBPATH=/usr/src/ofa_kernel/%{flavor}
 else
 	O2IBPATH=yes
 fi
