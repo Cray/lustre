@@ -2055,7 +2055,7 @@ struct hsm_progress {
 	struct hsm_extent	hp_extent;
 	__u16			hp_flags;
 	__u16			hp_errval; /* positive val */
-	__u32			padding;
+	__u32			hp_action;
 };
 
 struct hsm_copy {

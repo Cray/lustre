@@ -823,20 +823,23 @@ int ll_get_mdt_idx(struct inode *inode)
 static int ll_ioc_copy_start(struct super_block *sb, struct hsm_copy *copy)
 {
 	struct ll_sb_info		*sbi = ll_s2sbi(sb);
-	struct hsm_progress_kernel	 hpk;
+	struct hsm_action_item		*hai = &copy->hc_hai;
+	struct hsm_progress_kernel_v2	 hpk;
 	int				 rc = 0;
 	int				 rc2;
 	ENTRY;
 
 	/* Forge a hsm_progress based on data from copy. */
 	hpk.hpk_fid = copy->hc_hai.hai_fid;
+	hpk.hpk_dfid = copy->hc_hai.hai_dfid;
 	hpk.hpk_cookie = copy->hc_hai.hai_cookie;
+	hpk.hpk_action = hai->hai_action;
 	hpk.hpk_extent.offset = copy->hc_hai.hai_extent.offset;
 	hpk.hpk_extent.length = 0;
 	hpk.hpk_flags = 0;
 	hpk.hpk_errval = 0;
 	hpk.hpk_data_version = 0;
-
+	hpk.hpk_version = HPK_V2;
 
 	/* For archive requests, we need to read the current file version. */
 	if (copy->hc_hai.hai_action == HSMA_ARCHIVE) {
@@ -844,7 +847,7 @@ static int ll_ioc_copy_start(struct super_block *sb, struct hsm_copy *copy)
 		__u64		 data_version = 0;
 
 		/* Get inode for this fid */
-		inode = search_inode_for_lustre(sb, &copy->hc_hai.hai_fid);
+		inode = search_inode_for_lustre(sb, &hai->hai_fid);
 		if (IS_ERR(inode)) {
 			hpk.hpk_flags |= HP_FLAG_RETRY;
 			/* hpk_errval is >= 0 */
@@ -859,8 +862,8 @@ static int ll_ioc_copy_start(struct super_block *sb, struct hsm_copy *copy)
 			CDEBUG(D_HSM, "Could not read file data version of "
 				      DFID" (rc = %d). Archive request ("
 				      "%#llx) could not be done.\n",
-				      PFID(&copy->hc_hai.hai_fid), rc,
-				      copy->hc_hai.hai_cookie);
+				      PFID(&hai->hai_fid), rc,
+				      hai->hai_cookie);
 			hpk.hpk_flags |= HP_FLAG_RETRY;
 			/* hpk_errval must be >= 0 */
 			hpk.hpk_errval = -rc;
@@ -902,23 +905,27 @@ progress:
 static int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
 {
 	struct ll_sb_info		*sbi = ll_s2sbi(sb);
-	struct hsm_progress_kernel	 hpk;
+	struct hsm_progress_kernel_v2	 hpk;
+	struct hsm_action_item		*hai = &copy->hc_hai;
 	int				 rc = 0;
 	int				 rc2;
-	ENTRY;
 
+	ENTRY;
 	/* If you modify the logic here, also check llapi_hsm_copy_end(). */
-	/* Take care: copy->hc_hai.hai_action, len, gid and data are not
+	/* Take care: hai->hai_action, len, gid and data are not
 	 * initialized if copy_end was called with copy == NULL.
 	 */
 
 	/* Forge a hsm_progress based on data from copy. */
-	hpk.hpk_fid = copy->hc_hai.hai_fid;
-	hpk.hpk_cookie = copy->hc_hai.hai_cookie;
-	hpk.hpk_extent = copy->hc_hai.hai_extent;
+	hpk.hpk_fid = hai->hai_fid;
+	hpk.hpk_dfid = hai->hai_dfid;
+	hpk.hpk_cookie = hai->hai_cookie;
+	hpk.hpk_extent = hai->hai_extent;
 	hpk.hpk_flags = copy->hc_flags | HP_FLAG_COMPLETED;
+	hpk.hpk_action = hai->hai_action;
 	hpk.hpk_errval = copy->hc_errval;
 	hpk.hpk_data_version = 0;
+	hpk.hpk_version = HPK_V2;
 
 	/* For archive and migrate requests, we need to check the file data
 	 * was not changed.
@@ -926,16 +933,24 @@ static int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
 	 * For restore request, we need to send the file data version, this is
 	 * useful when the file was created using hsm_import.
 	 */
-	if ((copy->hc_hai.hai_action == HSMA_ARCHIVE ||
-	     copy->hc_hai.hai_action == HSMA_RESTORE ||
-	     copy->hc_hai.hai_action == HSMA_MIGRATE) &&
+	if ((hai->hai_action == HSMA_ARCHIVE ||
+	     hai->hai_action == HSMA_RESTORE ||
+	     hai->hai_action == HSMA_MIGRATE) &&
 	    (copy->hc_errval == 0)) {
-		struct inode	*inode;
-		__u64		 data_version = 0;
+		struct inode *inode;
+		struct lu_fid *fid = &hai->hai_fid;
+		__u64 data_version = 0;
 
-		/* Get lsm for this fid */
-		inode = search_inode_for_lustre(sb, &copy->hc_hai.hai_fid);
+
+		if (hpk.hpk_action == HSMA_RESTORE)
+			fid = &hai->hai_dfid;
+
+		/* Get lsm for the appropriate fid */
+		inode = search_inode_for_lustre(sb, fid);
 		if (IS_ERR(inode)) {
+			CERROR("Bad fid for %s "DFID"\n",
+			       hsm_copytool_action2name(hai->hai_action),
+			       PFID(fid));
 			hpk.hpk_flags |= HP_FLAG_RETRY;
 			/* hpk_errval must be >= 0 */
 			hpk.hpk_errval = -PTR_ERR(inode);
@@ -958,13 +973,12 @@ static int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
 
 		/* File could have been stripped during archiving, so we need
 		 * to check anyway. */
-		if ((copy->hc_hai.hai_action == HSMA_ARCHIVE) &&
+		if ((hai->hai_action == HSMA_ARCHIVE) &&
 		    (copy->hc_data_version != data_version)) {
 			CDEBUG(D_HSM, "File data version mismatched. "
 			      "File content was changed during archiving. "
 			       DFID", start:%#llx current:%#llx\n",
-			       PFID(&copy->hc_hai.hai_fid),
-			       copy->hc_data_version, data_version);
+			       PFID(fid), copy->hc_data_version, data_version);
 			/* File was changed, send error to cdt. Do not ask for
 			 * retry because if a file is modified frequently,
 			 * the cdt will loop on retried archive requests.
@@ -1801,18 +1815,21 @@ out_hur:
 		RETURN(rc);
 	}
 	case LL_IOC_HSM_PROGRESS: {
-		struct hsm_progress_kernel	hpk;
+		struct hsm_progress_kernel_v2	hpk;
 		struct hsm_progress		hp;
 
 		if (copy_from_user(&hp, (void __user *)arg, sizeof(hp)))
 			RETURN(-EFAULT);
 
 		hpk.hpk_fid = hp.hp_fid;
+		fid_zero(&hpk.hpk_dfid);
 		hpk.hpk_cookie = hp.hp_cookie;
 		hpk.hpk_extent = hp.hp_extent;
 		hpk.hpk_flags = hp.hp_flags;
 		hpk.hpk_errval = hp.hp_errval;
+		hpk.hpk_action = hp.hp_action;
 		hpk.hpk_data_version = 0;
+		hpk.hpk_version = HPK_V2;
 
 		/* File may not exist in Lustre; all progress
 		 * reported to Lustre root */

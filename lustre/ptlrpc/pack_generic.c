@@ -2687,6 +2687,19 @@ void lustre_swab_hsm_progress_kernel(struct hsm_progress_kernel *hpk)
 	__swab16s(&hpk->hpk_errval);
 }
 
+void lustre_swab_hsm_progress_kernel_v2(struct hsm_progress_kernel_v2 *hpk)
+{
+	lustre_swab_lu_fid(&hpk->hpk_fid);
+        __swab64s(&hpk->hpk_cookie);
+        __swab64s(&hpk->hpk_extent.offset);
+        __swab64s(&hpk->hpk_extent.length);
+        __swab16s(&hpk->hpk_flags);
+	__swab32s(&hpk->hpk_version);
+        __swab16s(&hpk->hpk_errval);
+	__swab32s(&hpk->hpk_action);
+	lustre_swab_lu_fid(&hpk->hpk_dfid);
+}
+
 void lustre_swab_hsm_request(struct hsm_request *hr)
 {
 	__swab32s(&hr->hr_action);

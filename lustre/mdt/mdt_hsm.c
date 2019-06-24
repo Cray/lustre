@@ -109,7 +109,7 @@ static inline bool mdt_hsm_is_admin(struct mdt_thread_info *info)
 int mdt_hsm_progress(struct tgt_session_info *tsi)
 {
 	struct mdt_thread_info		*info;
-	struct hsm_progress_kernel	*hpk;
+	struct hsm_progress_kernel_v2	*hpk;
 	int				 rc;
 	ENTRY;
 
@@ -119,6 +119,11 @@ int mdt_hsm_progress(struct tgt_session_info *tsi)
 	hpk = req_capsule_client_get(tsi->tsi_pill, &RMF_MDS_HSM_PROGRESS);
 	if (hpk == NULL)
 		RETURN(err_serious(-EPROTO));
+
+	if (hpk->hpk_version != HPK_V2) {
+		CERROR("bad hpk_version %d\n", hpk->hpk_version);
+		RETURN(err_serious(-EPROTO));
+	}
 
 	hpk->hpk_errval = lustre_errno_ntoh(hpk->hpk_errval);
 

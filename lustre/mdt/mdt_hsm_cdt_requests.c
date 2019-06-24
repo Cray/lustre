@@ -470,7 +470,7 @@ int mdt_cdt_remove_request(struct coordinator *cdt, __u64 cookie)
  * \retval -ve failure
  */
 struct cdt_agent_req *mdt_cdt_update_request(struct coordinator *cdt,
-					  const struct hsm_progress_kernel *pgs)
+					  const struct hsm_progress_kernel_v2 *pgs)
 {
 	struct cdt_agent_req	*car;
 	int			 rc;

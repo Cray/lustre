@@ -1198,8 +1198,8 @@ struct req_msg_field RMF_HSM_STATE_SET =
 EXPORT_SYMBOL(RMF_HSM_STATE_SET);
 
 struct req_msg_field RMF_MDS_HSM_PROGRESS =
-	DEFINE_MSGF("hsm_progress", 0, sizeof(struct hsm_progress_kernel),
-		    lustre_swab_hsm_progress_kernel, NULL);
+	DEFINE_MSGF("hsm_progress", 0, sizeof(struct hsm_progress_kernel_v2),
+		    lustre_swab_hsm_progress_kernel_v2, NULL);
 EXPORT_SYMBOL(RMF_MDS_HSM_PROGRESS);
 
 struct req_msg_field RMF_MDS_HSM_CURRENT_ACTION =

@@ -1666,10 +1666,10 @@ out:
 }
 
 static int mdc_ioc_hsm_progress(struct obd_export *exp,
-				struct hsm_progress_kernel *hpk)
+				struct hsm_progress_kernel_v2 *hpk)
 {
 	struct obd_import		*imp = class_exp2cliimp(exp);
-	struct hsm_progress_kernel	*req_hpk;
+	struct hsm_progress_kernel_v2	*req_hpk;
 	struct ptlrpc_request		*req;
 	int				 rc;
 	ENTRY;

@@ -1031,7 +1031,7 @@ static int lmv_iocontrol(unsigned int cmd, struct obd_export *exp,
 		break;
 	}
 	case LL_IOC_HSM_PROGRESS: {
-		const struct hsm_progress_kernel *hpk = karg;
+		const struct hsm_progress_kernel_v2 *hpk = karg;
 
 		tgt = lmv_find_target(lmv, &hpk->hpk_fid);
 		if (IS_ERR(tgt))

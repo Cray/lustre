@@ -1268,11 +1268,6 @@ int llapi_hsm_action_end(struct hsm_copyaction_private **phcp,
 	}
 
 end:
-	/* In some cases, like restore, 2 FIDs are used.
-	 * Set the right FID to use here. */
-	if (hai->hai_action == HSMA_ARCHIVE || hai->hai_action == HSMA_RESTORE)
-		hai->hai_fid = hai->hai_dfid;
-
 	/* Fill the last missing data that will be needed by
 	 * kernel to send a hsm_progress. */
 	hcp->copy.hc_flags  = hp_flags;
@@ -1285,6 +1280,10 @@ end:
 		rc = -errno;
 		goto err_cleanup;
 	}
+
+	/* to keep the logging happy for RESTORE set fid to be dfid */
+	if (hai->hai_action == HSMA_RESTORE)
+		hai->hai_fid = hai->hai_dfid;
 
 	llapi_hsm_log_ct_progress(&hcp, hai, CT_FINISH, 0, 0);
 
@@ -1327,15 +1326,16 @@ int llapi_hsm_action_progress(struct hsm_copyaction_private *hcp,
 	memset(&hp, 0, sizeof(hp));
 
 	hp.hp_cookie = hai->hai_cookie;
-	hp.hp_flags  = hp_flags;
+	hp.hp_flags = hp_flags;
+	hp.hp_action = hai->hai_action;
 
 	if (hai->hai_action == HSMA_RESTORE) {
-		/* Progress is made on the dfid */
+		/* Progress is made on the dfid, since it exists */
 		hp.hp_fid = hai->hai_dfid;
 	} else {
-		/* Progress is made on the fid */
 		hp.hp_fid = hai->hai_fid;
 	}
+
 	hp.hp_extent = *he;
 
 	rc = ioctl(hcp->ct_priv->mnt_fd, LL_IOC_HSM_PROGRESS, &hp);

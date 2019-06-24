@@ -1015,7 +1015,7 @@ void mdt_cdt_get_work_done(struct cdt_agent_req *car, __u64 *done_sz);
 void mdt_cdt_get_request(struct cdt_agent_req *car);
 void mdt_cdt_put_request(struct cdt_agent_req *car);
 struct cdt_agent_req *mdt_cdt_update_request(struct coordinator *cdt,
-					 const struct hsm_progress_kernel *pgs);
+					 const struct hsm_progress_kernel_v2 *pgs);
 int mdt_cdt_remove_request(struct coordinator *cdt, __u64 cookie);
 /* mdt/mdt_coordinator.c */
 void mdt_hsm_dump_hal(int level, const char *prefix,
@@ -1060,7 +1060,7 @@ bool mdt_hsm_is_action_compat(const struct hsm_action_item *hai,
 			      u32 archive_id, u64 rq_flags,
 			      const struct md_hsm *hsm);
 int mdt_hsm_update_request_state(struct mdt_thread_info *mti,
-				 struct hsm_progress_kernel *pgs);
+				 struct hsm_progress_kernel_v2 *pgs);
 
 int mdt_close_swap_layouts(struct mdt_thread_info *info,
 			   struct mdt_object *o, struct md_attr *ma);

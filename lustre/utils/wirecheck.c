@@ -2184,16 +2184,32 @@ check_hsm_action_list(void)
 static void
 check_hsm_progress_kernel(void)
 {
+        BLANK_LINE();
+        CHECK_STRUCT(hsm_progress_kernel);
+        CHECK_MEMBER(hsm_progress_kernel, hpk_fid);
+        CHECK_MEMBER(hsm_progress_kernel, hpk_cookie);
+        CHECK_MEMBER(hsm_progress_kernel, hpk_extent);
+        CHECK_MEMBER(hsm_progress_kernel, hpk_flags);
+        CHECK_MEMBER(hsm_progress_kernel, hpk_errval);
+        CHECK_MEMBER(hsm_progress_kernel, hpk_padding1);
+        CHECK_MEMBER(hsm_progress_kernel, hpk_data_version);
+        CHECK_MEMBER(hsm_progress_kernel, hpk_padding2);
+}
+
+static void
+check_hsm_progress_kernel_v2(void)
+{
 	BLANK_LINE();
-	CHECK_STRUCT(hsm_progress_kernel);
-	CHECK_MEMBER(hsm_progress_kernel, hpk_fid);
-	CHECK_MEMBER(hsm_progress_kernel, hpk_cookie);
-	CHECK_MEMBER(hsm_progress_kernel, hpk_extent);
-	CHECK_MEMBER(hsm_progress_kernel, hpk_flags);
-	CHECK_MEMBER(hsm_progress_kernel, hpk_errval);
-	CHECK_MEMBER(hsm_progress_kernel, hpk_padding1);
-	CHECK_MEMBER(hsm_progress_kernel, hpk_data_version);
-	CHECK_MEMBER(hsm_progress_kernel, hpk_padding2);
+	CHECK_STRUCT(hsm_progress_kernel_v2);
+	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_fid);
+	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_cookie);
+	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_extent);
+	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_flags);
+	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_errval);
+	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_action);
+	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_data_version);
+	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_version);
+	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_dfid);
 }
 
 static void
@@ -2206,7 +2222,7 @@ check_hsm_progress(void)
 	CHECK_MEMBER(hsm_progress, hp_extent);
 	CHECK_MEMBER(hsm_progress, hp_flags);
 	CHECK_MEMBER(hsm_progress, hp_errval);
-	CHECK_MEMBER(hsm_progress, padding);
+	CHECK_MEMBER(hsm_progress, hp_action);
 	CHECK_DEFINE_X(HP_FLAG_COMPLETED);
 	CHECK_DEFINE_X(HP_FLAG_RETRY);
 }
@@ -2959,6 +2975,7 @@ main(int argc, char **argv)
 	check_hsm_progress();
 	check_hsm_copy();
 	check_hsm_progress_kernel();
+	check_hsm_progress_kernel_v2();
 	check_hsm_user_item();
 	check_hsm_user_state();
 	check_hsm_state_set();

@@ -108,6 +108,7 @@ void lustre_swab_layout_intent(struct layout_intent *li);
 void lustre_swab_hsm_user_state(struct hsm_user_state *hus);
 void lustre_swab_hsm_current_action(struct hsm_current_action *action);
 void lustre_swab_hsm_progress_kernel(struct hsm_progress_kernel *hpk);
+void lustre_swab_hsm_progress_kernel_v2(struct hsm_progress_kernel_v2 *hpk);
 void lustre_swab_hsm_user_state(struct hsm_user_state *hus);
 void lustre_swab_hsm_user_item(struct hsm_user_item *hui);
 void lustre_swab_hsm_request(struct hsm_request *hr);

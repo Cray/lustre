@@ -3367,6 +3367,22 @@ struct hsm_progress_kernel {
 	__u64			hpk_padding2;
 } __attribute__((packed));
 
+#define HPK_V2 0x02
+struct hsm_progress_kernel_v2 {
+	/* Field taken from struct hsm_progress */
+	struct lu_fid		hpk_fid;
+	__u64			hpk_cookie;
+	struct hsm_extent	hpk_extent;
+	__u16			hpk_flags;
+	__u16			hpk_errval; /* positive val */
+	__u32			hpk_version;
+	/* Additional fields */
+	__u64			hpk_data_version;
+	__u32			hpk_action;
+	__u32			hpk_padding1;
+	struct lu_fid		hpk_dfid;
+} __attribute__((packed));
+
 /**
  * OUT_UPDATE RPC Format
  *

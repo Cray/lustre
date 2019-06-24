@@ -1390,7 +1390,7 @@ out:
  * \retval -ve failure
  */
 static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
-				     struct hsm_progress_kernel *pgs,
+				     struct hsm_progress_kernel_v2 *pgs,
 				     const struct cdt_agent_req *car,
 				     enum agent_req_status *status)
 {
@@ -1606,6 +1606,75 @@ out:
 	RETURN(rc);
 }
 
+
+static bool req_is_valid(struct hsm_action_item *hai,
+			 struct hsm_progress_kernel_v2 *pgs)
+{
+        CDEBUG(D_HSM, "Check %s req: pgs "DFID" "DFID" hai: "DFID" "DFID"\n",
+	       hsm_copytool_action2name(hai->hai_action),
+	       PFID(&pgs->hpk_fid), PFID(&pgs->hpk_dfid),
+	       PFID(&hai->hai_fid), PFID(&hai->hai_dfid));
+
+	/*
+	 * Valid States
+	 * ARCHIVE:
+	 *   fid and dfid must always be the same (Lustre source file)
+	 *   progress will always use the same fid
+	 *
+	 * RESTORE:
+	 *   fid and dfid are always different
+	 *     fid is the destination Lustre file, dfid is the temporary
+	 *     Lustre file written to.  Progress is reported to the
+	 *     temporary file.
+	 *   begin/end progress fid and dfid are always different
+	 *   progress will always have hpk_fid=dfid and hpk_dfid=zero
+	 *
+	 * MIGRATE:
+	 *   fid and dfid are always different
+	 *     fid is the original file, dfid is the temporary Lustre file
+	 *     with the new layout
+	 *   begin/end progress fid and dfid are always different
+	 *   progress will always be reported on the source file (hai_fid)
+	 */
+	switch (hai->hai_action) {
+		case HSMA_ARCHIVE:
+			if (!lu_fid_eq(&hai->hai_fid, &hai->hai_dfid))
+				return false;
+			if (!lu_fid_eq(&hai->hai_fid, &pgs->hpk_fid))
+				return false;
+			return true;
+		case HSMA_RESTORE:
+			if (fid_is_zero(&pgs->hpk_dfid)) {
+				if (lu_fid_eq(&hai->hai_dfid, &pgs->hpk_fid))
+					return true;
+			} else {
+				if (lu_fid_eq(&hai->hai_fid, &pgs->hpk_fid) &&
+				    lu_fid_eq(&hai->hai_dfid, &pgs->hpk_dfid))
+					return true;
+			}
+			break;
+		case HSMA_MIGRATE:
+			if (fid_is_zero(&pgs->hpk_dfid)) {
+				if (lu_fid_eq(&hai->hai_fid, &pgs->hpk_fid))
+					return true;
+			} else {
+				if (lu_fid_eq(&hai->hai_fid, &pgs->hpk_fid) &&
+				    lu_fid_eq(&hai->hai_dfid, &pgs->hpk_dfid))
+					return true;
+			}
+			break;
+		case HSMA_REMOVE:
+			if (lu_fid_eq(&hai->hai_fid, &pgs->hpk_fid))
+				return true;
+			break;
+		default:
+			CERROR("Invalid progress action: %s\n",
+			       hsm_copytool_action2name(hai->hai_action));
+			break;
+		}
+	return false;
+}
+
 /**
  * update status of a request
  * \param mti [IN] context
@@ -1614,7 +1683,7 @@ out:
  * \retval -ve failure
  */
 int mdt_hsm_update_request_state(struct mdt_thread_info *mti,
-				 struct hsm_progress_kernel *pgs)
+				 struct hsm_progress_kernel_v2 *pgs)
 {
 	struct mdt_device	*mdt = mti->mti_mdt;
 	struct coordinator	*cdt = &mdt->mdt_coordinator;
@@ -1639,9 +1708,11 @@ int mdt_hsm_update_request_state(struct mdt_thread_info *mti,
 		RETURN(PTR_ERR(car));
 	}
 
-	CDEBUG(D_HSM, "Progress received for fid="DFID" cookie=%#llx"
-		      " action=%s flags=%d err=%d fid="DFID" dfid="DFID"\n",
-		      PFID(&pgs->hpk_fid), pgs->hpk_cookie,
+	CDEBUG(D_HSM, "Progress received for fid="DFID" dfid="DFID
+		      "cookie=%#llx action=%s flags=%d err=%d fid="DFID
+		      " dfid="DFID"\n",
+		      PFID(&pgs->hpk_fid), PFID(&pgs->hpk_dfid),
+		      pgs->hpk_cookie,
 		      hsm_copytool_action2name(car->car_hai->hai_action),
 		      pgs->hpk_flags, pgs->hpk_errval,
 		      PFID(&car->car_hai->hai_fid),
@@ -1652,13 +1723,9 @@ int mdt_hsm_update_request_state(struct mdt_thread_info *mti,
 	/* for restore progress is used to send back the data FID to cdt */
 	if (car->car_hai->hai_action == HSMA_RESTORE &&
 	    lu_fid_eq(&car->car_hai->hai_fid, &car->car_hai->hai_dfid))
-		car->car_hai->hai_dfid = pgs->hpk_fid;
+		car->car_hai->hai_dfid = pgs->hpk_dfid;
 
-	if ((car->car_hai->hai_action == HSMA_RESTORE ||
-	     car->car_hai->hai_action == HSMA_ARCHIVE ||
-	     car->car_hai->hai_action == HSMA_MIGRATE) &&
-	    (!lu_fid_eq(&pgs->hpk_fid, &car->car_hai->hai_dfid) &&
-	     !lu_fid_eq(&pgs->hpk_fid, &car->car_hai->hai_fid))) {
+	if (!req_is_valid(car->car_hai, pgs)) {
 		CERROR("%s: Progress on "DFID" for cookie %#llx"
 		       " does not match request FID "DFID" nor data FID "
 		       DFID"\n",
@@ -1691,7 +1758,6 @@ int mdt_hsm_update_request_state(struct mdt_thread_info *mti,
 		int rc1;
 
 		rc = hsm_cdt_request_completed(mti, pgs, car, &status);
-
 		CDEBUG(D_HSM, "updating record: fid="DFID" cookie=%#llx action=%s "
 			      "status=%s\n",
 		       PFID(&pgs->hpk_fid), pgs->hpk_cookie,

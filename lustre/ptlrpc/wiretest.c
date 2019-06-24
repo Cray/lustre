@@ -4796,10 +4796,10 @@ void lustre_assert_wire_constants(void)
 		 (long long)(int)offsetof(struct hsm_progress, hp_errval));
 	LASSERTF((int)sizeof(((struct hsm_progress *)0)->hp_errval) == 2, "found %lld\n",
 		 (long long)(int)sizeof(((struct hsm_progress *)0)->hp_errval));
-	LASSERTF((int)offsetof(struct hsm_progress, padding) == 44, "found %lld\n",
-		 (long long)(int)offsetof(struct hsm_progress, padding));
-	LASSERTF((int)sizeof(((struct hsm_progress *)0)->padding) == 4, "found %lld\n",
-		 (long long)(int)sizeof(((struct hsm_progress *)0)->padding));
+	LASSERTF((int)offsetof(struct hsm_progress, hp_action) == 44, "found %lld\n",
+		 (long long)(int)offsetof(struct hsm_progress, hp_action));
+	LASSERTF((int)sizeof(((struct hsm_progress *)0)->hp_action) == 4, "found %lld\n",
+		 (long long)(int)sizeof(((struct hsm_progress *)0)->hp_action));
 	LASSERTF(HP_FLAG_COMPLETED == 0x01, "found 0x%.8x\n",
 		HP_FLAG_COMPLETED);
 	LASSERTF(HP_FLAG_RETRY == 0x02, "found 0x%.8x\n",
@@ -4861,6 +4861,50 @@ void lustre_assert_wire_constants(void)
 		 (long long)(int)offsetof(struct hsm_progress_kernel, hpk_padding2));
 	LASSERTF((int)sizeof(((struct hsm_progress_kernel *)0)->hpk_padding2) == 8, "found %lld\n",
 		 (long long)(int)sizeof(((struct hsm_progress_kernel *)0)->hpk_padding2));
+
+	/* Checks for struct hsm_progress_kernel_v2 */
+	LASSERTF((int)sizeof(struct hsm_progress_kernel_v2) == 80, "found %lld\n",
+		 (long long)(int)sizeof(struct hsm_progress_kernel_v2));
+	LASSERTF((int)offsetof(struct hsm_progress_kernel_v2, hpk_fid) == 0, "found %lld\n",
+		 (long long)(int)offsetof(struct hsm_progress_kernel_v2, hpk_fid));
+	LASSERTF((int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_fid) == 16, "found %lld\n",
+		 (long long)(int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_fid));
+	LASSERTF((int)offsetof(struct hsm_progress_kernel_v2, hpk_cookie) == 16, "found %lld\n",
+		 (long long)(int)offsetof(struct hsm_progress_kernel_v2, hpk_cookie));
+	LASSERTF((int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_cookie) == 8, "found %lld\n",
+		 (long long)(int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_cookie));
+	LASSERTF((int)offsetof(struct hsm_progress_kernel_v2, hpk_extent) == 24, "found %lld\n",
+		 (long long)(int)offsetof(struct hsm_progress_kernel_v2, hpk_extent));
+	LASSERTF((int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_extent) == 16, "found %lld\n",
+		 (long long)(int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_extent));
+	LASSERTF((int)offsetof(struct hsm_progress_kernel_v2, hpk_flags) == 40, "found %lld\n",
+		 (long long)(int)offsetof(struct hsm_progress_kernel_v2, hpk_flags));
+	LASSERTF((int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_flags) == 2, "found %lld\n",
+		 (long long)(int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_flags));
+	LASSERTF((int)offsetof(struct hsm_progress_kernel_v2, hpk_errval) == 42, "found %lld\n",
+		 (long long)(int)offsetof(struct hsm_progress_kernel_v2, hpk_errval));
+	LASSERTF((int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_errval) == 2, "found %lld\n",
+		 (long long)(int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_errval));
+	LASSERTF((int)offsetof(struct hsm_progress_kernel_v2, hpk_version) == 44, "found %lld\n",
+		 (long long)(int)offsetof(struct hsm_progress_kernel_v2, hpk_version));
+	LASSERTF((int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_version) == 4, "found %lld\n",
+		 (long long)(int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_version));
+	LASSERTF((int)offsetof(struct hsm_progress_kernel_v2, hpk_data_version) == 48, "found %lld\n",
+		 (long long)(int)offsetof(struct hsm_progress_kernel_v2, hpk_data_version));
+	LASSERTF((int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_data_version) == 8, "found %lld\n",
+		 (long long)(int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_data_version));
+	LASSERTF((int)offsetof(struct hsm_progress_kernel_v2, hpk_action) == 56, "found %lld\n",
+		 (long long)(int)offsetof(struct hsm_progress_kernel_v2, hpk_action));
+	LASSERTF((int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_action) == 4, "found %lld\n",
+		 (long long)(int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_action));
+	LASSERTF((int)offsetof(struct hsm_progress_kernel_v2, hpk_padding1) == 60, "found %lld\n",
+		 (long long)(int)offsetof(struct hsm_progress_kernel_v2, hpk_padding1));
+	LASSERTF((int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_padding1) == 4, "found %lld\n",
+		 (long long)(int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_padding1));
+	LASSERTF((int)offsetof(struct hsm_progress_kernel_v2, hpk_dfid) == 64, "found %lld\n",
+		 (long long)(int)offsetof(struct hsm_progress_kernel_v2, hpk_dfid));
+	LASSERTF((int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_dfid) == 16, "found %lld\n",
+		 (long long)(int)sizeof(((struct hsm_progress_kernel_v2 *)0)->hpk_dfid));
 
 	/* Checks for struct hsm_user_item */
 	LASSERTF((int)sizeof(struct hsm_user_item) == 32, "found %lld\n",
