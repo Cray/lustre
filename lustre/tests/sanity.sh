@@ -2628,6 +2628,24 @@ test_27O() {
 }
 run_test 27O "restriping of an empty dir should not corrupt fs"
 
+test_27L() {
+	remote_mds_nodsh && skip "remote MDS with nodsh"
+
+	local POOL=${POOL:-$TESTNAME}
+
+	if ! combined_mgs_mds ; then
+		mount_mgs_client
+		trap umount_mgs_client EXIT
+	fi
+
+	pool_add $POOL || error "pool_add failed"
+
+	lfs pool_list $MOUNT | grep -Fx "${FSNAME}.${POOL}" ||
+		 error "pool_list does not contain ${FSNAME}.${POOL}:" \
+		       "$(lfs pool_list $MOUNT | grep -F "${POOL}")"
+}
+run_test 27L "lfs pool_list gives correct pool name"
+
 # createtest also checks that device nodes are created and
 # then visible correctly (#2091)
 test_28() { # bug 2091
