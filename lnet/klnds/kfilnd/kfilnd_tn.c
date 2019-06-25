@@ -18,85 +18,56 @@ static __sum16 kfilnd_tn_cksum(void *ptr, int nob)
 	return csum_fold(csum_partial(ptr, nob, 0));
 }
 
-static const char *event_flags_to_str(uint64_t flags)
-{
-	if (flags & KFI_SEND)
-		return "KFI send";
-	else if (flags & KFI_WRITE)
-		return "KFI write";
-	else if (flags & KFI_READ)
-		return "KFI read";
-	else if (flags & KFI_RECV)
-		return "KFI recv";
-	else
-		return "Unhandled KFI operation";
-}
-
-static const char *kfilnd_tn_msgtype2str(int type)
+static const char *kfilnd_tn_msgtype2str(enum kfilnd_msg_type type)
 {
 	switch (type) {
-	case KFILND_MSG_NOOP:
-		return "NOOP";
-
 	case KFILND_MSG_IMMEDIATE:
 		return "IMMEDIATE";
 
-	case KFILND_MSG_PUT_REQ:
-		return "PUT_REQ";
+	case KFILND_MSG_BULK_PUT_REQ:
+		return "BULK_PUT_REQUEST";
 
-	case KFILND_MSG_PUT_NAK:
-		return "PUT_NAK";
+	case KFILND_MSG_BULK_GET_REQ:
+		return "BULK_GET_REQUEST";
 
-	case KFILND_MSG_GET_REQ:
-		return "GET_REQ";
-
-	case KFILND_MSG_GET_NAK:
-		return "GET_NAK";
+	case KFILND_MSG_BULK_RSP:
+		return "BULK_RESPONSE";
 
 	default:
 		return "???";
 	}
 }
 
-static int kfilnd_tn_msgtype2size(int type)
+static int kfilnd_tn_msgtype2size(enum kfilnd_msg_type type)
 {
 	const int hdr_size = offsetof(struct kfilnd_msg, kfm_u);
 
 	switch (type) {
-	case KFILND_MSG_NOOP:
-		return hdr_size;
-
 	case KFILND_MSG_IMMEDIATE:
-		return offsetof(struct kfilnd_msg, kfm_u.immed.kfim_payload[0]);
+		return offsetof(struct kfilnd_msg, kfm_u.immed.payload[0]);
 
-	case KFILND_MSG_PUT_REQ:
-		return hdr_size + sizeof(struct kfilnd_putreq_msg);
+	case KFILND_MSG_BULK_PUT_REQ:
+	case KFILND_MSG_BULK_GET_REQ:
+		return hdr_size + sizeof(struct kfilnd_bulk_req);
 
-	case KFILND_MSG_GET_REQ:
-		return hdr_size + sizeof(struct kfilnd_get_msg);
-
-	case KFILND_MSG_PUT_NAK:
-	case KFILND_MSG_GET_NAK:
-		return hdr_size + sizeof(struct kfilnd_completion_msg);
+	case KFILND_MSG_BULK_RSP:
+		return hdr_size + sizeof(struct kfilnd_bulk_rsp);
 	default:
 		return -1;
 	}
 }
 
-static void kfilnd_tn_pack_msg(struct kfilnd_transaction *tn, u8 prefer_rx,
-			       u8 rma_rx)
+static void kfilnd_tn_pack_msg(struct kfilnd_transaction *tn, u8 prefer_rx)
 {
-	struct kfilnd_msg *msg = tn->tn_tx_msg;
+	struct kfilnd_msg *msg = tn->tn_tx_msg.msg;
 
 	/* Commented out members should be set already */
 	msg->kfm_magic    = KFILND_MSG_MAGIC;
 	msg->kfm_version  = KFILND_MSG_VERSION;
 	/*  kfm_type */
 	msg->kfm_prefer_rx = prefer_rx;
-	msg->kfm_rma_rx = rma_rx;
 	/*  kfm_nob */
 	/*  kfm_srcnid */
-	msg->kfm_dstnid   = tn->tn_target_nid;
 	msg->kfm_cksum    = kfilnd_tn_cksum(msg, msg->kfm_nob);
 }
 
@@ -144,7 +115,6 @@ static int kfilnd_tn_unpack_msg(struct kfilnd_msg *msg, int nob)
 		msg->kfm_version = version;
 		msg->kfm_nob     = msg_nob;
 		__swab64s(&msg->kfm_srcnid);
-		__swab64s(&msg->kfm_dstnid);
 	}
 
 	if (msg->kfm_srcnid == LNET_NID_ANY) {
@@ -159,27 +129,22 @@ static int kfilnd_tn_unpack_msg(struct kfilnd_msg *msg, int nob)
 		return -EPROTO;
 	}
 
-	switch (msg->kfm_type) {
-
-	case KFILND_MSG_NOOP:
+	switch ((enum kfilnd_msg_type)msg->kfm_type) {
 	case KFILND_MSG_IMMEDIATE:
 		break;
 
-	case KFILND_MSG_PUT_REQ:
-		if (flip)
-			__swab64s(&msg->kfm_u.putreq.kfprm_match_bits);
-		break;
-
-	case KFILND_MSG_GET_REQ:
-		if (flip)
-			__swab64s(&msg->kfm_u.get.kfgm_match_bits);
-		break;
-
-	case KFILND_MSG_PUT_NAK:
-	case KFILND_MSG_GET_NAK:
+	case KFILND_MSG_BULK_PUT_REQ:
+	case KFILND_MSG_BULK_GET_REQ:
 		if (flip) {
-			__swab32s(&msg->kfm_u.completion.kfcm_status);
-			__swab64s(&msg->kfm_u.completion.kfcm_match_bits);
+			__swab32s(&msg->kfm_u.bulk_req.mr_key);
+			__swab64s(&msg->kfm_u.bulk_req.cookie);
+		}
+		break;
+
+	case KFILND_MSG_BULK_RSP:
+		if (flip) {
+			__swab32s(&msg->kfm_u.bulk_rsp.status);
+			__swab64s(&msg->kfm_u.bulk_rsp.cookie);
 		}
 		break;
 
@@ -200,17 +165,17 @@ static void kfilnd_tn_setup_immed(struct kfilnd_transaction *tn)
 {
 	if (tn->tn_kiov)
 		lnet_copy_kiov2flat(KFILND_IMMEDIATE_MSG_SIZE,
-				    tn->tn_tx_msg,
+				    tn->tn_tx_msg.msg,
 				    offsetof(struct kfilnd_msg,
-					     kfm_u.immed.kfim_payload),
+					     kfm_u.immed.payload),
 				    tn->tn_num_iovec, tn->tn_kiov,
 				    tn->tn_offset_iovec,
 				    tn->tn_nob_iovec);
 	else
 		lnet_copy_iov2flat(KFILND_IMMEDIATE_MSG_SIZE,
-				   tn->tn_tx_msg,
+				   tn->tn_tx_msg.msg,
 				   offsetof(struct kfilnd_msg,
-					    kfm_u.immed.kfim_payload),
+					    kfm_u.immed.payload),
 				   tn->tn_num_iovec, tn->tn_iov,
 				   tn->tn_offset_iovec,
 				   tn->tn_nob_iovec);
@@ -227,23 +192,58 @@ static void kfilnd_tn_process_rx_event(void *buf_context, void *msg_context,
 {
 	struct kfilnd_transaction *tn;
 	struct kfilnd_immediate_buffer *bufdesc = buf_context;
+	struct kfilnd_msg *rx_msg = msg_context;
+	bool alloc_msg = true;
+	enum tn_events event = TN_EVENT_FAIL;
+	int rc;
 
-	/*
-	 * context points to a received buffer and status is the length.
-	 * Allocate a Tn structure, set its values, then launch the receive.
-	 */
-	tn = kfilnd_tn_alloc(bufdesc->immed_end->end_dev,
-			     bufdesc->immed_end->end_cpt, false);
-	if (!tn) {
-		CERROR("Can't get receive Tn: Tn descs exhausted\n");
+	/* Unpack the message */
+	rc = kfilnd_tn_unpack_msg(rx_msg, msg_size);
+	if (rc) {
+		CERROR("Failed to unpack message: rc=%d\n", rc);
 		return;
 	}
-	tn->tn_rx_msg = msg_context;
-	tn->tn_msgsz = msg_size;
-	tn->tn_nob = msg_size;
-	tn->tn_posted_buf = bufdesc;
 
-	/* Move TN from idle to receiving */
+	switch ((enum kfilnd_msg_type)rx_msg->kfm_type) {
+	case KFILND_MSG_IMMEDIATE:
+		alloc_msg = false;
+
+		/* Fall through to allocate transaction strcture. */
+	case KFILND_MSG_BULK_PUT_REQ:
+	case KFILND_MSG_BULK_GET_REQ:
+		/* Context points to a received buffer and status is the length.
+		 * Allocate a Tn structure, set its values, then launch the
+		 * receive.
+		 */
+		tn = kfilnd_tn_alloc(bufdesc->immed_end->end_dev,
+				     bufdesc->immed_end->end_cpt, alloc_msg);
+		if (!tn) {
+			CERROR("Can't get receive Tn: Tn descs exhausted\n");
+			return;
+		}
+		tn->tn_rx_msg.msg = msg_context;
+		tn->tn_rx_msg.length = msg_size;
+		tn->tn_nob = msg_size;
+		tn->tn_posted_buf = bufdesc;
+		break;
+
+	case KFILND_MSG_BULK_RSP:
+		tn = (void *)rx_msg->kfm_u.bulk_rsp.cookie;
+		if (rx_msg->kfm_u.bulk_rsp.status) {
+			CERROR("Peer error: rc=%d\n",
+			       rx_msg->kfm_u.bulk_rsp.status);
+			tn->tn_status = -EREMOTEIO;
+			event = TN_EVENT_FAIL;
+		}
+		tn->tn_posted_buf = bufdesc;
+
+		break;
+
+	default:
+		CERROR("Dropping receive message\n");
+		return;
+	};
+
 	kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK);
 }
 
@@ -267,13 +267,47 @@ static void kfilnd_tn_process_unlink_event(void *buf_context, void *context,
 }
 
 /**
+ * kfilnd_tn_process_rma_event() - Process a RMA transaction event.
+ */
+static void kfilnd_tn_process_rma_event(void *ep_context, void *tn_context,
+					int status)
+{
+	struct kfilnd_transaction *tn = tn_context;
+	enum tn_events event;
+
+	if (status)
+		CERROR("RMA failed to %s: rx_ctx=%llu errno=%d\n",
+		       libcfs_nid2str(tn->tn_target_nid),
+		       KFILND_RX_CONTEXT(tn->tn_target_addr), status);
+
+	tn->tn_flags &= ~KFILND_TN_FLAG_TX_POSTED;
+	tn->tn_status = status;
+
+	if (tn->tn_status)
+		event = TN_EVENT_FAIL;
+	else
+		event = TN_EVENT_RMA_OK;
+
+	/*
+	 * The status parameter has been sent to the transaction's state
+	 * machine event.
+	 */
+	kfilnd_tn_event_handler(tn, event);
+}
+
+/**
  * kfilnd_tn_process_tx_event() - Process a transmit transaction event.
  */
-static void kfilnd_tn_process_tx_event(void *tn_context, void *context,
+static void kfilnd_tn_process_tx_event(void *ep_context, void *tn_context,
 				       int status)
 {
 	struct kfilnd_transaction *tn = tn_context;
 	enum tn_events event;
+
+	if (status)
+		CERROR("Send failed to %s: rx_ctx=%llu errno=%d\n",
+		       libcfs_nid2str(tn->tn_target_nid),
+		       KFILND_RX_CONTEXT(tn->tn_target_addr), status);
 
 	tn->tn_flags &= ~KFILND_TN_FLAG_TX_POSTED;
 	tn->tn_status = status;
@@ -291,56 +325,24 @@ static void kfilnd_tn_process_tx_event(void *tn_context, void *context,
 }
 
 /**
- * kfilnd_tn_process_mr_event() - Process a memory region event.
- */
-static void kfilnd_tn_process_mr_event(void *ep_context, void *tn_context,
-				       int status)
-{
-	struct kfilnd_transaction *tn = tn_context;
-	enum tn_events event;
-
-	tn->tn_status = status;
-
-	if (tn->tn_status)
-		event = TN_EVENT_FAIL;
-	else
-		event = TN_EVENT_RX_OK;
-
-	kfilnd_tn_event_handler(tn, event);
-}
-
-/**
  * kfilnd_tn_cq_error() - Process a completion queue error entry.
  */
 void kfilnd_tn_cq_error(struct kfilnd_ep *ep, struct kfi_cq_err_entry *error)
 {
 	struct kfilnd_immediate_buffer *buf;
-	struct kfilnd_transaction *tn;
 
 	if (error->err == ECANCELED || error->flags & KFI_MULTI_RECV) {
 		buf = error->op_context;
 
 		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_unlink_event,
 				buf, NULL, 0);
-	} else if (error->flags & (KFI_RMA | KFI_REMOTE_READ) ||
-		   error->flags & (KFI_RMA | KFI_REMOTE_WRITE)) {
-		tn = error->op_context;
-
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_mr_event,
-				ep, tn, -error->err);
 	} else if (error->flags & (KFI_RMA | KFI_READ) ||
-		   error->flags & (KFI_RMA | KFI_WRITE) ||
-		   error->flags & KFI_SEND) {
-		tn = error->op_context;
-
-		CERROR("%s failed to %s: rx_ctx=%llu errno=%d prov_errno=%d\n",
-		       event_flags_to_str(error->flags),
-		       libcfs_nid2str(tn->tn_target_nid),
-		       KFILND_RX_CONTEXT(tn->tn_target_addr), -error->err,
-		       error->prov_errno);
-
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tx_event, tn,
-				NULL, -error->err);
+		   error->flags & (KFI_RMA | KFI_WRITE)) {
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_rma_event, ep,
+				error->op_context, -error->err);
+	} else if (error->flags & (KFI_MSG | KFI_SEND)) {
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tx_event, ep,
+				error->op_context, -error->err);
 	} else {
 		CERROR("Dropping error event: flags=%llx\n", error->flags);
 	}
@@ -352,7 +354,6 @@ void kfilnd_tn_cq_error(struct kfilnd_ep *ep, struct kfi_cq_err_entry *error)
 void kfilnd_tn_cq_event(struct kfilnd_ep *ep, struct kfi_cq_data_entry *event)
 {
 	struct kfilnd_immediate_buffer *buf;
-	struct kfilnd_tn *tn;
 
 	if (event->flags & KFI_RECV) {
 		buf = event->op_context;
@@ -369,19 +370,13 @@ void kfilnd_tn_cq_event(struct kfilnd_ep *ep, struct kfi_cq_data_entry *event)
 			kfilnd_wkr_post(ep->end_cpt,
 					kfilnd_tn_process_unlink_event, buf,
 					NULL, 0);
-	} else if (event->flags & (KFI_RMA | KFI_REMOTE_READ) ||
-		   event->flags & (KFI_RMA | KFI_REMOTE_WRITE)) {
-		tn = event->op_context;
-
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_mr_event, ep, tn,
-				0);
 	} else if (event->flags & (KFI_RMA | KFI_READ) ||
-		   event->flags & (KFI_RMA | KFI_WRITE) ||
-		   event->flags & KFI_SEND) {
-		tn = event->op_context;
-
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tx_event, tn,
-				NULL, 0);
+		   event->flags & (KFI_RMA | KFI_WRITE)) {
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_rma_event, ep,
+				event->op_context, 0);
+	} else if (event->flags & (KFI_MSG | KFI_SEND)) {
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tx_event, ep,
+				event->op_context, 0);
 	} else {
 		CERROR("Unhandled CQ event: flags=%llx\n", event->flags);
 	}
@@ -432,7 +427,16 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 
 	switch (event) {
 	case TN_EVENT_TX_OK:
-		msg = tn->tn_tx_msg;
+		msg = tn->tn_tx_msg.msg;
+
+		/* Lookup the peer's KFI address. */
+		rc = kfilnd_dev_lookup_peer_address(tn->tn_ep->end_dev,
+						    tn->tn_target_nid,
+						    &tn->tn_target_addr);
+		if (rc) {
+			CERROR("Failed to lookup KFI address: rc=%d\n", rc);
+			break;
+		}
 
 		/* If the transaction is an immediate message only, pack the
 		 * message and post the buffer. If not an immediate message
@@ -442,8 +446,7 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 		 */
 		if (tn->tn_flags & KFILND_TN_FLAG_IMMEDIATE) {
 			kfilnd_tn_setup_immed(tn);
-			kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn),
-					    tn->rma_rx);
+			kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
 
 			/* Post an immediate message with KFI LND header and
 			 * entire LNet payload.
@@ -465,9 +468,8 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 			 * perform an RMA operation.
 			 */
 			if (sync_mr_reg && !rc) {
-				kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn),
-						   tn->rma_rx);
-				tn->tn_state = TN_STATE_WAIT_RMA;
+				kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
+				tn->tn_state = TN_STATE_WAIT_COMP;
 				rc = kfilnd_ep_post_send(tn->tn_ep, tn, false);
 				if (rc)
 					CERROR("Failed to send to %s: rc=%d\n",
@@ -478,14 +480,7 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 		break;
 
 	case TN_EVENT_RX_OK:
-		msg = tn->tn_rx_msg;
-
-		/* Unpack the message */
-		rc = kfilnd_tn_unpack_msg(msg, tn->tn_nob);
-		if (rc) {
-			CERROR("Failed to unpack message: rc=%d\n", rc);
-			break;
-		}
+		msg = tn->tn_rx_msg.msg;
 
 		/* Update the NID address with the new preferred RX context.
 		 * Don't drop the message if this fails.
@@ -499,11 +494,6 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 			rc = 0;
 		}
 
-		/* RMA RX context is needed to target the correct RX context for
-		 * a future RMA operation.
-		 */
-		tn->rma_rx = msg->kfm_rma_rx;
-
 		/*
 		 * Pass message up to LNet
 		 * The TN will be reused in this call chain so we need to
@@ -514,11 +504,11 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 		*tn_released = true;
 		if (msg->kfm_type == KFILND_MSG_IMMEDIATE)
 			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
-					&msg->kfm_u.immed.kfim_hdr,
-					msg->kfm_srcnid, tn, 0);
+					&msg->kfm_u.immed.hdr, msg->kfm_srcnid,
+					tn, 0);
 		else
 			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
-					&msg->kfm_u.get.kfgm_hdr,
+					&msg->kfm_u.bulk_req.hdr,
 					msg->kfm_srcnid, tn, 1);
 		if (rc)
 			CERROR("Failed to parse LNet message from %s: rc=%d\n",
@@ -602,12 +592,31 @@ static int kfilnd_tn_imm_recv(struct kfilnd_transaction *tn,
 		else
 			tn->tn_posted_buf = NULL;
 
-		/* Initiate the RMA operation to push/pull the LNet payload. */
-		tn->tn_state = TN_STATE_WAIT_RMA;
-		if (tn->tn_flags & KFILND_TN_FLAG_SINK)
-			rc = kfilnd_ep_post_read(tn->tn_ep, tn);
-		else
-			rc = kfilnd_ep_post_write(tn->tn_ep, tn);
+		/* Lookup the peer's KFI address. */
+		rc = kfilnd_dev_lookup_peer_address(tn->tn_ep->end_dev,
+						    tn->tn_target_nid,
+						    &tn->tn_target_addr);
+		if (rc) {
+			CERROR("Failed to lookup KFI address: rc=%d\n", rc);
+		} else {
+			/* Update the KFI address to use the response RX
+			 * context.
+			 */
+			tn->tn_target_addr =
+				kfi_rx_addr(KFILND_BASE_ADDR(tn->tn_target_addr),
+					    tn->tn_response_rx,
+					    KFILND_FAB_RX_CTX_BITS);
+
+			/* Initiate the RMA operation to push/pull the LNet
+			 * payload.
+			 */
+			tn->tn_state = TN_STATE_BULK_RMA;
+			if (tn->tn_flags & KFILND_TN_FLAG_SINK)
+				rc = kfilnd_ep_post_read(tn->tn_ep, tn);
+			else
+				rc = kfilnd_ep_post_write(tn->tn_ep, tn);
+		}
+
 		if (!rc)
 			break;
 
@@ -645,13 +654,13 @@ static int kfilnd_tn_reg_mem(struct kfilnd_transaction *tn,
 
 	switch (event) {
 	case TN_EVENT_MR_OK:
-		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn), tn->rma_rx);
+		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
 
 		/* Post an immediate message only with the KFI LND header. The
 		 * peer will perform an RMA operation to push/pull the LNet
 		 * payload.
 		 */
-		tn->tn_state = TN_STATE_WAIT_RMA;
+		tn->tn_state = TN_STATE_WAIT_COMP;
 		rc = kfilnd_ep_post_send(tn->tn_ep, tn, false);
 		if (!rc)
 			break;
@@ -680,13 +689,67 @@ static int kfilnd_tn_reg_mem(struct kfilnd_transaction *tn,
 	return rc;
 }
 
-static int kfilnd_tn_wait_rma(struct kfilnd_transaction *tn,
+static int kfilnd_tn_wait_comp(struct kfilnd_transaction *tn,
+			       enum tn_events event, bool *tn_released)
+{
+	switch (event) {
+	case TN_EVENT_FAIL:
+	case TN_EVENT_TX_OK:
+	case TN_EVENT_RX_OK:
+		break;
+
+	default:
+		CERROR("Invalid event for wait complete state: event=%d\n",
+		       event);
+	}
+
+	spin_unlock(&tn->tn_lock);
+	*tn_released = true;
+
+	kfilnd_tn_finalize(tn);
+
+	return 0;
+}
+
+static int kfilnd_tn_bulk_rma(struct kfilnd_transaction *tn,
 			      enum tn_events event, bool *tn_released)
 {
 	int rc = 0;
-	bool finalize_tn = true;
+	bool finalize_tn = false;
+	struct kfilnd_msg *tx_msg = tn->tn_tx_msg.msg;
 
 	switch (event) {
+	case TN_EVENT_RMA_OK:
+		/* Build the completion message to finalize the LNet operation.
+		 */
+		tx_msg->kfm_u.bulk_rsp.cookie = tn->tn_response_cookie;
+		tx_msg->kfm_u.bulk_rsp.status = tn->tn_status;
+
+		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
+
+		/* Lookup the peer's KFI address. */
+		rc = kfilnd_dev_lookup_peer_address(tn->tn_ep->end_dev,
+						    tn->tn_target_nid,
+						    &tn->tn_target_addr);
+		if (rc) {
+			CERROR("Failed to lookup KFI address: rc=%d\n", rc);
+		} else {
+			/* Update the KFI address to use the response RX
+			 * context.
+			 */
+			tn->tn_target_addr =
+				kfi_rx_addr(KFILND_BASE_ADDR(tn->tn_target_addr),
+					    tn->tn_response_rx,
+					    KFILND_FAB_RX_CTX_BITS);
+
+			tn->tn_state = TN_STATE_WAIT_COMP;
+			rc = kfilnd_ep_post_send(tn->tn_ep, tn, true);
+		}
+
+		if (rc)
+			finalize_tn = true;
+		break;
+
 	case TN_EVENT_FAIL:
 		/* Remove LNet NID from hash only if transaction fails. This
 		 * would only get called if the KFI_RMA or KFI_REMOTE_RMA event
@@ -696,8 +759,6 @@ static int kfilnd_tn_wait_rma(struct kfilnd_transaction *tn,
 					       tn->tn_target_nid);
 
 		/* Fall through. */
-	case TN_EVENT_TX_OK:
-	case TN_EVENT_RX_OK:
 		finalize_tn = true;
 		break;
 
@@ -754,8 +815,11 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 	case TN_STATE_REG_MEM:
 		rc = kfilnd_tn_reg_mem(tn, event, &tn_released);
 		break;
-	case TN_STATE_WAIT_RMA:
-		rc = kfilnd_tn_wait_rma(tn, event, &tn_released);
+	case TN_STATE_WAIT_COMP:
+		rc = kfilnd_tn_wait_comp(tn, event, &tn_released);
+		break;
+	case TN_STATE_BULK_RMA:
+		rc = kfilnd_tn_bulk_rma(tn, event, &tn_released);
 		break;
 	default:
 		CERROR("Transaction in bad state: %d\n", tn->tn_state);
@@ -774,9 +838,11 @@ void kfilnd_tn_free(struct kfilnd_transaction *tn)
 	list_del(&tn->tn_entry);
 	spin_unlock(&tn->tn_ep->tn_list_lock);
 
+	kfilnd_dom_put_mr_key(tn->tn_ep->end_dev->dom, tn->tn_mr_key);
+
 	/* Free send message buffer if needed. */
-	if (tn->tn_tx_msg)
-		LIBCFS_FREE(tn->tn_tx_msg, KFILND_IMMEDIATE_MSG_SIZE);
+	if (tn->tn_tx_msg.msg)
+		LIBCFS_FREE(tn->tn_tx_msg.msg, KFILND_IMMEDIATE_MSG_SIZE);
 
 	kmem_cache_free(tn_cache, tn);
 }
@@ -799,6 +865,7 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 {
 	struct kfilnd_transaction *tn;
 	struct kfilnd_ep *ep;
+	int rc;
 
 	if (!dev)
 		goto err;
@@ -812,24 +879,27 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 		      libcfs_nid2str(dev->kfd_ni->ni_nid), cpt);
 		ep = dev->kfd_endpoints[0];
 	}
-
 	tn = kmem_cache_alloc(tn_cache, GFP_KERNEL);
 	if (!tn)
 		goto err;
 
 	memset(tn, 0, sizeof(*tn));
 	if (alloc_msg) {
-		LIBCFS_CPT_ALLOC(tn->tn_tx_msg, lnet_cpt_table(), cpt,
+		LIBCFS_CPT_ALLOC(tn->tn_tx_msg.msg, lnet_cpt_table(), cpt,
 				 KFILND_IMMEDIATE_MSG_SIZE);
-		if (!tn->tn_tx_msg)
+		if (!tn->tn_tx_msg.msg)
 			goto err_free_tn;
 	}
 
 	spin_lock_init(&tn->tn_lock);
 
-	/* Use MR remote key as the transaction cookie. */
-	tn->tn_cookie = kfilnd_dom_get_mr_key(dev->dom);
+	rc = kfilnd_dom_get_mr_key(dev->dom);
+	if (rc < 0)
+		goto err_free_tn;
+
+	tn->tn_mr_key = rc;
 	tn->tn_ep = ep;
+	tn->tn_response_rx = ep->end_context_id;
 
 	/* Add the transaction to an endpoint.  This is like
 	 * incrementing a ref counter.
@@ -840,8 +910,8 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 	return tn;
 
 err_free_tn:
-	if (tn->tn_tx_msg)
-		LIBCFS_FREE(tn->tn_tx_msg, KFILND_IMMEDIATE_MSG_SIZE);
+	if (tn->tn_tx_msg.msg)
+		LIBCFS_FREE(tn->tn_tx_msg.msg, KFILND_IMMEDIATE_MSG_SIZE);
 	kmem_cache_free(tn_cache, tn);
 err:
 	return NULL;

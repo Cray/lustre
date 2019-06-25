@@ -11,6 +11,8 @@
 void kfilnd_dom_put(struct kfilnd_dom *dom);
 struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
 				  struct kfi_info **dev_info);
-unsigned int kfilnd_dom_get_mr_key(struct kfilnd_dom *dom);
+
+int kfilnd_dom_get_mr_key(struct kfilnd_dom *dom);
+void kfilnd_dom_put_mr_key(struct kfilnd_dom *dom, unsigned int mr_key);
 
 #endif /* _KFILND_DOM_ */
