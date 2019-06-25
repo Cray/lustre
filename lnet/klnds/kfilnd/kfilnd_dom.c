@@ -98,6 +98,8 @@ static void kfilnd_dom_free(struct kref *kref)
 	list_del(&dom->entry);
 	mutex_unlock(&dom->fab->dom_list_lock);
 
+	ida_destroy(&dom->mr_keys);
+
 	kfi_close(&dom->domain->fid);
 	if (!sync_mr_reg)
 		kfi_close(&dom->eq->fid);
@@ -137,7 +139,7 @@ static struct kfilnd_dom *kfilnd_dom_alloc(struct kfi_info *dom_info,
 	spin_lock_init(&dom->lock);
 	dom->fab = fab;
 	kref_init(&dom->cnt);
-	dom->mr_key = 1;
+	ida_init(&dom->mr_keys);
 
 	rc = kfi_domain(fab->fabric, dom_info, &dom->domain, dom);
 	if (rc) {
@@ -408,8 +410,7 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
 
 	hints->caps = KFI_MSG | KFI_RMA | KFI_SEND | KFI_RECV | KFI_READ |
 		KFI_WRITE | KFI_REMOTE_READ | KFI_REMOTE_WRITE |
-		KFI_MULTI_RECV | KFI_RMA_EVENT | KFI_REMOTE_COMM |
-		KFI_NAMED_RX_CTX;
+		KFI_MULTI_RECV | KFI_REMOTE_COMM | KFI_NAMED_RX_CTX;
 	hints->domain_attr->mr_iov_limit = 256; /* 1 MiB LNet message */
 	hints->domain_attr->mr_cnt = 1024; /* Max LNet credits */
 	hints->ep_attr->max_msg_size = LNET_MAX_PAYLOAD;
@@ -475,26 +476,12 @@ err:
 	return ERR_PTR(rc);
 }
 
-/**
- * kfilnd_dom_get_mr_key() - Get a MR remote key.
- * @dom: KFI LND domain MR remote key should come from.
- *
- * MR keys need to be unique with a KFI LND domain. Enforcement of unique MR
- * keys occurs by the KFI domain during MR allocation.
- *
- * An MR key of zero should be considered invalid.
- *
- * Return: Non-zero, MR key value.
- */
-unsigned int kfilnd_dom_get_mr_key(struct kfilnd_dom *dom)
+int kfilnd_dom_get_mr_key(struct kfilnd_dom *dom)
 {
-	unsigned int key;
+	return ida_simple_get(&dom->mr_keys, 1, INT_MAX, GFP_KERNEL);
+}
 
-	spin_lock(&dom->lock);
-	key = dom->mr_key;
-	if (++dom->mr_key == 0)
-		dom->mr_key = 1;
-	spin_unlock(&dom->lock);
-
-	return key;
+void kfilnd_dom_put_mr_key(struct kfilnd_dom *dom, unsigned int mr_key)
+{
+	ida_simple_remove(&dom->mr_keys, mr_key);
 }
