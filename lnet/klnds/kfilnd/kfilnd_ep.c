@@ -188,11 +188,11 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		rc = kfi_mr_regbv(ep->end_dev->dom->domain,
 				  (struct bio_vec *)tn->tn_kiov,
 				  tn->tn_num_iovec, access, tn->tn_offset_iovec,
-				  tn->tn_cookie, 0, &tn->tn_mr, tn);
+				  tn->tn_mr_key, 0, &tn->tn_mr, tn);
 	else
 		rc = kfi_mr_regv(ep->end_dev->dom->domain, tn->tn_iov,
 				 tn->tn_num_iovec, access, tn->tn_offset_iovec,
-				 tn->tn_cookie, 0, &tn->tn_mr, tn);
+				 tn->tn_mr_key, 0, &tn->tn_mr, tn);
 	if (rc) {
 		CERROR("Failed to register buffer of %u bytes, rc = %d\n",
 		       tn->tn_nob_iovec, rc);
@@ -205,7 +205,6 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		CERROR("kfi_mr_bind failed: rc = %d", rc);
 		goto err_free_mr;
 	}
-	tn->rma_rx = ep->end_context_id;
 
 	rc = kfi_mr_enable(tn->tn_mr);
 	if (rc) {
@@ -239,7 +238,6 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
 	size_t len;
 	void *buf;
 	int rc;
-	kfi_addr_t addr;
 	struct kfi_cq_err_entry fake_error = {
 		.op_context = tn,
 		.flags = KFI_MSG | KFI_SEND,
@@ -249,19 +247,12 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
 	if (!ep || !tn || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
 		return -EINVAL;
 
-	buf = tn->tn_tx_msg;
-	len = tn->tn_msgsz;
+	buf = tn->tn_tx_msg.msg;
+	len = tn->tn_tx_msg.length;
 
 	/* Make sure the device is not being shut down */
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
-
-	/* Find the peer's address. */
-	rc = kfilnd_dev_lookup_peer_address(ep->end_dev, tn->tn_target_nid,
-					    &addr);
-	if (rc)
-		return rc;
-	tn->tn_target_addr = addr;
 
 	/* Progress transaction to failure if send should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND)) {
@@ -270,7 +261,8 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
 		kfilnd_tn_cq_error(ep, &fake_error);
 	} else {
 		if (want_event) {
-			rc = kfi_send(ep->end_tx, buf, len, NULL, addr, tn);
+			rc = kfi_send(ep->end_tx, buf, len, NULL,
+				      tn->tn_target_addr, tn);
 		} else {
 			/*
 			 * To avoid getting a Tx event, we need to use
@@ -287,13 +279,14 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
 			msg.msg_iov = &msg_vec;
 			msg.iov_count = 1;
 			msg.context = tn;
-			msg.addr = addr;
+			msg.addr = tn->tn_target_addr;
 			rc = kfi_sendmsg(ep->end_tx, &msg, 0);
 		}
 
 		if (rc == 0)
 			tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
 	}
+
 	return rc;
 }
 
@@ -313,7 +306,6 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
  */
 int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 {
-	kfi_addr_t addr;
 	int rc;
 	struct kfi_cq_err_entry fake_error = {
 		.op_context = tn,
@@ -328,15 +320,6 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
-	/* Find the peer's address and update to the RMA RX context. */
-	rc = kfilnd_dev_lookup_peer_address(ep->end_dev, tn->tn_target_nid,
-					    &addr);
-	if (rc)
-		return rc;
-	addr = kfi_rx_addr(KFILND_BASE_ADDR(addr), tn->rma_rx,
-			   KFILND_FAB_RX_CTX_BITS);
-	tn->tn_target_addr = addr;
-
 	/* Progress transaction to failure if read should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE)) {
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
@@ -346,12 +329,12 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		if (tn->tn_kiov)
 			rc = kfi_writebv(ep->end_tx,
 					 (struct bio_vec *)tn->tn_kiov, NULL,
-					 tn->tn_num_iovec, addr, 0,
-					 tn->tn_cookie, tn);
+					 tn->tn_num_iovec, tn->tn_target_addr,
+					 0, tn->tn_response_mr_key, tn);
 		else
 			rc = kfi_writev(ep->end_tx, tn->tn_iov, NULL,
-					tn->tn_num_iovec, addr, 0,
-					tn->tn_cookie, tn);
+					tn->tn_num_iovec, tn->tn_target_addr, 0,
+					tn->tn_response_mr_key, tn);
 
 		if (rc == 0)
 			tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
@@ -375,7 +358,6 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
  */
 int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 {
-	kfi_addr_t addr;
 	int rc;
 	struct kfi_cq_err_entry fake_error = {
 		.op_context = tn,
@@ -390,15 +372,6 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
-	/* Find the peer's address and update to the RMA RX context. */
-	rc = kfilnd_dev_lookup_peer_address(ep->end_dev, tn->tn_target_nid,
-					    &addr);
-	if (rc)
-		return rc;
-	addr = kfi_rx_addr(KFILND_BASE_ADDR(addr), tn->rma_rx,
-			   KFILND_FAB_RX_CTX_BITS);
-	tn->tn_target_addr = addr;
-
 	/* Progress transaction to failure if read should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ)) {
 		tn->tn_flags |= KFILND_TN_FLAG_RX_POSTED;
@@ -408,12 +381,12 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		if (tn->tn_kiov)
 			rc = kfi_readbv(ep->end_tx,
 					(struct bio_vec *)tn->tn_kiov, NULL,
-					tn->tn_num_iovec, addr, 0,
-					tn->tn_cookie, tn);
+					tn->tn_num_iovec, tn->tn_target_addr, 0,
+					tn->tn_response_mr_key, tn);
 		else
 			rc = kfi_readv(ep->end_tx, tn->tn_iov, NULL,
-				       tn->tn_num_iovec, addr, 0, tn->tn_cookie,
-				       tn);
+				       tn->tn_num_iovec, tn->tn_target_addr, 0,
+				       tn->tn_response_mr_key, tn);
 
 		if (rc == 0)
 			tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;

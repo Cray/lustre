@@ -145,7 +145,7 @@ struct kfilnd_dom {
 	struct kfid_eq *eq;
 	struct kfid_domain *domain;
 	struct kref cnt;
-	unsigned int mr_key;
+	struct ida mr_keys;
 };
 
 struct kfilnd_dev {
@@ -169,36 +169,29 @@ struct kfilnd_dev {
 	struct cfs_hash *nid_hash;
 };
 
-struct kfilnd_immed_msg
-{
-	struct lnet_hdr	kfim_hdr;	/* lnet header */
-	char		kfim_payload[0];/* piggy-backed payload */
-} WIRE_ATTR;
-
-struct kfilnd_putreq_msg
-{
-	struct lnet_hdr	kfprm_hdr;	/* lnet header */
-	__u64		kfprm_match_bits;
-} WIRE_ATTR;
-
-struct kfilnd_get_msg
-{
-	struct lnet_hdr	kfgm_hdr;	/* lnet header */
-	__u64		kfgm_match_bits;
-} WIRE_ATTR;
-
-struct kfilnd_completion_msg
-{
-	__u64	kfcm_match_bits;
-	__s32	kfcm_status;
-} WIRE_ATTR;
-
 /* Invalid checksum value is treated as no checksum. */
 /* TODO: Module parameter to disable checksum? */
 #define NO_CHECKSUM 0xFFFF
 
-struct kfilnd_msg
-{
+struct kfilnd_immed_msg {
+	struct lnet_hdr	hdr;
+	char payload[0];
+} WIRE_ATTR;
+
+struct kfilnd_bulk_req {
+	struct lnet_hdr	hdr;
+	__u32 mr_key;
+	__u64 cookie;
+	__u8 response_rx;
+
+} WIRE_ATTR;
+
+struct kfilnd_bulk_rsp {
+	__u64 cookie;
+	__s32 status;
+} WIRE_ATTR;
+
+struct kfilnd_msg {
 	/* First 2 fields fixed FOR ALL TIME */
 	__u32	kfm_magic;	/* I'm an ibnal message */
 	__u16	kfm_version;	/* this is my version number */
@@ -208,14 +201,12 @@ struct kfilnd_msg
 	__u32	kfm_nob;	/* # bytes in whole message */
 	__sum16	kfm_cksum;	/* checksum */
 	__u64	kfm_srcnid;	/* sender's NID */
-	__u64	kfm_dstnid;	/* destination's NID */
-	__u8	kfm_rma_rx;	/* RX endpoint RMA operation should use */
 
+	/* Message payload based on message type. */
 	union {
-		struct kfilnd_immed_msg		immed;
-		struct kfilnd_putreq_msg	putreq;
-		struct kfilnd_get_msg		get;
-		struct kfilnd_completion_msg	completion;
+		struct kfilnd_immed_msg immed;
+		struct kfilnd_bulk_req bulk_req;
+		struct kfilnd_bulk_rsp bulk_rsp;
 	} WIRE_ATTR kfm_u;
 } WIRE_ATTR;
 
@@ -224,12 +215,13 @@ struct kfilnd_msg
 #define KFILND_MSG_VERSION_1	0x11
 #define KFILND_MSG_VERSION	KFILND_MSG_VERSION_1
 
-#define KFILND_MSG_NOOP		0xd0	/* nothing (just credits) */
-#define KFILND_MSG_IMMEDIATE	0xd1	/* immediate */
-#define KFILND_MSG_PUT_REQ	0xd2	/* putreq (src->sink) */
-#define KFILND_MSG_PUT_NAK	0xd3	/* completion (sink->src) */
-#define KFILND_MSG_GET_REQ	0xd6	/* getreq (sink->src) */
-#define KFILND_MSG_GET_NAK	0xd7	/* completion (src->sink) */
+/* TODO: Support NOOPs? */
+enum kfilnd_msg_type {
+	KFILND_MSG_IMMEDIATE = 1,
+	KFILND_MSG_BULK_PUT_REQ,
+	KFILND_MSG_BULK_GET_REQ,
+	KFILND_MSG_BULK_RSP,
+};
 
 /* Transaction States */
 enum tn_states {
@@ -237,7 +229,8 @@ enum tn_states {
 	TN_STATE_IMM_SEND,
 	TN_STATE_IMM_RECV,
 	TN_STATE_REG_MEM,
-	TN_STATE_WAIT_RMA
+	TN_STATE_WAIT_COMP,
+	TN_STATE_BULK_RMA,
 };
 
 /* Transaction Events */
@@ -245,8 +238,9 @@ enum tn_events {
 	TN_EVENT_TX_OK,
 	TN_EVENT_MR_OK,
 	TN_EVENT_RX_OK,
+	TN_EVENT_RMA_OK,
 	TN_EVENT_FAIL,
-	TN_EVENT_RMA_PREP
+	TN_EVENT_RMA_PREP,
 };
 
 #define KFILND_TN_FLAG_IMMEDIATE	BIT(0)
@@ -254,8 +248,13 @@ enum tn_events {
 #define KFILND_TN_FLAG_RX_POSTED	BIT(2)
 #define KFILND_TN_FLAG_SINK		BIT(3)
 
-struct kfilnd_transaction			/* Both send and receive */
-{
+struct kfilnd_transaction_msg {
+	struct kfilnd_msg *msg;
+	size_t length;
+};
+
+/* Initiator and target transaction structure. */
+struct kfilnd_transaction {
 	/* Endpoint list transaction lives on. */
 	struct list_head	tn_entry;
 	spinlock_t		tn_lock;	/* to serialize events */
@@ -266,31 +265,36 @@ struct kfilnd_transaction			/* Both send and receive */
 	unsigned int		tn_flags;	/* see set of Tn flags above */
 	struct lnet_msg		*tn_lntmsg;	/* LNet msg to finalize */
 	struct lnet_msg		*tn_getreply;	/* GET LNet msg to finalize */
-	u64			tn_cookie;	/* unique transaction id */
-	lnet_nid_t		tn_target_nid;	/* NID transaction is with */
-	kfi_addr_t		tn_target_addr;	/* Transaction KFI addr */
-	u32			tn_procid;	/* PROCID transaction is with */
 
-	/* Transaction send message. */
-	struct kfilnd_msg *tn_tx_msg;
+	/* Transaction send message and target address. */
+	lnet_nid_t		tn_target_nid;
+	kfi_addr_t		tn_target_addr;
+	struct kfilnd_transaction_msg tn_tx_msg;
 
 	/* Transaction multi-receive buffer and associated receive message. */
 	struct kfilnd_immediate_buffer *tn_posted_buf;
-	struct kfilnd_msg *tn_rx_msg;
+	struct kfilnd_transaction_msg tn_rx_msg;
 
-	/* Send or receive message size. */
-	size_t tn_msgsz;
-
-	/* Used to keep track of user's buffers */
+	/* LNet buffer used to register a memory region or perform a RMA
+	 * operation.
+	 */
 	unsigned int		tn_num_iovec;
 	unsigned int		tn_nob_iovec;
 	unsigned int		tn_offset_iovec;
 	lnet_kiov_t		*tn_kiov;
 	struct kvec		*tn_iov;
-	struct kfid_mr		*tn_mr;
 
-	/* RX context used for MRs and RMA operations. */
-	u8			rma_rx;
+	/* Memory region and remote key used to cover initiator's buffer. */
+	struct kfid_mr		*tn_mr;
+	u32			tn_mr_key;
+
+	/* RX context used to perform response operations to a Put/Get
+	 * request. This is required since the request initiator locks in a
+	 * transactions to a specific RX context.
+	 */
+	u32			tn_response_mr_key;
+	u64			tn_response_cookie;
+	u8			tn_response_rx;
 };
 
 #endif /* _KFILND_ */
