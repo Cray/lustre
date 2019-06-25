@@ -56,7 +56,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	struct kfilnd_transaction *tn;
 	int nob;
 	struct kfilnd_dev *dev = ni->ni_data;
-	unsigned int lnd_msg_type = 0;
+	enum kfilnd_msg_type lnd_msg_type;
 	int cpt;
 
 	/* NB 'private' is different depending on what we're sending.... */
@@ -84,25 +84,25 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	case LNET_MSG_GET:
 		/* Is the src buffer too small for RDMA? */
 		nob = offsetof(struct kfilnd_msg,
-			      kfm_u.immed.kfim_payload[msg->msg_md->md_length]);
+			      kfm_u.immed.payload[msg->msg_md->md_length]);
 		if (nob <= KFILND_IMMEDIATE_MSG_SIZE) {
 			lnd_msg_type = KFILND_MSG_IMMEDIATE;
 			break;		/* send IMMEDIATE */
 		}
 
-		lnd_msg_type = KFILND_MSG_GET_REQ;
+		lnd_msg_type = KFILND_MSG_BULK_GET_REQ;
 		break;
 
 	case LNET_MSG_REPLY:
 	case LNET_MSG_PUT:
 		/* Is the payload small enough not to need RDMA? */
 		nob = offsetof(struct kfilnd_msg,
-			       kfm_u.immed.kfim_payload[msg->msg_len]);
+			       kfm_u.immed.payload[msg->msg_len]);
 		if (nob <= KFILND_IMMEDIATE_MSG_SIZE) {
 			lnd_msg_type = KFILND_MSG_IMMEDIATE;
 			break;			/* send IMMEDIATE */
 		}
-		lnd_msg_type = KFILND_MSG_PUT_REQ;
+		lnd_msg_type = KFILND_MSG_BULK_PUT_REQ;
 		break;
 	}
 
@@ -114,16 +114,15 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		return -ENOMEM;
 	}
 
-	kfmsg = tn->tn_tx_msg;
+	kfmsg = tn->tn_tx_msg.msg;
 
 	switch (lnd_msg_type) {
 	case KFILND_MSG_IMMEDIATE:
 		/* Copy over the LNet header */
-		kfmsg->kfm_u.immed.kfim_hdr = *hdr;
+		kfmsg->kfm_u.immed.hdr = *hdr;
 
 		/* Determine size of LNet message (exclude LND header) */
-		nob = offsetof(struct kfilnd_immed_msg,
-			       kfim_payload[msg->msg_len]);
+		nob = offsetof(struct kfilnd_immed_msg, payload[msg->msg_len]);
 
 		/* Transaction fields for immediate messages */
 		tn->tn_flags = KFILND_TN_FLAG_IMMEDIATE;
@@ -133,15 +132,17 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		tn->tn_kiov = msg->msg_kiov;
 		tn->tn_iov = msg->msg_iov;
 		break;
-	case KFILND_MSG_PUT_REQ:
-		/* Copy over the LNet header */
-		kfmsg->kfm_u.putreq.kfprm_hdr = *hdr;
 
-		/* Use the cookie in the tn for matchbits */
-		kfmsg->kfm_u.putreq.kfprm_match_bits = tn->tn_cookie;
+	case KFILND_MSG_BULK_PUT_REQ:
+		/* Copy over the LNet header */
+		kfmsg->kfm_u.bulk_req.hdr = *hdr;
+
+		kfmsg->kfm_u.bulk_req.mr_key = tn->tn_mr_key;
+		kfmsg->kfm_u.bulk_req.cookie = (u64)tn;
+		kfmsg->kfm_u.bulk_req.response_rx = tn->tn_response_rx;
 
 		/* Determine size of LNet message (exclude LND header) */
-		nob = sizeof(struct kfilnd_putreq_msg);
+		nob = sizeof(struct kfilnd_bulk_req);
 
 		tn->tn_flags = 0;
 		tn->tn_num_iovec = msg->msg_niov;
@@ -151,7 +152,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		tn->tn_iov = msg->msg_iov;
 		break;
 
-	case KFILND_MSG_GET_REQ:
+	case KFILND_MSG_BULK_GET_REQ:
 		/* We need to create a reply message to inform LNet our
 		 * optimized GET is done.
 		 */
@@ -163,13 +164,14 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 			return -EIO;
 		}
 		/* Copy over the LNet header */
-		kfmsg->kfm_u.get.kfgm_hdr = *hdr;
+		kfmsg->kfm_u.bulk_req.hdr = *hdr;
 
-		/* Use the cookie in the tn for matchbits */
-		kfmsg->kfm_u.get.kfgm_match_bits = tn->tn_cookie;
+		kfmsg->kfm_u.bulk_req.mr_key = tn->tn_mr_key;
+		kfmsg->kfm_u.bulk_req.cookie = (u64)tn;
+		kfmsg->kfm_u.bulk_req.response_rx = tn->tn_response_rx;
 
 		/* Determine size of LNet message (exclude LND header) */
-		nob = sizeof(struct kfilnd_get_msg);
+		nob = sizeof(struct kfilnd_bulk_req);
 
 		tn->tn_flags = KFILND_TN_FLAG_SINK;
 		tn->tn_num_iovec = msg->msg_md->md_niov,
@@ -187,12 +189,11 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	}
 
 	/* Initialize the protocol header */
-	tn->tn_msgsz = kfilnd_init_proto(tn->tn_tx_msg, lnd_msg_type, nob,
-					 ni);
+	tn->tn_tx_msg.length = kfilnd_init_proto(tn->tn_tx_msg.msg,
+						 lnd_msg_type, nob, ni);
 
 	/* Setup remaining transaction fields */
 	tn->tn_target_nid = target.nid;
-	tn->tn_procid = KFILND_MY_PROCID;
 	tn->tn_lntmsg = msg;	/* finalise msg on completion */
 
 	/* Start the state machine processing this transaction */
@@ -208,7 +209,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		       unsigned int rlen)
 {
 	struct kfilnd_transaction *tn = private;
-	struct kfilnd_msg *rxmsg = tn->tn_rx_msg;
+	struct kfilnd_msg *rxmsg = tn->tn_rx_msg.msg;
 	int nob;
 	int rc = 0;
 
@@ -227,36 +228,31 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 
 	switch (rxmsg->kfm_type) {
 	case KFILND_MSG_IMMEDIATE:
-		nob = offsetof(struct kfilnd_msg,
-			       kfm_u.immed.kfim_payload[rlen]);
-		if (nob > tn->tn_msgsz) {
+		nob = offsetof(struct kfilnd_msg, kfm_u.immed.payload[rlen]);
+		if (nob > tn->tn_rx_msg.length) {
 			CERROR("Immediate message from %s too big: %d(%lu)\n",
-			       libcfs_nid2str(rxmsg->kfm_u.immed.kfim_hdr.src_nid),
-			       nob, tn->tn_msgsz);
-			rc = -EPROTO;
-			break;
+			       libcfs_nid2str(rxmsg->kfm_u.immed.hdr.src_nid),
+			       nob, tn->tn_rx_msg.length);
+			return -EPROTO;
 		}
 
 		if (kiov)
 			lnet_copy_flat2kiov(niov, kiov, offset,
 					    KFILND_IMMEDIATE_MSG_SIZE, rxmsg,
 					    offsetof(struct kfilnd_msg,
-						     kfm_u.immed.kfim_payload),
+						     kfm_u.immed.payload),
 					    mlen);
 		else
 			lnet_copy_flat2iov(niov, iov, offset,
 					   KFILND_IMMEDIATE_MSG_SIZE, rxmsg,
 					   offsetof(struct kfilnd_msg,
-						    kfm_u.immed.kfim_payload),
-					   mlen);
+						    kfm_u.immed.payload), mlen);
 
 		tn->tn_status = 0;
 		kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK);
-		break;
+		return 0;
 
-	case KFILND_MSG_PUT_REQ:
-		tn->tn_lntmsg = msg;
-
+	case KFILND_MSG_BULK_PUT_REQ:
 		/* Post the buffer given us as a sink  */
 		tn->tn_flags |= KFILND_TN_FLAG_SINK;
 		tn->tn_num_iovec = niov;
@@ -264,15 +260,9 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		tn->tn_offset_iovec = offset;
 		tn->tn_kiov = kiov;
 		tn->tn_iov = iov;
-		tn->tn_cookie = rxmsg->kfm_u.putreq.kfprm_match_bits;
-		tn->tn_target_nid = msg->msg_initiator;
-
-		kfilnd_tn_event_handler(tn, TN_EVENT_RMA_PREP);
 		break;
 
-	case KFILND_MSG_GET_REQ:
-		tn->tn_lntmsg = msg;
-
+	case KFILND_MSG_BULK_GET_REQ:
 		/* Post the buffer given to us as a source  */
 		tn->tn_flags &= ~KFILND_TN_FLAG_SINK;
 		tn->tn_num_iovec = msg->msg_niov;
@@ -280,17 +270,24 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		tn->tn_offset_iovec = msg->msg_offset;
 		tn->tn_kiov = msg->msg_kiov;
 		tn->tn_iov = msg->msg_iov;
-		tn->tn_cookie = rxmsg->kfm_u.get.kfgm_match_bits;
-		tn->tn_target_nid = msg->msg_initiator;
-		tn->tn_procid = KFILND_MY_PROCID;
-
-		kfilnd_tn_event_handler(tn, TN_EVENT_RMA_PREP);
 		break;
 
 	default:
 		CERROR("Invalid message type = %d\n", rxmsg->kfm_type);
-		rc = -EINVAL;
+		return -EINVAL;
 	}
+
+	/* Store relevant fields to generate a bulk response. */
+	tn->tn_response_mr_key = rxmsg->kfm_u.bulk_req.mr_key;
+	tn->tn_response_rx = rxmsg->kfm_u.bulk_req.response_rx;
+	tn->tn_response_cookie = rxmsg->kfm_u.bulk_req.cookie;
+	tn->tn_target_nid = msg->msg_initiator;
+	tn->tn_tx_msg.length = kfilnd_init_proto(tn->tn_tx_msg.msg,
+						 KFILND_MSG_BULK_RSP,
+						 sizeof(struct kfilnd_bulk_rsp),
+						 ni);
+
+	kfilnd_tn_event_handler(tn, TN_EVENT_RMA_PREP);
 
 	return rc;
 }
