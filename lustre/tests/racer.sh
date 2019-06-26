@@ -72,9 +72,6 @@ RACER_ENABLE_FLR=${RACER_ENABLE_FLR:-true}
 RACER_ENABLE_SEL=${RACER_ENABLE_SEL:-true}
 RACER_LBUG_ON_EVICTION=${RACER_LBUG_ON_EVICTION:-false}
 
-check_progs_installed $CLIENTS $racer ||
-	{ skip_env "$racer not found" && exit 0; }
-
 fail_random_facet () {
 	local facets=${victims[@]}
 	facets=${facets// /,}
