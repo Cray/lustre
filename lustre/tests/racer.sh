@@ -74,9 +74,6 @@ RACER_ENABLE_OVERSTRIPE=${RACER_ENABLE_OVERSTRIPE:-true}
 RACER_LBUG_ON_EVICTION=${RACER_LBUG_ON_EVICTION:-false}
 RACER_FILE_STRIPECOUNT=${RACER_FILE_STRIPECOUNT:-""}
 
-check_progs_installed $CLIENTS $racer ||
-	{ skip_env "$racer not found" && exit 0; }
-
 fail_random_facet () {
 	local facets=${victims[@]}
 	facets=${facets// /,}
