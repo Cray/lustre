@@ -1070,6 +1070,7 @@ unlock_parent:
 	mdt_object_unlock(info, mp, parent_lh, rc);
 put_parent:
 	mdt_object_put(info->mti_env, mp);
+	CFS_RACE_WAKEUP(OBD_FAIL_OBD_ZERO_NLINK_RACE);
         return rc;
 }
 
