@@ -2361,10 +2361,12 @@ lnet_discovery_event_reply(struct lnet_peer *lp, struct lnet_event *ev)
 			CWARN("Reply says %s is Multi-Rail, DLC says not\n",
 			      libcfs_nid2str(lp->lp_primary_nid));
 		} else if (lnet_peer_discovery_disabled) {
-			CDEBUG(D_NET, "peer %s(%p) no MR: DD disabled locally\n",
+			CDEBUG(D_NET,
+			       "peer %s(%p) not MR: DD disabled locally\n",
 			       libcfs_nid2str(lp->lp_primary_nid), lp);
 		} else if (lp->lp_state & LNET_PEER_NO_DISCOVERY) {
-			CDEBUG(D_NET, "peer %s(%p) no MR: DD disabled remotely\n",
+			CDEBUG(D_NET,
+			       "peer %s(%p) not MR: DD disabled remotely\n",
 			       libcfs_nid2str(lp->lp_primary_nid), lp);
 		} else {
 			CDEBUG(D_NET, "peer %s(%p) is MR capable\n",
