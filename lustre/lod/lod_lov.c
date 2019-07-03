@@ -990,6 +990,9 @@ int lod_generate_lovea(const struct lu_env *env, struct lod_object *lo,
 		if (lod_comp->llc_flags & LCME_FL_NOSYNC)
 			lcme->lcme_timestamp =
 				cpu_to_le64(lod_comp->llc_timestamp);
+		if (lod_comp->llc_flags & LCME_FL_EXTENSION)
+			lcm->lcm_magic = cpu_to_le32(LOV_MAGIC_SEL);
+
 		lcme->lcme_extent.e_start =
 			cpu_to_le64(lod_comp->llc_extent.e_start);
 		lcme->lcme_extent.e_end =
@@ -1246,12 +1249,13 @@ int lod_parse_striping(const struct lu_env *env, struct lod_object *lo,
 	magic = le32_to_cpu(lmm->lmm_magic);
 
 	if (magic != LOV_MAGIC_V1 && magic != LOV_MAGIC_V3 &&
-	    magic != LOV_MAGIC_COMP_V1)
+	    magic != LOV_MAGIC_COMP_V1 &&
+	    magic != LOV_MAGIC_SEL)
 		GOTO(out, rc = -EINVAL);
 
 	lod_free_comp_entries(lo);
 
-	if (magic == LOV_MAGIC_COMP_V1) {
+	if (magic == LOV_MAGIC_COMP_V1 || magic == LOV_MAGIC_SEL) {
 		comp_v1 = (struct lov_comp_md_v1 *)lmm;
 		comp_cnt = le16_to_cpu(comp_v1->lcm_entry_count);
 		if (comp_cnt == 0)
