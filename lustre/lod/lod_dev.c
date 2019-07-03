@@ -1339,7 +1339,7 @@ static int lod_statfs(const struct lu_env *env, struct dt_device *dev,
 	u64 ost_ffree = 0;
 	int i, rc, bs;
 
-	rc = dt_statfs(env, dt2lod_dev(dev)->lod_child, sfs, NULL);
+	rc = dt_statfs(env, dt2lod_dev(dev)->lod_child, sfs);
 	if (rc)
 		GOTO(out, rc);
 
@@ -1354,7 +1354,7 @@ static int lod_statfs(const struct lu_env *env, struct dt_device *dev,
 	lod_foreach_mdt(lod, i) {
 		mdt = MDT_TGT(lod, i);
 		LASSERT(mdt && mdt->ltd_mdt);
-		rc = dt_statfs(env, mdt->ltd_mdt, &ost_sfs, NULL);
+		rc = dt_statfs(env, mdt->ltd_mdt, &ost_sfs);
 		/* ignore errors */
 		if (rc)
 			continue;
@@ -1373,7 +1373,7 @@ static int lod_statfs(const struct lu_env *env, struct dt_device *dev,
 	lod_foreach_ost(lod, i) {
 		ost = OST_TGT(lod, i);
 		LASSERT(ost && ost->ltd_ost);
-		rc = dt_statfs(env, ost->ltd_ost, &ost_sfs, NULL);
+		rc = dt_statfs(env, ost->ltd_ost, &ost_sfs);
 		/* ignore errors */
 		if (rc || ost_sfs.os_bsize == 0)
 			continue;
