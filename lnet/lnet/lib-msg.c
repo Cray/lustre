@@ -666,6 +666,101 @@ lnet_check_finalize_recursion_locked(struct lnet_msg *msg,
 	return my_slot;
 }
 
+int
+lnet_attempt_msg_resend(struct lnet_msg *msg)
+{
+	struct lnet_msg_container *container;
+	int my_slot;
+	int cpt;
+
+	/* we can only resend tx_committed messages */
+	LASSERT(msg->msg_tx_committed);
+
+	/* don't resend recovery messages */
+	if (msg->msg_recovery) {
+		CDEBUG(D_NET, "msg %s->%s is a recovery ping. retry# %d\n",
+			libcfs_nid2str(msg->msg_from),
+			libcfs_nid2str(msg->msg_target.nid),
+			msg->msg_retry_count);
+		return -ENOTRECOVERABLE;
+	}
+
+	/*
+	 * if we explicitly indicated we don't want to resend then just
+	 * return
+	 */
+	if (msg->msg_no_resend) {
+		CDEBUG(D_NET, "msg %s->%s requested no resend. retry# %d\n",
+			libcfs_nid2str(msg->msg_from),
+			libcfs_nid2str(msg->msg_target.nid),
+			msg->msg_retry_count);
+		return -ENOTRECOVERABLE;
+	}
+
+	/* check if the message has exceeded the number of retries */
+	if (msg->msg_retry_count >= lnet_retry_count) {
+		CNETERR("msg %s->%s exceeded retry count %d\n",
+			libcfs_nid2str(msg->msg_from),
+			libcfs_nid2str(msg->msg_target.nid),
+			msg->msg_retry_count);
+		return -ENOTRECOVERABLE;
+	}
+
+	cpt = msg->msg_tx_cpt;
+	lnet_net_lock(cpt);
+
+	/* check again under lock */
+	if (the_lnet.ln_mt_state != LNET_MT_STATE_RUNNING) {
+		lnet_net_unlock(cpt);
+		return -ESHUTDOWN;
+	}
+
+	container = the_lnet.ln_msg_containers[cpt];
+	my_slot =
+		lnet_check_finalize_recursion_locked(msg,
+					&container->msc_resending,
+					container->msc_nfinalizers,
+					container->msc_resenders);
+
+	/* enough threads are resending */
+	if (my_slot == -1) {
+		lnet_net_unlock(cpt);
+		return 0;
+	}
+
+	while (!list_empty(&container->msc_resending)) {
+		msg = list_entry(container->msc_resending.next,
+					struct lnet_msg, msg_list);
+		list_del(&msg->msg_list);
+
+		/*
+		 * resending the message will require us to call
+		 * lnet_msg_decommit_tx() which will return the credit
+		 * which this message holds. This could trigger another
+		 * queued message to be sent. If that message fails and
+		 * requires a resend we will recurse.
+		 * But since at this point the slot is taken, the message
+		 * will be queued in the container and dealt with
+		 * later. This breaks the recursion.
+		 */
+		lnet_resend_msg_locked(msg);
+	}
+
+	/*
+	 * msc_resenders is an array of process pointers. Each entry holds
+	 * a pointer to the current process operating on the message. An
+	 * array entry is created per CPT. If the array slot is already
+	 * set, then it means that there is a thread on the CPT currently
+	 * resending a message.
+	 * Once the thread finishes clear the slot to enable the thread to
+	 * take on more resend work.
+	 */
+	container->msc_resenders[my_slot] = NULL;
+	lnet_net_unlock(cpt);
+
+	return 0;
+}
+
 /*
  * Do a health check on the message:
  * return -1 if we're not going to handle the error or
@@ -677,12 +772,9 @@ static int
 lnet_health_check(struct lnet_msg *msg)
 {
 	enum lnet_msg_hstatus hstatus = msg->msg_health_status;
-	struct lnet_msg_container *container;
 	struct lnet_peer_ni *lpni;
 	struct lnet_ni *ni;
 	bool lo = false;
-	int my_slot;
-	int cpt;
 
 	/* if we're shutting down no point in handling health. */
 	if (the_lnet.ln_mt_state != LNET_MT_STATE_RUNNING)
@@ -776,7 +868,7 @@ lnet_health_check(struct lnet_msg *msg)
 		lnet_handle_local_failure(ni);
 		if (msg->msg_tx_committed)
 			/* add to the re-send queue */
-			goto resend;
+			return lnet_attempt_msg_resend(msg);
 		break;
 
 	/*
@@ -794,7 +886,7 @@ lnet_health_check(struct lnet_msg *msg)
 	case LNET_MSG_STATUS_REMOTE_DROPPED:
 		lnet_handle_remote_failure(lpni);
 		if (msg->msg_tx_committed)
-			goto resend;
+			return lnet_attempt_msg_resend(msg);
 		break;
 
 	case LNET_MSG_STATUS_REMOTE_ERROR:
@@ -806,98 +898,8 @@ lnet_health_check(struct lnet_msg *msg)
 		LBUG();
 	}
 
-resend:
-	/* we can only resend tx_committed messages */
-	LASSERT(msg->msg_tx_committed);
-
-	/* don't resend recovery messages */
-	if (msg->msg_recovery) {
-		CDEBUG(D_NET, "msg %s->%s is a recovery ping. retry# %d\n",
-			libcfs_nid2str(msg->msg_from),
-			libcfs_nid2str(msg->msg_target.nid),
-			msg->msg_retry_count);
-		return -ENOTRECOVERABLE;
-	}
-
-	/*
-	 * if we explicitly indicated we don't want to resend then just
-	 * return
-	 */
-	if (msg->msg_no_resend) {
-		CDEBUG(D_NET, "msg %s->%s requested no resend. retry# %d\n",
-			libcfs_nid2str(msg->msg_from),
-			libcfs_nid2str(msg->msg_target.nid),
-			msg->msg_retry_count);
-		return -ENOTRECOVERABLE;
-	}
-
-	/* check if the message has exceeded the number of retries */
-	if (msg->msg_retry_count >= lnet_retry_count) {
-		CNETERR("msg %s->%s exceeded retry count %d\n",
-			libcfs_nid2str(msg->msg_from),
-			libcfs_nid2str(msg->msg_target.nid),
-			msg->msg_retry_count);
-		return -ENOTRECOVERABLE;
-	}
-
-	cpt = msg->msg_tx_cpt;
-	lnet_net_lock(cpt);
-
-	/* check again under lock */
-	if (the_lnet.ln_mt_state != LNET_MT_STATE_RUNNING) {
-		lnet_net_unlock(cpt);
-		return -ESHUTDOWN;
-	}
-
-	container = the_lnet.ln_msg_containers[cpt];
-	my_slot =
-		lnet_check_finalize_recursion_locked(msg,
-					&container->msc_resending,
-					container->msc_nfinalizers,
-					container->msc_resenders);
-
-	/* enough threads are resending */
-	if (my_slot == -1) {
-		lnet_net_unlock(cpt);
-		return 0;
-	}
-
-	while (!list_empty(&container->msc_resending)) {
-		msg = list_entry(container->msc_resending.next,
-					struct lnet_msg, msg_list);
-		list_del(&msg->msg_list);
-
-		/*
-		 * resending the message will require us to call
-		 * lnet_msg_decommit_tx() which will return the credit
-		 * which this message holds. This could trigger another
-		 * queued message to be sent. If that message fails and
-		 * requires a resend we will recurse.
-		 * But since at this point the slot is taken, the message
-		 * will be queued in the container and dealt with
-		 * later. This breaks the recursion.
-		 */
-		lnet_resend_msg_locked(msg);
-	}
-
-	/*
-	 * msc_resenders is an array of process pointers. Each entry holds
-	 * a pointer to the current process operating on the message. An
-	 * array entry is created per CPT. If the array slot is already
-	 * set, then it means that there is a thread on the CPT currently
-	 * resending a message.
-	 * Once the thread finishes clear the slot to enable the thread to
-	 * take on more resend work.
-	 */
-	container->msc_resenders[my_slot] = NULL;
-	lnet_net_unlock(cpt);
-
-	/*
-	 * if we've resent successfully, then return and wait for
-	 * lnet_finalize to be called once more on the same
-	 * message, otherwise the message that has
-	 */
-	return 0;
+	/* no resend is needed */
+	return -1;
 }
 
 static void
