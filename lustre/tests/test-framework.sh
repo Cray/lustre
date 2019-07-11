@@ -420,6 +420,9 @@ init_test_env() {
 	fi
 
 	export TF_FAIL=${TF_FAIL:-$TMP/tf.fail}
+
+	# Constants used in more than one test script
+	export LOV_MAX_STRIPE_COUNT=2000
 }
 
 check_cpt_number() {
@@ -4665,11 +4668,7 @@ mkfs_opts() {
 		opts+=${L_GETIDENTITY:+" --param=mdt.identity_upcall=$L_GETIDENTITY"}
 
 		if [ $fstype == ldiskfs ]; then
-			# Check for wide striping
-			if [ $OSTCOUNT -gt 160 ]; then
-				MDSJOURNALSIZE=${MDSJOURNALSIZE:-4096}
-				fs_mkfs_opts+="-O ea_inode"
-			fi
+			fs_mkfs_opts+="-O ea_inode"
 
 			var=${facet}_JRN
 			if [ -n "${!var}" ]; then

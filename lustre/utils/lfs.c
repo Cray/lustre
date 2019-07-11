@@ -165,6 +165,7 @@ static inline int lfs_mirror_split(int argc, char **argv)
 #define SSM_CMD_COMMON(cmd) \
 	"usage: "cmd" [--component-end|-E <comp_end>]\n"		\
 	"                 [--stripe-count|-c <stripe_count>]\n"		\
+	"                 [--overstripe-count|-C <stripe_count>]\n"	\
 	"                 [--stripe-index|-i <start_ost_idx>]\n"	\
 	"                 [--stripe-size|-S <stripe_size>]\n"		\
 	"                 [--extension-size|--ext-size|-z]\n"           \
@@ -176,6 +177,9 @@ static inline int lfs_mirror_split(int argc, char **argv)
 
 #define SSM_HELP_COMMON \
 	"\tstripe_count: Number of OSTs to stripe over (0=fs default, -1 all)\n" \
+	"\t		 Using -C instead of -c allows overstriping, which\n" \
+	 "\t		 will place more than one stripe per OST if\n" \
+	 "\t		 stripe_count is greater than the number of OSTs\n" \
 	"\tstart_ost_idx: OST index of first stripe (-1=default round robin)\n"\
 	"\tstripe_size:  Number of bytes on each OST (0=fs default)\n" \
 	"\t              Can be specified with K, M or G (for KB, MB, GB\n" \
@@ -579,6 +583,7 @@ command_t cmdlist[] = {
 	 "layout\nto another (may be not safe with concurent writes).\n"
 	 "usage: migrate  "
 	 "[--stripe-count|-c] <stripe_count>\n"
+	 "[--overstripe-count|-C] <stripe_count>\n"
 	 "		[--stripe-index|-i] <start_ost_index>\n"
 	 "		[--stripe-size|-S] <stripe_size>\n"
 	 "		[--pool|-p] <pool_name>\n"
@@ -588,6 +593,9 @@ command_t cmdlist[] = {
 	 "		[--non-direct|-D]\n"
 	 "		<file|directory>\n"
 	 "\tstripe_count:     number of OSTs to stripe a file over\n"
+	 "\t		  Using -C instead of -c allows overstriping, which\n"
+	 "\t		  will place more than one stripe per OST if\n"
+	 "\t		  stripe_count is greater than the number of OSTs\n"
 	 "\tstripe_ost_index: index of the first OST to stripe a file over\n"
 	 "\tstripe_size:      number of bytes to store before moving to the next OST\n"
 	 "\tpool_name:        name of the predefined pool of OSTs\n"
@@ -2123,20 +2131,23 @@ free_layout:
  * indices and ranges, for example "1,2-4,7". Add the indices into the
  * \a tgts array and remove duplicates.
  *
- * \param[out] tgts    array to store indices in
- * \param[in] size     size of \a tgts array
- * \param[in] offset   starting index in \a tgts
- * \param[in] arg      string containing OST index list
+ * \param[out] tgts		array to store indices in
+ * \param[in] size		size of \a tgts array
+ * \param[in] offset		starting index in \a tgts
+ * \param[in] arg		string containing OST index list
+ * \param[in/out] overstriping	index list may contain duplicates
  *
  * \retval positive    number of indices in \a tgts
  * \retval -EINVAL     unable to parse \a arg
  */
-static int parse_targets(__u32 *tgts, int size, int offset, char *arg)
+static int parse_targets(__u32 *tgts, int size, int offset, char *arg,
+			 unsigned long long *pattern)
 {
 	int rc;
 	int nr = offset;
 	int slots = size - offset;
 	char *ptr = NULL;
+	bool overstriped = false;
 	bool end_of_loop;
 
 	if (arg == NULL)
@@ -2144,8 +2155,8 @@ static int parse_targets(__u32 *tgts, int size, int offset, char *arg)
 
 	end_of_loop = false;
 	while (!end_of_loop) {
-		int start_index;
-		int end_index;
+		int start_index = 0;
+		int end_index = 0;
 		int i;
 		char *endptr = NULL;
 
@@ -2176,14 +2187,21 @@ static int parse_targets(__u32 *tgts, int size, int offset, char *arg)
 
 			/* remove duplicate */
 			for (j = 0; j < offset; j++) {
-				if (tgts[j] == i)
-					break;
+				if (tgts[j] == i && pattern &&
+				    *pattern == LLAPI_LAYOUT_OVERSTRIPING)
+					overstriped = true;
+				else if (tgts[j] == i)
+					return -EINVAL;
 			}
-			if (j == offset) { /* no duplicate */
+
+			j = offset;
+
+			if (j == offset) { /* check complete */
 				tgts[nr++] = i;
 				--slots;
 			}
 		}
+
 		if (slots == 0 && i < end_index)
 			break;
 
@@ -2194,6 +2212,9 @@ static int parse_targets(__u32 *tgts, int size, int offset, char *arg)
 	}
 	if (!end_of_loop && ptr != NULL)
 		*ptr = ',';
+
+	if (!overstriped && pattern)
+		*pattern = LLAPI_LAYOUT_DEFAULT;
 
 	return rc < 0 ? rc : nr;
 }
@@ -2399,6 +2420,13 @@ new_comp:
 		}
 		/* Data-on-MDT component has always single stripe up to end */
 		lsa->lsa_stripe_size = lsa->lsa_comp_end;
+	} else if (lsa->lsa_pattern == LLAPI_LAYOUT_OVERSTRIPING) {
+		rc = llapi_layout_pattern_set(layout, lsa->lsa_pattern);
+		if (rc) {
+			fprintf(stderr, "Set stripe pattern %#llx failed. %s\n",
+				lsa->lsa_pattern, strerror(errno));
+			return rc;
+		}
 	}
 
 	size = lsa->lsa_comp_flags & LCME_FL_EXTENSION ?
@@ -2582,6 +2610,10 @@ static int build_layout_from_yaml_node(struct cYAML *node,
 				} else if (!strcmp(string, "pattern")) {
 					if (!strcmp(node->cy_valuestring, "mdt"))
 						lsa->lsa_pattern = LLAPI_LAYOUT_MDT;
+					if (!strcmp(node->cy_valuestring,
+						    "raid0,overstriped"))
+						lsa->lsa_pattern =
+							LLAPI_LAYOUT_OVERSTRIPING;
 				} else if (!strcmp(string, "lcme_flags")) {
 					rc = comp_str2flags(node->cy_valuestring,
 							    &lsa->lsa_comp_flags,
@@ -3018,7 +3050,8 @@ static int lfs_setstripe_internal(int argc, char **argv,
 	{ .val = 'c',	.name = "stripe-count",	.has_arg = required_argument},
 	{ .val = 'c',	.name = "stripe_count",	.has_arg = required_argument},
 	{ .val = 'c',	.name = "mdt-count",	.has_arg = required_argument},
-/* find	{ .val = 'C',	.name = "ctime",	.has_arg = required_argument }*/
+	{ .val = 'C',	.name = "overstripe-count",
+						.has_arg = required_argument},
 	{ .val = 'd',	.name = "delete",	.has_arg = no_argument},
 	{ .val = 'd',	.name = "destroy",	.has_arg = no_argument},
 	/* --non-direct is only valid in migrate mode */
@@ -3074,7 +3107,7 @@ static int lfs_setstripe_internal(int argc, char **argv,
 	snprintf(cmd, sizeof(cmd), "%s %s", progname, argv[0]);
 	progname = cmd;
 	while ((c = getopt_long(argc, argv,
-				"a:bc:dDE:f:hH:i:I:m:N::no:p:L:s:S:vy:z:",
+				"a:bc:C:dDE:f:hH:i:I:m:N::no:p:L:s:S:vy:z:",
 				long_opts, NULL)) >= 0) {
 		size_units = 1;
 		switch (c) {
@@ -3163,6 +3196,9 @@ static int lfs_setstripe_internal(int argc, char **argv,
 			}
 			migration_block = true;
 			break;
+		case 'C':
+			lsa.lsa_pattern = LLAPI_LAYOUT_OVERSTRIPING;
+			/* fall through */
 		case 'c':
 			lsa.lsa_stripe_count = strtoul(optarg, &end, 0);
 			if (*end != '\0') {
@@ -3325,7 +3361,7 @@ static int lfs_setstripe_internal(int argc, char **argv,
 			migrate_mdt_mode = true;
 			lsa.lsa_nr_tgts = parse_targets(tgts,
 						sizeof(tgts) / sizeof(__u32),
-						lsa.lsa_nr_tgts, optarg);
+						lsa.lsa_nr_tgts, optarg, NULL);
 			if (lsa.lsa_nr_tgts < 0) {
 				fprintf(stderr,
 					"%s %s: invalid MDT target(s) '%s'\n",
@@ -3400,9 +3436,16 @@ static int lfs_setstripe_internal(int argc, char **argv,
 					progname, argv[0]);
 				goto usage_error;
 			}
+
+			/* -o allows overstriping, and must note it because
+			 * parse_targets is shared with MDT striping, which
+			 * does not allow duplicates
+			 */
+			lsa.lsa_pattern = LLAPI_LAYOUT_OVERSTRIPING;
 			lsa.lsa_nr_tgts = parse_targets(tgts,
 						sizeof(tgts) / sizeof(__u32),
-						lsa.lsa_nr_tgts, optarg);
+						lsa.lsa_nr_tgts, optarg,
+						&lsa.lsa_pattern);
 			if (lsa.lsa_nr_tgts < 0) {
 				fprintf(stderr,
 					"%s %s: invalid OST target(s) '%s'\n",
@@ -3700,6 +3743,14 @@ static int lfs_setstripe_internal(int argc, char **argv,
 			param->lsp_stripe_offset = -1;
 		else
 			param->lsp_stripe_offset = lsa.lsa_stripe_off;
+		param->lsp_stripe_pattern =
+				llapi_pattern_to_lov(lsa.lsa_pattern);
+		if (param->lsp_stripe_pattern == EINVAL) {
+			fprintf(stderr, "error: %s: invalid stripe pattern\n",
+				argv[0]);
+			free(param);
+			goto usage_error;
+		}
 		param->lsp_pool = lsa.lsa_pool_name;
 		param->lsp_is_specific = false;
 		if (lsa.lsa_nr_tgts > 0) {
@@ -3952,6 +4003,8 @@ static int name2layout(__u32 *layout, char *name)
 			*layout |= LOV_PATTERN_RAID0;
 		else if (strcmp(layout_name, "mdt") == 0)
 			*layout |= LOV_PATTERN_MDT;
+		else if (strcmp(layout_name, "overstriping") == 0)
+			*layout |= LOV_PATTERN_OVERSTRIPING;
 		else
 			return -1;
 	}
@@ -5532,15 +5585,17 @@ static int lfs_setdirstripe(int argc, char **argv)
 					"%s %s: warning: '--index' deprecated, use '--mdt-index' instead\n",
 					progname, argv[0]);
 #endif
+			lsa.lsa_pattern = LLAPI_LAYOUT_OVERSTRIPING;
 			lsa.lsa_nr_tgts = parse_targets(mdts,
 						sizeof(mdts) / sizeof(__u32),
-						lsa.lsa_nr_tgts, optarg);
+						lsa.lsa_nr_tgts, optarg, NULL);
 			if (lsa.lsa_nr_tgts < 0) {
 				fprintf(stderr,
 					"%s %s: invalid MDT target(s) '%s'\n",
 					progname, argv[0], optarg);
 				return CMD_HELP;
 			}
+			lsa.lsa_pattern = 0;
 
 			lsa.lsa_tgts = mdts;
 			if (lsa.lsa_stripe_off == LLAPI_LAYOUT_DEFAULT)
