@@ -377,15 +377,6 @@ struct echo_client_obd {
 	__u64			ec_unique;
 };
 
-/* Generic subset of OSTs */
-struct ost_pool {
-        __u32              *op_array;      /* array of index of
-                                                   lov_obd->lov_tgts */
-        unsigned int        op_count;      /* number of OSTs in the array */
-        unsigned int        op_size;       /* allocated size of lp_array */
-	struct rw_semaphore op_rw_sem;     /* to protect ost_pool use */
-};
-
 /* allow statfs data caching for 1 second */
 #define OBD_STATFS_CACHE_SECONDS 1
 /* arbitrary maximum. larger would be useless, allows catching bogus input */

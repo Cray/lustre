@@ -1996,14 +1996,14 @@ static void lustre_swab_obd_dqblk (struct obd_dqblk *b)
         CLASSERT(offsetof(typeof(*b), dqb_padding) != 0);
 }
 
-void lustre_swab_obd_quotactl (struct obd_quotactl *q)
+void lustre_swab_obd_quotactl(struct obd_quotactl *q)
 {
-        __swab32s (&q->qc_cmd);
-        __swab32s (&q->qc_type);
-        __swab32s (&q->qc_id);
-        __swab32s (&q->qc_stat);
-        lustre_swab_obd_dqinfo (&q->qc_dqinfo);
-        lustre_swab_obd_dqblk (&q->qc_dqblk);
+	__swab32s(&q->qc_cmd);
+	__swab32s(&q->qc_type);
+	__swab32s(&q->qc_id);
+	__swab32s(&q->qc_stat);
+	lustre_swab_obd_dqinfo(&q->qc_dqinfo);
+	lustre_swab_obd_dqblk(&q->qc_dqblk);
 }
 
 void lustre_swab_fid2path(struct getinfo_fid2path *gf)
