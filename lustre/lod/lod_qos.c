@@ -616,7 +616,7 @@ static int lod_qos_calc_rr(struct lod_device *lod, struct ost_pool *src_pool,
 	   deleting from the pool. The lq_rw_sem insures that nobody else
 	   is reading. */
 	lqr->lqr_pool.op_count = real_count;
-	rc = lod_ost_pool_extend(&lqr->lqr_pool, real_count);
+	rc = tgt_pool_extend(&lqr->lqr_pool, real_count);
 	if (rc) {
 		up_write(&lod->lod_qos.lq_rw_sem);
 		RETURN(rc);

@@ -1115,7 +1115,26 @@ void lustre_register_quota_process_config(int (*qpc)(struct lustre_cfg *lcfg))
 EXPORT_SYMBOL(lustre_register_quota_process_config);
 #endif /* HAVE_SERVER_SUPPORT */
 
-/** Process configuration commands given in lustre_cfg form.
+#define QMT0_DEV_NAME_LEN (LUSTRE_MAXFSNAME + sizeof("-QMT0000"))
+static struct obd_device *obd_find_qmt0(char *obd_name)
+{
+#ifdef HAVE_SERVER_SUPPORT
+	char qmt_name[QMT0_DEV_NAME_LEN];
+	struct obd_device *qmt = NULL;
+
+	if (!server_name2fsname(obd_name, qmt_name, NULL)) {
+		strlcat(qmt_name, "-QMT0000", QMT0_DEV_NAME_LEN);
+		qmt = class_name2obd(qmt_name);
+	}
+
+	return qmt;
+#else
+	return NULL;
+#endif /* HAVE_SERVER_SUPPORT */
+}
+
+/**
+ * Process configuration commands given in lustre_cfg form.
  * These may come from direct calls (e.g. class_manual_cleanup)
  * or processing the config llog, or ioctl from lctl.
  */
@@ -1270,41 +1289,64 @@ int class_process_config(struct lustre_cfg *lcfg)
 		err = class_setup(obd, lcfg);
 		GOTO(out, err);
 	}
-        case LCFG_DETACH: {
-                err = class_detach(obd, lcfg);
-                GOTO(out, err = 0);
-        }
-        case LCFG_CLEANUP: {
-                err = class_cleanup(obd, lcfg);
-                GOTO(out, err = 0);
-        }
-        case LCFG_ADD_CONN: {
-                err = class_add_conn(obd, lcfg);
-                GOTO(out, err = 0);
-        }
-        case LCFG_DEL_CONN: {
-                err = class_del_conn(obd, lcfg);
-                GOTO(out, err = 0);
-        }
-        case LCFG_POOL_NEW: {
-                err = obd_pool_new(obd, lustre_cfg_string(lcfg, 2));
-                GOTO(out, err = 0);
-        }
-        case LCFG_POOL_ADD: {
-                err = obd_pool_add(obd, lustre_cfg_string(lcfg, 2),
+	case LCFG_DETACH: {
+		err = class_detach(obd, lcfg);
+		GOTO(out, err = 0);
+	}
+	case LCFG_CLEANUP: {
+		err = class_cleanup(obd, lcfg);
+		GOTO(out, err = 0);
+	}
+	case LCFG_ADD_CONN: {
+		err = class_add_conn(obd, lcfg);
+		GOTO(out, err = 0);
+	}
+	case LCFG_DEL_CONN: {
+		err = class_del_conn(obd, lcfg);
+		GOTO(out, err = 0);
+	}
+	case LCFG_POOL_NEW: {
+		err = obd_pool_new(obd, lustre_cfg_string(lcfg, 2));
+		if (!err && !strcmp(obd->obd_type->typ_name, LUSTRE_LOD_NAME)) {
+			obd = obd_find_qmt0(obd->obd_name);
+			if (obd)
+				obd_pool_new(obd, lustre_cfg_string(lcfg, 2));
+		}
+		GOTO(out, err = 0);
+	}
+	case LCFG_POOL_ADD: {
+		err = obd_pool_add(obd, lustre_cfg_string(lcfg, 2),
                                    lustre_cfg_string(lcfg, 3));
-                GOTO(out, err = 0);
-        }
-        case LCFG_POOL_REM: {
-                err = obd_pool_rem(obd, lustre_cfg_string(lcfg, 2),
+		if (!err && !strcmp(obd->obd_type->typ_name, LUSTRE_LOD_NAME)) {
+			obd = obd_find_qmt0(obd->obd_name);
+			if (obd)
+				obd_pool_add(obd, lustre_cfg_string(lcfg, 2),
+					     lustre_cfg_string(lcfg, 3));
+		}
+		GOTO(out, err = 0);
+	}
+	case LCFG_POOL_REM: {
+		err = obd_pool_rem(obd, lustre_cfg_string(lcfg, 2),
                                    lustre_cfg_string(lcfg, 3));
-                GOTO(out, err = 0);
-        }
-        case LCFG_POOL_DEL: {
-                err = obd_pool_del(obd, lustre_cfg_string(lcfg, 2));
-                GOTO(out, err = 0);
-        }
-	/* Process config log ADD_MDC record twice to add MDC also to LOV
+		if (!err && !strcmp(obd->obd_type->typ_name, LUSTRE_LOD_NAME)) {
+			obd = obd_find_qmt0(obd->obd_name);
+			if (obd)
+				obd_pool_rem(obd, lustre_cfg_string(lcfg, 2),
+					     lustre_cfg_string(lcfg, 3));
+		}
+		GOTO(out, err = 0);
+	}
+	case LCFG_POOL_DEL: {
+		err = obd_pool_del(obd, lustre_cfg_string(lcfg, 2));
+		if (!err && !strcmp(obd->obd_type->typ_name, LUSTRE_LOD_NAME)) {
+			obd = obd_find_qmt0(obd->obd_name);
+			if (obd)
+				obd_pool_del(obd, lustre_cfg_string(lcfg, 2));
+		}
+		GOTO(out, err = 0);
+	}
+	/*
+	 * Process config log ADD_MDC record twice to add MDC also to LOV
 	 * for Data-on-MDT:
 	 *
 	 * add 0:lustre-clilmv 1:lustre-MDT0000_UUID 2:0 3:1

@@ -31,6 +31,7 @@
 
 #ifndef __OBD_TARGET_H
 #define __OBD_TARGET_H
+#include <lprocfs_status.h>
 
 /* server-side individual type definitions */
 
@@ -69,5 +70,21 @@ struct ost_obd {
 	struct ptlrpc_service	*ost_out_service;
 	struct mutex		 ost_health_mutex;
 };
+
+/* Generic subset of OSTs */
+struct ost_pool {
+	__u32			*op_array; /* array of index of
+					      lov_obd->lov_tgts */
+	unsigned int		 op_count;  /* number of OSTs in the array */
+	unsigned int		 op_size;   /* allocated size of lp_array */
+	struct rw_semaphore	 op_rw_sem; /* to protect ost_pool use */
+};
+
+int tgt_pool_init(struct ost_pool *op, unsigned int count);
+int tgt_pool_add(struct ost_pool *op, __u32 idx, unsigned int min_count);
+int tgt_pool_remove(struct ost_pool *op, __u32 idx);
+int tgt_pool_free(struct ost_pool *op);
+int tgt_check_index(int idx, struct ost_pool *osts);
+int tgt_pool_extend(struct ost_pool *op, unsigned int min_count);
 
 #endif /* __OBD_TARGET_H */
