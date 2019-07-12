@@ -38,6 +38,7 @@
 #include <uapi/linux/lustre/lustre_idl.h>
 #include <lu_ref.h>
 #include <linux/percpu_counter.h>
+#include <obd_target.h>
 
 struct seq_file;
 struct proc_dir_entry;

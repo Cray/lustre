@@ -95,7 +95,7 @@ void lod_putref(struct lod_device *lod, struct lod_tgt_descs *ltd)
 			LTD_TGT(ltd, idx) = NULL;
 			/*FIXME: only support ost pool for now */
 			if (ltd == &lod->lod_ost_descs) {
-				lod_ost_pool_remove(&lod->lod_pool_info, idx);
+				tgt_pool_remove(&lod->lod_pool_info, idx);
 				if (tgt_desc->ltd_active)
 					lod->lod_desc.ld_active_tgt_count--;
 			}
@@ -356,7 +356,7 @@ int lod_add_device(const struct lu_env *env, struct lod_device *lod,
 
 	if (for_ost) {
 		/* pool and qos are not supported for MDS stack yet */
-		rc = lod_ost_pool_add(&lod->lod_pool_info, index,
+		rc = tgt_pool_add(&lod->lod_pool_info, index,
 				      lod->lod_osts_size);
 		if (rc) {
 			CERROR("%s: can't set up pool, failed with %d\n",
@@ -420,7 +420,7 @@ out_ltd:
 	cfs_bitmap_clear(ltd->ltd_tgt_bitmap, index);
 	LTD_TGT(ltd, index) = NULL;
 out_pool:
-	lod_ost_pool_remove(&lod->lod_pool_info, index);
+	tgt_pool_remove(&lod->lod_pool_info, index);
 out_mutex:
 	if (lock) {
 		mutex_unlock(&ltd->ltd_mutex);
@@ -2155,18 +2155,18 @@ int lod_pools_init(struct lod_device *lod, struct lustre_cfg *lcfg)
 
 	INIT_LIST_HEAD(&lod->lod_pool_list);
 	lod->lod_pool_count = 0;
-	rc = lod_ost_pool_init(&lod->lod_pool_info, 0);
+	rc = tgt_pool_init(&lod->lod_pool_info, 0);
 	if (rc)
 		GOTO(out_hash, rc);
 	lod_qos_rr_init(&lod->lod_qos.lq_rr);
-	rc = lod_ost_pool_init(&lod->lod_qos.lq_rr.lqr_pool, 0);
+	rc = tgt_pool_init(&lod->lod_qos.lq_rr.lqr_pool, 0);
 	if (rc)
 		GOTO(out_pool_info, rc);
 
 	RETURN(0);
 
 out_pool_info:
-	lod_ost_pool_free(&lod->lod_pool_info);
+	tgt_pool_free(&lod->lod_pool_info);
 out_hash:
 	cfs_hash_putref(lod->lod_pools_hash_body);
 
@@ -2196,8 +2196,8 @@ int lod_pools_fini(struct lod_device *lod)
 	}
 
 	cfs_hash_putref(lod->lod_pools_hash_body);
-	lod_ost_pool_free(&(lod->lod_qos.lq_rr.lqr_pool));
-	lod_ost_pool_free(&lod->lod_pool_info);
+	tgt_pool_free(&(lod->lod_qos.lq_rr.lqr_pool));
+	tgt_pool_free(&lod->lod_pool_info);
 
 	RETURN(0);
 }
