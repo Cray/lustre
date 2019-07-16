@@ -57,8 +57,20 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 	    [LDISKFS_SERIES="4.4-sles12sp2.series"]
 	)], [LDISKFS_SERIES="4.4-sles12sp3.series"],
             [LDISKFS_SERIES="4.4-sles12sp3.series"]
-	)], [LDISKFS_SERIES="4.12-sles15.series"],
-	    [LDISKFS_SERIES="4.12-sles15.series"])
+	)], [LDISKFS_SERIES="4.12-sles15r23.series"], [
+		# Extract release sub version
+		#   ex: 4.12.14-150.17.1_5.0.82-variant => 150
+		#               ^^^
+		# ga:  23.1     through 25.28.1 ->	sles15r25
+		# ga:  150.14.1 through 150.22.1 ->	sles15
+		# sp1: 195.1    through 197.7.1 ->	sles15
+		KPLEV=$(echo $LINUXRELEASE | sed -e 's/4.12.14-//g' -e 's/\..*//g' -e 's/-.*//' -e 's/_.*//')
+		case $KPLEV in
+		23)  LDISKFS_SERIES="4.12-sles15r23.series" ;;
+		25)  LDISKFS_SERIES="4.12-sles15r25.series" ;;
+		*)   LDISKFS_SERIES="4.12-sles15.series"    ;;
+		esac
+	])
 ], [test x$UBUNTU_KERNEL = xyes], [
 	AS_VERSION_COMPARE([$LINUXRELEASE],[4.15.0],[
 	AS_VERSION_COMPARE([$LINUXRELEASE],[4.4.0], [],
@@ -92,7 +104,7 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 ])
 AS_IF([test -z "$LDISKFS_SERIES"],
 	[AC_MSG_RESULT([failed to identify series])],
-	[AC_MSG_RESULT([$LDISKFS_SERIES])])
+	[AC_MSG_RESULT([$LDISKFS_SERIES for $LINUXRELEASE])])
 AC_SUBST(LDISKFS_SERIES)
 ]) # LDISKFS_LINUX_SERIES
 
