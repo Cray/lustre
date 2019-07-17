@@ -23,6 +23,8 @@ sles15/ext4-attach-jinode-in-writepages.patch
 sles15/ext4-dont-check-before-replay.patch
 rhel7.2/ext4-dont-check-in-ro.patch
 rhel7/ext4-use-GFP_NOFS-in-ext4_inode_attach_jinode.patch
+sles15/ext4-ialloc-uid-gid.patch
+rhel7.4/ext4-pass-owner-down.patch
 rhel7/ext4-optimize-ext4_find_delalloc_range-in-nodelalloc.patch
 rhel7.4/ext4-dquot-commit-speedup.patch
 rhel7/ext4-export-orphan-add.patch

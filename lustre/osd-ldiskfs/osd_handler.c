@@ -3056,6 +3056,17 @@ static struct dentry *osd_child_dentry_get(const struct lu_env *env,
 	return osd_child_dentry_by_inode(env, obj->oo_inode, name, namelen);
 }
 
+static inline struct timespec sec_or_omit(s64 s, unsigned int flag)
+{
+	struct timespec ts = { .tv_sec = 0, .tv_nsec = 0 };
+
+	if (flag)
+		ts.tv_sec = s;
+	else
+		ts.tv_nsec = UTIME_OMIT;
+	return ts;
+}
+
 static int osd_mkfile(struct osd_thread_info *info, struct osd_object *obj,
 		      umode_t mode, struct dt_allocation_hint *hint,
 		      struct thandle *th, struct lu_attr *attr)
@@ -3065,6 +3076,7 @@ static int osd_mkfile(struct osd_thread_info *info, struct osd_object *obj,
 	struct osd_thandle *oth;
 	struct dt_object *parent = NULL;
 	struct inode *inode;
+	struct iattr utime;
 	uid_t owner[2] = {0, 0};
 
 	if (attr->la_valid & LA_UID)
@@ -3090,10 +3102,16 @@ static int osd_mkfile(struct osd_thread_info *info, struct osd_object *obj,
 	    !dt_object_remote(hint->dah_parent))
 		parent = hint->dah_parent;
 
+	/* Only this combination of attrs is allowed by ldiskfs */
+	utime.ia_valid = ATTR_ATIME | ATTR_CTIME | ATTR_MTIME;
+	utime.ia_atime = sec_or_omit(attr->la_valid & LA_ATIME, attr->la_atime);
+	utime.ia_ctime = sec_or_omit(attr->la_valid & LA_CTIME, attr->la_ctime);
+	utime.ia_mtime = sec_or_omit(attr->la_valid & LA_MTIME, attr->la_mtime);
+
 	inode = ldiskfs_create_inode(oth->ot_handle,
 				     parent ? osd_dt_obj(parent)->oo_inode :
 					      osd_sb(osd)->s_root->d_inode,
-				     mode, owner);
+				     mode, owner, &utime);
 	if (!IS_ERR(inode)) {
 		/* Do not update file c/mtime in ldiskfs. */
 		inode->i_flags |= S_NOCMTIME;
@@ -3756,6 +3774,7 @@ static struct inode *osd_create_local_agent_inode(const struct lu_env *env,
 	struct osd_thread_info *info = osd_oti_get(env);
 	struct inode *local;
 	struct osd_thandle *oh;
+	struct iattr iattr, *piattr = NULL;
 	int rc;
 
 	ENTRY;
@@ -3764,8 +3783,17 @@ static struct inode *osd_create_local_agent_inode(const struct lu_env *env,
 	oh = container_of(th, struct osd_thandle, ot_super);
 	LASSERT(oh->ot_handle->h_transaction != NULL);
 
-	local = ldiskfs_create_inode(oh->ot_handle, pobj->oo_inode, type,
-				     NULL);
+	if (unlikely(pobj->oo_inode->i_mode & S_ISGID)) {
+		/* Only this combination of attrs is allowed by ldiskfs */
+		iattr.ia_valid = ATTR_ATIME | ATTR_CTIME | ATTR_MTIME;
+		iattr.ia_atime = ((struct timespec) { .tv_nsec = UTIME_OMIT });
+		iattr.ia_ctime = ((struct timespec) { .tv_nsec = UTIME_OMIT });
+		iattr.ia_mtime = ((struct timespec) { .tv_nsec = UTIME_OMIT });
+		piattr = &iattr;
+	}
+
+	local = ldiskfs_create_inode(oh->ot_handle, pobj->oo_inode,
+				     type, NULL, piattr);
 	if (IS_ERR(local)) {
 		CERROR("%s: create local error %d\n", osd_name(osd),
 		       (int)PTR_ERR(local));
