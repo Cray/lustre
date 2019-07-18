@@ -1262,9 +1262,23 @@ static inline void* lu_env_info(const struct lu_env *env,
 	return info;
 }
 
+#ifdef HAVE_SERVER_SUPPORT
 struct lu_env *lu_env_find(void);
 int lu_env_add(struct lu_env *env);
 void lu_env_remove(struct lu_env *env);
+#else
+static inline struct lu_env *lu_env_find(void)
+{
+	return NULL;
+}
+static inline int lu_env_add(struct lu_env *env)
+{
+	return 0;
+}
+static inline void lu_env_remove(struct lu_env *env)
+{
+}
+#endif /* HAVE_SERVER_SUPPORT */
 
 /** @} lu_context */
 
