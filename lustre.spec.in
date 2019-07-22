@@ -156,7 +156,7 @@
 %define with_systemd 1
 %endif
 
-%{!?mpi_name: %global mpi_name openmpi}
+%{!?mpi_name: %global mpi_name mpich}
 
 Summary: Lustre File System
 Name: %{lustre_name}
