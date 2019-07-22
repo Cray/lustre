@@ -1672,7 +1672,7 @@ static int ptlrpc_send_new_req(struct ptlrpc_request *req)
 	       imp->imp_obd->obd_uuid.uuid,
 	       lustre_msg_get_status(req->rq_reqmsg), req->rq_xid,
 	       obd_import_nid2str(imp), lustre_msg_get_opc(req->rq_reqmsg),
-	       lustre_msg_get_jobid(req->rq_reqmsg));
+	       lustre_msg_get_jobid(req->rq_reqmsg) ?: "");
 
         rc = ptl_send_rpc(req, 0);
 	if (rc == -ENOMEM) {
@@ -2111,7 +2111,7 @@ int ptlrpc_check_set(const struct lu_env *env, struct ptlrpc_request_set *set)
 			       req->rq_xid,
 			       obd_import_nid2str(imp),
 			       lustre_msg_get_opc(req->rq_reqmsg),
-			       lustre_msg_get_jobid(req->rq_reqmsg));
+			       lustre_msg_get_jobid(req->rq_reqmsg) ?: "");
 
 		spin_lock(&imp->imp_lock);
 		/* Request already may be not on sending or delaying list. This
