@@ -2376,19 +2376,16 @@ out_lock:
 	 * to reorder. */
 	if (unlikely(CFS_FAIL_PRECHECK(OBD_FAIL_PTLRPC_CLIENT_BULK_CB2)) &&
 	    desc) {
-		wait_queue_head_t	 waitq;
-		struct l_wait_info	 lwi1;
 
 		req->rq_status = rc;
 		target_committed_to_req(req);
 		target_send_reply(req, 0, 0);
 
 		CDEBUG(D_INFO, "reorder BULK\n");
-		init_waitqueue_head(&waitq);
 
-		lwi1 = LWI_TIMEOUT_INTR(cfs_time_seconds(cfs_fail_val ?: 3),
-					NULL, NULL, NULL);
-		l_wait_event(waitq, 0, &lwi1);
+		OBD_FAIL_TIMEOUT(OBD_FAIL_PTLRPC_CLIENT_BULK_CB2,
+				 cfs_fail_val  ?: 3);
+
 		target_bulk_io(exp, desc, &lwi);
 		ptlrpc_free_bulk(desc);
 	}

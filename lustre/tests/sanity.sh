@@ -14944,7 +14944,7 @@ test_224c() { # LU-6441
 run_test 224c "Don't hang if one of md lost during large bulk RPC"
 
 test_224d() { # LU-11169
-	test_224bd_sub $((TIMEOUT + 2)) return 0
+	test_224bd_sub $((TIMEOUT + 2)) error "dd failed"
 }
 run_test 224d "Don't corrupt data on bulk IO timeout"
 
