@@ -958,8 +958,6 @@ void ll_lli_init(struct ll_inode_info *lli)
 
 	init_rwsem(&lli->lli_xattrs_list_rwsem);
 	mutex_init(&lli->lli_xattrs_enq_lock);
-	init_rwsem(&lli->lli_write_setattr);
-	atomic_set(&lli->lli_write_cnt, 0);
 
 	LASSERT(lli->lli_vfs_inode.i_mode != 0);
 	if (S_ISDIR(lli->lli_vfs_inode.i_mode)) {
@@ -1772,13 +1770,6 @@ out:
 
 	if (S_ISREG(inode->i_mode)) {
 		inode_lock(inode);
-		/*
-		 * write assumes that S_NOSEC will not be changed
-		 * while it runs, lli_write_setattr rw semaphore
-		 * protects agaist the race between write and setattr.
-		 */
-		down_write(&lli->lli_write_setattr);
-
 		if ((attr->ia_valid & ATTR_SIZE) && !hsm_import)
 			inode_dio_wait(inode);
 		/* Once we've got the i_mutex, it's safe to set the S_NOSEC
@@ -1787,7 +1778,6 @@ out:
 		 * This can cause a writer to take the i_mutex unnecessarily,
 		 * but this is safe to do and should be rare. */
 		inode_has_no_xattr(inode);
-		up_write(&lli->lli_write_setattr);
 	}
 
 	ll_stats_ops_tally(ll_i2sbi(inode), (attr->ia_valid & ATTR_SIZE) ?
