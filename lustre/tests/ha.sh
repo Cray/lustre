@@ -182,6 +182,7 @@ declare     ha_lfsck_after=${LFSCK_AFTER:-false}
 declare     ha_lfsck_node=${LFSCK_NODE:-""}
 declare     ha_lfsck_device=${LFSCK_DEV:-""}
 declare     ha_lfsck_types=${LFSCK_TYPES:-"namespace layout"}
+declare     ha_lfsck_custom_params=${LFSCK_CUSTOM_PARAMS:-""}
 declare     ha_lfsck_wait=${LFSCK_WAIT:-1200}
 declare     ha_lfsck_fail_on_repaired=${LFSCK_FAIL_ON_REPAIRED:-false}
 declare     ha_power_down_cmd=${POWER_DOWN:-"pm -0"}
@@ -623,7 +624,7 @@ ha_start_lfsck()
 
 	# -A: start LFSCK on all nodes via the specified MDT device
 	# (see "-M" option) by single LFSCK command
-	local params=" -A -r "
+	local params=" -A -r $ha_lfsck_custom_params"
 
 	# use specified device if set
 	[ -n "$ha_lfsck_device" ] && params="-M $ha_lfsck_device $params"
