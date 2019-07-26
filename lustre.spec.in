@@ -95,6 +95,8 @@
 %endif
 %endif
 
+%{!?rpm_rel: %global rpm_rel 1}
+
 # We set this because kernel_module_package has its own method of identifying
 # which kernel to build against, and it is unlikely that its decision will
 # match with Lustre's method of selecting which kernel to build against.
@@ -217,7 +219,7 @@
 Summary: Lustre File System
 Name: %{lustre_name}
 Version: %{version}
-Release: 1%{?dist}
+Release: %{rpm_rel}%{?dist}
 License: GPL-2.0-only AND LGPL-2.1-or-later
 %if 0%{?suse_version} >= 1310
 # SUSE needs Group for the kernel_module_package macro
