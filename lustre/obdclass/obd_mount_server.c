@@ -1327,6 +1327,8 @@ static int server_start_targets(struct super_block *sb)
 						 LUSTRE_MDS_NAME,
 						 LUSTRE_MDS_OBDNAME"_uuid",
 						 NULL, NULL, NULL, NULL);
+
+			OBD_FAIL_TIMEOUT(OBD_FAIL_OBD_STOP_MDS_RACE, 1);
 			if (rc) {
 				mutex_unlock(&server_start_lock);
 				CERROR("failed to start MDS: %d\n", rc);
@@ -1585,6 +1587,13 @@ static void server_put_super(struct super_block *sb)
 			 * to .put_super, so we better make sure we clean up! */
 			obd->obd_force = 1;
 			class_manual_cleanup(obd);
+			if (OBD_FAIL_PRECHECK(OBD_FAIL_OBD_STOP_MDS_RACE)) {
+				int idx;
+				server_name2index(lsi->lsi_svname, &idx, NULL);
+				/* sleeping for MDT0001 */
+				if (idx == 1)
+				OBD_FAIL_TIMEOUT(OBD_FAIL_OBD_STOP_MDS_RACE, 1);
+			}
 		} else {
 			CERROR("no obd %s\n", lsi->lsi_svname);
 			server_deregister_mount(lsi->lsi_svname);
