@@ -523,7 +523,6 @@ AS_IF([test x$enable_server = xyes], [
 # in the Make targets named "rpms" and "srpm".
 #
 AC_DEFUN([LB_CONFIG_RPMBUILD_OPTIONS], [
-RPMBINARGS=
 CONFIGURE_ARGS=
 eval set -- $ac_configure_args
 for arg; do
