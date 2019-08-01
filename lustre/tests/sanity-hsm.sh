@@ -3882,6 +3882,7 @@ helper_test_114() {
 		error "write data into $file failed"
 	local start_md5=$(md5sum $file)
 	local start_ss=$($LFS getstripe --stripe-size $file)
+	local fid=$(path2fid $file)
 
 	# Migrate it
 	cmd="$LFS migrate --hsm $optcmd $target_obdidx --stripe-size $req_ss $file"
@@ -3889,7 +3890,7 @@ helper_test_114() {
 	eval $cmd || error "$cmd failed"
 
 	# Wait for migration to happen
-	wait_request_state MIGRATE SUCCEED
+	wait_request_state $fid MIGRATE SUCCEED
 
 	sleep 1
 
