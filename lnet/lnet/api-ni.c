@@ -1253,7 +1253,6 @@ lnet_prepare(lnet_pid_t requested_pid)
 	INIT_LIST_HEAD(&the_lnet.ln_mt_peerNIRecovq);
 	init_waitqueue_head(&the_lnet.ln_dc_waitq);
 	LNetInvalidateEQHandle(&the_lnet.ln_mt_eqh);
-	init_completion(&the_lnet.ln_started);
 
 	rc = lnet_descriptor_setup();
 	if (rc != 0)
@@ -2756,8 +2755,6 @@ LNetNIInit(lnet_pid_t requested_pid)
 	lnet_router_debugfs_init();
 
 	mutex_unlock(&the_lnet.ln_api_mutex);
-
-	complete_all(&the_lnet.ln_started);
 
 	return 0;
 

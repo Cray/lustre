@@ -3417,7 +3417,6 @@ lnet_monitor_thread(void *arg)
 	int interval;
 	time64_t now;
 
-	wait_for_completion(&the_lnet.ln_started);
 	/*
 	 * The monitor thread takes care of the following:
 	 *  1. Checks the aliveness of routers
