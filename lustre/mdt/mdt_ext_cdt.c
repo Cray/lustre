@@ -831,11 +831,6 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 			 * set ARCHIVE keep EXIST and clear LOST and
 			 * DIRTY
 			 */
-			if (pgs->hpk_data_version == 0) {
-				CDEBUG(D_HSM, "No data version on 0x%llx/"DFID"\n",
-				      pgs->hpk_cookie, PFID(&pgs->hpk_fid));
-				goto out;
-			}
 			mh.mh_arch_ver = pgs->hpk_data_version;
 			mh.mh_flags |= HS_ARCHIVED | HS_EXISTS;
 			mh.mh_flags &= ~(HS_LOST|HS_DIRTY);
