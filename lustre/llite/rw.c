@@ -362,6 +362,17 @@ ll_read_ahead_pages(const struct lu_env *env, struct cl_io *io,
 				if (rc < 0)
 					break;
 
+				/* Do not shrink the ria_end at any case until
+				 * the minimum end of current read is covered.
+				 * And only shrink the ria_end if the matched
+				 * LDLM lock doesn't cover more. */
+				if (page_idx > ra.cra_end ||
+				    (ra.cra_contention &&
+				     page_idx > ria->ria_end_min)) {
+					ria->ria_end = ra.cra_end;
+					break;
+				}
+
 				CDEBUG(D_READA, "idx: %lu, ra: %lu, rpc: %lu\n",
 				       page_idx, ra.cra_end, ra.cra_rpc_size);
 				LASSERTF(ra.cra_end >= page_idx,
@@ -378,8 +389,6 @@ ll_read_ahead_pages(const struct lu_env *env, struct cl_io *io,
 					ria->ria_end = end - 1;
 				if (ria->ria_end < ria->ria_end_min)
 					ria->ria_end = ria->ria_end_min;
-				if (ria->ria_end > ra.cra_end)
-					ria->ria_end = ra.cra_end;
 			}
 			if (page_idx > ria->ria_end)
 				break;
