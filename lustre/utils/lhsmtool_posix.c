@@ -899,15 +899,16 @@ static int ct_begin(struct hsm_copyaction_private **phcp,
 }
 
 static int ct_fini(struct hsm_copyaction_private **phcp,
-		   const struct hsm_action_item *hai, int hp_flags, int ct_rc)
+		   const struct hsm_action_item *hai, const int archive_id,
+		   int hp_flags, int ct_rc)
 {
 	struct hsm_copyaction_private	*hcp;
 	char				 lstr[PATH_MAX];
 	int				 rc;
 
 	CT_TRACE("Action completed, notifying coordinator "
-		 "cookie=%#jx, FID="DFID", hp_flags=%d err=%d",
-		 (uintmax_t)hai->hai_cookie, PFID(&hai->hai_fid),
+		 "cookie=%#jx, FID="DFID", archive_id=%d hp_flags=%d err=%d",
+		 (uintmax_t)hai->hai_cookie, PFID(&hai->hai_fid), archive_id,
 		 hp_flags, -ct_rc);
 
 	ct_path_lustre(lstr, sizeof(lstr), opt.o_mnt, &hai->hai_fid);
@@ -922,7 +923,8 @@ static int ct_fini(struct hsm_copyaction_private **phcp,
 		phcp = &hcp;
 	}
 
-	rc = llapi_hsm_action_end(phcp, &hai->hai_extent, hp_flags, abs(ct_rc));
+	rc = llapi_hsm_action_end(phcp, &hai->hai_extent, archive_id,
+				  hp_flags, abs(ct_rc));
 	if (rc == -ECANCELED)
 		CT_ERROR(rc, "completed action on '%s' has been canceled: "
 			 "cookie=%#jx, FID="DFID, lstr,
@@ -936,7 +938,8 @@ static int ct_fini(struct hsm_copyaction_private **phcp,
 	return rc;
 }
 
-static int ct_archive(const struct hsm_action_item *hai, const long hal_flags)
+static int ct_archive(const struct hsm_action_item *hai, const int archive_id,
+		      const long hal_flags)
 {
 	struct hsm_copyaction_private	*hcp = NULL;
 	char				 src[PATH_MAX];
@@ -1174,12 +1177,13 @@ out:
 	if (!(dst_fd < 0))
 		close(dst_fd);
 
-	rc = ct_fini(&hcp, hai, hp_flags, rcf);
+	rc = ct_fini(&hcp, hai, archive_id, hp_flags, rcf);
 
 	return rc;
 }
 
-static int ct_restore(const struct hsm_action_item *hai, const long hal_flags)
+static int ct_restore(const struct hsm_action_item *hai, const int archive_id,
+		      const long hal_flags)
 {
 	struct hsm_copyaction_private	*hcp = NULL;
 	char				 src[PATH_MAX];
@@ -1284,7 +1288,7 @@ static int ct_restore(const struct hsm_action_item *hai, const long hal_flags)
 	CT_TRACE("data restore from '%s' to '%s' done", src, dst);
 
 fini:
-	rc = ct_fini(&hcp, hai, hp_flags, rc);
+	rc = ct_fini(&hcp, hai, archive_id, hp_flags, rc);
 
 	/* object swaping is done by cdt at copy end, so close of volatile file
 	 * cannot be done before */
@@ -1297,7 +1301,8 @@ fini:
 	return rc;
 }
 
-static int ct_remove(const struct hsm_action_item *hai, const long hal_flags)
+static int ct_remove(const struct hsm_action_item *hai, const int archive_id,
+		     const long hal_flags)
 {
 	struct hsm_copyaction_private	*hcp = NULL;
 	char				 dst[PATH_MAX], attr[PATH_MAX + 4];
@@ -1334,7 +1339,7 @@ static int ct_remove(const struct hsm_action_item *hai, const long hal_flags)
 	}
 
 fini:
-	rc = ct_fini(&hcp, hai, 0, rc);
+	rc = ct_fini(&hcp, hai, archive_id, 0, rc);
 
 	return rc;
 }
@@ -1347,7 +1352,8 @@ fini:
  * \retval                 0 on success
  * \retval                 negative errno on failure
  */
-static int ct_migrate(const struct hsm_action_item *hai, const long hal_flags)
+static int ct_migrate(const struct hsm_action_item *hai, const int archive_id,
+		      const long hal_flags)
 {
 	struct hsm_copyaction_private *hcp = NULL;
 	int hp_flags = 0;
@@ -1499,7 +1505,7 @@ fini:
 	if (src_fd != -1)
 		close(src_fd);
 
-	rc = ct_fini(&hcp, hai, hp_flags, rc);
+	rc = ct_fini(&hcp, hai, archive_id, hp_flags, rc);
 
 	if (dst_fd != -1) {
 		char tmp_name[PATH_MAX];
@@ -1675,7 +1681,7 @@ static int ct_restore_v2(struct lu_fid *fid, struct lu_fid *dfid)
 
 fini:
 	rc = llapi_hsm_end(HSMA_RESTORE, src_fd, cookie,
-			   dfid, data_version, rc);
+			   dfid, data_version, 0, rc);
 
 	if (!(src_fd <= 0))
 		close(src_fd);
@@ -1803,7 +1809,7 @@ fini_major:
 
 out:
 	rc = llapi_hsm_end(HSMA_ARCHIVE, src_fd, cookie, dfid, data_version,
-			   rc);
+			   0, rc);
 
 	if (rc) {
 		CT_ERROR(rc, "llapi_hsm_end failed\n");
@@ -1922,7 +1928,7 @@ fini:
 	}
 
 	rc1 = llapi_hsm_end(HSMA_MIGRATE, src_fd, cookie, dfid, data_version,
-			    rc);
+			    0, rc);
 	if (rc1) {
 		CT_ERROR(rc1, "Migrate end failed\n");
 		rc = rc ? rc : rc1;
@@ -1934,7 +1940,8 @@ fini:
 	return rc;
 }
 
-static int ct_process_item(struct hsm_action_item *hai, const long hal_flags)
+static int ct_process_item(struct hsm_action_item *hai, const int archive_id,
+			   const long hal_flags)
 {
 	int	rc = 0;
 
@@ -1954,22 +1961,22 @@ static int ct_process_item(struct hsm_action_item *hai, const long hal_flags)
 		if (rc < 0)
 			CT_ERROR(rc, "cannot get path of FID %s", fid);
 		else
-			CT_TRACE("processing file '%s'", path);
+			CT_TRACE("processing file '%s' to archive %d", path, archive_id);
 	}
 
 	switch (hai->hai_action) {
 	/* set err_major, minor inside these functions */
 	case HSMA_ARCHIVE:
-		rc = ct_archive(hai, hal_flags);
+		rc = ct_archive(hai, archive_id, hal_flags);
 		break;
 	case HSMA_RESTORE:
-		rc = ct_restore(hai, hal_flags);
+		rc = ct_restore(hai, archive_id, hal_flags);
 		break;
 	case HSMA_REMOVE:
-		rc = ct_remove(hai, hal_flags);
+		rc = ct_remove(hai, archive_id, hal_flags);
 		break;
 	case HSMA_MIGRATE:
-		rc = ct_migrate(hai, hal_flags);
+		rc = ct_migrate(hai, archive_id, hal_flags);
 		break;
 	case HSMA_CANCEL:
 		CT_TRACE("cancel not implemented for file system '%s'",
@@ -1985,7 +1992,7 @@ static int ct_process_item(struct hsm_action_item *hai, const long hal_flags)
 		CT_ERROR(rc, "unknown action %d, on '%s'", hai->hai_action,
 			 opt.o_mnt);
 		err_minor++;
-		ct_fini(NULL, hai, 0, rc);
+		ct_fini(NULL, hai, archive_id, 0, rc);
 	}
 
 	return 0;
@@ -1993,6 +2000,7 @@ static int ct_process_item(struct hsm_action_item *hai, const long hal_flags)
 
 struct ct_th_data {
 	long			 hal_flags;
+	int			 hal_archive_id;
 	struct hsm_action_item	*hai;
 };
 
@@ -2001,7 +2009,7 @@ static void *ct_thread(void *data)
 	struct ct_th_data *cttd = data;
 	int rc;
 
-	rc = ct_process_item(cttd->hai, cttd->hal_flags);
+	rc = ct_process_item(cttd->hai, cttd->hal_archive_id, cttd->hal_flags);
 
 	free(cttd->hai);
 	free(cttd);
@@ -2009,6 +2017,7 @@ static void *ct_thread(void *data)
 }
 
 static int ct_process_item_async(const struct hsm_action_item *hai,
+				 const int archive_id,
 				 long hal_flags)
 {
 	pthread_attr_t		 attr;
@@ -2028,6 +2037,7 @@ static int ct_process_item_async(const struct hsm_action_item *hai,
 
 	memcpy(data->hai, hai, hai->hai_len);
 	data->hal_flags = hal_flags;
+	data->hal_archive_id = archive_id;
 
 	rc = pthread_attr_init(&attr);
 	if (rc != 0) {
@@ -2590,7 +2600,8 @@ static int ct_run(void)
 				err_major++;
 				break;
 			}
-			rc = ct_process_item_async(hai, hal->hal_flags);
+			rc = ct_process_item_async(hai, hal->hal_archive_id,
+						   hal->hal_flags);
 			if (rc < 0)
 				CT_ERROR(rc, "'%s' item %d process",
 					 opt.o_mnt, i);

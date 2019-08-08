@@ -900,6 +900,7 @@ int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
 	hpk.hpk_extent = hai->hai_extent;
 	hpk.hpk_flags = copy->hc_flags | HP_FLAG_COMPLETED;
 	hpk.hpk_action = hai->hai_action;
+	hpk.hpk_archive_id = copy->hc_archive_id;
 	hpk.hpk_errval = copy->hc_errval;
 	hpk.hpk_data_version = 0;
 	hpk.hpk_version = HPK_V2;

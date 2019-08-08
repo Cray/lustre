@@ -468,7 +468,8 @@ int llapi_hsm_action_begin(struct hsm_copyaction_private **phcp,
 			   int restore_mdt_index, int restore_open_flags,
 			   bool is_error);
 int llapi_hsm_action_end(struct hsm_copyaction_private **phcp,
-			 const struct hsm_extent *he, int hp_flags, int errval);
+			 const struct hsm_extent *he, const int archive_id,
+			 int hp_flags, int errval);
 int llapi_hsm_action_progress(struct hsm_copyaction_private *hcp,
 			      const struct hsm_extent *he, __u64 total,
 			      int hp_flags);
@@ -487,7 +488,8 @@ int llapi_hsm_open_files(enum hsm_copytool_action, const char *mnt,
 int llapi_hsm_start(enum hsm_copytool_action action, int fd, __u64 *cookie,
 		    struct lu_fid *dfid, __u64 *data_version);
 int llapi_hsm_end(enum hsm_copytool_action action, int fd, __u64 cookie,
-		  struct lu_fid *dfid, __u64 data_version, int errval);
+		  struct lu_fid *dfid, __u64 data_version, int archive_id,
+		  int errval);
 int llapi_hsm_progress(int fd, __u64 cookie, enum hsm_copytool_action action,
 		       ssize_t offset, ssize_t length);
 

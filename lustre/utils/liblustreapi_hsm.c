@@ -1242,11 +1242,13 @@ err_out:
  * \param errval[in]   The status code of the operation.
  * \param flags[in]    The flags about the termination status (HP_FLAG_RETRY if
  *                     the error is retryable).
+ * \param archive_id[in] The archive the file was written to
  *
  * \return 0 on success.
  */
 int llapi_hsm_action_end(struct hsm_copyaction_private **phcp,
-			 const struct hsm_extent *he, int hp_flags, int errval)
+			 const struct hsm_extent *he, const int archive_id,
+			 int hp_flags, int errval)
 {
 	struct hsm_copyaction_private	*hcp;
 	struct hsm_action_item		*hai;
@@ -1291,7 +1293,7 @@ end:
 	 * kernel to send a hsm_progress. */
 	hcp->copy.hc_flags  = hp_flags;
 	hcp->copy.hc_errval = abs(errval);
-
+	hcp->copy.hc_archive_id = archive_id;
 	hcp->copy.hc_hai.hai_extent = *he;
 
 	rc = ioctl(hcp->ct_priv->mnt_fd, LL_IOC_HSM_COPY_END, &hcp->copy);
@@ -1919,7 +1921,7 @@ int llapi_hsm_start(enum hsm_copytool_action action, int fd, __u64 *cookie,
 	copy.hc_data_version = 0;
 	copy.hc_flags = 0;
 	copy.hc_errval = 0;
-	copy.padding = 0;
+	copy.hc_archive_id = 0;
 
 	if (!*cookie) {
 		*cookie = rand();
@@ -1960,7 +1962,8 @@ int llapi_hsm_start(enum hsm_copytool_action action, int fd, __u64 *cookie,
  * Data out: rc
  */
 int llapi_hsm_end(enum hsm_copytool_action action, int fd, __u64 cookie,
-		  struct lu_fid *dfid, __u64 data_version, int errval)
+		  struct lu_fid *dfid, __u64 data_version,
+		  const int archive_id, int errval)
 {
 	struct hsm_copy copy;
 	int rc = 0;
@@ -1968,7 +1971,7 @@ int llapi_hsm_end(enum hsm_copytool_action action, int fd, __u64 cookie,
 	copy.hc_data_version = data_version;
 	copy.hc_flags = HP_FLAG_COMPLETED;
 	copy.hc_errval = abs(errval);
-	copy.padding = 0;
+	copy.hc_archive_id = archive_id;
 
 	copy.hc_hai.hai_len = sizeof(struct hsm_action_item);
 	copy.hc_hai.hai_action = action;

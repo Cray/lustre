@@ -987,6 +987,10 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 			 */
 			mh.mh_arch_ver = pgs->hpk_data_version;
 			mh.mh_flags |= HS_ARCHIVED | HS_EXISTS;
+			if (pgs->hpk_archive_id)
+				mh.mh_arch_id = pgs->hpk_archive_id;
+			else
+				mh.mh_arch_id = cdt->cdt_default_archive_id;
 			mh.mh_flags &= ~(HS_LOST|HS_DIRTY);
 			is_mh_changed = true;
 			break;
