@@ -601,7 +601,7 @@ int ext_cdt_send_request(struct mdt_thread_info *mti,
 			continue;
 		else if (IS_ERR(obj)) {
 			CDEBUG(D_HSM, "Failed to get object for request\n");
-			rc = -EINVAL;
+			rc = PTR_ERR(obj);
 			goto out;
 		}
 
@@ -610,7 +610,6 @@ int ext_cdt_send_request(struct mdt_thread_info *mti,
 		if (rc < 0) {
 			CDEBUG(D_HSM, "Permissions check failed: "DFID"\n",
 			       PFID(&hai->hai_fid));
-			rc = -EPERM;
 			goto out;
 		}
 
@@ -621,7 +620,6 @@ int ext_cdt_send_request(struct mdt_thread_info *mti,
 					  hal->hal_flags, &mh)) {
 			CDEBUG(D_HSM, "action not needed for "DFID"\n",
 			       PFID(&hai->hai_fid));
-			rc = -EINVAL;
 			goto out;
 		}
 
@@ -630,7 +628,7 @@ int ext_cdt_send_request(struct mdt_thread_info *mti,
 			CDEBUG(D_HSM, "%s not compatable with "DFID"\n",
 			       hsm_copytool_action2name(hai->hai_action),
 			       PFID(&hai->hai_fid));
-			rc = -EINVAL;
+			rc = -EPERM;
 			goto out;
 		}
 	}
