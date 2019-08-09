@@ -2317,6 +2317,10 @@ mdt_hsm_cdt_control_seq_write(struct file *file, const char __user *buffer,
 			CERROR("%s: External Coordinator is already started\n",
 			       mdt_obd_name(mdt));
 		} else if (set_cdt_state(cdt, CDT_EXTERNAL) == 0) {
+			cdt->cdt_user_request_mask = (1UL << HSMA_RESTORE);
+			cdt->cdt_group_request_mask = (1UL << HSMA_RESTORE);
+			cdt->cdt_other_request_mask = (1UL << HSMA_RESTORE);
+
 			rc = cdt_external_start();
 			if (!rc)
 				CERROR("%s: External Coordinator started\n",
