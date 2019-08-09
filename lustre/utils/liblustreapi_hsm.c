@@ -1205,7 +1205,18 @@ int llapi_hsm_action_begin(struct hsm_copyaction_private **phcp,
 	}
 
 out_log:
-	llapi_hsm_log_ct_progress(&hcp, hai, CT_START, 0, 0);
+	/*
+	 * Logging wants fid/fid for restore, so make a fake fid that does
+	 * what it wants.
+	 */
+	if (hai->hai_action == HSMA_RESTORE) {
+		struct hsm_action_item tmp_hai;
+
+		memcpy(&tmp_hai, hai, sizeof(tmp_hai));
+		tmp_hai.hai_dfid = hai->hai_fid;
+		llapi_hsm_log_ct_progress(&hcp, &tmp_hai, CT_START, 0, 0);
+	} else
+		llapi_hsm_log_ct_progress(&hcp, hai, CT_START, 0, 0);
 
 ok_out:
 	hcp->magic = CP_PRIV_MAGIC;
