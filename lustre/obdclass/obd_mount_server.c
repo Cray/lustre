@@ -46,6 +46,7 @@
 #include <linux/selinux.h>
 #include <linux/statfs.h>
 #include <linux/version.h>
+#include <linux/delay.h>
 #ifdef HAVE_KERNEL_LOCKED
 #include <linux/smp_lock.h>
 #endif
@@ -1320,7 +1321,6 @@ static int server_start_targets(struct super_block *sb)
 						 LUSTRE_MDS_OBDNAME"_uuid",
 						 NULL, NULL, NULL, NULL);
 
-			OBD_FAIL_TIMEOUT(OBD_FAIL_OBD_STOP_MDS_RACE, 1);
 			if (rc) {
 				mutex_unlock(&server_start_lock);
 				CERROR("failed to start MDS: %d\n", rc);
@@ -1328,6 +1328,10 @@ static int server_start_targets(struct super_block *sb)
 			}
 		}
 		mutex_unlock(&server_start_lock);
+		if (OBD_FAIL_PRECHECK(OBD_FAIL_OBD_STOP_MDS_RACE)) {
+			OBD_RACE(OBD_FAIL_OBD_STOP_MDS_RACE);
+			msleep(2 * MSEC_PER_SEC);
+		}
 	}
 
 	/* If we're an OST, make sure the global OSS is running */
@@ -1591,7 +1595,7 @@ static void server_put_super(struct super_block *sb)
 				server_name2index(lsi->lsi_svname, &idx, NULL);
 				/* sleeping for MDT0001 */
 				if (idx == 1)
-				OBD_FAIL_TIMEOUT(OBD_FAIL_OBD_STOP_MDS_RACE, 1);
+					OBD_RACE(OBD_FAIL_OBD_STOP_MDS_RACE);
 			}
 		} else {
 			CERROR("no obd %s\n", lsi->lsi_svname);
