@@ -2431,6 +2431,9 @@ test_26a() {
 run_test 26a "Remove Archive On Last Unlink (RAoLU) policy"
 
 test_26b() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not support actions while stopped"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -2580,6 +2583,9 @@ test_27b() {
 run_test 27b "Remove the archive of a relased file (Operation not permitted)"
 
 test_28() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not support enable/disable"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -3339,6 +3345,9 @@ test_59() {
 run_test 59 "Release stripeless file with non-zero size"
 
 test_60() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External CDT doen't record registrations in kernel"
+
 	# This test validates the fix for LU-4512. Ensure that the -u
 	# option changes the progress reporting interval from the
 	# default (30 seconds) to the user-specified interval.
@@ -3405,6 +3414,9 @@ test_60() {
 run_test 60 "Changing progress update interval from default"
 
 test_61() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not support enable/disable"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -3687,6 +3699,9 @@ test_100() {
 run_test 100 "Set coordinator /proc tunables"
 
 test_102() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not support enable/disable"
+
 	cdt_disable
 	cdt_enable
 	cdt_restart
@@ -3736,6 +3751,9 @@ test_104() {
 run_test 104 "Copy tool data field"
 
 test_105() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not support enable/disable"
+
 	local max_requests=$(get_hsm_param max_requests)
 	mkdir -p $DIR/$tdir
 	local i=""
@@ -3951,6 +3969,9 @@ run_test 111b "No retry policy (release case), restore will error"\
 	      " (No such file or directory)"
 
 test_112() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not support enable/disable"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4567,7 +4588,7 @@ run_test 228 "On released file, return extend to FIEMAP. For [cp,tar] --sparse"
 
 test_250() {
 	[[ "$COORDINATOR" == "external" ]] &&
-		skip "Internal coordinator only"
+		skip "External coordinator does not support enable/disable"
 
 	local file="$DIR/$tdir/$tfile"
 
@@ -4630,6 +4651,9 @@ test_250() {
 run_test 250 "Coordinator max request"
 
 test_251() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not support enable/disable"
+
 	local f=$DIR/$tdir/$tfile
 	local fid=$(create_empty_file "$f")
 
@@ -4740,6 +4764,9 @@ run_test 254a "Request counters are initialized to zero"
 
 test_254b()
 {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External CDT does not support max_requests"
+
 	[ $MDS_VERSION_CODE -lt $(version_code 2.10.56) ] &&
 		skip "need MDS version at least 2.10.56"
 
@@ -4812,6 +4839,9 @@ run_test 254b "Request counters are correctly incremented and decremented"
 
 test_255()
 {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External CDT does not support stop/start persistence"
+
 	[ $MDS1_VERSION -lt $(version_code 2.12.0) ] &&
 		skip "Need MDS version at least 2.12.0"
 
