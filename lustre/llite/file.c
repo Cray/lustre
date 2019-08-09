@@ -1438,6 +1438,46 @@ restart:
 			LBUG();
 		}
 
+		if (iot == CIT_WRITE) {
+			/*
+			 * file_remove_privs() is going to be called via
+			 *  ll_file_io_generic
+			 *    cl_io_loop
+			 *      cl_io_start
+			 *        vvp_io_write_start
+			 *          __generic_file_write_iter
+			 *            __generic_file_aio_write
+			 *              file_remove_privs
+			 * i. e. after osc/mdc ldlm lock is obtained.
+			 * Also file_remove_privs() may involve sending
+			 * enqueue rpc via
+			 *  dentry_needs_remove_privs
+			 *    security_inode_need_killpriv
+			 *      cap_inode_need_killpriv
+			 *        generic_getxattr
+			 *        ll_xattr_get_common_3_11
+			 *          ..
+			 *            mdc_enqueue_base
+			 *
+			 * If the held osc/mdc ldlm lock is being
+			 * callback pending then delaying of the
+			 * enqueue may lead to client eviction.
+			 * Run file_remove_privs() before cl_io_lock()
+			 * does ldlm locking.
+			 * file_remove_privs() called from
+			 * __generic_file_aio_write is turned into
+			 * no-op. See vvp_io_write_start().
+			 */
+			inode_lock(inode);
+			rc = file_remove_privs(file);
+			inode_unlock(inode);
+			if (rc) {
+				if (range_locked)
+					range_unlock(&lli->lli_write_tree,
+						     &range);
+				GOTO(out, rc);
+			}
+		}
 		ll_cl_add(file, env, io, LCC_RW);
 		rc = cl_io_loop(env, io);
 		ll_cl_remove(file, env);
@@ -1628,7 +1668,6 @@ static ssize_t ll_do_tiny_write(struct kiocb *iocb, struct iov_iter *iter)
 	ssize_t count = iov_iter_count(iter);
 	struct  file *file = iocb->ki_filp;
 	struct  inode *inode = file_inode(file);
-	bool	lock_inode = !IS_NOSEC(inode);
 	ssize_t result = 0;
 
 	ENTRY;
@@ -1640,12 +1679,14 @@ static ssize_t ll_do_tiny_write(struct kiocb *iocb, struct iov_iter *iter)
 	    (iocb->ki_pos & (PAGE_SIZE-1)) + count > PAGE_SIZE)
 		RETURN(0);
 
-	if (unlikely(lock_inode))
-		inode_lock(inode);
+	inode_lock(inode);
+	result = file_remove_privs(file);
+	inode_unlock(inode);
+	if (result)
+		RETURN(result);
+	set_IS_NOSEC(inode);
 	result = __generic_file_write_iter(iocb, iter);
-
-	if (unlikely(lock_inode))
-		inode_unlock(inode);
+	restore_IS_NOSEC(inode);
 
 	/* If the page is not already dirty, ll_tiny_write_begin returns
 	 * -ENODATA.  We continue on to normal write.
