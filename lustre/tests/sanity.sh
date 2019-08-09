@@ -16604,7 +16604,7 @@ test_276() {
 }
 run_test 276 "Race between mount and obd_statfs"
 
-test_277() {
+test_278() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run" && return
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 	[[ "$(facet_host mds1)" != "$(facet_host mds2)" ]] &&
@@ -16613,8 +16613,8 @@ test_277() {
 	local pid1
 	local pid2
 
-#define OBD_FAIL_OBD_STOP_MDS_RACE     0x60b
-	do_facet mds2 $LCTL set_param fail_loc=0x0000060b
+#define OBD_FAIL_OBD_STOP_MDS_RACE     0x60c
+	do_facet mds2 $LCTL set_param fail_loc=0x8000060c
 	stop mds2 &
 	pid2=$!
 
@@ -16629,7 +16629,7 @@ test_277() {
 
 	start mds2 $(mdsdevname 2) $MDS_MOUNT_OPTS
 }
-run_test 277 "Race starting MDS between MDTs stop/start"
+run_test 278 "Race starting MDS between MDTs stop/start"
 
 cleanup_test_300() {
 	trap 0
