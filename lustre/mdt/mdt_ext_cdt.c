@@ -815,6 +815,13 @@ static int hsm_send_to_ct(struct obd_uuid *uuid, struct hsm_action_list *hal,
 			continue;
 		}
 
+		/*
+		 * For REMOVE, we don't necessarily need the file on Lustre
+		 * since we're telling the copytool to remove it from
+		 * the archive
+		 */
+		if (hai->hai_action == HSMA_REMOVE)
+			continue;
 		hru.cookie = hai->hai_cookie;
 		hru.status = ARS_FAILED;
 		CDEBUG(D_HSM, "FID "DFID" cannot be found\n",
@@ -904,11 +911,40 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 	/* we will update MD HSM only if needed */
 	is_mh_changed = false;
 
-
 	/* no need to change mh->mh_arch_id
 	 * mdt_hsm_get_md_hsm() got it from disk and it is still valid
 	 */
 	if (pgs->hpk_errval != 0) {
+		switch (pgs->hpk_errval) {
+		case ENOSYS:
+			/* the copy tool does not support cancel
+			 * so the cancel request is failed
+			 * As we cannot distinguish a cancel progress
+			 * from another action progress (they have the
+			 * same cookie), we suppose here the CT returns
+			 * ENOSYS only if does not support cancel
+			 */
+			/* this can also happen when cdt calls it to
+			 * for a timed out request */
+			status = ARS_FAILED;
+			/* to have a cancel event in changelog */
+			pgs->hpk_errval = ECANCELED;
+			break;
+		case ECANCELED:
+			/* the request record has already been set to
+			 * ARS_CANCELED, this set the cancel request
+			 * to ARS_SUCCEED */
+			status = ARS_SUCCEED;
+			break;
+		default:
+			/* retry only if current policy or requested, and
+			 * object is not on error/removed */
+			status = (cdt->cdt_policy & CDT_NORETRY_ACTION ||
+				  !(pgs->hpk_flags & HP_FLAG_RETRY) ||
+				  IS_ERR(obj)) ? ARS_FAILED : ARS_WAITING;
+			break;
+		}
+
 		CDEBUG(D_HSM, "errval != 0\n");
 		if (pgs->hpk_errval > CLF_HSM_MAXERROR) {
 			CERROR("HSM request %#llx on "DFID

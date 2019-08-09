@@ -244,6 +244,9 @@ int hsm_action_permission(struct mdt_thread_info *mti,
 	if (hsma != HSMA_RESTORE && mdt_rdonly(mti->mti_exp))
 		RETURN(-EROFS);
 
+	if (!uc)
+		RETURN(-EINVAL);
+
 	if (md_capable(uc, CFS_CAP_SYS_ADMIN))
 		RETURN(0);
 

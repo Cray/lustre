@@ -940,9 +940,32 @@ int mdt_handle_last_unlink(struct mdt_thread_info *info, struct mdt_object *mo,
 		archive_id = cdt->cdt_default_archive_id;
 
 	hai.hai_fid = *mdt_object_fid(mo);
+	if (is_cdt_external(cdt)) {
+		struct hsm_action_list *hal;
+		int hal_size = sizeof(struct hsm_action_list) +
+			cfs_size_round(MTI_NAME_MAXLEN) + sizeof(hai);
 
-	rc = mdt_agent_record_add(info->mti_env, info->mti_mdt, archive_id, 0,
-				  &hai);
+		hal = kmalloc(hal_size, GFP_NOFS);
+		if (hal == NULL) {
+			rc = -ENOMEM;
+			goto out;
+		}
+
+		hal->hal_version = HAL_VERSION;
+		hal->hal_archive_id = archive_id;
+		obd_uuid2fsname(hal->hal_fsname, mdt_obd_name(info->mti_mdt),
+				MTI_NAME_MAXLEN);
+		hal->hal_count = 1;
+		memcpy(hai_first(hal), &hai, sizeof(struct hsm_action_item));
+
+		rc = ext_cdt_send_request(info, hal);
+		kfree(hal);
+	} else {
+		rc = mdt_agent_record_add(info->mti_env, info->mti_mdt,
+					  archive_id, 0, &hai);
+	}
+
+out:
 	if (rc)
 		CERROR("%s: unable to add HSM remove request for "DFID
 		       ": rc=%d\n", mdt_obd_name(info->mti_mdt),
