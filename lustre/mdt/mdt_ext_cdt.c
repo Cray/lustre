@@ -566,7 +566,9 @@ int ext_cdt_send_request(struct mdt_thread_info *mti,
 	for (hai = hai_first(hal); i < hal->hal_count;
 	     i++, hai = hai_next(hai)) {
 		obj = mdt_hsm_get_md_hsm(mti, &hai->hai_fid, &mh);
-		if (IS_ERR(obj)) {
+		if (IS_ERR(obj) && hai->hai_action == HSMA_REMOVE)
+			continue;
+		else if (IS_ERR(obj)) {
 			CDEBUG(D_HSM, "Failed to get object for request\n");
 			rc = -EINVAL;
 			goto out;
