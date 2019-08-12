@@ -235,7 +235,7 @@ struct md_object_operations {
 			     struct md_device *m, const struct lu_fid *fid);
 
 	int (*moo_open)(const struct lu_env *env,
-			struct md_object *obj, u64 open_flags);
+			struct md_object *obj, u64 open_flags, struct md_op_spec*);
 
 	int (*moo_close)(const struct lu_env *env, struct md_object *obj,
 			 struct md_attr *ma, u64 open_flags);
@@ -507,10 +507,10 @@ static inline int mo_swap_layouts(const struct lu_env *env,
 }
 
 static inline int mo_open(const struct lu_env *env, struct md_object *m,
-			  u64 open_flags)
+			  u64 open_flags, struct md_op_spec *spec)
 {
 	LASSERT(m->mo_ops->moo_open);
-	return m->mo_ops->moo_open(env, m, open_flags);
+	return m->mo_ops->moo_open(env, m, open_flags, spec);
 }
 
 static inline int mo_close(const struct lu_env *env, struct md_object *m,
