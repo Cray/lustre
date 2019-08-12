@@ -265,6 +265,7 @@ extern char obd_jobid_var[];
 #define OBD_FAIL_MDS_RECOVERY_ACCEPTS_GAPS 0x185
 #define OBD_FAIL_MDS_GET_INFO_NET        0x186
 #define OBD_FAIL_MDS_DQACQ_NET           0x187
+#define OBD_FAIL_MDS_LINK_RENAME_RACE	 0x18a
 
 /* OI scrub */
 #define OBD_FAIL_OSD_SCRUB_DELAY			0x190

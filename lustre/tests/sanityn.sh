@@ -4406,6 +4406,38 @@ test_103() {
 }
 run_test 103 "Test size correctness with lockahead"
 
+test_104() {
+	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
+
+	mkdir $DIR1/$tdir
+	$LFS mkdir -i 0 $DIR1/$tdir/mdt0dir
+	$LFS mkdir -i 1 $DIR1/$tdir/mdt1dir
+
+	mkdir $DIR1/$tdir/mdt0dir/foodir
+	touch $DIR1/$tdir/mdt0dir/foodir/{file1,file2}
+
+	$MULTIOP $DIR2/$tdir/mdt0dir/foodir/file2 Ow4096_c &
+	MULTIOP_PID=$!
+	ln $DIR1/$tdir/mdt0dir/foodir/file2 $DIR1/$tdir/mdt1dir/file2
+
+	#define OBD_FAIL_MDS_LINK_RENAME_RACE   0x18a
+	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x8000018a
+
+	ln $DIR1/$tdir/mdt0dir/foodir/file2 $DIR1/$tdir/mdt1dir/file2x &
+	sleep 1
+
+	rm $DIR2/$tdir/mdt1dir/file2
+	sleep 1
+
+	mv $DIR2/$tdir/mdt0dir/foodir/file1 $DIR2/$tdir/mdt0dir/foodir/file2
+	sleep 1
+
+	kill $MULTIOP_PID
+	wait
+	rm -r $DIR1/$tdir || error "Removing test dir failed"
+}
+run_test 104 "rename to an open file and link race should not cause fs corruption"
+
 log "cleanup: ======================================================"
 
 # kill and wait in each test only guarentee script finish, but command in script

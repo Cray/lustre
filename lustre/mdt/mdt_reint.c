@@ -1211,6 +1211,8 @@ static int mdt_reint_link(struct mdt_thread_info *info,
 
 	cos_incompat = (mdt_object_remote(mp) || mdt_object_remote(ms));
 
+	OBD_RACE(OBD_FAIL_MDS_LINK_RENAME_RACE);
+
 	lhp = &info->mti_lh[MDT_LH_PARENT];
 	mdt_lock_pdo_init(lhp, LCK_PW, &rr->rr_name);
 	rc = mdt_reint_object_lock(info, mp, lhp, MDS_INODELOCK_UPDATE,
@@ -2237,6 +2239,7 @@ out_put_tgtdir:
 	mdt_object_put(info->mti_env, mtgtdir);
 out_put_srcdir:
 	mdt_object_put(info->mti_env, msrcdir);
+	OBD_RACE(OBD_FAIL_MDS_LINK_RENAME_RACE);
 	return rc;
 }
 
