@@ -1213,9 +1213,8 @@ int mdt_hsm_cdt_stop(struct mdt_device *mdt)
 	RETURN(rc);
 }
 
-static int mdt_hsm_set_exists(struct mdt_thread_info *mti,
-			      const struct lu_fid *fid,
-			      u32 archive_id)
+int mdt_hsm_set_exists(struct mdt_thread_info *mti, const struct lu_fid *fid,
+		       u32 archive_id)
 {
 	struct mdt_object *obj;
 	struct md_hsm mh;
