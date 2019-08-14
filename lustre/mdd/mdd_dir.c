@@ -2343,6 +2343,7 @@ static int mdd_create_data(const struct lu_env *env, struct md_object *pobj,
 	const struct lu_buf *buf;
 	struct lu_attr *attr = MDD_ENV_VAR(env, cattr);
 	struct dt_allocation_hint *hint = &mdd_env_info(env)->mdi_hint;
+	bool lov_stored = false;
 	int rc;
 
 	ENTRY;
@@ -2369,7 +2370,7 @@ static int mdd_create_data(const struct lu_env *env, struct md_object *pobj,
 
 	handle = mdd_trans_create(env, mdd);
 	if (IS_ERR(handle))
-		GOTO(out_free, rc = PTR_ERR(handle));
+		RETURN(PTR_ERR(handle));
 
 	/*
 	 * XXX: Setting the lov ea is not locked but setting the attr is locked?
@@ -2410,13 +2411,21 @@ static int mdd_create_data(const struct lu_env *env, struct md_object *pobj,
 	if (rc)
 		GOTO(stop, rc);
 
+	lov_stored = true;
 	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, son, handle,
 				      NULL);
 
 stop:
 	rc = mdd_trans_stop(env, mdd, rc, handle);
 
-out_free:
+	/*
+	 * The LOV declare above allocated the striping in memory. If the
+	 * layout was not stored, the next attempt to create it would trip
+	 * the assertion in lod_ah_init(), so free the striping.
+	 */
+	if (rc && !lov_stored)
+		dt_invalidate(env, mdd_object_child(son), true);
+
 	RETURN(rc);
 }
 

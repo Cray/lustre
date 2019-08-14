@@ -498,7 +498,7 @@ static void osp_thandle_invalidate_object(const struct lu_env *env,
 	list_for_each_entry_safe(obj, next, &our->our_invalidate_cb_list,
 				 opo_invalidate_cb_list) {
 		if (result < 0)
-			osp_invalidate(env, &obj->opo_obj);
+			osp_invalidate(env, &obj->opo_obj, false);
 
 		spin_lock(&obj->opo_lock);
 		list_del_init(&obj->opo_invalidate_cb_list);

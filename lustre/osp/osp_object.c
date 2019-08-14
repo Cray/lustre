@@ -1372,6 +1372,7 @@ void osp_obj_invalidate_cache(struct osp_object *obj)
  * osp_invalidate() - Implement OSP layer do_invalidate() interface.
  * @env: pointer to the thread context
  * @dt: pointer to the OSP layer dt_object
+ * @free_striping: unused, OSP objects have no striping
  *
  * Implement OSP layer dt_object_operations::do_invalidate() interface.
  * Invalidate attributes cached on the specified MDT/OST object.
@@ -1380,7 +1381,8 @@ void osp_obj_invalidate_cache(struct osp_object *obj)
  * * %0 for success
  * * %negative error number on failure
  */
-int osp_invalidate(const struct lu_env *env, struct dt_object *dt)
+int osp_invalidate(const struct lu_env *env, struct dt_object *dt,
+		   bool free_striping)
 {
 	struct osp_object *obj = dt2osp_obj(dt);
 	ENTRY;

@@ -1034,13 +1034,17 @@ struct dt_object_operations {
 	 *
 	 * @env: execution environment for this thread
 	 * @dt: object
+	 * @free_striping: also free the in-memory striping of the object, set
+	 *		   when the striping was allocated by a declare but the
+	 *		   layout was not stored
 	 *
 	 * This method invalidate attribute cache of the object, which is on OSP
 	 * only.
 	 *
 	 * Return: 0 on success, negative on error
 	 */
-	int   (*do_invalidate)(const struct lu_env *env, struct dt_object *dt);
+	int   (*do_invalidate)(const struct lu_env *env, struct dt_object *dt,
+			       bool free_striping);
 
 	/**
 	 * do_check_stale() - Check object stale state.
@@ -3013,7 +3017,8 @@ static inline int dt_xattr_list(const struct lu_env *env, struct dt_object *dt,
 	return dt->do_ops->do_xattr_list(env, dt, buf);
 }
 
-static inline int dt_invalidate(const struct lu_env *env, struct dt_object *dt)
+static inline int dt_invalidate(const struct lu_env *env, struct dt_object *dt,
+				bool free_striping)
 {
 	LASSERT(dt);
 	LASSERT(dt->do_ops);
@@ -3021,7 +3026,7 @@ static inline int dt_invalidate(const struct lu_env *env, struct dt_object *dt)
 	if (!dt->do_ops->do_invalidate)
 		return 0;
 
-	return dt->do_ops->do_invalidate(env, dt);
+	return dt->do_ops->do_invalidate(env, dt, free_striping);
 }
 
 static inline int dt_declare_delete(const struct lu_env *env,

@@ -375,7 +375,7 @@ static int __lfsck_ibits_lock(const struct lu_env *env,
 		 * previous state
 		 */
 		if (rc == ELDLM_OK)
-			dt_invalidate(env, obj);
+			dt_invalidate(env, obj, false);
 	} else {
 		rc = ldlm_cli_enqueue_local(env, lfsck->li_namespace, resid,
 					    LDLM_IBITS, policy, mode,

@@ -6776,7 +6776,7 @@ static int lod_object_unlock(const struct lu_env *env, struct dt_object *dt,
 	 */
 	for (i = 0; i < lo->ldo_dir_stripe_count; i++) {
 		if (lo->ldo_stripe[i])
-			dt_invalidate(env, lo->ldo_stripe[i]);
+			dt_invalidate(env, lo->ldo_stripe[i], false);
 	}
 
 	slave_locks_size = offsetof(typeof(*slave_locks),
@@ -6885,9 +6885,13 @@ static int lod_object_lock(const struct lu_env *env,
  *
  * see dt_object_operations::do_invalidate() in the API description for details
  */
-static int lod_invalidate(const struct lu_env *env, struct dt_object *dt)
+static int lod_invalidate(const struct lu_env *env, struct dt_object *dt,
+			  bool free_striping)
 {
-	return dt_invalidate(env, dt_object_child(dt));
+	if (free_striping)
+		lod_striping_free(env, lod_dt_obj(dt));
+
+	return dt_invalidate(env, dt_object_child(dt), free_striping);
 }
 
 static int lod_declare_instantiate_components(const struct lu_env *env,

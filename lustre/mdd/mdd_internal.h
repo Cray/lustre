@@ -743,7 +743,7 @@ mdo_xattr_list(const struct lu_env *env, struct mdd_object *obj,
 static inline int
 mdo_invalidate(const struct lu_env *env, struct mdd_object *obj)
 {
-	return dt_invalidate(env, mdd_object_child(obj));
+	return dt_invalidate(env, mdd_object_child(obj), false);
 }
 
 static inline int

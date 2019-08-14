@@ -107,14 +107,23 @@ static int mdt_create_data(struct mdt_thread_info *info,
 		rc = mdo_create_data(info->mti_env,
 				     p ? mdt_object_child(p) : NULL,
 				     mdt_object_child(o), spec, ma);
+		/*
+		 * Once the layout is stored, it must not be created again,
+		 * even if reading it back fails or an error was returned
+		 * after it had been stored.
+		 */
 		if (rc == 0)
-			rc = mdt_attr_get_complex(info, o, ma);
-
-		if (rc == 0 && ma->ma_valid & MA_LOV)
+			o->mot_lov_created = 1;
+		else if (mdt_attr_get_complex(info, o, ma) == 0 &&
+			 ma->ma_valid & MA_LOV)
 			o->mot_lov_created = 1;
 	}
-
 	mutex_unlock(&o->mot_lov_mutex);
+
+	/* the layout may have been created by a concurrent open */
+	if (rc == 0)
+		rc = mdt_attr_get_complex(info, o, ma);
+
 	RETURN(rc);
 }
 
