@@ -219,9 +219,11 @@ out:
 
 int mdt_hsm_ct_unregister(struct tgt_session_info *tsi)
 {
-	struct mdt_thread_info	*info;
-	struct obd_uuid		*uuid;
-	int			 rc;
+	struct mdt_thread_info *info;
+	struct obd_uuid *uuid;
+	int rc;
+	int rc1 = 0;
+
 	ENTRY;
 
 	if (tsi->tsi_mdt_body == NULL)
@@ -233,12 +235,12 @@ int mdt_hsm_ct_unregister(struct tgt_session_info *tsi)
 
 	uuid = &tsi->tsi_exp->exp_client_uuid;
 	if (is_cdt_external(&info->mti_mdt->mdt_coordinator))
-		rc = ext_cdt_copytool_unregister(uuid);
-	else
-		rc = mdt_hsm_agent_unregister(info, uuid);
+		rc1 = ext_cdt_copytool_unregister(uuid);
+
+	rc = mdt_hsm_agent_unregister(info, uuid);
 out:
 	mdt_thread_info_fini(info);
-	RETURN(rc);
+	RETURN(rc ? rc : rc1);
 }
 
 /**
