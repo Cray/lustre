@@ -511,6 +511,7 @@ static int ofd_preprw_read(const struct lu_env *env, struct obd_export *exp,
 	struct ofd_object *fo;
 	int i, j, rc, tot_bytes = 0;
 	enum dt_bufs_type dbt = DT_BUFS_TYPE_READ;
+	int maxlnb = *nr_local;
 
 	ENTRY;
 	LASSERT(env != NULL);
@@ -536,14 +537,19 @@ static int ofd_preprw_read(const struct lu_env *env, struct obd_export *exp,
 		dbt |= DT_BUFS_TYPE_LOCAL;
 
 	for (*nr_local = 0, i = 0, j = 0; i < niocount; i++) {
+
+		if (OBD_FAIL_CHECK(OBD_FAIL_OST_2BIG_NIOBUF))
+			rnb[i].rnb_len = 100 * 1024 * 1024;
+
 		rc = dt_bufs_get(env, ofd_object_child(fo), rnb + i,
-				 lnb + j, dbt);
+				 lnb + j, maxlnb, dbt);
 		if (unlikely(rc < 0))
 			GOTO(buf_put, rc);
 		LASSERT(rc <= PTLRPC_MAX_BRW_PAGES);
 		/* correct index for local buffers to continue with */
 		j += rc;
 		*nr_local += rc;
+		maxlnb -= rc;
 		LASSERT(j <= PTLRPC_MAX_BRW_PAGES);
 		tot_bytes += rnb[i].rnb_len;
 	}
@@ -598,6 +604,7 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 	int i, j, k, rc = 0, tot_bytes = 0;
 	enum dt_bufs_type dbt = DT_BUFS_TYPE_WRITE;
 	struct range_lock *range = &ofd_info(env)->fti_write_range;
+	int maxlnb = *nr_local;
 
 	ENTRY;
 	LASSERT(env != NULL);
@@ -708,8 +715,10 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 
 	/* parse remote buffers to local buffers and prepare the latter */
 	for (*nr_local = 0, i = 0, j = 0; i < obj->ioo_bufcnt; i++) {
+		if (OBD_FAIL_CHECK(OBD_FAIL_OST_2BIG_NIOBUF))
+			rnb[i].rnb_len += PAGE_SIZE;
 		rc = dt_bufs_get(env, ofd_object_child(fo),
-				 rnb + i, lnb + j, dbt);
+				 rnb + i, lnb + j, maxlnb, dbt);
 		if (unlikely(rc < 0))
 			GOTO(err, rc);
 		LASSERT(rc <= PTLRPC_MAX_BRW_PAGES);
@@ -722,6 +731,7 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 		}
 		j += rc;
 		*nr_local += rc;
+		maxlnb -= rc;
 		LASSERT(j <= PTLRPC_MAX_BRW_PAGES);
 		tot_bytes += rnb[i].rnb_len;
 	}
