@@ -4160,6 +4160,9 @@ test_202() {
 run_test 202 "Register/Cancel remove"
 
 test_220A() { # was test_220
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4179,6 +4182,9 @@ test_220A() { # was test_220
 run_test 220A "Changelog for archive"
 
 test_220a() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4211,6 +4217,9 @@ test_220a() {
 run_test 220a "Changelog for failed archive"
 
 test_221() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	local f=$DIR/$tdir/$tfile
 	local fid=$(create_empty_file "$f")
 
@@ -4234,6 +4243,9 @@ test_221() {
 run_test 221 "Changelog for archive canceled"
 
 test_222a() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4255,6 +4267,9 @@ test_222a() {
 run_test 222a "Changelog for explicit restore"
 
 test_222b() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4277,6 +4292,9 @@ test_222b() {
 run_test 222b "Changelog for implicit restore"
 
 test_222c() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4311,6 +4329,9 @@ test_222c() {
 run_test 222c "Changelog for failed explicit restore"
 
 test_222d() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4335,6 +4356,9 @@ test_222d() {
 run_test 222d "Changelog for failed implicit restore"
 
 test_223a() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	# test needs a running copytool
 	copytool setup -b 1
 
@@ -4388,6 +4412,9 @@ test_223b() {
 run_test 223b "Changelog for restore canceled (release case)"
 
 test_224A() { # was test_224
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4409,6 +4436,9 @@ test_224A() { # was test_224
 run_test 224A "Changelog for remove"
 
 test_224a() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4450,6 +4480,9 @@ test_225() {
 	echo "Test disabled"
 	return 0
 
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4476,6 +4509,9 @@ test_225() {
 run_test 225 "Changelog for remove canceled"
 
 test_226() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	# test needs a running copytool
 	copytool setup
 
@@ -4511,6 +4547,9 @@ run_test 226 "changelog for last rm/mv with exiting archive"
 # This is just a utility function to clarify what test_227 does
 __test_227()
 {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	local target=0x280
 
 	"$LFS" "$action" --$flag "$file" ||
@@ -5522,6 +5561,9 @@ test_500()
 run_test 500 "various LLAPI HSM tests"
 
 test_600() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	[ $MDS_VERSION_CODE -lt $(version_code 2.10.58) ] &&
 		skip "need MDS version at least 2.10.58"
 
@@ -5555,6 +5597,9 @@ test_600() {
 run_test 600 "Changelog fields 'u=' and 'nid='"
 
 test_601() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	[ $MDS_VERSION_CODE -lt $(version_code 2.10.58) ] &&
 		skip "need MDS version at least 2.10.58"
 
@@ -5578,6 +5623,9 @@ test_601() {
 run_test 601 "OPEN Changelog entry"
 
 test_602() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	[ $MDS_VERSION_CODE -lt $(version_code 2.10.58) ] &&
 		skip "need MDS version at least 2.10.58"
 
@@ -5625,6 +5673,9 @@ test_602() {
 run_test 602 "Changelog record CLOSE only if open+write or OPEN recorded"
 
 test_603() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	[ $MDS_VERSION_CODE -lt $(version_code 2.10.58) ] &&
 		skip "need MDS version at least 2.10.58"
 
@@ -5650,6 +5701,9 @@ test_603() {
 run_test 603 "GETXATTR Changelog entry"
 
 test_604() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	[ $MDS_VERSION_CODE -lt $(version_code 2.10.58) ] &&
 		skip "need MDS version at least 2.10.58"
 
@@ -5726,6 +5780,9 @@ test_604() {
 run_test 604 "NOPEN Changelog entry"
 
 test_605() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not write to changelog"
+
 	[ $MDS_VERSION_CODE -lt $(version_code 2.10.58) ] &&
 		skip "need MDS version at least 2.10.58"
 

@@ -759,7 +759,6 @@ out:
 static int hsm_request_progress(struct mdt_thread_info *mti,
 				struct hsm_progress_kernel_v2 *pgs)
 {
-	const struct lu_env *env = mti->mti_env;
 	struct mdt_device *mdt = mti->mti_mdt;
 	struct coordinator *cdt = &mdt->mdt_coordinator;
 	struct mdt_object *obj;
@@ -767,9 +766,7 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 	struct lu_fid *fid;
 	struct lu_fid *dfid;
 	bool is_mh_changed;
-	bool need_changelog = true;
 	int status = ARS_WAITING;
-	int cl_flags = 0;
 	int rc = 0;
 
 	/*
@@ -801,24 +798,16 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 			       " failed, error code %d too large\n",
 			       pgs->hpk_cookie, PFID(&pgs->hpk_fid),
 			       pgs->hpk_errval);
-			hsm_set_cl_error(&cl_flags,
-					 CLF_HSM_ERROVERFLOW);
 			rc = -EINVAL;
-		} else {
-			hsm_set_cl_error(&cl_flags, pgs->hpk_errval);
 		}
 		switch (pgs->hpk_action) {
 		case HSMA_ARCHIVE:
-			hsm_set_cl_event(&cl_flags, HE_ARCHIVE);
 			break;
 		case HSMA_RESTORE:
-			hsm_set_cl_event(&cl_flags, HE_RESTORE);
 			break;
 		case HSMA_REMOVE:
-			hsm_set_cl_event(&cl_flags, HE_REMOVE);
 			break;
 		case HSMA_CANCEL:
-			hsm_set_cl_event(&cl_flags, HE_CANCEL);
 			CERROR("%s: Failed request %#llx on "DFID
 			       " cannot be a CANCEL\n",
 			       mdt_obd_name(mdt),
@@ -839,7 +828,6 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 		status = ARS_SUCCEED;
 		switch (pgs->hpk_action) {
 		case HSMA_ARCHIVE:
-			hsm_set_cl_event(&cl_flags, HE_ARCHIVE);
 			/*
 			 * set ARCHIVE keep EXIST and clear LOST and
 			 * DIRTY
@@ -850,7 +838,6 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 			is_mh_changed = true;
 			break;
 		case HSMA_RESTORE:
-			hsm_set_cl_event(&cl_flags, HE_RESTORE);
 			/*
 			 * do not clear RELEASED and DIRTY here
 			 * this will occur in hsm_swap_layouts()
@@ -862,13 +849,11 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 			is_mh_changed = true;
 			break;
 		case HSMA_REMOVE:
-			hsm_set_cl_event(&cl_flags, HE_REMOVE);
 			/* clear ARCHIVED EXISTS and LOST */
 			mh.mh_flags &= ~(HS_ARCHIVED | HS_EXISTS | HS_LOST);
 			is_mh_changed = true;
 			break;
 		case HSMA_CANCEL:
-			hsm_set_cl_event(&cl_flags, HE_CANCEL);
 			CERROR("%s: Successful request %#llx on "DFID" cannot be a CANCEL\n",
 			       mdt_obd_name(mdt), pgs->hpk_cookie,
 			       PFID(&pgs->hpk_fid));
@@ -883,17 +868,11 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 	}
 
 	/*
-	 * rc != 0 means error when analysing action, it may come from
-	 * a crazy CT no need to manage DIRTY
-	 * and if mdt_hsm_get_md_hsm() has returned an error, mh has not been
+	 * rc != 0 means error when analysing action
+	 * if mdt_hsm_get_md_hsm() has returned an error, mh has not been
 	 * filled
 	 */
 	CDEBUG(D_HSM, "rc = %d hpk_action = %d\n", rc, pgs->hpk_action);
-	if (rc == 0 && !IS_ERR(obj)) {
-		CDEBUG(D_HSM, "set_cl_flags\n");
-		hsm_set_cl_flags(&cl_flags,
-				 mh.mh_flags & HS_DIRTY ? CLF_HSM_DIRTY : 0);
-	}
 
 	/* unlock is done later, after layout lock management */
 	if (is_mh_changed && !IS_ERR(obj)) {
@@ -927,15 +906,6 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 		if (status == ARS_WAITING)
 			goto out;
 
-		/*
-		 * restore special case, need to create ChangeLog record
-		 * before to give back layout lock to avoid concurrent
-		 * file updater to post out of order ChangeLog
-		 */
-		mo_changelog(env, CL_HSM, cl_flags, mdt->mdt_child,
-			     &pgs->hpk_fid);
-		need_changelog = false;
-
 		rc = put_hsm_layout_lock(mti, pgs->hpk_cookie, &pgs->hpk_fid);
 		if (rc)
 			CERROR("Failed to release HSM layout lock on "DFID" rc=%d\n",
@@ -943,11 +913,6 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 	}
 
 out:
-	/* always add a ChangeLog record */
-	if (need_changelog)
-		mo_changelog(env, CL_HSM, cl_flags, mdt->mdt_child,
-			     &pgs->hpk_fid);
-
 	if (status != ARS_WAITING) {
 		struct hsm_record_update hru;
 
