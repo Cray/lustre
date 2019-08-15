@@ -560,6 +560,7 @@ int ext_cdt_send_request(struct mdt_thread_info *mti,
 	struct hsm_action_item *hai;
 	struct md_hsm mh;
 	struct mdt_object *obj;
+	bool is_restore = false;
 	int i = 0;
 	int rc = 0;
 
@@ -612,10 +613,12 @@ int ext_cdt_send_request(struct mdt_thread_info *mti,
 
 		get_random_bytes(&hai->hai_cookie, sizeof(hai->hai_cookie));
 
-		if (hai->hai_action == HSMA_RESTORE)
+		if (hai->hai_action == HSMA_RESTORE) {
+			is_restore = true;
 			rc = get_hsm_layout_lock(&hai->hai_fid,
 						 hai->hai_action,
 						 hai->hai_cookie, mti);
+		}
 		if (rc)
 			goto out;
 	}
@@ -624,6 +627,14 @@ int ext_cdt_send_request(struct mdt_thread_info *mti,
 
 out:
 	CDEBUG(D_HSM, "ext_cdt_send_request rc %d\n", rc);
+	if (is_restore && !rc) {
+		struct mdt_device *mdt = mti->mti_mdt;
+		struct coordinator *cdt = &mdt->mdt_coordinator;
+
+		if (cdt->cdt_policy & CDT_NONBLOCKING_RESTORE)
+			rc = -ENODATA;
+	}
+
 	return rc;
 }
 

@@ -317,21 +317,23 @@ static void vvp_io_fini(const struct lu_env *env, const struct cl_io_slice *ios)
 		 * before finishing the io
 		 */
 		rc = ll_layout_restore(inode, 0, OBD_OBJECT_EOF);
-		/* if restore registration failed, no restart,
-		 * we will return -ENODATA */
-		/* The layout will change after restore, so we need to
+		/*
+		 * if restore registration failed, or if the
+		 * CDT_NONBLOCKING_RESTORE flag is set, -ENODATA will be
+		 * returned and we need to exit immediately
+		 *
+		 * The layout will change after restore, so we need to
 		 * block on layout lock held by the MDT
 		 * as MDT will not send new layout in lvb (see LU-3124)
 		 * we have to explicitly fetch it, all this will be done
 		 * by ll_layout_refresh().
+		 *
 		 * Even if ll_layout_restore() returns zero, it doesn't mean
 		 * that restore has been successful. Therefore it sets
 		 * ci_verify_layout so that it will check layout at the end
 		 * of this function.
 		 */
-		if ((retries++ < 10) && rc)
-			continue;
-		if (rc || retries >= 10) {
+		if (retries++ >= 10 || rc) {
 			io->ci_restore_needed = 1;
 			io->ci_need_restart = 0;
 			io->ci_verify_layout = 0;
