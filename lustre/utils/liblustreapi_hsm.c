@@ -1732,7 +1732,7 @@ enum ext_hsm_cmd llapi_hsm_cdt_recv(struct hsm_cdt_private *hcp,
 	    nlh->nlmsg_type >= EXT_HSM_LAST_OPC)
 		return EXT_HSM_FAIL;
 
-	memcpy(data, NLMSG_DATA(nlh), NLMSG_PAYLOAD(nlh, 0));
+	memcpy(data, NLMSG_DATA(nlh), rc);
 	return nlh->nlmsg_type;
 }
 

@@ -45,7 +45,7 @@
 #include <uapi/linux/lustre/lustre_idl.h>
 #include <uapi/linux/lustre/lustre_fid.h>
 
-#define MAX_PAYLOAD 1024 /* maximum payload size*/
+#define MAX_PAYLOAD 4096 /* maximum payload size*/
 
 FILE *fp;
 
@@ -188,7 +188,11 @@ int nlmsg_send_to_ct(struct hsm_cdt_private *hcp,
 		     struct hsm_action_list *hal)
 {
 	struct hsm_send_to_ct_kernel *hct;
+	struct hsm_action_item *hai = hai_first(hal);
 	int len = sizeof(struct hsm_send_to_ct_kernel) + hal_size(hal);
+
+	fprintf(fp, "send_to_ct %s %s "DFID"\n", uuid.uuid,
+		hsm_copytool_action2name(hai->hai_action), PFID(&hai->hai_fid));
 
 	hct = (struct hsm_send_to_ct_kernel *)malloc(len);
 	memcpy(&hct->uuid, &uuid, sizeof(struct obd_uuid));
@@ -714,7 +718,6 @@ int start_action(struct hsm_queues *queues)
 		if (tmp == NULL)
 			break;
 
-		fprintf(fp, "send_to_ct %d %p\n", i, &tmp->hal);
 		hsmq_enqueue(&queues->copytools[i].active, tmp);
 		nlmsg_send_to_ct(queues->hcp,
 				 queues->copytools[i].uuid, &tmp->hal);
@@ -798,6 +801,7 @@ int main(int argc, char **argv)
 	struct hsm_queues queues;
 	enum ext_hsm_cmd cmd;
 	void *msg;
+	size_t msgsize = MAX_PAYLOAD;
 	int i = 0;
 
 	fp = stdout;
@@ -818,16 +822,17 @@ int main(int argc, char **argv)
 		bzero(&queues.copytools[i].uuid, sizeof(struct obd_uuid));
 	}
 
-	msg = malloc(MAX_PAYLOAD);
-	queues.hcp = llapi_hsm_cdt_connect(MAX_PAYLOAD);
+	msg = malloc(msgsize);
+	queues.hcp = llapi_hsm_cdt_connect(msgsize);
 
 	fprintf(fp, "Waiting for message from kernel\n");
 /* Read message from kernel */
 	while (true) {
-		cmd = llapi_hsm_cdt_recv(queues.hcp, msg, MAX_PAYLOAD);
+		cmd = llapi_hsm_cdt_recv(queues.hcp, msg, msgsize);
 
 		switch (cmd) {
 		case EXT_HSM_FAIL:
+			fprintf(fp, "Failed to receive message %d\n", cmd);
 			break;
 		case EXT_HSM_ACTION:
 			hsm_action(msg, &queues);
