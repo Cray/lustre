@@ -4659,6 +4659,9 @@ test_251() {
 run_test 251 "Coordinator request timeout"
 
 test_252() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not handle send retries"
+
 	local f=$DIR/$tdir/$tfile
 	local fid=$(create_empty_file "$f")
 
@@ -5239,6 +5242,9 @@ test_402a() {
 run_test 402a "Copytool start fails if all MDTs are inactive"
 
 test_402b() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not handle send retries"
+
 	copytool setup
 
 	mkdir -p $DIR/$tdir
