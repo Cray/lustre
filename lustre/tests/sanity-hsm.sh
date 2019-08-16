@@ -5106,6 +5106,9 @@ test_260c()
 run_test 260c "Requests are not reordered on the 'hot' path of the coordinator"
 
 test_300() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "External coordinator does not keep state on restart"
+
 	[ "$CLIENTONLY" ] && skip "CLIENTONLY mode" && return
 
 	# the only way to test ondisk conf is to restart MDS ...
