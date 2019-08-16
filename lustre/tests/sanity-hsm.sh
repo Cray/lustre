@@ -5068,6 +5068,9 @@ run_test 260b "Restore request have priority over other requests"
 # mechanism in the coordinator. It might not make sense to keep it in the future
 test_260c()
 {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "Internal coordinator specific algorithm"
+
 	[ $MDS1_VERSION -lt $(version_code 2.12.0) ] &&
 		skip "Need MDS version at least 2.12.0"
 

@@ -96,6 +96,16 @@ void hsmq_enqueue(struct hsm_queue *queue,
 	queue->count++;
 }
 
+void hsmq_add_to_head(struct hsm_queue *queue,
+		      struct hsm_queue_item *item)
+{
+	item->next = queue->head;
+	queue->head = item;
+	if (queue->tail == NULL)
+		queue->tail = queue->head;
+	queue->count++;
+}
+
 /*
  * Convert a HAL list into a series of 1-element lists and add it to the
  * waitq
@@ -124,7 +134,12 @@ void create_queue(struct hsm_queue *queue, struct hsm_action_list *hal)
 		       LUSTRE_MAXFSNAME);
 		new->hal.hal_count = 1;
 		memcpy(hai_first(&new->hal), hai, hai->hai_len);
-		hsmq_enqueue(queue, new);
+
+		/* Policy: restore has priority */
+		if (hai->hai_action == HSMA_RESTORE)
+			hsmq_add_to_head(queue, new);
+		else
+			hsmq_enqueue(queue, new);
 	}
 }
 
