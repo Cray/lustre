@@ -1042,6 +1042,8 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 	 * in other cases we just unlock the object
 	 */
 	if (pgs->hpk_action == HSMA_RESTORE) {
+		struct mdt_lock_handle *lh;
+
 		CDEBUG(D_HSM, "action = HSMA_RESTORE\n");
 		/*
 		 * restore in data FID done, we swap the layouts
@@ -1063,6 +1065,14 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 		if (rc)
 			CERROR("Failed to release HSM layout lock on "DFID" rc=%d\n",
 			       PFID(&pgs->hpk_fid), rc);
+		if (!IS_ERR_OR_NULL(obj)) {
+			/* flush UPDATE lock so attributes are updated */
+			lh = &mti->mti_lh[MDT_LH_OLD];
+			mdt_lock_reg_init(lh, LCK_EX);
+			mdt_object_lock(mti, obj, lh, MDS_INODELOCK_UPDATE);
+			mdt_object_unlock(mti, obj, lh, 1);
+		}
+
 	}
 
 out:
