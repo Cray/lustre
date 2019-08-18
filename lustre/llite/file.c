@@ -3931,7 +3931,8 @@ static int ll_file_flock_lock(struct file *file, struct file_lock *file_lock)
 	}
 #endif /* HAVE_LOCKS_LOCK_FILE_WAIT */
 	if (rc)
-		CDEBUG(D_ERROR, "kernel lock failed rc=%d\n", rc);
+		CDEBUG(rc == -ENOENT ? D_DLMTRACE : D_ERROR,
+		       "kernel lock failed rc=%d\n", rc);
 
 	return rc;
 }
