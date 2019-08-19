@@ -3645,7 +3645,6 @@ ll_file_flock(struct file *file, int cmd, struct file_lock *file_lock)
 
 		rc = md_enqueue(sbi->ll_md_exp, &einfo, &flock, op_data,
 				&lockh, flags);
-		OBD_FREE_PTR(cb_data);
 
 		if (!(flags & LDLM_FL_TEST_LOCK) && fl_type == F_UNLCK) {
 			CFS_FAIL_TIMEOUT(OBD_FAIL_LLITE_FLOCK_UNLOCK_RACE, 3);
@@ -3658,11 +3657,13 @@ ll_file_flock(struct file *file, int cmd, struct file_lock *file_lock)
 			rc2 = ll_file_flock_lock(file, file_lock);
 			if (rc2) {
 				einfo.ei_mode = LCK_NL;
+				cb_data->fa_mode = einfo.ei_mode;
 				md_enqueue(sbi->ll_md_exp, &einfo, &flock,
 					   op_data, &lockh, flags);
 				rc = rc2;
 			}
 		}
+		OBD_FREE_PTR(cb_data);
 	}
 out:
 	ll_finish_md_op_data(op_data);
