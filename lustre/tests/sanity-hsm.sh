@@ -5464,6 +5464,9 @@ test_406() {
 run_test 406 "attempting to migrate HSM archived files is safe"
 
 test_407() {
+	[[ "$COORDINATOR" == "external" ]] &&
+		skip "Test 407 specific to internal coordinator"
+
 	local f=$DIR/$tdir/$tfile
 	local f2=$DIR2/$tdir/$tfile
 	local fid=$(create_empty_file "$f")

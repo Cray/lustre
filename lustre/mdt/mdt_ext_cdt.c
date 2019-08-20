@@ -449,9 +449,9 @@ static int get_hsm_layout_lock(struct lu_fid *fid, u32 action, u64 cookie,
 				       &cll->cll_hash);
 	if (unlikely(cll != cll2)) {
 		CDEBUG(D_HSM, "Duplicate cll found\n");
+		mdt_object_unlock(mti, obj, &cll->cll_lh, 1);
 		kfree(cll);
 		cll = cll2;
-		mdt_object_unlock(mti, obj, &cll->cll_lh, 1);
 		rc = -EALREADY;
 		goto err_out;
 	} else {
