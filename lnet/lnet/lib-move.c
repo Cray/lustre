@@ -2881,6 +2881,7 @@ lnet_finalize_expired_responses(void)
 	struct lnet_libmd *md;
 	struct list_head local_queue;
 	struct lnet_rsp_tracker *rspt, *tmp;
+	ktime_t now;
 	int i;
 
 	if (the_lnet.ln_mt_rstq == NULL)
@@ -2896,6 +2897,8 @@ lnet_finalize_expired_responses(void)
 		}
 		list_splice_init(the_lnet.ln_mt_rstq[i], &local_queue);
 		lnet_net_unlock(i);
+
+		now = ktime_get();
 
 		list_for_each_entry_safe(rspt, tmp, &local_queue, rspt_on_list) {
 			/*
@@ -2917,7 +2920,7 @@ lnet_finalize_expired_responses(void)
 				continue;
 			}
 
-			if (ktime_compare(ktime_get(), rspt->rspt_deadline) >= 0 ||
+			if (ktime_compare(now, rspt->rspt_deadline) >= 0 ||
 			    the_lnet.ln_mt_state == LNET_MT_STATE_SHUTDOWN) {
 				struct lnet_peer_ni *lpni;
 				lnet_nid_t nid;
@@ -2998,10 +3001,11 @@ lnet_finalize_expired_responses(void)
 			}
 		}
 
-		lnet_net_lock(i);
-		if (!list_empty(&local_queue))
+		if (!list_empty(&local_queue)) {
+			lnet_net_lock(i);
 			list_splice(&local_queue, the_lnet.ln_mt_rstq[i]);
-		lnet_net_unlock(i);
+			lnet_net_unlock(i);
+		}
 	}
 }
 
