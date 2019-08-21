@@ -1,5 +1,4 @@
 #!/bin/bash
-trap 'kill $(jobs -p)' EXIT
 
 org_LANG=$LANG
 export LANG=C
