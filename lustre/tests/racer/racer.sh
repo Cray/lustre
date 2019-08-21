@@ -46,7 +46,7 @@ racer_cleanup()
 {
 	echo "racer cleanup"
 	for P in $RACER_PROGS; do
-		killall -q $P.sh
+		killall -g -q $P.sh
 	done
 	trap 0
 
@@ -97,7 +97,7 @@ cd $(dirname $0)
 for ((N = 1; N <= $NUM_THREADS; N++)); do
 	for P in $RACER_PROGS; do
 		RACER_MIGRATE_STRIPE_MAX=$RACER_MIGRATE_STRIPE_MAX \
-		./$P.sh $DIR $MAX_FILES &
+		setsid ./$P.sh $DIR $MAX_FILES &
 	done
 done
 

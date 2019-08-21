@@ -1,5 +1,4 @@
 #!/bin/bash
-trap 'kill $(jobs -p)' EXIT
 
 LUSTRE=${LUSTRE:-$(cd $(dirname $0)/../..; echo $PWD)}
 . $LUSTRE/tests/test-framework.sh
