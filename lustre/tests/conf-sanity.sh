@@ -7406,8 +7406,8 @@ test_101b () {
 	mkdir $dir
 	$LFS setstripe -c 1 -i 0 $dir
 	do_facet $SINGLEMDS "$LCTL --device $dev deactivate;"
-#define OBD_FAIL_OSP_CON_EVENT_DELAY 0x2105
-	do_facet mds1 "$LCTL set_param fail_loc=0x80002105 fail_val=20"
+#define OBD_FAIL_OSP_CON_EVENT_DELAY 0x2107
+	do_facet mds1 "$LCTL set_param fail_loc=0x80002107 fail_val=20"
 	do_facet $SINGLEMDS "$LCTL --device $dev activate;"
 	stop_ost
 	sleep 25
