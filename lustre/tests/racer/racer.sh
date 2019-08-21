@@ -27,7 +27,7 @@ racer_cleanup()
 {
 	echo "racer cleanup"
 	for P in $RACER_PROGS; do
-		killall -q $P.sh
+		killall -g -q $P.sh
 	done
 	trap 0
 
@@ -70,7 +70,7 @@ trap "
 cd `dirname $0`
 for N in `seq 1 $NUM_THREADS`; do
 	for P in $RACER_PROGS; do
-		./$P.sh $DIR $MAX_FILES &
+		setsid ./$P.sh $DIR $MAX_FILES &
 	done
 done
 
