@@ -453,8 +453,13 @@ int mdt_hsm_action(struct tgt_session_info *tsi)
 	if (rc < 0)
 		GOTO(out, rc = err_serious(rc));
 
-	rc = mdt_hsm_get_action(info, &info->mti_body->mbo_fid1, &action,
-				&status, &extent);
+	if (is_cdt_external(&info->mti_mdt->mdt_coordinator))
+		rc = ext_cdt_hsm_action(info, &info->mti_body->mbo_fid1,
+					&action, &status, &extent);
+	else
+		rc = mdt_hsm_get_action(info, &info->mti_body->mbo_fid1,
+					&action, &status, &extent);
+
 	if (rc < 0)
 		GOTO(out_ucred, rc);
 

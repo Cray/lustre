@@ -39,6 +39,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <errno.h>
+#include <sys/param.h>
 
 #include <lustre/lustreapi.h>
 #include <uapi/linux/lustre/lustre_idl.h>
@@ -215,7 +216,8 @@ int nlmsg_send_progress_item(struct hsm_cdt_private *hcp,
 int nlmsg_send_request_list(struct hsm_cdt_private *hcp,
 			    __u64 compound_id,
 			    enum agent_req_status status,
-			    struct hsm_action_list *hal)
+			    struct hsm_action_list *hal,
+			    enum ext_hsm_cmd cmd)
 {
 	struct hsm_request_item *hri;
 	int len;
@@ -228,78 +230,75 @@ int nlmsg_send_request_list(struct hsm_cdt_private *hcp,
 	hri->hri_status = status;
 	memcpy(&hri->hri_hal, hal, hal_size(hal));
 
-	llapi_hsm_cdt_send(hcp, EXT_HSM_REQUEST_LIST_REP, hri, len);
+	llapi_hsm_cdt_send(hcp, cmd, hri, len);
 	return 0;
+}
+
+struct hsm_action_list *search_for_hal(struct hsm_queue_item *hqi,
+				       struct lu_fid *fid)
+{
+	struct hsm_action_list *hal;
+	struct hsm_action_item *hai;
+
+	for (; hqi; hqi = hqi->next) {
+		hal = &hqi->hal;
+		hai = hai_first(hal);
+		if (lu_fid_eq(&hai->hai_fid, fid))
+			return hal;
+	}
+
+	return NULL;
 }
 
 int hsm_action(void *msg, struct hsm_queues *queues)
 {
-	struct hsm_action_list *hal = msg;
-	struct hsm_action_list *tmphal = NULL;
-	struct hsm_action_item *hai;
-	struct hsm_action_item *tmphai = NULL;
-	struct hsm_queue_item *hqi;
-	bool found = false;
+	struct lu_fid *fid = msg;
+	struct hsm_action_list *hal;
 	enum agent_req_status status;
 	int i = 0;
-	int j = 0;
 
-	fprintf(fp, "------\n");
-	fprintf(fp, "Action HAL: version %d count %d compound_id %llu flags %llu "
-	       "archive_id %d\n\tpadding %d fsname %s\n",
-	       hal->hal_version, hal->hal_count, hal->hal_compound_id,
-	       hal->hal_flags, hal->hal_archive_id, hal->padding1,
-	       hal->hal_fsname);
+	hal = search_for_hal(queues->waitq.head, fid);
+	if (hal) {
+		status = ARS_WAITING;
+		goto done;
+	}
 
-	/* hal_count should always be 1 for this request */
-	hai = hai_first(hal);
-	for (hqi = queues->waitq.head; hqi && !found; hqi = hqi->next) {
-		tmphal = &hqi->hal;
-		tmphai = hai_first(tmphal);
-		if (lu_fid_eq(&tmphai->hai_fid, &hai->hai_fid)) {
-			found = true;
-			status = ARS_WAITING;
-			goto found;
-		}
+	hal = search_for_hal(queues->doneq.head, fid);
+	if (hal) {
+		status = ARS_SUCCEED;
+		goto done;
 	}
-	for (hqi = queues->doneq.head; hqi && !found; hqi = hqi->next) {
-		tmphal = &hqi->hal;
-		tmphai = hai_first(tmphal);
-		if (lu_fid_eq(&tmphai->hai_fid, &hai->hai_fid)) {
-			found = true;
-			status = ARS_SUCCEED;
-			goto found;
-		}
+
+	hal = search_for_hal(queues->cancelq.head, fid);
+	if (hal) {
+		status = ARS_CANCELED;
+		goto done;
 	}
-	for (j = 0; i < MAX_COPYTOOLS && !found; j++) {
-		for (hqi = queues->copytools[j].active.head; hqi && !found;
-		     hqi = hqi->next) {
-			tmphal = &hqi->hal;
-			tmphai = hai_first(tmphal);
-			if (lu_fid_eq(&tmphai->hai_fid, &hai->hai_fid)) {
-				found = true;
-				status = ARS_STARTED;
-				goto found;
-				break;
-			}
+
+	hal = search_for_hal(queues->failq.head, fid);
+	if (hal) {
+		status = ARS_FAILED;
+		goto done;
+	}
+
+	for (i = 0; i < MAX_COPYTOOLS; i++) {
+		hal = search_for_hal(queues->copytools[i].active.head, fid);
+		if (hal) {
+			status = ARS_STARTED;
+			goto done;
 		}
 	}
 
-found:
-	if (found && tmphai != NULL) {
-		nlmsg_send_request_list(queues->hcp, tmphai->hai_cookie,
-					status,	tmphal);
+done:
+	if (hal) {
+		struct hsm_action_item *hai = hai_first(hal);
+
+		nlmsg_send_request_list(queues->hcp, hai->hai_cookie,
+					status,	hal, EXT_HSM_ACTION_REP);
+	} else {
+		fprintf(fp, "Progress: FID "DFID" not found\n", PFID(fid));
 	}
 
-	hai = hai_first(hal);
-	fprintf(fp, "Action HAI: len %d action %s fid "DFID" dfid "DFID"\n"
-		"\textent: %llu %llu cookie %llu gid %llu data %s\n",
-		hai->hai_len, hsm_copytool_action2name(hai->hai_action),
-		PFID(&hai->hai_fid),
-		PFID(&hai->hai_dfid), hai->hai_extent.offset,
-		hai->hai_extent.length, hai->hai_cookie, hai->hai_gid,
-		hai->hai_data);
-	fprintf(fp, "------\n");
 	return 0;
 }
 
@@ -310,6 +309,8 @@ int hsm_progress(void *msg, struct hsm_queues *queues)
 	struct hsm_queue *runq;
 	struct hsm_action_list *hal;
 	struct hsm_action_item *hai;
+	__u64 first;
+	__u64 last;
 	int j = 0;
 
 	fprintf(fp, "Progress: FID "DFID" cookie %llu\n"
@@ -318,10 +319,6 @@ int hsm_progress(void *msg, struct hsm_queues *queues)
 	       PFID(&hpk->hpk_fid), hpk->hpk_cookie, hpk->hpk_extent.offset,
 	       hpk->hpk_extent.length, hpk->hpk_flags, hpk->hpk_errval,
 	       hpk->hpk_action, hpk->hpk_data_version, hpk->hpk_version);
-
-	/* print out progress, but we don't care unless it's a begin or end*/
-	if (hpk->hpk_flags == 0)
-		goto out;
 
 	for (j = 0; j < MAX_COPYTOOLS; j++) {
 		runq = &queues->copytools[j].active;
@@ -341,6 +338,23 @@ int hsm_progress(void *msg, struct hsm_queues *queues)
 found:
 	fprintf(fp, "Found "DFID"\n", PFID(&hai->hai_fid));
 	hai->hai_dfid = hpk->hpk_dfid;
+
+	if (hai->hai_extent.length == -1 ||
+	    (hai->hai_extent.offset == 0 && hai->hai_extent.length == 0)) {
+		/* HAI extent is uninitialized, use the new one */
+		hai->hai_extent.length = hpk->hpk_extent.length;
+		hai->hai_extent.offset = hpk->hpk_extent.offset;
+	}
+
+	/* set the beginning of the new extent, calculate the length */
+	first = MIN(hai->hai_extent.offset, hpk->hpk_extent.offset);
+	last = MAX(hai->hai_extent.offset + hai->hai_extent.length,
+		   hpk->hpk_extent.offset + hpk->hpk_extent.length);
+	hai->hai_extent.offset = first;
+	hai->hai_extent.length = last - first;
+
+	fprintf(fp, "New Extent: %llu %llu\n", hai->hai_extent.offset,
+		hai->hai_extent.length);
 out:
 	return 0;
 }
@@ -549,7 +563,8 @@ int hsm_list_requests(void *msg, struct hsm_queues *queues)
 	for (hqi = queues->waitq.head; hqi; hqi = hqi->next) {
 		nlmsg_send_request_list(queues->hcp,
 					hai_first(&hqi->hal)->hai_cookie,
-					ARS_WAITING, &hqi->hal);
+					ARS_WAITING, &hqi->hal,
+					EXT_HSM_REQUEST_LIST_REP);
 		wait++;
 	}
 
@@ -561,8 +576,8 @@ int hsm_list_requests(void *msg, struct hsm_queues *queues)
 		     hqi = hqi->next) {
 			nlmsg_send_request_list(queues->hcp,
 						hai_first(&hqi->hal)->hai_cookie,
-						ARS_STARTED,
-						&hqi->hal);
+						ARS_STARTED, &hqi->hal,
+						EXT_HSM_REQUEST_LIST_REP);
 			active++;
 		}
 	}
@@ -570,24 +585,24 @@ int hsm_list_requests(void *msg, struct hsm_queues *queues)
 	for (hqi = queues->doneq.head; hqi; hqi = hqi->next) {
 		nlmsg_send_request_list(queues->hcp,
 					hai_first(&hqi->hal)->hai_cookie,
-					ARS_SUCCEED,
-					&hqi->hal);
+					ARS_SUCCEED, &hqi->hal,
+					EXT_HSM_REQUEST_LIST_REP);
 		done++;
 	}
 
 	for (hqi = queues->failq.head; hqi; hqi = hqi->next) {
 		nlmsg_send_request_list(queues->hcp,
 					hai_first(&hqi->hal)->hai_cookie,
-					ARS_FAILED,
-					&hqi->hal);
+					ARS_FAILED, &hqi->hal,
+					EXT_HSM_REQUEST_LIST_REP);
 		failed++;
 	}
 
 	for (hqi = queues->cancelq.head; hqi; hqi = hqi->next) {
 		nlmsg_send_request_list(queues->hcp,
 					hai_first(&hqi->hal)->hai_cookie,
-					ARS_CANCELED,
-					&hqi->hal);
+					ARS_CANCELED, &hqi->hal,
+					EXT_HSM_REQUEST_LIST_REP);
 		canceled++;
 	}
 
@@ -595,7 +610,8 @@ int hsm_list_requests(void *msg, struct hsm_queues *queues)
 	       "canceled %d\n", wait, active, done, failed, canceled);
 	bzero(&hal, sizeof(struct hsm_action_list));
 	/* send list-done message */
-	nlmsg_send_request_list(queues->hcp, 0, ARS_CANCELED, &hal);
+	nlmsg_send_request_list(queues->hcp, 0, ARS_CANCELED, &hal,
+				EXT_HSM_REQUEST_LIST_REP);
 
 	return 0;
 }

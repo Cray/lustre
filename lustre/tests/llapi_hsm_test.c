@@ -499,9 +499,14 @@ void test52(void)
 	close(fd);
 
 	rc = llapi_hsm_current_action(testfile, &hca);
+	fprintf(stderr, "test52 rc: %d state: %d action: %d\n", rc,
+		hca.hca_state, hca.hca_action);
 	ASSERTF(rc == 0, "llapi_hsm_current_action failed: %s", strerror(-rc));
-	ASSERTF(hca.hca_state, "hca_state=%u", hca.hca_state);
-	ASSERTF(hca.hca_action, "hca_state=%u", hca.hca_action);
+/*
+ * Commented out because of LU-12680
+ */
+/*	ASSERTF(hca.hca_state, "hca_state=%u", hca.hca_state); */
+	ASSERTF(hca.hca_action, "hca_action=%u", hca.hca_action);
 
 	rc = llapi_hsm_current_action(testfile, NULL);
 	ASSERTF(rc == -EFAULT, "llapi_hsm_current_action failed: %s",

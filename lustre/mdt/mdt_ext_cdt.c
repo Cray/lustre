@@ -42,6 +42,7 @@
 
 wait_queue_head_t hsm_cdt_waitq;
 static DEFINE_MUTEX(netlink_mutex);
+struct hsm_request_item *action_hri;
 
 static DEFINE_MUTEX(init_mutex);
 bool nl_env_init;
@@ -72,6 +73,7 @@ static void put_nl_ref(void);
  */
 static int hsm_send_to_ct(struct obd_uuid *uuid, struct hsm_action_list *hal,
 			  struct mdt_thread_info *mti);
+static int hsm_action_reply(struct hsm_request_item *hri);
 static int hsm_request_list(struct hsm_request_item *hri);
 static int hsm_request_progress(struct mdt_thread_info *mti,
 				struct hsm_progress_kernel_v2 *hpk);
@@ -198,6 +200,9 @@ void netlink_recv_msg(struct sk_buff *skb)
 		hct = NLMSG_DATA(nlh);
 		hsm_send_to_ct(&hct->uuid, &hct->hal, mti);
 		break;
+	case EXT_HSM_ACTION_REP:
+		hsm_action_reply(NLMSG_DATA(nlh));
+		break;
 	case EXT_HSM_REQUEST_LIST_REP:
 		hsm_request_list(NLMSG_DATA(nlh));
 		break;
@@ -219,6 +224,7 @@ static int start_cdt(void)
 	};
 	int rc = 0;
 
+	action_hri = NULL;
 	mutex_lock(&init_mutex);
 	CDEBUG(D_HSM, "Starting external coordinator\n");
 	if (nl_env_init)
@@ -297,6 +303,14 @@ static void stop_cdt(void)
 		cfs_hash_putref(cdt_layout_hash);
 	}
 	cdt_layout_hash = NULL;
+
+	if (action_hri) {
+		mutex_lock(&netlink_mutex);
+		kfree(action_hri);
+		action_hri = NULL;
+		mutex_unlock(&netlink_mutex);
+	}
+
 	mutex_unlock(&init_mutex);
 }
 
@@ -329,7 +343,7 @@ int cdt_external_stop(void)
 	return 0;
 }
 
-static int netlink_send_msg(enum mds_cmd cmd, void *msg, int msg_size)
+static int netlink_send_msg(enum mds_cmd cmd, const void *msg, int msg_size)
 {
 	struct nlmsghdr *nlh;
 	struct sk_buff *skb_out;
@@ -512,6 +526,16 @@ int ext_cdt_send_hsm_progress(struct mdt_thread_info *mti,
 	       PFID(&hpk->hpk_fid), PFID(&hpk->hpk_dfid), hpk->hpk_cookie,
 	       hsm_copytool_action2name(hpk->hpk_action), hpk->hpk_flags,
 	       hpk->hpk_errval, hpk->hpk_data_version);
+
+	if (hpk->hpk_extent.offset + hpk->hpk_extent.length <
+	    hpk->hpk_extent.offset) {
+		CDEBUG(D_HSM, "Got a bad progress message\n");
+		if (hpk->hpk_flags & HP_FLAG_COMPLETED)
+			hpk->hpk_extent.length = 0;
+		else
+			return -EINVAL;
+	}
+
 	/*
 	 * We've gotten a restore request in a progress update
 	 *
@@ -638,9 +662,102 @@ out:
 	return rc;
 }
 
-int ext_cdt_hsm_action(struct hsm_action_list *hal)
+static int hsm_action_reply(struct hsm_request_item *hri)
 {
-	return netlink_send_msg(EXT_HSM_ACTION, hal, hal_size(hal));
+	const unsigned long secs = msecs_to_jiffies(MSEC_PER_SEC);
+	int size = hal_size(&hri->hri_hal) + 2*sizeof(__u32);
+	int retries = 2;
+	int rc;
+
+	mutex_lock(&netlink_mutex);
+
+	while (action_hri && retries) {
+		mutex_unlock(&netlink_mutex);
+		rc = wait_event_interruptible_timeout(hsm_cdt_waitq,
+						      action_hri == NULL,
+						      secs);
+		mutex_lock(&netlink_mutex);
+		retries--;
+	}
+	/*
+	 * No thread picked up the waiting HRI?
+	 */
+	if (action_hri) {
+		mutex_unlock(&netlink_mutex);
+		return -EBUSY;
+	}
+
+	action_hri = kmalloc(size, GFP_NOFS);
+	if (action_hri) {
+		memcpy(action_hri, hri, size);
+		wake_up_all(&hsm_cdt_waitq);
+		rc = 0;
+	} else {
+		CERROR("Allocation failed for action_hri\n");
+		rc = -ENOMEM;
+	}
+	mutex_unlock(&netlink_mutex);
+
+	return rc;
+}
+
+static bool hri_fid_cmp(struct hsm_request_item *hri, const struct lu_fid *fid)
+{
+	struct hsm_action_item *hai;
+
+	if (!hri)
+		return false;
+
+	hai = hai_first(&hri->hri_hal);
+	if (!lu_fid_cmp(&hai->hai_fid, fid))
+		return true;
+	return false;
+}
+
+int ext_cdt_hsm_action(struct mdt_thread_info *mti, const struct lu_fid *fid,
+		       enum hsm_copytool_action *action,
+		       enum agent_req_status *status,
+		       struct hsm_extent *extent)
+{
+	const unsigned long secs = msecs_to_jiffies(MSEC_PER_SEC);
+	int rc;
+
+	*action = HSMA_NONE;
+	*status = ARS_FAILED;
+	extent->offset = 0;
+	extent->length = 0;
+
+	rc = netlink_send_msg(EXT_HSM_ACTION, fid, sizeof(struct lu_fid));
+	if (rc) {
+		rc = 0;
+		goto out;
+	}
+
+	rc = 1;
+	mutex_lock(&netlink_mutex);
+	while (!hri_fid_cmp(action_hri, fid) && rc) {
+		mutex_unlock(&netlink_mutex);
+		rc = wait_event_interruptible_timeout(hsm_cdt_waitq,
+						      action_hri != NULL,
+						      secs);
+		mutex_lock(&netlink_mutex);
+	}
+
+	if (action_hri) {
+		struct hsm_action_item *hai = hai_first(&action_hri->hri_hal);
+
+		*action = hai->hai_action;
+		*status = action_hri->hri_status;
+		extent->offset = hai->hai_extent.offset;
+		extent->length = hai->hai_extent.length;
+		kfree(action_hri);
+		action_hri = NULL;
+		rc = 0;
+	}
+
+	mutex_unlock(&netlink_mutex);
+out:
+	return rc;
 }
 
 static int hsm_send_to_ct(struct obd_uuid *uuid, struct hsm_action_list *hal,

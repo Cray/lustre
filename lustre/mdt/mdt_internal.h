@@ -1046,7 +1046,11 @@ int ext_cdt_copytool_register(struct obd_uuid *uuid, __u32 archives);
 int ext_cdt_copytool_unregister(struct obd_uuid *uuid);
 int ext_cdt_send_hsm_progress(struct mdt_thread_info *mti,
 			      struct hsm_progress_kernel_v2 *hpk);
-int ext_cdt_hsm_action(struct hsm_action_list *hal);
+int ext_cdt_hsm_action(struct mdt_thread_info *mti,
+		       const struct lu_fid *fid,
+		       enum hsm_copytool_action *action,
+		       enum agent_req_status *status,
+		       struct hsm_extent *extent);
 int ext_cdt_send_request(struct mdt_thread_info *mti,
 			 struct hsm_action_list *hal);
 bool ext_cdt_is_restore_running(struct mdt_thread_info *mti,
