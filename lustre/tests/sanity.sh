@@ -17730,7 +17730,7 @@ test_401a() { #LU-7437
 	[ -n "$printf_arg" ] && skip_env "find does not support -printf" &&
 		return
 	#count the number of parameters by "list_param -R"
-	local params=$($LCTL list_param -R '*' 2>/dev/null | wc -l)
+	local params=$($LCTL list_param -R '*' 2>/dev/null | sort -u | wc -l)
 	#count the number of parameters by listing proc files
 	local proc_dirs=$(eval \ls -d $proc_regexp 2>/dev/null)
 	echo "proc_dirs='$proc_dirs'"
