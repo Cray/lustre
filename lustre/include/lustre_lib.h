@@ -213,10 +213,6 @@ struct l_wait_info {
 
 #define LWI_INTR(cb, data)  LWI_TIMEOUT_INTR(0, NULL, cb, data)
 
-#define LUSTRE_FATAL_SIGS					 \
-	(sigmask(SIGKILL) | sigmask(SIGINT) | sigmask(SIGTERM) | \
-	 sigmask(SIGQUIT) | sigmask(SIGALRM))
-
 /*
  * Wait Queue
  */
