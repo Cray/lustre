@@ -85,8 +85,8 @@ is_project_quota_supported() {
 		[ $(lustre_version_code $SINGLEMDS) -le \
 			$(version_code 2.10.53) ] && return 1
 
-		do_facet mds1 $ZPOOL upgrade -v |
-			grep project_quota && return 0
+		do_facet mds1 $ZPOOL get all |
+			grep -q project_quota && return 0
 	fi
 
 	return 1
@@ -426,11 +426,13 @@ enable_project_quota() {
 	stopall || error "failed to stopall (1)"
 
 	for num in $(seq $MDSCOUNT); do
+		[[ $(facet_fstype mds$num) == "zfs" ]] && continue
 		do_facet mds$num $TUNE2FS -O project $(mdsdevname $num) ||
 			error "tune2fs $(mdsdevname $num) failed"
 	done
 
 	for num in $(seq $OSTCOUNT); do
+		[[ $(facet_fstype ost$num) == "zfs" ]] && continue
 		do_facet ost$num $TUNE2FS -O project $(ostdevname $num) ||
 			error "tune2fs $(ostdevname $num) failed"
 	done
@@ -442,10 +444,12 @@ enable_project_quota() {
 project_quota_enabled () {
 	local rc=0
 	for num in $(seq $MDSCOUNT); do
+		[[ $(facet_fstype mds$num) == "zfs" ]] && continue
 		do_facet mds$num $DEBUGFS -R features $(mdsdevname $num) |
 			grep -q project || rc=1
 	done
 	for num in $(seq $OSTCOUNT); do
+		[[ $(facet_fstype ost$num) == "zfs" ]] && continue
 		do_facet ost$num $DEBUGFS -R features $(ostdevname $num) |
 			grep -q project || rc=1
 	done
