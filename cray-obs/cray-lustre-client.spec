@@ -208,6 +208,10 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 
 %files devel
 %{_includedir}/lustre
+%dir %{_includedir}/linux
+%dir %{_includedir}/linux/lustre
+%{_includedir}/linux/lustre/lustre_fiemap.h
+%{_includedir}/linux/lustre/lustre_user.h
 %{_libdir}/liblustreapi.a
 %{_libdir}/liblustreapi.so*
 %{_libdir}/liblnetconfig.a
