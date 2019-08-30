@@ -1207,7 +1207,8 @@ struct ldlm_enqueue_info {
 	void		*ei_namespace;	/** lock namespace **/
 	u64		ei_inodebits;	/** lock inode bits **/
 	unsigned int	ei_enq_slave:1;	/** whether enqueue slave stripes */
-	unsigned int	ei_enq_slot:1;	/** whether acquire rpc slot */
+	unsigned int	ei_req_slot:1;	/** whether acquire rpc slot */
+	unsigned int	ei_mod_slot:1;	/** whether acquire mod rpc slot */
 };
 
 #define ei_res_id	ei_cb_gl
@@ -1757,7 +1758,8 @@ int ldlm_cli_enqueue_fini(struct obd_export *exp, struct ptlrpc_request *req,
 			  enum ldlm_type type, __u8 with_policy,
 			  enum ldlm_mode mode, __u64 *flags, void *lvb,
 			  __u32 lvb_len,
-			  const struct lustre_handle *lockh, int rc);
+			  const struct lustre_handle *lockh, int rc,
+			  bool request_slot);
 int ldlm_cli_enqueue_local(const struct lu_env *env,
 			   struct ldlm_namespace *ns,
 			   const struct ldlm_res_id *res_id,

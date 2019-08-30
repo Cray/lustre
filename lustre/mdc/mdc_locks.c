@@ -964,7 +964,8 @@ resend:
 		req->rq_sent = ktime_get_real_seconds() + resends;
         }
 
-	einfo->ei_enq_slot = !mdc_skip_mod_rpc_slot(it);
+	einfo->ei_req_slot = !(op_data->op_cli_flags & CLI_NO_SLOT);
+	einfo->ei_mod_slot = !mdc_skip_mod_rpc_slot(it);
 
 	/* With Data-on-MDT the glimpse callback is needed too.
 	 * It is set here in advance but not in mdc_finish_enqueue()
@@ -1082,7 +1083,7 @@ static int mdc_enqueue_async_interpret(const struct lu_env *env,
 
 	ldlm_lock2handle(lock, &lockh);
 	rc = ldlm_cli_enqueue_fini(exp, req, LDLM_FLOCK, 1, mea->mea_mode,
-				   &mea->mea_flags, NULL, 0, &lockh, rc);
+				   &mea->mea_flags, NULL, 0, &lockh, rc, true);
 	if (rc == -ENOLCK)
 		LDLM_LOCK_RELEASE(lock);
 
@@ -1119,7 +1120,8 @@ int mdc_enqueue_async(struct obd_export *exp, struct ldlm_enqueue_info *einfo,
 	if (IS_ERR(req))
 		RETURN(PTR_ERR(req));
 
-	einfo->ei_enq_slot = 1;
+	einfo->ei_req_slot = 1;
+	einfo->ei_mod_slot = 1;
 
 	rc = ldlm_cli_enqueue(exp, &req, einfo, &res_id, policy, &flags, NULL,
 			      0, 0, &lockh, 1);
@@ -1426,7 +1428,7 @@ static int mdc_intent_getattr_async_interpret(const struct lu_env *env,
                 rc = -ETIMEDOUT;
 
         rc = ldlm_cli_enqueue_fini(exp, req, einfo->ei_type, 1, einfo->ei_mode,
-                                   &flags, NULL, 0, lockh, rc);
+                                   &flags, NULL, 0, lockh, rc, true);
         if (rc < 0) {
                 CERROR("ldlm_cli_enqueue_fini: %d\n", rc);
                 mdc_clear_replay_flag(req, rc);

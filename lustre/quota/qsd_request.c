@@ -170,7 +170,7 @@ static int qsd_intent_interpret(const struct lu_env *env,
 
 	rc = ldlm_cli_enqueue_fini(aa->aa_exp, req, LDLM_PLAIN, 0, LCK_CR,
 				   &flags, (void *)aa->aa_lvb,
-				   sizeof(struct lquota_lvb), lockh, rc);
+				   sizeof(struct lquota_lvb), lockh, rc, false);
 	if (rc < 0) {
 		/* the lock has been destroyed, forget about the lock handle */
 		memset(lockh, 0, sizeof(*lockh));

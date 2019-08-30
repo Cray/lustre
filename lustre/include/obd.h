@@ -838,6 +838,7 @@ enum md_cli_flags {
 	CLI_HASH64      = 1 << 2,
 	CLI_API32       = 1 << 3,
 	CLI_MIGRATE     = 1 << 4,
+	CLI_NO_SLOT     = 1 << 5,
 };
 
 /**
