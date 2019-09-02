@@ -1388,7 +1388,7 @@ client_load_mkdir () {
 	else
 		mkdir $dir || return 1
 	fi
-	$LFS getdirstripe $dir
+	$LFS getdirstripe $dir || return 1
 
 	if [ -n "$client_load_SETSTRIPEPARAMS" ]; then
 		$LFS setstripe $client_load_SETSTRIPEPARAMS $dir ||
