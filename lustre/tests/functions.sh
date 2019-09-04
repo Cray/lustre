@@ -464,7 +464,13 @@ run_mdtest() {
     mdtest_iteration=${mdtest_iteration:-1}
 	local mdtest_custom_params=${mdtest_custom_params:-""}
 
-    local type=${1:-"ssf"}
+	local type=${1:-"ssf"}
+	local mdtest_Nmntp=${mdtest_Nmntp:-1}
+
+	if [ $type = "ssf" ] && [ $mdtest_Nmntp -ne 1 ]; then
+		skip "shared directory mode is not compatible" \
+			"with multiple directory paths"
+	fi
 
     if [ "$NFSCLIENT" ]; then
         skip "skipped for NFSCLIENT mode"
@@ -482,9 +488,18 @@ run_mdtest() {
     local testdir=$DIR/d0.mdtest
     mkdir -p $testdir
 	setstripe_getstripe $testdir $mdtest_SETSTRIPEPARAMS
+	chmod 0777 $testdir
 
+	for ((i=1; i<mdtest_Nmntp; i++)); do
+		zconf_mount_clients $clients $MOUNT$i "$mntopts" ||
+			error_exit "Failed $clients on $MOUNT$i"
+		local dir=$DIR$i/d0.mdtest$i
+		mkdir -p $dir
+		setstripe_getstripe $dir $mdtest_SETSTRIPEPARAMS
+		chmod 0777 $dir
+		testdir="$testdir@$dir"
+	done
     # mpi_run uses mpiuser
-    chmod 0777 $testdir
 
     # -i # : repeat each test # times
     # -d   : test dir
@@ -511,7 +526,13 @@ run_mdtest() {
     if [ $rc != 0 ] ; then
         error "mdtest failed! $rc"
     fi
-    rm -rf $testdir
+	rm -rf $testdir
+	for ((i=1; i<mdtest_Nmntp; i++)); do
+		local dir=$DIR$i/d0.mdtest$i
+		rm -rf $dir
+		zconf_umount_clients $clients $MOUNT$i ||
+                        error_exit "Failed umount $MOUNT$i on $clients"
+        done
 }
 
 run_connectathon() {
