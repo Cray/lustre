@@ -8532,7 +8532,12 @@ generate_logname() {
 test_mkdir() {
 	local path
 	local p_option
-	local dirstripe_count=${DIRSTRIPE_COUNT:-"-1"}
+	local dirstripe_count
+	if [ "$ENABLE_EXPERIMENTAL_FEATURES" == yes ]; then
+		dirstripe_count=${DIRSTRIPE_COUNT:-"-1"}
+	else
+		dirstripe_count=1
+	fi
 	local dirstripe_index=${DIRSTRIPE_INDEX:-"-1"}
 	local OPTIND=1
 
