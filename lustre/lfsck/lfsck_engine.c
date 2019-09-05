@@ -961,13 +961,17 @@ static int lfsck_master_oit_engine(const struct lu_env *env,
 		}
 
 		if (dt_object_exists(target)) {
-			struct lu_attr la;
+			struct lu_attr la = { .la_valid = 0 };
 
 			rc = dt_attr_get(env, target, &la);
-			if (likely((rc == 0) &&
-			    ((la.la_valid & LA_FLAGS) &&
-			     ((la.la_flags & LUSTRE_ORPHAN_FL) == 0))))
+			if (likely(!rc && (!(la.la_valid & LA_FLAGS) ||
+					   !(la.la_flags & LUSTRE_ORPHAN_FL))))
 				rc = lfsck_exec_oit(env, lfsck, target);
+			else
+				CDEBUG(D_INFO,
+				       "%s: orphan "DFID", %llx/%x: rc = %d\n",
+				       lfsck_lfsck2name(lfsck), PFID(fid),
+				       la.la_valid, la.la_flags, rc);
 		}
 
 		lfsck_object_put(env, target);
