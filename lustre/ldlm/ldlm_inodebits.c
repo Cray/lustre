@@ -524,7 +524,7 @@ void ldlm_inodebits_add_lock(struct ldlm_resource *res, struct list_head *head,
 	} else if (head == &res->lr_granted && lock->l_ibits_node != NULL) {
 		for (i = 0; i <= MDS_INODELOCK_MAXSHIFT; i++)
 			LASSERT(list_empty(&lock->l_ibits_node->lin_link[i]));
-		OBD_SLAB_FREE_PTR(lock->l_ibits_node, ldlm_interval_slab);
+		OBD_SLAB_FREE_PTR(lock->l_ibits_node, ldlm_inodebits_slab);
 		lock->l_ibits_node = NULL;
 	}
 }

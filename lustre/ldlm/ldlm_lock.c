@@ -231,7 +231,7 @@ void ldlm_lock_put(struct ldlm_lock *lock)
 		} else if (res->lr_type == LDLM_IBITS) {
 			if (lock->l_ibits_node != NULL)
 				OBD_SLAB_FREE_PTR(lock->l_ibits_node,
-						  ldlm_interval_slab);
+						  ldlm_inodebits_slab);
 		}
 		ldlm_resource_putref(res);
 		lock->l_resource = NULL;
