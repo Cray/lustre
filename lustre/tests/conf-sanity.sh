@@ -6359,6 +6359,7 @@ test_87() { #LU-6544
 		{ skip "ldiskfs only test" && return; }
 	[[ $OSTCOUNT -gt 59 ]] &&
 		{ skip "Ignore wide striping situation" && return; }
+	[ -n "$FILESET" ] && skip "Not functional for FILESET set"
 
 	local mdsdev=$(mdsdevname 1)
 	local mdsvdev=$(mdsvdevname 1)
@@ -8198,6 +8199,7 @@ test_115() {
 	if [ $(facet_fstype $SINGLEMDS) != ldiskfs ]; then
 		skip "Only applicable to ldiskfs-based MDTs"
 	fi
+	[ -n "$FILESET" ] && skip "Not functional for FILESET set"
 
 	is_dm_flakey_dev $SINGLEMDS $(mdsdevname 1) &&
 		skip "This test can not be executed on flakey dev"
