@@ -594,6 +594,7 @@ fi
 %{_mandir}/man?/*
 %endif
 %{_datadir}/lustre
+%{_datadir}/bash-completion/completions/*
 %endif
 %if %{with static}
 %{_libdir}/liblustreapi.a
