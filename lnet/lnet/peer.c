@@ -170,10 +170,7 @@ lnet_peer_ni_alloc(lnet_nid_t nid)
 
 	spin_lock_init(&lpni->lpni_lock);
 
-	if (lnet_peers_start_down())
-		lpni->lpni_ns_status = LNET_NI_STATUS_DOWN;
-	else
-		lpni->lpni_ns_status = LNET_NI_STATUS_UP;
+	lpni->lpni_ns_status = LNET_NI_STATUS_UP;
 	lpni->lpni_ping_feats = LNET_PING_FEAT_INVAL;
 	lpni->lpni_nid = nid;
 	lpni->lpni_cpt = cpt;
@@ -258,6 +255,7 @@ lnet_peer_alloc(lnet_nid_t nid)
 	init_waitqueue_head(&lp->lp_dc_waitq);
 	spin_lock_init(&lp->lp_lock);
 	lp->lp_primary_nid = nid;
+	lp->lp_alive = true;
 
 	/*
 	 * all peers created on a router should have health on
