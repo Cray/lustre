@@ -1704,17 +1704,6 @@ out_mutex_unlock:
  * Peer Discovery
  */
 
-bool
-lnet_peer_is_uptodate(struct lnet_peer *lp)
-{
-	bool rc;
-
-	spin_lock(&lp->lp_lock);
-	rc = lnet_peer_is_uptodate_locked(lp);
-	spin_unlock(&lp->lp_lock);
-	return rc;
-}
-
 /*
  * Is a peer uptodate from the point of view of discovery?
  *
@@ -1724,11 +1713,11 @@ lnet_peer_is_uptodate(struct lnet_peer *lp)
  * Otherwise look at whether the peer needs rediscovering.
  */
 bool
-lnet_peer_is_uptodate_locked(struct lnet_peer *lp)
-__must_hold(&lp->lp_lock)
+lnet_peer_is_uptodate(struct lnet_peer *lp)
 {
 	bool rc;
 
+	spin_lock(&lp->lp_lock);
 	if (lp->lp_state & (LNET_PEER_DISCOVERING |
 			    LNET_PEER_FORCE_PING |
 			    LNET_PEER_FORCE_PUSH)) {
@@ -1750,6 +1739,7 @@ __must_hold(&lp->lp_lock)
 	} else {
 		rc = false;
 	}
+	spin_unlock(&lp->lp_lock);
 
 	return rc;
 }
