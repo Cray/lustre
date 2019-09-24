@@ -226,7 +226,6 @@ run_test 4 "set supplementary group ==============="
 
 create_nodemaps() {
 	local i
-	local out
 	local rc
 
 	squash_id default 99 0
@@ -238,16 +237,16 @@ create_nodemaps() {
 		       	return 1
 		fi
 
-		out=$(do_facet mgs $LCTL get_param nodemap.$csum.id)
-		## This needs to return zero if the following statement is 1
-		[[ $(echo $out | grep -c $csum) == 0 ]] && return 1
+		wait_update_facet --verbose mgs \
+			"$LCTL get_param nodemap.$csum.id 2>/dev/null | \
+			grep -c $csum || true" 1 30 ||
+		    return 1
 	done
 	return 0
 }
 
 delete_nodemaps() {
 	local i
-	local out
 
 	for ((i = 0; i < NODEMAP_COUNT; i++)); do
 		local csum=${HOSTNAME_CHECKSUM}_${i}
@@ -257,8 +256,10 @@ delete_nodemaps() {
 			return 3
 		fi
 
-		out=$(do_facet mgs $LCTL get_param nodemap.$csum.id 2>/dev/null)
-		[[ $(echo $out | grep -c $csum) != 0 ]] && return 1
+		wait_update_facet --verbose mgs \
+			"$LCTL get_param nodemap.$csum.id 2>/dev/null | \
+			grep -c $csum || true" 0 30 ||
+		    return 1
 	done
 	return 0
 }
