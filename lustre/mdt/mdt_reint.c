@@ -299,8 +299,6 @@ int mdt_reint_striped_lock(struct mdt_thread_info *info,
 {
 	int rc;
 
-	LASSERT(!mdt_object_remote(o));
-
 	memset(einfo, 0, sizeof(*einfo));
 
 	rc = mdt_reint_object_lock(info, o, lh, ibits, cos_incompat);
@@ -313,6 +311,7 @@ int mdt_reint_striped_lock(struct mdt_thread_info *info,
 			mdt_object_unlock(info, o, lh, rc);
 		return rc;
 	}
+	LASSERT(!mdt_object_remote(o));
 
 	rc = mdt_lock_slaves(info, o, lh->mlh_reg_mode, ibits, einfo);
 	if (rc) {
