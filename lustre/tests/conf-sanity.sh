@@ -6046,9 +6046,6 @@ cleanup_82b() {
 	# Remove OSTs from a pool and destroy the pool.
 	destroy_pool $ost_pool || true
 
-	if ! combined_mgs_mds ; then
-		umount_mgs_client
-	fi
 	restore_ostindex
 }
 
@@ -6088,9 +6085,6 @@ test_82b() { # LU-4665
 	done
 
 	mount_client $MOUNT || error "mount client $MOUNT failed"
-	if ! combined_mgs_mds ; then
-		mount_mgs_client
-	fi
 
 	wait_osts_up
 	$LFS df $MOUNT || error "$LFS df $MOUNT failed"
@@ -7580,9 +7574,6 @@ test_103() {
 	cp $LUSTRE/tests/test-framework.sh $DIR/$tdir ||
 		error "(2) Fail to copy test-framework.sh"
 
-	if ! combined_mgs_mds ; then
-		mount_mgs_client
-	fi
 	do_facet mgs $LCTL pool_new $FSNAME.pool1 ||
 		error "(3) Fail to create $FSNAME.pool1"
 	# name the pool name as the fsname
@@ -7594,9 +7585,6 @@ test_103() {
 	$SETSTRIPE -p $FSNAME $DIR/$tdir/d0 ||
 		error "(6) Fail to setstripe on $DIR/$tdir/d0"
 
-	if ! combined_mgs_mds ; then
-		umount_mgs_client
-	fi
 	KEEP_ZPOOL=true
 	stopall
 
@@ -7606,9 +7594,6 @@ test_103() {
 	FSNAME="mylustre"
 	setupall
 
-	if ! combined_mgs_mds ; then
-		mount_mgs_client
-	fi
 	test_103_check_pool $save_fsname 7
 
 	if [ $OSTCOUNT -ge 2 ]; then
@@ -7617,9 +7602,6 @@ test_103() {
 
 	$SETSTRIPE -p $save_fsname $DIR/$tdir/f0 ||
 		error "(16) Fail to setstripe on $DIR/$tdir/f0"
-	if ! combined_mgs_mds ; then
-		umount_mgs_client
-	fi
 
 	stopall
 
@@ -7628,14 +7610,8 @@ test_103() {
 	FSNAME="tfs"
 	setupall
 
-	if ! combined_mgs_mds ; then
-		mount_mgs_client
-	fi
 	test_103_check_pool $save_fsname 17
 
-	if ! combined_mgs_mds ; then
-		umount_mgs_client
-	fi
 	stopall
 
 	test_renamefs $save_fsname
