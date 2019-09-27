@@ -446,6 +446,9 @@ int ptlrpc_unregister_bulk(struct ptlrpc_request *req, int async)
 
 	LASSERT(!in_interrupt());     /* might sleep */
 
+	if (desc)
+		desc->bd_registered = 0;
+
 	/* Let's setup deadline for reply unlink. */
 	if (OBD_FAIL_CHECK(OBD_FAIL_PTLRPC_LONG_BULK_UNLINK) &&
 	    async && req->rq_bulk_deadline == 0 && cfs_fail_val == 0)
@@ -817,9 +820,16 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 			request->rq_repmsg = NULL;
 		}
 
-                rc = LNetMEAttach(request->rq_reply_portal,/*XXX FIXME bug 249*/
-                                  connection->c_peer, request->rq_xid, 0,
-                                  LNET_UNLINK, LNET_INS_AFTER, &reply_me_h);
+		if (request->rq_bulk &&
+		    OBD_FAIL_CHECK(OBD_FAIL_PTLRPC_BULK_REPLY_ATTACH)) {
+			rc = -ENOMEM;
+		} else {
+			rc = LNetMEAttach(request->rq_reply_portal,/*XXX FIXME bug 249*/
+					  connection->c_peer, request->rq_xid,
+					  0, LNET_UNLINK, LNET_INS_AFTER,
+					  &reply_me_h);
+		}
+
                 if (rc != 0) {
                         CERROR("LNetMEAttach failed: %d\n", rc);
                         LASSERT (rc == -ENOMEM);
