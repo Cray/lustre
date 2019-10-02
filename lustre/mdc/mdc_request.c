@@ -38,6 +38,7 @@
 #include <linux/pagemap.h>
 #include <linux/user_namespace.h>
 #include <linux/utsname.h>
+#include <linux/delay.h>
 #ifdef HAVE_UIDGID_HEADER
 # include <linux/uidgid.h>
 #endif
@@ -1042,14 +1043,11 @@ static int mdc_getpage(struct obd_export *exp, const struct lu_fid *fid,
 	struct ptlrpc_request   *req;
 	struct ptlrpc_bulk_desc *desc;
 	int                      i;
-	wait_queue_head_t        waitq;
 	int                      resends = 0;
-	struct l_wait_info       lwi;
 	int                      rc;
 	ENTRY;
 
 	*request = NULL;
-	init_waitqueue_head(&waitq);
 
 restart_bulk:
 	req = ptlrpc_request_alloc(class_exp2cliimp(exp), &RQF_MDS_READPAGE);
@@ -1094,9 +1092,7 @@ restart_bulk:
 			       exp->exp_obd->obd_name, -EIO);
 			RETURN(-EIO);
 		}
-		lwi = LWI_TIMEOUT_INTR(cfs_time_seconds(resends), NULL, NULL,
-				       NULL);
-		l_wait_event(waitq, 0, &lwi);
+		ssleep(resends);
 
 		goto restart_bulk;
 	}
