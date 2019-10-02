@@ -35,6 +35,7 @@
 #define DEBUG_SUBSYSTEM S_CLASS
 
 #include <linux/user_namespace.h>
+#include <linux/delay.h>
 #ifdef HAVE_UIDGID_HEADER
 # include <linux/uidgid.h>
 #endif
