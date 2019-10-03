@@ -5498,7 +5498,7 @@ int ll_layout_restore(struct inode *inode, loff_t offset, __u64 length)
 
 	hur->hur_request.hr_action = HUA_RESTORE;
 	hur->hur_request.hr_archive_id = 0;
-	hur->hur_request.hr_flags = 0;
+	hur->hur_request.hr_flags = HAL_IMPLICIT_RESTORE;
 	memcpy(&hur->hur_user_item[0].hui_fid, &ll_i2info(inode)->lli_fid,
 	       sizeof(hur->hur_user_item[0].hui_fid));
 	hur->hur_user_item[0].hui_extent.offset = offset;

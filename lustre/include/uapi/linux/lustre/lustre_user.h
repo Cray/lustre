@@ -2001,6 +2001,10 @@ static inline char *hai_dump_data_field(const struct hsm_action_item *hai,
 	return buffer;
 }
 
+enum hal_flags {
+	HAL_IMPLICIT_RESTORE = 1 << 5
+};
+
 /* Copytool action list */
 #define HAL_VERSION 1
 #define HAL_MAXSIZE LNET_MTU /* bytes, used in userspace only */
