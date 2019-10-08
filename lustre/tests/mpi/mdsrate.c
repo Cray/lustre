@@ -118,7 +118,7 @@ int    openflags = O_RDWR|O_CREAT|O_EXCL;
 int    ndirs = 1;
 char * dirfmt;
 char   dir[PATH_MAX];
-char   mkdir_cmd[PATH_MAX+32];
+char   mkdir_cmd[PATH_MAX + 48];
 int    dirthreads;
 int    dirnum;
 DIR *  directory;
@@ -542,13 +542,15 @@ process_args(int argc, char *argv[])
 
 		if (mdt_count > 1) {
 			struct stat sb;
+
 			if (stat(dir, &sb) == 0) {
 				if (!S_ISDIR(sb.st_mode))
 					fatal(myrank, "'%s' is not dir\n", dir);
 			} else if (errno == ENOENT) {
-				sprintf(mkdir_cmd, "lfs mkdir -i %d -c %d %s",
-					rand() % mdt_count,
-					rand() % mdt_count + 1, dir);
+				snprintf(mkdir_cmd, sizeof(mkdir_cmd),
+					 "lfs mkdir -i %d -c %d %s",
+					 rand() % mdt_count,
+					 rand() % mdt_count + 1, dir);
 			} else {
 				fatal(myrank, "'%s' stat failed\n", dir);
 			}

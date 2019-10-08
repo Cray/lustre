@@ -1503,7 +1503,7 @@ fini:
 
 	if (dst_fd != -1) {
 		char tmp_name[PATH_MAX];
-		char dest_file[PATH_MAX];
+		char dest_file[PATH_MAX + strlen(opt.o_mnt) + 2];
 		long long recno = -1;
 		int linkno = 0;
 
@@ -1511,7 +1511,8 @@ fini:
 		rc = llapi_fid2path(opt.o_mnt, dst_name, tmp_name,
 				    sizeof(tmp_name), &recno, &linkno);
 
-		snprintf(dest_file, PATH_MAX, "%s/%s", opt.o_mnt, tmp_name);
+		snprintf(dest_file, sizeof(dest_file), "%s/%s", opt.o_mnt,
+			 tmp_name);
 		rc = unlink(dest_file);
 		if (rc)
 			CT_ERROR(rc, "Unlink failed on %s\n", dest_file);
@@ -1900,7 +1901,7 @@ static int ct_migrate_v2(struct lu_fid *fid, struct lu_fid *dfid)
 fini:
 	if (!(dst_fd <= -1)) {
 		char tmp_name[PATH_MAX];
-		char dest_file[PATH_MAX];
+		char dest_file[PATH_MAX + strlen(opt.o_mnt) + 2];
 		long long recno = -1;
 		int linkno = 0;
 
@@ -1910,8 +1911,8 @@ fini:
 				     sizeof(tmp_name), &recno, &linkno);
 
 		if (!rc1) {
-			snprintf(dest_file, PATH_MAX, "%s/%s", opt.o_mnt,
-				 tmp_name);
+			snprintf(dest_file, sizeof(dest_file), "%s/%s",
+				 opt.o_mnt, tmp_name);
 			rc1 = unlink(dest_file);
 		}
 
