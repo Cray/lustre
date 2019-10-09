@@ -2080,7 +2080,7 @@ struct hsm_copy {
 	__u64			hc_data_version;
 	__u16			hc_flags;
 	__u16			hc_errval; /* positive val */
-	__u32			hc_archive_id;
+	__u32			padding;
 	struct hsm_action_item	hc_hai;
 };
 

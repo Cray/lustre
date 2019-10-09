@@ -578,8 +578,7 @@ void helper_archiving(void (*progress)
 		progress(hcp, length);
 
 	/* Done archiving */
-	rc = llapi_hsm_action_end(&hcp, &hai->hai_extent,
-				  hur->hur_request.hr_archive_id, 0, 0);
+	rc = llapi_hsm_action_end(&hcp, &hai->hai_extent, 0, 0);
 	ASSERTF(rc == 0, "llapi_hsm_action_end failed: %s", strerror(-rc));
 	ASSERTF(hcp == NULL, "hcp is NULL");
 

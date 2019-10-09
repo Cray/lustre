@@ -2207,7 +2207,6 @@ check_hsm_progress_kernel_v2(void)
 	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_flags);
 	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_errval);
 	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_action);
-	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_archive_id);
 	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_data_version);
 	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_version);
 	CHECK_MEMBER(hsm_progress_kernel_v2, hpk_dfid);
@@ -2235,7 +2234,7 @@ check_hsm_copy(void)
 	CHECK_MEMBER(hsm_copy, hc_data_version);
 	CHECK_MEMBER(hsm_copy, hc_flags);
 	CHECK_MEMBER(hsm_copy, hc_errval);
-	CHECK_MEMBER(hsm_copy, hc_archive_id);
+	CHECK_MEMBER(hsm_copy, padding);
 	CHECK_MEMBER(hsm_copy, hc_hai);
 }
 

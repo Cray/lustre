@@ -3386,7 +3386,7 @@ struct hsm_progress_kernel_v2 {
 	/* Additional fields */
 	__u64			hpk_data_version;
 	__u32			hpk_action;
-	__u32			hpk_archive_id;
+	__u32			hpk_padding1;
 	struct lu_fid		hpk_dfid;
 } __attribute__((packed));
 
