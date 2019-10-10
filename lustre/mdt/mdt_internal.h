@@ -1038,8 +1038,7 @@ void cdt_restore_handle_del(struct mdt_thread_info *mti,
 			    struct coordinator *cdt, const struct lu_fid *fid);
 int hsm_swap_layouts(struct mdt_thread_info *mti, struct mdt_object *obj,
 		     const struct lu_fid *dfid, struct md_hsm *mh_common);
-int mdt_hsm_set_exists(struct mdt_thread_info *mti, const struct lu_fid *fid,
-		       u32 archive_id);
+
 int hsm_init_ucred(struct lu_ucred *uc);
 
 /* mdt/mdt_ext_cdt.c */

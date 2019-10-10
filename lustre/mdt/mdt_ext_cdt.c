@@ -550,12 +550,6 @@ int ext_cdt_send_hsm_progress(struct mdt_thread_info *mti,
 			goto out;
 	}
 
-	if (hpk->hpk_flags & HP_FLAG_BEGIN &&
-	    hpk->hpk_action == HSMA_ARCHIVE) {
-		hsm_init_ucred(mdt_ucred(mti));
-		mdt_hsm_set_exists(mti, &hpk->hpk_fid, hpk->hpk_archive_id);
-	}
-
 	rc = netlink_send_msg(EXT_HSM_PROGRESS, hpk,
 			      sizeof(struct hsm_progress_kernel_v2));
 	if (rc)
