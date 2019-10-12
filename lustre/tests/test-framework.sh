@@ -3515,7 +3515,7 @@ facet_failover() {
 		skip=0
 		#check whether facet has been included in other affected facets
 		for ((index=0; index<$total; index++)); do
-			[[ *,$facet,* == ,${affecteds[index]}, ]] && skip=1
+			[[ ,${affecteds[index]}, == *,$facet,* ]] && skip=1
 		done
 
 		if [ $skip -eq 0 ]; then
@@ -3531,18 +3531,23 @@ facet_failover() {
 		shutdown_facet $facet
 	done
 
+	# keep all nodes online after failover to allow the active
+	# facet detection logic to work
+	for ((index=0; index<$total; index++)); do
+		echo reboot facets: ${affecteds[index]}
+		facet=$(echo ${affecteds[index]} | tr -s " " | cut -d"," -f 1)
+		reboot_facet $facet
+	done
+	for ((index=0; index<$total; index++)); do
+		wait_for_facet ${affecteds[index]}
+	done
+
 	$E2FSCK_ON_MDT0 && (run_e2fsck $(facet_active_host $SINGLEMDS) \
 		$(mdsdevname 1) "-n" || error "Running e2fsck")
 
 	for ((index=0; index<$total; index++)); do
-		facet=$(echo ${affecteds[index]} | tr -s " " | cut -d"," -f 1)
-		echo reboot facets: ${affecteds[index]}
-
-		reboot_facet $facet
-
 		change_active ${affecteds[index]}
 
-		wait_for_facet ${affecteds[index]}
 		# start mgs first if it is affected
 		if ! combined_mgs_mds &&
 			list_member ${affecteds[index]} mgs; then
@@ -3892,7 +3897,7 @@ detect_active() {
 	# active facet is ${facet}failover if device is mounted on failover
 	# on other cases active facet is $facet
 	[[ $dev = $(do_node $failover \
-			lctl get_param -n *.$svc.mntdev 2>/dev/null) ]] &&
+			lctl get_param -n *.$svc.mntdev | head -1 2>/dev/null) ]] &&
 				((combined_mgs_mds && [[ $facet == "mgs" ]]) &&
 				echo mds1failover || echo ${facet}failover) &&
 				return
@@ -7544,7 +7549,9 @@ wait_clients_import_state () {
 	local facets=$facet
 
 	if [ "$FAILURE_MODE" = HARD ]; then
-		facets=$(facets_on_host $(facet_active_host $facet))
+		facets=$(for f in ${facet//,/ }; do
+			facets_on_host $(facet_active_host $f) | tr "," "\n"
+		done | sort -u | paste -sd , )
 	fi
 
 	for facet in ${facets//,/ }; do
