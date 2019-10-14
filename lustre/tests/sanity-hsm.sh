@@ -5988,6 +5988,37 @@ test_606() {
 }
 run_test 606 "llog_reader groks changelog fields"
 
+test_607() {
+	[ $MDS1_VERSION -lt $(version_code 2.12.0.4) ] &&
+		skip "need MDS version at least 2.12.0.4"
+
+	[ "$OSTCOUNT" -lt "2" ] && skip_env "needs >= 2 OSTs" && return
+
+	mkdir -p $DIR/$tdir
+
+	local workdir=$DIR/$tdir/foodir
+	stack_trap "rm -rf $workdir" EXIT
+	$LFS mkdir -i 0 $workdir || error "lfs mkdir"
+	$LFS setstripe -i 0 $workdir
+
+	local fid=$(create_small_file $workdir/$tfile)
+
+	copytool setup
+
+	$LFS hsm_archive $workdir/$tfile
+	wait_request_state "$fid" ARCHIVE SUCCEED
+
+	$LFS migrate -i1 $workdir/$tfile ||
+		error "error while migrating an archived file"
+
+	$LFS hsm_release $workdir/$tfile ||
+		error "cannot release $workdir/$tfile"
+
+	echo -n "Verifying released state: "
+	check_hsm_flags $workdir/$tfile "0x0000000d"
+}
+run_test 607 "release migrated archived file"
+
 test_700() {
 	[[ "$COORDINATOR" != "external" ]] &&
 		skip "New Copytool interface only supported on external CDT"
