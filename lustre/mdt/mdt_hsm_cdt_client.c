@@ -178,9 +178,8 @@ bool hsm_action_is_needed(struct hsm_action_item *hai, int hal_an,
 			is_needed = true;
 		break;
 	case HSMA_CANCEL:
-		is_needed = true;
-		break;
 	case HSMA_MIGRATE:
+	case HSMA_RESYNC:
 		is_needed = true;
 		break;
 	}
@@ -222,6 +221,7 @@ static bool hal_is_sane(struct hsm_action_list *hal)
 		case HSMA_REMOVE:
 		case HSMA_CANCEL:
 		case HSMA_MIGRATE:
+		case HSMA_RESYNC:
 			break;
 		default:
 			RETURN(false);

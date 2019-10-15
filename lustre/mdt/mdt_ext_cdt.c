@@ -964,6 +964,8 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 			break;
 		case HSMA_REMOVE:
 			break;
+		case HSMA_RESYNC:
+			break;
 		case HSMA_CANCEL:
 			CERROR("%s: Failed request %#llx on "DFID
 			       " cannot be a CANCEL\n",
@@ -1009,6 +1011,9 @@ static int hsm_request_progress(struct mdt_thread_info *mti,
 			/* clear ARCHIVED EXISTS and LOST */
 			mh.mh_flags &= ~(HS_ARCHIVED | HS_EXISTS | HS_LOST);
 			is_mh_changed = true;
+			break;
+		case HSMA_RESYNC:
+			is_mh_changed = false;
 			break;
 		case HSMA_CANCEL:
 			CERROR("%s: Successful request %#llx on "DFID" cannot be a CANCEL\n",

@@ -549,6 +549,7 @@ struct llapi_resync_comp {
 /** Opaque data type abstracting the layout of a Lustre file. */
 struct llapi_layout;
 
+int llapi_mirror_resync_file(int fd, __u16 *mirror_ids, int ids_nr);
 int llapi_mirror_truncate(int fd, unsigned int id, off_t length);
 ssize_t llapi_mirror_write(int fd, unsigned int id, const void *buf,
 			   size_t count, off_t pos);

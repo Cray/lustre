@@ -4091,6 +4091,37 @@ test_114d() {
 }
 run_test 114d "HSM migrate test with -o, stripe size of 64KiB"
 
+test_115() {
+	local tf=$DIR/$tfile
+
+	# test needs a running copytool
+	copytool setup
+
+	$LFS mirror create -N -E 1M -S 1M -o0 --flags=prefer -E eof -o1 \
+			   -N -o1 $tf || error "create mirrored file $tf failed"
+
+	# write to the mirrored file and check primary
+	cp /etc/hosts $tf || error "error writing file '$tf'"
+
+	# file should have stale component
+	echo " **verify files have stale component"
+	[[ $($LFS getstripe --component-flags=stale $tf) =~ stale ]] ||
+		error "after writing $tf, it does not contain stale component"
+
+	# resync file and check prefer flag
+	$LFS mirror resync --hsm $tf || error "error resyncing file '$tf'"
+
+	wait_request_state $fid RESYNC SUCCEED
+
+	# file should not have stale component
+	echo " **verify files do not contain stale component"
+	! [[ $($LFS getstripe --component-flags=stale $tf) =~ stale ]] ||
+		error "after syncing $tf, it contains stale component"
+
+	echo "success"
+}
+run_test 115 "lfs mirror resync --hsm"
+
 test_200() {
 	local f=$DIR/$tdir/$tfile
 	local fid=$(create_empty_file "$f")

@@ -1402,7 +1402,7 @@ enum hsm_event {
 	HE_REMOVE       = 4,
 	HE_STATE        = 5,
 	HE_MIGRATE      = 6,
-	HE_SPARE2       = 7,
+	HE_RESYNC       = 7,
 };
 
 static inline enum hsm_event hsm_get_cl_event(__u16 flags)
@@ -1985,6 +1985,7 @@ enum hsm_user_action {
 	HUA_REMOVE  = 13, /* remove from archive */
 	HUA_CANCEL  = 14, /* cancel a request */
 	HUA_MIGRATE = 15, /* migrate a file between OSTs */
+	HUA_RESYNC  = 16, /* perform a mirror sync */
 };
 
 static inline const char *hsm_user_action2name(enum hsm_user_action  a)
@@ -1997,6 +1998,7 @@ static inline const char *hsm_user_action2name(enum hsm_user_action  a)
 	case HUA_REMOVE:  return "REMOVE";
 	case HUA_CANCEL:  return "CANCEL";
 	case HUA_MIGRATE: return "MIGRATE";
+	case HUA_RESYNC:  return "RESYNC";
 	default:          return "UNKNOWN";
 	}
 }
@@ -2075,6 +2077,7 @@ enum hsm_copytool_action {
 	HSMA_REMOVE  = 22,
 	HSMA_CANCEL  = 23,
 	HSMA_MIGRATE = 24,
+	HSMA_RESYNC  = 25,
 };
 
 static inline const char *hsm_copytool_action2name(enum hsm_copytool_action  a)
@@ -2086,6 +2089,7 @@ static inline const char *hsm_copytool_action2name(enum hsm_copytool_action  a)
 	case HSMA_REMOVE:  return "REMOVE";
 	case HSMA_CANCEL:  return "CANCEL";
 	case HSMA_MIGRATE: return "MIGRATE";
+	case HSMA_RESYNC:  return "RESYNC";
 	default:           return "UNKNOWN";
 	}
 }
@@ -2100,6 +2104,10 @@ static inline enum hsm_copytool_action hsm_copytool_name2action(char *name)
 		return HSMA_REMOVE;
 	else if (!strncasecmp(name, "CANCEL", strlen("CANCEL")))
 		return HSMA_CANCEL;
+	else if (!strncasecmp(name, "MIGRATE", strlen("MIGRATE")))
+		return HSMA_MIGRATE;
+	else if (!strncasecmp(name, "RESYNC", strlen("RESYNC")))
+		return HSMA_RESYNC;
 
 	return HSMA_NONE;
 }

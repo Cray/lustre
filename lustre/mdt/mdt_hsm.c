@@ -482,6 +482,9 @@ int mdt_hsm_action(struct tgt_session_info *tsi)
 	case HSMA_MIGRATE:
 		hca->hca_action = HUA_MIGRATE;
 		break;
+	case HSMA_RESYNC:
+		hca->hca_action = HUA_RESYNC;
+		break;
 	default:
 		hca->hca_action = HUA_NONE;
 		CERROR("%s: Unknown hsm action: %d on "DFID"\n",
@@ -598,6 +601,9 @@ int mdt_hsm_request(struct tgt_session_info *tsi)
 		break;
 	case HUA_MIGRATE:
 		action = HSMA_MIGRATE;
+		break;
+	case HUA_RESYNC:
+		action = HSMA_RESYNC;
 		break;
 	default:
 		CERROR("Unknown hsm action: %d\n", hr->hr_action);

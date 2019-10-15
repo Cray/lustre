@@ -120,6 +120,11 @@ enum ct_event {
 	CT_MIGRATE_FINISH	= HSMA_MIGRATE + CT_FINISH,
 	CT_MIGRATE_CANCEL	= HSMA_MIGRATE + CT_CANCEL,
 	CT_MIGRATE_ERROR	= HSMA_MIGRATE + CT_ERROR,
+	CT_MIRROR_START		= HSMA_RESYNC,
+	CT_MIRROR_RUNNING	= HSMA_RESYNC + CT_RUNNING,
+	CT_MIRROR_FINISH	= HSMA_RESYNC + CT_FINISH,
+	CT_MIRROR_CANCEL	= HSMA_RESYNC + CT_CANCEL,
+	CT_MIRROR_ERROR		= HSMA_RESYNC + CT_ERROR,
 	CT_EVENT_MAX
 };
 
@@ -1193,6 +1198,20 @@ int llapi_hsm_action_begin(struct hsm_copyaction_private **phcp,
 			goto err_out;
 		}
 		hcp->data_fd = fd;
+	} else if (hai->hai_action == HSMA_RESYNC) {
+		if (!fid_is_sane(&hai->hai_fid)) {
+			rc = -EINVAL;
+			goto err_out;
+		}
+		fd = ct_open_by_fid(hcp->ct_priv, &hai->hai_fid,
+				    O_RDWR | O_DIRECT);
+		if (fd < 0) {
+			rc = fd;
+			llapi_error(LLAPI_MSG_ERROR, rc,
+				    "ct_open_by_fid failed\n");
+			goto err_out;
+		}
+		hcp->source_fd = fd;
 	}
 
 	rc = ioctl(ct->mnt_fd, LL_IOC_HSM_COPY_START, &hcp->copy);
@@ -1402,7 +1421,8 @@ int llapi_hsm_action_get_fd(const struct hsm_copyaction_private *hcp)
 	if (hcp->magic != CP_PRIV_MAGIC)
 		return -EINVAL;
 
-	if (hai->hai_action == HSMA_ARCHIVE) {
+	if (hai->hai_action == HSMA_ARCHIVE ||
+	    hai->hai_action == HSMA_RESYNC) {
 		fd = dup(hcp->source_fd);
 		return fd < 0 ? -errno : fd;
 	} else if (hai->hai_action == HSMA_RESTORE ||

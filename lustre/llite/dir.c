@@ -904,14 +904,15 @@ int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
 	hpk.hpk_data_version = 0;
 	hpk.hpk_version = HPK_V2;
 
-	/* For archive and migrate requests, we need to check the file data
-	 * was not changed.
+	/* For archive, migrate and mirror requests, we need to check the
+	 * file data was not changed.
 	 *
 	 * For restore request, we need to send the file data version, this is
 	 * useful when the file was created using hsm_import.
 	 */
 	if ((hai->hai_action == HSMA_ARCHIVE ||
 	     hai->hai_action == HSMA_RESTORE ||
+	     hai->hai_action == HSMA_RESYNC ||
 	     hai->hai_action == HSMA_MIGRATE) &&
 	    (copy->hc_errval == 0)) {
 		struct inode *inode;

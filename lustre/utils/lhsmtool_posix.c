@@ -1521,6 +1521,55 @@ fini:
 	return rc;
 }
 
+/*
+ * Mirror sync a file
+ *
+ * \param[in] hai          hsm_action_item describing mirror operation
+ * \param[in] hal_flags    hsm action list flags for operation
+ * \retval                 0 on success
+ * \retval                 negative errno on failure
+ */
+static int ct_resync(const struct hsm_action_item *hai, const long hal_flags)
+{
+	struct hsm_copyaction_private *hcp = NULL;
+	int src_fd = -1;
+	char src_name[FID_LEN];
+	int rc;
+	int rc1;
+
+	snprintf(src_name, FID_LEN, DFID, PFID(&hai->hai_fid));
+	CT_TRACE("Mirror fid %s\n", src_name);
+
+	/* Begin mirror sync. */
+	rc = ct_begin(&hcp, hai);
+	if (rc < 0)
+		goto fini;
+
+	if (opt.o_dry_run) {
+		rc = 0;
+		goto fini;
+	}
+
+	src_fd = llapi_hsm_action_get_fd(hcp);
+	if (src_fd < 0) {
+		rc = -errno;
+		CT_ERROR(rc, "cannot open mirror file: %s", src_name);
+		goto fini;
+	}
+
+	rc = llapi_mirror_resync_file(src_fd, NULL, 0);
+
+	CT_TRACE("mirror sync done: %d", rc);
+
+fini:
+	if (src_fd != -1)
+		close(src_fd);
+
+	rc1 = ct_fini(&hcp, hai, 0, rc);
+
+	return rc ? rc : rc1;
+}
+
 /**
  * ct_copy_data_v2
  *
@@ -1971,6 +2020,9 @@ static int ct_process_item(struct hsm_action_item *hai, const long hal_flags)
 		break;
 	case HSMA_MIGRATE:
 		rc = ct_migrate(hai, hal_flags);
+		break;
+	case HSMA_RESYNC:
+		rc = ct_resync(hai, hal_flags);
 		break;
 	case HSMA_CANCEL:
 		CT_TRACE("cancel not implemented for file system '%s'",

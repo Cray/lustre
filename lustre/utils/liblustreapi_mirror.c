@@ -46,6 +46,152 @@
 #include <lustre/lustreapi.h>
 #include <linux/lustre/lustre_ioctl.h>
 
+/*
+ * Resync the mirrors of a file
+ *
+ * \param fd	file descriptor to be mirrored
+ * \param mirror_ids	List of mirror IDs to sync, or NULL for all
+ * \param ids_nr	size of @mirror_ids
+ *
+ * \retval	0 on success.
+ * \retval	-errno on failure.
+ */
+int llapi_mirror_resync_file(int fd, __u16 *mirror_ids, int ids_nr)
+{
+	struct llapi_resync_comp comp_array[1024] = { { 0 } };
+	struct llapi_layout *layout;
+	struct stat stbuf;
+	struct ll_ioc_lease *ioc = NULL;
+	uint32_t flr_state;
+	uint64_t start;
+	uint64_t end;
+	int comp_size = 0;
+	int idx;
+	int rc;
+	int rc1;
+
+	if (fstat(fd, &stbuf) < 0) {
+		rc = -errno;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "cannot stat fd %d\n", fd);
+		goto error;
+	}
+	if (!S_ISREG(stbuf.st_mode)) {
+		rc = -EINVAL;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "'%d' is not a regular file.\n", fd);
+		goto error;
+	}
+
+	layout = llapi_layout_get_by_fd(fd, 0);
+	if (layout == NULL) {
+		rc = -errno;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "'%d' llapi_layout_get_by_fd failed\n", fd);
+		goto error;
+	}
+
+	rc = llapi_layout_flags_get(layout, &flr_state);
+	if (rc) {
+		rc = -errno;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "'%d' llapi_layout_flags_get failed\n", fd);
+		goto free_layout;
+	}
+
+	flr_state &= LCM_FL_FLR_MASK;
+	if (flr_state == LCM_FL_NONE) {
+		rc = -EINVAL;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "'%d' is not a FLR file.\n", fd);
+		goto free_layout;
+	}
+
+	/* get stale component info */
+	comp_size = llapi_mirror_find_stale(layout, comp_array,
+					    ARRAY_SIZE(comp_array),
+					    mirror_ids, ids_nr);
+	if (comp_size <= 0) {
+		rc = comp_size;
+		goto free_layout;
+	}
+
+	/* set the lease on the file */
+	ioc = calloc(sizeof(*ioc) + sizeof(__u32) * 4096, 1);
+	if (ioc == NULL) {
+		rc = -errno;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "cannot alloc id array for ioc\n");
+		goto error;
+	}
+
+	ioc->lil_mode = LL_LEASE_WRLCK;
+	ioc->lil_flags = LL_LEASE_RESYNC;
+	rc = llapi_lease_set(fd, ioc);
+	if (rc < 0) {
+		if (rc == -EALREADY)
+			rc = 0;
+		else
+			llapi_error(LLAPI_MSG_ERROR, rc,
+				    "%d: llapi_lease_get_ext resync failed\n",
+				    fd);
+		goto free_layout;
+	}
+
+	/* get the read range [start, end) */
+	start = comp_array[0].lrc_start;
+	end = comp_array[0].lrc_end;
+	for (idx = 1; idx < comp_size; idx++) {
+		if (comp_array[idx].lrc_start < start)
+			start = comp_array[idx].lrc_start;
+		if (end < comp_array[idx].lrc_end)
+			end = comp_array[idx].lrc_end;
+	}
+
+	rc = llapi_lease_check(fd);
+	if (rc != LL_LEASE_WRLCK) {
+		llapi_error(LLAPI_MSG_ERROR, rc, "'%d' lost lease lock.\n",
+			    fd);
+		goto free_layout;
+	}
+
+	rc = llapi_mirror_resync_many(fd, layout, comp_array, comp_size,
+				      start, end);
+	if (rc < 0)
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "llapi_mirror_resync_many: %d.\n", fd);
+
+	/* prepare ioc for lease put */
+	ioc->lil_mode = LL_LEASE_UNLCK;
+	ioc->lil_flags = LL_LEASE_RESYNC_DONE;
+	ioc->lil_count = 0;
+	for (idx = 0; idx < comp_size; idx++) {
+		if (comp_array[idx].lrc_synced) {
+			ioc->lil_ids[ioc->lil_count] = comp_array[idx].lrc_id;
+			ioc->lil_count++;
+		}
+	}
+
+	rc1 = llapi_lease_set(fd, ioc);
+	if (rc1 <= 0) {
+		if (rc1 == 0) /* lost lease lock */
+			rc = -EBUSY;
+		else
+			rc = rc1;
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "resync file '%d' failed\n", fd);
+	}
+
+free_layout:
+	llapi_layout_free(layout);
+
+error:
+	if (ioc)
+		free(ioc);
+
+	return rc;
+}
+
 /**
  * Set the mirror id for the opening file pointed by @fd, once the mirror
  * is set successfully, the policy to choose mirrors will be disabed and the

@@ -5041,6 +5041,8 @@ void lustre_assert_wire_constants(void)
 		 (long long)HUA_CANCEL);
 	LASSERTF(HUA_MIGRATE == 15, "found %lld\n",
 		 (long long)HUA_MIGRATE);
+	LASSERTF(HUA_RESYNC == 16, "found %lld\n",
+		 (long long)HUA_RESYNC);
 	LASSERTF(HE_ARCHIVE == 0, "found %lld\n",
 		 (long long)HE_ARCHIVE);
 	LASSERTF(HE_RESTORE == 1, "found %lld\n",
@@ -5055,6 +5057,8 @@ void lustre_assert_wire_constants(void)
 		 (long long)HE_STATE);
 	LASSERTF(HE_MIGRATE == 6, "found %lld\n",
 		 (long long)HE_MIGRATE);
+	LASSERTF(HE_RESYNC == 7, "found %lld\n",
+		 (long long)HE_RESYNC);
 	LASSERTF(HSMA_NONE == 10, "found %lld\n",
 		 (long long)HSMA_NONE);
 	LASSERTF(HSMA_ARCHIVE == 20, "found %lld\n",
@@ -5067,6 +5071,8 @@ void lustre_assert_wire_constants(void)
 		 (long long)HSMA_CANCEL);
 	LASSERTF(HSMA_MIGRATE == 24, "found %lld\n",
 		 (long long)HSMA_MIGRATE);
+	LASSERTF(HSMA_RESYNC == 25, "found %lld\n",
+		 (long long)HSMA_RESYNC);
 
 	/* Checks for struct hsm_user_request */
 	LASSERTF((int)sizeof(struct hsm_user_request) == 24, "found %lld\n",

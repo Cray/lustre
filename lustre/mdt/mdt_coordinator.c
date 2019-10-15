@@ -1515,6 +1515,9 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 		case HSMA_MIGRATE:
 			hsm_set_cl_event(&clf_flags, HE_MIGRATE);
 			break;
+		case HSMA_RESYNC:
+			hsm_set_cl_event(&clf_flags, HE_RESYNC);
+			break;
 		default:
 			CERROR("%s: Failed request %#llx on "DFID
 			       " %d is an unknown action\n",
@@ -1551,6 +1554,10 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 		case HSMA_MIGRATE:
 			hsm_set_cl_event(&clf_flags, HE_MIGRATE);
 			is_mh_changed = true;
+			break;
+		case HSMA_RESYNC:
+			hsm_set_cl_event(&clf_flags, HE_RESYNC);
+			is_mh_changed = false;
 			break;
 		case HSMA_REMOVE:
 			hsm_set_cl_event(&clf_flags, HE_REMOVE);
@@ -1695,6 +1702,7 @@ static bool req_is_valid(struct hsm_action_item *hai,
 			}
 			break;
 		case HSMA_MIGRATE:
+		case HSMA_RESYNC:
 			if (fid_is_zero(&pgs->hpk_dfid)) {
 				if (lu_fid_eq(&hai->hai_fid, &pgs->hpk_fid))
 					return true;
@@ -2035,6 +2043,10 @@ bool mdt_hsm_is_action_compat(const struct hsm_action_item *hai,
 		break;
 	case HSMA_MIGRATE:
 		if (!(hsm_flags & HS_RELEASED) && !(hsm_flags & HS_NOMIGRATE))
+			is_compat = true;
+		break;
+	case HSMA_RESYNC:
+		if (!(hsm_flags & HS_RELEASED))
 			is_compat = true;
 		break;
 	}
