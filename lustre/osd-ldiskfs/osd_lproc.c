@@ -60,7 +60,7 @@ void osd_brw_stats_update(struct osd_device *osd, struct osd_iobuf *iobuf)
 
 	blocks_per_page = PAGE_SIZE >> osd_sb(osd)->s_blocksize_bits;
 
-        lprocfs_oh_tally_log2(&s->hist[BRW_R_PAGES+rw], nr_pages);
+        lprocfs_oh_tally_log2_pcpu(&s->hist[BRW_R_PAGES+rw], nr_pages);
 
         while (nr_pages-- > 0) {
                 if (last_page && (*pages)->index != (last_page->index + 1))
@@ -74,12 +74,12 @@ void osd_brw_stats_update(struct osd_device *osd, struct osd_iobuf *iobuf)
                 }
         }
 
-        lprocfs_oh_tally(&s->hist[BRW_R_DISCONT_PAGES+rw], discont_pages);
-        lprocfs_oh_tally(&s->hist[BRW_R_DISCONT_BLOCKS+rw], discont_blocks);
+        lprocfs_oh_tally_pcpu(&s->hist[BRW_R_DISCONT_PAGES+rw], discont_pages);
+        lprocfs_oh_tally_pcpu(&s->hist[BRW_R_DISCONT_BLOCKS+rw], discont_blocks);
 }
 
 static void display_brw_stats(struct seq_file *seq, char *name, char *units,
-        struct obd_histogram *read, struct obd_histogram *write, int scale)
+        struct obd_hist_pcpu **read, struct obd_hist_pcpu **write, int scale)
 {
         unsigned long read_tot, write_tot, r, w, read_cum = 0, write_cum = 0;
         int i;
@@ -88,11 +88,11 @@ static void display_brw_stats(struct seq_file *seq, char *name, char *units,
         seq_printf(seq, "%-22s %-5s %% cum %% |  %-11s %% cum %%\n",
                    name, units, units);
 
-        read_tot = lprocfs_oh_sum(read);
-        write_tot = lprocfs_oh_sum(write);
+        read_tot = lprocfs_oh_sum_pcpu(read);
+        write_tot = lprocfs_oh_sum_pcpu(write);
         for (i = 0; i < OBD_HIST_MAX; i++) {
-                r = read->oh_buckets[i];
-                w = write->oh_buckets[i];
+                r = lprocfs_oh_counter_pcpu(read, i);
+                w = lprocfs_oh_counter_pcpu(write, i);
                 read_cum += r;
                 write_cum += w;
                 if (read_cum == 0 && write_cum == 0)
@@ -174,7 +174,7 @@ static ssize_t osd_brw_stats_seq_write(struct file *file,
         int i;
 
         for (i = 0; i < BRW_LAST; i++)
-                lprocfs_oh_clear(&osd->od_brw_stats.hist[i]);
+                lprocfs_oh_clear_pcpu(&osd->od_brw_stats.hist[i]);
 
         return len;
 }
@@ -187,7 +187,7 @@ static int osd_stats_init(struct osd_device *osd)
         ENTRY;
 
         for (i = 0; i < BRW_LAST; i++)
-		spin_lock_init(&osd->od_brw_stats.hist[i].oh_lock);
+		lprocfs_oh_clear_pcpu(&osd->od_brw_stats.hist[i]);
 
         osd->od_stats = lprocfs_alloc_stats(LPROC_OSD_LAST, 0);
         if (osd->od_stats != NULL) {
@@ -805,6 +805,11 @@ out:
 
 int osd_procfs_fini(struct osd_device *osd)
 {
+	int i;
+
+	for (i = 0; i < BRW_LAST; i++)
+		lprocfs_oh_release_pcpu(&osd->od_brw_stats.hist[i]);
+
 	if (osd->od_stats)
 		lprocfs_free_stats(&osd->od_stats);
 

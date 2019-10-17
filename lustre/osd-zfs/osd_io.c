@@ -72,43 +72,48 @@ static void dbuf_set_pending_evict(dmu_buf_t *db)
 
 static void record_start_io(struct osd_device *osd, int rw, int discont_pages)
 {
-	struct obd_histogram *h = osd->od_brw_stats.hist;
+	struct brw_stats *h = &osd->od_brw_stats;
 
 	if (rw == READ) {
 		atomic_inc(&osd->od_r_in_flight);
-		lprocfs_oh_tally(&h[BRW_R_RPC_HIST],
-				 atomic_read(&osd->od_r_in_flight));
-		lprocfs_oh_tally(&h[BRW_R_DISCONT_PAGES], discont_pages);
+		lprocfs_oh_tally_pcpu(&h->hist[BRW_R_RPC_HIST],
+				      atomic_read(&osd->od_r_in_flight));
+		lprocfs_oh_tally_pcpu(&h->hist[BRW_R_DISCONT_PAGES],
+				      discont_pages);
 
 	} else {
 		atomic_inc(&osd->od_w_in_flight);
-		lprocfs_oh_tally(&h[BRW_W_RPC_HIST],
-				 atomic_read(&osd->od_w_in_flight));
-		lprocfs_oh_tally(&h[BRW_W_DISCONT_PAGES], discont_pages);
-
+		lprocfs_oh_tally_pcpu(&h->hist[BRW_W_RPC_HIST],
+				      atomic_read(&osd->od_w_in_flight));
+		lprocfs_oh_tally_pcpu(&h->hist[BRW_W_DISCONT_PAGES],
+				      discont_pages);
 	}
 }
 
 static void record_end_io(struct osd_device *osd, int rw,
 			  unsigned long elapsed, int disksize, int npages)
 {
-	struct obd_histogram *h = osd->od_brw_stats.hist;
+	struct brw_stats *h = &osd->od_brw_stats;
 
 	if (rw == READ) {
 		atomic_dec(&osd->od_r_in_flight);
-		lprocfs_oh_tally_log2(&h[BRW_R_PAGES], npages);
+		lprocfs_oh_tally_log2_pcpu(&h->hist[BRW_R_PAGES], npages);
 		if (disksize > 0)
-			lprocfs_oh_tally_log2(&h[BRW_R_DISK_IOSIZE], disksize);
+			lprocfs_oh_tally_log2_pcpu(&h->hist[BRW_R_DISK_IOSIZE],
+						   disksize);
 		if (elapsed)
-			lprocfs_oh_tally_log2(&h[BRW_R_IO_TIME], elapsed);
+			lprocfs_oh_tally_log2_pcpu(&h->hist[BRW_R_IO_TIME],
+						   elapsed);
 
 	} else {
 		atomic_dec(&osd->od_w_in_flight);
-		lprocfs_oh_tally_log2(&h[BRW_W_PAGES], npages);
+		lprocfs_oh_tally_log2_pcpu(&h->hist[BRW_W_PAGES], npages);
 		if (disksize > 0)
-			lprocfs_oh_tally_log2(&h[BRW_W_DISK_IOSIZE], disksize);
+			lprocfs_oh_tally_log2_pcpu(&h->hist[BRW_W_DISK_IOSIZE],
+						   disksize);
 		if (elapsed)
-			lprocfs_oh_tally_log2(&h[BRW_W_IO_TIME], elapsed);
+			lprocfs_oh_tally_log2_pcpu(&h->hist[BRW_W_IO_TIME],
+						   elapsed);
 	}
 }
 

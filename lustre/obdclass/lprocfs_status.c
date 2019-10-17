@@ -2203,6 +2203,102 @@ void lprocfs_oh_clear(struct obd_histogram *oh)
 }
 EXPORT_SYMBOL(lprocfs_oh_clear);
 
+void lprocfs_oh_tally_pcpu(struct obd_hist_pcpu **oh,
+			   unsigned int value)
+{
+	struct obd_hist_pcpu *ohd;
+
+	if (value >= OBD_HIST_MAX)
+		value = OBD_HIST_MAX - 1;
+
+	rcu_read_lock();
+	ohd = rcu_dereference(*oh);
+	ohd->oh_buckets[smp_processor_id()][value]++;
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL(lprocfs_oh_tally_pcpu);
+
+void lprocfs_oh_tally_log2_pcpu(struct obd_hist_pcpu **oh,
+				unsigned int value)
+{
+	unsigned int val = 0;
+
+	if (likely(value != 0))
+		val = min(fls(value - 1), OBD_HIST_MAX);
+
+	lprocfs_oh_tally_pcpu(oh, val);
+}
+EXPORT_SYMBOL(lprocfs_oh_tally_log2_pcpu);
+
+unsigned long lprocfs_oh_counter_pcpu(struct obd_hist_pcpu **oh,
+				      unsigned int value)
+{
+	struct obd_hist_pcpu *ohd;
+	unsigned long ret = 0;
+	int i;
+
+	rcu_read_lock();
+	ohd = rcu_dereference(*oh);
+	for_each_possible_cpu(i)
+		ret +=  ohd->oh_buckets[i][value];
+	rcu_read_unlock();
+
+	return ret;
+}
+EXPORT_SYMBOL(lprocfs_oh_counter_pcpu);
+
+unsigned long lprocfs_oh_sum_pcpu(struct obd_hist_pcpu **oh)
+{
+	struct obd_hist_pcpu *ohd;
+	unsigned long ret = 0;
+	int i, j;
+
+	rcu_read_lock();
+	ohd = rcu_dereference(*oh);
+	for_each_possible_cpu(j)
+		for (i = 0; i < OBD_HIST_MAX; i++)
+			ret += ohd->oh_buckets[j][i];
+	rcu_read_unlock();
+
+	return ret;
+}
+EXPORT_SYMBOL(lprocfs_oh_sum_pcpu);
+
+static inline int obd_hist_pcpu_size(void)
+{
+	return sizeof(unsigned long[num_possible_cpus()][OBD_HIST_MAX]);
+}
+
+void lprocfs_oh_clear_pcpu(struct obd_hist_pcpu **oh)
+{
+	static DEFINE_SPINLOCK(clear_lock);
+	struct obd_hist_pcpu *oh_old, *oh_new;
+
+	OBD_ALLOC_LARGE(oh_new, obd_hist_pcpu_size());
+	if (!oh_new)
+		return;
+
+	spin_lock(&clear_lock);
+	oh_old = rcu_dereference(*oh);
+	rcu_assign_pointer(*oh, oh_new);
+	spin_unlock(&clear_lock);
+
+	if (!oh_old)
+		return;
+
+	/* not a perf critical part, so let's do it sync for simplicity */
+	synchronize_rcu();
+	OBD_FREE_LARGE(oh_old, obd_hist_pcpu_size());
+}
+EXPORT_SYMBOL(lprocfs_oh_clear_pcpu);
+
+void lprocfs_oh_release_pcpu(struct obd_hist_pcpu **oh)
+{
+	OBD_FREE_LARGE(*oh, obd_hist_pcpu_size());
+	*oh = NULL;
+}
+EXPORT_SYMBOL(lprocfs_oh_release_pcpu);
+
 ssize_t lustre_attr_show(struct kobject *kobj,
 			 struct attribute *attr, char *buf)
 {

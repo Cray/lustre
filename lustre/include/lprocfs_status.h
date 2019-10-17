@@ -89,6 +89,15 @@ struct obd_histogram {
 	unsigned long	oh_buckets[OBD_HIST_MAX];
 };
 
+struct obd_hist_pcpu {
+	/*
+	 * cpus go first so as to reduce cache line contention
+	 * for typical access with several threads updating
+	 * the same counter from different cpus
+	 */
+	unsigned long	oh_buckets[0][OBD_HIST_MAX];
+};
+
 enum {
         BRW_R_PAGES = 0,
         BRW_W_PAGES,
@@ -108,7 +117,7 @@ enum {
 };
 
 struct brw_stats {
-        struct obd_histogram hist[BRW_LAST];
+        struct obd_hist_pcpu *hist[BRW_LAST];
 };
 
 enum {
@@ -623,6 +632,14 @@ void lprocfs_oh_tally(struct obd_histogram *oh, unsigned int value);
 void lprocfs_oh_tally_log2(struct obd_histogram *oh, unsigned int value);
 void lprocfs_oh_clear(struct obd_histogram *oh);
 unsigned long lprocfs_oh_sum(struct obd_histogram *oh);
+
+void lprocfs_oh_tally_pcpu(struct obd_hist_pcpu **oh, unsigned int value);
+void lprocfs_oh_tally_log2_pcpu(struct obd_hist_pcpu **oh, unsigned int value);
+void lprocfs_oh_clear_pcpu(struct obd_hist_pcpu **oh);
+void lprocfs_oh_release_pcpu(struct obd_hist_pcpu **oh);
+unsigned long lprocfs_oh_sum_pcpu(struct obd_hist_pcpu **oh);
+unsigned long lprocfs_oh_counter_pcpu(struct obd_hist_pcpu **oh,
+				      unsigned int value);
 
 void lprocfs_stats_collect(struct lprocfs_stats *stats, int idx,
                            struct lprocfs_counter *cnt);
