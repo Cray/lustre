@@ -1528,11 +1528,7 @@ lnet_peer_ni_traffic_add(lnet_nid_t nid, lnet_nid_t pref)
 	struct lnet_peer *lp;
 	struct lnet_peer_net *lpn;
 	struct lnet_peer_ni *lpni;
-	/*
-	 * Assume peer is Multi-Rail capable and let discovery find out
-	 * otherwise.
-	 */
-	unsigned flags = LNET_PEER_MULTI_RAIL;
+	unsigned flags = 0;
 	int rc = 0;
 
 	if (nid == LNET_NID_ANY) {
@@ -2310,20 +2306,6 @@ lnet_discovery_event_reply(struct lnet_peer *lp, struct lnet_event *ev)
 		goto out;
 	}
 
-
-	/*
-	 * Only enable the multi-rail feature on the peer if both sides of
-	 * the connection have discovery on
-	 */
-	if (pbuf->pb_info.pi_features & LNET_PING_FEAT_MULTI_RAIL) {
-		CDEBUG(D_NET, "Peer %s has Multi-Rail feature enabled\n",
-		       libcfs_nid2str(lp->lp_primary_nid));
-		lp->lp_state |= LNET_PEER_MULTI_RAIL;
-	} else {
-		CDEBUG(D_NET, "Peer %s has Multi-Rail feature disabled\n",
-		       libcfs_nid2str(lp->lp_primary_nid));
-		lp->lp_state &= ~LNET_PEER_MULTI_RAIL;
-	}
 
 	/*
 	 * The peer may have discovery disabled at its end. Set
