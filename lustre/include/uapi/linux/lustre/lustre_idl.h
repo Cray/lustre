@@ -3555,6 +3555,21 @@ struct mdc_swap_layouts {
 	__u64           msl_flags;
 } __attribute__((packed));
 
+/** optional parameters.
+ * Are not processed/send on old servers/clients
+ */
+struct mdc_layouts_ext {
+	__u64		msl_old_dvs; /* is the original layout version */
+	__u64		msl_new_dvs; /* is the most current layout version */
+	__u64		msl_reserved[8]; /* can be used for extention */
+};
+
+/* To carry two structures to the mdc_ioc_swap_layouts */
+struct mdc_swap_layout_ext {
+	struct mdc_swap_layouts msl;
+	struct mdc_layouts_ext mlv;
+};
+
 #define INLINE_RESYNC_ARRAY_SIZE	15
 struct close_data_resync_done {
 	__u32	resync_count;

@@ -2574,12 +2574,12 @@ struct ll_swap_stack {
 static int ll_swap_layouts(struct file *file1, struct file *file2,
 			   struct lustre_swap_layouts *lsl)
 {
-	struct mdc_swap_layouts	 msl;
-	struct md_op_data	*op_data;
-	__u32			 gid;
-	__u64			 dv;
-	struct ll_swap_stack	*llss = NULL;
-	int			 rc;
+	struct mdc_swap_layout_ext	msle;
+	struct md_op_data		*op_data;
+	__u32			 	gid;
+	__u64			 	dv;
+	struct ll_swap_stack		*llss = NULL;
+	int			 	rc;
 
 	OBD_ALLOC_PTR(llss);
 	if (llss == NULL)
@@ -2649,11 +2649,16 @@ static int ll_swap_layouts(struct file *file1, struct file *file2,
 	 * only flags is missing, so we use struct mdc_swap_layouts
 	 * through the md_op_data->op_data */
 	/* flags from user space have to be converted before they are send to
-	 * server, no flag is sent today, they are only used on the client */
-	msl.msl_flags = 0;
+	 * server. OBD_MD_LAYOUT_VERSION is set and sent to server to show
+	 * that client filled new and old object versions. */
+	msle.msl.msl_flags = OBD_MD_LAYOUT_VERSION;
+
+	msle.mlv.msl_old_dvs = lsl->sl_dv1;
+	msle.mlv.msl_new_dvs = lsl->sl_dv2;
+
 	rc = -ENOMEM;
 	op_data = ll_prep_md_op_data(NULL, llss->inode1, llss->inode2, NULL, 0,
-				     0, LUSTRE_OPC_ANY, &msl);
+				     0, LUSTRE_OPC_ANY, &msle);
 	if (IS_ERR(op_data))
 		GOTO(free, rc = PTR_ERR(op_data));
 

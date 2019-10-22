@@ -1515,7 +1515,8 @@ static int mdt_swap_layouts(struct tgt_session_info *tsi)
 	struct mdt_object	*o1, *o2, *o;
 	struct mdt_lock_handle	*lh1, *lh2;
 	struct mdc_swap_layouts *msl;
-	int			 rc;
+        int                      rc;
+
 	ENTRY;
 
 	/* client does not support layout lock, so layout swaping
@@ -1588,6 +1589,48 @@ static int mdt_swap_layouts(struct tgt_session_info *tsi)
 		GOTO(unlock2, rc);
 
 	mdt_swap_lov_flag(o1, o2);
+
+	/* LU-5896 Update data version if layout is changed */
+	if (msl->msl_flags & OBD_MD_LAYOUT_VERSION) {
+		struct			md_attr *ma;
+		__u64			old_arch_ver;
+		struct mdt_body		*reqbody;
+		struct mdc_layouts_ext *mlv;
+
+		req_capsule_extend(tsi->tsi_pill, &RQF_MDS_SWAP_LAYOUTS_EXT);
+		mlv = req_capsule_client_get(info->mti_pill, &RMF_LAYOUTS_EXT);
+		if (mlv == NULL)
+			GOTO(put, rc = -EPROTO);
+
+		ma = &info->mti_attr;
+		ma->ma_need = MA_HSM;
+
+		rc = mdt_attr_get_complex(info, o1, ma);
+		if (rc != 0)
+			GOTO(unlock2, rc);
+
+		old_arch_ver = ma->ma_hsm.mh_arch_ver;
+
+		rc = mdt_attr_get_complex(info, o2, ma);
+		if (rc != 0)
+			GOTO(unlock2, rc);
+
+		if (mlv->msl_old_dvs == old_arch_ver) {
+			ma->ma_hsm.mh_arch_ver = mlv->msl_new_dvs;
+			reqbody = req_capsule_client_get(info->mti_pill,
+							 &RMF_MDT_BODY);
+			if (reqbody == NULL)
+				GOTO(unlock2, -EFAULT);
+
+			rc = mdt_init_ucred(info, reqbody);
+			if (rc == 0) {
+				rc = mdt_hsm_attr_set(info, o1, &ma->ma_hsm);
+				mdt_exit_ucred(info);
+				if (rc != 0)
+					GOTO(unlock2, rc);
+			}
+		}
+	}
 
 unlock2:
 	mdt_object_unlock(info, o2, lh2, rc);
