@@ -881,14 +881,14 @@ static int migrate_copy_timestamps(int fd, int fdv)
 
 static int migrate_block(int fd, int fdv)
 {
-	__u64	dv1;
+	__u64	dv1, dv2;
 	int	gid;
 	int	rc;
 	int	rc2;
 
 	rc = llapi_get_data_version(fd, &dv1, LL_DV_RD_FLUSH);
 	if (rc < 0) {
-		error_loc = "cannot get dataversion";
+		error_loc = "cannot get source dataversion";
 		return rc;
 	}
 
@@ -918,13 +918,20 @@ static int migrate_block(int fd, int fdv)
 		goto out_unlock;
 	}
 
+	rc = llapi_get_data_version(fdv, &dv2, LL_DV_RD_FLUSH);
+	if (rc < 0) {
+		error_loc = "cannot get target dataversion";
+		goto out_unlock;
+	}
+
 	/* swap layouts
 	 * for a migration we need to check data version on file did
 	 * not change.
 	 *
 	 * Pass in gid=0 since we already own grouplock. */
-	rc = llapi_fswap_layouts_grouplock(fd, fdv, dv1, 0, 0,
-					   SWAP_LAYOUTS_CHECK_DV1);
+	rc = llapi_fswap_layouts_grouplock(fd, fdv, dv1, dv2, 0,
+					   SWAP_LAYOUTS_CHECK_DV1 |
+					   SWAP_LAYOUTS_CHECK_DV2);
 	if (rc == -EAGAIN) {
 		error_loc = "file changed";
 		goto out_unlock;
