@@ -121,6 +121,7 @@ void lustre_swab_out_update_buffer(struct out_update_buffer *oub);
 void lustre_swab_object_update_result(struct object_update_result *our);
 void lustre_swab_object_update_reply(struct object_update_reply *our);
 void lustre_swab_swap_layouts(struct mdc_swap_layouts *msl);
+void lustre_swab_layouts_ext(struct mdc_layouts_ext *mlv);
 void lustre_swab_close_data(struct close_data *data);
 void lustre_swab_close_data_resync_done(struct close_data_resync_done *resync);
 void lustre_swab_lmv_user_md(struct lmv_user_md *lum);
