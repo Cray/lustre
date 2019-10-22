@@ -337,6 +337,16 @@ static const struct req_msg_field *mdt_swap_layouts[] = {
 	&RMF_DLM_REQ
 };
 
+static const struct req_msg_field *mdt_swap_layouts_ext[] = {
+	&RMF_PTLRPC_BODY,
+	&RMF_MDT_BODY,
+	&RMF_SWAP_LAYOUTS,
+	&RMF_CAPA1,
+	&RMF_CAPA2,
+	&RMF_DLM_REQ,
+	&RMF_LAYOUTS_EXT
+};
+
 static const struct req_msg_field *mds_rmfid_client[] = {
 	&RMF_PTLRPC_BODY,
 	&RMF_MDT_BODY,
@@ -798,6 +808,7 @@ static struct req_format *req_formats[] = {
 	&RQF_MDS_HSM_ACTION,
 	&RQF_MDS_HSM_REQUEST,
 	&RQF_MDS_SWAP_LAYOUTS,
+	&RQF_MDS_SWAP_LAYOUTS_EXT,
 	&RQF_MDS_RMFID,
 	&RQF_OUT_UPDATE,
 	&RQF_OST_CONNECT,
@@ -1257,6 +1268,13 @@ struct req_msg_field RMF_SWAP_LAYOUTS =
 		    lustre_swab_swap_layouts, NULL);
 EXPORT_SYMBOL(RMF_SWAP_LAYOUTS);
 
+struct req_msg_field RMF_LAYOUTS_EXT =
+	DEFINE_MSGF("swap_layouts_ext", 0,
+		    sizeof(struct  mdc_layouts_ext),
+		    lustre_swab_layouts_ext, NULL);
+EXPORT_SYMBOL(RMF_LAYOUTS_EXT);
+
+
 struct req_msg_field RMF_LFSCK_REQUEST =
 	DEFINE_MSGF("lfsck_request", 0, sizeof(struct lfsck_request),
 		    lustre_swab_lfsck_request, NULL);
@@ -1635,6 +1653,12 @@ struct req_format RQF_MDS_SWAP_LAYOUTS =
 	DEFINE_REQ_FMT0("MDS_SWAP_LAYOUTS",
 			mdt_swap_layouts, empty);
 EXPORT_SYMBOL(RQF_MDS_SWAP_LAYOUTS);
+
+struct req_format RQF_MDS_SWAP_LAYOUTS_EXT =
+	DEFINE_REQ_FMT0("MDS_SWAP_LAYOUTS_EXT",
+			mdt_swap_layouts_ext, empty);
+EXPORT_SYMBOL(RQF_MDS_SWAP_LAYOUTS_EXT);
+
 
 struct req_format RQF_MDS_RMFID =
 	DEFINE_REQ_FMT0("MDS_RMFID", mds_rmfid_client,
