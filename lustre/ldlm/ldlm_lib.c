@@ -1761,7 +1761,8 @@ static void extend_recovery_timer(struct obd_device *obd, time_t drt,
 	time_t to;
 
 	spin_lock(&obd->obd_dev_lock);
-	if (!obd->obd_recovering || obd->obd_abort_recovery) {
+	if (!obd->obd_recovering || obd->obd_abort_recovery ||
+	    obd->obd_stopping) {
 		spin_unlock(&obd->obd_dev_lock);
 		return;
 	}
@@ -2231,7 +2232,8 @@ static int check_for_recovery_ready(struct lu_target *lut)
 
 	if (lut->lut_tdtd != NULL) {
 		if (!lut->lut_tdtd->tdtd_replay_ready &&
-		    !obd->obd_abort_recovery) {
+		    !obd->obd_abort_recovery &&
+		    !obd->obd_stopping) {
 			/* Let's extend recovery timer, in case the recovery
 			 * timer expired, and some clients got evicted */
 			extend_recovery_timer(obd, obd->obd_recovery_timeout,
