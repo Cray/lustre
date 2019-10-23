@@ -1194,6 +1194,10 @@ int target_handle_connect(struct ptlrpc_request *req)
                 rc = -EALREADY;
                 class_export_put(export);
                 export = NULL;
+	} else if (OBD_FAIL_PRECHECK(OBD_FAIL_TGT_RECOVERY_CONNECT) &&
+		   !lw_client) {
+		spin_unlock(&export->exp_lock);
+		rc = -EAGAIN;
         } else {
 		export->exp_connecting = 1;
 		spin_unlock(&export->exp_lock);
