@@ -83,6 +83,12 @@ test_1() {
 		fi
 	done
 
+	local save="$TMP/$TESTSUITE-$TESTNAME.parameters"
+	local facets=$(get_facets OST)
+
+	save_lustre_params $facets "lbug_on_eviction" > $save
+	do_nodes $(comma_list $(osts_nodes)) $LCTL set_param lbug_on_eviction=1
+
 	local rpids=""
 	for rdir in $RDIRS; do
 		do_nodes $clients "DURATION=$DURATION \
@@ -122,6 +128,8 @@ test_1() {
 		    rrc=$((rrc + 1))
 		fi
 	done
+
+	restore_lustre_params < $save
 
 	if $RACER_ENABLE_SNAPSHOT; then
 		killall -q lss_create.sh

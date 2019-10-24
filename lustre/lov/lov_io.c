@@ -1221,6 +1221,10 @@ static int lov_io_commit_async(const struct lu_env *env,
 			break;
 
 		from = 0;
+
+		if (lov_comp_entry(index) !=
+		    lov_comp_entry(lov_page_index(page)))
+			cl_io_release_extent(sub->sub_env, &sub->sub_io);
 	}
 
 	/* for error case, add the page back into the qin list */
