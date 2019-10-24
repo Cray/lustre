@@ -1599,6 +1599,11 @@ struct cl_io_operations {
 			struct cl_page_list *queue, int from, int to,
 			cl_commit_cbt cb);
 	/**
+	 * Release active extent.
+	 */
+	void  (*cio_release_extent)(const struct lu_env *env,
+				    const struct cl_io_slice *slice);
+	/**
 	 * Decide maximum read ahead extent
 	 *
 	 * \pre io->ci_type == CIT_READ
@@ -2351,6 +2356,7 @@ int   cl_io_submit_sync  (const struct lu_env *env, struct cl_io *io,
 int   cl_io_commit_async (const struct lu_env *env, struct cl_io *io,
 			  struct cl_page_list *queue, int from, int to,
 			  cl_commit_cbt cb);
+void  cl_io_release_extent (const struct lu_env *env, struct cl_io *io);
 int   cl_io_read_ahead   (const struct lu_env *env, struct cl_io *io,
 			  pgoff_t start, struct cl_read_ahead *ra);
 void  cl_io_rw_advance   (const struct lu_env *env, struct cl_io *io,
