@@ -4038,6 +4038,7 @@ static int mdt_intent_opc(enum ldlm_intent_flags it_opc,
 		it_handler = &mdt_intent_open;
 		break;
 	case IT_GETATTR:
+		/* fallthrough */
 	case IT_LOOKUP:
 		it_format = &RQF_LDLM_INTENT_GETATTR;
 		it_handler = &mdt_intent_getattr;
