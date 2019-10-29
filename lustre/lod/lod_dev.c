@@ -802,7 +802,7 @@ static char *lod_show_update_logs_retrievers(void *data, int *size, int *count)
 		rc = lodname2mdt_index(lod2obd(lod)->obd_name, &i);
 		LASSERTF(rc == 0, "Fail to parse target index: rc = %d\n", rc);
 
-		rc = snprintf(buf + len, *size - len, " %04x", i);
+		rc = scnprintf(buf + len, *size - len, " %04x", i);
 		LASSERT(rc > 0);
 
 		len += rc;
@@ -812,7 +812,7 @@ static char *lod_show_update_logs_retrievers(void *data, int *size, int *count)
 	cfs_foreach_bit(ltd->ltd_tgt_bitmap, i) {
 		tgt = LTD_TGT(ltd, i);
 		if (!tgt->ltd_got_update_log) {
-			rc = snprintf(buf + len, *size - len, " %04x", i);
+			rc = scnprintf(buf + len, *size - len, " %04x", i);
 			if (unlikely(rc <= 0))
 				break;
 
