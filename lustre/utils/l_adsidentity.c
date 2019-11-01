@@ -418,8 +418,8 @@ int get_params(FILE *fp, char params[][STRING_MAX_SIZE])
                 for (i = 0; i < CONF_MAX; i++) {
                         if (reqd_params[i].isvisited == FALSE &&
                             !strcmp(reqd_params[i].desc, desc)) {
-                                strncpy(params[i], value,
-                                        STRING_MAX_SIZE - 1);
+				snprintf(params[i], sizeof(params[i]), "%s",
+					value);
                                 num_params++;
                                 reqd_params[i].isvisited = TRUE;
                                 break;
