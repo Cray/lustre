@@ -61,11 +61,15 @@ fi
 [[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.10.55) ]] &&
 	RACER_ENABLE_FLR=false
 
+[[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.12.0) ]] &&
+	RACER_ENABLE_SEL=false
+
 RACER_ENABLE_MIGRATION=${RACER_ENABLE_MIGRATION:-false}
 RACER_ENABLE_SNAPSHOT=${RACER_ENABLE_SNAPSHOT:-true}
 RACER_ENABLE_PFL=${RACER_ENABLE_PFL:-true}
 RACER_ENABLE_DOM=${RACER_ENABLE_DOM:-true}
 RACER_ENABLE_FLR=${RACER_ENABLE_FLR:-true}
+RACER_ENABLE_SEL=${RACER_ENABLE_SEL:-true}
 
 check_progs_installed $CLIENTS $racer ||
 	{ skip_env "$racer not found" && exit 0; }
@@ -126,6 +130,7 @@ test_1() {
 			RACER_ENABLE_PFL=$RACER_ENABLE_PFL \
 			RACER_ENABLE_DOM=$RACER_ENABLE_DOM \
 			RACER_ENABLE_FLR=$RACER_ENABLE_FLR \
+			RACER_ENABLE_SEL=$RACER_ENABLE_SEL \
 			LFS=$LFS \
 			LCTL=$LCTL \
 			$racer $rdir $NUM_RACER_THREADS" &
