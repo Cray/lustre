@@ -815,6 +815,9 @@ test_21e() { # LU-5863
 
 	local fsname=test1234
 
+	do_facet $fs2mgs which $MKFS >& /dev/null ||
+		skip "mkfs.lustre not available."
+
 	add $fs2mgs $(mkfs_opts mgs $fs2mgsdev) --fsname=$fsname \
 		--reformat $fs2mgsdev $fs2mgsvdev || error "add fs2mgs failed"
 	start $fs2mgs $fs2mgsdev $MGS_MOUNT_OPTS && trap cleanup_21e EXIT INT ||
@@ -5576,6 +5579,9 @@ test_77() { # LU-3445
 	local failnid="$(h2nettype 1.2.3.4),$(h2nettype 4.3.2.1)"
 
 	combined_mgs_mds || stop_mgs || error "stopping MGS service failed"
+
+	do_facet fs2ost which $MKFS >& /dev/null ||
+		skip "mkfs.lustre not available."
 
 	add fs2mds $(mkfs_opts mds1 $fs2mdsdev) --mgs --fsname=$fsname \
 		--reformat $fs2mdsdev $fs2mdsvdev || error "add fs2mds failed"
