@@ -136,7 +136,7 @@ kgnilnd_quiesce_wait(char *reason)
 			set_current_state(TASK_UNINTERRUPTIBLE);
 			schedule_timeout(cfs_time_seconds(1 * i));
 
-			LASSERTF(quiesce_deadline > jiffies,
+			LASSERTF(time_after(quiesce_deadline, jiffies),
 				 "couldn't quiesce threads in %lu seconds, falling over now\n",
 				 cfs_duration_sec(quiesce_to));
 		}
