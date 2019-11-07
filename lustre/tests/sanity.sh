@@ -72,7 +72,7 @@ get_lustre_env
 init_logging
 
 #                                  5          12          (min)"
-[ "$SLOW" = "no" ] && EXCEPT_SLOW="27m 64b 68 71 115 300o"
+[ "$SLOW" = "no" ] && EXCEPT_SLOW="27m 64b 68 71 115 135 300o"
 
 if [ "$mds1_FSTYPE" = "zfs" ]; then
 	# bug number for skipped test: LU-1957
@@ -11681,6 +11681,35 @@ test_134b() {
 	unlinkmany $DIR/$tdir/f $nr
 }
 run_test 134b "Server rejects lock request when reaching lock_limit_mb"
+
+test_135() {
+	remote_mds_nodsh && skip "remote MDS with nodsh"
+	[[ $MDS1_VERSION -lt $(version_code 2.12.0) ]] &&
+		skip "Need MDS version at least 2.12.0"
+	local fname
+
+	mkdir -p $DIR/$tdir || error "failed to create $DIR/$tdir"
+
+	#set only one record at plain llog
+	do_facet $SINGLEMDS $LCTL set_param fail_loc=0x1319 fail_val=1
+
+	#fill already existed 2 plain llogs each 64767
+	#wrapping whole catalog
+	createmany -o -u $DIR/$tdir/$tfile- $((64767 * 1))
+
+	createmany -o $DIR/$tdir/$tfile_ 64700
+	for (( i = 0; i < 64700; i = i + 2 ))
+	do
+		rm $DIR/$tdir/$tfile_$i &
+		rm $DIR/$tdir/$tfile_$((i + 1)) &
+		local pid=$!
+		wait $pid
+	done
+
+	#waiting osp synchronization
+	sleep $TIMEOUT
+}
+run_test 135 "Race catalog processing"
 
 test_140() { #bug-17379
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
