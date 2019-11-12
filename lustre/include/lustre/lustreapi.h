@@ -1054,6 +1054,8 @@ ssize_t llapi_mirror_read(int fd, unsigned int id,
 ssize_t llapi_mirror_copy_many(int fd, __u16 src, __u16 *dst, size_t count);
 int llapi_mirror_copy(int fd, unsigned int src, unsigned int dst,
 		       off_t pos, size_t count);
+int llapi_layout_sanity(struct llapi_layout *layout, bool incomplete, bool flr);
+void llapi_layout_sanity_perror(int error);
 
 /**
  * External HSM coordinator functions

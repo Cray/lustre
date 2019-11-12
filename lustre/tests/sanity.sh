@@ -2238,6 +2238,8 @@ test_27D() {
 	[ $MDS1_VERSION -lt $(version_code 2.9.55) -o \
 	  $CLIENT_VERSION -lt $(version_code 2.9.55) ] &&
 		skip27D+=" -s 30,31"
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code $SEL_VER) ] &&
+		skip27D+="-s 32"
 	llapi_layout_test -d$DIR/$tdir -p$POOL -o$OSTCOUNT $skip27D ||
 		error "llapi_layout_test failed"
 
