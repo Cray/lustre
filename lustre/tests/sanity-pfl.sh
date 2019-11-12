@@ -89,6 +89,11 @@ test_1() {
 }
 run_test 1 "Create full components file, reused OSTs"
 
+check_component_count() {
+	local comp_cnt=$($LFS getstripe --component-count $1)
+	[ $comp_cnt -ne $2 ] && error "$1, component count $comp_cnt != $2"
+}
+
 test_2() {
 	local comp_file=$DIR/$tdir/$tfile
 	local rw_len=$((5 * 1024 * 1024))	# 5M
@@ -99,8 +104,7 @@ test_2() {
 	$LFS setstripe -E 1m -S 1m $comp_file ||
 		error "Create $comp_file failed"
 
-	local comp_cnt=$($LFS getstripe --component-count $comp_file)
-	[ $comp_cnt -ne 1 ] && error "component count $comp_cnt != 1"
+	check_component_count $comp_file 1
 
 	dd if=/dev/zero of=$comp_file bs=1M count=1 > /dev/null 2>&1 ||
 		error "Write first component failed"
@@ -115,14 +119,12 @@ test_2() {
 	$LFS setstripe --component-add -E 2M -S 1M -c 1 $comp_file ||
 		error "Add component to $comp_file failed"
 
-	comp_cnt=$($LFS getstripe --component-count $comp_file)
-	[ $comp_cnt -ne 2 ] && error "component count $comp_cnt != 2"
+	check_component_count $comp_file 2
 
 	$LFS setstripe --component-add -E -1 -c 3 $comp_file ||
 		error "Add last component to $comp_file failed"
 
-	comp_cnt=$($LFS getstripe --component-count $comp_file)
-	[ $comp_cnt -ne 3 ] && error "component count $comp_cnt != 3"
+	check_component_count $comp_file 3
 
 	small_write $comp_file $rw_len || error "Verify RW failed"
 
@@ -162,8 +164,7 @@ test_3() {
 	$LFS setstripe -E 1M -S 1M -E 64M -c 2 -E -1 -c 3 $comp_file ||
 		error "Create $comp_file failed"
 
-	local comp_cnt=$($LFS getstripe --component-count $comp_file)
-	[ $comp_cnt -ne 3 ] && error "component count $comp_cnt != 3"
+	check_component_count $comp_file 3
 
 	dd if=/dev/zero of=$comp_file bs=1M count=2
 
@@ -207,8 +208,7 @@ test_5() {
 
 	# create file under parent
 	touch $comp_file || error "Create $comp_file failed"
-	local comp_cnt=$($LFS getstripe --component-count $comp_file)
-	[ $comp_cnt -ne 2 ] && error "file $comp_cnt != 2"
+	check_component_count $comp_file 2
 
 	#instantiate all components, so that objs are allocted
 	dd if=/dev/zero of=$comp_file bs=1k count=1 seek=65k
@@ -230,8 +230,7 @@ test_5() {
 	# create file under subdir
 	touch $subdir/$tfile || error "Create $subdir/$tfile failed"
 
-	comp_cnt=$($LFS getstripe --component-count $subdir/$tfile)
-	[ $comp_cnt -ne 2 ] && error "$subdir/$tfile $comp_cnt != 2"
+	check_component_count $subdir/$tfile 2
 
 	# delete default layout setting from parent
 	$LFS setstripe -d $parent ||
@@ -256,8 +255,7 @@ test_6() {
 	$LFS setstripe -c 1 -S 128K $comp_file ||
 		error "Create v1 $comp_file failed"
 
-	local comp_cnt=$($LFS getstripe --component-count $comp_file)
-	[ $comp_cnt -ne 0 ] && error "Wrong component count $comp_cnt"
+	check_component_count $comp_file 0
 
 	dd if=/dev/urandom of=$comp_file bs=1M count=5 oflag=sync ||
 		error "Write to v1 $comp_file failed"
@@ -268,8 +266,7 @@ test_6() {
 	$LFS migrate -E 1M -S 512K -c 1 -E -1 -S 1M -c 2 $comp_file ||
 		error "Migrate(v1 -> composite) $comp_file failed"
 
-	comp_cnt=$($LFS getstripe --component-count $comp_file)
-	[ "$comp_cnt" -ne 2 ] && error "$comp_cnt != 2"
+	check_component_count $comp_file 2
 
 	local chksum=$(md5sum $comp_file)
 	[ "$old_chksum" != "$chksum" ] &&
@@ -280,8 +277,7 @@ test_6() {
 		-E -1 -S 3M -c 3 $comp_file ||
 		error "Migrate(compsoite -> composite) $comp_file failed"
 
-	comp_cnt=$($LFS getstripe --component-count $comp_file)
-	[ "$comp_cnt" -ne 3 ] && error "$comp_cnt != 3"
+	check_component_count $comp_file 3
 
 	chksum=$(md5sum $comp_file)
 	[ "$old_chksum" != "$chksum" ] &&
@@ -291,8 +287,7 @@ test_6() {
 	$LFS migrate -c 2 -S 2M $comp_file ||
 		error "Migrate(composite -> v1) $comp_file failed"
 
-	comp_cnt=$($LFS getstripe --component-count $comp_file)
-	[ $comp_cnt -ne 0 ] && error "$comp_cnt isn't 0"
+	check_component_count $comp_file 0
 
 	chksum=$(md5sum $comp_file)
 	[ "$old_chksum" != "$chksum" ] &&
@@ -348,8 +343,7 @@ test_9() {
 	$LFS setstripe -E 1M -S 1M -E -1 -c 1 $comp_file ||
 		error "Create $comp_file failed"
 
-	local comp_cnt=$($LFS getstripe --component-count $comp_file)
-	[ $comp_cnt -ne 2 ] && error "component count $comp_cnt != 2"
+	check_component_count $comp_file 2
 
 	replay_barrier $SINGLEMDS
 
