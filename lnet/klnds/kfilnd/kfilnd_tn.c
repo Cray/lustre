@@ -401,7 +401,7 @@ static void kfilnd_tn_finalize(struct kfilnd_transaction *tn, bool *tn_released)
 		return;
 
 	if (!*tn_released) {
-		spin_unlock(&tn->tn_lock);
+		mutex_unlock(&tn->tn_lock);
 		*tn_released = true;
 	}
 
@@ -521,7 +521,7 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 		 * release the lock on the TN before proceeding.
 		 */
 		tn->tn_state = TN_STATE_IMM_RECV;
-		spin_unlock(&tn->tn_lock);
+		mutex_unlock(&tn->tn_lock);
 		*tn_released = true;
 		if (msg->kfm_type == KFILND_MSG_IMMEDIATE)
 			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
@@ -808,7 +808,7 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 	if (!tn)
 		return;
 
-	spin_lock(&tn->tn_lock);
+	mutex_lock(&tn->tn_lock);
 
 	if (dec_async_event_count)
 		atomic_dec(&tn->async_event_count);
@@ -837,7 +837,7 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 	}
 
 	if (!tn_released)
-		spin_unlock(&tn->tn_lock);
+		mutex_unlock(&tn->tn_lock);
 }
 
 /**
@@ -902,7 +902,7 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 			goto err_free_tn;
 	}
 
-	spin_lock_init(&tn->tn_lock);
+	mutex_init(&tn->tn_lock);
 
 	rc = kfilnd_dom_get_mr_key(dev->dom);
 	if (rc < 0)
