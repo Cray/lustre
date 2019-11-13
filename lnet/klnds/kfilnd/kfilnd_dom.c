@@ -12,24 +12,6 @@ static LIST_HEAD(fab_list);
 static DEFINE_MUTEX(fab_list_lock);
 
 /**
- * kfilnd_dom_process_transaction() - Process a transaction event.
- */
-static void kfilnd_dom_process_transaction(void *devctx, void *context,
-					   int status)
-{
-	struct kfilnd_transaction *tn = context;
-
-	if (!tn)
-		return;
-
-	/*
-	 * The status parameter has been sent to the transaction's state
-	 * machine event.
-	 */
-	kfilnd_tn_event_handler(tn, status, true);
-}
-
-/**
  * kfilnd_dom_eq_handler() - Event handler for KFI domain event queue.
  * @eq: KFI event queue handler was raised for.
  * @context: user specific context.
@@ -40,7 +22,6 @@ static void kfilnd_dom_process_transaction(void *devctx, void *context,
  */
 static void kfilnd_dom_eq_handler(struct kfid_eq *eq, void *context)
 {
-	struct kfilnd_transaction *tn;
 	uint32_t event_type;
 	struct kfi_eq_entry event;
 	size_t rc;
@@ -51,14 +32,8 @@ static void kfilnd_dom_eq_handler(struct kfid_eq *eq, void *context)
 		rc = kfi_eq_read(eq, &event_type, &event, sizeof(event), 0);
 		if (rc == -KFI_EAVAIL) {
 			/* We have error events */
-			while (kfi_eq_readerr(eq, &err_event, 0) == 1) {
-				tn = err_event.context;
-				tn->tn_status = -err_event.err;
-				kfilnd_wkr_post(tn->tn_ep->end_cpt,
-						kfilnd_dom_process_transaction,
-						tn->tn_ep->end_dev, tn,
-						TN_EVENT_FAIL);
-			}
+			while (kfi_eq_readerr(eq, &err_event, 0) == 1)
+				kfilnd_tn_eq_error(&err_event);
 
 			/* Processed error events, back to normal events */
 			continue;
@@ -69,15 +44,7 @@ static void kfilnd_dom_eq_handler(struct kfid_eq *eq, void *context)
 			break;
 		}
 
-		if (event_type == KFI_MR_COMPLETE) {
-			tn = event.context;
-
-			kfilnd_wkr_post(tn->tn_ep->end_cpt,
-					kfilnd_dom_process_transaction,
-					tn->tn_ep->end_dev, tn, TN_EVENT_MR_OK);
-		} else {
-			CERROR("Unexpected EQ event = %u\n", event_type);
-		}
+		kfilnd_tn_eq_event(&event, event_type);
 	}
 }
 
@@ -410,7 +377,8 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
 
 	hints->caps = KFI_MSG | KFI_RMA | KFI_SEND | KFI_RECV | KFI_READ |
 		KFI_WRITE | KFI_REMOTE_READ | KFI_REMOTE_WRITE |
-		KFI_MULTI_RECV | KFI_REMOTE_COMM | KFI_NAMED_RX_CTX;
+		KFI_MULTI_RECV | KFI_REMOTE_COMM | KFI_NAMED_RX_CTX |
+		KFI_TAGGED;
 	hints->domain_attr->mr_iov_limit = 256; /* 1 MiB LNet message */
 	hints->domain_attr->mr_cnt = 1024; /* Max LNet credits */
 	hints->ep_attr->max_msg_size = LNET_MAX_PAYLOAD;

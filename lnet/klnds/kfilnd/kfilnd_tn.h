@@ -8,6 +8,8 @@
 
 #include "kfilnd.h"
 
+void kfilnd_tn_eq_error(struct kfi_eq_err_entry *error);
+void kfilnd_tn_eq_event(struct kfi_eq_entry *event, uint32_t event_type);
 void kfilnd_tn_cq_error(struct kfilnd_ep *ep, struct kfi_cq_err_entry *error);
 void kfilnd_tn_cq_event(struct kfilnd_ep *ep, struct kfi_cq_data_entry *event);
 void kfilnd_tn_free(struct kfilnd_transaction *tn);

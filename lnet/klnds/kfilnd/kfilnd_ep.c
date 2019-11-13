@@ -174,9 +174,24 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 {
 	uint64_t access;
 	int rc;
+	struct kfi_eq_err_entry fake_error;
 
 	if (!ep || !tn)
 		return -EINVAL;
+
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_REG_MR)) {
+		if (sync_mr_reg)
+			return -EIO;
+
+		atomic_inc(&tn->async_event_count);
+
+		fake_error.context = tn;
+		fake_error.err = EIO;
+
+		kfilnd_tn_eq_error(&fake_error);
+
+		return 0;
+	}
 
 	/* Determine access setting based on whether this is a sink or source.
 	 */
@@ -224,6 +239,131 @@ err_free_mr:
 	kfi_close(&tn->tn_mr->fid);
 	tn->tn_mr = NULL;
 err:
+	return rc;
+}
+
+/**
+ * kfilnd_ep_post_tagged_send() - Post a tagged send operation.
+ * @ep: KFI LND endpoint used to post the tagged receivce operation.
+ * @tn: Transaction structure containing the send buffer to be posted.
+ *
+ * The tag for the post tagged send operation is the response memory region key
+ * associated with the transaction.
+ *
+ * Return: On success, zero. Else, negative errno value.
+ */
+int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,
+			       struct kfilnd_transaction *tn)
+{
+	const struct kvec iov = {
+		.iov_base = tn->tn_tx_msg.msg,
+		.iov_len = tn->tn_tx_msg.length,
+	};
+	const struct kfi_msg_tagged msg = {
+		.type = KFI_KVEC,
+		.msg_iov = &iov,
+		.iov_count = 1,
+		.addr = tn->tn_target_addr,
+		.tag = tn->tn_response_mr_key,
+		.context = tn,
+	};
+	int rc;
+
+	if (!ep || !tn)
+		return -EINVAL;
+
+	/* Make sure the device is not being shut down */
+	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
+		return -EINVAL;
+
+	atomic_inc(&tn->async_event_count);
+
+	rc = kfi_tsendmsg(ep->end_tx, &msg, KFI_COMPLETION);
+	if (rc)
+		atomic_dec(&tn->async_event_count);
+
+	return rc;
+}
+
+/**
+ * kfilnd_ep_cancel_tagged_recv() - Cancel a tagged recv.
+ * @ep: KFI LND endpoint used to cancel the tagged receivce operation.
+ * @tn: Transaction structure containing the receive buffer to be cancelled.
+ *
+ * The tagged receive buffer context pointer is used to cancel a tagged receive
+ * operation. The context pointer is always the transaction pointer.
+ *
+ * Return: 0 on success. -ENOENT if the tagged receive buffer is not found. The
+ * tagged receive buffer may not be found due to a tagged send operation already
+ * landing or the tagged receive buffer never being posted. Negative errno value
+ * on error.
+ */
+int kfilnd_ep_cancel_tagged_recv(struct kfilnd_ep *ep,
+				 struct kfilnd_transaction *tn)
+{
+	if (!ep || !tn)
+		return -EINVAL;
+
+	/* Make sure the device is not being shut down */
+	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
+		return -EINVAL;
+
+	/* The async event count is not decremented for a cancel operation since
+	 * it was incremented for the post tagged receive.
+	 */
+	return kfi_cancel(&ep->end_rx->fid, tn);
+}
+
+/**
+ * kfilnd_ep_post_tagged_recv() - Post a tagged receive operation.
+ * @ep: KFI LND endpoint used to post the tagged receivce operation.
+ * @tn: Transaction structure containing the receive buffer to be posted.
+ *
+ * The tag for the post tagged receive operation is the memory region key
+ * associated with the transaction.
+ *
+ * Return: On success, zero. Else, negative errno value.
+ */
+int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
+			       struct kfilnd_transaction *tn)
+{
+	const struct kvec iov = {
+		.iov_base = tn->tn_tag_rx_msg.msg,
+		.iov_len = tn->tn_tag_rx_msg.length,
+	};
+	const struct kfi_msg_tagged msg = {
+		.type = KFI_KVEC,
+		.msg_iov = &iov,
+		.iov_count = 1,
+		.tag = tn->tn_mr_key,
+		.context = tn,
+	};
+	struct kfi_cq_err_entry fake_error = {
+		.op_context = tn,
+		.flags = KFI_TAGGED | KFI_RECV,
+		.err = EIO,
+	};
+	int rc;
+
+	if (!ep || !tn)
+		return -EINVAL;
+
+	/* Make sure the device is not being shut down */
+	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
+		return -EINVAL;
+
+	atomic_inc(&tn->async_event_count);
+
+	/* Progress transaction to failure if send should fail. */
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_RECV)) {
+		kfilnd_tn_cq_error(ep, &fake_error);
+		return 0;
+	}
+
+	rc = kfi_trecvmsg(ep->end_rx, &msg, KFI_COMPLETION);
+	if (rc)
+		atomic_dec(&tn->async_event_count);
+
 	return rc;
 }
 
