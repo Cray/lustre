@@ -295,6 +295,9 @@ struct kfilnd_transaction {
 	u32			tn_response_mr_key;
 	u64			tn_response_cookie;
 	u8			tn_response_rx;
+
+	/* Number of pending asychronous events. */
+	atomic_t async_event_count;
 };
 
 #endif /* _KFILND_ */

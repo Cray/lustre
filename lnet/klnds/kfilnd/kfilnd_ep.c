@@ -206,6 +206,9 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		goto err_free_mr;
 	}
 
+	if (!sync_mr_reg)
+		atomic_inc(&tn->async_event_count);
+
 	rc = kfi_mr_enable(tn->tn_mr);
 	if (rc) {
 		CERROR("kfi_mr_enable failed: rc = %d", rc);
@@ -215,6 +218,9 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	return 0;
 
 err_free_mr:
+	if (!sync_mr_reg)
+		atomic_dec(&tn->async_event_count);
+
 	kfi_close(&tn->tn_mr->fid);
 	tn->tn_mr = NULL;
 err:
@@ -254,38 +260,42 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
+	atomic_inc(&tn->async_event_count);
+
 	/* Progress transaction to failure if send should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND)) {
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
-		rc = 0;
 		kfilnd_tn_cq_error(ep, &fake_error);
-	} else {
-		if (want_event) {
-			rc = kfi_send(ep->end_tx, buf, len, NULL,
-				      tn->tn_target_addr, tn);
-		} else {
-			/*
-			 * To avoid getting a Tx event, we need to use
-			 * kfi_sendmsg() with a zero flag parameter.  It also
-			 * means we need to construct a kfi_msg with a kvec to
-			 * hold the message.
-			 */
-			struct kfi_msg msg = {};
-			struct kvec msg_vec;
-
-			msg_vec.iov_base = buf;
-			msg_vec.iov_len = len;
-			msg.type = KFI_KVEC;
-			msg.msg_iov = &msg_vec;
-			msg.iov_count = 1;
-			msg.context = tn;
-			msg.addr = tn->tn_target_addr;
-			rc = kfi_sendmsg(ep->end_tx, &msg, 0);
-		}
-
-		if (rc == 0)
-			tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
+		return 0;
 	}
+
+	if (want_event) {
+		rc = kfi_send(ep->end_tx, buf, len, NULL, tn->tn_target_addr,
+			      tn);
+	} else {
+		/*
+		 * To avoid getting a Tx event, we need to use
+		 * kfi_sendmsg() with a zero flag parameter.  It also
+		 * means we need to construct a kfi_msg with a kvec to
+		 * hold the message.
+		 */
+		struct kfi_msg msg = {};
+		struct kvec msg_vec;
+
+		msg_vec.iov_base = buf;
+		msg_vec.iov_len = len;
+		msg.type = KFI_KVEC;
+		msg.msg_iov = &msg_vec;
+		msg.iov_count = 1;
+		msg.context = tn;
+		msg.addr = tn->tn_target_addr;
+		rc = kfi_sendmsg(ep->end_tx, &msg, 0);
+	}
+
+	if (rc == 0)
+		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
+	else
+		atomic_dec(&tn->async_event_count);
 
 	return rc;
 }
@@ -320,25 +330,29 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
+	atomic_inc(&tn->async_event_count);
+
 	/* Progress transaction to failure if read should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE)) {
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
-		rc = 0;
 		kfilnd_tn_cq_error(ep, &fake_error);
-	} else {
-		if (tn->tn_kiov)
-			rc = kfi_writebv(ep->end_tx,
-					 (struct bio_vec *)tn->tn_kiov, NULL,
-					 tn->tn_num_iovec, tn->tn_target_addr,
-					 0, tn->tn_response_mr_key, tn);
-		else
-			rc = kfi_writev(ep->end_tx, tn->tn_iov, NULL,
-					tn->tn_num_iovec, tn->tn_target_addr, 0,
-					tn->tn_response_mr_key, tn);
-
-		if (rc == 0)
-			tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
+		return 0;
 	}
+
+	if (tn->tn_kiov)
+		rc = kfi_writebv(ep->end_tx,
+				 (struct bio_vec *)tn->tn_kiov, NULL,
+				 tn->tn_num_iovec, tn->tn_target_addr,
+				 0, tn->tn_response_mr_key, tn);
+	else
+		rc = kfi_writev(ep->end_tx, tn->tn_iov, NULL,
+				tn->tn_num_iovec, tn->tn_target_addr, 0,
+				tn->tn_response_mr_key, tn);
+
+	if (rc == 0)
+		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
+	else
+		atomic_dec(&tn->async_event_count);
 
 	return rc;
 }
@@ -372,25 +386,28 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
+	atomic_inc(&tn->async_event_count);
+
 	/* Progress transaction to failure if read should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ)) {
 		tn->tn_flags |= KFILND_TN_FLAG_RX_POSTED;
-		rc = 0;
 		kfilnd_tn_cq_error(ep, &fake_error);
-	} else {
-		if (tn->tn_kiov)
-			rc = kfi_readbv(ep->end_tx,
-					(struct bio_vec *)tn->tn_kiov, NULL,
-					tn->tn_num_iovec, tn->tn_target_addr, 0,
-					tn->tn_response_mr_key, tn);
-		else
-			rc = kfi_readv(ep->end_tx, tn->tn_iov, NULL,
-				       tn->tn_num_iovec, tn->tn_target_addr, 0,
-				       tn->tn_response_mr_key, tn);
-
-		if (rc == 0)
-			tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
+		return 0;
 	}
+
+	if (tn->tn_kiov)
+		rc = kfi_readbv(ep->end_tx, (struct bio_vec *)tn->tn_kiov, NULL,
+				tn->tn_num_iovec, tn->tn_target_addr, 0,
+				tn->tn_response_mr_key, tn);
+	else
+		rc = kfi_readv(ep->end_tx, tn->tn_iov, NULL, tn->tn_num_iovec,
+			       tn->tn_target_addr, 0, tn->tn_response_mr_key,
+			       tn);
+
+	if (rc == 0)
+		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
+	else
+		atomic_dec(&tn->async_event_count);
 
 	return rc;
 }
