@@ -196,6 +196,7 @@ static void kfilnd_tn_process_rx_event(void *buf_context, void *msg_context,
 	bool alloc_msg = true;
 	enum tn_events event = TN_EVENT_FAIL;
 	int rc;
+	bool dec_async_event_count = false;
 
 	/* Unpack the message */
 	rc = kfilnd_tn_unpack_msg(rx_msg, msg_size);
@@ -236,6 +237,7 @@ static void kfilnd_tn_process_rx_event(void *buf_context, void *msg_context,
 			event = TN_EVENT_FAIL;
 		}
 		tn->tn_posted_buf = bufdesc;
+		dec_async_event_count = true;
 
 		break;
 
@@ -244,7 +246,7 @@ static void kfilnd_tn_process_rx_event(void *buf_context, void *msg_context,
 		return;
 	};
 
-	kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK);
+	kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK, dec_async_event_count);
 }
 
 /**
@@ -292,7 +294,7 @@ static void kfilnd_tn_process_rma_event(void *ep_context, void *tn_context,
 	 * The status parameter has been sent to the transaction's state
 	 * machine event.
 	 */
-	kfilnd_tn_event_handler(tn, event);
+	kfilnd_tn_event_handler(tn, event, true);
 }
 
 /**
@@ -321,7 +323,7 @@ static void kfilnd_tn_process_tx_event(void *ep_context, void *tn_context,
 	 * The status parameter has been sent to the transaction's state
 	 * machine event.
 	 */
-	kfilnd_tn_event_handler(tn, event);
+	kfilnd_tn_event_handler(tn, event, true);
 }
 
 /**
@@ -386,11 +388,22 @@ void kfilnd_tn_cq_event(struct kfilnd_ep *ep, struct kfi_cq_data_entry *event)
  * kfilnd_tn_finalize() - Cleanup resources and finalize LNet operation.
  *
  * All state machine functions should call kfilnd_tn_finalize() instead of
- * kfilnd_tn_free().
+ * kfilnd_tn_free(). Once all expected asynchronous events have been received,
+ * if the transaction lock has not been released, it will now be released,
+ * transaction resources cleaned up, and LNet finalized will be called.
  */
-static void kfilnd_tn_finalize(struct kfilnd_transaction *tn)
+static void kfilnd_tn_finalize(struct kfilnd_transaction *tn, bool *tn_released)
 {
 	int rc;
+
+	/* Can only finalize if all events have occurred. */
+	if (atomic_read(&tn->async_event_count))
+		return;
+
+	if (!*tn_released) {
+		spin_unlock(&tn->tn_lock);
+		*tn_released = true;
+	}
 
 	/* Free memory region before finalizing LNet operation and thus
 	 * releasing the LNet buffer.
@@ -523,13 +536,7 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 	if (rc) {
 		tn->tn_status = rc;
 
-		/* Release the transaction if not already done. */
-		if (!*tn_released) {
-			spin_unlock(&tn->tn_lock);
-			*tn_released = true;
-		}
-
-		kfilnd_tn_finalize(tn);
+		kfilnd_tn_finalize(tn, tn_released);
 	}
 
 	return rc;
@@ -564,10 +571,7 @@ static int kfilnd_tn_imm_send(struct kfilnd_transaction *tn,
 	if (rc)
 		tn->tn_status = rc;
 
-	spin_unlock(&tn->tn_lock);
-	*tn_released = true;
-
-	kfilnd_tn_finalize(tn);
+	kfilnd_tn_finalize(tn, tn_released);
 
 	return rc;
 }
@@ -637,10 +641,7 @@ static int kfilnd_tn_imm_recv(struct kfilnd_transaction *tn,
 		if (rc)
 			tn->tn_status = rc;
 
-		spin_unlock(&tn->tn_lock);
-		*tn_released = true;
-
-		kfilnd_tn_finalize(tn);
+		kfilnd_tn_finalize(tn, tn_released);
 	}
 
 	return rc;
@@ -680,10 +681,7 @@ static int kfilnd_tn_reg_mem(struct kfilnd_transaction *tn,
 		if (rc)
 			tn->tn_status = rc;
 
-		spin_unlock(&tn->tn_lock);
-		*tn_released = true;
-
-		kfilnd_tn_finalize(tn);
+		kfilnd_tn_finalize(tn, tn_released);
 	}
 
 	return rc;
@@ -703,10 +701,7 @@ static int kfilnd_tn_wait_comp(struct kfilnd_transaction *tn,
 		       event);
 	}
 
-	spin_unlock(&tn->tn_lock);
-	*tn_released = true;
-
-	kfilnd_tn_finalize(tn);
+	kfilnd_tn_finalize(tn, tn_released);
 
 	return 0;
 }
@@ -772,10 +767,7 @@ static int kfilnd_tn_bulk_rma(struct kfilnd_transaction *tn,
 		if (rc)
 			tn->tn_status = rc;
 
-		spin_unlock(&tn->tn_lock);
-		*tn_released = true;
-
-		kfilnd_tn_finalize(tn);
+		kfilnd_tn_finalize(tn, tn_released);
 	}
 
 	return 0;
@@ -785,6 +777,8 @@ static int kfilnd_tn_bulk_rma(struct kfilnd_transaction *tn,
  * kfilnd_tn_event_handler() - Update transaction state machine with an event.
  * @tn: Transaction to be updated.
  * @event: Transaction event.
+ * @dec_async_event_count: Decrement the transaction asynchronous event counter.
+ * This should occur when network events happen for a transaction.
  *
  * When the transaction event handler is first called on a new transaction, the
  * transaction is now own by the transaction system. This means that will be
@@ -792,7 +786,7 @@ static int kfilnd_tn_bulk_rma(struct kfilnd_transaction *tn,
  * machine.
  */
 void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
-			     enum tn_events event)
+			     enum tn_events event, bool dec_async_event_count)
 {
 	int rc;
 	bool tn_released = false;
@@ -801,6 +795,9 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 		return;
 
 	spin_lock(&tn->tn_lock);
+
+	if (dec_async_event_count)
+		atomic_dec(&tn->async_event_count);
 
 	switch (tn->tn_state) {
 	case TN_STATE_IDLE:
