@@ -257,7 +257,7 @@ struct kfilnd_transaction_msg {
 struct kfilnd_transaction {
 	/* Endpoint list transaction lives on. */
 	struct list_head	tn_entry;
-	spinlock_t		tn_lock;	/* to serialize events */
+	struct mutex		tn_lock;	/* to serialize events */
 	int			tn_status;	/* return code from ops */
 	struct kfilnd_ep	*tn_ep;		/* endpoint we operate under */
 	int			tn_nob;		/* bytes received into msg */
