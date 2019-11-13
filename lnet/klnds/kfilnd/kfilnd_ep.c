@@ -231,15 +231,13 @@ err:
  * kfilnd_ep_post_send() - Post a send operation.
  * @ep: KFI LND endpoint used to post the send operation.
  * @tn: Transaction structure containing the buffer to be sent.
- * @want_event: Enable/disable successful send events/
  *
  * The target of the send operation is based on the target LNet NID field within
  * the transaction structure. A lookup of LNet NID to KFI address is performed.
  *
  * Return: On success, zero. Else, negative errno value.
  */
-int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
-			bool want_event)
+int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 {
 	size_t len;
 	void *buf;
@@ -269,29 +267,7 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
 		return 0;
 	}
 
-	if (want_event) {
-		rc = kfi_send(ep->end_tx, buf, len, NULL, tn->tn_target_addr,
-			      tn);
-	} else {
-		/*
-		 * To avoid getting a Tx event, we need to use
-		 * kfi_sendmsg() with a zero flag parameter.  It also
-		 * means we need to construct a kfi_msg with a kvec to
-		 * hold the message.
-		 */
-		struct kfi_msg msg = {};
-		struct kvec msg_vec;
-
-		msg_vec.iov_base = buf;
-		msg_vec.iov_len = len;
-		msg.type = KFI_KVEC;
-		msg.msg_iov = &msg_vec;
-		msg.iov_count = 1;
-		msg.context = tn;
-		msg.addr = tn->tn_target_addr;
-		rc = kfi_sendmsg(ep->end_tx, &msg, 0);
-	}
-
+	rc = kfi_send(ep->end_tx, buf, len, NULL, tn->tn_target_addr, tn);
 	if (rc == 0)
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
 	else
@@ -575,16 +551,14 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	}
 
 	/* Bind these two contexts to the CPT's CQ */
-	rc = kfi_ep_bind(ep->end_rx, &ep->end_rx_cq->fid,
-			 KFI_RECV | KFI_SELECTIVE_COMPLETION);
+	rc = kfi_ep_bind(ep->end_rx, &ep->end_rx_cq->fid, 0);
 	if (rc) {
 		CERROR("Could not bind RX context on CPT %d, rc = %d\n", cpt,
 		       rc);
 		goto err_free_tx_context;
 	}
 
-	rc = kfi_ep_bind(ep->end_tx, &ep->end_tx_cq->fid,
-			 KFI_TRANSMIT | KFI_SELECTIVE_COMPLETION);
+	rc = kfi_ep_bind(ep->end_tx, &ep->end_tx_cq->fid, 0);
 	if (rc) {
 		CERROR("Could not bind TX context on CPT %d, rc = %d\n", cpt,
 		       rc);
