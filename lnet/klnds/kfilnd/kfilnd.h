@@ -48,11 +48,14 @@
 #include "kfi_endpoint.h"
 #include "kfi_errno.h"
 #include "kfi_rma.h"
+#include "kfi_tagged.h"
 
 /* KFILND CFS fail range 0xF100 - 0xF1FF. */
 #define CFS_KFI_FAIL_SEND 0xF100
 #define CFS_KFI_FAIL_READ 0xF101
 #define CFS_KFI_FAIL_WRITE 0xF102
+#define CFS_KFI_FAIL_REG_MR 0xF103
+#define CFS_KFI_FAIL_TAGGED_RECV 0xF104
 
 /* Some constants which should be turned into tunables */
 #define KFILND_MAX_BULK_RX 100
@@ -181,13 +184,11 @@ struct kfilnd_immed_msg {
 struct kfilnd_bulk_req {
 	struct lnet_hdr	hdr;
 	__u32 mr_key;
-	__u64 cookie;
 	__u8 response_rx;
 
 } WIRE_ATTR;
 
 struct kfilnd_bulk_rsp {
-	__u64 cookie;
 	__s32 status;
 } WIRE_ATTR;
 
@@ -241,6 +242,7 @@ enum tn_events {
 	TN_EVENT_RMA_OK,
 	TN_EVENT_FAIL,
 	TN_EVENT_RMA_PREP,
+	TN_EVENT_CANCEL,
 };
 
 #define KFILND_TN_FLAG_IMMEDIATE	BIT(0)
@@ -275,6 +277,9 @@ struct kfilnd_transaction {
 	struct kfilnd_immediate_buffer *tn_posted_buf;
 	struct kfilnd_transaction_msg tn_rx_msg;
 
+	/* Transaction tagged multi-receive buffer. */
+	struct kfilnd_transaction_msg tn_tag_rx_msg;
+
 	/* LNet buffer used to register a memory region or perform a RMA
 	 * operation.
 	 */
@@ -293,7 +298,6 @@ struct kfilnd_transaction {
 	 * transactions to a specific RX context.
 	 */
 	u32			tn_response_mr_key;
-	u64			tn_response_cookie;
 	u8			tn_response_rx;
 
 	/* Number of pending asychronous events. */
