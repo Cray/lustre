@@ -26,7 +26,7 @@ static void kfilnd_dom_process_transaction(void *devctx, void *context,
 	 * The status parameter has been sent to the transaction's state
 	 * machine event.
 	 */
-	kfilnd_tn_event_handler(tn, status);
+	kfilnd_tn_event_handler(tn, status, true);
 }
 
 /**
