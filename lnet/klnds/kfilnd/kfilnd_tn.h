@@ -14,7 +14,7 @@ void kfilnd_tn_free(struct kfilnd_transaction *tn);
 struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 					   bool alloc_msg);
 void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
-			     enum tn_events event);
+			     enum tn_events event, bool dec_async_event_count);
 void kfilnd_tn_cleanup(void);
 int kfilnd_tn_init(void);
 
