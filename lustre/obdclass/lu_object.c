@@ -1791,8 +1791,8 @@ int lu_context_refill(struct lu_context *ctx)
  * predefined when the lu_device type are registered, during the module probe
  * phase.
  */
-u32 lu_context_tags_default;
-u32 lu_session_tags_default;
+u32 lu_context_tags_default = LCT_CL_THREAD;
+u32 lu_session_tags_default = LCT_SESSION;
 
 void lu_context_tags_update(__u32 tags)
 {
