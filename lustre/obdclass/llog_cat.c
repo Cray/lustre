@@ -926,6 +926,7 @@ int llog_cat_process_or_fork(const struct lu_env *env,
 			 * catalog bottom.
 			 */
 			startcat = 0;
+			d.lpd_startcat = 0;
 			if (rc != 0)
 				RETURN(rc);
 		}
