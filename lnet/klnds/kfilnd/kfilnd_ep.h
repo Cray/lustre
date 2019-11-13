@@ -16,8 +16,7 @@
 
 void kfilnd_ep_dereg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
-int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn,
-			bool want_event);
+int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_imm_buffer_put(struct kfilnd_ep *ep,
