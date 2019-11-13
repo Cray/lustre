@@ -16,6 +16,12 @@
 
 void kfilnd_ep_dereg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
+int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,
+			       struct kfilnd_transaction *tn);
+int kfilnd_ep_cancel_tagged_recv(struct kfilnd_ep *ep,
+				 struct kfilnd_transaction *tn);
+int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
+			       struct kfilnd_transaction *tn);
 int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
