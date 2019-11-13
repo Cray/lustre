@@ -465,7 +465,7 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 			 * entire LNet payload.
 			 */
 			tn->tn_state = TN_STATE_IMM_SEND;
-			rc = kfilnd_ep_post_send(tn->tn_ep, tn, true);
+			rc = kfilnd_ep_post_send(tn->tn_ep, tn);
 			if (rc)
 				CERROR("Failed to send to %s: rc=%d\n",
 				       libcfs_nid2str(tn->tn_target_nid), rc);
@@ -483,11 +483,19 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 			if (sync_mr_reg && !rc) {
 				kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
 				tn->tn_state = TN_STATE_WAIT_COMP;
-				rc = kfilnd_ep_post_send(tn->tn_ep, tn, false);
-				if (rc)
+
+				/* Issue an extra increment for the receive
+				 * event.
+				 */
+				atomic_inc(&tn->async_event_count);
+
+				rc = kfilnd_ep_post_send(tn->tn_ep, tn);
+				if (rc) {
 					CERROR("Failed to send to %s: rc=%d\n",
 					       libcfs_nid2str(tn->tn_target_nid),
 					       rc);
+					atomic_dec(&tn->async_event_count);
+				}
 			}
 		}
 		break;
@@ -662,9 +670,15 @@ static int kfilnd_tn_reg_mem(struct kfilnd_transaction *tn,
 		 * payload.
 		 */
 		tn->tn_state = TN_STATE_WAIT_COMP;
-		rc = kfilnd_ep_post_send(tn->tn_ep, tn, false);
-		if (!rc)
+
+		/* Issue an extra increment for the receive event. */
+		atomic_inc(&tn->async_event_count);
+
+		rc = kfilnd_ep_post_send(tn->tn_ep, tn);
+		if (!rc) {
+			atomic_dec(&tn->async_event_count);
 			break;
+		}
 
 		/* Fall through on bad transaction status. */
 	case TN_EVENT_FAIL:
@@ -738,7 +752,7 @@ static int kfilnd_tn_bulk_rma(struct kfilnd_transaction *tn,
 					    KFILND_FAB_RX_CTX_BITS);
 
 			tn->tn_state = TN_STATE_WAIT_COMP;
-			rc = kfilnd_ep_post_send(tn->tn_ep, tn, true);
+			rc = kfilnd_ep_post_send(tn->tn_ep, tn);
 		}
 
 		if (rc)
