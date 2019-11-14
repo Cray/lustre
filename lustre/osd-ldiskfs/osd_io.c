@@ -1659,9 +1659,11 @@ static int osd_ldiskfs_writelink(struct inode *inode, char *buffer, int buflen)
 	return 0;
 }
 
-int osd_ldiskfs_write_record(struct inode *inode, void *buf, int bufsize,
-			     int write_NUL, loff_t *offs, handle_t *handle)
+static int osd_ldiskfs_write_record(struct dt_object *dt, void *buf,
+				    int bufsize, int write_NUL, loff_t *offs,
+				    handle_t *handle)
 {
+	struct inode *inode = osd_dt_obj(dt)->oo_inode;
         struct buffer_head *bh        = NULL;
         loff_t              offset    = *offs;
         loff_t              new_size  = i_size_read(inode);
@@ -1707,8 +1709,19 @@ int osd_ldiskfs_write_record(struct inode *inode, void *buf, int bufsize,
 		bh = __ldiskfs_bread(handle, inode, block, 0);
 
 		if (IS_ERR_OR_NULL(bh)) {
+			struct osd_device *osd = osd_obj2dev(osd_dt_obj(dt));
+			int flags = LDISKFS_GET_BLOCKS_CREATE;
+
 			LASSERTF(sync, "Sparse file detected %lu!\n", block);
-			bh = __ldiskfs_bread(handle, inode, block, 1);
+			/* while the file system is being mounted, avoid
+			 * preallocation otherwise mount can take a long
+			 * time as mballoc cache is cold.
+			 * XXX: this is a workaround until we have a proper
+			 *	fix in mballoc
+			 * XXX: works with extent-based files only */
+			if (!osd->od_cl_seq)
+				flags |= LDISKFS_GET_BLOCKS_NO_NORMALIZE;
+			bh = __ldiskfs_bread(handle, inode, block, flags);
 			create = true;
 		} else {
 			if (sync)
@@ -1809,9 +1822,8 @@ static ssize_t osd_write(const struct lu_env *env, struct dt_object *dt,
 	if (is_link && (buf->lb_len < sizeof(LDISKFS_I(inode)->i_data)))
 		result = osd_ldiskfs_writelink(inode, buf->lb_buf, buf->lb_len);
 	else
-		result = osd_ldiskfs_write_record(inode, buf->lb_buf,
-						  buf->lb_len, is_link, pos,
-						  oh->ot_handle);
+		result = osd_ldiskfs_write_record(dt, buf->lb_buf, buf->lb_len,
+						  is_link, pos, oh->ot_handle);
 	if (result == 0)
 		result = buf->lb_len;
 
