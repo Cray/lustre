@@ -93,9 +93,10 @@ struct obd_hist_pcpu {
 	/*
 	 * cpus go first so as to reduce cache line contention
 	 * for typical access with several threads updating
-	 * the same counter from different cpus
+	 * the same counter from different cpus.
+	 * Use '1' instead of a zero-length array so sizeof is meaningful
 	 */
-	unsigned long	oh_buckets[0][OBD_HIST_MAX];
+	unsigned long oh_pc_buckets[1][OBD_HIST_MAX];
 };
 
 enum {

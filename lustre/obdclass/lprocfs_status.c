@@ -2213,7 +2213,7 @@ void lprocfs_oh_tally_pcpu(struct obd_hist_pcpu **oh,
 
 	rcu_read_lock();
 	ohd = rcu_dereference(*oh);
-	ohd->oh_buckets[smp_processor_id()][value]++;
+	ohd->oh_pc_buckets[smp_processor_id()][value]++;
 	rcu_read_unlock();
 }
 EXPORT_SYMBOL(lprocfs_oh_tally_pcpu);
@@ -2240,7 +2240,7 @@ unsigned long lprocfs_oh_counter_pcpu(struct obd_hist_pcpu **oh,
 	rcu_read_lock();
 	ohd = rcu_dereference(*oh);
 	for_each_possible_cpu(i)
-		ret +=  ohd->oh_buckets[i][value];
+		ret +=  ohd->oh_pc_buckets[i][value];
 	rcu_read_unlock();
 
 	return ret;
@@ -2257,16 +2257,16 @@ unsigned long lprocfs_oh_sum_pcpu(struct obd_hist_pcpu **oh)
 	ohd = rcu_dereference(*oh);
 	for_each_possible_cpu(j)
 		for (i = 0; i < OBD_HIST_MAX; i++)
-			ret += ohd->oh_buckets[j][i];
+			ret += ohd->oh_pc_buckets[j][i];
 	rcu_read_unlock();
 
 	return ret;
 }
 EXPORT_SYMBOL(lprocfs_oh_sum_pcpu);
 
-static inline int obd_hist_pcpu_size(void)
+static inline size_t obd_hist_pcpu_size(void)
 {
-	return sizeof(unsigned long[num_possible_cpus()][OBD_HIST_MAX]);
+	return sizeof(struct obd_hist_pcpu) * num_possible_cpus();
 }
 
 void lprocfs_oh_clear_pcpu(struct obd_hist_pcpu **oh)
