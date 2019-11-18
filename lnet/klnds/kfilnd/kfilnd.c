@@ -305,11 +305,11 @@ static struct lnet_lnd lnd = {
 static int kfilnd_startup(struct lnet_ni *ni)
 {
 	char *ifname;
+	struct lnet_inetdev *ifaces = NULL;
 	struct kfilnd_dev *kfdev;
 	int rc;
-	uint32_t netmask;
-	uint32_t ip;
-	int up;
+	int i;
+	uint32_t ip = 0;
 
 	if (!ni)
 		return -EINVAL;
@@ -336,15 +336,22 @@ static int kfilnd_startup(struct lnet_ni *ni)
 		ifname = KFILND_DEFAULT_DEVICE;
 	}
 
-	rc = lnet_ipif_query(ifname, &up, &ip, &netmask);
-	if (rc) {
-		CERROR("Can't query IP interface %s: %d\n",
-			ifname, rc);
+	rc = lnet_inet_enumerate(&ifaces);
+	if (rc < 0)
 		goto err;
+
+	for (i = 0; i < rc; i++) {
+		if (strcmp(ifname, ifaces[i].li_name) == 0) {
+			ip = ifaces[i].li_ipaddr;
+			break;
+		}
 	}
 
-	if (!up) {
-		CERROR("Can't query IP interface %s: it's down\n", ifname);
+	kfree(ifaces);
+
+	if (i == rc) {
+		CERROR("No matching interfaces\n");
+		rc = -ENOENT;
 		goto err;
 	}
 
