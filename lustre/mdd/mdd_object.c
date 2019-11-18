@@ -72,6 +72,7 @@ static int mdd_changelog_data_store_by_fid(const struct lu_env *env,
 					   enum changelog_rec_type type,
 					   enum changelog_rec_flags clf_flags,
 					   const struct lu_fid *fid,
+					   const struct lu_fid *pfid,
 					   const char *xattr_name,
 					   struct thandle *handle);
 
@@ -447,8 +448,8 @@ static int mdd_xattr_get(const struct lu_env *env,
 			GOTO(stop, rc2);
 
 		rc2 = mdd_changelog_data_store_by_fid(env, mdd, CL_GETXATTR, 0,
-						      mdo2fid(mdd_obj), name,
-						      handle);
+						      mdo2fid(mdd_obj), NULL,
+						      name, handle);
 
 stop:
 		rc2 = mdd_trans_stop(env, mdd, rc2, handle);
@@ -840,6 +841,7 @@ static int mdd_changelog_data_store_by_fid(const struct lu_env *env,
 					   enum changelog_rec_type type,
 					   enum changelog_rec_flags clf_flags,
 					   const struct lu_fid *fid,
+					   const struct lu_fid *pfid,
 					   const char *xattr_name,
 					   struct thandle *handle)
 {
@@ -875,6 +877,8 @@ static int mdd_changelog_data_store_by_fid(const struct lu_env *env,
 	rec->cr.cr_flags = clf_flags;
 	rec->cr.cr_type = (__u32)type;
 	rec->cr.cr_tfid = *fid;
+	if (pfid)
+		rec->cr.cr_pfid = *pfid;
 	rec->cr.cr_namelen = 0;
 
 	if (clf_flags & CLF_JOBID)
@@ -906,11 +910,13 @@ static int mdd_changelog_data_store_by_fid(const struct lu_env *env,
  * want the change to commit without the log entry.
  * \param mdd_obj - mdd_object of change
  * \param handle - transaction handle
+ * \param pfid - parent FID, if set
  */
 int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
 			     enum changelog_rec_type type,
 			     enum changelog_rec_flags clf_flags,
-			     struct mdd_object *mdd_obj, struct thandle *handle)
+			     struct mdd_object *mdd_obj, struct thandle *handle,
+			     const struct lu_fid *pfid)
 {
 	int				 rc;
 
@@ -932,7 +938,8 @@ int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
 	}
 
 	rc = mdd_changelog_data_store_by_fid(env, mdd, type, clf_flags,
-					     mdo2fid(mdd_obj), NULL, handle);
+					     mdo2fid(mdd_obj), pfid, NULL,
+					     handle);
 	if (rc == 0)
 		mdd_obj->mod_cltime = ktime_get();
 
@@ -968,7 +975,7 @@ int mdd_changelog_data_store_xattr(const struct lu_env *env,
 	}
 
 	rc = mdd_changelog_data_store_by_fid(env, mdd, type, clf_flags,
-					     mdo2fid(mdd_obj), xattr_name,
+					     mdo2fid(mdd_obj), NULL, xattr_name,
 					     handle);
 	if (rc == 0)
 		mdd_obj->mod_cltime = ktime_get();
@@ -1007,7 +1014,7 @@ static int mdd_changelog(const struct lu_env *env, enum changelog_rec_type type,
 		GOTO(stop, rc);
 
 	rc = mdd_changelog_data_store_by_fid(env, mdd, type, clf_flags,
-					     fid, NULL, handle);
+					     fid, NULL, NULL, handle);
 
 stop:
 	rc = mdd_trans_stop(env, mdd, rc, handle);
@@ -1028,7 +1035,7 @@ stop:
  * atime and ctime are independent.) */
 static int mdd_attr_set_changelog(const struct lu_env *env,
                                   struct md_object *obj, struct thandle *handle,
-                                  __u64 valid)
+                                  const struct lu_fid *pfid, __u64 valid)
 {
 	struct mdd_device *mdd = mdo2mdd(obj);
 	int bits, type = 0;
@@ -1048,8 +1055,8 @@ static int mdd_attr_set_changelog(const struct lu_env *env,
 	type = __ffs(bits);
 
 	/* XXX: we only store the low CLF_FLAGMASK bits of la_valid */
-	return mdd_changelog_data_store(env, mdd, type, valid,
-					md2mdd_obj(obj), handle);
+	return mdd_changelog_data_store(env, mdd, type, valid, md2mdd_obj(obj),
+					handle, pfid);
 }
 
 static int mdd_declare_attr_set(const struct lu_env *env,
@@ -1266,7 +1273,7 @@ int mdd_attr_set(const struct lu_env *env, struct md_object *obj,
 
 out:
 	if (rc == 0)
-		rc = mdd_attr_set_changelog(env, obj, handle,
+		rc = mdd_attr_set_changelog(env, obj, handle, &ma->ma_pfid,
 					    la_copy->la_valid);
 
 	if (handle != NULL)
@@ -1546,8 +1553,10 @@ static int mdd_xattr_merge(const struct lu_env *env, struct md_object *md_obj,
 	if (rc) /* wtf? */
 		GOTO(out_restore, rc);
 
-	(void)mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, obj, handle);
-	(void)mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, vic, handle);
+	(void)mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, obj, handle,
+				       NULL);
+	(void)mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, vic, handle,
+				       NULL);
 	EXIT;
 
 out_restore:
@@ -1772,11 +1781,13 @@ static int mdd_xattr_split(const struct lu_env *env, struct md_object *md_obj,
 	if (rc)
 		GOTO(out_restore, rc);
 
-	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, obj, handle);
+	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, obj, handle,
+				      NULL);
 	if (rc)
 		GOTO(out, rc);
 
-	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, vic, handle);
+	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, vic, handle,
+				      NULL);
 	if (rc)
 		GOTO(out, rc);
 	EXIT;
@@ -2073,7 +2084,7 @@ static int mdd_xattr_hsm_replace(const struct lu_env *env,
 	/* Add a changelog record for release. */
 	hsm_set_cl_event(&clf_flags, HE_RELEASE);
 	rc = mdd_changelog_data_store(env, mdo2mdd(&o->mod_obj), CL_HSM,
-				      clf_flags, o, handle);
+				      clf_flags, o, handle, NULL);
 	RETURN(rc);
 }
 
@@ -2504,11 +2515,13 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 		GOTO(out_restore, rc);
 
 	/* Issue one changelog record per file */
-	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, fst_o, handle);
+	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, fst_o, handle,
+				      NULL);
 	if (rc)
 		GOTO(stop, rc);
 
-	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, snd_o, handle);
+	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, snd_o, handle,
+				      NULL);
 	if (rc)
 		GOTO(stop, rc);
 	EXIT;
@@ -2624,7 +2637,8 @@ mdd_layout_instantiate_component(const struct lu_env *env,
 	if (rc)
 		RETURN(rc);
 
-	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, obj, handle);
+	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, obj, handle,
+				      NULL);
 	RETURN(rc);
 }
 
@@ -2708,7 +2722,7 @@ mdd_layout_update_rdonly(const struct lu_env *env, struct mdd_object *obj,
 	if (rc)
 		GOTO(out, rc);
 
-	rc = mdd_changelog_data_store(env, mdd, CL_FLRW, 0, obj, handle);
+	rc = mdd_changelog_data_store(env, mdd, CL_FLRW, 0, obj, handle, NULL);
 	if (rc)
 		GOTO(out, rc);
 
@@ -2858,7 +2872,8 @@ mdd_object_update_sync_pending(const struct lu_env *env, struct mdd_object *obj,
 			GOTO(out, rc);
 	}
 
-	rc = mdd_changelog_data_store(env, mdd, CL_RESYNC, 0, obj, handle);
+	rc = mdd_changelog_data_store(env, mdd, CL_RESYNC, 0, obj, handle,
+				      NULL);
 	if (rc)
 		GOTO(out, rc);
 	EXIT;
@@ -3309,7 +3324,7 @@ out:
 
 		/* FYI, only the bottom 32 bits of open_flags are recorded */
 		mdd_changelog_data_store(env, mdd, CL_CLOSE, open_flags,
-					 mdd_obj, handle);
+					 mdd_obj, handle, NULL);
 	}
 
 stop:
