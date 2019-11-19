@@ -472,6 +472,13 @@ LNetMDBind(struct lnet_md umd, enum lnet_unlink unlink,
 	if (rc != 0)
 		goto out_free;
 
+	if (md->md_length > LNET_MTU) {
+		CERROR("Invalid length: too big transfer size %u, %d max\n",
+		       md->md_length, LNET_MTU);
+		rc = -EINVAL;
+		goto out_free;
+	}
+
 	cpt = lnet_res_lock_current();
 
 	rc = lnet_md_link(md, umd.eq_handle, cpt);
