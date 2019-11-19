@@ -116,8 +116,7 @@ static struct kfilnd_dom *kfilnd_dom_alloc(struct kfi_info *dom_info,
 
 	/* Bind EQ to domain for asynchronous memory registration. */
 	if (!sync_mr_reg) {
-		/* TODO: Verify EQ settings are correct. */
-		eq_attr.size = KFILND_MAX_TX;
+		eq_attr.size = credits;
 		rc = kfi_eq_open(fab->fabric, &eq_attr, &dom->eq,
 				 kfilnd_dom_eq_handler, dom);
 		if (rc) {
@@ -380,7 +379,8 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
 		KFI_MULTI_RECV | KFI_REMOTE_COMM | KFI_NAMED_RX_CTX |
 		KFI_TAGGED;
 	hints->domain_attr->mr_iov_limit = 256; /* 1 MiB LNet message */
-	hints->domain_attr->mr_cnt = 1024; /* Max LNet credits */
+	hints->domain_attr->mr_key_size = sizeof(int);
+	hints->domain_attr->resource_mgmt = KFI_RM_DISABLED;
 	hints->ep_attr->max_msg_size = LNET_MAX_PAYLOAD;
 	hints->rx_attr->op_flags = KFI_COMPLETION | KFI_MULTI_RECV;
 	hints->rx_attr->iov_limit = 256; /* 1 MiB LNet message */
