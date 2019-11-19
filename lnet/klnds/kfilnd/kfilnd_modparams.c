@@ -31,8 +31,34 @@ static int nscheds;
 module_param(nscheds, int, 0444);
 MODULE_PARM_DESC(nscheds, "number of threads in each scheduler pool");
 
+/* Scale factor for TX and RX context queue depth. The factor is applied to the
+ * number of credits to determine queue depth.
+ */
+unsigned int rx_scale_factor = 2;
+module_param(rx_scale_factor, uint, 0444);
+MODULE_PARM_DESC(rx_scale_factor,
+		 "Factor applied to credits to determine RX context size");
+
+unsigned int tx_scale_factor = 2;
+module_param(tx_scale_factor, uint, 0444);
+MODULE_PARM_DESC(tx_scale_factor,
+		 "Factor applied to credits to determine TX context size");
+
+/* Scale factor for TX and RX completion queue depth. The factor is applied to
+ * the number of credits to determine queue depth.
+ */
+unsigned int rx_cq_scale_factor = 10;
+module_param(rx_cq_scale_factor, uint, 0444);
+MODULE_PARM_DESC(rx_cq_scale_factor,
+		 "Factor applied to credits to determine RX CQ size");
+
+unsigned int tx_cq_scale_factor = 10;
+module_param(tx_cq_scale_factor, uint, 0444);
+MODULE_PARM_DESC(tx_cq_scale_factor,
+		 "Factor applied to credits to determine TX CQ size");
+
 /* NB: this value is shared by all CPTs */
-static int credits = 256;
+int credits = 256;
 module_param(credits, int, 0444);
 MODULE_PARM_DESC(credits, "# concurrent sends");
 
@@ -99,6 +125,26 @@ int kfilnd_tunables_setup(struct lnet_ni *ni)
 
 int kfilnd_tunables_init(void)
 {
+	if (rx_scale_factor < 1) {
+		CERROR("RX context scale factor less than 1");
+		return -EINVAL;
+	}
+
+	if (tx_scale_factor < 1) {
+		CERROR("TX context scale factor less than 1");
+		return -EINVAL;
+	}
+
+	if (rx_cq_scale_factor < 1) {
+		CERROR("RX CQ scale factor less than 1");
+		return -EINVAL;
+	}
+
+	if (tx_cq_scale_factor < 1) {
+		CERROR("TX CQ scale factor less than 1");
+		return -EINVAL;
+	}
+
 	default_tunables.lnd_version = CURRENT_LND_VERSION;
 	return 0;
 }
