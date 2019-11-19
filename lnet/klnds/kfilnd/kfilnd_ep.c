@@ -627,7 +627,6 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 
 	/* Create a CQ for this CPT */
 	cq_attr.flags = KFI_AFFINITY;
-	cq_attr.size = KFILND_MAX_TX + KFILND_MAX_BULK_RX;
 	cq_attr.format = KFI_CQ_FORMAT_DATA;
 	cq_attr.wait_cond = KFI_CQ_COND_NONE;
 	cq_attr.wait_obj = KFI_WAIT_NONE;
@@ -636,12 +635,16 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	cq_attr.signaling_vector =
 		cpumask_first(cfs_cpt_cpumask(lnet_cpt_table(), cpt));
 
+	cq_attr.size = credits * rx_cq_scale_factor;
+
 	rc = kfi_cq_open(dev->dom->domain, &cq_attr, &ep->end_rx_cq,
 			 kfilnd_ep_cq_handler, ep);
 	if (rc) {
 		CERROR("Could not open RX CQ, rc = %d\n", rc);
 		goto err_free_ep;
 	}
+
+	cq_attr.size = credits * tx_cq_scale_factor;
 
 	rc = kfi_cq_open(dev->dom->domain, &cq_attr, &ep->end_tx_cq,
 			 kfilnd_ep_cq_handler, ep);
@@ -654,8 +657,7 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	rx_attr.op_flags = KFI_COMPLETION | KFI_MULTI_RECV;
 	rx_attr.msg_order = KFI_ORDER_NONE;
 	rx_attr.comp_order = KFI_ORDER_NONE;
-	rx_attr.total_buffered_recv = 0;
-	rx_attr.size = (KFILND_MAX_BULK_RX + ncpts - 1) / ncpts;
+	rx_attr.size = credits * rx_scale_factor;
 	rx_attr.iov_limit = LNET_MAX_IOV;
 	rc = kfi_rx_context(dev->kfd_sep, context_id, &rx_attr, &ep->end_rx,
 			    ep);
@@ -678,8 +680,7 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	tx_attr.op_flags = KFI_COMPLETION | KFI_TRANSMIT_COMPLETE;
 	tx_attr.msg_order = KFI_ORDER_NONE;
 	tx_attr.comp_order = KFI_ORDER_NONE;
-	tx_attr.inject_size = 0;
-	tx_attr.size = (KFILND_MAX_TX + ncpts - 1) / ncpts;
+	tx_attr.size = credits * tx_scale_factor;
 	tx_attr.iov_limit = LNET_MAX_IOV;
 	tx_attr.rma_iov_limit = LNET_MAX_IOV;
 	rc = kfi_tx_context(dev->kfd_sep, context_id, &tx_attr, &ep->end_tx,
