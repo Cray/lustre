@@ -58,8 +58,6 @@
 #define CFS_KFI_FAIL_TAGGED_RECV 0xF104
 
 /* Some constants which should be turned into tunables */
-#define KFILND_MAX_BULK_RX 100
-#define KFILND_MAX_TX 100
 #define KFILND_NUM_IMMEDIATE_MSG 100
 #define KFILND_IMMEDIATE_MSG_SIZE 4096
 
@@ -82,6 +80,11 @@ struct kfilnd_tunables {
 
 extern struct kfilnd_tunables  kfilnd_tunable_vals;
 extern unsigned int sync_mr_reg;
+extern unsigned int rx_scale_factor;
+extern unsigned int tx_scale_factor;
+extern unsigned int rx_cq_scale_factor;
+extern unsigned int tx_cq_scale_factor;
+extern int credits;
 
 int kfilnd_tunables_setup(struct lnet_ni *ni);
 int kfilnd_tunables_init(void);
