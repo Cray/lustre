@@ -8,6 +8,7 @@ kkfilnd-objs := \
 	kfilnd_ep.o \
 	kfilnd_dev.o \
 	kfilnd_dom.o \
+	kfilnd_peer.o \
 
 EXTRA_POST_CFLAGS += @KFICPPFLAGS@
 
