@@ -179,8 +179,6 @@ lnet_net_lock_current(void)
 
 #define lnet_ptl_lock(ptl)	spin_lock(&(ptl)->ptl_lock)
 #define lnet_ptl_unlock(ptl)	spin_unlock(&(ptl)->ptl_lock)
-#define lnet_eq_wait_lock()	spin_lock(&the_lnet.ln_eq_wait_lock)
-#define lnet_eq_wait_unlock()	spin_unlock(&the_lnet.ln_eq_wait_lock)
 #define lnet_ni_lock(ni)	spin_lock(&(ni)->ni_lock)
 #define lnet_ni_unlock(ni)	spin_unlock(&(ni)->ni_lock)
 
@@ -218,21 +216,6 @@ lnet_ni_set_status(struct lnet_ni *ni, __u32 status)
 	lnet_ni_unlock(ni);
 
 	return update;
-}
-
-static inline struct lnet_eq *
-lnet_eq_alloc (void)
-{
-	struct lnet_eq *eq;
-
-	LIBCFS_ALLOC(eq, sizeof(*eq));
-	return (eq);
-}
-
-static inline void
-lnet_eq_free(struct lnet_eq *eq)
-{
-	LIBCFS_FREE(eq, sizeof(*eq));
 }
 
 static inline struct lnet_libmd *
@@ -636,13 +619,12 @@ void lnet_build_msg_event(struct lnet_msg *msg, enum lnet_event_kind ev_type);
 void lnet_msg_commit(struct lnet_msg *msg, int cpt);
 void lnet_msg_decommit(struct lnet_msg *msg, int cpt, int status);
 
-void lnet_eq_enqueue_event(struct lnet_eq *eq, struct lnet_event *ev);
 void lnet_prep_send(struct lnet_msg *msg, int type,
 		    struct lnet_process_id target, unsigned int offset,
 		    unsigned int len);
 int lnet_send(lnet_nid_t nid, struct lnet_msg *msg, lnet_nid_t rtr_nid);
 int lnet_send_ping(lnet_nid_t dest_nid, struct lnet_handle_md *mdh, int nnis,
-		   void *user_ptr, struct lnet_eq *eq, bool recovery);
+		   void *user_ptr, lnet_eq_handler_t eq, bool recovery);
 void lnet_return_tx_credits_locked(struct lnet_msg *msg);
 void lnet_return_rx_credits_locked(struct lnet_msg *msg);
 void lnet_schedule_blocked_locked(struct lnet_rtrbufpool *rbp);
