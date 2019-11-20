@@ -20,6 +20,7 @@
 #include <linux/uio.h>
 #include <linux/rwsem.h>
 #include <linux/mutex.h>
+#include <linux/rhashtable.h>
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -126,12 +127,14 @@ struct kfilnd_ep {
 	spinlock_t tn_list_lock;
 };
 
-struct kfilnd_nid_entry {
-	struct hlist_node node;
+struct kfilnd_peer {
+	struct rhash_head node;
+	struct rcu_head rcu_head;
 	struct kfilnd_dev *dev;
 	lnet_nid_t nid;
 	kfi_addr_t addr;
 	atomic_t rx_context;
+	atomic_t remove_peer;
 	refcount_t cnt;
 };
 
@@ -172,7 +175,7 @@ struct kfilnd_dev {
 	struct kfilnd_ep	**cpt_to_endpoint;
 
 	/* Hash of LNet NIDs to KFI addresses. */
-	struct cfs_hash *nid_hash;
+	struct rhashtable peer_cache;
 };
 
 /* Invalid checksum value is treated as no checksum. */
@@ -274,6 +277,7 @@ struct kfilnd_transaction {
 	/* Transaction send message and target address. */
 	lnet_nid_t		tn_target_nid;
 	kfi_addr_t		tn_target_addr;
+	struct kfilnd_peer	*peer;
 	struct kfilnd_transaction_msg tn_tx_msg;
 
 	/* Transaction multi-receive buffer and associated receive message. */
