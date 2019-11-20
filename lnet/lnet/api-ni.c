@@ -1393,8 +1393,6 @@ lnet_prepare(lnet_pid_t requested_pid)
 static int
 lnet_unprepare (void)
 {
-	int rc;
-
 	/* NB no LNET_LOCK since this is the last reference.  All LND instances
 	 * have shut down already, so it is safe to unlink and free all
 	 * descriptors, even those that appear committed to a network op (eg MD
@@ -1412,9 +1410,8 @@ lnet_unprepare (void)
 	}
 
 	if (the_lnet.ln_mt_eq) {
-		rc = LNetEQFree(the_lnet.ln_mt_eq);
+		LNetEQFree(the_lnet.ln_mt_eq);
 		the_lnet.ln_mt_eq = NULL;
-		LASSERT(rc == 0);
 	}
 
 	lnet_portals_destroy();
@@ -1897,10 +1894,9 @@ fail_decref_ping_buffer:
 	lnet_ping_buffer_decref(*ppbuf);
 	*ppbuf = NULL;
 fail_free_eq:
-	if (set_eq) {
-		rc2 = LNetEQFree(the_lnet.ln_ping_target_eq);
-		LASSERT(rc2 == 0);
-	}
+	if (set_eq)
+		LNetEQFree(the_lnet.ln_ping_target_eq);
+
 	return rc;
 }
 
@@ -2007,13 +2003,10 @@ lnet_ping_target_update(struct lnet_ping_buffer *pbuf,
 static void
 lnet_ping_target_fini(void)
 {
-	int		rc;
-
 	lnet_ping_md_unlink(the_lnet.ln_ping_target,
 			    &the_lnet.ln_ping_target_md);
 
-	rc = LNetEQFree(the_lnet.ln_ping_target_eq);
-	LASSERT(rc == 0);
+	LNetEQFree(the_lnet.ln_ping_target_eq);
 
 	lnet_ping_target_destroy();
 }
@@ -4492,10 +4485,7 @@ static int lnet_ping(struct lnet_process_id id, signed long timeout,
 	rc = pbuf->pb_info.pi_nnis;
 
  fail_free_eq:
-	rc2 = LNetEQFree(eq);
-	if (rc2 != 0)
-		CERROR("rc2 %d\n", rc2);
-	LASSERT(rc2 == 0);
+	LNetEQFree(eq);
 
  fail_ping_buffer_decref:
 	lnet_ping_buffer_decref(pbuf);
