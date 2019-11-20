@@ -84,6 +84,8 @@ static int ptl_send_buf(struct lnet_handle_md *mdh, void *base, int len,
 	CDEBUG(D_NET, "Sending %d bytes to portal %d, xid %lld, offset %u\n",
 	       len, portal, xid, offset);
 
+	percpu_ref_get(&ptlrpc_pending);
+
 	rc = LNetPut(self, *mdh, ack,
 		     peer_id, portal, xid, offset, 0);
 	if (unlikely(rc != 0)) {
@@ -213,6 +215,7 @@ int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc)
 			}
 			break;
 		}
+		percpu_ref_get(&ptlrpc_pending);
 
 		/* LU-6441: last md is not sent and desc->bd_refs == 1 */
 		if (OBD_FAIL_CHECK_ORSET(OBD_FAIL_PTLRPC_CLIENT_BULK_CB3,
@@ -385,6 +388,7 @@ int ptlrpc_register_bulk(struct ptlrpc_request *req)
 			       posted_md, rc);
 			break;
 		}
+		percpu_ref_get(&ptlrpc_pending);
 
 		/* About to let the network at it... */
 		rc = LNetMDAttach(me_h, md, LNET_UNLINK,
@@ -872,14 +876,15 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 			/* ...but the MD attach didn't succeed... */
 			request->rq_receiving_reply = 0;
 			spin_unlock(&request->rq_lock);
-                        GOTO(cleanup_me, rc = -ENOMEM);
-                }
+			GOTO(cleanup_me, rc = -ENOMEM);
+		}
+		percpu_ref_get(&ptlrpc_pending);
 
-		CDEBUG(D_NET, "Setup reply buffer: %u bytes, xid %llu"
-                       ", portal %u\n",
-                       request->rq_repbuf_len, request->rq_xid,
-                       request->rq_reply_portal);
-        }
+		CDEBUG(D_NET,
+		       "Setup reply buffer: %u bytes, xid %llu, portal %u\n",
+		       request->rq_repbuf_len, request->rq_xid,
+		       request->rq_reply_portal);
+	}
 
         /* add references on request for request_out_callback */
         ptlrpc_request_addref(request);
@@ -983,10 +988,12 @@ int ptlrpc_register_rqbd(struct ptlrpc_request_buffer_desc *rqbd)
 	md.eq_handle = ptlrpc_eq;
 
         rc = LNetMDAttach(me_h, md, LNET_UNLINK, &rqbd->rqbd_md_h);
-        if (rc == 0)
+	if (rc == 0) {
+		percpu_ref_get(&ptlrpc_pending);
                 return (0);
+	}
 
-        CERROR("LNetMDAttach failed: %d; \n", rc);
+	CERROR("ptlrpc: LNetMDAttach failed: rc = %d\n", rc);
         LASSERT (rc == -ENOMEM);
         rc = LNetMEUnlink (me_h);
         LASSERT (rc == 0);
