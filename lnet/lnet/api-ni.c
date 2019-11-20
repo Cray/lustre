@@ -1409,10 +1409,7 @@ lnet_unprepare (void)
 		the_lnet.ln_mt_zombie_rstqs = NULL;
 	}
 
-	if (the_lnet.ln_mt_eq) {
-		LNetEQFree(the_lnet.ln_mt_eq);
-		the_lnet.ln_mt_eq = NULL;
-	}
+	the_lnet.ln_mt_eq = NULL;
 
 	lnet_portals_destroy();
 
@@ -1841,15 +1838,9 @@ lnet_ping_target_setup(struct lnet_ping_buffer **ppbuf,
 	struct lnet_md md = { NULL };
 	int rc, rc2;
 
-	if (set_eq) {
+	if (set_eq)
 		the_lnet.ln_ping_target_eq =
-			LNetEQAlloc(lnet_ping_target_event_handler);
-		if (IS_ERR(the_lnet.ln_ping_target_eq)) {
-			rc = PTR_ERR(the_lnet.ln_ping_target_eq);
-			CERROR("Can't allocate ping buffer EQ: %d\n", rc);
-			return rc;
-		}
-	}
+			lnet_ping_target_event_handler;
 
 	*ppbuf = lnet_ping_target_create(ni_count);
 	if (*ppbuf == NULL) {
@@ -1894,9 +1885,6 @@ fail_decref_ping_buffer:
 	lnet_ping_buffer_decref(*ppbuf);
 	*ppbuf = NULL;
 fail_free_eq:
-	if (set_eq)
-		LNetEQFree(the_lnet.ln_ping_target_eq);
-
 	return rc;
 }
 
@@ -2005,8 +1993,6 @@ lnet_ping_target_fini(void)
 {
 	lnet_ping_md_unlink(the_lnet.ln_ping_target,
 			    &the_lnet.ln_ping_target_md);
-
-	LNetEQFree(the_lnet.ln_ping_target_eq);
 
 	lnet_ping_target_destroy();
 }
@@ -2142,12 +2128,7 @@ static int lnet_push_target_init(void)
 		return -EALREADY;
 
 	the_lnet.ln_push_target_eq =
-		LNetEQAlloc(lnet_push_target_event_handler);
-	if (IS_ERR(the_lnet.ln_push_target_eq)) {
-		rc = PTR_ERR(the_lnet.ln_push_target_eq);
-		CERROR("Can't allocated push target EQ: %d\n", rc);
-		return rc;
-	}
+		lnet_push_target_event_handler;
 
 	rc = LNetSetLazyPortal(LNET_RESERVED_PORTAL);
 	LASSERT(rc == 0);
@@ -2159,7 +2140,6 @@ static int lnet_push_target_init(void)
 
 	if (rc) {
 		LNetClearLazyPortal(LNET_RESERVED_PORTAL);
-		LNetEQFree(the_lnet.ln_push_target_eq);
 		the_lnet.ln_push_target_eq = NULL;
 	}
 
@@ -2189,7 +2169,6 @@ static void lnet_push_target_fini(void)
 	the_lnet.ln_push_target_nnis = 0;
 
 	LNetClearLazyPortal(LNET_RESERVED_PORTAL);
-	LNetEQFree(the_lnet.ln_push_target_eq);
 	the_lnet.ln_push_target_eq = NULL;
 }
 
@@ -2890,12 +2869,7 @@ LNetNIInit(lnet_pid_t requested_pid)
 
 	lnet_ping_target_update(pbuf, ping_mdh);
 
-	the_lnet.ln_mt_eq = LNetEQAlloc(lnet_mt_event_handler);
-	if (IS_ERR(the_lnet.ln_mt_eq)) {
-		rc = PTR_ERR(the_lnet.ln_mt_eq);
-		CERROR("Can't allocate monitor thread EQ: %d\n", rc);
-		goto err_stop_ping;
-	}
+	the_lnet.ln_mt_eq = lnet_mt_event_handler;
 
 	rc = lnet_push_target_init();
 	if (rc != 0)
@@ -4357,7 +4331,6 @@ lnet_ping_event_handler(struct lnet_event *event)
 static int lnet_ping(struct lnet_process_id id, signed long timeout,
 		     struct lnet_process_id __user *ids, int n_ids)
 {
-	struct lnet_eq *eq;
 	struct lnet_md md = { NULL };
 	struct ping_data pd = { 0 };
 	struct lnet_ping_buffer *pbuf;
@@ -4385,13 +4358,6 @@ static int lnet_ping(struct lnet_process_id id, signed long timeout,
 	if (!pbuf)
 		return -ENOMEM;
 
-	eq = LNetEQAlloc(lnet_ping_event_handler);
-	if (IS_ERR(eq)) {
-		rc = PTR_ERR(eq);
-		CERROR("Can't allocate EQ: %d\n", rc);
-		goto fail_ping_buffer_decref;
-	}
-
 	/* initialize md content */
 	md.start     = &pbuf->pb_info;
 	md.length    = LNET_PING_INFO_SIZE(n_ids);
@@ -4399,14 +4365,14 @@ static int lnet_ping(struct lnet_process_id id, signed long timeout,
 	md.max_size  = 0;
 	md.options   = LNET_MD_TRUNCATE;
 	md.user_ptr  = &pd;
-	md.eq_handle = eq;
+	md.eq_handle = lnet_ping_event_handler;
 
 	init_completion(&pd.completion);
 
 	rc = LNetMDBind(md, LNET_UNLINK, &pd.mdh);
 	if (rc != 0) {
 		CERROR("Can't bind MD: %d\n", rc);
-		goto fail_free_eq;
+		goto fail_ping_buffer_decref;
 	}
 
 	rc = LNetGet(LNET_NID_ANY, pd.mdh, id,
@@ -4428,7 +4394,7 @@ static int lnet_ping(struct lnet_process_id id, signed long timeout,
 	}
 	if (!pd.replied) {
 		rc = -EIO;
-		goto fail_free_eq;
+		goto fail_ping_buffer_decref;
 	}
 
 	nob = pd.rc;
@@ -4439,7 +4405,7 @@ static int lnet_ping(struct lnet_process_id id, signed long timeout,
 	if (nob < 8) {
 		CERROR("%s: ping info too short %d\n",
 		       libcfs_id2str(id), nob);
-		goto fail_free_eq;
+		goto fail_ping_buffer_decref;
 	}
 
 	if (pbuf->pb_info.pi_magic == __swab32(LNET_PROTO_PING_MAGIC)) {
@@ -4447,20 +4413,20 @@ static int lnet_ping(struct lnet_process_id id, signed long timeout,
 	} else if (pbuf->pb_info.pi_magic != LNET_PROTO_PING_MAGIC) {
 		CERROR("%s: Unexpected magic %08x\n",
 		       libcfs_id2str(id), pbuf->pb_info.pi_magic);
-		goto fail_free_eq;
+		goto fail_ping_buffer_decref;
 	}
 
 	if ((pbuf->pb_info.pi_features & LNET_PING_FEAT_NI_STATUS) == 0) {
 		CERROR("%s: ping w/o NI status: 0x%x\n",
 		       libcfs_id2str(id), pbuf->pb_info.pi_features);
-		goto fail_free_eq;
+		goto fail_ping_buffer_decref;
 	}
 
 	if (nob < LNET_PING_INFO_SIZE(0)) {
 		CERROR("%s: Short reply %d(%d min)\n",
 		       libcfs_id2str(id),
 		       nob, (int)LNET_PING_INFO_SIZE(0));
-		goto fail_free_eq;
+		goto fail_ping_buffer_decref;
 	}
 
 	if (pbuf->pb_info.pi_nnis < n_ids)
@@ -4470,7 +4436,7 @@ static int lnet_ping(struct lnet_process_id id, signed long timeout,
 		CERROR("%s: Short reply %d(%d expected)\n",
 		       libcfs_id2str(id),
 		       nob, (int)LNET_PING_INFO_SIZE(n_ids));
-		goto fail_free_eq;
+		goto fail_ping_buffer_decref;
 	}
 
 	rc = -EFAULT;		/* if I segv in copy_to_user()... */
@@ -4480,12 +4446,9 @@ static int lnet_ping(struct lnet_process_id id, signed long timeout,
 		tmpid.pid = pbuf->pb_info.pi_pid;
 		tmpid.nid = pbuf->pb_info.pi_ni[i].ns_nid;
 		if (copy_to_user(&ids[i], &tmpid, sizeof(tmpid)))
-			goto fail_free_eq;
+			goto fail_ping_buffer_decref;
 	}
 	rc = pbuf->pb_info.pi_nnis;
-
- fail_free_eq:
-	LNetEQFree(eq);
 
  fail_ping_buffer_decref:
 	lnet_ping_buffer_decref(pbuf);
