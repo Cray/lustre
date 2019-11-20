@@ -180,8 +180,6 @@ struct lnet_libhandle {
 	((type *)((char *)(ptr)-(char *)(&((type *)0)->member)))
 
 struct lnet_eq {
-	struct list_head	eq_list;
-	struct lnet_libhandle	eq_lh;
 	unsigned long		eq_enq_seq;
 	unsigned long		eq_deq_seq;
 	unsigned int		eq_size;
@@ -1080,7 +1078,7 @@ struct lnet {
 	 * ln_api_mutex.
 	 */
 	struct lnet_handle_md		ln_ping_target_md;
-	struct lnet_handle_eq		ln_ping_target_eq;
+	struct lnet_eq			*ln_ping_target_eq;
 	struct lnet_ping_buffer		*ln_ping_target;
 	atomic_t			ln_ping_target_seqno;
 
@@ -1092,13 +1090,13 @@ struct lnet {
 	 * buffer may linger a while after it has been unlinked, in
 	 * which case the event handler cleans up.
 	 */
-	struct lnet_handle_eq		ln_push_target_eq;
+	struct lnet_eq			*ln_push_target_eq;
 	struct lnet_handle_md		ln_push_target_md;
 	struct lnet_ping_buffer		*ln_push_target;
 	int				ln_push_target_nnis;
 
 	/* discovery event queue handle */
-	struct lnet_handle_eq		ln_dc_eqh;
+	struct lnet_eq			*ln_dc_eq;
 	/* discovery requests */
 	struct list_head		ln_dc_request;
 	/* discovery working list */
@@ -1169,7 +1167,7 @@ struct lnet {
 	 */
 	struct list_head		**ln_mt_zombie_rstqs;
 	/* recovery eq handler */
-	struct lnet_handle_eq		ln_mt_eqh;
+	struct lnet_eq			*ln_mt_eq;
 
 	/*
 	 * Completed when the discovery and monitor threads can enter their
