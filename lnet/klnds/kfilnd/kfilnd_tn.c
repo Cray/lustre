@@ -9,6 +9,7 @@
 #include "kfilnd_ep.h"
 #include "kfilnd_dev.h"
 #include "kfilnd_dom.h"
+#include "kfilnd_peer.h"
 #include <asm/checksum.h>
 
 static struct kmem_cache *tn_cache;
@@ -309,7 +310,7 @@ static void kfilnd_tn_process_rma_event(void *ep_context, void *tn_context,
 	if (status)
 		CERROR("RMA failed to %s: rx_ctx=%llu errno=%d\n",
 		       libcfs_nid2str(tn->tn_target_nid),
-		       KFILND_RX_CONTEXT(tn->tn_target_addr), status);
+		       KFILND_RX_CONTEXT(tn->peer->addr), status);
 
 	tn->tn_flags &= ~KFILND_TN_FLAG_TX_POSTED;
 	tn->tn_status = status;
@@ -338,7 +339,7 @@ static void kfilnd_tn_process_tx_event(void *ep_context, void *tn_context,
 	if (status)
 		CERROR("Send failed to %s: rx_ctx=%llu errno=%d\n",
 		       libcfs_nid2str(tn->tn_target_nid),
-		       KFILND_RX_CONTEXT(tn->tn_target_addr), status);
+		       KFILND_RX_CONTEXT(tn->peer->addr), status);
 
 	tn->tn_flags &= ~KFILND_TN_FLAG_TX_POSTED;
 	tn->tn_status = status;
@@ -523,6 +524,17 @@ static void kfilnd_tn_finalize(struct kfilnd_transaction *tn, bool *tn_released)
 		lnet_finalize(tn->tn_getreply, tn->tn_status);
 	}
 
+	/* If the KFI address is valid and the operation failed, evict the LNet
+	 * NID entry from the cache. Future transactions to this LNet NID will
+	 * have to allocate a new entry.
+	 */
+	if (!IS_ERR_OR_NULL(tn->peer)) {
+		if (tn->tn_status)
+			kfilnd_peer_mark_removal(tn->peer);
+
+		kfilnd_peer_put(tn->peer);
+	}
+
 	kfilnd_tn_free(tn);
 }
 
@@ -564,13 +576,15 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 		msg = tn->tn_tx_msg.msg;
 
 		/* Lookup the peer's KFI address. */
-		rc = kfilnd_dev_lookup_peer_address(tn->tn_ep->end_dev,
-						    tn->tn_target_nid,
-						    &tn->tn_target_addr);
-		if (rc) {
+		tn->peer = kfilnd_peer_get(tn->tn_ep->end_dev,
+					   tn->tn_target_nid);
+		if (IS_ERR(tn->peer)) {
+			rc = PTR_ERR(tn->peer);
 			CERROR("Failed to lookup KFI address: rc=%d\n", rc);
 			break;
 		}
+
+		tn->tn_target_addr = tn->peer->addr;
 
 		/* If the transaction is an immediate message only, pack the
 		 * message and post the buffer. If not an immediate message
@@ -652,17 +666,9 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 	case TN_EVENT_RX_OK:
 		msg = tn->tn_rx_msg.msg;
 
-		/* Update the NID address with the new preferred RX context.
-		 * Don't drop the message if this fails.
-		 */
-		rc = kfilnd_dev_update_peer_address(tn->tn_ep->end_dev,
-						    msg->kfm_srcnid,
-						    msg->kfm_prefer_rx);
-		if (rc) {
-			CWARN("Failed to update peer address %s: rc=%d\n",
-			      libcfs_nid2str(msg->kfm_srcnid), rc);
-			rc = 0;
-		}
+		/* Update the NID address with the new preferred RX context. */
+		kfilnd_peer_update(tn->tn_ep->end_dev, msg->kfm_srcnid,
+				   msg->kfm_prefer_rx);
 
 		/*
 		 * Pass message up to LNet
@@ -707,13 +713,6 @@ static int kfilnd_tn_imm_send(struct kfilnd_transaction *tn,
 
 	switch (event) {
 	case TN_EVENT_FAIL:
-		/* Remove LNet NID from hash if transaction fails. This would
-		 * only get called if the KFI_SEND event has an error.
-		 */
-		kfilnd_dev_remove_peer_address(tn->tn_ep->end_dev,
-					       tn->tn_target_nid);
-
-		/* Fall through. */
 	case TN_EVENT_TX_OK:
 		break;
 
@@ -755,17 +754,17 @@ static int kfilnd_tn_imm_recv(struct kfilnd_transaction *tn,
 			tn->tn_posted_buf = NULL;
 
 		/* Lookup the peer's KFI address. */
-		rc = kfilnd_dev_lookup_peer_address(tn->tn_ep->end_dev,
-						    tn->tn_target_nid,
-						    &tn->tn_target_addr);
-		if (rc) {
+		tn->peer = kfilnd_peer_get(tn->tn_ep->end_dev,
+					   tn->tn_target_nid);
+		if (IS_ERR(tn->peer)) {
+			rc = PTR_ERR(tn->peer);
 			CERROR("Failed to lookup KFI address: rc=%d\n", rc);
 		} else {
 			/* Update the KFI address to use the response RX
 			 * context.
 			 */
 			tn->tn_target_addr =
-				kfi_rx_addr(KFILND_BASE_ADDR(tn->tn_target_addr),
+				kfi_rx_addr(KFILND_BASE_ADDR(tn->peer->addr),
 					    tn->tn_response_rx,
 					    KFILND_FAB_RX_CTX_BITS);
 
@@ -891,30 +890,13 @@ static int kfilnd_tn_bulk_rma(struct kfilnd_transaction *tn,
 
 		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
 
-		/* Lookup the peer's KFI address. */
-		rc = kfilnd_dev_lookup_peer_address(tn->tn_ep->end_dev,
-						    tn->tn_target_nid,
-						    &tn->tn_target_addr);
-		if (rc) {
-			CERROR("Failed to lookup KFI address: rc=%d\n", rc);
-		} else {
-			tn->tn_state = TN_STATE_WAIT_COMP;
-			rc = kfilnd_ep_post_tagged_send(tn->tn_ep, tn);
-		}
-
+		tn->tn_state = TN_STATE_WAIT_COMP;
+		rc = kfilnd_ep_post_tagged_send(tn->tn_ep, tn);
 		if (rc)
 			finalize_tn = true;
 		break;
 
 	case TN_EVENT_FAIL:
-		/* Remove LNet NID from hash only if transaction fails. This
-		 * would only get called if the KFI_RMA or KFI_REMOTE_RMA event
-		 * has an error.
-		 */
-		kfilnd_dev_remove_peer_address(tn->tn_ep->end_dev,
-					       tn->tn_target_nid);
-
-		/* Fall through. */
 		finalize_tn = true;
 		break;
 
