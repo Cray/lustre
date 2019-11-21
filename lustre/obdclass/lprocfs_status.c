@@ -2294,8 +2294,10 @@ EXPORT_SYMBOL(lprocfs_oh_clear_pcpu);
 
 void lprocfs_oh_release_pcpu(struct obd_hist_pcpu **oh)
 {
-	OBD_FREE_LARGE(*oh, obd_hist_pcpu_size());
-	*oh = NULL;
+	if (*oh) {
+		OBD_FREE_LARGE(*oh, obd_hist_pcpu_size());
+		*oh = NULL;
+	}
 }
 EXPORT_SYMBOL(lprocfs_oh_release_pcpu);
 
