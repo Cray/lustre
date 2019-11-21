@@ -232,23 +232,44 @@ enum kfilnd_msg_type {
 
 /* Transaction States */
 enum tn_states {
-	TN_STATE_IDLE = 0,
+	TN_STATE_INVALID,
+
+	/* Shared initiator and target states. */
+	TN_STATE_IDLE,
+	TN_STATE_WAIT_TAG_COMP,
+
+	/* Initiator states. */
 	TN_STATE_IMM_SEND,
-	TN_STATE_IMM_RECV,
 	TN_STATE_REG_MEM,
 	TN_STATE_WAIT_COMP,
-	TN_STATE_BULK_RMA,
+	TN_STATE_FAIL,
+
+	/* Target states. */
+	TN_STATE_IMM_RECV,
+	TN_STATE_WAIT_RMA_COMP,
 };
 
 /* Transaction Events */
 enum tn_events {
+	TN_EVENT_INVALID,
+
+	/* Initiator events. */
 	TN_EVENT_TX_OK,
+	TN_EVENT_TX_FAIL,
 	TN_EVENT_MR_OK,
+	TN_EVENT_MR_FAIL,
+	TN_EVENT_TAG_RX_OK,
+	TN_EVENT_TAG_RX_FAIL,
+	TN_EVENT_TAG_RX_CANCEL,
+
+	/* Target events. */
 	TN_EVENT_RX_OK,
-	TN_EVENT_RMA_OK,
-	TN_EVENT_FAIL,
+	TN_EVENT_RX_FAIL,
 	TN_EVENT_RMA_PREP,
-	TN_EVENT_CANCEL,
+	TN_EVENT_RMA_OK,
+	TN_EVENT_RMA_FAIL,
+	TN_EVENT_TAG_TX_OK,
+	TN_EVENT_TAG_TX_FAIL,
 };
 
 #define KFILND_TN_FLAG_IMMEDIATE	BIT(0)
