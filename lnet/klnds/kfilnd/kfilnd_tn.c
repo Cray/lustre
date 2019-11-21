@@ -235,7 +235,7 @@ static void kfilnd_tn_process_tagged_rx_event(void *ep_context,
 					      void *tn_context, int status)
 {
 	struct kfilnd_transaction *tn = tn_context;
-	enum tn_events event = TN_EVENT_RX_OK;
+	enum tn_events event = TN_EVENT_TAG_RX_OK;
 	int rc;
 	struct kfilnd_transaction_msg *msg = &tn->tn_tag_rx_msg;
 
@@ -253,18 +253,18 @@ static void kfilnd_tn_process_tagged_rx_event(void *ep_context,
 				CERROR("Peer error: rc=%d\n",
 				       msg->msg->kfm_u.bulk_rsp.status);
 				tn->tn_status = -EREMOTEIO;
-				event = TN_EVENT_FAIL;
+				event = TN_EVENT_TAG_RX_FAIL;
 			}
 		} else {
 			CERROR("Bad tagged receive message type: type=%d\n",
 			       msg->msg->kfm_type);
 			tn->tn_status = -EIO;
-			event = TN_EVENT_FAIL;
+			event = TN_EVENT_TAG_RX_FAIL;
 		}
 	} else {
 		CERROR("Bad tagged receive: rc=%d\n", status);
 		tn->tn_status = status;
-		event = TN_EVENT_FAIL;
+		event = TN_EVENT_TAG_RX_FAIL;
 	}
 
 out:
@@ -295,7 +295,7 @@ static void kfilnd_tn_process_tagged_unlink_event(void *ep_context,
 {
 	struct kfilnd_transaction *tn = tn_context;
 
-	kfilnd_tn_event_handler(tn, TN_EVENT_CANCEL, true);
+	kfilnd_tn_event_handler(tn, TN_EVENT_TAG_RX_CANCEL, true);
 }
 
 /**
@@ -305,7 +305,7 @@ static void kfilnd_tn_process_rma_event(void *ep_context, void *tn_context,
 					int status)
 {
 	struct kfilnd_transaction *tn = tn_context;
-	enum tn_events event;
+	enum tn_events event = TN_EVENT_RMA_OK;
 
 	if (status)
 		CERROR("RMA failed to %s: rx_ctx=%llu errno=%d\n",
@@ -316,9 +316,7 @@ static void kfilnd_tn_process_rma_event(void *ep_context, void *tn_context,
 	tn->tn_status = status;
 
 	if (tn->tn_status)
-		event = TN_EVENT_FAIL;
-	else
-		event = TN_EVENT_RMA_OK;
+		event = TN_EVENT_RMA_FAIL;
 
 	/*
 	 * The status parameter has been sent to the transaction's state
@@ -334,7 +332,7 @@ static void kfilnd_tn_process_tx_event(void *ep_context, void *tn_context,
 				       int status)
 {
 	struct kfilnd_transaction *tn = tn_context;
-	enum tn_events event;
+	enum tn_events event = TN_EVENT_TX_OK;
 
 	if (status)
 		CERROR("Send failed to %s: rx_ctx=%llu errno=%d\n",
@@ -345,9 +343,7 @@ static void kfilnd_tn_process_tx_event(void *ep_context, void *tn_context,
 	tn->tn_status = status;
 
 	if (tn->tn_status)
-		event = TN_EVENT_FAIL;
-	else
-		event = TN_EVENT_TX_OK;
+		event = TN_EVENT_TX_FAIL;
 
 	/*
 	 * The status parameter has been sent to the transaction's state
@@ -356,35 +352,70 @@ static void kfilnd_tn_process_tx_event(void *ep_context, void *tn_context,
 	kfilnd_tn_event_handler(tn, event, true);
 }
 
+static void kfilnd_tn_process_tagged_tx_event(void *ep_context,
+					      void *tn_context, int status)
+{
+	struct kfilnd_transaction *tn = tn_context;
+	enum tn_events event = TN_EVENT_TAG_TX_OK;
+
+	if (status) {
+		tn->tn_status = status;
+		event = TN_EVENT_TAG_TX_FAIL;
+		CERROR("Tagged send failed to %s: errno=%d\n",
+		       libcfs_nid2str(tn->tn_target_nid), status);
+	}
+
+	kfilnd_tn_event_handler(tn, event, true);
+}
+
 /**
  * kfilnd_tn_cq_error() - Process a completion queue error entry.
  */
 void kfilnd_tn_cq_error(struct kfilnd_ep *ep, struct kfi_cq_err_entry *error)
 {
-	if (error->err == ECANCELED && error->flags & KFI_RECV) {
-		if (error->flags & KFI_TAGGED)
+	switch (error->flags) {
+	case KFI_MSG | KFI_RECV:
+		if (error->err != ECANCELED) {
+			CERROR("Dropping error receive event: rc=%d\n",
+			       -error->err);
+			break;
+		}
+
+		/* Fall through. */
+	case KFI_MSG | KFI_RECV | KFI_MULTI_RECV:
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_unlink_event,
+				error->op_context, NULL, 0);
+		break;
+
+	case KFI_TAGGED | KFI_RECV:
+		if (error->err == ECANCELED)
 			kfilnd_wkr_post(ep->end_cpt,
 					kfilnd_tn_process_tagged_unlink_event,
 					ep, error->op_context, 0);
 		else
 			kfilnd_wkr_post(ep->end_cpt,
-					kfilnd_tn_process_unlink_event,
-					error->op_context, NULL, 0);
-	} else if (error->flags & KFI_MULTI_RECV) {
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_unlink_event,
-				error->op_context, NULL, 0);
-	} else if (error->flags & (KFI_RMA | KFI_READ) ||
-		   error->flags & (KFI_RMA | KFI_WRITE)) {
+					kfilnd_tn_process_tagged_rx_event, ep,
+					error->op_context, -error->err);
+		break;
+
+	case KFI_RMA | KFI_READ:
+	case KFI_RMA | KFI_WRITE:
 		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_rma_event, ep,
 				error->op_context, -error->err);
-	} else if (error->flags & (KFI_MSG | KFI_SEND)) {
+		break;
+
+	case KFI_MSG | KFI_SEND:
 		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tx_event, ep,
 				error->op_context, -error->err);
-	} else if (error->flags & (KFI_TAGGED | KFI_RECV)) {
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tagged_rx_event,
+		break;
+
+	case KFI_TAGGED | KFI_SEND:
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tagged_tx_event,
 				ep, error->op_context, -error->err);
-	} else {
-		CERROR("Dropping error event: flags=%llx\n", error->flags);
+		break;
+
+	default:
+		CERROR("Unhandled CQ event: flags=%llx\n", error->flags);
 	}
 }
 
@@ -415,7 +446,7 @@ void kfilnd_tn_eq_error(struct kfi_eq_err_entry *error)
 	tn->tn_status = -error->err;
 
 	kfilnd_wkr_post(tn->tn_ep->end_cpt, kfilnd_tn_process_eq_event,
-			tn->tn_ep->end_dev, tn, TN_EVENT_FAIL);
+			tn->tn_ep->end_dev, tn, TN_EVENT_MR_FAIL);
 }
 
 /**
@@ -470,9 +501,13 @@ void kfilnd_tn_cq_event(struct kfilnd_ep *ep, struct kfi_cq_data_entry *event)
 		break;
 
 	case KFI_MSG | KFI_SEND:
-	case KFI_TAGGED | KFI_SEND:
 		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tx_event, ep,
 				event->op_context, 0);
+		break;
+
+	case KFI_TAGGED | KFI_SEND:
+		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tagged_tx_event,
+				ep, event->op_context, 0);
 		break;
 
 	default:
@@ -565,8 +600,8 @@ static int kfilnd_tn_cancel_tag_recv(struct kfilnd_transaction *tn)
 }
 
 /*  The following are the state machine routines for the transactions. */
-static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
-			  bool *tn_released)
+static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
+				 enum tn_events event, bool *tn_released)
 {
 	struct kfilnd_msg *msg;
 	int rc;
@@ -599,14 +634,13 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 			/* Post an immediate message with KFI LND header and
 			 * entire LNet payload.
 			 */
-			tn->tn_state = TN_STATE_IMM_SEND;
 			rc = kfilnd_ep_post_send(tn->tn_ep, tn);
 			if (rc)
-				CERROR("Failed to send to %s: rc=%d\n",
+				CERROR("Failed to post send to %s: rc=%d\n",
 				       libcfs_nid2str(tn->tn_target_nid), rc);
+			else
+				tn->tn_state = TN_STATE_IMM_SEND;
 		} else {
-			tn->tn_state = TN_STATE_REG_MEM;
-
 			/* Post tagged receive buffer used to land bulk
 			 * response.
 			 */
@@ -619,6 +653,8 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 
 			rc = kfilnd_ep_reg_mr(tn->tn_ep, tn);
 			if (rc) {
+				tn->tn_status = rc;
+
 				CERROR("Failed to register MR for %s: rc=%d\n",
 				       libcfs_nid2str(tn->tn_target_nid), rc);
 
@@ -627,9 +663,16 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 				 * successful, a error KFI_ECANCELED event will
 				 * progress the transaction.
 				 */
-				tn->tn_status = rc;
 				rc = kfilnd_tn_cancel_tag_recv(tn);
-				goto out;
+				if (rc)
+					CERROR("Failed to cancel tagged receive\n");
+				else
+					tn->tn_state = TN_STATE_FAIL;
+
+				/* Exit now since an asynchronous cancel event
+				 * will occur to progress the transaction.
+				 */
+				return;
 			}
 
 			/* If synchronous memory registration is used, post an
@@ -638,13 +681,14 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 			 */
 			if (sync_mr_reg) {
 				kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
-				tn->tn_state = TN_STATE_WAIT_COMP;
 
 				/* Issue an extra increment for the receive
 				 * event.
 				 */
 				rc = kfilnd_ep_post_send(tn->tn_ep, tn);
 				if (rc) {
+					tn->tn_status = rc;
+
 					CERROR("Failed to send to %s: rc=%d\n",
 					       libcfs_nid2str(tn->tn_target_nid),
 					       rc);
@@ -655,10 +699,22 @@ static int kfilnd_tn_idle(struct kfilnd_transaction *tn, enum tn_events event,
 					 * KFI_ECANCELED event will progress the
 					 * transaction.
 					 */
-					tn->tn_status = rc;
 					rc = kfilnd_tn_cancel_tag_recv(tn);
-					goto out;
+					if (rc)
+						CERROR("Failed to cancel tagged receive\n");
+					else
+						tn->tn_state = TN_STATE_FAIL;
+
+					/* Exit now since an asynchronous cancel
+					 * event will occur to progress the
+					 * transaction.
+					 */
+					return;
+				} else {
+					tn->tn_state = TN_STATE_WAIT_COMP;
 				}
+			} else {
+				tn->tn_state = TN_STATE_REG_MEM;
 			}
 		}
 		break;
@@ -702,42 +758,28 @@ out:
 
 		kfilnd_tn_finalize(tn, tn_released);
 	}
-
-	return rc;
 }
 
-static int kfilnd_tn_imm_send(struct kfilnd_transaction *tn,
-			      enum tn_events event, bool *tn_released)
+static void kfilnd_tn_state_imm_send(struct kfilnd_transaction *tn,
+				     enum tn_events event, bool *tn_released)
 {
-	int rc = 0;
-
 	switch (event) {
-	case TN_EVENT_FAIL:
 	case TN_EVENT_TX_OK:
+	case TN_EVENT_TX_FAIL:
+		kfilnd_tn_finalize(tn, tn_released);
 		break;
 
 	default:
 		CERROR("Invalid event for immediate send state: event=%d\n",
 		       event);
-		rc = -EINVAL;
+		CERROR("Transaction resource leak\n");
 	}
-
-	/* Transaction is always finalized when an event occurs in the immediate
-	 * send state.
-	 */
-	if (rc)
-		tn->tn_status = rc;
-
-	kfilnd_tn_finalize(tn, tn_released);
-
-	return rc;
 }
 
-static int kfilnd_tn_imm_recv(struct kfilnd_transaction *tn,
-			      enum tn_events event, bool *tn_released)
+static void kfilnd_tn_state_imm_recv(struct kfilnd_transaction *tn,
+				     enum tn_events event, bool *tn_released)
 {
 	int rc = 0;
-	bool finalize_tn = false;
 
 	switch (event) {
 	case TN_EVENT_RMA_PREP:
@@ -771,44 +813,39 @@ static int kfilnd_tn_imm_recv(struct kfilnd_transaction *tn,
 			/* Initiate the RMA operation to push/pull the LNet
 			 * payload.
 			 */
-			tn->tn_state = TN_STATE_BULK_RMA;
 			if (tn->tn_flags & KFILND_TN_FLAG_SINK)
 				rc = kfilnd_ep_post_read(tn->tn_ep, tn);
 			else
 				rc = kfilnd_ep_post_write(tn->tn_ep, tn);
+
+			if (rc)
+				CERROR("Failed to post RMA to %s: rc=%d\n",
+				       libcfs_nid2str(tn->tn_target_nid), rc);
+			else
+				tn->tn_state = TN_STATE_WAIT_RMA_COMP;
 		}
 
 		if (!rc)
 			break;
 
+		tn->tn_status = rc;
+
 		/* On any failure, fallthrough */
-	case TN_EVENT_FAIL:
 	case TN_EVENT_RX_OK:
-		finalize_tn = true;
+		kfilnd_tn_finalize(tn, tn_released);
 		break;
 
 	default:
 		CERROR("Invalid event for immediate receive state: event=%d\n",
 		       event);
-		rc = -EINVAL;
-		finalize_tn = true;
+		CERROR("Transaction resource leak\n");
 	}
-
-	if (finalize_tn) {
-		if (rc)
-			tn->tn_status = rc;
-
-		kfilnd_tn_finalize(tn, tn_released);
-	}
-
-	return rc;
 }
 
-static int kfilnd_tn_reg_mem(struct kfilnd_transaction *tn,
-			     enum tn_events event, bool *tn_released)
+static void kfilnd_tn_state_reg_mem(struct kfilnd_transaction *tn,
+				    enum tn_events event, bool *tn_released)
 {
-	int rc = 0;
-	bool finalize_tn = false;
+	int rc;
 
 	switch (event) {
 	case TN_EVENT_MR_OK:
@@ -818,68 +855,76 @@ static int kfilnd_tn_reg_mem(struct kfilnd_transaction *tn,
 		 * peer will perform an RMA operation to push/pull the LNet
 		 * payload.
 		 */
-		tn->tn_state = TN_STATE_WAIT_COMP;
-
 		rc = kfilnd_ep_post_send(tn->tn_ep, tn);
-		if (!rc)
+		if (!rc) {
+			tn->tn_state = TN_STATE_WAIT_COMP;
 			break;
+		}
+
+		CERROR("Failed to send to %s: rc=%d\n",
+		       libcfs_nid2str(tn->tn_target_nid), rc);
 
 		/* Fall through on bad transaction status. */
-	case TN_EVENT_CANCEL:
-		finalize_tn = true;
-		break;
-
-	case TN_EVENT_FAIL:
+	case TN_EVENT_MR_FAIL:
 		/* Need to cancel the tagged receive in order to prevent
 		 * resources from being leaked. If successful, a error
 		 * KFI_ECANCELED event will progress the transaction.
 		 */
 		rc = kfilnd_tn_cancel_tag_recv(tn);
-		if (rc)
-			finalize_tn = true;
+		if (rc) {
+			CERROR("Failed to cancel tagged receive\n");
+			break;
+		}
+
+		/* Fall through. */
+	case TN_EVENT_TAG_RX_FAIL:
+		tn->tn_state = TN_STATE_FAIL;
 		break;
 
 	default:
 		CERROR("Invalid event for reg mem state: event=%d\n", event);
-		rc = -EINVAL;
-		finalize_tn = true;
+		CERROR("Transaction resource leak\n");
 	}
-
-	if (finalize_tn) {
-		if (rc)
-			tn->tn_status = rc;
-
-		kfilnd_tn_finalize(tn, tn_released);
-	}
-
-	return rc;
 }
 
-static int kfilnd_tn_wait_comp(struct kfilnd_transaction *tn,
-			       enum tn_events event, bool *tn_released)
+static void kfilnd_tn_state_wait_comp(struct kfilnd_transaction *tn,
+				      enum tn_events event, bool *tn_released)
 {
+	int rc;
+
 	switch (event) {
-	case TN_EVENT_FAIL:
 	case TN_EVENT_TX_OK:
-	case TN_EVENT_RX_OK:
-	case TN_EVENT_CANCEL:
+		tn->tn_state = TN_STATE_WAIT_TAG_COMP;
+		break;
+
+	case TN_EVENT_TX_FAIL:
+		/* Need to cancel the tagged receive in order to prevent
+		 * resources from being leaked. If successful, a error
+		 * KFI_ECANCELED event will progress the transaction.
+		 */
+		rc = kfilnd_tn_cancel_tag_recv(tn);
+		if (rc) {
+			CERROR("Failed to cancel tagged receive\n");
+			break;
+		}
+
+		/* Fall through. */
+	case TN_EVENT_TAG_RX_FAIL:
+		tn->tn_state = TN_STATE_FAIL;
 		break;
 
 	default:
 		CERROR("Invalid event for wait complete state: event=%d\n",
 		       event);
+		CERROR("Transaction resource leak\n");
 	}
-
-	kfilnd_tn_finalize(tn, tn_released);
-
-	return 0;
 }
 
-static int kfilnd_tn_bulk_rma(struct kfilnd_transaction *tn,
-			      enum tn_events event, bool *tn_released)
+static void kfilnd_tn_state_wait_rma_comp(struct kfilnd_transaction *tn,
+					  enum tn_events event,
+					  bool *tn_released)
 {
-	int rc = 0;
-	bool finalize_tn = false;
+	int rc;
 	struct kfilnd_msg *tx_msg = tn->tn_tx_msg.msg;
 
 	switch (event) {
@@ -890,30 +935,64 @@ static int kfilnd_tn_bulk_rma(struct kfilnd_transaction *tn,
 
 		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
 
-		tn->tn_state = TN_STATE_WAIT_COMP;
 		rc = kfilnd_ep_post_tagged_send(tn->tn_ep, tn);
-		if (rc)
-			finalize_tn = true;
-		break;
+		if (!rc) {
+			tn->tn_state = TN_STATE_WAIT_TAG_COMP;
+			break;
+		}
 
-	case TN_EVENT_FAIL:
-		finalize_tn = true;
+		CERROR("Failed to post tagged send to %s: rc=%d\n",
+		       libcfs_nid2str(tn->tn_target_nid), rc);
+
+		tn->tn_status = rc;
+
+		/* Fall through. */
+	case TN_EVENT_RMA_FAIL:
+		kfilnd_tn_finalize(tn, tn_released);
 		break;
 
 	default:
 		CERROR("Invalid event for wait RMA state: event=%d\n", event);
-		rc = -EINVAL;
-		finalize_tn = true;
+		CERROR("Transaction resource leak\n");
 	}
+}
 
-	if (finalize_tn) {
-		if (rc)
-			tn->tn_status = rc;
-
+static void kfilnd_tn_state_wait_tag_comp(struct kfilnd_transaction *tn,
+					  enum tn_events event,
+					  bool *tn_released)
+{
+	switch (event) {
+	case TN_EVENT_TAG_RX_OK:
+	case TN_EVENT_TAG_RX_FAIL:
+	case TN_EVENT_TAG_TX_OK:
+	case TN_EVENT_TAG_TX_FAIL:
 		kfilnd_tn_finalize(tn, tn_released);
-	}
+		break;
 
-	return 0;
+	default:
+		CERROR("Invalid event for wait tag complete state: event=%d\n",
+		       event);
+		CERROR("Transaction resource leak\n");
+	}
+}
+
+static void kfilnd_tn_state_fail(struct kfilnd_transaction *tn,
+				 enum tn_events event, bool *tn_released)
+{
+	switch (event) {
+	case TN_EVENT_TX_OK:
+	case TN_EVENT_TX_FAIL:
+	case TN_EVENT_MR_OK:
+	case TN_EVENT_MR_FAIL:
+	case TN_EVENT_TAG_RX_FAIL:
+	case TN_EVENT_TAG_RX_CANCEL:
+		kfilnd_tn_finalize(tn, tn_released);
+		break;
+
+	default:
+		CERROR("Invalid event for fail state: event=%d\n", event);
+		CERROR("Transaction resource leak\n");
+	}
 }
 
 /**
@@ -931,7 +1010,6 @@ static int kfilnd_tn_bulk_rma(struct kfilnd_transaction *tn,
 void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 			     enum tn_events event, bool dec_async_event_count)
 {
-	int rc;
 	bool tn_released = false;
 
 	if (!tn)
@@ -944,25 +1022,32 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 
 	switch (tn->tn_state) {
 	case TN_STATE_IDLE:
-		rc = kfilnd_tn_idle(tn, event, &tn_released);
+		kfilnd_tn_state_idle(tn, event, &tn_released);
 		break;
 	case TN_STATE_IMM_SEND:
-		rc = kfilnd_tn_imm_send(tn, event, &tn_released);
-		break;
-	case TN_STATE_IMM_RECV:
-		rc = kfilnd_tn_imm_recv(tn, event, &tn_released);
+		kfilnd_tn_state_imm_send(tn, event, &tn_released);
 		break;
 	case TN_STATE_REG_MEM:
-		rc = kfilnd_tn_reg_mem(tn, event, &tn_released);
+		kfilnd_tn_state_reg_mem(tn, event, &tn_released);
 		break;
 	case TN_STATE_WAIT_COMP:
-		rc = kfilnd_tn_wait_comp(tn, event, &tn_released);
+		kfilnd_tn_state_wait_comp(tn, event, &tn_released);
 		break;
-	case TN_STATE_BULK_RMA:
-		rc = kfilnd_tn_bulk_rma(tn, event, &tn_released);
+	case TN_STATE_FAIL:
+		kfilnd_tn_state_fail(tn, event, &tn_released);
+		break;
+	case TN_STATE_IMM_RECV:
+		kfilnd_tn_state_imm_recv(tn, event, &tn_released);
+		break;
+	case TN_STATE_WAIT_RMA_COMP:
+		kfilnd_tn_state_wait_rma_comp(tn, event, &tn_released);
+		break;
+	case TN_STATE_WAIT_TAG_COMP:
+		kfilnd_tn_state_wait_tag_comp(tn, event, &tn_released);
 		break;
 	default:
 		CERROR("Transaction in bad state: %d\n", tn->tn_state);
+		CERROR("Transaction resource leak\n");
 	}
 
 	if (!tn_released)
@@ -1049,6 +1134,7 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 	tn->tn_mr_key = rc;
 	tn->tn_ep = ep;
 	tn->tn_response_rx = ep->end_context_id;
+	tn->tn_state = TN_STATE_IDLE;
 
 	/* Add the transaction to an endpoint.  This is like
 	 * incrementing a ref counter.
