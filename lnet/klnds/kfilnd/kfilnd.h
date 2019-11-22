@@ -276,8 +276,6 @@ enum tn_events {
 };
 
 #define KFILND_TN_FLAG_IMMEDIATE	BIT(0)
-#define KFILND_TN_FLAG_TX_POSTED	BIT(1)
-#define KFILND_TN_FLAG_RX_POSTED	BIT(2)
 #define KFILND_TN_FLAG_SINK		BIT(3)
 
 struct kfilnd_transaction_msg {
