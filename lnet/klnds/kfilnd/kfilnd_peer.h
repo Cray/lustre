@@ -10,11 +10,11 @@
 
 #include "kfilnd.h"
 
-void kfilnd_peer_mark_removal(struct kfilnd_peer *peer);
+void kfilnd_peer_down(struct kfilnd_peer *peer);
 void kfilnd_peer_put(struct kfilnd_peer *peer);
 struct kfilnd_peer *kfilnd_peer_get(struct kfilnd_dev *dev, lnet_nid_t nid);
-void kfilnd_peer_update(struct kfilnd_dev *dev, lnet_nid_t nid,
-			unsigned int rx_context);
+void kfilnd_peer_update(struct kfilnd_peer *peer, unsigned int rx_context);
+void kfilnd_peer_alive(struct kfilnd_peer *peer);
 void kfilnd_peer_destroy(struct kfilnd_dev *dev);
 void kfilnd_peer_init(struct kfilnd_dev *dev);
 
