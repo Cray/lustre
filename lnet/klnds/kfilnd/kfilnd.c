@@ -195,7 +195,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	tn->tn_lntmsg = msg;	/* finalise msg on completion */
 
 	/* Start the state machine processing this transaction */
-	kfilnd_tn_event_handler(tn, TN_EVENT_TX_OK, false);
+	kfilnd_tn_event_handler(tn, TN_EVENT_TX_OK);
 
 	return 0;
 }
@@ -247,7 +247,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 						    kfm_u.immed.payload), mlen);
 
 		tn->tn_status = 0;
-		kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK, false);
+		kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK);
 		return 0;
 
 	case KFILND_MSG_BULK_PUT_REQ:
@@ -284,7 +284,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 						 sizeof(struct kfilnd_bulk_rsp),
 						 ni);
 
-	kfilnd_tn_event_handler(tn, TN_EVENT_RMA_PREP, false);
+	kfilnd_tn_event_handler(tn, TN_EVENT_RMA_PREP);
 
 	return rc;
 }
