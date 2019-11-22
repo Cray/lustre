@@ -228,7 +228,7 @@ static void kfilnd_tn_process_rx_event(void *buf_context, void *msg_context,
 		return;
 	};
 
-	kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK, false);
+	kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK);
 }
 
 static void kfilnd_tn_process_tagged_rx_event(void *ep_context,
@@ -268,7 +268,7 @@ static void kfilnd_tn_process_tagged_rx_event(void *ep_context,
 	}
 
 out:
-	kfilnd_tn_event_handler(tn, event, true);
+	kfilnd_tn_event_handler(tn, event);
 }
 
 /**
@@ -295,7 +295,7 @@ static void kfilnd_tn_process_tagged_unlink_event(void *ep_context,
 {
 	struct kfilnd_transaction *tn = tn_context;
 
-	kfilnd_tn_event_handler(tn, TN_EVENT_TAG_RX_CANCEL, true);
+	kfilnd_tn_event_handler(tn, TN_EVENT_TAG_RX_CANCEL);
 }
 
 /**
@@ -322,7 +322,7 @@ static void kfilnd_tn_process_rma_event(void *ep_context, void *tn_context,
 	 * The status parameter has been sent to the transaction's state
 	 * machine event.
 	 */
-	kfilnd_tn_event_handler(tn, event, true);
+	kfilnd_tn_event_handler(tn, event);
 }
 
 /**
@@ -349,7 +349,7 @@ static void kfilnd_tn_process_tx_event(void *ep_context, void *tn_context,
 	 * The status parameter has been sent to the transaction's state
 	 * machine event.
 	 */
-	kfilnd_tn_event_handler(tn, event, true);
+	kfilnd_tn_event_handler(tn, event);
 }
 
 static void kfilnd_tn_process_tagged_tx_event(void *ep_context,
@@ -365,7 +365,7 @@ static void kfilnd_tn_process_tagged_tx_event(void *ep_context,
 		       libcfs_nid2str(tn->tn_target_nid), status);
 	}
 
-	kfilnd_tn_event_handler(tn, event, true);
+	kfilnd_tn_event_handler(tn, event);
 }
 
 /**
@@ -433,7 +433,7 @@ static void kfilnd_tn_process_eq_event(void *devctx, void *context, int status)
 	 * The status parameter has been sent to the transaction's state
 	 * machine event.
 	 */
-	kfilnd_tn_event_handler(tn, status, true);
+	kfilnd_tn_event_handler(tn, status);
 }
 
 /**
@@ -527,10 +527,6 @@ static void kfilnd_tn_finalize(struct kfilnd_transaction *tn, bool *tn_released)
 {
 	int rc;
 
-	/* Can only finalize if all events have occurred. */
-	if (atomic_read(&tn->async_event_count))
-		return;
-
 	if (!*tn_released) {
 		mutex_unlock(&tn->tn_lock);
 		*tn_released = true;
@@ -602,7 +598,7 @@ static int kfilnd_tn_cancel_tag_recv(struct kfilnd_transaction *tn)
 static void kfilnd_tn_procces_timeout(void *ep_context, void *tn_context,
 				      int status)
 {
-	kfilnd_tn_event_handler(tn_context, TN_EVENT_TIMEOUT, true);
+	kfilnd_tn_event_handler(tn_context, TN_EVENT_TIMEOUT);
 }
 
 static void kfilnd_tn_timeout(unsigned long data)
@@ -618,12 +614,7 @@ static void kfilnd_tn_timeout(unsigned long data)
 
 static bool kfilnd_tn_timeout_cancel(struct kfilnd_transaction *tn)
 {
-	int rc = del_timer(&tn->timeout_timer);
-
-	if (rc)
-		atomic_dec(&tn->async_event_count);
-
-	return rc;
+	return del_timer(&tn->timeout_timer);
 }
 
 static void kfilnd_tn_timeout_enable(struct kfilnd_transaction *tn)
@@ -633,7 +624,6 @@ static void kfilnd_tn_timeout_enable(struct kfilnd_transaction *tn)
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_BULK_TIMEOUT))
 		expires = jiffies;
 
-	atomic_inc(&tn->async_event_count);
 	setup_timer(&tn->timeout_timer, kfilnd_tn_timeout, (unsigned long)tn);
 	mod_timer(&tn->timeout_timer, expires);
 }
@@ -1076,8 +1066,6 @@ static void kfilnd_tn_state_wait_timeout_comp(struct kfilnd_transaction *tn,
  * kfilnd_tn_event_handler() - Update transaction state machine with an event.
  * @tn: Transaction to be updated.
  * @event: Transaction event.
- * @dec_async_event_count: Decrement the transaction asynchronous event counter.
- * This should occur when network events happen for a transaction.
  *
  * When the transaction event handler is first called on a new transaction, the
  * transaction is now own by the transaction system. This means that will be
@@ -1085,7 +1073,7 @@ static void kfilnd_tn_state_wait_timeout_comp(struct kfilnd_transaction *tn,
  * machine.
  */
 void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
-			     enum tn_events event, bool dec_async_event_count)
+			     enum tn_events event)
 {
 	bool tn_released = false;
 
@@ -1093,9 +1081,6 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 		return;
 
 	mutex_lock(&tn->tn_lock);
-
-	if (dec_async_event_count)
-		atomic_dec(&tn->async_event_count);
 
 	switch (tn->tn_state) {
 	case TN_STATE_IDLE:
