@@ -359,14 +359,13 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 {
 	size_t len;
 	void *buf;
-	int rc;
 	struct kfi_cq_err_entry fake_error = {
 		.op_context = tn,
 		.flags = KFI_MSG | KFI_SEND,
 		.err = EIO,
 	};
 
-	if (!ep || !tn || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
+	if (!ep || !tn)
 		return -EINVAL;
 
 	buf = tn->tn_tx_msg.msg;
@@ -378,16 +377,11 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 
 	/* Progress transaction to failure if send should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND)) {
-		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
 		kfilnd_tn_cq_error(ep, &fake_error);
 		return 0;
 	}
 
-	rc = kfi_send(ep->end_tx, buf, len, NULL, tn->tn_target_addr, tn);
-	if (rc == 0)
-		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
-
-	return rc;
+	return kfi_send(ep->end_tx, buf, len, NULL, tn->tn_target_addr, tn);
 }
 
 /**
@@ -413,7 +407,7 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		.err = EIO,
 	};
 
-	if (!ep || !tn || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
+	if (!ep || !tn)
 		return -EINVAL;
 
 	/* Make sure the device is not being shut down */
@@ -422,7 +416,6 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 
 	/* Progress transaction to failure if read should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE)) {
-		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
 		kfilnd_tn_cq_error(ep, &fake_error);
 		return 0;
 	}
@@ -436,9 +429,6 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		rc = kfi_writev(ep->end_tx, tn->tn_iov, NULL,
 				tn->tn_num_iovec, tn->tn_target_addr, 0,
 				tn->tn_response_mr_key, tn);
-
-	if (rc == 0)
-		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
 
 	return rc;
 }
@@ -465,7 +455,7 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		.err = EIO,
 	};
 
-	if (!ep || !tn || tn->tn_flags & KFILND_TN_FLAG_TX_POSTED)
+	if (!ep || !tn)
 		return -EINVAL;
 
 	/* Make sure the device is not being shut down */
@@ -474,7 +464,6 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 
 	/* Progress transaction to failure if read should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ)) {
-		tn->tn_flags |= KFILND_TN_FLAG_RX_POSTED;
 		kfilnd_tn_cq_error(ep, &fake_error);
 		return 0;
 	}
@@ -487,9 +476,6 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		rc = kfi_readv(ep->end_tx, tn->tn_iov, NULL, tn->tn_num_iovec,
 			       tn->tn_target_addr, 0, tn->tn_response_mr_key,
 			       tn);
-
-	if (rc == 0)
-		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
 
 	return rc;
 }
