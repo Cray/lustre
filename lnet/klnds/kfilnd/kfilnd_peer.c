@@ -29,14 +29,18 @@ static void kfilnd_peer_free(void *ptr, void *arg)
 }
 
 /**
- * kfilnd_peer_mark_removal() - Mark a peer for removal.
- * @peer: Peer to be removed.
+ * kfilnd_peer_down() - Mark a peer as down.
+ * @peer: Peer to be downed.
  */
-void kfilnd_peer_mark_removal(struct kfilnd_peer *peer)
+void kfilnd_peer_down(struct kfilnd_peer *peer)
 {
-	if (atomic_cmpxchg(&peer->remove_peer, 0, 1) == 0)
+	if (atomic_cmpxchg(&peer->remove_peer, 0, 1) == 0) {
 		CDEBUG(D_NET, "%s marked for removal from peer cache\n",
 		       libcfs_nid2str(peer->nid));
+
+		lnet_notify(peer->dev->kfd_ni, peer->nid, false, false,
+			    peer->last_alive);
+	}
 }
 
 /**
@@ -146,6 +150,8 @@ again:
 		goto err_free_peer;
 	}
 
+	kfilnd_peer_alive(peer);
+
 	CDEBUG(D_NET, "%s peer entry allocated\n", libcfs_nid2str(peer->nid));
 
 	return peer;
@@ -160,22 +166,24 @@ err:
 
 /**
  * kfilnd_peer_update() - Update the RX context for a peer.
- * @dev: Device used to lookup peer.
- * @nid: LNet NID of peer.
+ * @peer: Peer to be updated.
  * @rx_context: New RX context for peer.
- *
- * If a peer is not found, the update will not occur.
  */
-void kfilnd_peer_update(struct kfilnd_dev *dev, lnet_nid_t nid,
-			unsigned int rx_context)
+void kfilnd_peer_update(struct kfilnd_peer *peer, unsigned int rx_context)
 {
-	struct kfilnd_peer *peer = kfilnd_peer_get(dev, nid);
+	atomic_set(&peer->rx_context, rx_context);
+}
 
-	if (!IS_ERR_OR_NULL(peer)) {
-		atomic_set(&peer->rx_context, rx_context);
+/**
+ * kfilnd_peer_alive() - Update when the peer was last alive.
+ * @peer: Peer to be updated.
+ */
+void kfilnd_peer_alive(struct kfilnd_peer *peer)
+{
+	peer->last_alive = ktime_get_seconds();
 
-		kfilnd_peer_put(peer);
-	}
+	/* Ensure timestamp is committed to memory before used. */
+	smp_mb();
 }
 
 /**
