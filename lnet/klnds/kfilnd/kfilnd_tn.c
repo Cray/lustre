@@ -599,6 +599,45 @@ static int kfilnd_tn_cancel_tag_recv(struct kfilnd_transaction *tn)
 	return 0;
 }
 
+static void kfilnd_tn_procces_timeout(void *ep_context, void *tn_context,
+				      int status)
+{
+	kfilnd_tn_event_handler(tn_context, TN_EVENT_TIMEOUT, true);
+}
+
+static void kfilnd_tn_timeout(unsigned long data)
+{
+	struct kfilnd_transaction *tn = (struct kfilnd_transaction *)data;
+
+	CDEBUG(D_NET, "Bulk operation timeout for transaction to %s\n",
+	       libcfs_nid2str(tn->tn_target_nid));
+
+	kfilnd_wkr_post(tn->tn_ep->end_cpt, kfilnd_tn_procces_timeout,
+			tn->tn_ep, tn, 0);
+}
+
+static bool kfilnd_tn_timeout_cancel(struct kfilnd_transaction *tn)
+{
+	int rc = del_timer(&tn->timeout_timer);
+
+	if (rc)
+		atomic_dec(&tn->async_event_count);
+
+	return rc;
+}
+
+static void kfilnd_tn_timeout_enable(struct kfilnd_transaction *tn)
+{
+	unsigned long expires = lnet_get_lnd_timeout() * HZ + jiffies;
+
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_BULK_TIMEOUT))
+		expires = jiffies;
+
+	atomic_inc(&tn->async_event_count);
+	setup_timer(&tn->timeout_timer, kfilnd_tn_timeout, (unsigned long)tn);
+	mod_timer(&tn->timeout_timer, expires);
+}
+
 /*  The following are the state machine routines for the transactions. */
 static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 				 enum tn_events event, bool *tn_released)
@@ -894,6 +933,7 @@ static void kfilnd_tn_state_wait_comp(struct kfilnd_transaction *tn,
 
 	switch (event) {
 	case TN_EVENT_TX_OK:
+		kfilnd_tn_timeout_enable(tn);
 		tn->tn_state = TN_STATE_WAIT_TAG_COMP;
 		break;
 
@@ -961,9 +1001,25 @@ static void kfilnd_tn_state_wait_tag_comp(struct kfilnd_transaction *tn,
 					  enum tn_events event,
 					  bool *tn_released)
 {
+	int rc;
+
 	switch (event) {
 	case TN_EVENT_TAG_RX_OK:
 	case TN_EVENT_TAG_RX_FAIL:
+		if (kfilnd_tn_timeout_cancel(tn))
+			kfilnd_tn_finalize(tn, tn_released);
+		else
+			tn->tn_state = TN_STATE_WAIT_TIMEOUT_COMP;
+		break;
+
+	case TN_EVENT_TIMEOUT:
+		rc = kfilnd_tn_cancel_tag_recv(tn);
+		if (rc)
+			CERROR("Failed to cancel tagged receive\n");
+		else
+			tn->tn_state = TN_STATE_WAIT_TIMEOUT_COMP;
+		break;
+
 	case TN_EVENT_TAG_TX_OK:
 	case TN_EVENT_TAG_TX_FAIL:
 		kfilnd_tn_finalize(tn, tn_released);
@@ -986,6 +1042,27 @@ static void kfilnd_tn_state_fail(struct kfilnd_transaction *tn,
 	case TN_EVENT_MR_FAIL:
 	case TN_EVENT_TAG_RX_FAIL:
 	case TN_EVENT_TAG_RX_CANCEL:
+		kfilnd_tn_finalize(tn, tn_released);
+		break;
+
+	default:
+		CERROR("Invalid event for fail state: event=%d\n", event);
+		CERROR("Transaction resource leak\n");
+	}
+}
+
+static void kfilnd_tn_state_wait_timeout_comp(struct kfilnd_transaction *tn,
+					      enum tn_events event,
+					      bool *tn_released)
+{
+	switch (event) {
+	case TN_EVENT_TAG_RX_CANCEL:
+		tn->tn_status = -ETIMEDOUT;
+
+		/* Fall through. */
+	case TN_EVENT_TIMEOUT:
+	case TN_EVENT_TAG_RX_OK:
+	case TN_EVENT_TAG_RX_FAIL:
 		kfilnd_tn_finalize(tn, tn_released);
 		break;
 
@@ -1045,6 +1122,9 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 	case TN_STATE_WAIT_TAG_COMP:
 		kfilnd_tn_state_wait_tag_comp(tn, event, &tn_released);
 		break;
+	case TN_STATE_WAIT_TIMEOUT_COMP:
+		kfilnd_tn_state_wait_timeout_comp(tn, event, &tn_released);
+		break;
 	default:
 		CERROR("Transaction in bad state: %d\n", tn->tn_state);
 		CERROR("Transaction resource leak\n");
@@ -1063,7 +1143,11 @@ void kfilnd_tn_free(struct kfilnd_transaction *tn)
 	list_del(&tn->tn_entry);
 	spin_unlock(&tn->tn_ep->tn_list_lock);
 
-	kfilnd_dom_put_mr_key(tn->tn_ep->end_dev->dom, tn->tn_mr_key);
+	/* TODO: Don't leak transaction IDs. */
+	if (tn->tn_status == -ETIMEDOUT)
+		CERROR("Transaction ID leaked: id=%u\n", tn->tn_mr_key);
+	else
+		kfilnd_dom_put_mr_key(tn->tn_ep->end_dev->dom, tn->tn_mr_key);
 
 	/* Free send message buffer if needed. */
 	if (tn->tn_tx_msg.msg)
