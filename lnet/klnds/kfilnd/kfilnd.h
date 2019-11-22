@@ -331,9 +331,6 @@ struct kfilnd_transaction {
 	u32			tn_response_mr_key;
 	u8			tn_response_rx;
 
-	/* Number of pending asychronous events. */
-	atomic_t async_event_count;
-
 	/* Bulk operation timeout timer. */
 	struct timer_list timeout_timer;
 };
