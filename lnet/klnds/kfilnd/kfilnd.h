@@ -57,6 +57,7 @@
 #define CFS_KFI_FAIL_WRITE 0xF102
 #define CFS_KFI_FAIL_REG_MR 0xF103
 #define CFS_KFI_FAIL_TAGGED_RECV 0xF104
+#define CFS_KFI_FAIL_BULK_TIMEOUT 0xF105
 
 /* Some constants which should be turned into tunables */
 #define KFILND_NUM_IMMEDIATE_MSG 100
@@ -243,6 +244,7 @@ enum tn_states {
 	TN_STATE_REG_MEM,
 	TN_STATE_WAIT_COMP,
 	TN_STATE_FAIL,
+	TN_STATE_WAIT_TIMEOUT_COMP,
 
 	/* Target states. */
 	TN_STATE_IMM_RECV,
@@ -261,6 +263,7 @@ enum tn_events {
 	TN_EVENT_TAG_RX_OK,
 	TN_EVENT_TAG_RX_FAIL,
 	TN_EVENT_TAG_RX_CANCEL,
+	TN_EVENT_TIMEOUT,
 
 	/* Target events. */
 	TN_EVENT_RX_OK,
@@ -330,6 +333,9 @@ struct kfilnd_transaction {
 
 	/* Number of pending asychronous events. */
 	atomic_t async_event_count;
+
+	/* Bulk operation timeout timer. */
+	struct timer_list timeout_timer;
 };
 
 #endif /* _KFILND_ */
