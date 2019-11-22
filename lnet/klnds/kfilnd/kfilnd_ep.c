@@ -183,8 +183,6 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		if (sync_mr_reg)
 			return -EIO;
 
-		atomic_inc(&tn->async_event_count);
-
 		fake_error.context = tn;
 		fake_error.err = EIO;
 
@@ -221,9 +219,6 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		goto err_free_mr;
 	}
 
-	if (!sync_mr_reg)
-		atomic_inc(&tn->async_event_count);
-
 	rc = kfi_mr_enable(tn->tn_mr);
 	if (rc) {
 		CERROR("kfi_mr_enable failed: rc = %d", rc);
@@ -233,9 +228,6 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	return 0;
 
 err_free_mr:
-	if (!sync_mr_reg)
-		atomic_dec(&tn->async_event_count);
-
 	kfi_close(&tn->tn_mr->fid);
 	tn->tn_mr = NULL;
 err:
@@ -267,7 +259,6 @@ int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,
 		.tag = tn->tn_response_mr_key,
 		.context = tn,
 	};
-	int rc;
 
 	if (!ep || !tn)
 		return -EINVAL;
@@ -276,13 +267,7 @@ int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
-	atomic_inc(&tn->async_event_count);
-
-	rc = kfi_tsendmsg(ep->end_tx, &msg, KFI_COMPLETION);
-	if (rc)
-		atomic_dec(&tn->async_event_count);
-
-	return rc;
+	return kfi_tsendmsg(ep->end_tx, &msg, KFI_COMPLETION);
 }
 
 /**
@@ -343,7 +328,6 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 		.flags = KFI_TAGGED | KFI_RECV,
 		.err = EIO,
 	};
-	int rc;
 
 	if (!ep || !tn)
 		return -EINVAL;
@@ -352,19 +336,13 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
-	atomic_inc(&tn->async_event_count);
-
 	/* Progress transaction to failure if send should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_RECV)) {
 		kfilnd_tn_cq_error(ep, &fake_error);
 		return 0;
 	}
 
-	rc = kfi_trecvmsg(ep->end_rx, &msg, KFI_COMPLETION);
-	if (rc)
-		atomic_dec(&tn->async_event_count);
-
-	return rc;
+	return kfi_trecvmsg(ep->end_rx, &msg, KFI_COMPLETION);
 }
 
 /**
@@ -398,8 +376,6 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
-	atomic_inc(&tn->async_event_count);
-
 	/* Progress transaction to failure if send should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND)) {
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
@@ -410,8 +386,6 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	rc = kfi_send(ep->end_tx, buf, len, NULL, tn->tn_target_addr, tn);
 	if (rc == 0)
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
-	else
-		atomic_dec(&tn->async_event_count);
 
 	return rc;
 }
@@ -446,8 +420,6 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
-	atomic_inc(&tn->async_event_count);
-
 	/* Progress transaction to failure if read should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE)) {
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
@@ -467,8 +439,6 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 
 	if (rc == 0)
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
-	else
-		atomic_dec(&tn->async_event_count);
 
 	return rc;
 }
@@ -502,8 +472,6 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
-	atomic_inc(&tn->async_event_count);
-
 	/* Progress transaction to failure if read should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ)) {
 		tn->tn_flags |= KFILND_TN_FLAG_RX_POSTED;
@@ -522,8 +490,6 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 
 	if (rc == 0)
 		tn->tn_flags |= KFILND_TN_FLAG_TX_POSTED;
-	else
-		atomic_dec(&tn->async_event_count);
 
 	return rc;
 }
