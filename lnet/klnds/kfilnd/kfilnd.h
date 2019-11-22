@@ -137,6 +137,7 @@ struct kfilnd_peer {
 	atomic_t rx_context;
 	atomic_t remove_peer;
 	refcount_t cnt;
+	time64_t last_alive;
 };
 
 struct kfilnd_fab {

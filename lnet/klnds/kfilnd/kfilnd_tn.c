@@ -541,16 +541,8 @@ static void kfilnd_tn_finalize(struct kfilnd_transaction *tn, bool *tn_released)
 		lnet_finalize(tn->tn_getreply, tn->tn_status);
 	}
 
-	/* If the KFI address is valid and the operation failed, evict the LNet
-	 * NID entry from the cache. Future transactions to this LNet NID will
-	 * have to allocate a new entry.
-	 */
-	if (!IS_ERR_OR_NULL(tn->peer)) {
-		if (tn->tn_status)
-			kfilnd_peer_mark_removal(tn->peer);
-
+	if (!IS_ERR_OR_NULL(tn->peer))
 		kfilnd_peer_put(tn->peer);
-	}
 
 	kfilnd_tn_free(tn);
 }
@@ -620,6 +612,7 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 {
 	struct kfilnd_msg *msg;
 	int rc;
+	struct kfilnd_peer *peer;
 
 	switch (event) {
 	case TN_EVENT_TX_OK:
@@ -738,8 +731,12 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 		msg = tn->tn_rx_msg.msg;
 
 		/* Update the NID address with the new preferred RX context. */
-		kfilnd_peer_update(tn->tn_ep->end_dev, msg->kfm_srcnid,
-				   msg->kfm_prefer_rx);
+		peer = kfilnd_peer_get(tn->tn_ep->end_dev, msg->kfm_srcnid);
+		if (!IS_ERR(peer)) {
+			kfilnd_peer_update(peer, msg->kfm_prefer_rx);
+			kfilnd_peer_alive(peer);
+			kfilnd_peer_put(peer);
+		}
 
 		/*
 		 * Pass message up to LNet
@@ -779,16 +776,22 @@ static void kfilnd_tn_state_imm_send(struct kfilnd_transaction *tn,
 				     enum tn_events event, bool *tn_released)
 {
 	switch (event) {
-	case TN_EVENT_TX_OK:
 	case TN_EVENT_TX_FAIL:
-		kfilnd_tn_finalize(tn, tn_released);
+		kfilnd_peer_down(tn->peer);
+		break;
+
+	case TN_EVENT_TX_OK:
+		kfilnd_peer_alive(tn->peer);
 		break;
 
 	default:
 		CERROR("Invalid event for immediate send state: event=%d\n",
 		       event);
 		CERROR("Transaction resource leak\n");
+		return;
 	}
+
+	kfilnd_tn_finalize(tn, tn_released);
 }
 
 static void kfilnd_tn_state_imm_recv(struct kfilnd_transaction *tn,
@@ -909,11 +912,14 @@ static void kfilnd_tn_state_wait_comp(struct kfilnd_transaction *tn,
 
 	switch (event) {
 	case TN_EVENT_TX_OK:
+		kfilnd_peer_alive(tn->peer);
 		kfilnd_tn_timeout_enable(tn);
 		tn->tn_state = TN_STATE_WAIT_TAG_COMP;
 		break;
 
 	case TN_EVENT_TX_FAIL:
+		kfilnd_peer_down(tn->peer);
+
 		/* Need to cancel the tagged receive in order to prevent
 		 * resources from being leaked. If successful, a error
 		 * KFI_ECANCELED event will progress the transaction.
@@ -945,6 +951,8 @@ static void kfilnd_tn_state_wait_rma_comp(struct kfilnd_transaction *tn,
 
 	switch (event) {
 	case TN_EVENT_RMA_OK:
+		kfilnd_peer_alive(tn->peer);
+
 		/* Build the completion message to finalize the LNet operation.
 		 */
 		tx_msg->kfm_u.bulk_rsp.status = tn->tn_status;
@@ -954,23 +962,26 @@ static void kfilnd_tn_state_wait_rma_comp(struct kfilnd_transaction *tn,
 		rc = kfilnd_ep_post_tagged_send(tn->tn_ep, tn);
 		if (!rc) {
 			tn->tn_state = TN_STATE_WAIT_TAG_COMP;
-			break;
+			return;
 		}
 
 		CERROR("Failed to post tagged send to %s: rc=%d\n",
 		       libcfs_nid2str(tn->tn_target_nid), rc);
 
 		tn->tn_status = rc;
+		break;
 
-		/* Fall through. */
 	case TN_EVENT_RMA_FAIL:
-		kfilnd_tn_finalize(tn, tn_released);
+		kfilnd_peer_down(tn->peer);
 		break;
 
 	default:
 		CERROR("Invalid event for wait RMA state: event=%d\n", event);
 		CERROR("Transaction resource leak\n");
+		return;
 	}
+
+	kfilnd_tn_finalize(tn, tn_released);
 }
 
 static void kfilnd_tn_state_wait_tag_comp(struct kfilnd_transaction *tn,
@@ -982,10 +993,10 @@ static void kfilnd_tn_state_wait_tag_comp(struct kfilnd_transaction *tn,
 	switch (event) {
 	case TN_EVENT_TAG_RX_OK:
 	case TN_EVENT_TAG_RX_FAIL:
-		if (kfilnd_tn_timeout_cancel(tn))
-			kfilnd_tn_finalize(tn, tn_released);
-		else
+		if (!kfilnd_tn_timeout_cancel(tn)) {
 			tn->tn_state = TN_STATE_WAIT_TIMEOUT_COMP;
+			return;
+		}
 		break;
 
 	case TN_EVENT_TIMEOUT:
@@ -994,37 +1005,51 @@ static void kfilnd_tn_state_wait_tag_comp(struct kfilnd_transaction *tn,
 			CERROR("Failed to cancel tagged receive\n");
 		else
 			tn->tn_state = TN_STATE_WAIT_TIMEOUT_COMP;
+		return;
+
+	case TN_EVENT_TAG_TX_FAIL:
+		kfilnd_peer_down(tn->peer);
 		break;
 
 	case TN_EVENT_TAG_TX_OK:
-	case TN_EVENT_TAG_TX_FAIL:
-		kfilnd_tn_finalize(tn, tn_released);
+		kfilnd_peer_alive(tn->peer);
 		break;
 
 	default:
 		CERROR("Invalid event for wait tag complete state: event=%d\n",
 		       event);
 		CERROR("Transaction resource leak\n");
+		return;
 	}
+
+	kfilnd_tn_finalize(tn, tn_released);
 }
 
 static void kfilnd_tn_state_fail(struct kfilnd_transaction *tn,
 				 enum tn_events event, bool *tn_released)
 {
 	switch (event) {
-	case TN_EVENT_TX_OK:
 	case TN_EVENT_TX_FAIL:
+		kfilnd_peer_down(tn->peer);
+		break;
+
+	case TN_EVENT_TX_OK:
+		kfilnd_peer_alive(tn->peer);
+		break;
+
 	case TN_EVENT_MR_OK:
 	case TN_EVENT_MR_FAIL:
 	case TN_EVENT_TAG_RX_FAIL:
 	case TN_EVENT_TAG_RX_CANCEL:
-		kfilnd_tn_finalize(tn, tn_released);
 		break;
 
 	default:
 		CERROR("Invalid event for fail state: event=%d\n", event);
 		CERROR("Transaction resource leak\n");
+		return;
 	}
+
+	kfilnd_tn_finalize(tn, tn_released);
 }
 
 static void kfilnd_tn_state_wait_timeout_comp(struct kfilnd_transaction *tn,
@@ -1034,6 +1059,7 @@ static void kfilnd_tn_state_wait_timeout_comp(struct kfilnd_transaction *tn,
 	switch (event) {
 	case TN_EVENT_TAG_RX_CANCEL:
 		tn->tn_status = -ETIMEDOUT;
+		kfilnd_peer_down(tn->peer);
 
 		/* Fall through. */
 	case TN_EVENT_TIMEOUT:
