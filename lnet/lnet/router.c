@@ -426,6 +426,7 @@ lnet_router_discovery_complete(struct lnet_peer *lp)
 
 	spin_lock(&lp->lp_lock);
 	lp->lp_state &= ~LNET_PEER_RTR_DISCOVERY;
+	lp->lp_state |= LNET_PEER_RTR_DISCOVERED;
 	lp->lp_alive = lp->lp_dc_error == 0;
 	if (lp->lp_alive) {
 		spin_unlock(&lp->lp_lock);
@@ -920,7 +921,7 @@ lnet_wait_known_routerstate(void)
 
 			spin_lock(&rtr->lp_lock);
 
-			if ((rtr->lp_state & LNET_PEER_DISCOVERED) == 0) {
+			if ((rtr->lp_state & LNET_PEER_RTR_DISCOVERED) == 0) {
 				all_known = 0;
 				spin_unlock(&rtr->lp_lock);
 				break;
