@@ -307,21 +307,14 @@ static void kfilnd_tn_process_rma_event(void *ep_context, void *tn_context,
 	struct kfilnd_transaction *tn = tn_context;
 	enum tn_events event = TN_EVENT_RMA_OK;
 
-	if (status)
+	if (status) {
+		tn->tn_status = status;
+		event = TN_EVENT_RMA_FAIL;
 		CERROR("RMA failed to %s: rx_ctx=%llu errno=%d\n",
 		       libcfs_nid2str(tn->tn_target_nid),
 		       KFILND_RX_CONTEXT(tn->peer->addr), status);
+	}
 
-	tn->tn_flags &= ~KFILND_TN_FLAG_TX_POSTED;
-	tn->tn_status = status;
-
-	if (tn->tn_status)
-		event = TN_EVENT_RMA_FAIL;
-
-	/*
-	 * The status parameter has been sent to the transaction's state
-	 * machine event.
-	 */
 	kfilnd_tn_event_handler(tn, event);
 }
 
@@ -334,21 +327,14 @@ static void kfilnd_tn_process_tx_event(void *ep_context, void *tn_context,
 	struct kfilnd_transaction *tn = tn_context;
 	enum tn_events event = TN_EVENT_TX_OK;
 
-	if (status)
+	if (status) {
+		tn->tn_status = status;
+		event = TN_EVENT_TX_FAIL;
 		CERROR("Send failed to %s: rx_ctx=%llu errno=%d\n",
 		       libcfs_nid2str(tn->tn_target_nid),
 		       KFILND_RX_CONTEXT(tn->peer->addr), status);
+	}
 
-	tn->tn_flags &= ~KFILND_TN_FLAG_TX_POSTED;
-	tn->tn_status = status;
-
-	if (tn->tn_status)
-		event = TN_EVENT_TX_FAIL;
-
-	/*
-	 * The status parameter has been sent to the transaction's state
-	 * machine event.
-	 */
 	kfilnd_tn_event_handler(tn, event);
 }
 
