@@ -571,13 +571,16 @@ repeat:
 			 * could be less than index. So we detect last index
 			 * for processing as index == lh_last_idx+1. But when
 			 * catalog is wrapped and full lgh_last_idx=llh_cat_idx,
-			 * the first processing index is llh_cat_idx+1.
+			 * the first processing index is llh_cat_idx+1. Since
+			 * index = lh_last_idx + 1 = llh_cat_idx + 1 and
+			 * lgh_last_idx == llh_cat_idx, the comparison could be
+			 * simplified to lh_last_idx = lgh_last_idx. This
+			 * exception is working for catalog only.
 			 */
 
 			if ((index == lh_last_idx && synced_idx != index) ||
 			    (index == (lh_last_idx + 1) &&
-			     !(index == (llh->llh_cat_idx + 1) &&
-			       (llh->llh_flags & LLOG_F_IS_CAT))) ||
+			     lh_last_idx != LLOG_HDR_TAIL(llh)->lrt_index) ||
 			    (rec->lrh_index == 0 && !repeated)) {
 
 				/* save offset inside buffer for the re-read */
@@ -638,7 +641,9 @@ repeat:
 				__u64	tmp_off;
 				int	tmp_idx;
 
-				CDEBUG(D_OTHER, "index: %d, lh_last_idx: %d "
+				CDEBUG((llh->llh_flags & LLOG_F_IS_CAT ?
+				        D_HA : D_OTHER),
+				       "index: %d, lh_last_idx: %d "
 				       "synced_idx: %d lgh_last_idx: %d\n",
 				       index, lh_last_idx, synced_idx,
 				       loghandle->lgh_last_idx);
@@ -688,6 +693,11 @@ repeat:
 	}
 
 out:
+	CDEBUG(D_HA, "stop processing %s "DOSTID":%x index %d count %d\n",
+	       ((llh->llh_flags & LLOG_F_IS_CAT) ? "catalog" : "plain"),
+	       POSTID(&loghandle->lgh_id.lgl_oi), loghandle->lgh_id.lgl_ogen,
+	       index, llh->llh_count);
+
 	if (cd != NULL)
 		cd->lpcd_last_idx = last_called_index;
 
@@ -789,7 +799,7 @@ int llog_process_or_fork(const struct lu_env *env,
 	lpi->lpi_cbdata    = data;
 	lpi->lpi_catdata   = catdata;
 
-	CDEBUG(D_OTHER,"Processing "DFID" flags 0x%03x startcat %d startidx %d first_idx %d last_idx %d\n",
+	CDEBUG(D_HA, "Processing "DFID" flags 0x%03x startcat %d startidx %d first_idx %d last_idx %d\n",
 	       PFID(&loghandle->lgh_id.lgl_oi.oi_fid),
 	       loghandle->lgh_hdr->llh_flags, d ? d->lpd_startcat : -1,
 	       d ? d->lpd_startidx : -1, cd ? cd->lpcd_first_idx : -1,
