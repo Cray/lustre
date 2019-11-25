@@ -981,7 +981,7 @@ static void osp_sync_process_record(const struct lu_env *env,
 			       rec->lrh_id, rc);
 	}
 
-	CDEBUG(D_HA, "found record %x, %d, idx %u, id %u\n",
+	CDEBUG(D_OTHER, "found record %x, %d, idx %u, id %u\n",
 	       rec->lrh_type, rec->lrh_len, rec->lrh_index, rec->lrh_id);
 
 	RETURN_EXIT;
@@ -1159,7 +1159,7 @@ static int osp_sync_process_queues(const struct lu_env *env,
 		if (osp_sync_can_process_new(d, rec)) {
 			if (llh == NULL) {
 				/* ask llog for another record */
-				CDEBUG(D_HA, "%u changes, %u in progress,"
+				CDEBUG_LIMIT(D_HA, "%u changes, %u in progress,"
 				     " %u in flight\n",
 				     atomic_read(&d->opd_sync_changes),
 				     atomic_read(&d->opd_sync_rpcs_in_progress),
