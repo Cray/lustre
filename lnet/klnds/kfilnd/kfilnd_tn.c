@@ -917,6 +917,10 @@ static void kfilnd_tn_state_wait_comp(struct kfilnd_transaction *tn,
 		tn->tn_state = TN_STATE_WAIT_TAG_COMP;
 		break;
 
+	case TN_EVENT_TAG_RX_OK:
+		tn->tn_state = TN_STATE_WAIT_SEND_COMP;
+		break;
+
 	case TN_EVENT_TX_FAIL:
 		kfilnd_peer_down(tn->peer);
 
@@ -937,6 +941,20 @@ static void kfilnd_tn_state_wait_comp(struct kfilnd_transaction *tn,
 
 	default:
 		CERROR("Invalid event for wait complete state: event=%d\n",
+		       event);
+		CERROR("Transaction resource leak\n");
+	}
+}
+
+static void kfilnd_tn_state_wait_send_comp(struct kfilnd_transaction *tn,
+					   enum tn_events event,
+					   bool *tn_released)
+{
+	if (event == TN_EVENT_TX_OK) {
+		kfilnd_peer_alive(tn->peer);
+		kfilnd_tn_finalize(tn, tn_released);
+	} else {
+		CERROR("Invalid event for wait send complete state: event=%d\n",
 		       event);
 		CERROR("Transaction resource leak\n");
 	}
@@ -1106,6 +1124,9 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 		break;
 	case TN_STATE_WAIT_COMP:
 		kfilnd_tn_state_wait_comp(tn, event, &tn_released);
+		break;
+	case TN_STATE_WAIT_SEND_COMP:
+		kfilnd_tn_state_wait_send_comp(tn, event, &tn_released);
 		break;
 	case TN_STATE_FAIL:
 		kfilnd_tn_state_fail(tn, event, &tn_released);
