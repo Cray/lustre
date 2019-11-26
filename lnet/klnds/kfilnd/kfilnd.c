@@ -58,6 +58,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	struct kfilnd_dev *dev = ni->ni_data;
 	enum kfilnd_msg_type lnd_msg_type;
 	int cpt;
+	enum tn_events event = TN_EVENT_INVALID;
 
 	/* NB 'private' is different depending on what we're sending.... */
 
@@ -125,12 +126,13 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		nob = offsetof(struct kfilnd_immed_msg, payload[msg->msg_len]);
 
 		/* Transaction fields for immediate messages */
-		tn->tn_flags = KFILND_TN_FLAG_IMMEDIATE;
 		tn->tn_num_iovec = msg->msg_niov;
 		tn->tn_nob_iovec = msg->msg_len;
 		tn->tn_offset_iovec = msg->msg_offset;
 		tn->tn_kiov = msg->msg_kiov;
 		tn->tn_iov = msg->msg_iov;
+
+		event = TN_EVENT_INIT_IMMEDIATE;
 		break;
 
 	case KFILND_MSG_BULK_PUT_REQ:
@@ -143,12 +145,14 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		/* Determine size of LNet message (exclude LND header) */
 		nob = sizeof(struct kfilnd_bulk_req);
 
-		tn->tn_flags = 0;
+		tn->sink_buffer = false;
 		tn->tn_num_iovec = msg->msg_niov;
 		tn->tn_nob_iovec = msg->msg_len;
 		tn->tn_offset_iovec = msg->msg_offset;
 		tn->tn_kiov = msg->msg_kiov;
 		tn->tn_iov = msg->msg_iov;
+
+		event = TN_EVENT_INIT_BULK;
 		break;
 
 	case KFILND_MSG_BULK_GET_REQ:
@@ -171,7 +175,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		/* Determine size of LNet message (exclude LND header) */
 		nob = sizeof(struct kfilnd_bulk_req);
 
-		tn->tn_flags = KFILND_TN_FLAG_SINK;
+		tn->sink_buffer = true;
 		tn->tn_num_iovec = msg->msg_md->md_niov,
 		tn->tn_nob_iovec = msg->msg_md->md_length;
 		tn->tn_offset_iovec = msg->msg_md->md_offset;
@@ -179,6 +183,8 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 			tn->tn_kiov = msg->msg_md->md_iov.kiov;
 		else
 			tn->tn_iov = msg->msg_md->md_iov.iov;
+
+		event = TN_EVENT_INIT_BULK;
 		break;
 
 	default:
@@ -195,7 +201,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	tn->tn_lntmsg = msg;	/* finalise msg on completion */
 
 	/* Start the state machine processing this transaction */
-	kfilnd_tn_event_handler(tn, TN_EVENT_TX_OK);
+	kfilnd_tn_event_handler(tn, event);
 
 	return 0;
 }
@@ -252,7 +258,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 
 	case KFILND_MSG_BULK_PUT_REQ:
 		/* Post the buffer given us as a sink  */
-		tn->tn_flags |= KFILND_TN_FLAG_SINK;
+		tn->sink_buffer = true;
 		tn->tn_num_iovec = niov;
 		tn->tn_nob_iovec = mlen;
 		tn->tn_offset_iovec = offset;
@@ -262,7 +268,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 
 	case KFILND_MSG_BULK_GET_REQ:
 		/* Post the buffer given to us as a source  */
-		tn->tn_flags &= ~KFILND_TN_FLAG_SINK;
+		tn->sink_buffer = false;
 		tn->tn_num_iovec = msg->msg_niov;
 		tn->tn_nob_iovec = msg->msg_len;
 		tn->tn_offset_iovec = msg->msg_offset;
