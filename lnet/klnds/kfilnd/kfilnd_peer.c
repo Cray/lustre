@@ -123,8 +123,12 @@ again:
 	kfree(service);
 	kfree(node);
 
-	if (rc < 0)
+	if (rc < 0) {
 		goto err_free_peer;
+	} else if (rc != 1) {
+		rc = -ECONNABORTED;
+		goto err_free_peer;
+	}
 
 	peer->dev = dev;
 	peer->nid = nid;
@@ -140,14 +144,17 @@ again:
 	clash_peer = rhashtable_lookup_get_insert_fast(&dev->peer_cache,
 						       &peer->node,
 						       peer_cache_params);
-	if (!IS_ERR_OR_NULL(clash_peer)) {
-		kfree(peer);
-		goto again;
-	}
 
-	if (IS_ERR(clash_peer)) {
-		rc = PTR_ERR(clash_peer);
-		goto err_free_peer;
+	if (clash_peer) {
+		kfi_av_remove(dev->kfd_av, &peer->addr, 1, 0);
+		kfree(peer);
+
+		if (IS_ERR(clash_peer)) {
+			rc = PTR_ERR(clash_peer);
+			goto err;
+		} else {
+			goto again;
+		}
 	}
 
 	kfilnd_peer_alive(peer);
