@@ -258,6 +258,8 @@ enum tn_events {
 	TN_EVENT_INVALID,
 
 	/* Initiator events. */
+	TN_EVENT_INIT_IMMEDIATE,
+	TN_EVENT_INIT_BULK,
 	TN_EVENT_TX_OK,
 	TN_EVENT_TX_FAIL,
 	TN_EVENT_MR_OK,
@@ -277,9 +279,6 @@ enum tn_events {
 	TN_EVENT_TAG_TX_FAIL,
 };
 
-#define KFILND_TN_FLAG_IMMEDIATE	BIT(0)
-#define KFILND_TN_FLAG_SINK		BIT(3)
-
 struct kfilnd_transaction_msg {
 	struct kfilnd_msg *msg;
 	size_t length;
@@ -294,7 +293,6 @@ struct kfilnd_transaction {
 	struct kfilnd_ep	*tn_ep;		/* endpoint we operate under */
 	int			tn_nob;		/* bytes received into msg */
 	enum tn_states		tn_state;	/* current state of Tn */
-	unsigned int		tn_flags;	/* see set of Tn flags above */
 	struct lnet_msg		*tn_lntmsg;	/* LNet msg to finalize */
 	struct lnet_msg		*tn_getreply;	/* GET LNet msg to finalize */
 
@@ -319,6 +317,9 @@ struct kfilnd_transaction {
 	unsigned int		tn_offset_iovec;
 	lnet_kiov_t		*tn_kiov;
 	struct kvec		*tn_iov;
+
+	/* Bulk transaction buffer is sink or source buffer. */
+	bool sink_buffer;
 
 	/* Memory region and remote key used to cover initiator's buffer. */
 	struct kfid_mr		*tn_mr;
