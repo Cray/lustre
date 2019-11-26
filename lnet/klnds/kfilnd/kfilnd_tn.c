@@ -615,10 +615,9 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 	struct kfilnd_peer *peer;
 
 	switch (event) {
-	case TN_EVENT_TX_OK:
+	case TN_EVENT_INIT_IMMEDIATE:
 		msg = tn->tn_tx_msg.msg;
 
-		/* Lookup the peer's KFI address. */
 		tn->peer = kfilnd_peer_get(tn->tn_ep->end_dev,
 					   tn->tn_target_nid);
 		if (IS_ERR(tn->peer)) {
@@ -629,47 +628,80 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 
 		tn->tn_target_addr = tn->peer->addr;
 
-		/* If the transaction is an immediate message only, pack the
-		 * message and post the buffer. If not an immediate message
-		 * only, register a sink/source memory region. If memory
-		 * registration is successfull, an async KFI event queue event
-		 * will occur and the transaction will progress.
-		 */
-		if (tn->tn_flags & KFILND_TN_FLAG_IMMEDIATE) {
-			kfilnd_tn_setup_immed(tn);
+		kfilnd_tn_setup_immed(tn);
+		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
+
+		/* Send immediate message. */
+		rc = kfilnd_ep_post_send(tn->tn_ep, tn);
+		if (rc)
+			CERROR("Failed to post immediate send to %s: rc=%d\n",
+			       libcfs_nid2str(tn->tn_target_nid), rc);
+		else
+			tn->tn_state = TN_STATE_IMM_SEND;
+		break;
+
+	case TN_EVENT_INIT_BULK:
+		msg = tn->tn_tx_msg.msg;
+
+		tn->peer = kfilnd_peer_get(tn->tn_ep->end_dev,
+					   tn->tn_target_nid);
+		if (IS_ERR(tn->peer)) {
+			rc = PTR_ERR(tn->peer);
+			CERROR("Failed to lookup KFI address: rc=%d\n", rc);
+			break;
+		}
+
+		tn->tn_target_addr = tn->peer->addr;
+
+		/* Post tagged receive buffer used to land bulk response. */
+		rc = kfilnd_ep_post_tagged_recv(tn->tn_ep, tn);
+		if (rc) {
+			CERROR("Failed to post tagged rx for %s: rc=%d\n",
+			       libcfs_nid2str(tn->tn_target_nid), rc);
+			goto out;
+		}
+
+		/* Target source or sink RMA buffer. */
+		rc = kfilnd_ep_reg_mr(tn->tn_ep, tn);
+		if (rc) {
+			tn->tn_status = rc;
+
+			CERROR("Failed to register MR for %s: rc=%d\n",
+			       libcfs_nid2str(tn->tn_target_nid), rc);
+
+			/* Need to cancel the tagged receive in order to
+			 * prevent resources from being leaked. If
+			 * successful, a error KFI_ECANCELED event will
+			 * progress the transaction.
+			 */
+			rc = kfilnd_tn_cancel_tag_recv(tn);
+			if (rc)
+				CERROR("Failed to cancel tagged receive\n");
+			else
+				tn->tn_state = TN_STATE_FAIL;
+
+			/* Exit now since an asynchronous cancel event
+			 * will occur to progress the transaction.
+			 */
+			return;
+		}
+
+		if (sync_mr_reg) {
 			kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
 
-			/* Post an immediate message with KFI LND header and
-			 * entire LNet payload.
-			 */
+			/* Send bulk request message. */
 			rc = kfilnd_ep_post_send(tn->tn_ep, tn);
-			if (rc)
-				CERROR("Failed to post send to %s: rc=%d\n",
-				       libcfs_nid2str(tn->tn_target_nid), rc);
-			else
-				tn->tn_state = TN_STATE_IMM_SEND;
-		} else {
-			/* Post tagged receive buffer used to land bulk
-			 * response.
-			 */
-			rc = kfilnd_ep_post_tagged_recv(tn->tn_ep, tn);
-			if (rc) {
-				CERROR("Failed to post tag rx for %s: rc=%d\n",
-				       libcfs_nid2str(tn->tn_target_nid), rc);
-				goto out;
-			}
-
-			rc = kfilnd_ep_reg_mr(tn->tn_ep, tn);
 			if (rc) {
 				tn->tn_status = rc;
 
-				CERROR("Failed to register MR for %s: rc=%d\n",
+				CERROR("Failed to post send to %s: rc=%d\n",
 				       libcfs_nid2str(tn->tn_target_nid), rc);
 
-				/* Need to cancel the tagged receive in order to
-				 * prevent resources from being leaked. If
-				 * successful, a error KFI_ECANCELED event will
-				 * progress the transaction.
+				/* Need to cancel the tagged receive in
+				 * order to prevent resources from being
+				 * leaked. If successful, a error
+				 * KFI_ECANCELED event will progress the
+				 * transaction.
 				 */
 				rc = kfilnd_tn_cancel_tag_recv(tn);
 				if (rc)
@@ -677,53 +709,16 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 				else
 					tn->tn_state = TN_STATE_FAIL;
 
-				/* Exit now since an asynchronous cancel event
-				 * will occur to progress the transaction.
+				/* Exit now since an asynchronous cancel
+				 * event will occur to progress the
+				 * transaction.
 				 */
 				return;
-			}
-
-			/* If synchronous memory registration is used, post an
-			 * immediate message with MR information so peer can
-			 * perform an RMA operation.
-			 */
-			if (sync_mr_reg) {
-				kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
-
-				/* Issue an extra increment for the receive
-				 * event.
-				 */
-				rc = kfilnd_ep_post_send(tn->tn_ep, tn);
-				if (rc) {
-					tn->tn_status = rc;
-
-					CERROR("Failed to send to %s: rc=%d\n",
-					       libcfs_nid2str(tn->tn_target_nid),
-					       rc);
-
-					/* Need to cancel the tagged receive in
-					 * order to prevent resources from being
-					 * leaked. If successful, a error
-					 * KFI_ECANCELED event will progress the
-					 * transaction.
-					 */
-					rc = kfilnd_tn_cancel_tag_recv(tn);
-					if (rc)
-						CERROR("Failed to cancel tagged receive\n");
-					else
-						tn->tn_state = TN_STATE_FAIL;
-
-					/* Exit now since an asynchronous cancel
-					 * event will occur to progress the
-					 * transaction.
-					 */
-					return;
-				} else {
-					tn->tn_state = TN_STATE_WAIT_COMP;
-				}
 			} else {
-				tn->tn_state = TN_STATE_REG_MEM;
+				tn->tn_state = TN_STATE_WAIT_COMP;
 			}
+		} else {
+			tn->tn_state = TN_STATE_REG_MEM;
 		}
 		break;
 
@@ -831,7 +826,7 @@ static void kfilnd_tn_state_imm_recv(struct kfilnd_transaction *tn,
 			/* Initiate the RMA operation to push/pull the LNet
 			 * payload.
 			 */
-			if (tn->tn_flags & KFILND_TN_FLAG_SINK)
+			if (tn->sink_buffer)
 				rc = kfilnd_ep_post_read(tn->tn_ep, tn);
 			else
 				rc = kfilnd_ep_post_write(tn->tn_ep, tn);

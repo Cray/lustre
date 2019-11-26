@@ -193,8 +193,7 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 
 	/* Determine access setting based on whether this is a sink or source.
 	 */
-	access = (tn->tn_flags & KFILND_TN_FLAG_SINK) ? KFI_REMOTE_WRITE :
-							KFI_REMOTE_READ;
+	access = tn->sink_buffer ? KFI_REMOTE_WRITE : KFI_REMOTE_READ;
 
 	/* Use the kfabric API to register buffer for RMA target. */
 	if (tn->tn_kiov)
