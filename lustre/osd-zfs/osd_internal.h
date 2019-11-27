@@ -603,6 +603,9 @@ extern struct lprocfs_vars lprocfs_osd_obd_vars[];
 int osd_procfs_init(struct osd_device *osd, const char *name);
 int osd_procfs_fini(struct osd_device *osd);
 
+int osd_stats_init(struct osd_device *osd);
+void osd_stats_fini(struct osd_device *osd);
+
 /* osd_object.c */
 extern char *osd_obj_tag;
 int __osd_obj2dnode(objset_t *os, uint64_t oid, dnode_t **dnp);

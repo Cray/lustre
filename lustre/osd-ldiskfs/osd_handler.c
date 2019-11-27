@@ -7437,11 +7437,21 @@ static int osd_device_init(const struct lu_env *env, struct lu_device *d,
 			   const char *name, struct lu_device *next)
 {
 	struct osd_device *osd = osd_dev(d);
+	int rc;
 
 	if (strlcpy(osd->od_svname, name, sizeof(osd->od_svname)) >=
 	    sizeof(osd->od_svname))
 		return -E2BIG;
-	return osd_procfs_init(osd, name);
+
+	rc = osd_stats_init(osd);
+	if (rc)
+		return rc;
+
+	rc = osd_procfs_init(osd, name);
+	if (rc)
+		osd_stats_fini(osd);
+
+	return rc;
 }
 
 static int osd_fid_init(const struct lu_env *env, struct osd_device *osd)
@@ -7750,6 +7760,7 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
 	osd_index_backup(env, o, false);
 	osd_shutdown(env, o);
 	osd_procfs_fini(o);
+	osd_stats_fini(o);
 	osd_obj_map_fini(o);
 	osd_umount(env, o);
 
@@ -7826,13 +7837,17 @@ static int osd_device_init0(const struct lu_env *env,
 	if (rc != 0)
 		GOTO(out_site, rc);
 
+	rc = osd_stats_init(o);
+	if (rc != 0)
+		GOTO(out_site, rc);
+
 	INIT_LIST_HEAD(&o->od_ios_list);
 	/* setup scrub, including OI files initialization */
 	o->od_in_init = 1;
 	rc = osd_scrub_setup(env, o);
 	o->od_in_init = 0;
 	if (rc < 0)
-		GOTO(out_site, rc);
+		GOTO(out_stats, rc);
 
 	rc = osd_procfs_init(o, o->od_svname);
 	if (rc != 0) {
@@ -7875,6 +7890,8 @@ static int osd_device_init0(const struct lu_env *env,
 
 out_procfs:
 	osd_procfs_fini(o);
+out_stats:
+	osd_stats_fini(o);
 out_scrub:
 	osd_scrub_cleanup(env, o);
 out_site:

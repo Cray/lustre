@@ -1159,6 +1159,10 @@ static int osd_mount(const struct lu_env *env,
 	if (rc)
 		GOTO(err, rc);
 
+	rc = osd_stats_init(o);
+	if (rc)
+		GOTO(err, rc);
+
 	o->od_in_init = 1;
 	rc = osd_scrub_setup(env, o);
 	o->od_in_init = 0;
@@ -1373,6 +1377,8 @@ static struct lu_device *osd_device_fini(const struct lu_env *env,
 	/* now with all the callbacks completed we can cleanup the remainings */
 	osd_shutdown(env, o);
 	osd_scrub_cleanup(env, o);
+
+	osd_stats_fini(o);
 
 	rc = osd_procfs_fini(o);
 	if (rc) {

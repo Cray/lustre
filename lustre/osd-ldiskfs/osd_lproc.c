@@ -181,55 +181,25 @@ static ssize_t osd_brw_stats_seq_write(struct file *file,
 
 LPROC_SEQ_FOPS(osd_brw_stats);
 
-static int osd_stats_init(struct osd_device *osd)
+int osd_stats_init(struct osd_device *osd)
 {
-        int i, result;
+        int i;
         ENTRY;
 
         for (i = 0; i < BRW_LAST; i++)
 		lprocfs_oh_clear_pcpu(&osd->od_brw_stats.hist[i]);
 
-        osd->od_stats = lprocfs_alloc_stats(LPROC_OSD_LAST, 0);
-        if (osd->od_stats != NULL) {
-                result = lprocfs_register_stats(osd->od_proc_entry, "stats",
-                                                osd->od_stats);
-                if (result)
-                        GOTO(out, result);
-
-                lprocfs_counter_init(osd->od_stats, LPROC_OSD_GET_PAGE,
-                                     LPROCFS_CNTR_AVGMINMAX|LPROCFS_CNTR_STDDEV,
-                                     "get_page", "usec");
-                lprocfs_counter_init(osd->od_stats, LPROC_OSD_NO_PAGE,
-                                     LPROCFS_CNTR_AVGMINMAX,
-                                     "get_page_failures", "num");
-                lprocfs_counter_init(osd->od_stats, LPROC_OSD_CACHE_ACCESS,
-                                     LPROCFS_CNTR_AVGMINMAX,
-                                     "cache_access", "pages");
-                lprocfs_counter_init(osd->od_stats, LPROC_OSD_CACHE_HIT,
-                                     LPROCFS_CNTR_AVGMINMAX,
-                                     "cache_hit", "pages");
-                lprocfs_counter_init(osd->od_stats, LPROC_OSD_CACHE_MISS,
-                                     LPROCFS_CNTR_AVGMINMAX,
-                                     "cache_miss", "pages");
-#if OSD_THANDLE_STATS
-                lprocfs_counter_init(osd->od_stats, LPROC_OSD_THANDLE_STARTING,
-                                     LPROCFS_CNTR_AVGMINMAX,
-                                     "thandle starting", "usec");
-                lprocfs_counter_init(osd->od_stats, LPROC_OSD_THANDLE_OPEN,
-                                     LPROCFS_CNTR_AVGMINMAX,
-                                     "thandle open", "usec");
-                lprocfs_counter_init(osd->od_stats, LPROC_OSD_THANDLE_CLOSING,
-                                     LPROCFS_CNTR_AVGMINMAX,
-                                     "thandle closing", "usec");
-#endif
-		result = lprocfs_seq_create(osd->od_proc_entry, "brw_stats",
-					    0644, &osd_brw_stats_fops, osd);
-        } else
-                result = -ENOMEM;
-
-out:
-        RETURN(result);
+        RETURN(0);
 }
+
+void osd_stats_fini(struct osd_device *osd)
+{
+	int i;
+
+	for (i = 0; i < BRW_LAST; i++)
+		lprocfs_oh_release_pcpu(&osd->od_brw_stats.hist[i]);
+}
+
 
 static int ldiskfs_osd_fstype_seq_show(struct seq_file *m, void *data)
 {
@@ -769,7 +739,7 @@ struct lprocfs_vars lprocfs_osd_module_vars[] = {
 int osd_procfs_init(struct osd_device *osd, const char *name)
 {
 	struct obd_type	*type;
-	int		rc;
+	int		rc = 0;
 	ENTRY;
 
 	if (osd->od_proc_entry)
@@ -794,9 +764,45 @@ int osd_procfs_init(struct osd_device *osd, const char *name)
 		GOTO(out, rc);
 	}
 
-	rc = osd_stats_init(osd);
+        osd->od_stats = lprocfs_alloc_stats(LPROC_OSD_LAST, 0);
+        if (osd->od_stats != NULL) {
+                rc = lprocfs_register_stats(osd->od_proc_entry, "stats",
+                                                osd->od_stats);
+                if (rc)
+                        GOTO(out, rc);
 
-	EXIT;
+                lprocfs_counter_init(osd->od_stats, LPROC_OSD_GET_PAGE,
+                                     LPROCFS_CNTR_AVGMINMAX|LPROCFS_CNTR_STDDEV,
+                                     "get_page", "usec");
+                lprocfs_counter_init(osd->od_stats, LPROC_OSD_NO_PAGE,
+                                     LPROCFS_CNTR_AVGMINMAX,
+                                     "get_page_failures", "num");
+                lprocfs_counter_init(osd->od_stats, LPROC_OSD_CACHE_ACCESS,
+                                     LPROCFS_CNTR_AVGMINMAX,
+                                     "cache_access", "pages");
+                lprocfs_counter_init(osd->od_stats, LPROC_OSD_CACHE_HIT,
+                                     LPROCFS_CNTR_AVGMINMAX,
+                                     "cache_hit", "pages");
+                lprocfs_counter_init(osd->od_stats, LPROC_OSD_CACHE_MISS,
+                                     LPROCFS_CNTR_AVGMINMAX,
+                                     "cache_miss", "pages");
+#if OSD_THANDLE_STATS
+                lprocfs_counter_init(osd->od_stats, LPROC_OSD_THANDLE_STARTING,
+                                     LPROCFS_CNTR_AVGMINMAX,
+                                     "thandle starting", "usec");
+                lprocfs_counter_init(osd->od_stats, LPROC_OSD_THANDLE_OPEN,
+                                     LPROCFS_CNTR_AVGMINMAX,
+                                     "thandle open", "usec");
+                lprocfs_counter_init(osd->od_stats, LPROC_OSD_THANDLE_CLOSING,
+                                     LPROCFS_CNTR_AVGMINMAX,
+                                     "thandle closing", "usec");
+#endif
+		rc = lprocfs_seq_create(osd->od_proc_entry, "brw_stats",
+					    0644, &osd_brw_stats_fops, osd);
+        } else
+                rc = -ENOMEM;
+
+	GOTO(out, rc);
 out:
 	if (rc)
 		osd_procfs_fini(osd);
@@ -805,16 +811,14 @@ out:
 
 int osd_procfs_fini(struct osd_device *osd)
 {
-	int i;
-
-	for (i = 0; i < BRW_LAST; i++)
-		lprocfs_oh_release_pcpu(&osd->od_brw_stats.hist[i]);
+	ENTRY;
 
 	if (osd->od_stats)
 		lprocfs_free_stats(&osd->od_stats);
 
 	if (osd->od_proc_entry)
 		lprocfs_remove(&osd->od_proc_entry);
+
 	RETURN(0);
 }
 #endif
