@@ -250,6 +250,8 @@ unsigned int libcfs_catastrophe;
 EXPORT_SYMBOL(libcfs_catastrophe);
 
 unsigned int libcfs_experimental_flag = 0;
+module_param(libcfs_experimental_flag, uint, 0644);
+MODULE_PARM_DESC(libcfs_experimental_flag, "Enable Lustre experimental features");
 EXPORT_SYMBOL(libcfs_experimental_flag);
 
 unsigned int libcfs_watchdog_ratelimit = 300;
