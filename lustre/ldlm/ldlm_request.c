@@ -578,8 +578,13 @@ static void failed_lock_cleanup(struct ldlm_namespace *ns,
 
 static bool ldlm_request_slot_needed(struct ldlm_enqueue_info *einfo)
 {
+	/* exclude EXTENT locks and DOM-only IBITS locks because they
+	 * are asynchronous and don't wait on server being blocked.
+	 */
 	return einfo->ei_req_slot &&
-	       (einfo->ei_type == LDLM_FLOCK || einfo->ei_type == LDLM_IBITS);
+	       (einfo->ei_type == LDLM_FLOCK ||
+		(einfo->ei_type == LDLM_IBITS &&
+		 einfo->ei_inodebits != MDS_INODELOCK_DOM));
 }
 
 /**
@@ -589,13 +594,13 @@ static bool ldlm_request_slot_needed(struct ldlm_enqueue_info *einfo)
  */
 int ldlm_cli_enqueue_fini(struct obd_export *exp, struct ptlrpc_request *req,
 			  enum ldlm_type type, __u8 with_policy,
-			  enum ldlm_mode mode, __u64 *flags, void *lvb,
+			  enum ldlm_mode mode, __u64 *ldlm_flags, void *lvb,
 			  __u32 lvb_len, const struct lustre_handle *lockh,
 			  int rc, bool request_slot)
 {
 	struct ldlm_namespace *ns = exp->exp_obd->obd_namespace;
 	const struct lu_env *env = NULL;
-	int is_replay = *flags & LDLM_FL_REPLAY;
+	int is_replay = *ldlm_flags & LDLM_FL_REPLAY;
 	struct ldlm_lock *lock;
 	struct ldlm_reply *reply;
 	int cleanup_phase = 1;
@@ -674,18 +679,18 @@ int ldlm_cli_enqueue_fini(struct obd_export *exp, struct ptlrpc_request *req,
                 lock->l_remote_handle = reply->lock_handle;
         }
 
-	*flags = ldlm_flags_from_wire(reply->lock_flags);
+	*ldlm_flags = ldlm_flags_from_wire(reply->lock_flags);
 	lock->l_flags |= ldlm_flags_from_wire(reply->lock_flags &
 					      LDLM_FL_INHERIT_MASK);
         unlock_res_and_lock(lock);
 
 	CDEBUG(D_INFO, "local: %p, remote cookie: %#llx, flags: %#llx\n",
-	       lock, reply->lock_handle.cookie, *flags);
+	       lock, reply->lock_handle.cookie, *ldlm_flags);
 
 	/* If enqueue returned a blocked lock but the completion handler has
 	 * already run, then it fixed up the resource and we don't need to do it
 	 * again. */
-	if ((*flags) & LDLM_FL_LOCK_CHANGED) {
+	if ((*ldlm_flags) & LDLM_FL_LOCK_CHANGED) {
 		int newmode = reply->lock_desc.l_req_mode;
 		LASSERT(!is_replay);
 		if (newmode && newmode != lock->l_req_mode) {
@@ -720,7 +725,7 @@ int ldlm_cli_enqueue_fini(struct obd_export *exp, struct ptlrpc_request *req,
 			LDLM_DEBUG(lock,"client-side enqueue, new policy data");
 	}
 
-	if ((*flags) & LDLM_FL_AST_SENT) {
+	if ((*ldlm_flags) & LDLM_FL_AST_SENT) {
 		lock_res_and_lock(lock);
 		ldlm_bl_desc2lock(&reply->lock_desc, lock);
 		lock->l_flags |= LDLM_FL_CBPENDING | LDLM_FL_BL_AST;
@@ -752,9 +757,10 @@ int ldlm_cli_enqueue_fini(struct obd_export *exp, struct ptlrpc_request *req,
 			OBD_FAIL_TIMEOUT(OBD_FAIL_LLITE_FLOCK_BL_GRANT_RACE,
 					 10);
 
-		rc = ldlm_lock_enqueue(env, ns, &lock, NULL, flags);
+		rc = ldlm_lock_enqueue(env, ns, &lock, NULL, ldlm_flags);
 		if (lock->l_completion_ast != NULL) {
-			int err = lock->l_completion_ast(lock, *flags, NULL);
+			int err = lock->l_completion_ast(lock, *ldlm_flags,
+							 NULL);
 			if (!rc)
 				rc = err;
 			if (rc)
@@ -1046,24 +1052,15 @@ int ldlm_cli_enqueue(struct obd_export *exp, struct ptlrpc_request **reqp,
 
 	/* extended LDLM opcodes in client stats */
 	if (exp->exp_obd->obd_svc_stats != NULL) {
-		bool glimpse = *flags & LDLM_FL_HAS_INTENT;
-
-		/* OST glimpse has no intent buffer */
-		if (req_capsule_has_field(&req->rq_pill, &RMF_LDLM_INTENT,
-					  RCL_CLIENT)) {
-			struct ldlm_intent *it;
-
-			it = req_capsule_client_get(&req->rq_pill,
-						    &RMF_LDLM_INTENT);
-			glimpse = (it && (it->opc == IT_GLIMPSE));
-		}
-
-		if (!glimpse)
-			ldlm_svc_get_eopc(body, exp->exp_obd->obd_svc_stats);
-		else
+		/* glimpse is intent with no intent buffer */
+		if (*flags & LDLM_FL_HAS_INTENT &&
+		    !req_capsule_has_field(&req->rq_pill, &RMF_LDLM_INTENT,
+					   RCL_CLIENT))
 			lprocfs_counter_incr(exp->exp_obd->obd_svc_stats,
 					     PTLRPC_LAST_CNTR +
 					     LDLM_GLIMPSE_ENQUEUE);
+		else
+			ldlm_svc_get_eopc(body, exp->exp_obd->obd_svc_stats);
 	}
 
 	/* It is important to obtain modify RPC slot first (if applicable), so

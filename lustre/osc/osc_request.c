@@ -2568,23 +2568,6 @@ int osc_enqueue_base(struct obd_export *exp, struct ldlm_res_id *res_id,
 	if (*flags & (LDLM_FL_TEST_LOCK | LDLM_FL_MATCH_LOCK))
 		RETURN(-ENOLCK);
 
-	if (intent) {
-		req = ptlrpc_request_alloc(class_exp2cliimp(exp),
-					   &RQF_LDLM_ENQUEUE_LVB);
-		if (req == NULL)
-			RETURN(-ENOMEM);
-
-		rc = ldlm_prep_enqueue_req(exp, req, NULL, 0);
-		if (rc) {
-                        ptlrpc_request_free(req);
-                        RETURN(rc);
-                }
-
-                req_capsule_set_size(&req->rq_pill, &RMF_DLM_LVB, RCL_SERVER,
-                                     sizeof *lvb);
-                ptlrpc_request_set_replen(req);
-        }
-
         /* users of osc_enqueue() can pass this flag for ldlm_lock_match() */
         *flags &= ~LDLM_FL_BLOCK_GRANTED;
 
@@ -2619,16 +2602,12 @@ int osc_enqueue_base(struct obd_export *exp, struct ldlm_res_id *res_id,
 				ptlrpcd_add_req(req);
 			else
 				ptlrpc_set_add_req(rqset, req);
-		} else if (intent) {
-			ptlrpc_req_finished(req);
 		}
 		RETURN(rc);
 	}
 
 	rc = osc_enqueue_fini(req, upcall, cookie, &lockh, einfo->ei_mode,
 			      flags, speculative, rc);
-	if (intent)
-		ptlrpc_req_finished(req);
 
 	RETURN(rc);
 }
@@ -2654,15 +2633,9 @@ int osc_match_base(const struct lu_env *env, struct obd_export *exp,
 	policy->l_extent.end |= ~PAGE_MASK;
 
         /* Next, search for already existing extent locks that will cover us */
-        /* If we're trying to read, we also search for an existing PW lock.  The
-         * VFS and page cache already protect us locally, so lots of readers/
-         * writers can share a single PW lock. */
-        rc = mode;
-        if (mode == LCK_PR)
-                rc |= LCK_PW;
-
         rc = ldlm_lock_match_with_skip(obd->obd_namespace, lflags, 0,
-                             res_id, type, policy, rc, lockh, m_flags);
+				       res_id, type, policy, mode, lockh,
+				       m_flags);
 	if (rc == 0 || lflags & LDLM_FL_TEST_LOCK)
 		RETURN(rc);
 

@@ -1808,7 +1808,7 @@ int ldlm_handle_enqueue0(struct ldlm_namespace *ns, struct ptlrpc_request *req,
 			 const struct ldlm_callback_suite *cbs);
 int ldlm_cli_enqueue_fini(struct obd_export *exp, struct ptlrpc_request *req,
 			  enum ldlm_type type, __u8 with_policy,
-			  enum ldlm_mode mode, __u64 *flags, void *lvb,
+			  enum ldlm_mode mode, __u64 *ldlm_flags, void *lvb,
 			  __u32 lvb_len,
 			  const struct lustre_handle *lockh, int rc,
 			  bool request_slot);

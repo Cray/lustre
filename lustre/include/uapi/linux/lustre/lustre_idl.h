@@ -838,7 +838,7 @@ struct ptlrpc_body_v2 {
 #define OBD_CONNECT2_SELINUX_POLICY	0x400ULL /* has client SELinux policy */
 #define OBD_CONNECT2_LSOM		0x800ULL /* LSOM support */
 #define OBD_CONNECT2_ASYNC_DISCARD	0x4000ULL /* support async DoM data discard */
-
+#define OBD_CONNECT2_DOM_LVB	       0x80000ULL /* pack DOM glimpse data in LVB */
 /* XXX README XXX:
  * Please DO NOT add flag values here before first ensuring that this same
  * flag value is not in use on some other branch.  Please clear any such
@@ -890,7 +890,8 @@ struct ptlrpc_body_v2 {
 				OBD_CONNECT2_INC_XID | \
 				OBD_CONNECT2_SELINUX_POLICY | \
 				OBD_CONNECT2_LSOM | \
-				OBD_CONNECT2_ASYNC_DISCARD)
+				OBD_CONNECT2_ASYNC_DISCARD | \
+				OBD_CONNECT2_DOM_LVB)
 
 #define OST_CONNECT_SUPPORTED  (OBD_CONNECT_SRVLOCK | OBD_CONNECT_GRANT | \
 				OBD_CONNECT_REQPORTAL | OBD_CONNECT_VERSION | \
