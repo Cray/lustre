@@ -858,7 +858,10 @@ static int mdc_finish_enqueue(struct obd_export *exp,
 		LDLM_DEBUG(lock, "DoM lock is returned by: %s, size: %llu",
 			   ldlm_it2str(it->it_op), body->mbo_dom_size);
 
-		rc = mdc_fill_lvb(req, &lock->l_ost_lvb);
+		lock_res_and_lock(lock);
+		mdc_body2lvb(body, &lock->l_ost_lvb);
+		ldlm_lock_allow_match_locked(lock);
+		unlock_res_and_lock(lock);
 	}
 out_lock:
 	LDLM_LOCK_PUT(lock);
