@@ -334,6 +334,12 @@ struct kfilnd_transaction {
 
 	/* Bulk operation timeout timer. */
 	struct timer_list timeout_timer;
+
+	/* Transaction health status. */
+	enum lnet_msg_hstatus hstatus;
+
+	/* Transaction deadline. */
+	ktime_t deadline;
 };
 
 #endif /* _KFILND_ */
