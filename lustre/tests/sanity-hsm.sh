@@ -2869,7 +2869,6 @@ test_31a() {
 	local f=$DIR/$tdir/$tfile
 	copytool import $tdir/$tfile $f
 	local fid=$($LFS path2fid $f)
-	copytool setup
 
 	restore_and_check_size $f $fid
 	local err=$?
