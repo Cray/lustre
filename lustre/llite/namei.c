@@ -184,7 +184,7 @@ int ll_test_inode_by_fid(struct inode *inode, void *opaque)
 	return lu_fid_eq(&ll_i2info(inode)->lli_fid, opaque);
 }
 
-static int ll_dom_lock_cancel(struct inode *inode, struct ldlm_lock *lock)
+int ll_dom_lock_cancel(struct inode *inode, struct ldlm_lock *lock)
 {
 	struct lu_env *env;
 	struct ll_inode_info *lli = ll_i2info(inode);
@@ -223,17 +223,6 @@ static int ll_dom_lock_cancel(struct inode *inode, struct ldlm_lock *lock)
 		rc = cl_sync_file_range(inode, 0, end, mode, 1);
 		truncate_inode_pages_range(inode->i_mapping, 0, end);
 	}
-	if (lock->l_ast_data) {
-		struct cl_attr attr;
-		struct cl_object *obj = lock->l_ast_data;
-
-		/* Losing the lock, set KMS to 0 */
-		cl_object_attr_lock(obj);
-		attr.cat_kms = 0;
-		cl_object_attr_update(env, obj, &attr, CAT_KMS);
-		cl_object_attr_unlock(obj);
-	}
-
 	cl_env_put(env, &refcheck);
 	RETURN(rc);
 }

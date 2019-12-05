@@ -59,7 +59,7 @@ static void mdc_lock_build_einfo(const struct lu_env *env,
 	einfo->ei_cb_bl = mdc_ldlm_blocking_ast;
 	einfo->ei_cb_cp = ldlm_completion_ast;
 	einfo->ei_cb_gl = mdc_ldlm_glimpse_ast;
-	einfo->ei_cbdata = osc2cl(osc); /* value to be put into ->l_ast_data */
+	einfo->ei_cbdata = osc; /* value to be put into ->l_ast_data */
 }
 
 static void mdc_lock_lvb_update(const struct lu_env *env,
