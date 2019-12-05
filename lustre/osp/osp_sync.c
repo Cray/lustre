@@ -1269,12 +1269,10 @@ static int osp_sync_thread(void *_arg)
 		/* processing reaches catalog bottom */
 		if (d->opd_sync_last_catalog_idx == size)
 			d->opd_sync_last_catalog_idx = LLOG_CAT_FIRST;
-		else if (wrapped)
-			/* If catalog is wrapped we can`t predict last index of
-			 * processing because lgh_last_idx could be changed.
-			 * Starting form the next one */
-			d->opd_sync_last_catalog_idx++;
-
+		/* If catalog is wrapped we can`t predict last index of
+		 * processing because lgh_last_idx could be changed.
+		 * Starting form the next one. Index would be increased
+		 * at llog_process_thread */
 	} while (rc == 0 && (wrapped ||
 			     d->opd_sync_last_catalog_idx == LLOG_CAT_FIRST));
 
