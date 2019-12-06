@@ -53,8 +53,6 @@
 /* Max payload size */
 #define LNET_MAX_PAYLOAD	LNET_MTU
 
-#define LNET_MAX_IOV		(LNET_MAX_PAYLOAD >> PAGE_SHIFT)
-
 /*
  * This is the maximum health value.
  * All local and peer NIs created have their health default to this value.
