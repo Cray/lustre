@@ -40,6 +40,7 @@
 #define DEBUG_SUBSYSTEM S_MDS
 
 #include <linux/kthread.h>
+#include <linux/delay.h>
 #include <lustre_log.h>
 #include <lustre_update.h>
 #include "osp_internal.h"
@@ -1170,6 +1171,9 @@ static int osp_sync_process_queues(const struct lu_env *env,
 			llh = NULL;
 			rec = NULL;
 		}
+		if (OBD_FAIL_PRECHECK(OBD_FAIL_CATALOG_FULL_CHECK) &&
+			    cfs_fail_val != 1)
+			msleep(1 * MSEC_PER_SEC);
 
 		l_wait_event(d->opd_sync_waitq,
 			     !osp_sync_running(d) ||

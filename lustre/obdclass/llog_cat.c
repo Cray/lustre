@@ -206,7 +206,8 @@ static int llog_cat_new_log(const struct lu_env *env,
 		if (freespace > (128 << 20))
 			loghandle->lgh_max_size = 128 << 20;
 	}
-	if (unlikely(OBD_FAIL_PRECHECK(OBD_FAIL_PLAIN_RECORDS))) {
+	if (unlikely(OBD_FAIL_PRECHECK(OBD_FAIL_PLAIN_RECORDS) ||
+		     OBD_FAIL_PRECHECK(OBD_FAIL_CATALOG_FULL_CHECK))) {
 		// limit the numer of plain records for test
 		loghandle->lgh_max_size = loghandle->lgh_hdr_size +
 		       cfs_fail_val * 64;
