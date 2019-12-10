@@ -308,7 +308,7 @@ int mdt_hsm_find_best_agent(struct coordinator *cdt, __u32 archive,
 }
 
 int mdt_hsm_send_action_to_each_archive(struct mdt_thread_info *mti,
-				    struct hsm_action_item *hai)
+					struct hsm_action_item *hai)
 {
 	__u64 compound_id;
 	struct hsm_agent *ha;
@@ -335,8 +335,7 @@ int mdt_hsm_send_action_to_each_archive(struct mdt_thread_info *mti,
 			compound_id = atomic_inc_return(&cdt->cdt_compound_id);
 			rc = mdt_agent_record_add(mti->mti_env, mti->mti_mdt,
 						  compound_id,
-						  ha->ha_archive_id[i], 0,
-						  hai);
+						  ha->ha_archive_id[i], 0, hai);
 			if (rc) {
 				CERROR("%s: unable to add HSM remove request "
 				       "for "DFID": rc=%d\n",
@@ -373,8 +372,8 @@ int mdt_hsm_send_action_to_each_archive(struct mdt_thread_info *mti,
  * This implies that request split has to be done
  *  before when building the hal
  */
-int mdt_hsm_agent_send(struct mdt_thread_info *mti,
-		       struct hsm_action_list *hal, bool purge)
+int mdt_hsm_agent_send(struct mdt_thread_info *mti, struct hsm_action_list *hal,
+		       bool purge)
 {
 	struct obd_export	*exp;
 	struct mdt_device	*mdt = mti->mti_mdt;

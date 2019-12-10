@@ -539,9 +539,9 @@ static int set_cdt_state(struct coordinator *cdt, enum cdt_states new_state)
 {
 	int rc;
 
-	mutex_lock(&cdt->cdt_state_lock);
+	down_write(&cdt->cdt_lock);
 	rc = set_cdt_state_locked(cdt, new_state);
-	mutex_unlock(&cdt->cdt_state_lock);
+	up_write(&cdt->cdt_lock);
 
 	return rc;
 }
@@ -655,7 +655,7 @@ static int mdt_coordinator(void *data)
 		hsd.request_cnt = 0;
 
 		rc = cdt_llog_process(mti->mti_env, mdt, mdt_coordinator_cb,
-				      &hsd, 0, 0, WRITE);
+				      &hsd, 0, 0, CDT_LOCK_WRITE);
 		if (rc < 0)
 			goto clean_cb_alloc;
 
@@ -937,7 +937,7 @@ static int mdt_hsm_pending_restore(struct mdt_thread_info *mti)
 	hrd.hrd_mti = mti;
 
 	rc = cdt_llog_process(mti->mti_env, mti->mti_mdt, hsm_restore_cb, &hrd,
-			      0, 0, WRITE);
+			      0, 0, CDT_LOCK_WRITE);
 
 	RETURN(rc);
 }
@@ -981,11 +981,10 @@ int mdt_hsm_cdt_init(struct mdt_device *mdt)
 	ENTRY;
 
 	init_waitqueue_head(&cdt->cdt_waitq);
-	init_rwsem(&cdt->cdt_llog_lock);
+	init_rwsem(&cdt->cdt_lock);
 	init_rwsem(&cdt->cdt_agent_lock);
 	init_rwsem(&cdt->cdt_request_lock);
 	mutex_init(&cdt->cdt_restore_lock);
-	mutex_init(&cdt->cdt_state_lock);
 	set_cdt_state(cdt, CDT_STOPPED);
 
 	INIT_LIST_HEAD(&cdt->cdt_request_list);
@@ -1121,7 +1120,7 @@ static int mdt_hsm_cdt_start(struct mdt_device *mdt)
 	cdt->cdt_policy = CDT_DEFAULT_POLICY;
 
 	/* just need to be larger than previous one */
-	/* cdt_last_cookie is protected by cdt_llog_lock */
+	/* cdt_last_cookie is protected by cdt_lock */
 	cdt->cdt_last_cookie = ktime_get_real_seconds();
 	atomic_set(&cdt->cdt_request_count, 0);
 	atomic_set(&cdt->cdt_archive_count, 0);
@@ -1791,7 +1790,7 @@ static int hsm_cancel_all_actions(struct mdt_device *mdt)
 
 	hsm_init_ucred(mdt_ucred(mti));
 
-	mutex_lock(&cdt->cdt_state_lock);
+	down_write(&cdt->cdt_lock);
 	old_state = cdt->cdt_state;
 
 	/* disable coordinator */
@@ -1868,12 +1867,12 @@ static int hsm_cancel_all_actions(struct mdt_device *mdt)
 	hcad.mdt = mdt;
 
 	rc = cdt_llog_process(mti->mti_env, mti->mti_mdt, mdt_cancel_all_cb,
-			      &hcad, 0, 0, WRITE);
+			      &hcad, 0, 0, CDT_LOCK_NONE);
 out_cdt_state:
 	/* Enable coordinator, unless the coordinator was stopping. */
 	set_cdt_state_locked(cdt, old_state);
 out_cdt_state_unlock:
-	mutex_unlock(&cdt->cdt_state_lock);
+	up_write(&cdt->cdt_lock);
 
 	lu_context_exit(&session);
 	lu_context_fini(&session);

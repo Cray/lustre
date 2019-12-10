@@ -155,7 +155,7 @@ static int hsm_find_compatible(const struct lu_env *env, struct mdt_device *mdt,
 	hcdcb.hal = hal;
 
 	rc = cdt_llog_process(env, mdt, hsm_find_compatible_cb, &hcdcb, 0, 0,
-			      READ);
+			      CDT_LOCK_READ);
 
 	RETURN(rc);
 }
@@ -441,7 +441,10 @@ int mdt_hsm_add_actions(struct mdt_thread_info *mti,
 	int			 rc;
 	ENTRY;
 
-	/* no coordinator started, so we cannot serve requests */
+	/* no coordinator started, so we cannot serve requests; check cdt_state
+	 * here without a lock and check it again while holding cdt_lock before
+	 * adding the request in mdt_agent_record_add()
+	 */
 	if (cdt->cdt_state == CDT_STOPPED || cdt->cdt_state == CDT_INIT)
 		RETURN(-EAGAIN);
 
