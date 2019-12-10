@@ -2721,7 +2721,8 @@ again:
 	 * let's consider this an NMR case so we can hit the destination
 	 * NID.
 	 */
-	if (!lnet_peer_is_multi_rail(peer) || msg->msg_recovery)
+	if (!lnet_peer_is_multi_rail(peer) || msg->msg_recovery ||
+	    (msg->msg_routing && (send_case & LOCAL_DST)))
 		send_case |= NMR_DST;
 	else
 		send_case |= MR_DST;
