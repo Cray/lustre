@@ -121,7 +121,7 @@ static inline char *cdt_mdt_state2str(int state)
 }
 
 /* when multiple lock are needed, the lock order is
- * cdt_llog_lock
+ * cdt_lock
  * cdt_agent_lock
  * cdt_counter_lock
  * cdt_restore_lock
@@ -137,11 +137,10 @@ struct coordinator {
 	struct proc_dir_entry	*cdt_proc_dir;	     /**< cdt /proc directory */
 	__u64			 cdt_policy;	     /**< policy flags */
 	enum cdt_states		 cdt_state;	      /**< state */
-	struct mutex		 cdt_state_lock;      /**< cdt_state lock */
 	__u64			 cdt_last_cookie;     /**< last cookie
 						       * allocated */
-	struct rw_semaphore	 cdt_llog_lock;       /**< protect llog
-						       * access */
+	struct rw_semaphore	 cdt_lock;	      /**< protect llog
+						       * access and cdt_state */
 	struct rw_semaphore	 cdt_agent_lock;      /**< protect agent list */
 	struct rw_semaphore	 cdt_request_lock;    /**< protect request
 						       * list */
@@ -959,12 +958,18 @@ int cdt_external_start(void);
 int cdt_external_stop(void);
 
 /* mdt/mdt_hsm_cdt_actions.c */
+enum cdt_lock_type {
+	CDT_LOCK_READ,
+	CDT_LOCK_WRITE,
+	CDT_LOCK_NONE
+};
+
 extern const struct file_operations mdt_hsm_actions_fops;
 void dump_llog_agent_req_rec(const char *prefix,
 			     const struct llog_agent_req_rec *larr);
 int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
 		     llog_cb_t cb, void *data, u32 start_cat_idx,
-		     u32 start_rec_idx, int rw);
+		     u32 start_rec_idx, enum cdt_lock_type lock);
 int mdt_agent_record_add(const struct lu_env *env, struct mdt_device *mdt,
 			 __u32 archive_id, __u64 flags,
 			 struct hsm_action_item *hai);

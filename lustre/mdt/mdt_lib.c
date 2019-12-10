@@ -962,7 +962,7 @@ int mdt_handle_last_unlink(struct mdt_thread_info *info, struct mdt_object *mo,
 		kfree(hal);
 	} else {
 		rc = mdt_agent_record_add(info->mti_env, info->mti_mdt,
-					  archive_id, 0, &hai);
+					  archive_id, HAL_CDT_FORCE, &hai);
 	}
 
 out:

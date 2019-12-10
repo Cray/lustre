@@ -203,7 +203,7 @@ void dump_llog_agent_req_rec(const char *prefix,
  * \param mdt [IN] MDT device
  * \param cb [IN] llog callback funtion
  * \param data [IN] llog callback  data
- * \param rw [IN] cdt_llog_lock mode (READ or WRITE)
+ * \param lock [IN] lock type
  * \param start_cat_idx first catalog index to examine
  * \param start_rec_idx first record index to examine
  * \retval 0 success
@@ -211,7 +211,7 @@ void dump_llog_agent_req_rec(const char *prefix,
  */
 int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
 		     llog_cb_t cb, void *data, u32 start_cat_idx,
-		     u32 start_rec_idx, int rw)
+		     u32 start_rec_idx, enum cdt_lock_type lock)
 {
 	struct obd_device	*obd = mdt2obd_dev(mdt);
 	struct llog_ctxt	*lctxt = NULL;
@@ -223,10 +223,10 @@ int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
 	if (lctxt == NULL || lctxt->loc_handle == NULL)
 		RETURN(-ENOENT);
 
-	if (rw == READ)
-		down_read(&cdt->cdt_llog_lock);
-	else
-		down_write(&cdt->cdt_llog_lock);
+	if (lock == CDT_LOCK_READ)
+		down_read(&cdt->cdt_lock);
+	else if (lock == CDT_LOCK_WRITE)
+		down_write(&cdt->cdt_lock);
 
 	rc = llog_cat_process(env, lctxt->loc_handle, cb, data, start_cat_idx,
 			      start_rec_idx);
@@ -238,10 +238,10 @@ int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
 
 	llog_ctxt_put(lctxt);
 
-	if (rw == READ)
-		up_read(&cdt->cdt_llog_lock);
-	else
-		up_write(&cdt->cdt_llog_lock);
+	if (lock == CDT_LOCK_READ)
+		up_read(&cdt->cdt_lock);
+	else if (lock == CDT_LOCK_WRITE)
+		up_write(&cdt->cdt_lock);
 
 	RETURN(rc);
 }
@@ -284,7 +284,25 @@ int mdt_agent_record_add(const struct lu_env *env, struct mdt_device *mdt,
 	if (lctxt == NULL || lctxt->loc_handle == NULL)
 		GOTO(free, rc = -ENOENT);
 
-	down_write(&cdt->cdt_llog_lock);
+	down_write(&cdt->cdt_lock);
+
+	/* This prevents new HSM requests from being added when the CDT is
+	 * shutdown (so is unavailable) or being initialized (as doing so opens
+	 * up the possiblity of HSM cookies being reused during startup and
+	 * triggering some of the assertions in cdt_agent_record_hash_add(), as
+	 * seen in LU-11675). Requests needed to implement the Remove Archive on
+	 * Last Unlink (RAoLU) policy are allowed when the CDT is shutdown, as
+	 * they are safe operations. They are also allowed during CDT
+	 * initialization, even though this can lead to the issues seen in
+	 * LU-11675, as doing so maintains administrator expectations regarding
+	 * file archives always being removed when the RAoLU policy is enabled.
+	 * This could probably be improved by e.g. failing when
+	 * mdt_handle_last_unlink() is not able to add an HSM remove request, or
+	 * saving the requests in an llog so they can be sent later.
+	 */
+	if ((cdt->cdt_state == CDT_STOPPED || cdt->cdt_state == CDT_INIT) &&
+	    !(flags & HAL_CDT_FORCE))
+		GOTO(unavail, rc = -EAGAIN);
 
 	/* in case of cancel request, the cookie is already set to the
 	 * value of the request cookie to be cancelled
@@ -298,7 +316,8 @@ int mdt_agent_record_add(const struct lu_env *env, struct mdt_device *mdt,
 	if (rc > 0)
 		rc = 0;
 
-	up_write(&cdt->cdt_llog_lock);
+unavail:
+	up_write(&cdt->cdt_lock);
 	llog_ctxt_put(lctxt);
 
 	EXIT;
@@ -440,7 +459,7 @@ int mdt_agent_record_update(const struct lu_env *env, struct mdt_device *mdt,
 	ducb.change_time = ktime_get_real_seconds();
 
 	rc = cdt_llog_process(env, mdt, mdt_agent_record_update_cb, &ducb,
-			      start_cat_idx, start_rec_idx, WRITE);
+			      start_cat_idx, start_rec_idx, CDT_LOCK_WRITE);
 	if (rc < 0)
 		CERROR("%s: cdt_llog_process() failed, rc=%d, cannot update "
 		       "status for %u cookies, done %u\n",
@@ -590,7 +609,7 @@ static int mdt_hsm_actions_proc_show(struct seq_file *s, void *v)
 	if (aai->aai_eof)
 		RETURN(0);
 
-	down_read(&cdt->cdt_llog_lock);
+	down_read(&cdt->cdt_lock);
 	if (is_cdt_external(cdt))
 		rc = mdt_ext_hsm_request_list(s);
 	else
@@ -598,7 +617,7 @@ static int mdt_hsm_actions_proc_show(struct seq_file *s, void *v)
 				      hsm_actions_show_cb, s,
 				      aai->aai_cat_index, aai->aai_index);
 
-	up_read(&cdt->cdt_llog_lock);
+	up_read(&cdt->cdt_lock);
 	if (rc == 0) /* all llog parsed */
 		aai->aai_eof = true;
 	if (rc == LLOG_PROC_BREAK) /* buffer full */

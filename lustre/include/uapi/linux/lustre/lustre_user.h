@@ -2183,7 +2183,9 @@ static inline char *hai_dump_data_field(const struct hsm_action_item *hai,
 }
 
 enum hal_flags {
-	HAL_IMPLICIT_RESTORE = 1 << 5
+	HAL_IMPLICIT_RESTORE = 1 << 5,
+	/* Register even when the CDT is shutdown or being initialized */
+	HAL_CDT_FORCE = 1 << 6,
 };
 
 /* Copytool action list */
