@@ -721,4 +721,8 @@ static inline struct timespec current_time(struct inode *inode)
 #define xa_unlock_irq(lockp) spin_unlock_irq(lockp)
 #endif
 
+#ifndef HAVE_LINUX_SELINUX_IS_ENABLED
+#define selinux_is_enabled() 1
+#endif
+
 #endif /* _LUSTRE_COMPAT_H */
