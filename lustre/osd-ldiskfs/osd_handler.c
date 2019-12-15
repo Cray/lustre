@@ -2108,7 +2108,7 @@ int osd_statfs(const struct lu_env *env, struct dt_device *d,
 		goto out;
 
 	statfs_pack(sfs, ksfs);
-	if (unlikely(sb->s_flags & MS_RDONLY))
+	if (unlikely(sb->s_flags & SB_RDONLY))
 		sfs->os_state |= OS_STATE_READONLY;
 	if (ldiskfs_has_feature_extents(sb))
 		sfs->os_maxbytes = sb->s_maxbytes;
@@ -7788,7 +7788,7 @@ static int osd_health_check(const struct lu_env *env, struct obd_device *obd)
 	struct osd_device *osd = osd_dev(obd->obd_lu_dev);
 	struct super_block *sb = osd_sb(osd);
 
-	return (osd->od_mnt == NULL || sb->s_flags & MS_RDONLY);
+	return (osd->od_mnt == NULL || sb->s_flags & SB_RDONLY);
 }
 
 /*
