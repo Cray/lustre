@@ -1902,7 +1902,8 @@ out_unlock:
 	}
 
 out_reprocess:
-	ldlm_reprocess_all(lease->l_resource, lease);
+	ldlm_reprocess_all(lease->l_resource,
+			   lease->l_policy_data.l_inodebits.bits);
 	LDLM_LOCK_PUT(lease);
 
 	ma->ma_valid = 0;
@@ -2065,7 +2066,8 @@ out_unlock_sem:
 out_obj:
 	mdt_object_put(info->mti_env, swap_objects ? o1 : o2);
 
-	ldlm_reprocess_all(lease->l_resource, lease);
+	ldlm_reprocess_all(lease->l_resource,
+			   lease->l_policy_data.l_inodebits.bits);
 
 out_lease:
 	LDLM_LOCK_PUT(lease);
@@ -2186,7 +2188,8 @@ out_unlock:
 		OBD_FREE(resync_ids, resync_count * sizeof(__u32));
 
 out_reprocess:
-	ldlm_reprocess_all(lease->l_resource, lease);
+	ldlm_reprocess_all(lease->l_resource,
+			   lease->l_policy_data.l_inodebits.bits);
 	LDLM_LOCK_PUT(lease);
 
 	ma->ma_valid = 0;
