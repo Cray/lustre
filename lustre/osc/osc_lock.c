@@ -144,6 +144,9 @@ static void osc_lock_build_policy(const struct lu_env *env,
  * with the DLM lock reply from the server. Copy of osc_update_enqueue()
  * logic.
  *
+ * This can be optimized to not update attributes when lock is a result of a
+ * local match.
+ *
  * Called under lock and resource spin-locks.
  */
 static void osc_lock_lvb_update(const struct lu_env *env,
@@ -199,7 +202,7 @@ static void osc_lock_lvb_update(const struct lu_env *env,
 }
 
 static void osc_lock_granted(const struct lu_env *env, struct osc_lock *oscl,
-			     struct lustre_handle *lockh)
+			     struct lustre_handle *lockh, bool lvb_update)
 {
 	struct ldlm_lock *dlmlock;
 
@@ -239,11 +242,10 @@ static void osc_lock_granted(const struct lu_env *env, struct osc_lock *oscl,
 		descr->cld_gid   = ext->gid;
 
 		/* no lvb update for matched lock */
-		if (!ldlm_is_lvb_cached(dlmlock)) {
+		if (lvb_update) {
 			LASSERT(oscl->ols_flags & LDLM_FL_LVB_READY);
 			osc_lock_lvb_update(env, cl2osc(oscl->ols_cl.cls_obj),
 					    dlmlock, NULL);
-			ldlm_set_lvb_cached(dlmlock);
 		}
 		LINVRNT(osc_lock_invariant(oscl));
 	}
@@ -283,7 +285,7 @@ static int osc_lock_upcall(void *cookie, struct lustre_handle *lockh,
 	}
 
 	if (rc == 0)
-		osc_lock_granted(env, oscl, lockh);
+		osc_lock_granted(env, oscl, lockh, errcode == ELDLM_OK);
 
 	/* Error handling, some errors are tolerable. */
 	if (oscl->ols_locklessable && rc == -EUSERS) {
@@ -339,8 +341,7 @@ static int osc_lock_upcall_speculative(void *cookie,
 	lock_res_and_lock(dlmlock);
 	LASSERT(dlmlock->l_granted_mode == dlmlock->l_req_mode);
 
-	/* there is no osc_lock associated with speculative locks
-	 * thus no need to set LDLM_FL_LVB_CACHED */
+	/* there is no osc_lock associated with speculative locks */
 	osc_lock_lvb_update(env, osc, dlmlock, NULL);
 
 	unlock_res_and_lock(dlmlock);
@@ -1024,6 +1025,7 @@ enqueue_base:
 	}
 	result = osc_enqueue_base(exp, resname, &oscl->ols_flags,
 				  policy, &oscl->ols_lvb,
+				  osc->oo_oinfo->loi_kms_valid,
 				  upcall, cookie,
 				  &oscl->ols_einfo, PTLRPCD_SET, async,
 				  oscl->ols_speculative);

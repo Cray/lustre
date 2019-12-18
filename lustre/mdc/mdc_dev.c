@@ -442,7 +442,7 @@ void mdc_lock_lvb_update(const struct lu_env *env, struct osc_object *osc,
 }
 
 static void mdc_lock_granted(const struct lu_env *env, struct osc_lock *oscl,
-			     struct lustre_handle *lockh)
+			     struct lustre_handle *lockh, bool lvb_update)
 {
 	struct ldlm_lock *dlmlock;
 
@@ -482,11 +482,10 @@ static void mdc_lock_granted(const struct lu_env *env, struct osc_lock *oscl,
 		descr->cld_end = CL_PAGE_EOF;
 
 		/* no lvb update for matched lock */
-		if (!ldlm_is_lvb_cached(dlmlock)) {
+		if (lvb_update) {
 			LASSERT(oscl->ols_flags & LDLM_FL_LVB_READY);
 			mdc_lock_lvb_update(env, cl2osc(oscl->ols_cl.cls_obj),
 					    dlmlock, NULL);
-			ldlm_set_lvb_cached(dlmlock);
 		}
 	}
 	unlock_res_and_lock(dlmlock);
@@ -527,7 +526,7 @@ static int mdc_lock_upcall(void *cookie, struct lustre_handle *lockh,
 
 	CDEBUG(D_INODE, "rc %d, err %d\n", rc, errcode);
 	if (rc == 0)
-		mdc_lock_granted(env, oscl, lockh);
+		mdc_lock_granted(env, oscl, lockh, errcode == ELDLM_OK);
 
 	/* Error handling, some errors are tolerable. */
 	if (oscl->ols_locklessable && rc == -EUSERS) {
