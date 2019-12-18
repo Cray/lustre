@@ -2386,10 +2386,9 @@ int osc_enqueue_base(struct obd_export *exp, struct ldlm_res_id *res_id,
 	RETURN(rc);
 }
 
-int osc_match_base(const struct lu_env *env, struct obd_export *exp,
-		   struct ldlm_res_id *res_id, enum ldlm_type type,
-		   union ldlm_policy_data *policy, enum ldlm_mode mode,
-		   __u64 *flags, struct osc_object *obj,
+int osc_match_base(struct obd_export *exp, struct ldlm_res_id *res_id,
+		   enum ldlm_type type, union ldlm_policy_data *policy,
+		   enum ldlm_mode mode, __u64 *flags, void *data,
 		   struct lustre_handle *lockh, int unref)
 {
 	struct obd_device *obd = exp->exp_obd;
@@ -2417,19 +2416,11 @@ int osc_match_base(const struct lu_env *env, struct obd_export *exp,
 	if (rc == 0 || lflags & LDLM_FL_TEST_LOCK)
 		RETURN(rc);
 
-	if (obj != NULL) {
+	if (data != NULL) {
 		struct ldlm_lock *lock = ldlm_handle2lock(lockh);
 
 		LASSERT(lock != NULL);
-		if (osc_set_lock_data(lock, obj)) {
-			lock_res_and_lock(lock);
-			if (!ldlm_is_lvb_cached(lock)) {
-				LASSERT(lock->l_ast_data == obj);
-				osc_lock_lvb_update(env, obj, lock, NULL);
-				ldlm_set_lvb_cached(lock);
-			}
-			unlock_res_and_lock(lock);
-		} else {
+		if (!osc_set_lock_data(lock, data)) {
 			ldlm_lock_decref(lockh, rc);
 			rc = 0;
 		}
