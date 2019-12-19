@@ -167,7 +167,6 @@ int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc)
 		RETURN(0);
 
 	/* NB no locking required until desc is on the network */
-	LASSERT(desc->bd_md_count == 0);
 	LASSERT(ptlrpc_is_bulk_op_active(desc->bd_type));
 
 	LASSERT(desc->bd_cbid.cbid_fn == server_bulk_callback);
@@ -189,8 +188,6 @@ int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc)
 	 * off high bits to get bulk count for this RPC. LU-1431 */
 	mbits = desc->bd_req->rq_mbits & ~((__u64)desc->bd_md_max_brw - 1);
 	desc->bd_refs = total_md = desc->bd_req->rq_mbits - mbits + 1;
-
-	desc->bd_refs = total_md;
 	desc->bd_failure = 0;
 
 	md.user_ptr = &desc->bd_cbid;
@@ -210,6 +207,7 @@ int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc)
 			       exp->exp_obd->obd_name, posted_md, rc);
 			LASSERT(rc == -ENOMEM);
 			if (posted_md == 0) {
+				/* don't expect any events */
 				desc->bd_md_count = 0;
 				RETURN(-ENOMEM);
 			}
@@ -219,7 +217,7 @@ int ptlrpc_start_bulk_transfer(struct ptlrpc_bulk_desc *desc)
 		/* LU-6441: last md is not sent and desc->bd_refs == 1 */
 		if (OBD_FAIL_CHECK_ORSET(OBD_FAIL_PTLRPC_CLIENT_BULK_CB3,
 					 CFS_FAIL_ONCE) &&
-		    total_md > 1 && posted_md == total_md - 1) {
+		    posted_md == 2) {
 			posted_md++;
 			continue;
 		}
@@ -327,7 +325,6 @@ int ptlrpc_register_bulk(struct ptlrpc_request *req)
 
 	/* NB no locking required until desc is on the network */
 	LASSERT(desc->bd_nob > 0);
-	LASSERT(desc->bd_md_count == 0);
 	LASSERT(desc->bd_md_max_brw <= PTLRPC_BULK_OPS_COUNT);
 	LASSERT(desc->bd_iov_count <= PTLRPC_MAX_BRW_PAGES);
 	LASSERT(desc->bd_req != NULL);
@@ -349,9 +346,9 @@ int ptlrpc_register_bulk(struct ptlrpc_request *req)
 	LASSERT(desc->bd_cbid.cbid_fn == client_bulk_callback);
 	LASSERT(desc->bd_cbid.cbid_arg == desc);
 
-	total_md = (desc->bd_iov_count + LNET_MAX_IOV - 1) / LNET_MAX_IOV;
+	total_md = desc->bd_md_count;
 	/* rq_mbits is matchbits of the final bulk */
-	mbits = req->rq_mbits - total_md + 1;
+	mbits = req->rq_mbits - desc->bd_md_count + 1;
 
 	LASSERTF(mbits == (req->rq_mbits & PTLRPC_BULK_OPS_MASK),
 		 "first mbits = x%llu, last mbits = x%llu\n",
@@ -369,13 +366,13 @@ int ptlrpc_register_bulk(struct ptlrpc_request *req)
 	md.eq_handle = ptlrpc_eq_h;
 	md.threshold = 1;                       /* PUT or GET */
 
-	for (posted_md = 0; posted_md < total_md; posted_md++, mbits++) {
+	for (posted_md = 0; posted_md < desc->bd_md_count; posted_md++, mbits++) {
 		md.options = PTLRPC_MD_OPTIONS |
 			     (ptlrpc_is_bulk_op_get(desc->bd_type) ?
 			      LNET_MD_OP_GET : LNET_MD_OP_PUT);
 		ptlrpc_fill_bulk_md(&md, desc, posted_md);
 
-		if (posted_md > 0 && posted_md + 1 == total_md &&
+		if (posted_md > 0 && posted_md + 1 == desc->bd_md_count &&
 		    OBD_FAIL_CHECK(OBD_FAIL_PTLRPC_BULK_ATTACH)) {
 			rc = -ENOMEM;
 		} else {
