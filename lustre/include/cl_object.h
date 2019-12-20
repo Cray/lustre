@@ -1912,6 +1912,10 @@ struct cl_io {
 	 */
 			     ci_ndelay:1;
 	/**
+	 * Bypass quota check
+	 */
+	unsigned	     ci_noquota:1;
+	/**
 	 * How many times the read has retried before this one.
 	 * Set by the top level and consumed by the LOV.
 	 */
