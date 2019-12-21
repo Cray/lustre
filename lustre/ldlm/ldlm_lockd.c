@@ -2199,24 +2199,23 @@ static int ldlm_cancel_handler(struct ptlrpc_request *req)
         if (req->rq_export == NULL) {
                 struct ldlm_request *dlm_req;
 
-                CERROR("%s from %s arrived at %lu with bad export cookie "
-		       "%llu\n",
-                       ll_opcode2str(lustre_msg_get_opc(req->rq_reqmsg)),
-                       libcfs_nid2str(req->rq_peer.nid),
-                       req->rq_arrival_time.tv_sec,
-                       lustre_msg_get_handle(req->rq_reqmsg)->cookie);
+		CERROR("%s from %s arrived at %llu with bad export cookie %llu\n",
+		       ll_opcode2str(lustre_msg_get_opc(req->rq_reqmsg)),
+		       libcfs_nid2str(req->rq_peer.nid),
+		       (unsigned long long)req->rq_arrival_time.tv_sec,
+		       lustre_msg_get_handle(req->rq_reqmsg)->cookie);
 
-                if (lustre_msg_get_opc(req->rq_reqmsg) == LDLM_CANCEL) {
-                        req_capsule_set(&req->rq_pill, &RQF_LDLM_CALLBACK);
-                        dlm_req = req_capsule_client_get(&req->rq_pill,
-                                                         &RMF_DLM_REQ);
-                        if (dlm_req != NULL)
-                                ldlm_lock_dump_handle(D_ERROR,
-                                                      &dlm_req->lock_handle[0]);
-                }
-                ldlm_callback_reply(req, -ENOTCONN);
-                RETURN(0);
-        }
+		if (lustre_msg_get_opc(req->rq_reqmsg) == LDLM_CANCEL) {
+			req_capsule_set(&req->rq_pill, &RQF_LDLM_CALLBACK);
+			dlm_req = req_capsule_client_get(&req->rq_pill,
+							 &RMF_DLM_REQ);
+			if (dlm_req != NULL)
+				ldlm_lock_dump_handle(D_ERROR,
+						      &dlm_req->lock_handle[0]);
+		}
+		ldlm_callback_reply(req, -ENOTCONN);
+		RETURN(0);
+	}
 
         switch (lustre_msg_get_opc(req->rq_reqmsg)) {
 
