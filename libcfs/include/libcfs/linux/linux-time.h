@@ -260,4 +260,19 @@ static inline time_t cfs_duration_sec(cfs_duration_t d)
 	DEFINE_TIMER((_name), (_function), (_expires), (_data))
 #endif
 
+#ifdef HAVE_TIMER_SETUP
+#define cfs_timer_cb_arg_t struct timer_list *
+#define cfs_from_timer(var, callback_timer, timer_fieldname) \
+	from_timer(var, callback_timer, timer_fieldname)
+#define cfs_timer_setup(timer, callback, data, flags) \
+	timer_setup((timer), (callback), (flags))
+#define cfs_timer_cb_arg(var, timer_fieldname) (&(var)->timer_fieldname)
+#else
+#define cfs_timer_cb_arg_t unsigned long
+#define cfs_from_timer(var, data, timer_fieldname) (typeof(var))(data)
+#define cfs_timer_setup(timer, callback, data, flags) \
+	setup_timer((timer), (callback), (data))
+#define cfs_timer_cb_arg(var, timer_fieldname) (cfs_timer_cb_arg_t)(var)
+#endif
+
 #endif /* __LIBCFS_LINUX_LINUX_TIME_H__ */
