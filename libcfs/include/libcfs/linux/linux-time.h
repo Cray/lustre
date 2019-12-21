@@ -244,4 +244,20 @@ static inline time_t cfs_duration_sec(cfs_duration_t d)
 	return d / msecs_to_jiffies(MSEC_PER_SEC);
 }
 
+#ifdef HAVE_NEW_DEFINE_TIMER
+# ifndef TIMER_DATA_TYPE
+# define TIMER_DATA_TYPE struct timer_list *
+# endif
+
+#define CFS_DEFINE_TIMER(_name, _function, _expires, _data) \
+	DEFINE_TIMER((_name), (_function))
+#else
+# ifndef TIMER_DATA_TYPE
+# define TIMER_DATA_TYPE unsigned long
+# endif
+
+#define CFS_DEFINE_TIMER(_name, _function, _expires, _data) \
+	DEFINE_TIMER((_name), (_function), (_expires), (_data))
+#endif
+
 #endif /* __LIBCFS_LINUX_LINUX_TIME_H__ */
