@@ -426,6 +426,8 @@ static int osc_dlm_blocking_ast0(const struct lu_env *env,
 
 	unlock_res_and_lock(dlmlock);
 
+	OBD_FAIL_TIMEOUT(OBD_FAIL_OSC_DELAY_CANCEL, 5);
+
 	/* if l_ast_data is NULL, the dlmlock was enqueued by AGL or
 	 * the object has been destroyed. */
 	if (obj != NULL) {
