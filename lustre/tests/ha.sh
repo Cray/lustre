@@ -695,17 +695,20 @@ ha_lfsck_repaired()
 
 ha_start_loads()
 {
-    trap ha_trap_stop_signals $ha_stop_signals
-    ha_start_nonmpi_loads
-    ha_start_mpi_loads
+	$ha_lfsck_bg && ha_lfsck_bg
+	trap ha_trap_stop_signals $ha_stop_signals
+	ha_start_nonmpi_loads
+	ha_start_mpi_loads
 }
 
 ha_stop_loads()
 {
-    touch $ha_stop_file
-    trap - $ha_stop_signals
-    ha_info "Waiting for workloads to stop"
-    wait
+	touch $ha_stop_file
+	# true because of lfsck_bg could be stopped already
+	$ha_lfsck_bg && wait $LFSCK_BG_PID || true
+	trap - $ha_stop_signals
+	ha_info "Waiting for workloads to stop"
+	wait
 }
 
 ha_wait_loads()
@@ -909,8 +912,6 @@ ha_main()
 	ha_on ${ha_clients[0]} " \
 		$LFS setstripe $ha_stripe_params $ha_test_dir"
 
-	$ha_lfsck_bg && ha_lfsck_bg
-
 	ha_start_loads
 	ha_wait_loads
 
@@ -926,9 +927,6 @@ ha_main()
 	$ha_lfsck_after && ha_start_lfsck | tee -a $ha_lfsck_log
 
 	$ha_lfsck_fail_on_repaired && ha_lfsck_repaired
-
-	# true because of lfsck_bg could be stopped already
-	$ha_lfsck_bg && wait $LFSCK_BG_PID || true
 
 	if [ -e "$ha_fail_file" ]; then
 		exit 1
