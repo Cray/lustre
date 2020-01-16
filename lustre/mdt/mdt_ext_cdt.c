@@ -607,7 +607,12 @@ int ext_cdt_send_request(struct mdt_thread_info *mti,
 
 		rc = hsm_action_permission(mti, obj, hai->hai_action);
 		mdt_object_put(mti->mti_env, obj);
-		if (rc < 0) {
+		/* RAoLU special case, file has been deleted already,
+		 * continue as normal
+		 */
+		if (hai->hai_action == HSMA_REMOVE && rc == -EINVAL)
+			rc = 0;
+		else if (rc < 0) {
 			CDEBUG(D_HSM, "Permissions check failed: "DFID"\n",
 			       PFID(&hai->hai_fid));
 			goto out;
