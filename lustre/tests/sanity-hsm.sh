@@ -4142,6 +4142,9 @@ test_115() {
 
 	wait_request_state $fid RESYNC SUCCEED
 
+	# allow mirror info to sync up.  sync does not seem to work here
+	sleep 1
+
 	# file should not have stale component
 	echo " **verify files do not contain stale component"
 	! [[ $($LFS getstripe --component-flags=stale $tf) =~ stale ]] ||
