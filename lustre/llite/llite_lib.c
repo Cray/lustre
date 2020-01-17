@@ -2133,6 +2133,7 @@ void ll_delete_inode(struct inode *inode)
 	struct ll_inode_info *lli = ll_i2info(inode);
 	struct address_space *mapping = &inode->i_data;
 	unsigned long nrpages;
+	int rc;
 	ENTRY;
 
 	if (S_ISREG(inode->i_mode) && lli->lli_clob != NULL) {
@@ -2143,8 +2144,10 @@ void ll_delete_inode(struct inode *inode)
 		 * local inode gets i_nlink 0 from server only for the last
 		 * unlink, so that file is not opened somewhere else
 		 */
-		cl_sync_file_range(inode, 0, OBD_OBJECT_EOF, inode->i_nlink ?
+		rc = cl_sync_file_range(inode, 0, OBD_OBJECT_EOF, inode->i_nlink ?
 				   CL_FSYNC_LOCAL : CL_FSYNC_DISCARD, 1);
+		if (rc < 0)
+			CERROR("Final sync failed: %d\n", rc);
 	}
 	truncate_inode_pages_final(mapping);
 
