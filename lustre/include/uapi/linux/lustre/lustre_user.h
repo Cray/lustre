@@ -805,7 +805,7 @@ struct lov_foreign_md {
 	__u32 lfm_type;		/* type, see LU_FOREIGN_TYPE_ */
 	__u32 lfm_flags;	/* flags, type specific */
 	char lfm_value[];
-};
+} __attribute__((packed));
 
 #define foreign_size(lfm) (((struct lov_foreign_md *)lfm)->lfm_length + \
 			   offsetof(struct lov_foreign_md, lfm_value))
