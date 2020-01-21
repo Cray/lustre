@@ -1075,6 +1075,9 @@ static int osd_mount(const struct lu_env *env,
 	int			 rc;
 	ENTRY;
 
+	if (OBD_FAIL_CHECK(OBD_FAIL_OSD_MOUNT))
+		RETURN(-EIO);
+
 	if (o->od_os != NULL)
 		RETURN(0);
 

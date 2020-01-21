@@ -21293,6 +21293,17 @@ test_819b() {
 }
 run_test 819b "too big niobuf in write"
 
+test_820() {
+	[ "$mds1_FSTYPE" = "zfs" ] || skip "osd-zfs specific test"
+
+	stop mds1
+	do_facet mds1 "$LCTL set_param fail_loc=0x19b"
+	start mds1 $(mdsdevname 1) $MDS_MOUNT_OPTS && error "expected to fail"
+	do_facet mds1 "$LCTL set_param fail_loc=0x0"
+	start mds1 $(mdsdevname 1) $MDS_MOUNT_OPTS || error "expected to succeed"
+}
+run_test 820 "failed osd-zfs mount should not crash"
+
 #
 # tests that do cleanup/setup should be run at the end
 #
