@@ -205,9 +205,12 @@ BuildRequires: krb5-devel openssl-devel
 %if %{with servers}
 Requires: lustre-osd
 Requires: lustre-osd-mount
+Obsoletes: lustre-server < %{version}
+Provides: lustre-server = %{version}-%{release}
+%endif
 Obsoletes: lustre-client < %{version}
 Provides: lustre-client = %{version}-%{release}
-%endif
+
 %if %{with lustre_modules}
 %if %{with mofed}
 BuildRequires: mlnx-ofa_kernel-devel
@@ -274,6 +277,7 @@ Summary: osd-ldiskfs-mount contains mount's ldiskfs specific dso.
 BuildRequires: e2fsprogs-devel
 Requires: ldiskfsprogs
 Provides: lustre-osd-mount = %{version}
+Obsoletes: lustre-osd-mount < %{version}
 Group: System Environment/Kernel
 
 %description osd-ldiskfs-mount
@@ -291,6 +295,7 @@ Provides: lustre-osd-mount = %{version}
 Requires: %{requires_kmod_zfs_name}
 Requires: %{requires_kmod_osd_zfs_name}
 Requires: zfs
+Obsoletes: lustre-osd-mount < %{version}
 Group: System Environment/Kernel
 
 %description osd-zfs-mount
@@ -305,7 +310,7 @@ ZFS hooks for mount/mkfs into a dynamic library.
 %package resource-agents
 Summary: HA Resuable Cluster Resource Scripts for Lustre
 Group: System Environment/Base
-Requires: lustre
+Requires: %{name}
 Requires: resource-agents
 
 %description resource-agents
@@ -333,13 +338,12 @@ find . -type f -name '*.h' | grep uapi | sed 's/.*uapi\//usr\/include\//' >> lus
 %package tests
 Summary: Lustre testing framework
 Group: System Environment/Kernel
-Provides: %{name}-tests = %{version}
+Provides: lustre-tests = %{version}
 %if %{with lustre_iokit}
-Requires: %{name} = %{version}, lustre-iokit
-%else
-Requires: %{name} = %{version}
+Requires: lustre-iokit
 %endif
 Requires: lustre-devel = %{version}
+Requires: lustre-client = %{version}
 Requires: %{requires_kmod_name} = %{requires_kmod_version}
 Requires: %{requires_kmod_tests_name} = %{requires_kmod_version}
 Requires: attr, acl, e2fsprogs, rsync, perl, pdsh, lsof, libtool, /usr/bin/getconf
@@ -491,7 +495,7 @@ make install DESTDIR=$RPM_BUILD_ROOT
 # RHEL, we handle this here in the spec file rather than in
 # Lustre's build system.  This is not expected to bother SLES's
 # kernel_module_path macro.
-basemodpath=$RPM_BUILD_ROOT%{modules_fs_path}/%{lustre_name}
+basemodpath=$RPM_BUILD_ROOT%{modules_fs_path}/%{name}
 %if %{with ldiskfs}
 mkdir -p $basemodpath-osd-ldiskfs/fs
 mv $basemodpath/fs/osd_ldiskfs.ko $basemodpath-osd-ldiskfs/fs/osd_ldiskfs.ko
