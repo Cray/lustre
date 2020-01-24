@@ -4662,7 +4662,7 @@ test_103() {
 	remote_ost || { skip "local OST" && return 0; }
 	remote_ost_nodsh && skip "remote OST w/o dsh" && return 0
 
-	local testnum=23
+	local locktest=23
 
 	test_mkdir -p $DIR/$tdir
 
@@ -4677,7 +4677,7 @@ test_103() {
 	#define OBD_FAIL_OST_BRW_PAUSE_BULK 0x214
 	do_facet ost1 $LCTL set_param fail_loc=0x214 fail_val=2
 
-	lockahead_test -d $DIR/$tdir -D $DIR2/$tdir -t $testnum -f $tfile
+	lockahead_test -d $DIR/$tdir -D $DIR2/$tdir -t $locktest -f $tfile
 	rc=$?
 	if [ $rc -eq 0 ]; then
 		echo "This doesn't work 100%, but this is just reproducing the bug, not testing the fix, so OK to not fail test."
@@ -4690,11 +4690,9 @@ test_103() {
 	$LCTL set_param fail_loc=0
 
 	# Write commit is still delayed by 2 seconds
-	lockahead_test -d $DIR/$tdir -D $DIR2/$tdir -t $testnum -f $tfile
+	lockahead_test -d $DIR/$tdir -D $DIR2/$tdir -t $locktest -f $tfile
 	rc=$?
-	if [ $rc -ne 0 ]; then
-		error "Lockahead test${testnum} failed, ${rc}"
-	fi
+	[ $rc -eq 0 ] || error "Lockahead test$locktest failed, $rc"
 
 	# guarantee write commit timeout has expired
 	sleep 2
