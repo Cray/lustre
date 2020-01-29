@@ -126,8 +126,7 @@ static int llog_osd_create_new_object(const struct lu_env *env,
 static int llog_osd_exist(struct llog_handle *handle)
 {
 	LASSERT(handle->lgh_obj);
-	return dt_object_exists(handle->lgh_obj) &&
-		!lu_object_is_dying(handle->lgh_obj->do_lu.lo_header);
+	return dt_object_exists(handle->lgh_obj) && !handle->lgh_destroyed;
 }
 
 static void *rec_tail(struct llog_rec_hdr *rec)
@@ -913,7 +912,7 @@ static int llog_osd_next_block(const struct lu_env *env,
 	o = loghandle->lgh_obj;
 	LASSERT(o);
 	dt_read_lock(env, o, 0);
-	if (!dt_object_exists(o))
+	if (!llog_osd_exist(loghandle))
 		GOTO(out, rc = -ESTALE); //object was destroyed
 
 	dt = lu2dt_dev(o->do_lu.lo_dev);
@@ -1091,7 +1090,7 @@ static int llog_osd_prev_block(const struct lu_env *env,
 	o = loghandle->lgh_obj;
 	LASSERT(o);
 	dt_read_lock(env, o, 0);
-	if (!dt_object_exists(o))
+	if (!llog_osd_exist(loghandle))
 		GOTO(out, rc = -ESTALE);
 
 	dt = lu2dt_dev(o->do_lu.lo_dev);
@@ -1822,7 +1821,7 @@ static int llog_osd_destroy(const struct lu_env *env,
 	LASSERT(o != NULL);
 
 	dt_write_lock(env, o, 0);
-	if (!dt_object_exists(o))
+	if (!llog_osd_exist(loghandle))
 		GOTO(out_unlock, rc = 0);
 
 	if (loghandle->lgh_name) {
@@ -1848,6 +1847,7 @@ static int llog_osd_destroy(const struct lu_env *env,
 	if (rc < 0)
 		GOTO(out_unlock, rc);
 
+	loghandle->lgh_destroyed = true;
 	if (loghandle->lgh_ctxt->loc_flags & LLOG_CTXT_FLAG_NORMAL_FID) {
 		rc = llog_osd_regular_fid_del_name_entry(env, o, th, false);
 		if (rc < 0)
