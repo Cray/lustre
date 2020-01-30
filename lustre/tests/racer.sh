@@ -92,6 +92,7 @@ RACER_LOV_MAX_STRIPECOUNT=${RACER_LOV_MAX_STRIPECOUNT:-$LOV_MAX_STRIPE_COUNT}
 RACER_EXTRA_LAYOUT=${RACER_EXTRA_LAYOUT:-""}
 RACER_MIGRATE_STRIPE_MAX=${RACER_MIGRATE_STRIPE_MAX:-1}
 RACER_ENABLE_FALLOCATE=${RACER_ENABLE_FALLOCATE:-true}
+RACER_LBUG_ON_EVICTION=${RACER_LBUG_ON_EVICTION:-false}
 
 fail_random_facet () {
 	local facets=${victims[@]}
@@ -142,6 +143,9 @@ test_1() {
 		fi
 	done
 
+	if $RACER_LBUG_ON_EVICTION; then
+		do_nodes $clients $LCTL set_param lbug_on_eviction=1
+	fi
 	local rpids=""
 	for rdir in $RDIRS; do
 		do_nodes $clients "DURATION=$DURATION \
@@ -200,6 +204,10 @@ test_1() {
 		    rrc=$((rrc + 1))
 		fi
 	done
+
+	if $RACER_LBUG_ON_EVICTION; then
+		do_nodes $clients $LCTL set_param lbug_on_eviction=0
+	fi
 
 	if $RACER_FAILOVER; then
 		touch $racer_done
