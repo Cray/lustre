@@ -39,6 +39,7 @@ lfs \- client utility for Lustre-specific file layout and other attributes
 [[\fB!\fR] \fB--size|\fB-s\fR [\fB-+\fR]\fIn\fR[\fBKMGTPE\fR]]
       [[\fB!\fR] \fB--stripe-count|\fB-c\fR [\fB+-\fR]\fIn\fR]
       [[\fB!\fR] \fB--stripe-index|\fB-i\fR \fIn\fR,...]
+      [[\fB!\fR] \fB--extension-size\fR|\fB-ext-size\fR|\fB-z\fR [\fB+-\fR]\fIn\fR[\fBKMG\fR]]
       [[\fB!\fR] \fB--stripe-size|\fB-S\fR [\fB+-\fR]\fIn\fR[\fBKMG\fR]]
 [[\fB!\fR] \fB--type\fR|\fB-t\fR {\fBbcdflps\fR}]
       [[\fB!\fR] \fB--uid\fR|\fB-u\fR|\fB--user\fR|\fB-U
@@ -65,7 +66,8 @@ lfs \- client utility for Lustre-specific file layout and other attributes
 [\fB--stripe-count\fR|\fB-c\fR]
 [\fB--stripe-index\fR|\fB-i\fR]
         [\fB--stripe-size\fR|\fB-S\fR]
-[\fB--verbose\fR|\fB-v\fR]
+[\fB--extension-size\fR|\fB--ext-size\fR|\fB-z\fR]
+        [\fB--verbose\fR|\fB-v\fR]
 [\fB--yaml\fR|\fB-y\fR]
         <\fIdirname\fR|\fIfilename\fR> ...
 .br
@@ -119,6 +121,7 @@ lfs \- client utility for Lustre-specific file layout and other attributes
 .br
 .B lfs setstripe [--stripe-size|-S <size>] [--stripe-count|-c <count>]
         \fB[--stripe-index|-i <start_ost_index>] [--pool|-p <poolname>]
+        \fB[--extension-size|--ext-size|-z <ext_size>]
         \fB[--ost-list|-o <ost_indices>] <directory|filename>\fR
 .br
 .B lfs setstripe -d <dir>
