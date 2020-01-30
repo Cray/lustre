@@ -318,7 +318,6 @@ static int mdc_dlm_blocking_ast0(const struct lu_env *env,
 
 	if (dlmlock->l_ast_data != NULL) {
 		obj = osc2cl(dlmlock->l_ast_data);
-		dlmlock->l_ast_data = NULL;
 		cl_object_get(obj);
 	}
 	ldlm_set_kms_ignore(dlmlock);
@@ -337,6 +336,7 @@ static int mdc_dlm_blocking_ast0(const struct lu_env *env,
 		 */
 		/* losing a lock, update kms */
 		lock_res_and_lock(dlmlock);
+		dlmlock->l_ast_data = NULL;
 		cl_object_attr_lock(obj);
 		attr->cat_kms = 0;
 		cl_object_attr_update(env, obj, attr, CAT_KMS);
