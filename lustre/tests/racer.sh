@@ -70,6 +70,7 @@ RACER_ENABLE_PFL=${RACER_ENABLE_PFL:-true}
 RACER_ENABLE_DOM=${RACER_ENABLE_DOM:-true}
 RACER_ENABLE_FLR=${RACER_ENABLE_FLR:-true}
 RACER_ENABLE_SEL=${RACER_ENABLE_SEL:-true}
+RACER_LBUG_ON_EVICTION=${RACER_LBUG_ON_EVICTION:-false}
 
 check_progs_installed $CLIENTS $racer ||
 	{ skip_env "$racer not found" && exit 0; }
@@ -114,12 +115,9 @@ test_1() {
 		fi
 	done
 
-	local save="$TMP/$TESTSUITE-$TESTNAME.parameters"
-	local facets=$(get_facets OST)
-
-	save_lustre_params $facets "lbug_on_eviction" > $save
-	do_nodes $(comma_list $(osts_nodes)) $LCTL set_param lbug_on_eviction=1
-
+	if $RACER_LBUG_ON_EVICTION; then
+		do_nodes $clients $LCTL set_param lbug_on_eviction=1
+	fi
 	local rpids=""
 	for rdir in $RDIRS; do
 		do_nodes $clients "DURATION=$DURATION \
@@ -169,7 +167,9 @@ test_1() {
 		fi
 	done
 
-	restore_lustre_params < $save
+	if $RACER_LBUG_ON_EVICTION; then
+		do_nodes $clients $LCTL set_param lbug_on_eviction=0
+	fi
 
 	if $RACER_FAILOVER; then
 		touch $racer_done
