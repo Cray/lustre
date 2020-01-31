@@ -1440,6 +1440,7 @@ int mdt_layout_change(struct mdt_thread_info *info, struct mdt_object *obj,
 		      struct md_layout_change *layout)
 {
 	struct mdt_lock_handle *lh = &info->mti_lh[MDT_LH_LOCAL];
+	__u64 lockpart = MDS_INODELOCK_LAYOUT;
 	int rc;
 	ENTRY;
 
@@ -1455,8 +1456,11 @@ int mdt_layout_change(struct mdt_thread_info *info, struct mdt_object *obj,
 		GOTO(out, rc);
 
 	/* take layout lock to prepare layout change */
+	if (layout->mlc_opc == MD_LAYOUT_WRITE)
+		lockpart |= MDS_INODELOCK_UPDATE;
+
 	mdt_lock_reg_init(lh, LCK_EX);
-	rc = mdt_object_lock(info, obj, lh, MDS_INODELOCK_LAYOUT);
+	rc = mdt_object_lock(info, obj, lh, lockpart);
 	if (rc)
 		GOTO(out, rc);
 
