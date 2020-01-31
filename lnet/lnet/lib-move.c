@@ -3350,7 +3350,8 @@ lnet_recover_local_nis(void)
 			ev_info->mt_type = MT_TYPE_LOCAL_NI;
 			ev_info->mt_nid = nid;
 			rc = lnet_send_ping(nid, &mdh, LNET_INTERFACES_MIN,
-					    ev_info, the_lnet.ln_mt_eq, true);
+					    ev_info, the_lnet.ln_mt_handler,
+					    true);
 			/* lookup the nid again */
 			lnet_net_lock(0);
 			ni = lnet_nid2ni_locked(nid, 0);
@@ -3588,7 +3589,8 @@ lnet_recover_peer_nis(void)
 			ev_info->mt_type = MT_TYPE_PEER_NI;
 			ev_info->mt_nid = nid;
 			rc = lnet_send_ping(nid, &mdh, LNET_INTERFACES_MIN,
-					    ev_info, the_lnet.ln_mt_eq, true);
+					    ev_info, the_lnet.ln_mt_handler,
+					    true);
 			lnet_net_lock(0);
 			/*
 			 * lnet_find_peer_ni_locked() grabs a refcount for
@@ -3716,7 +3718,7 @@ lnet_monitor_thread(void *arg)
 int
 lnet_send_ping(lnet_nid_t dest_nid,
 	       struct lnet_handle_md *mdh, int nnis,
-	       void *user_data, lnet_eq_handler_t eq, bool recovery)
+	       void *user_data, lnet_handler_t handler, bool recovery)
 {
 	struct lnet_md md = { NULL };
 	struct lnet_process_id id;
@@ -3741,7 +3743,7 @@ lnet_send_ping(lnet_nid_t dest_nid,
 	md.max_size  = 0;
 	md.options   = LNET_MD_TRUNCATE | LNET_MD_TRACK_RESPONSE;
 	md.user_ptr  = user_data;
-	md.eq_handle = eq;
+	md.handler   = handler;
 
 	rc = LNetMDBind(md, LNET_UNLINK, mdh);
 	if (rc) {
@@ -3940,7 +3942,7 @@ clean_thread:
 	lnet_clean_local_ni_recoveryq();
 	lnet_clean_peer_ni_recoveryq();
 	lnet_clean_resendqs();
-	the_lnet.ln_mt_eq = NULL;
+	the_lnet.ln_mt_handler = NULL;
 	return rc;
 clean_queues:
 	lnet_rsp_tracker_clean();
