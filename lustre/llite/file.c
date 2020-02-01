@@ -4036,6 +4036,7 @@ static int ll_file_flc2policy(struct file_lock *file_lock, int cmd,
 	}
 	flock->l_flock.pid = file_lock->fl_pid;
 
+#ifdef HAVE_LM_COMPARE_OWNER
 	/* Somewhat ugly workaround for svc lockd.
 	 * lockd installs custom fl_lmops->lm_compare_owner that checks
 	 * for the fl_owner to be the same (which it always is on local node
@@ -4046,7 +4047,7 @@ static int ll_file_flc2policy(struct file_lock *file_lock, int cmd,
 	 */
 	if (file_lock->fl_lmops && file_lock->fl_lmops->lm_compare_owner)
 		flock->l_flock.owner = (__u64)file_lock->fl_pid;
-
+#endif
 	RETURN(0);
 }
 

@@ -841,25 +841,6 @@ generic_permission_2args, [
 ]) # LC_GENERIC_PERMISSION
 
 #
-# LC_LM_XXX_LOCK_MANAGER_OPS
-#
-# 3.1 renames lock-manager ops(lock_manager_operations) from fl_xxx to lm_xxx
-# see kernel commit 8fb47a4fbf858a164e973b8ea8ef5e83e61f2e50
-#
-AC_DEFUN([LC_LM_XXX_LOCK_MANAGER_OPS], [
-LB_CHECK_COMPILE([if 'lock-manager' ops renamed to 'lm_xxx'],
-lock_manager_ops_lm_xxx, [
-	#include <linux/fs.h>
-],[
-	struct lock_manager_operations lm_ops;
-	lm_ops.lm_compare_owner = NULL;
-],[
-	AC_DEFINE(HAVE_LM_XXX_LOCK_MANAGER_OPS, 1,
-		[lock-manager ops renamed to lm_xxx])
-])
-]) # LC_LM_XXX_LOCK_MANAGER_OPS
-
-#
 # LC_INODE_DIO_WAIT
 #
 # 3.1 kills inode->i_alloc_sem, use i_dio_count and inode_dio_wait
@@ -3249,7 +3230,6 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_SETNS
 
 	# 3.1
-	LC_LM_XXX_LOCK_MANAGER_OPS
 	LC_INODE_DIO_WAIT
 	LC_IOP_GET_ACL
 	LC_FILE_LLSEEK_SIZE
