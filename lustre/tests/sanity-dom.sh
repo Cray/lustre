@@ -29,8 +29,7 @@ if [ $(facet_fstype $SINGLEMDS) = "zfs" ]; then
 		ALWAYS_EXCEPT+=""
 	fi
 fi
-[[ $ENABLE_EXPERIMENTAL_FEATURES == yes ]] ||
-	{ skip "DoM is an experimental and DoM tests are skipped"; exit 0; }
+
 [[ $(lustre_version_code $SINGLEMDS) -ge $(version_code 2.10.56) ]] ||
 	{ skip "Need MDS version at least 2.10.56"; exit 0; }
 
