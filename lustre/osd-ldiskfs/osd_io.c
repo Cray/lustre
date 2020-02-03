@@ -1673,7 +1673,7 @@ static int osd_ldiskfs_write_record(struct dt_object *dt, void *buf,
         int                 size;
         int                 boffs;
         int                 dirty_inode = 0;
-	bool		    create, sparse;
+	bool create, sparse, sync = false;
 
 	if (write_NUL) {
 		/*
@@ -1691,7 +1691,6 @@ static int osd_ldiskfs_write_record(struct dt_object *dt, void *buf,
 
 	while (bufsize > 0) {
 		int credits = handle->h_buffer_credits;
-		bool sync;
 		unsigned long last_block = (new_size == 0) ? 0 :
 					   (new_size - 1) >> inode->i_blkbits;
 
@@ -1724,8 +1723,10 @@ static int osd_ldiskfs_write_record(struct dt_object *dt, void *buf,
 			bh = __ldiskfs_bread(handle, inode, block, flags);
 			create = true;
 		} else {
-			if (sync)
+			if (sync) {
 				inode_unlock(inode);
+				sync = false;
+			}
 			create = false;
 		}
 		if (IS_ERR_OR_NULL(bh)) {
@@ -1754,7 +1755,10 @@ static int osd_ldiskfs_write_record(struct dt_object *dt, void *buf,
 			 boffs, size, (unsigned long)bh->b_size);
 		if (create) {
 			memset(bh->b_data, 0, bh->b_size);
-			inode_unlock(inode);
+			if (sync) {
+				inode_unlock(inode);
+				sync = false;
+			}
 		}
 		memcpy(bh->b_data + boffs, buf, size);
 		err = ldiskfs_handle_dirty_metadata(handle, NULL, bh);
@@ -1767,8 +1771,11 @@ static int osd_ldiskfs_write_record(struct dt_object *dt, void *buf,
                 bufsize -= size;
                 buf += size;
         }
-        if (bh)
-                brelse(bh);
+	if (sync)
+		inode_unlock(inode);
+
+	if (bh)
+		brelse(bh);
 
 	if (write_NUL)
 		--new_size;
