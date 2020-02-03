@@ -749,7 +749,7 @@ static void rsc_flush(rsc_entry_match *match, long data)
         int n;
         ENTRY;
 
-	write_lock(&rsc_cache.hash_lock);
+	cache_write_lock(&rsc_cache);
         for (n = 0; n < RSC_HASHMAX; n++) {
 #ifdef HAVE_CACHE_HEAD_HLIST
 		head = &rsc_cache.hash_table[n];
@@ -780,7 +780,7 @@ static void rsc_flush(rsc_entry_match *match, long data)
                         rsc_cache.entries--;
                 }
         }
-	write_unlock(&rsc_cache.hash_lock);
+	cache_write_unlock(&rsc_cache);
         EXIT;
 }
 
