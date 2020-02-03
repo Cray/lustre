@@ -1920,8 +1920,6 @@ recheck:
 		lum = tmp.lb_buf;
 		if (lov_pattern(le32_to_cpu(lum->lmm_pattern)) ==
 		    LOV_PATTERN_MDT) {
-			if (!is_from_disk && !libcfs_experimental_flag)
-				RETURN(-ENOSYS);
 			/* DoM component can be only the first stripe */
 			if (le64_to_cpu(ext->e_start) > 0) {
 				CDEBUG(D_LAYOUT, "invalid DoM component "
