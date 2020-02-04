@@ -366,13 +366,6 @@ ll_direct_IO(
 	io = lcc->lcc_io;
 	LASSERT(io != NULL);
 
-	/* 0. Need locking between buffered and direct access. and race with
-	 *    size changing by concurrent truncates and writes.
-	 * 1. Need inode mutex to operate transient pages.
-	 */
-	if (iov_iter_rw(iter) == READ)
-		inode_lock(inode);
-
 	while (iov_iter_count(iter)) {
 		struct page **pages;
 		size_t offs;
@@ -421,9 +414,6 @@ ll_direct_IO(
 		file_offset += result;
 	}
 out:
-	if (iov_iter_rw(iter) == READ)
-		inode_unlock(inode);
-
 	if (tot_bytes > 0) {
 		struct vvp_io *vio = vvp_env_io(env);
 
