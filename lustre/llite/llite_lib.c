@@ -1411,10 +1411,14 @@ static int ll_update_lsm_md(struct inode *inode, struct lustre_md *md)
 	 * normally dir layout doesn't change, only take read lock to check
 	 * that to avoid blocking other MD operations.
 	 */
-	if (lli->lli_lsm_md)
+	if (lli->lli_lsm_md) {
 		down_read(&lli->lli_lsm_sem);
-	else
+		LASSERT(lli->lli_lsm_md != NULL);
+	} else {
 		down_write(&lli->lli_lsm_sem);
+		if (lli->lli_lsm_md)
+			downgrade_write(&lli->lli_lsm_sem);
+	}
 
 	/*
 	 * if dir layout mismatch, check whether version is increased, which
