@@ -2763,6 +2763,23 @@ group_info_gid, [
 ]) # LC_GROUP_INFO_GID
 
 #
+# LC_XA_IS_VALUE
+# kernel 4.19-rc6 commit 3159f943aafdbacb2f94c38fdaadabf2bbde2a14
+# xarray: Replace exceptional entries
+# adds xa_is_value
+#
+AC_DEFUN([LC_XA_IS_VALUE], [
+LB_CHECK_COMPILE([xa_is_value exist],
+xa_is_value, [
+	#include <linux/xarray.h>
+],[
+	xa_is_value(NULL);
+],[
+	AC_DEFINE(HAVE_XA_IS_VALUE, 1, [xa_is_value exist])
+])
+]) # LC_XA_IS_VALUE
+
+#
 # LC_VFS_SETXATTR
 #
 # Kernel version 4.9 commit 5d6c31910bc0713e37628dc0ce677dcb13c8ccf4
@@ -3417,6 +3434,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 4.18
 	LC_INODE_TIMESPEC64
+	LC_XA_IS_VALUE
 
 	# 4.20
 	LC_HAVE_SUNRPC_CACHE_HASH_LOCK_IS_A_SPINLOCK
