@@ -38,6 +38,7 @@
  * @{
  */
 
+#include <glob.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <linux/lustre/lustre_user.h>
@@ -1090,6 +1091,11 @@ enum ext_hsm_cmd llapi_hsm_cdt_recv(struct hsm_cdt_private *cdt,
 					 void *data, size_t data_sz);
 struct hsm_cdt_private *llapi_hsm_cdt_connect(size_t max_bufsize);
 int llapi_hsm_cdt_disconnect(struct hsm_cdt_private *cdt);
+
+int llapi_param_get_paths(const char *pattern, glob_t *paths);
+int llapi_param_get_value(const char *path, char **buf, size_t *buflen);
+void llapi_param_paths_free(glob_t *paths);
+
 /** @} llapi */
 
 #if defined(__cplusplus)
