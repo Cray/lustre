@@ -1968,8 +1968,10 @@ static void lnet_peer_discovery_complete(struct lnet_peer *lp)
  */
 void lnet_peer_push_event(struct lnet_event *ev)
 {
-	struct lnet_ping_buffer *pbuf = ev->md.user_ptr;
+	struct lnet_ping_buffer *pbuf;
 	struct lnet_peer *lp;
+
+	pbuf = LNET_PING_INFO_TO_BUFFER(ev->md.start + ev->offset);
 
 	/* lnet_find_peer() adds a refcount */
 	lp = lnet_find_peer(ev->source.nid);
@@ -1977,6 +1979,7 @@ void lnet_peer_push_event(struct lnet_event *ev)
 		CDEBUG(D_NET, "Push Put from unknown %s (source %s). Ignoring...\n",
 		       libcfs_nid2str(ev->initiator.nid),
 		       libcfs_nid2str(ev->source.nid));
+		pbuf->pb_needs_post = true;
 		return;
 	}
 
@@ -2060,7 +2063,7 @@ void lnet_peer_push_event(struct lnet_event *ev)
 	 * NIDS_UPTODATE flag and set FORCE_PING to trigger a ping,
 	 * and tell discovery to allocate a bigger buffer.
 	 */
-	if (pbuf->pb_nnis < pbuf->pb_info.pi_nnis) {
+	if (ev->mlength < ev->rlength) {
 		if (the_lnet.ln_push_target_nnis < pbuf->pb_info.pi_nnis)
 			the_lnet.ln_push_target_nnis = pbuf->pb_info.pi_nnis;
 		lp->lp_state &= ~LNET_PEER_NIDS_UPTODATE;
@@ -2118,6 +2121,9 @@ void lnet_peer_push_event(struct lnet_event *ev)
 	       LNET_PING_BUFFER_SEQNO(pbuf));
 
 out:
+	/* We've processed this buffer. It can be reposted */
+	pbuf->pb_needs_post = true;
+
 	/*
 	 * Queue the peer for discovery if not done, force it on the request
 	 * queue and wake the discovery thread if the peer was already queued,
@@ -3199,7 +3205,8 @@ static int lnet_peer_discovery_wait_for_work(void)
 				TASK_INTERRUPTIBLE);
 		if (the_lnet.ln_dc_state == LNET_DC_STATE_STOPPING)
 			break;
-		if (lnet_push_target_resize_needed())
+		if (lnet_push_target_resize_needed() ||
+		    the_lnet.ln_push_target->pb_needs_post)
 			break;
 		if (!list_empty(&the_lnet.ln_dc_request))
 			break;
@@ -3285,10 +3292,13 @@ static int lnet_peer_discovery(void *arg)
 		if (lnet_peer_discovery_wait_for_work())
 			break;
 
-		lnet_resend_msgs();
-
 		if (lnet_push_target_resize_needed())
 			lnet_push_target_resize();
+		else if (the_lnet.ln_push_target->pb_needs_post)
+			lnet_push_target_post(the_lnet.ln_push_target,
+					      &the_lnet.ln_push_target_md);
+
+		lnet_resend_msgs();
 
 		lnet_net_lock(LNET_LOCK_EX);
 		if (the_lnet.ln_dc_state == LNET_DC_STATE_STOPPING)
@@ -3315,6 +3325,12 @@ static int lnet_peer_discovery(void *arg)
 			 */
 			lp->lp_last_queued = ktime_get_real_seconds();
 			lnet_net_unlock(LNET_LOCK_EX);
+
+			if (lnet_push_target_resize_needed())
+				lnet_push_target_resize();
+			else if (the_lnet.ln_push_target->pb_needs_post)
+				lnet_push_target_post(the_lnet.ln_push_target,
+						      &the_lnet.ln_push_target_md);
 
 			/*
 			 * Select an action depending on the state of
