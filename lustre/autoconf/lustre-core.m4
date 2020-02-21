@@ -3644,8 +3644,14 @@ AC_CHECK_FUNCS([gethostbyname])
 # lustre/utils/llverdev.c
 AC_CHECK_HEADERS([blkid/blkid.h])
 
-# lustre/utils/llverfs.c
-AC_CHECK_HEADERS([ext2fs/ext2fs.h])
+# lustre/utils/llverfs.c lustre/utils/libmount_utils_ldiskfs.c
+AC_CHECK_HEADERS([ext2fs/ext2fs.h], [], [
+	AS_IF([test "x$enable_utils" = xyes -a "x$enable_ldiskfs" = xyes], [
+		AC_MSG_ERROR([
+ext2fs.h not found. Please install e2fsprogs development package.
+		])
+	])
+])
 
 # lustre/utils/lfs.c
 AS_IF([test "$enable_dist" = "no"], [
