@@ -734,12 +734,12 @@ migrate_open_files(const char *name, __u64 migration_flags,
 		}
 
 		/* create, open a volatile file, use caching (ie no directio) */
-		if (param != NULL)
-			fdv = llapi_file_open_param(volatile_file, open_flags,
-						    open_mode, param);
-		else
+		if (layout)
 			fdv = lfs_component_create(volatile_file, open_flags,
 						   open_mode, layout);
+		else
+			fdv = llapi_file_open_param(volatile_file, open_flags,
+						    open_mode, param);
 	} while (fdv < 0 && (rc = fdv) == -EEXIST);
 
 	if (rc < 0) {
@@ -3461,6 +3461,11 @@ static int lfs_setstripe_internal(int argc, char **argv,
 		goto usage_error;
 	}
 
+	/* lfs migrate $filename should keep the file's layout by default */
+	if (migrate_mode && !setstripe_args_specified(&lsa) && !layout &&
+	    !from_yaml)
+		from_copy = true;
+
 	if (mirror_mode && mirror_count == 0) {
 		fprintf(stderr,
 			"error: %s: --mirror-count|-N option is required\n",
@@ -3580,8 +3585,8 @@ static int lfs_setstripe_internal(int argc, char **argv,
 
 	if ((from_yaml || from_copy) &&
 	    (setstripe_args_specified(&lsa) || layout != NULL)) {
-		fprintf(stderr, "error: %s: can't specify --yaml with "
-			"-c, -S, -i, -o, -p or -E options.\n",
+		fprintf(stderr, "error: %s: can't specify --yaml or --copy with"
+			" -c, -S, -i, -o, -p or -E options.\n",
 			argv[0]);
 		goto error;
 	}
@@ -3713,14 +3718,6 @@ static int lfs_setstripe_internal(int argc, char **argv,
 				argv[0], template);
 			goto error;
 		}
-	} else if (from_copy) {
-		layout = llapi_layout_get_by_path(template, 0);
-		if (layout == NULL) {
-			fprintf(stderr,
-			    "%s: can't create composite layout from file %s.\n",
-				progname, template);
-			goto error;
-		}
 	}
 
 	if (layout != NULL || mirror_list != NULL) {
@@ -3739,6 +3736,16 @@ static int lfs_setstripe_internal(int argc, char **argv,
 	}
 
 	for (fname = argv[optind]; fname != NULL; fname = argv[++optind]) {
+		if (from_copy) {
+			layout = llapi_layout_get_by_path(template ?: fname, 0);
+			if (layout == NULL) {
+				fprintf(stderr, "%s: can't create composite "
+					"layout from file %s.\n",
+					progname, template ?: fname);
+				goto error;
+			}
+		}
+
 		if (migrate_mdt_mode) {
 			result = llapi_migrate_mdt(fname, &migrate_mdt_param);
 		} else if (migrate_mode) {
