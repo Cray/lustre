@@ -744,15 +744,14 @@ static int vvp_io_setattr_start(const struct lu_env *env,
 {
 	struct cl_io		*io    = ios->cis_io;
 	struct inode		*inode = vvp_object_inode(io->ci_obj);
+	struct ll_inode_info	*lli   = ll_i2info(inode);
 
 	OBD_FAIL_TIMEOUT(OBD_FAIL_LLITE_TRUNCATE_INODE_PAUSE, cfs_fail_val);
 
-	if (cl_io_is_trunc(io)) {
-		inode_lock(inode);
+	mutex_lock(&lli->lli_setattr_mutex);
+
+	if (cl_io_is_trunc(io))
 		inode_dio_wait(inode);
-	} else {
-		inode_lock(inode);
-	}
 
 	if (io->u.ci_setattr.sa_avalid & TIMES_SET_FLAGS)
 		return vvp_io_setattr_time(env, ios);
@@ -765,16 +764,15 @@ static void vvp_io_setattr_end(const struct lu_env *env,
 {
 	struct cl_io		*io    = ios->cis_io;
 	struct inode		*inode = vvp_object_inode(io->ci_obj);
+	struct ll_inode_info	*lli   = ll_i2info(inode);
 
 	if (cl_io_is_trunc(io)) {
 		/* Truncate in memory pages - they must be clean pages
 		 * because osc has already notified to destroy osc_extents. */
 		vvp_do_vmtruncate(inode, io->u.ci_setattr.sa_attr.lvb_size);
 		inode_dio_write_done(inode);
-		inode_unlock(inode);
-	} else {
-		inode_unlock(inode);
 	}
+	mutex_unlock(&lli->lli_setattr_mutex);
 }
 
 static void vvp_io_setattr_fini(const struct lu_env *env,

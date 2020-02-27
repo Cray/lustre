@@ -189,6 +189,7 @@ struct ll_inode_info {
 			 */
 			struct rw_semaphore	lli_trunc_sem;
 			struct range_lock_tree	lli_write_tree;
+			struct mutex		lli_setattr_mutex;
 
 			struct rw_semaphore	lli_glimpse_sem;
 			ktime_t			lli_glimpse_time;

@@ -973,6 +973,7 @@ void ll_lli_init(struct ll_inode_info *lli)
 	} else {
 		mutex_init(&lli->lli_size_mutex);
 		mutex_init(&lli->lli_group_mutex);
+		mutex_init(&lli->lli_setattr_mutex);
 		lli->lli_symlink_name = NULL;
 		init_rwsem(&lli->lli_trunc_sem);
 		range_lock_tree_init(&lli->lli_write_tree);
