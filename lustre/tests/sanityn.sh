@@ -5652,6 +5652,9 @@ test_111() {
 	[[ $(facet_active_host mds1) = $(facet_active_host mds2) ]] ||
 		skip "MDT0 and MDT1 should be on the same node"
 
+	[[ $(facet_active_host mds1) = $(facet_active_host mds2) ]] ||
+		skip "MDT0 and MDT1 should be on the same node"
+
 	mkdir $DIR1/$tdir
 	$LFS mkdir -i 0 $DIR1/$tdir/mdt0dir
 	$LFS mkdir -i 1 $DIR1/$tdir/mdt1dir

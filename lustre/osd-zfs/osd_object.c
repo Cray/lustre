@@ -1288,6 +1288,9 @@ static int osd_attr_set(const struct lu_env *env, struct dt_object *dt,
 				obj->oo_lma_flags =
 					la->la_flags & LUSTRE_LMA_FL_MASKS;
 			}
+			if (!rc)
+				obj->oo_lma_flags =
+					la->la_flags & LUSTRE_LMA_FL_MASKS;
 		}
 	}
 
