@@ -4706,6 +4706,9 @@ run_test 103 "Test size correctness with lockahead"
 test_104() {
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return
 
+	[[ $(facet_active_host mds1) = $(facet_active_host mds2) ]] ||
+		skip "MDT0 and MDT1 should be on the same node"
+
 	mkdir $DIR1/$tdir
 	$LFS mkdir -i 0 $DIR1/$tdir/mdt0dir
 	$LFS mkdir -i 1 $DIR1/$tdir/mdt1dir
