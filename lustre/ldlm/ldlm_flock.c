@@ -327,6 +327,8 @@ reprocess:
 	if (*flags != LDLM_FL_WAIT_NOREPROC && mode == LCK_NL) {
 #ifdef HAVE_SERVER_SUPPORT
 		list_for_each_entry(lock, &res->lr_waiting, l_res_link) {
+			LASSERT(lock->l_req_mode != LCK_NL);
+
 			if (ldlm_flocks_are_equal(req, lock)) {
 				/* To start cancel a waiting lock */
 				LIST_HEAD(rpc_list);
