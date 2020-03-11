@@ -1721,6 +1721,8 @@ static void __ldlm_resource_add_lock(struct ldlm_resource *res,
 
 	if (res->lr_type == LDLM_IBITS)
 		ldlm_inodebits_add_lock(res, head, lock, tail);
+	else if (res->lr_type == LDLM_FLOCK)
+		LASSERT(lock->l_req_mode != LCK_NL || head != &res->lr_waiting);
 
 	ldlm_resource_dump(D_INFO, res);
 }
