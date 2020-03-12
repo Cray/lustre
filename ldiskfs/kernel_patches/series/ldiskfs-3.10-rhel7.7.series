@@ -42,6 +42,5 @@ rhel7.4/ext4-dont-expand-during-alloc.patch
 rhel7.2/ext4-simple-blockalloc.patch
 rhel7.7/ext4-fix-project-with-unpatched-kernel.patch
 rhel7.7/ext4-ialloc-uid-gid-and-pass-owner-down.patch
-rhel7.2/ext4-simple-blockalloc.patch
 rhel7/ext4-mballoc-skip-uninit-groups-cr0.patch
 rhel7.7/ext4-mballoc-prefetch.patch
