@@ -122,7 +122,6 @@ extern unsigned int ldlm_enqueue_min;
 /* ldlm_resource.c */
 extern struct kmem_cache *ldlm_resource_slab;
 extern struct kmem_cache *ldlm_lock_slab;
-extern struct kmem_cache *ldlm_inodebits_slab;
 extern struct kmem_cache *ldlm_interval_tree_slab;
 
 void ldlm_resource_insert_lock_after(struct ldlm_lock *original,
@@ -206,10 +205,6 @@ int ldlm_process_inodebits_lock(struct ldlm_lock *lock, __u64 *flags,
 				enum ldlm_process_intention intention,
 				enum ldlm_error *err,
 				struct list_head *work_list);
-int ldlm_reprocess_inodebits_queue(struct ldlm_resource *res,
-				   struct list_head *queue,
-				   struct list_head *work_list,
-				   enum ldlm_process_intention intention);
 /* ldlm_extent.c */
 int ldlm_process_extent_lock(struct ldlm_lock *lock, __u64 *flags,
 			     enum ldlm_process_intention intention,
@@ -217,10 +212,6 @@ int ldlm_process_extent_lock(struct ldlm_lock *lock, __u64 *flags,
 #endif
 void ldlm_extent_add_lock(struct ldlm_resource *res, struct ldlm_lock *lock);
 void ldlm_extent_unlink_lock(struct ldlm_lock *lock);
-
-void ldlm_inodebits_add_lock(struct ldlm_resource *res, struct list_head *head,
-			     struct ldlm_lock *lock);
-void ldlm_inodebits_unlink_lock(struct ldlm_lock *lock);
 
 /* ldlm_flock.c */
 int ldlm_process_flock_lock(struct ldlm_lock *req, __u64 *flags,

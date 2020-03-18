@@ -651,19 +651,6 @@ struct ldlm_interval_tree {
 	struct interval_node	*lit_root; /* actual ldlm_interval */
 };
 
-/**
- * Lists of waiting locks for each inodebit type.
- * A lock can be in several liq_waiting lists and it remains in lr_waiting.
- */
-struct ldlm_ibits_queues {
-	struct list_head	liq_waiting[MDS_INODELOCK_NUMBITS + 1];
-};
-
-struct ldlm_ibits_node {
-	struct list_head	lin_link[MDS_INODELOCK_NUMBITS + 1];
-	struct ldlm_lock	*lock;
-};
-
 /** Whether to track references to exports by LDLM locks. */
 #define LUSTRE_TRACKS_LOCK_EXP_REFS (0)
 
@@ -759,12 +746,9 @@ struct ldlm_lock {
 	 */
 	struct list_head	l_res_link;
 	/**
-	 * Internal structures per lock type..
+	 * Tree node for ldlm_extent.
 	 */
-	union {
-		struct ldlm_interval	*l_tree_node;
-		struct ldlm_ibits_node  *l_ibits_node;
-	};
+	struct ldlm_interval	*l_tree_node;
 	/**
 	 * Per export hash of locks.
 	 * Protected by per-bucket exp->exp_lock_hash locks.
@@ -1036,14 +1020,10 @@ struct ldlm_resource {
 	/** Resource name */
 	struct ldlm_res_id	lr_name;
 
-	union {
-		/**
-		 * Interval trees (only for extent locks) for all modes of
-		 * this resource
-		 */
-		struct ldlm_interval_tree *lr_itree;
-		struct ldlm_ibits_queues *lr_ibits_queues;
-	};
+	/**
+	 * Interval trees (only for extent locks) for all modes of this resource
+	 */
+	struct ldlm_interval_tree *lr_itree;
 
 	union {
 		/**
@@ -1074,11 +1054,6 @@ struct ldlm_resource {
 	/** List of references to this resource. For debugging. */
 	struct lu_ref		lr_reference;
 };
-
-static inline int ldlm_is_granted(struct ldlm_lock *lock)
-{
-	return lock->l_req_mode == lock->l_granted_mode;
-}
 
 static inline bool ldlm_has_layout(struct ldlm_lock *lock)
 {
@@ -1330,11 +1305,6 @@ typedef int (*ldlm_processing_policy)(struct ldlm_lock *lock, __u64 *flags,
 				      enum ldlm_error *err,
 				      struct list_head *work_list);
 
-typedef int (*ldlm_reprocessing_policy)(struct ldlm_resource *res,
-					struct list_head *queue,
-					struct list_head *work_list,
-					enum ldlm_process_intention intention);
-
 /**
  * Return values for lock iterators.
  * Also used during deciding of lock grants and cancellations.
@@ -1433,8 +1403,6 @@ struct ldlm_lock *ldlm_request_lock(struct ptlrpc_request *req);
 /* ldlm_lock.c */
 #ifdef HAVE_SERVER_SUPPORT
 ldlm_processing_policy ldlm_get_processing_policy(struct ldlm_resource *res);
-ldlm_reprocessing_policy
-ldlm_get_reprocessing_policy(struct ldlm_resource *res);
 #endif
 void ldlm_register_intent(struct ldlm_namespace *ns, ldlm_res_policy arg);
 void ldlm_lock2handle(const struct ldlm_lock *lock,
