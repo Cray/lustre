@@ -1508,4 +1508,10 @@ int osd_get_integrity_profile(struct osd_device *osd,
 			      integrity_vrfy_fn **verify_fn);
 #endif
 
+#ifdef HAVE_BIO_BI_PHYS_SEGMENTS
+#define osd_bio_nr_segs(bio)		((bio)->bi_phys_segments)
+#else
+#define osd_bio_nr_segs(bio)		bio_segments((bio))
+#endif /* HAVE_BIO_BI_PHYS_SEGMENTS */
+
 #endif /* _OSD_INTERNAL_H */

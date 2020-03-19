@@ -567,7 +567,7 @@ static int osd_do_bio(struct osd_device *osd, struct inode *inode,
 				       bi_size, bio->bi_vcnt, bio->bi_max_vecs,
 				       bio_sectors(bio),
 				       queue_max_sectors(q),
-				       bio->bi_phys_segments,
+				       osd_bio_nr_segs(bio),
 				       queue_max_phys_segments(q),
 				       0, queue_max_hw_segments(q));
 				rc = osd_bio_integrity_handle(osd, bio,
