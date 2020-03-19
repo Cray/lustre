@@ -34,6 +34,10 @@ BuildRequires: libyaml-devel
 %if 0%{?sle_version} <= 120000
 BuildRequires: ofed-devel
 %endif
+%if %{with server}
+BuildRequires: e2fsprogs-devel
+Requires: ldiskfsprogs
+%endif
 BuildConflicts: post-build-checks
 Group: System/Filesystems
 License: GPL
