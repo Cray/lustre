@@ -1199,6 +1199,7 @@ static int vvp_io_write_start(const struct lu_env *env,
 	loff_t			 pos = io->u.ci_wr.wr.crw_pos;
 	size_t			 cnt = io->u.ci_wr.wr.crw_count;
 	size_t nob = io->ci_nob;
+	struct iov_iter iter;
 	size_t written = 0;
 
 	ENTRY;
@@ -1249,6 +1250,8 @@ static int vvp_io_write_start(const struct lu_env *env,
 		 * is held in use
 		 */
 		set_IS_NOSEC(inode);
+		iter = *vio->vui_iter;
+
 		result = __generic_file_write_iter(vio->vui_iocb,
 						   vio->vui_iter);
 		restore_IS_NOSEC(inode);
@@ -1271,12 +1274,20 @@ static int vvp_io_write_start(const struct lu_env *env,
 
 	if (result > 0) {
 		result = vvp_io_write_commit(env, io);
+		/* Simulate short commit */
+		if (CFS_FAULT_CHECK(OBD_FAIL_LLITE_SHORT_COMMIT)) {
+			vio->u.write.vui_written >>= 1;
+			if (vio->u.write.vui_written > 0)
+				io->ci_need_restart = 1;
+		}
 		if (vio->u.write.vui_written > 0) {
 			result = vio->u.write.vui_written;
 			CDEBUG(D_VFSTRACE, "%s: write nob %zd, result: %zd\n",
 				file_dentry(file)->d_name.name,
 				io->ci_nob, result);
 			io->ci_nob += result;
+		} else {
+			io->ci_continue = 0;
 		}
 	}
 	if (vio->vui_iocb->ki_pos != (pos + io->ci_nob - nob)) {
@@ -1286,8 +1297,16 @@ static int vvp_io_write_start(const struct lu_env *env,
 		       file_dentry(file)->d_name.name,
 		       vio->vui_iocb->ki_pos, pos + io->ci_nob - nob,
 		       written, io->ci_nob - nob, result);
-		/* rewind ki_pos to where it has successfully committed */
+		/*
+		 * Rewind ki_pos and vui_iter to where it has
+		 * successfully committed.
+		 */
 		vio->vui_iocb->ki_pos = pos + io->ci_nob - nob;
+		iov_iter_advance(&iter, io->ci_nob - nob);
+		vio->vui_iter->iov = iter.iov;
+		vio->vui_iter->nr_segs = iter.nr_segs;
+		vio->vui_iter->iov_offset = iter.iov_offset;
+		vio->vui_iter->count = iter.count;
 	}
 	if (result > 0) {
 		ll_file_set_flag(ll_i2info(inode), LLIF_DATA_MODIFIED);
