@@ -136,8 +136,8 @@ test_5() {
 
 	getfattr -d $DIR2/$tfile
 
-#define OBD_FAIL_LLITE_TRUNCATE_INODE_PAUSE        0x1415
-	$LCTL set_param fail_loc=0x80001415 fail_val=5
+#define OBD_FAIL_LLITE_TRUNCATE_INODE_PAUSE        0x1416
+	$LCTL set_param fail_loc=0x80001416 fail_val=5
 	kill -USR1 $truncate
 	sleep 1
 	multiop $DIR2/$tfile Ow10 &
