@@ -430,6 +430,7 @@ ha_repeat_mpi_load()
 
 	machines="-machinefile $machines"
 	while [ ! -e "$ha_stop_file" ] && ((rc == 0)) && ((rccheck == 0)); do
+		ha_info "$client Starts: $cmd" 2>&1 |  tee -a $log
 		{
 		local mdt_index
 		if $ha_mdt_index_random && [ $ha_mdt_index -ne 0 ]; then
@@ -555,6 +556,7 @@ ha_repeat_nonmpi_load()
 	ha_info "Starting $tag on $client"
 
 	while [ ! -e "$ha_stop_file" ] && ((rc == 0)); do
+		ha_info "$client Starts: $cmd" 2>&1 |  tee -a $log
 		ha_on $client "mkdir -p $dir &&                               \
 			$cmd"              >>"$log" 2>&1 || rc=$?
 
