@@ -216,9 +216,10 @@ int ll_dom_lock_cancel(struct inode *inode, struct ldlm_lock *lock)
 	RETURN(rc);
 }
 
-void ll_lock_cancel_bits(struct ldlm_lock *lock, __u64 bits)
+void ll_lock_cancel_bits(struct ldlm_lock *lock, __u64 to_cancel)
 {
 	struct inode *inode;
+	__u64 bits = to_cancel;
 	int rc;
 	ENTRY;
 
@@ -226,10 +227,8 @@ void ll_lock_cancel_bits(struct ldlm_lock *lock, __u64 bits)
 	if (lock->l_req_mode != lock->l_granted_mode)
 		return;
 
-	if (!bits)
-		RETURN_EXIT;
-
 	inode = ll_inode_from_resource_lock(lock);
+
 	if (!inode) {
 		/* That means the inode is evicted most likely and may cause
 		 * the skipping of lock cleanups below, so print the message
@@ -242,8 +241,6 @@ void ll_lock_cancel_bits(struct ldlm_lock *lock, __u64 bits)
 				   I_FREEING ? "" : "not ");
 		RETURN_EXIT;
 	}
-
-	LDLM_DEBUG(lock, "to cancel bits %#llx", bits);
 
 	if (!fid_res_name_eq(ll_inode2fid(inode),
 			     &lock->l_resource->lr_name)) {
@@ -287,6 +284,11 @@ void ll_lock_cancel_bits(struct ldlm_lock *lock, __u64 bits)
 		bits &= ~MDS_INODELOCK_OPEN;
 	}
 
+	if (bits & (MDS_INODELOCK_LOOKUP | MDS_INODELOCK_UPDATE |
+		    MDS_INODELOCK_LAYOUT | MDS_INODELOCK_PERM |
+		    MDS_INODELOCK_DOM))
+		ll_have_md_lock(inode, &bits, LCK_MINMODE);
+
 	if (bits & MDS_INODELOCK_DOM) {
 		rc =  ll_dom_lock_cancel(inode, lock);
 		if (rc < 0)
@@ -296,12 +298,7 @@ void ll_lock_cancel_bits(struct ldlm_lock *lock, __u64 bits)
 		lock_res_and_lock(lock);
 		ldlm_set_kms_ignore(lock);
 		unlock_res_and_lock(lock);
-		bits &= ~MDS_INODELOCK_DOM;
 	}
-
-	if (bits & (MDS_INODELOCK_LOOKUP | MDS_INODELOCK_UPDATE |
-		    MDS_INODELOCK_LAYOUT | MDS_INODELOCK_PERM))
-		ll_have_md_lock(inode, &bits, LCK_MINMODE);
 
 	if (bits & MDS_INODELOCK_LAYOUT) {
 		struct cl_object_conf conf = {
@@ -390,7 +387,6 @@ int ll_md_need_convert(struct ldlm_lock *lock)
 {
 	struct ldlm_namespace *ns = ldlm_lock_to_ns(lock);
 	struct inode *inode;
-
 	__u64 wanted = lock->l_policy_data.l_inodebits.cancel_bits;
 	__u64 bits = lock->l_policy_data.l_inodebits.bits & ~wanted;
 	enum ldlm_mode mode = LCK_MINMODE;
@@ -439,11 +435,9 @@ int ll_md_need_convert(struct ldlm_lock *lock)
 	}
 	unlock_res_and_lock(lock);
 
-	/* Don't convert lock if remaining bits are set also in other locks */
 	inode = ll_inode_from_resource_lock(lock);
 	ll_have_md_lock(inode, &bits, mode);
 	iput(inode);
-
 	return !!(bits);
 }
 
@@ -451,8 +445,7 @@ int ll_md_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *desc,
 		       void *data, int flag)
 {
 	struct lustre_handle lockh;
-	__u64 to_cancel;
-	__u64 to_cancel_early = MDS_INODELOCK_DOM;
+	__u64 bits = lock->l_policy_data.l_inodebits.bits;
 	int rc;
 
 	ENTRY;
@@ -462,29 +455,17 @@ int ll_md_blocking_ast(struct ldlm_lock *lock, struct ldlm_lock_desc *desc,
 	{
 		__u64 cancel_flags = LCF_ASYNC;
 
-		if (!ldlm_is_granted(lock))
-			goto do_cancel;
-
 		if (ll_md_need_convert(lock)) {
 			cancel_flags |= LCF_CONVERT;
-			to_cancel = lock->l_policy_data.l_inodebits.cancel_bits;
-		} else {
-			/* if no convert then all bits to be canceled.
-			 * Set also lock cancel_bits to know that we were
-			 * here and canceled some bits early.
+			/* For lock convert some cancel actions may require
+			 * this lock with non-dropped canceled bits, e.g. page
+			 * flush for DOM lock. So call ll_lock_cancel_bits()
+			 * here while canceled bits are still set.
 			 */
-			to_cancel = lock->l_policy_data.l_inodebits.bits;
-			lock->l_policy_data.l_inodebits.cancel_bits = to_cancel;
+			bits = lock->l_policy_data.l_inodebits.cancel_bits;
+			if (bits & MDS_INODELOCK_DOM)
+				ll_lock_cancel_bits(lock, MDS_INODELOCK_DOM);
 		}
-
-		/* While dropping DOM lock the CLIO code checks that data being
-		 * flushed is still covered by lock, so DOM bits must be set.
-		 * Make DOM data flush early while DOM bit is still set in lock
-		 * because later it may be dropped by possible lock convert.
-		 * The same may be needed for layout lock.
-		 */
-		ll_lock_cancel_bits(lock, to_cancel & to_cancel_early);
-do_cancel:
 		ldlm_lock2handle(lock, &lockh);
 		rc = ldlm_cli_cancel(&lockh, cancel_flags);
 		if (rc < 0) {
@@ -494,28 +475,19 @@ do_cancel:
 		break;
 	}
 	case LDLM_CB_CANCELING:
-		/* Nothing to do for non-granted locks */
-		if (!ldlm_is_granted(lock))
-			break;
-
-		to_cancel = lock->l_policy_data.l_inodebits.cancel_bits;
-		/* We may have two possible cases here:
-		 * 1) Local cancel from ELC or export cleanup, etc.
-		 *    and no cancel_bits are set. All bits to drop.
-		 * 2) Cancel bits are set (server BL AST with cancel_bits) and
-		 *    lock is not being converted, drop all bits except those
-		 *    canceled early.
-		 * 3) Cancel bits are set and lock is being converted, drop
-		 *    only cancel_bits excluding early canceled bits.
-		 */
-		if (!to_cancel)
-			to_cancel = lock->l_policy_data.l_inodebits.bits;
-		else if (!ldlm_is_converting(lock))
-			to_cancel = lock->l_policy_data.l_inodebits.bits &
-				    ~to_cancel_early;
-		else
-			to_cancel &= ~to_cancel_early;
-		ll_lock_cancel_bits(lock, to_cancel);
+		if (ldlm_is_converting(lock)) {
+			/* this is called on already converted lock, so
+			 * ibits has remained bits only and cancel_bits
+			 * are bits that were dropped.
+			 * Note that DOM lock is handled prior lock convert
+			 * and is excluded here.
+			 */
+			bits = lock->l_policy_data.l_inodebits.cancel_bits &
+				~MDS_INODELOCK_DOM;
+		} else {
+			LASSERT(ldlm_is_canceling(lock));
+		}
+		ll_lock_cancel_bits(lock, bits);
 		break;
 	default:
 		LBUG();
