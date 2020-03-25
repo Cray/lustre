@@ -523,8 +523,11 @@ static int ll_readahead(const struct lu_env *env, struct cl_io *io,
 
 	/* at least to extend the readahead window to cover current read */
 	if (!hit && vio->vui_ra_valid &&
-	    vio->vui_ra_start + vio->vui_ra_count > ria->ria_start)
+	    vio->vui_ra_start + vio->vui_ra_count > ria->ria_start) {
 		ria->ria_end_min = vio->vui_ra_start + vio->vui_ra_count - 1;
+		mlen = vio->vui_ra_start + vio->vui_ra_count -
+				ria->ria_start;
+	}
 
 	ria->ria_reserved = ll_ra_count_get(ll_i2sbi(inode), ria, len, mlen);
 	if (ria->ria_reserved < len)
