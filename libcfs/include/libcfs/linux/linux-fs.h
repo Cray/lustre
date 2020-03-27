@@ -50,6 +50,10 @@ static inline struct dentry *file_dentry(const struct file *file)
 }
 #endif
 
+#ifndef QSTR_INIT
+#define QSTR_INIT(n, l) { .len = l, .name = n }
+#endif
+
 #ifndef IFSHIFT
 #define IFSHIFT			12
 #endif
