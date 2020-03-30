@@ -266,7 +266,7 @@ ll_direct_IO_seg(const struct lu_env *env, struct cl_io *io, int rw,
 	if (rc == 0 && io_pages) {
 		rc = cl_io_submit_sync(env, io,
 				       rw == READ ? CRT_READ : CRT_WRITE,
-				       queue, 0);
+				       queue, 0, NULL);
 	}
 	if (rc == 0)
 		rc = orig_size;

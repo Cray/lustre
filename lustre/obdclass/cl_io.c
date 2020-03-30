@@ -570,7 +570,6 @@ void cl_io_end(const struct lu_env *env, struct cl_io *io)
         const struct cl_io_slice *scan;
 
         LINVRNT(cl_io_is_loopable(io));
-        LINVRNT(io->ci_state == CIS_IO_GOING);
         LINVRNT(cl_io_invariant(io));
         ENTRY;
 
@@ -690,7 +689,7 @@ EXPORT_SYMBOL(cl_io_submit_rw);
  */
 int cl_io_submit_sync(const struct lu_env *env, struct cl_io *io,
 		      enum cl_req_type iot, struct cl_2queue *queue,
-		      long timeout)
+		      long timeout, bool *hole)
 {
 	struct cl_sync_io *anchor = &cl_env_info(env)->clt_anchor;
 	struct cl_page *pg;
@@ -703,6 +702,10 @@ int cl_io_submit_sync(const struct lu_env *env, struct cl_io *io,
 	}
 
 	cl_sync_io_init(anchor, queue->c2_qin.pl_nr);
+
+	anchor->csi_highest_success = 0;
+	anchor->csi_lowest_failed = CL_PAGE_EOF;
+
 	rc = cl_io_submit_rw(env, io, iot, queue);
 	if (rc == 0) {
 		/*
@@ -723,6 +726,14 @@ int cl_io_submit_sync(const struct lu_env *env, struct cl_io *io,
 		LASSERT(list_empty(&queue->c2_qout.pl_pages));
 		cl_page_list_for_each(pg, &queue->c2_qin)
 			pg->cp_sync_io = NULL;
+	}
+	if (hole) {
+		*hole = (anchor->csi_lowest_failed != CL_PAGE_EOF &&
+		 anchor->csi_highest_success > anchor->csi_lowest_failed);
+		if (*hole)
+			CDEBUG(D_VFSTRACE, "hole - failed %lu, success %lu\n",
+			       anchor->csi_lowest_failed,
+			       anchor->csi_highest_success);
 	}
 	RETURN(rc);
 }

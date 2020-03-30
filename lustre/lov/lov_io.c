@@ -937,12 +937,16 @@ static int lov_io_end_wrapper(const struct lu_env *env, struct cl_io *io)
 	/*
 	 * It's possible that lov_io_start() wasn't called against this
 	 * sub-io, either because previous sub-io failed, or upper layer
-	 * completed IO.
+	 * completed IO. Since osc extent is created during vvp_io_write_commit
+	 * and it could finished with error, we have to release extents
+	 * for error case too, when subio don't have GOING state.
 	 */
-	if (io->ci_state == CIS_IO_GOING)
+	if (io->ci_state == CIS_IO_GOING || (io->ci_state == CIS_LOCKED &&
+	    (io->ci_type == CIT_WRITE || io->ci_type == CIT_FAULT)))
 		cl_io_end(env, io);
 	else
 		io->ci_state = CIS_IO_FINISHED;
+
 	RETURN(0);
 }
 

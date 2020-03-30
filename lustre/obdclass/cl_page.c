@@ -934,11 +934,22 @@ void cl_page_completion(const struct lu_env *env,
 								  ioret);
 	}
 
-	if (anchor != NULL) {
-		LASSERT(pg->cp_sync_io == anchor);
-		pg->cp_sync_io = NULL;
-		cl_sync_io_note(env, anchor, ioret);
+	if (anchor == NULL)
+		GOTO(out, 0);
+
+	LASSERT(pg->cp_sync_io == anchor);
+	pg->cp_sync_io = NULL;
+
+	if (likely(ioret == 0)) {
+		if (anchor->csi_highest_success < pg->cp_vmpage->index)
+			anchor->csi_highest_success = pg->cp_vmpage->index;
+	} else {
+		if (anchor->csi_lowest_failed > pg->cp_vmpage->index)
+			anchor->csi_lowest_failed = pg->cp_vmpage->index;
 	}
+
+	cl_sync_io_note(env, anchor, ioret);
+out:
 	EXIT;
 }
 EXPORT_SYMBOL(cl_page_completion);
