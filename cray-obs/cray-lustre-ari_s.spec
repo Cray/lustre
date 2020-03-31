@@ -11,12 +11,13 @@
 %define kversion %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease)
 
 %bcond_with server
+%define config_server --disable-server
+%ifarch x86_64
 %if 0%{?sle_version} >= 150000
 # Enable server builds for SLES15
 %define with_server 1
 %define config_server --enable-server
-%else
-%define config_server --disable-server
+%endif
 %endif
 
 BuildRequires: cray-gni-devel
