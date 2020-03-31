@@ -163,6 +163,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %dir %{_libdir}/lustre
 %{_libdir}/lustre/tests
 %{_modulefiles_prefix}
+%{_datadir}/bash-completion/completions/*
 %exclude /etc/lustre/perm.conf
 %exclude /etc/modprobe.d/ko2iblnd.conf
 %exclude /etc/lnet.conf
