@@ -205,6 +205,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 # The versioned shared library files for liblnetconfig are needed for
 # lnetctl, so they are included in the base package
 %{_libdir}/liblnetconfig.so.*
+%{_datadir}/bash-completion/completions/*
 
 %files devel
 %{_includedir}/lustre
