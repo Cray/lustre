@@ -157,6 +157,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_libdir}/liblnetconfig.so*
 %{_libdir}/liblustreapi.a
 %{_libdir}/liblustreapi.so*
+%{_datadir}/bash-completion/completions/*
 %{_pkgconfigdir}/cray-lustre-api-devel.pc
 %{_pkgconfigdir}/cray-lustre-cfsutil-devel.pc
 %{_pkgconfigdir}/cray-lustre-ptlctl-devel.pc
