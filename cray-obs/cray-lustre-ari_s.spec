@@ -205,6 +205,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %dir %{_libdir}/lustre
 %{_libdir}/lustre/tests
 %{_modulefiles_prefix}
+%{_datadir}/bash-completion/completions/*
 %if %{with server}
 %{_libdir}/lustre/mount_osd_ldiskfs.so
 %{_libdir}/libiam.a
