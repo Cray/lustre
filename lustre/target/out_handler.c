@@ -1043,6 +1043,9 @@ int out_handle(struct tgt_session_info *tsi)
 		if (rc < 0)
 			GOTO(out_free, rc = err_serious(rc));
 	}
+
+	OBD_FAIL_TIMEOUT(OBD_FAIL_OUT_UPDATE_TIMEO, cfs_fail_val);
+
 	/* validate the request and calculate the total update count and
 	 * set it to reply */
 	reply_size = 0;

@@ -2966,6 +2966,31 @@ test_139() {
 }
 run_test 139 "corrupted catid won't cause crash"
 
+test_142() {
+	local am
+
+	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs" && return 0
+
+	$LFS setdirstripe -c 1 -i 0 $MOUNT/$tdir
+
+	am=$(at_max_get mds2)
+
+	do_facet mds2 $LCTL set_param timeout=5
+	at_max_set 0 mds2
+
+	do_facet mds2 $LCTL set_param fail_loc=0x80001706 fail_val=5
+	do_facet mds2 dmesg -c > /dev/null
+
+	$LFS setdirstripe -c -1 -i 0 $MOUNT/$tdir/1
+	sleep 10
+	do_facet mds2 dmesg | grep "is used by two objects" && error "should not have happened"
+
+	at_max_set $am mds2
+
+	rm -rf $MOUNT/$tdir
+}
+run_test 142 "out_update resend"
+
 complete $SECONDS
 check_and_cleanup_lustre
 exit_status
