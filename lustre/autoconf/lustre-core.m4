@@ -2267,6 +2267,23 @@ bio_endio, [
 ]) # LC_BIO_ENDIO_USES_ONE_ARG
 
 #
+# LC_ACCOUNT_PAGE_DIRTIED_3ARGS
+#
+# 4.2 kernel page dirtied takes 3 arguments
+#
+AC_DEFUN([LC_ACCOUNT_PAGE_DIRTIED_3ARGS], [
+LB_CHECK_COMPILE([if 'account_page_dirtied' with 3 args exists],
+account_page_dirtied, [
+	#include <linux/mm.h>
+],[
+	account_page_dirtied(NULL, NULL, NULL);
+],[
+	AC_DEFINE(HAVE_ACCOUNT_PAGE_DIRTIED_3ARGS, 1,
+		[account_page_dirtied takes three arguments])
+])
+]) # LC_ACCOUNT_PAGE_DIRTIED_3ARGS
+
+#
 # LC_HAVE_INTERVAL_EXP_BLK_INTEGRITY
 #
 # 4.3 replace interval with interval_exp in 'struct blk_integrity'
@@ -2560,6 +2577,23 @@ d_in_lookup, [
 ])
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_D_IN_LOOKUP
+
+#
+# LC_LOCK_PAGE_MEMCG
+#
+# Kernel version 4.6 adds lock_page_memcg
+#
+AC_DEFUN([LC_LOCK_PAGE_MEMCG], [
+LB_CHECK_COMPILE([if 'lock_page_memcg' is defined],
+lock_page_memcg, [
+	#include <linux/memcontrol.h>
+],[
+	lock_page_memcg(NULL);
+],[
+	AC_DEFINE(HAVE_LOCK_PAGE_MEMCG, 1,
+		[lock_page_memcg is defined])
+])
+]) # LC_LOCK_PAGE_MEMCG
 
 #
 # LC_DIRECTIO_2ARGS
@@ -3383,6 +3417,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_NEW_CANCEL_DIRTY_PAGE
 	LC_BIO_ENDIO_USES_ONE_ARG
 	LC_SYMLINK_OPS_USE_NAMEIDATA
+	LC_ACCOUNT_PAGE_DIRTIED_3ARGS
 
 	# 4.3
 	LC_HAVE_INTERVAL_EXP_BLK_INTEGRITY
@@ -3409,6 +3444,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 4.6
 	LC_HAVE_IN_COMPAT_SYSCALL
 	LC_HAVE_XATTR_HANDLER_INODE_PARAM
+	LC_LOCK_PAGE_MEMCG
 
 	# 4.7
 	LC_D_IN_LOOKUP
