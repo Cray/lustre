@@ -2144,6 +2144,8 @@ void ll_delete_inode(struct inode *inode)
 	struct address_space *mapping = &inode->i_data;
 	unsigned long nrpages;
 	int rc;
+	unsigned long flags;
+
 	ENTRY;
 
 	if (S_ISREG(inode->i_mode) && lli->lli_clob != NULL) {
@@ -2170,9 +2172,9 @@ void ll_delete_inode(struct inode *inode)
 	 */
 	nrpages = mapping->nrpages;
 	if (nrpages) {
-		xa_lock_irq(&mapping->i_pages);
+		xa_lock_irqsave(&mapping->i_pages, flags);
 		nrpages = mapping->nrpages;
-		xa_unlock_irq(&mapping->i_pages);
+		xa_unlock_irqrestore(&mapping->i_pages, flags);
 	} /* Workaround end */
 
 	LASSERTF(nrpages == 0, "%s: inode="DFID"(%p) nrpages=%lu, "
