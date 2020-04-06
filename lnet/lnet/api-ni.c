@@ -334,11 +334,6 @@ sensitivity_set(const char *val, cfs_kernel_param_arg_t *kp)
 	 */
 	mutex_lock(&the_lnet.ln_api_mutex);
 
-	if (the_lnet.ln_state != LNET_STATE_RUNNING) {
-		mutex_unlock(&the_lnet.ln_api_mutex);
-		return 0;
-	}
-
 	if (value > LNET_MAX_HEALTH_VALUE) {
 		mutex_unlock(&the_lnet.ln_api_mutex);
 		CERROR("Invalid health value. Maximum: %d value = %lu\n",
@@ -376,11 +371,6 @@ recovery_interval_set(const char *val, cfs_kernel_param_arg_t *kp)
 	 * the correct value ends up stored properly.
 	 */
 	mutex_lock(&the_lnet.ln_api_mutex);
-
-	if (the_lnet.ln_state != LNET_STATE_RUNNING) {
-		mutex_unlock(&the_lnet.ln_api_mutex);
-		return 0;
-	}
 
 	*interval = value;
 
@@ -490,11 +480,6 @@ transaction_to_set(const char *val, cfs_kernel_param_arg_t *kp)
 	 */
 	mutex_lock(&the_lnet.ln_api_mutex);
 
-	if (the_lnet.ln_state != LNET_STATE_RUNNING) {
-		mutex_unlock(&the_lnet.ln_api_mutex);
-		return 0;
-	}
-
 	if (value < lnet_retry_count || value == 0) {
 		mutex_unlock(&the_lnet.ln_api_mutex);
 		CERROR("Invalid value for lnet_transaction_timeout (%lu). "
@@ -538,9 +523,10 @@ retry_count_set(const char *val, cfs_kernel_param_arg_t *kp)
 	 */
 	mutex_lock(&the_lnet.ln_api_mutex);
 
-	if (the_lnet.ln_state != LNET_STATE_RUNNING) {
+	if (lnet_health_sensitivity == 0) {
 		mutex_unlock(&the_lnet.ln_api_mutex);
-		return 0;
+		CERROR("Can not set retry_count when health feature is turned off\n");
+		return -EINVAL;
 	}
 
 	if (value > lnet_transaction_timeout) {
@@ -549,11 +535,6 @@ retry_count_set(const char *val, cfs_kernel_param_arg_t *kp)
 		       "Has to be smaller than lnet_transaction_timeout (%u)\n",
 		       value, lnet_transaction_timeout);
 		return -EINVAL;
-	}
-
-	if (value == *retry_count) {
-		mutex_unlock(&the_lnet.ln_api_mutex);
-		return 0;
 	}
 
 	*retry_count = value;
