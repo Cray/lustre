@@ -103,6 +103,7 @@ yml_build_info() {
 	local LUSTRE_VERSION=$(lustre_build_version)
 	local LUSTRE_BUILD=${LUSTRE_BUILD_SOURCE:-$LUSTRE_VERSION}
 	local FILE_SYSTEM=$(node_fstypes $(hostname -s))
+	local LUSTRE_REVISION=${LUSTRE_REVISION:-$(cat /sys/fs/lustre/version)}
 
 cat <<EOF
     lbats_build_id: $LBATS_ID
