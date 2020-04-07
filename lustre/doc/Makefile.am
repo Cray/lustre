@@ -56,6 +56,7 @@ MANFILES =					\
 	lfs-setstripe.1				\
 	lfs-setquota.1				\
 	lfs-project.1				\
+	lfs-quota.1				\
 	l_getidentity.8				\
 	lgss_sk.8				\
 	lhbadm.8				\
