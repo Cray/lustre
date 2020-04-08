@@ -2929,6 +2929,41 @@ test_138() {
 }
 run_test 138 "Umount MDT during recovery"
 
+test_143() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.11.56) ] &&
+		skip "Need MDS version at least 2.11.56"
+
+	#define OBD_FAIL_MDS_ORPHAN_DELETE	0x165
+	do_facet mds1 $LCTL set_param fail_loc=0x165
+	$MULTIOP $DIR/$tfile Ouc || error "multiop failed"
+
+	stop mds1
+	start mds1 $(mdsdevname 1) $MDS_MOUNT_OPTS
+
+	sleep 5
+	[[ $(do_facet mds1 pgrep orph_.*-MDD | wc -l) -eq 0 ]] ||
+		error "MDD orphan cleanup thread not quit"
+}
+run_test 143 "orphan name stub can be cleaned up in startup"
+
+test_144() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.12.00) ] &&
+		skip "Need MDS version at least 2.12.00"
+	[ $PARALLEL == "yes" ] && skip "skip parallel run"
+
+	local mntpt=$(facet_mntpt $SINGLEMDS)
+	stop mds1
+	mount_fstype $SINGLEMDS || error "mount as fstype $SINGLEMDS failed"
+	do_facet $SINGLEMDS touch $mntpt/PENDING/$tfile
+	unmount_fstype $SINGLEMDS
+	start mds1 $(mdsdevname 1) $MDS_MOUNT_OPTS || error "mds1 start fail"
+
+	wait_recovery_complete $SINGLEMDS || error "MDS recovery not done"
+	wait_update_facet mds1 "pgrep orph_.*-MDD | wc -l" "0" ||
+		error "MDD orphan cleanup thread not quit"
+}
+run_test 144 "orphan cleanup thread shouldn't be blocked even delete failed"
+
 complete $SECONDS
 check_and_cleanup_lustre
 exit_status
