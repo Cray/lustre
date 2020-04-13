@@ -20879,6 +20879,47 @@ test_423() {
 }
 run_test 423 "statfs should return a right data"
 
+test_425() {
+	test_mkdir -c1 $DIR/$tdir
+
+	lru_resize_disable mdc
+	lru_resize_disable osc
+
+	sleep 5
+
+	for i in {1..1000}; do
+		local t=$DIR/$tdir/$tfile_$i
+
+		dd if=/dev/zero of=$t bs=4K count=1 > /dev/null 2>&1 ||
+			error_noexit "Create file $t"
+	done
+
+	for oscparam in $($LCTL list_param ldlm.namespaces.*osc-[-0-9a-f]*);
+	do
+		local lru_size=$($LCTL get_param -n $oscparam.lru_size)
+		local lock_count=$($LCTL get_param -n $oscparam.lock_count)
+
+		[ $lock_count -le $lru_size ] ||
+			error "osc lock count $lock_count exceeding " \
+			      "lru size $lru_size"
+	done
+
+	for mdcparam in $($LCTL list_param ldlm.namespaces.*mdc-*); do
+		local lru_size=$($LCTL get_param -n $mdcparam.lru_size)
+		local lock_count=$($LCTL get_param -n $mdcparam.lock_count)
+
+		[ $lock_count -le $lru_size ] ||
+			error "mdc lock count $lock_count exceeding " \
+			      "lru size $lru_size"
+	done
+
+	rm -rf $DIR/$tdir || error "remove dir error"
+
+	lru_resize_enable mdc
+	lru_resize_enable osc
+}
+run_test 425 "lock count should not exceed lru size"
+
 prep_801() {
 	[[ $(lustre_version_code mds1) -lt $(version_code 2.9.55) ]] ||
 	[[ $OST1_VERSION -lt $(version_code 2.9.55) ]] &&
