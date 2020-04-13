@@ -338,7 +338,7 @@ static int kfilnd_startup(struct lnet_ni *ni)
 		ifname = KFILND_DEFAULT_DEVICE;
 	}
 
-	rc = lnet_inet_enumerate(&ifaces);
+	rc = lnet_inet_enumerate(&ifaces, &init_net);
 	if (rc < 0)
 		goto err;
 
