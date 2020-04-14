@@ -945,10 +945,10 @@ int mdt_handle_last_unlink(struct mdt_thread_info *info, struct mdt_object *mo,
 		int hal_size = sizeof(struct hsm_action_list) +
 			cfs_size_round(MTI_NAME_MAXLEN) + sizeof(hai);
 
-		hal = kmalloc(hal_size, GFP_NOFS);
+		OBD_ALLOC(hal, hal_size);
 		if (hal == NULL) {
 			rc = -ENOMEM;
-			goto out;
+			GOTO(out, rc);
 		}
 
 		hal->hal_version = HAL_VERSION;
@@ -959,7 +959,7 @@ int mdt_handle_last_unlink(struct mdt_thread_info *info, struct mdt_object *mo,
 		memcpy(hai_first(hal), &hai, sizeof(struct hsm_action_item));
 
 		rc = ext_cdt_send_request(info, hal);
-		kfree(hal);
+		OBD_FREE(hal, hal_size);
 	} else {
 		rc = mdt_agent_record_add(info->mti_env, info->mti_mdt,
 					  archive_id, HAL_CDT_FORCE, &hai);
