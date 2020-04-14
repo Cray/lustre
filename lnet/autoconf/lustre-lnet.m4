@@ -715,34 +715,32 @@ AC_SUBST(GNILND)
 # check whether to use the kfabric Network Interface lnd
 #
 AC_DEFUN([LN_CONFIG_KFILND], [
-AC_MSG_CHECKING([whether to enable KFI lnd])
-AC_ARG_ENABLE([kfi],
-	AC_HELP_STRING([--enable-kfi],
-		[enable KFI lnd]),
-	[], [enable_kfi="no"])
-AC_MSG_RESULT([$enable_kfi])
-
-AS_IF([test "x$enable_kfi" = xyes], [
-	# KFICPPFLAGS was set in spec file
-	KFICPPFLAGS="-I$LUSTRE/../../kfabric/include"
-	EXTRA_KCFLAGS_save="$EXTRA_KCFLAGS"
-	EXTRA_KCFLAGS="$EXTRA_KCFLAGS $KFICPPFLAGS"
-	LB_CHECK_COMPILE([if kfabric headers are present],
-	KFI_header, [
-		#include <kfi_endpoint.h>
-	],[
-		struct kfi_info *hints;
-
-		hints = kfi_allocinfo();
-	],[
-		KFILND="kfilnd"
-		AC_MSG_NOTICE([adding $LUSTRE/../../kfabric/Module.symvers to Symbol Path])
-		EXTRA_SYMBOLS="$EXTRA_SYMBOLS $LUSTRE/../../kfabric/Module.symvers"
-	],[
-		AC_MSG_ERROR([can't compile kfilnd with given KFICPPFLAGS: $KFICPPFLAGS])
-	])
-	EXTRA_KCFLAGS="$EXTRA_KCFLAGS_save"
-])
+AC_ARG_WITH([kfi],
+	AC_HELP_STRING([--with-kfi=<path>], [Kfabric build path for kfilnd]),
+	[
+		AC_CHECK_FILE([$with_kfi/Module.symvers],
+		[
+			# KFICPPFLAGS was set in spec file
+			KFICPPFLAGS="-I$with_kfi/include"
+			EXTRA_KCFLAGS_save="$EXTRA_KCFLAGS"
+			EXTRA_KCFLAGS="$EXTRA_KCFLAGS $KFICPPFLAGS"
+			LB_CHECK_COMPILE([if kfabric headers are present], KFI_header,
+			[
+				#include <kfi_endpoint.h>
+			],[
+				struct kfi_info *hints;
+				hints = kfi_allocinfo();
+			],[
+				KFILND="kfilnd"
+				AC_MSG_NOTICE([adding $with_kfi/Module.symvers to Symbol Path])
+				EXTRA_SYMBOLS="$EXTRA_SYMBOLS $with_kfi/Module.symvers"
+			],[
+				AC_MSG_ERROR([can't compile kfilnd with given KFICPPFLAGS: $KFICPPFLAGS])
+			])
+		],[
+			AC_MSG_ERROR(["$with_kfi/Module.symvers does not exist"])
+		])
+	],[])
 AC_SUBST(KFICPPFLAGS)
 AC_SUBST(KFILND)
 AC_SUBST(EXTRA_SYMBOLS)
