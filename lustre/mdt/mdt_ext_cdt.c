@@ -550,12 +550,6 @@ int ext_cdt_send_hsm_progress(struct mdt_thread_info *mti,
 			goto out;
 	}
 
-	if (hpk->hpk_flags & HP_FLAG_BEGIN &&
-	    hpk->hpk_action == HSMA_ARCHIVE) {
-		hsm_init_ucred(mdt_ucred(mti));
-		mdt_hsm_set_exists(mti, &hpk->hpk_fid, 0);
-	}
-
 	rc = netlink_send_msg(EXT_HSM_PROGRESS, hpk,
 			      sizeof(struct hsm_progress_kernel_v2));
 	if (rc)
@@ -587,10 +581,12 @@ bool ext_cdt_is_restore_running(struct mdt_thread_info *mti,
 int ext_cdt_send_request(struct mdt_thread_info *mti,
 			 struct hsm_action_list *hal)
 {
+	struct coordinator *cdt = &mti->mti_mdt->mdt_coordinator;
 	struct hsm_action_item *hai;
 	struct md_hsm mh;
 	struct mdt_object *obj;
 	bool is_restore = false;
+	bool uc_init = false;
 	int i = 0;
 	int rc = 0;
 
@@ -636,6 +632,14 @@ int ext_cdt_send_request(struct mdt_thread_info *mti,
 			rc = -EPERM;
 			goto out;
 		}
+
+		/* If an archive id has been explicitly specified use it, if not
+		 * and one exists in the HSM xattr use that, otherwise use the
+		 * default archive id
+		 */
+		if (hal->hal_archive_id == 0)
+			hal->hal_archive_id = mh.mh_arch_id ? :
+					      cdt->cdt_default_archive_id;
 	}
 
 	for (hai = hai_first(hal), i = 0; i < hal->hal_count;
@@ -646,14 +650,60 @@ int ext_cdt_send_request(struct mdt_thread_info *mti,
 
 		get_random_bytes(&hai->hai_cookie, sizeof(hai->hai_cookie));
 
-		if (hai->hai_action == HSMA_RESTORE) {
+		switch (hai->hai_action) {
+		case HSMA_ARCHIVE:
+			/* Set the exists HSM flag and the archive id */
+			if (!uc_init) {
+				struct lu_ucred *uc = mdt_ucred(mti);
+
+				/* Use a root ucred for mdt_hsm_set_exists(); don't call
+				 * hsm_init_ucred() as it sets uc_ginfo and uc_identity
+				 * to NULL, but callers of this function expect valid
+				 * pointers as they call mdt_exit_ucred() to clean up
+				 * mdt_ucred()
+				 */
+				uc->uc_o_uid = 0;
+				uc->uc_o_gid = 0;
+				uc->uc_o_fsuid = 0;
+				uc->uc_o_fsgid = 0;
+				uc->uc_uid = 0;
+				uc->uc_gid = 0;
+				uc->uc_fsuid = 0;
+				uc->uc_fsgid = 0;
+				uc->uc_suppgids[0] = -1;
+				uc->uc_suppgids[1] = -1;
+				uc->uc_cap = CFS_CAP_FS_MASK;
+				uc->uc_umask = 0777;
+
+				uc_init = true;
+			}
+
+			rc = mdt_hsm_set_exists(mti, &hai->hai_fid,
+						hal->hal_archive_id);
+			if (rc == -ENOENT) {
+				/* Ignore ENOENT errors */
+				break;
+			} else if (rc < 0) {
+				/* Don't unset HS_EXISTS in case of error to
+				 * match the behavior of the internal CDT; this
+				 * could probably be changed for both types of
+				 * CDTs at some point
+				 */
+				goto out;
+			}
+			break;
+		case HSMA_RESTORE:
 			is_restore = true;
+
 			rc = get_hsm_layout_lock(&hai->hai_fid,
 						 hai->hai_action,
 						 hai->hai_cookie, mti);
+			if (rc)
+				goto out;
+			break;
+		default:
+			break;
 		}
-		if (rc)
-			goto out;
 	}
 
 	rc = netlink_send_msg(EXT_HSM_REQUEST, hal, hal_size(hal));

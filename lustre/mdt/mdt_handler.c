@@ -6078,6 +6078,7 @@ static int mdt_export_cleanup(struct obd_export *exp)
 	struct mdt_device	*mdt;
 	struct mdt_thread_info	*info;
 	struct lu_env		 env;
+	struct lu_context	 session;
 	struct mdt_file_data	*mfd, *n;
 	int rc = 0;
 	ENTRY;
@@ -6100,6 +6101,14 @@ static int mdt_export_cleanup(struct obd_export *exp)
         rc = lu_env_init(&env, LCT_MD_THREAD);
         if (rc)
                 RETURN(rc);
+
+	/* Needed for ext_cdt_send_request()->mdt_hsm_set_exists() */
+	rc = lu_context_init(&session, LCT_SERVER_SESSION);
+	if (rc < 0)
+		GOTO(out, rc);
+
+	lu_context_enter(&session);
+	env.le_ses = &session;
 
         info = lu_context_key_get(&env.le_ctx, &mdt_thread_key);
         LASSERT(info != NULL);
@@ -6147,6 +6156,10 @@ static int mdt_export_cleanup(struct obd_export *exp)
         /* Do not erase record for recoverable client. */
         if (!(exp->exp_flags & OBD_OPT_FAILOVER) || exp->exp_failed)
 		tgt_client_del(&env, exp);
+
+	lu_context_exit(&session);
+	lu_context_fini(&session);
+out:
         lu_env_fini(&env);
 
         RETURN(rc);

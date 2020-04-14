@@ -1278,10 +1278,6 @@ test_10a() {
 	echo "Verifying hsm state "
 	check_hsm_flags $f "0x00000009"
 
-	[[ "$COORDINATOR" == "external" ]] &&
-		echo "External coordinator doesn't store archive id; exiting" &&
-		exit 0
-
 	echo "Verifying archive number is $HSM_ARCHIVE_NUMBER"
 	local st=$(get_hsm_archive_id $f)
 	[[ $st == $HSM_ARCHIVE_NUMBER ]] ||
