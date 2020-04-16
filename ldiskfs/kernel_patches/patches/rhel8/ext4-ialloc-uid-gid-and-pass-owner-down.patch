@@ -1,0 +1,109 @@
+From 630a4d31ccad536181c0f0cc7193fe5512051216 Mon Sep 17 00:00:00 2001
+From: Shaun Tancheff <shaun.tancheff@hpe.com>
+Date: Thu, 16 Apr 2020 12:27:25 -0500
+Subject: [PATCH] pass owner and inode times directly
+
+This patch reorganizes the ldiskfs patch series in
+order to accommodate struct iattr being added to
+ldiskfs_create_inode.
+---
+ fs/ext4/ext4.h   | 10 ++++++----
+ fs/ext4/ialloc.c |  9 ++++++++-
+ fs/ext4/namei.c  | 17 +++++++++++++++--
+ 3 files changed, 29 insertions(+), 7 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index c497b1e..be8c367 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -2540,15 +2540,15 @@ extern struct inode *__ext4_new_inode(handle_t *, struct inode *, umode_t,
+ 				      const struct qstr *qstr, __u32 goal,
+ 				      uid_t *owner, __u32 i_flags,
+ 				      int handle_type, unsigned int line_no,
+-				      int nblocks);
++				      int nblocks, struct iattr *iattr);
+ 
+ #define ext4_new_inode(handle, dir, mode, qstr, goal, owner, i_flags) \
+ 	__ext4_new_inode((handle), (dir), (mode), (qstr), (goal), (owner), \
+-			 i_flags, 0, 0, 0)
++			 i_flags, 0, 0, 0, NULL)
+ #define ext4_new_inode_start_handle(dir, mode, qstr, goal, owner, \
+ 				    type, nblocks)		    \
+ 	__ext4_new_inode(NULL, (dir), (mode), (qstr), (goal), (owner), \
+-			 0, (type), __LINE__, (nblocks))
++			 0, (type), __LINE__, (nblocks), NULL)
+ 
+ 
+ extern void ext4_free_inode(handle_t *, struct inode *);
+@@ -2673,7 +2673,9 @@ extern int ext4_dirent_csum_verify(struct inode *inode,
+ extern int ext4_orphan_add(handle_t *, struct inode *);
+ extern int ext4_orphan_del(handle_t *, struct inode *);
+ extern struct inode *ext4_create_inode(handle_t *handle,
+-				       struct inode *dir, int mode);
++				       struct inode *dir, int mode,
++				       uid_t *owner,
++				       struct iattr *iattr);
+ extern int ext4_delete_entry(handle_t *handle, struct inode * dir,
+ 			     struct ext4_dir_entry_2 *de_del,
+ 			     struct buffer_head *bh);
+diff --git a/fs/ext4/ialloc.c b/fs/ext4/ialloc.c
+index 668b0b6..efb01e6 100644
+--- a/fs/ext4/ialloc.c
++++ b/fs/ext4/ialloc.c
+@@ -744,7 +744,7 @@ struct inode *__ext4_new_inode(handle_t *handle, struct inode *dir,
+ 			       umode_t mode, const struct qstr *qstr,
+ 			       __u32 goal, uid_t *owner, __u32 i_flags,
+ 			       int handle_type, unsigned int line_no,
+-			       int nblocks)
++			       int nblocks, struct iattr *iattr)
+ {
+ 	struct super_block *sb;
+ 	struct buffer_head *inode_bitmap_bh = NULL;
+@@ -1089,6 +1089,13 @@ got:
+ 	inode->i_mtime = inode->i_atime = inode->i_ctime = current_time(inode);
+ 	ei->i_crtime = timespec64_to_timespec(inode->i_mtime);
+ 
++	if (iattr && iattr->ia_ctime.tv_nsec != UTIME_OMIT)
++		inode->i_ctime = iattr->ia_ctime;
++	if (iattr && iattr->ia_mtime.tv_nsec != UTIME_OMIT)
++		inode->i_mtime = iattr->ia_mtime;
++	if (iattr && iattr->ia_atime.tv_nsec != UTIME_OMIT)
++		inode->i_atime = iattr->ia_atime;
++
+ 	memset(ei->i_data, 0, sizeof(ei->i_data));
+ 	ei->i_dir_start_lookup = 0;
+ 	ei->i_disksize = 0;
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index a3e886e..ed104e9 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -3022,11 +3022,24 @@ static int ext4_add_nondir(handle_t *handle,
+ 
+  /* Return locked inode, then the caller can modify the inode's states/flags
+   * before others finding it. The caller should unlock the inode by itself. */
+-struct inode *ext4_create_inode(handle_t *handle, struct inode *dir, int mode)
++struct inode *ext4_create_inode(handle_t *handle, struct inode *dir, int mode,
++				uid_t *owner, struct iattr *iattr)
+ {
+ 	struct inode *inode;
++	uid_t s_owner[2] = { -1, -1 };
+ 
+-	inode = ext4_new_inode(handle, dir, mode, NULL, 0, NULL, 0);
++	if (owner) {
++		s_owner[0] = owner[0];
++		s_owner[1] = owner[1];
++	} else if (iattr) {
++		if (iattr->ia_valid & ATTR_UID)
++			s_owner[0] = from_kuid(&init_user_ns, iattr->ia_uid);
++		if (iattr->ia_valid & ATTR_GID)
++			s_owner[1] = from_kgid(&init_user_ns, iattr->ia_gid);
++	}
++
++	inode = __ext4_new_inode(handle, dir, mode, NULL, 0, s_owner, 0,
++				 0, 0, 0, iattr);
+ 	if (!IS_ERR(inode)) {
+ 		if (S_ISCHR(mode) || S_ISBLK(mode) || S_ISFIFO(mode)) {
+ #ifdef CONFIG_LDISKFS_FS_XATTR
+-- 
+2.20.1
+
