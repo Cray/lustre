@@ -126,10 +126,14 @@ static int jobid_should_free_item(void *obj, void *data)
 	if (obj == NULL)
 		return 0;
 
+	if (jobid == NULL) {
+		WARN_ON_ONCE(atomic_read(&pidmap->jp_refcount) != 1);
+		return 1;
+	}
+
 	spin_lock(&pidmap->jp_lock);
-	if (jobid == NULL)
-		rc = 1;
-	else if (jobid[0] == '\0')
+	/* prevent newly inserted items from deleting */
+	if (jobid[0] == '\0' && atomic_read(&pidmap->jp_refcount) == 1)
 		rc = 1;
 	else if (ktime_get_real_seconds() - pidmap->jp_time > DELETE_INTERVAL)
 		rc = 1;
@@ -213,6 +217,12 @@ static int jobid_get_from_cache(char *jobid, size_t joblen)
 		pidmap->jp_jobid[0] = '\0';
 		spin_lock_init(&pidmap->jp_lock);
 		INIT_HLIST_NODE(&pidmap->jp_hash);
+		/*
+		 * @pidmap might be reclaimed just after it is added into
+		 * hash list, init @jp_refcount as 1 to make sure memory
+		 * could be not freed during access.
+		 */
+		atomic_set(&pidmap->jp_refcount, 1);
 
 		/*
 		 * Add the newly created map to the hash, on key collision we
@@ -226,8 +236,6 @@ static int jobid_get_from_cache(char *jobid, size_t joblen)
 			       pid);
 			OBD_FREE_PTR(pidmap);
 			pidmap = pidmap2;
-		} else {
-			cfs_hash_get(jobid_hash, &pidmap->jp_hash);
 		}
 	}
 
