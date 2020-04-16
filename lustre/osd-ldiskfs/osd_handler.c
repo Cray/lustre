@@ -3097,9 +3097,9 @@ static struct dentry *osd_child_dentry_get(const struct lu_env *env,
 	return osd_child_dentry_by_inode(env, obj->oo_inode, name, namelen);
 }
 
-static inline struct timespec sec_or_omit(s64 s, unsigned int flag)
+static inline struct osd_timespec sec_or_omit(unsigned int flag, s64 s)
 {
-	struct timespec ts = { .tv_sec = 0, .tv_nsec = 0 };
+	struct osd_timespec ts = { .tv_sec = 0, .tv_nsec = 0 };
 
 	if (flag)
 		ts.tv_sec = s;
@@ -3843,9 +3843,9 @@ static struct inode *osd_create_local_agent_inode(const struct lu_env *env,
 	if (unlikely(pobj->oo_inode->i_mode & S_ISGID)) {
 		/* Only this combination of attrs is allowed by ldiskfs */
 		iattr.ia_valid = ATTR_ATIME | ATTR_CTIME | ATTR_MTIME;
-		iattr.ia_atime = ((struct timespec) { .tv_nsec = UTIME_OMIT });
-		iattr.ia_ctime = ((struct timespec) { .tv_nsec = UTIME_OMIT });
-		iattr.ia_mtime = ((struct timespec) { .tv_nsec = UTIME_OMIT });
+		iattr.ia_atime = sec_or_omit(false, 0ll);
+		iattr.ia_ctime = sec_or_omit(false, 0ll);
+		iattr.ia_mtime = sec_or_omit(false, 0ll);
 		piattr = &iattr;
 	}
 
