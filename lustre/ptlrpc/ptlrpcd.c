@@ -479,8 +479,12 @@ static int ptlrpcd(void *arg)
 		time64_t timeout;
 
                 timeout = ptlrpc_set_next_timeout(set);
-		lwi = LWI_TIMEOUT(cfs_time_seconds(timeout),
-				ptlrpc_expired_set, set);
+		if (timeout < 0) {
+			ptlrpc_expired_set(set);
+			timeout = 1;
+		}
+
+		lwi = LWI_TIMEOUT(cfs_time_seconds(timeout), NULL, NULL);
 
 		lu_context_enter(&env.le_ctx);
 		lu_context_enter(env.le_ses);
