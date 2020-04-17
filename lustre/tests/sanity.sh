@@ -21722,6 +21722,20 @@ test_820() {
 }
 run_test 820 "failed osd-zfs mount should not crash"
 
+test_821() {
+	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs"
+	$LFS mkdir -i1 -c2 $DIR/$tdir
+
+	touch $DIR/$tdir/f1 || error "touch failed"
+
+	fail mds2
+
+#define OBD_FAIL_PTLRPC_DROP_REQ_OPC     0x513
+	do_facet mds1 "$LCTL set_param fail_loc=0x80000513 fail_val=900"
+	rm $DIR/$tdir/f1 || error "rm failed"
+}
+run_test 821 "FLD_QUERY timeout on unlink"
+
 #
 # tests that do cleanup/setup should be run at the end
 #

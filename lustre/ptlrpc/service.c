@@ -2044,12 +2044,12 @@ ptlrpc_server_handle_req_in(struct ptlrpc_service_part *svcpt,
                 goto err_req;
         }
 
-        if (OBD_FAIL_CHECK(OBD_FAIL_PTLRPC_DROP_REQ_OPC) &&
-            lustre_msg_get_opc(req->rq_reqmsg) == cfs_fail_val) {
+	if (unlikely(lustre_msg_get_opc(req->rq_reqmsg) == cfs_fail_val &&
+		     OBD_FAIL_CHECK(OBD_FAIL_PTLRPC_DROP_REQ_OPC))) {
 		CERROR("drop incoming rpc opc %u, x%llu\n",
-                       cfs_fail_val, req->rq_xid);
-                goto err_req;
-        }
+		       cfs_fail_val, req->rq_xid);
+		goto err_req;
+	}
 
         rc = -EINVAL;
         if (lustre_msg_get_type(req->rq_reqmsg) != PTL_RPC_MSG_REQUEST) {
