@@ -41,6 +41,7 @@
 #include <libcfs/libcfs.h>
 #include <linux/module.h>
 #include <linux/math64.h>
+#include <linux/delay.h>
 
 #include <obd.h>
 #include <obd_class.h>
@@ -347,6 +348,7 @@ int fld_client_rpc(struct obd_export *exp,
 	LASSERT(exp != NULL);
 
 	imp = class_exp2cliimp(exp);
+again:
 	switch (fld_op) {
 	case FLD_QUERY:
 		req = ptlrpc_request_alloc_pack(imp, &RQF_FLD_QUERY,
@@ -417,11 +419,14 @@ int fld_client_rpc(struct obd_export *exp,
 		    imp->imp_connect_flags_orig & OBD_CONNECT_MDS_MDS &&
 		    OCD_HAS_FLAG(&imp->imp_connect_data, LIGHTWEIGHT) &&
 		    rc != -ENOTSUPP) {
-			/*
-			 * Since LWP is not replayable, so notify the caller
-			 * to retry if needed after a while.
-			 */
+			/* LWP is not replayable, retry after a while */
 			rc = -EAGAIN;
+		}
+		if (rc == -EAGAIN) {
+			ptlrpc_req_finished(req);
+			ssleep(2);
+			rc = 0;
+			goto again;
 		}
 		GOTO(out_req, rc);
 	}
