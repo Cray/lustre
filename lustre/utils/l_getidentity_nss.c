@@ -75,6 +75,15 @@ static void *nss_grent_buf = NULL;
 #define NSS_MODULE_NAME_SIZE 32
 
 static int g_n_nss_modules = 0;
+static int g_n_only_module = -1;
+
+/* the module is used for user id lookup */
+#define NSS_MODULE_FL_USER  0x1
+/* the module is used for fetching supplemetary groups */
+#define NSS_MODULE_FL_GROUP 0x2
+/* once user id is found by this module, only this module is used
+ * for fetching supplemetary groups */
+#define NSS_MODULE_FL_ONLY  0x4
 
 struct nss_module {
 	char name[NSS_MODULE_NAME_SIZE];
@@ -103,6 +112,7 @@ struct nss_module {
 			FILE *f_group;
 		} files;
 	} u;
+	unsigned int flags;
 };
 
 static struct nss_module g_nss_modules[NSS_MODULES_MAX_NR];
@@ -143,8 +153,13 @@ static struct passwd *getpwuid_nss(uid_t uid)
 	for (i = 0; i < g_n_nss_modules; i++) {
 		struct nss_module *mod = g_nss_modules + i;
 
-		if (mod->getpwuid(mod, uid, &pw) == 0)
+		if (!(mod->flags & NSS_MODULE_FL_USER))
+			continue;
+		if (mod->getpwuid(mod, uid, &pw) == 0) {
+			if (mod->flags & NSS_MODULE_FL_ONLY)
+				g_n_only_module = i;
 			return &pw;
+		}
 	}
 	return NULL;
 }
@@ -521,6 +536,10 @@ static int get_groups_nss(struct identity_downcall_data *data,
 	for (i = 0; i < g_n_nss_modules; i++) {
 		struct nss_module *mod = g_nss_modules + i;
 
+		if (!(mod->flags & NSS_MODULE_FL_GROUP))
+			continue;
+		if (g_n_only_module >= 0 && i != g_n_only_module)
+			continue;
 		mod->grouplist(mod, pw_name, pw->pw_gid, groups, &ngroups,
 				maxgroups);
 	}
@@ -723,25 +742,61 @@ static char *striml(char *s)
 	return s;
 }
 
-static void check_new_module(struct nss_module *mod)
+static void check_new_module(const char *name)
 {
 	int i;
+
+	if (strlen(name) == 0) {
+		errlog("Empty module name\n");
+		exit(-1);
+	}
 
 	for (i = 0; i < g_n_nss_modules; i++) {
 		struct nss_module *pos = g_nss_modules + i;
 
-		if (!strcmp(mod->name, pos->name)) {
+		if (!strcmp(name, pos->name)) {
 			errlog("attempt to initialize \"%s\" module twice\n",
-				pos->name);
+				name);
 			exit(-1);
 		}
 	}
 }
 
 /**
+ Parse module options and set module lookup flags
+ */
+static void parse_mod_options(struct nss_module *mod, char *opts)
+{
+	char *opt;
+
+	/* clear default flags if the module has options */
+	mod->flags = 0;
+
+	while((opt = strsep(&opts,",")) != NULL) {
+		if (strlen(opt) == 0) {
+			continue;
+		} else if (!strcmp(opt, "user")) {
+			mod->flags |= NSS_MODULE_FL_USER;
+		} else if (!strcmp(opt, "group")) {
+			mod->flags |= NSS_MODULE_FL_GROUP;
+		} else if (!strcmp(opt, "only")) {
+			mod->flags |= NSS_MODULE_FL_ONLY;
+		} else {
+			errlog("Unknown module option \"%s\"", opt);
+			exit(-1);
+		}
+	}
+	/* Enable both user and group lookup for this module if noone
+	 * set explicitly */
+	if (!(mod->flags & (NSS_MODULE_FL_USER | NSS_MODULE_FL_GROUP)))
+		mod->flags |= NSS_MODULE_FL_USER | NSS_MODULE_FL_GROUP;
+
+}
+
+/**
  Check and parse lookup db config line.
 */
-static int lookup_db_line(char *line)
+static int parse_lookup_line(char *line)
 {
 	char *p, *tok;
 	int ret = 0;
@@ -750,15 +805,47 @@ static int lookup_db_line(char *line)
 	if (strncmp(p, L_GETIDENTITY_LOOKUP_CMD,
 		sizeof(L_GETIDENTITY_LOOKUP_CMD) - 1))
 			return -EAGAIN;
-	tok = strtok(p, " \t");
+	tok = strsep(&p, " \t");
 	if (tok == NULL || strcmp(tok, L_GETIDENTITY_LOOKUP_CMD))
 		return -EIO;
 
-	while((tok = strtok(NULL, " \t\n")) != NULL) {
+	if (g_n_nss_modules != 0) {
+		errlog("Lookup cmd was processed already\n");
+		exit(-1);
+	}
+
+	while((tok = strsep(&p, " \t\n")) != NULL) {
 		struct nss_module *newmod = g_nss_modules + g_n_nss_modules;
+		int tok_len = strlen(tok);
+		char *opt_start, *opt_end;
+
+		if (tok_len == 0)
+			continue;
 
 		if (g_n_nss_modules >= NSS_MODULES_MAX_NR)
 			return -ERANGE;
+
+		newmod->flags = NSS_MODULE_FL_USER | NSS_MODULE_FL_GROUP;
+
+		opt_start = strchr(tok,'[');
+		if (opt_start != NULL) {
+			*opt_start++ = 0;
+			opt_end = strchr(opt_start, ']');
+			if (opt_end != NULL) {
+				*opt_end++ =0;
+				if (*opt_end != 0) {
+					errlog("Module options parse error");
+					exit(-1);
+				}
+				parse_mod_options(newmod, opt_start);
+			} else {
+				errlog("Module options parse error -- unbalanced []");
+				exit(-1);
+			}
+		}
+
+		check_new_module(tok);
+
 		if (!strcmp(tok, "files")) {
 			ret = init_files_module(newmod);
 		} else {
@@ -766,7 +853,7 @@ static int lookup_db_line(char *line)
 		}
 		if (ret)
 			break;
-		check_new_module(newmod);
+
 		g_n_nss_modules++;
 	}
 
@@ -795,7 +882,7 @@ static int get_perms(struct identity_downcall_data *data)
 
 		if (comment_line(line))
 			continue;
-		ret = lookup_db_line(line);
+		ret = parse_lookup_line(line);
 		if (ret == 0)
 			continue;
 		if (ret == -EIO)
