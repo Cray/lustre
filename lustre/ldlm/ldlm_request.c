@@ -1389,8 +1389,9 @@ static inline struct ldlm_pool *ldlm_imp2pl(struct obd_import *imp)
  */
 int ldlm_cli_update_pool(struct ptlrpc_request *req)
 {
+	struct ldlm_namespace *ns;
         struct obd_device *obd;
-        __u64 new_slv;
+        __u64 new_slv, ratio;
         __u32 new_limit;
         ENTRY;
         if (unlikely(!req->rq_import || !req->rq_import->imp_obd ||
@@ -1420,15 +1421,39 @@ int ldlm_cli_update_pool(struct ptlrpc_request *req)
         new_slv = lustre_msg_get_slv(req->rq_repmsg);
         obd = req->rq_import->imp_obd;
 
-	/* Set new SLV and limit in OBD fields to make them accessible
-	 * to the pool thread. We do not access obd_namespace and pool
-	 * directly here as there is no reliable way to make sure that
-	 * they are still alive at cleanup time. Evil races are possible
-	 * which may cause Oops at that time. */
+	/**
+	 * OBD device keeps the new pool attributes before they are handled by
+	 * the pool.
+	 */
 	write_lock(&obd->obd_pool_lock);
         obd->obd_pool_slv = new_slv;
         obd->obd_pool_limit = new_limit;
 	write_unlock(&obd->obd_pool_lock);
+
+	/**
+	 * Check if an urgent pool recalc is needed, let it to be a change of
+	 * SLV on 10%. It is applicable to LRU resize enabled case only.
+	 */
+	ns = obd->obd_namespace;
+	if (!ns_connect_lru_resize(ns) ||
+	    ldlm_pool_get_slv(&ns->ns_pool) < new_slv)
+		RETURN(0);
+
+	ratio = 100 * new_slv / ldlm_pool_get_slv(&ns->ns_pool);
+	if (100 - ratio >= ns->ns_change_slv &&
+	    !ns->ns_stopping && !ns->ns_rpc_recalc) {
+		int recalc = 0;
+
+		spin_lock(&ns->ns_lock);
+		if (!ns->ns_stopping && !ns->ns_rpc_recalc) {
+			ldlm_namespace_get(ns);
+			recalc = 1;
+			ns->ns_rpc_recalc = 1;
+		}
+		spin_unlock(&ns->ns_lock);
+		if (recalc)
+			ldlm_bl_to_thread_ns(ns);
+	}
 
         RETURN(0);
 }
