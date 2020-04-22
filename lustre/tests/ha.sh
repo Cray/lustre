@@ -223,6 +223,7 @@ declare     ha_mdtest_params=${MDTESTP:-'" -i 1 -n 1000"'}
 declare     ha_mpirun_options=${MPIRUN_OPTIONS:-""}
 declare     ha_clients_stripe=${CLIENTSSTRIPE:-'"$STRIPEPARAMS"'}
 declare     ha_nclientsset=${NCLIENTSSET:-1}
+declare     ha_ninstmustfail=${NINSTMUSTFAIL:-1}
 
 declare     ha_racer_params=${RACERP:-"MDSCOUNT=1"}
 
@@ -418,6 +419,7 @@ ha_repeat_mpi_load()
 	local machines=$5
 	local stripeparams=$6
 	local mpiuser=$7
+	local mustpass=$8
 	local tag=${ha_mpi_load_tags[$load]}
 	local cmd=${ha_mpi_load_cmds[$tag]}
 	local dir=$ha_test_dir/$client-$tag
@@ -431,6 +433,7 @@ ha_repeat_mpi_load()
 	cmd=${cmd//"{}"/$dir}
 	cmd=${cmd//"{params}"/$parameter}
 
+	[[ -n "$ha_postcmd" ]] && ha_postcmd=${ha_postcmd//"{}"/$dir}
 	ha_info "Starting $tag"
 
 	machines="-machinefile $machines"
@@ -454,25 +457,38 @@ ha_repeat_mpi_load()
 		ha_on ${ha_clients[0]} "$check_attrs   &&                     \
 					sleep 60 &&                           \
 					$check_attrs " && rccheck=1
-		((rc == 0)) && ((rccheck == 0)) &&
+		[[ -n "$ha_postcmd" ]] && ha_info "$ha_postcmd" &&
+			ha_on $client $ha_postcmd >>"$log" 2>&1
+		(( ((rc == 0)) && ((rccheck == 0)) && (( mustpass != 0 )) )) ||
+		(( ((rc != 0)) && ((rccheck == 0)) && (( mustpass == 0 )) )) &&
 		ha_on $client rm -rf "$dir";
 		} >>"$log" 2>&1
 
-		ha_info rc=$rc rccheck=$rccheck
+		ha_info rc=$rc rccheck=$rccheck mustpass=$mustpass
 
-		if (( (rc + rccheck) != 0 )); then
+		# mustpass=0 means that failure is expected
+		if (( rccheck != 0 )); then
 			touch "$ha_fail_file"
 			touch "$ha_stop_file"
 			ha_dump_logs "${ha_clients[*]} ${ha_servers[*]}"
+		elif (( rc !=0 )); then
+			if (( mustpass != 0 )); then
+				touch "$ha_fail_file"
+				touch "$ha_stop_file"
+				ha_dump_logs "${ha_clients[*]} ${ha_servers[*]}"
+			else
+				# Ok to fail
+				rc=0
+			fi
 		fi
-		echo $rc >"$status"
+		echo rc=$rc rccheck=$rccheck mustpass=$mustpass >"$status"
 
 		nr_loops=$((nr_loops + 1))
 	done
 
 	avg_loop_time=$((($(date +%s) - start_time) / nr_loops))
 
-	ha_info "$tag stopped: rc $rc avg loop time $avg_loop_time"
+	ha_info "$tag stopped: rc=$rc mustpass=$mustpass avg loop time $avg_loop_time"
 }
 
 ha_start_mpi_loads()
@@ -536,7 +552,8 @@ ha_start_mpi_loads()
 			local stripe=${!aref}
 			local m=$(( n % ha_nclientsset))
 			machines=${mach[m]}
-			ha_repeat_mpi_load $client $load $status "$parameter" $machines "$stripe" "$mpiuser" &
+			local mustpass=$(( n % ha_ninstmustfail))
+			ha_repeat_mpi_load $client $load $status "$parameter" $machines "$stripe" "$mpiuser" "$mustpass" &
 				ha_status_files+=("$status")
 		done
 	done
