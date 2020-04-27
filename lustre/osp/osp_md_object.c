@@ -1019,6 +1019,15 @@ int osp_md_declare_destroy(const struct lu_env *env, struct dt_object *dt,
 	return osp_trans_update_request_create(th);
 }
 
+static int osp_destroy_interpreter(const struct lu_env *env,
+				   struct object_update_reply *reply,
+				   struct ptlrpc_request *req,
+				   struct osp_object *obj,
+				   void *data, int index, int rc)
+{
+	return 0;
+}
+
 /**
  * Implement OSP layer dt_object_operations::do_destroy() interface.
  *
@@ -1041,9 +1050,10 @@ int osp_md_destroy(const struct lu_env *env, struct dt_object *dt,
 	struct osp_device *osp = lu2osp_dev(dt->do_lu.lo_dev);
 	struct osp_update_request *update;
 	int rc = 0;
-
 	ENTRY;
+
 	o->opo_non_exist = 1;
+	o->opo_destroyed = 1;
 
 	LASSERT(osp->opd_connect_mdt);
 	update = thandle_to_osp_update_request(th);
@@ -1051,6 +1061,12 @@ int osp_md_destroy(const struct lu_env *env, struct dt_object *dt,
 
 	rc = OSP_UPDATE_RPC_PACK(env, out_destroy_pack, update,
 				 lu_object_fid(&dt->do_lu));
+	if (rc != 0)
+		RETURN(rc);
+
+	/* retain the object and it's status until it's destroyed on remote */
+	rc = osp_insert_update_callback(env, update, o, NULL,
+					osp_destroy_interpreter);
 	if (rc != 0)
 		RETURN(rc);
 
@@ -1115,6 +1131,9 @@ static ssize_t osp_md_declare_write(const struct lu_env *env,
 	struct osp_device *osp = dt2osp_dev(th->th_dev);
 	int rc;
 
+	if (dt2osp_obj(dt)->opo_destroyed)
+		return -ENOENT;
+
 	rc = osp_trans_update_request_create(th);
 	if (rc != 0)
 		return rc;
@@ -1170,6 +1189,9 @@ static ssize_t osp_md_write(const struct lu_env *env, struct dt_object *dt,
 	struct osp_thandle	  *oth = thandle_to_osp_thandle(th);
 	ssize_t			  rc;
 	ENTRY;
+
+	if (obj->opo_destroyed)
+		RETURN(-ENOENT);
 
 	update = thandle_to_osp_update_request(th);
 	LASSERT(update != NULL);
@@ -1237,6 +1259,9 @@ static ssize_t osp_md_read(const struct lu_env *env, struct dt_object *dt,
 	int i;
 	int rc;
 	ENTRY;
+
+	if (dt2osp_obj(dt)->opo_destroyed)
+		RETURN(-ENOENT);
 
 	/* Because it needs send the update buffer right away,
 	 * just create an update buffer, instead of attaching the
