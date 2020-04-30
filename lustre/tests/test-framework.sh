@@ -4135,7 +4135,7 @@ detect_active() {
 	# active facet is ${facet}failover if device is mounted on failover
 	# on other cases active facet is $facet
 	[[ $dev = $(do_node $failover \
-			lctl get_param -n *.$svc.mntdev | head -1 2>/dev/null) ]] &&
+			lctl get_param -n *.$svc.mntdev 2>/dev/null | head -1 ) ]] &&
 		echo ${facet}failover && return
 
 	echo $facet
