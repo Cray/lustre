@@ -1059,25 +1059,27 @@ out:
 /** Create the destination volatile file for a restore operation.
  *
  * \param hcp        Private copyaction handle.
+ * \param hai	     Copytool instance of the hai for saving the dfid.
  * \param mdt_index  MDT index where to create the volatile file.
  * \param flags      Volatile file creation flags.
  * \return 0 on success.
  */
 static int create_restore_volatile(struct hsm_copyaction_private *hcp,
+				   struct hsm_action_item *hai,
 				   int mdt_index, int open_flags)
 {
 	int			 rc;
 	int			 fd;
 	char			 parent[PATH_MAX + 1];
 	const char		*mnt = hcp->ct_priv->mnt;
-	struct hsm_action_item	*hai = &hcp->copy.hc_hai;
+	struct hsm_action_item	*hai_copy = &hcp->copy.hc_hai;
 
-	rc = fid_parent(mnt, &hai->hai_fid, parent, sizeof(parent));
+	rc = fid_parent(mnt, &hai_copy->hai_fid, parent, sizeof(parent));
 	if (rc < 0) {
 		/* fid_parent() failed, try to keep on going */
 		llapi_error(LLAPI_MSG_ERROR, rc,
 			    "cannot get parent path to restore "DFID" "
-			    "using '%s'", PFID(&hai->hai_fid), mnt);
+			    "using '%s'", PFID(&hai_copy->hai_fid), mnt);
 		snprintf(parent, sizeof(parent), "%s", mnt);
 	}
 
@@ -1089,9 +1091,19 @@ static int create_restore_volatile(struct hsm_copyaction_private *hcp,
 	if (rc < 0)
 		goto err_cleanup;
 
-	rc = llapi_fd2fid(fd, &hai->hai_dfid);
+	rc = llapi_fd2fid(fd, &hai_copy->hai_dfid);
 	if (rc < 0)
 		goto err_cleanup;
+
+	/* Copy the fid of the volatile file created to the copytool instance of
+	 * the hai. When a restore request is canceled the
+	 * ioctl(LL_IOC_HSM_COPY_START) call in llapi_hsm_action_begin() fails,
+	 * which causes hcp to be freed and the dfid in its copy of the hai
+	 * lost. The final progress message sent to the CDT needs to contain the
+	 * correct dfid to pass checks in req_is_valid(); it uses the dfid from
+	 * the copytool's instance of the hai in the cancellation case
+	 */
+	hai->hai_dfid = hai_copy->hai_dfid;
 
 	hcp->data_fd = fd;
 
@@ -1162,10 +1174,12 @@ int llapi_hsm_action_begin(struct hsm_copyaction_private **phcp,
 		if (rc < 0)
 			goto err_out;
 
-		rc = create_restore_volatile(hcp, restore_mdt_index,
+		rc = create_restore_volatile(hcp, (struct hsm_action_item *)hai,
+					     restore_mdt_index,
 					     restore_open_flags);
 		if (rc < 0)
 			goto err_out;
+
 	} else if (hai->hai_action == HSMA_REMOVE) {
 		/* Since remove is atomic there is no need to send an
 		 * initial MDS_HSM_PROGRESS RPC. */
