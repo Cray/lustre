@@ -21,7 +21,7 @@
 
 #include "socklnd.h"
 
-static int sock_timeout = 50;
+static int sock_timeout;
 module_param(sock_timeout, int, 0644);
 MODULE_PARM_DESC(sock_timeout, "dead socket timeout (seconds)");
 
