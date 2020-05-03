@@ -28,6 +28,9 @@ fi
 racer_cleanup()
 {
 	echo "racer cleanup"
+	$LCTL mark "racer_cleanup"
+	$LCTL set_param lbug_on_eviction=0
+
 	for P in $RACER_PROGS; do
 		killall -g -q $P.sh
 	done
