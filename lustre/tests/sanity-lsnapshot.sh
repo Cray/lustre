@@ -335,21 +335,36 @@ test_4() { # LU-10843
 	local exports=$(do_facet mgs "$LCTL get_param -n mgs.MGS.num_exports")
 	local rcount=$(do_facet mgs $rcmd)
 
-	echo "Remount MGT"
+	echo "Initial: exports:$exports resources:$rcount"
 	stop mgs || error "stop mgs failed"
 	start mgs $(mgsdevname) $MGS_MOUNT_OPTS || error "start mgs failed"
 
 	echo "Wait for all reconnects"
 	local CMD="$LCTL get_param -n mgs.MGS.num_exports"
-	wait_update_facet mgs "$CMD" $exports ||
-		lss_err "(1) failed to export from mgs"
+	wait_update_facet mgs "$CMD" $exports
+	local wex_result=$?
+	wait_update_facet mgs "$rcmd" $rcount
+	local wrc_result=$?
 
-	wait_update_facet mgs "$rcmd" $rcount ||
-		lss_err "(2) failed to reconnect mds"
+	local post_exports=$(do_facet mgs
+		"$LCTL get_param -n mgs.MGS.num_exports")
+	local post_rcount=$(do_facet mgs $rcmd)
+	echo "Reconnect: exports:$post_exports resources:$post_rcount"
+
+	if [[ $((wex_result + wrc_result)) -ne 0 ]] ; then
+		echo "Mismatched exports? $wex_result, namespaces? $wrc_result"
+		sleep 5
+	fi
 
 	echo "Create lss_4_0"
-	lsnapshot_create -n lss_4_0 -c "'It is test_4'" ||
-		lss_err "(3) Fail to create lss_4_0"
+	for retry in 1 0; do
+		lsnapshot_create -n lss_4_0 -c "'It is test_4'"
+		err=$?
+		[[ $err -eq 0 ]] && break
+		[[ $retry -eq 0 ]] && lss_err "(3) Fail to create lss_4_0"
+		echo "lsnapshot_create => $err | Retry .. $retry"
+		sleep 5
+	done
 
 	echo "List lss_4_0"
 	lsnapshot_list -n lss_4_0 ||
