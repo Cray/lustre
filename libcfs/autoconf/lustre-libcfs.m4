@@ -88,6 +88,15 @@ nsecs_to_jiffies64, [
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LIBCFS_HAVE_SMP_STORE_LOAD
 
+# Kernel version v3.8-rc4-82-g4f522a247bc2 exported d_hash_and_lookup()
+# It was added in v2.6.16-3821-g3e7e241f8c5c, so no worries about header.
+#
+AC_DEFUN([LIBCFS_D_HASH_AND_LOOKUP],[
+LB_CHECK_EXPORT([d_hash_and_lookup], [fs/dcache.c],
+	[AC_DEFINE(HAVE_D_HASH_AND_LOOKUP, 1,
+		[d_hash_and_lookup is exported by the kernel])])
+]) # LIBCFS_D_HASH_AND_LOOKUP
+
 #
 # Kernel version 3.11 introduced ktime_get_ts64
 #
@@ -1885,6 +1894,7 @@ AC_MSG_NOTICE([LibCFS kernel checks
 LIBCFS_CONFIG_PANIC_DUMPLOG
 
 # 3.8
+LIBCFS_D_HASH_AND_LOOKUP
 LIBCFS_HAVE_IDR_ALLOC
 # 3.11
 LIBCFS_KTIME_GET_TS64
