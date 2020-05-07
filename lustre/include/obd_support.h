@@ -453,6 +453,7 @@ extern char obd_jobid_var[];
 #define OBD_FAIL_PTLRPC_RESEND_RACE	 0x525
 #define OBD_FAIL_PTLRPC_ROUND_XID	 0x530
 #define OBD_FAIL_PTLRPC_CONNECT_RACE	 0x531
+#define OBD_FAIL_NET_ERROR_RPC		 0x532
 
 #define OBD_FAIL_OBD_PING_NET            0x600
 /*	OBD_FAIL_OBD_LOG_CANCEL_NET      0x601 obsolete since 1.5 */
@@ -694,6 +695,7 @@ extern char obd_jobid_var[];
 #define OBD_FAIL_OSP_FAKE_PRECREATE		0x2102
 #define OBD_FAIL_OSP_RPCS_SEM			0x2104
 #define OBD_FAIL_OSP_CON_EVENT_DELAY		0x2105
+#define OBD_FAIL_OSP_PRECREATE_PAUSE		0x2108
 
  /* barrier */
 #define OBD_FAIL_MGS_BARRIER_READ_NET		0x2200
