@@ -685,6 +685,9 @@ static int osp_precreate_send(const struct lu_env *env, struct osp_device *d)
 	if (rc) {
 		CERROR("%s: can't precreate: rc = %d\n", d->opd_obd->obd_name,
 		       rc);
+		if (req->rq_net_err)
+			/* have osp_precreate_reserve() to wait for repeat */
+			rc = -ENOTCONN;
 		GOTO(out_req, rc);
 	}
 	LASSERT(req->rq_transno == 0);
