@@ -223,7 +223,7 @@ declare     ha_mdtest_params=${MDTESTP:-'" -i 1 -n 1000"'}
 declare     ha_mpirun_options=${MPIRUN_OPTIONS:-""}
 declare     ha_clients_stripe=${CLIENTSSTRIPE:-'"$STRIPEPARAMS"'}
 declare     ha_nclientsset=${NCLIENTSSET:-1}
-declare     ha_ninstmustfail=${NINSTMUSTFAIL:-1}
+declare     ha_ninstmustfail=${NINSTMUSTFAIL:-0}
 
 declare     ha_racer_params=${RACERP:-"MDSCOUNT=1"}
 
@@ -480,6 +480,10 @@ ha_repeat_mpi_load()
 				# Ok to fail
 				rc=0
 			fi
+		elif (( mustpass == 0 )); then
+			touch "$ha_fail_file"
+			touch "$ha_stop_file"
+			ha_dump_logs "${ha_clients[*]} ${ha_servers[*]}"
 		fi
 		echo rc=$rc rccheck=$rccheck mustpass=$mustpass >"$status"
 
@@ -552,7 +556,8 @@ ha_start_mpi_loads()
 			local stripe=${!aref}
 			local m=$(( n % ha_nclientsset))
 			machines=${mach[m]}
-			local mustpass=$(( n % ha_ninstmustfail))
+			local mustpass=1
+			[[ $ha_ninstmustfail == 0 ]] || mustpass=$(( n % ha_ninstmustfail ))
 			ha_repeat_mpi_load $client $load $status "$parameter" $machines "$stripe" "$mpiuser" "$mustpass" &
 				ha_status_files+=("$status")
 		done
