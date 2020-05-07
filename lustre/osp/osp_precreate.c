@@ -732,6 +732,9 @@ out_req:
 	osp_pre_update_status(d, rc);
 	wake_up(&d->opd_pre_user_waitq);
 
+	/* let osp_precreate_reserve to continue */
+	CFS_FAIL_TIMEOUT(OBD_FAIL_OSP_PRECREATE_PAUSE, 2);
+
 	ptlrpc_req_finished(req);
 	RETURN(rc);
 }
