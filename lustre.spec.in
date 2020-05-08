@@ -634,7 +634,7 @@ fi
 %{_mandir}/man?/*
 %endif
 %{_datadir}/lustre
-%{_datadir}/bash-completion/completions/*
+@BASH_COMPLETION_DIR@
 %endif
 
 %if %{with shared}
