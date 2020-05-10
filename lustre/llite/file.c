@@ -4135,12 +4135,18 @@ static void ll_file_flock_async_cb(struct ldlm_flock_info *args, int err)
 	 * In this case notify() returns error for already canceled flock.
 	 */
 	if (!(args->fa_flags & FA_FL_CANCELED)) {
+		struct file_lock notify_lock;
+
+		locks_init_lock(&notify_lock);
+		locks_copy_lock(&notify_lock, flc);
+
 		if (err == 0)
 			ll_file_flock_lock(file, flc);
+
 #ifdef HAVE_LM_GRANT_2ARGS
-		rc = args->fa_notify(file_lock, err);
+		rc = args->fa_notify(&notify_lock, err);
 #else
-		rc = args->fa_notify(file_lock, NULL, err);
+		rc = args->fa_notify(&notify_lock, NULL, err);
 #endif
 		if (rc) {
 			CDEBUG(D_ERROR, "notify failed file_lock=%p err=%d\n",
