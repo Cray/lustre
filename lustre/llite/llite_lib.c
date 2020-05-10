@@ -1492,7 +1492,7 @@ static int ll_update_lsm_md(struct inode *inode, struct lustre_md *md)
 			GOTO(unlock, rc = -ENOMEM);
 
 		/* validate the lsm */
-		rc = md_merge_attr(ll_i2mdexp(inode), lsm, attr,
+		rc = md_merge_attr(ll_i2mdexp(inode), &lli->lli_fid, lsm, attr,
 				   ll_md_blocking_ast);
 		if (rc != 0) {
 			OBD_FREE_PTR(attr);
