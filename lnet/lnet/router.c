@@ -179,9 +179,14 @@ lnet_rtr_transfer_to_peer(struct lnet_peer *src, struct lnet_peer *target)
 	lnet_net_unlock(LNET_LOCK_EX);
 }
 
+int
+lnet_peers_start_down(void)
+{
+	return check_routers_before_use;
+}
+
 /*
- * The peer_net of a gateway is alive if at least one of the peer_ni's on
- * that peer_net is alive.
+ * A net is alive if at least one gateway NI on the network is alive.
  */
 static bool
 lnet_is_gateway_net_alive(struct lnet_peer_net *lpn)
@@ -204,9 +209,6 @@ bool lnet_is_gateway_alive(struct lnet_peer *gw)
 {
 	struct lnet_peer_net *lpn;
 
-	if (!gw->lp_alive)
-		return false;
-
 	list_for_each_entry(lpn, &gw->lp_peer_nets, lpn_peer_nets) {
 		if (!lnet_is_gateway_net_alive(lpn))
 			return false;
@@ -225,12 +227,9 @@ bool lnet_is_gateway_alive(struct lnet_peer *gw)
 bool lnet_is_route_alive(struct lnet_route *route)
 {
 	struct lnet_peer *gw = route->lr_gateway;
-	struct lnet_peer_net *local_lpn;
-	struct lnet_peer_net *remote_lpn;
-
-	/* If the gateway is down then all routes are considered down */
-	if (!gw->lp_alive)
-		return false;
+	struct lnet_peer_net *llpn;
+	struct lnet_peer_net *rlpn;
+	bool route_alive;
 
 	/*
 	 * if discovery is disabled then rely on the cached aliveness
@@ -243,35 +242,36 @@ bool lnet_is_route_alive(struct lnet_route *route)
 		return route->lr_alive;
 
 	/*
-	 * check the gateway's interfaces on the local network
+	 * check the gateway's interfaces on the route rnet to make sure
+	 * that the gateway is viable.
 	 */
-	local_lpn = lnet_peer_get_net_locked(gw, route->lr_lnet);
-	if (!local_lpn)
+	llpn = lnet_peer_get_net_locked(gw, route->lr_lnet);
+	if (!llpn)
 		return false;
 
-	if (!lnet_is_gateway_net_alive(local_lpn))
-		return false;
+	route_alive = lnet_is_gateway_net_alive(llpn);
 
 	if (avoid_asym_router_failure) {
-		/* Check the gateway's interfaces on the remote network */
-		remote_lpn = lnet_peer_get_net_locked(gw, route->lr_net);
-		if (!remote_lpn)
+		rlpn = lnet_peer_get_net_locked(gw, route->lr_net);
+		if (!rlpn)
 			return false;
-		if (!lnet_is_gateway_net_alive(remote_lpn))
-			return false;
+		route_alive = route_alive &&
+			      lnet_is_gateway_net_alive(rlpn);
 	}
+
+	if (!route_alive)
+		return route_alive;
 
 	spin_lock(&gw->lp_lock);
 	if (!(gw->lp_state & LNET_PEER_ROUTER_ENABLED)) {
-		spin_unlock(&gw->lp_lock);
 		if (gw->lp_rtr_refcount > 0)
 			CERROR("peer %s is being used as a gateway but routing feature is not turned on\n",
 			       libcfs_nid2str(gw->lp_primary_nid));
-		return false;
+		route_alive = false;
 	}
 	spin_unlock(&gw->lp_lock);
 
-	return true;
+	return route_alive;
 }
 
 void
@@ -427,27 +427,31 @@ lnet_router_discovery_complete(struct lnet_peer *lp)
 	spin_lock(&lp->lp_lock);
 	lp->lp_state &= ~LNET_PEER_RTR_DISCOVERY;
 	lp->lp_state |= LNET_PEER_RTR_DISCOVERED;
-	lp->lp_alive = lp->lp_dc_error == 0;
-	if (lp->lp_alive) {
-		spin_unlock(&lp->lp_lock);
-		return;
-	}
-	/*
-	 * We do not send messages directly to the remote interfaces
-	 * of an LNet router. As such, we rely on the PING response
-	 * to determine the up/down status of these interfaces. If
-	 * a PING response is not receieved, or some other problem with
-	 * discovery occurs that prevents us from getting this status,
-	 * we assume all interfaces are down until we're able to
-	 * determine otherwise.
-	 */
-	list_for_each_entry(route, &lp->lp_routes, lr_gwlist)
-		lnet_set_route_aliveness(route, false);
-
 	spin_unlock(&lp->lp_lock);
 
+	/*
+	 * Router discovery successful? All peer information would've been
+	 * updated already. No need to do any more processing
+	 */
+	if (!lp->lp_dc_error)
+		return;
+	/*
+	 * discovery failed? then we need to set the status of each lpni
+	 * to DOWN. It will be updated the next time we discover the
+	 * router. For router peer NIs not on local networks, we never send
+	 * messages directly to them, so their health will always remain
+	 * at maximum. We can only tell if they are up or down from the
+	 * status returned in the PING response. If we fail to get that
+	 * status in our scheduled router discovery, then we'll assume
+	 * it's down until we're told otherwise.
+	 */
+	CDEBUG(D_NET, "%s: Router discovery failed %d\n",
+	       libcfs_nid2str(lp->lp_primary_nid), lp->lp_dc_error);
 	while ((lpni = lnet_get_next_peer_ni_locked(lp, NULL, lpni)) != NULL)
 		lpni->lpni_ns_status = LNET_NI_STATUS_DOWN;
+
+	list_for_each_entry(route, &lp->lp_routes, lr_gwlist)
+		lnet_set_route_aliveness(route, false);
 }
 
 static void
@@ -1661,7 +1665,6 @@ lnet_notify(struct lnet_ni *ni, lnet_nid_t nid, bool alive, bool reset,
 	lnet_peer_ni_decref_locked(lpni);
 	if (lpni && lpni->lpni_peer_net && lpni->lpni_peer_net->lpn_peer) {
 		lp = lpni->lpni_peer_net->lpn_peer;
-		lp->lp_alive = alive;
 		list_for_each_entry(route, &lp->lp_routes, lr_gwlist)
 			lnet_set_route_aliveness(route, alive);
 	}
