@@ -5583,14 +5583,15 @@ again:
 	lmm = buf->lb_buf;
 	magic = le32_to_cpu(lmm->lmm_magic);
 	if (magic == LOV_MAGIC_COMP_V1) {
+		struct lov_mds_md_v1 *v1;
 		int i;
 
 		lcm = buf->lb_buf;
 		count = le16_to_cpu(lcm->lcm_entry_count);
 		for (i = 0; i < count; i++) {
 			lcme = &lcm->lcm_entries[i];
-			lmm = buf->lb_buf + le32_to_cpu(lcme->lcme_offset);
-			if (memcmp(oi, &lmm->lmm_oi, sizeof(*oi)) != 0)
+			v1 = buf->lb_buf + le32_to_cpu(lcme->lcme_offset);
+			if (memcmp(oi, &v1->lmm_oi, sizeof(*oi)) != 0)
 				goto fix;
 		}
 
@@ -5639,12 +5640,13 @@ fix:
 	}
 
 	if (magic == LOV_MAGIC_COMP_V1) {
+		struct lov_mds_md_v1 *v1;
 		int i;
 
 		for (i = 0; i < count; i++) {
 			lcme = &lcm->lcm_entries[i];
-			lmm = buf->lb_buf + le32_to_cpu(lcme->lcme_offset);
-			lmm->lmm_oi = *oi;
+			v1 = buf->lb_buf + le32_to_cpu(lcme->lcme_offset);
+			v1->lmm_oi = *oi;
 		}
 	} else {
 		lmm->lmm_oi = *oi;
