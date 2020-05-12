@@ -871,6 +871,7 @@ int lnet_sock_connect(struct socket **sockp, int *fatal,
 			__u32 local_ip, int local_port,
 			__u32 peer_ip, int peer_port, struct net *ns);
 
+int lnet_peers_start_down(void);
 int lnet_peer_buffer_credits(struct lnet_net *net);
 void lnet_consolidate_routes_locked(struct lnet_peer *orig_lp,
 				    struct lnet_peer *new_lp);
