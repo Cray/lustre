@@ -3160,7 +3160,7 @@ test_147() {
 }
 run_test 147 "Check client reconnect"
 
-test_148() {
+test_148a() {
 	local wce_param="obdfilter.$FSNAME-OST0000.writethrough_cache_enable"
 	local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
 	local amc=$(at_max_get client)
@@ -3203,7 +3203,55 @@ test_148() {
 
 	return 0
 }
-run_test 148 "data corruption through resend"
+run_test 148a "data corruption through resend (OSS)"
+
+test_148b() {
+       local wce_param="osd-ldiskfs.$FSNAME-MDT0000.writethrough_cache_enable"
+       local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
+       local amc=$(at_max_get client)
+       local amo=$(at_max_get mds1)
+       local timeout
+
+       at_max_set 0 client
+       at_max_set 0 mds1
+       timeout=$(request_timeout client)
+
+       [ "$(facet_fstype mds1)" = "ldiskfs" ] && {
+               # save old r/o cache settings
+               save_lustre_params mds1 $wce_param > $p
+
+               # disable r/o cache
+               do_facet mds1 "$LCTL set_param -n $wce_param=0"
+       }
+
+       $LFS mkdir -i 0 $DIR/$tdir
+       $LFS setstripe -E 1M -L mdt $DIR/$tdir/$tfile
+       dd if=/dev/zero of=$DIR/$tdir/$tfile bs=4096 count=1 oflag=direct
+       cp $DIR/$tdir/$tfile $TMP/$tfile
+       # make sure there are no pending writes from other tests
+       sync
+       #define OBD_FAIL_OST_BRW_PAUSE_BULK2     0x227
+       do_facet mds1 $LCTL set_param fail_loc=0x80000227
+       do_facet mds1 $LCTL set_param fail_val=$((timeout+2))
+       dd if=/dev/urandom of=$DIR/$tdir/$tfile bs=4096 count=1 conv=notrunc,fdatasync
+       dd if=/dev/zero of=$DIR/$tdir/$tfile bs=4096 count=1 conv=notrunc,fdatasync
+       sleep 3
+       cancel_lru_locks mdc
+       cmp -b $DIR/$tdir/$tfile $TMP/$tfile || error "wrong data"
+
+       rm -f $DIR/$tdir/$tfile $TMP/$tfile
+
+       at_max_set $amc client
+       at_max_set $amo mds1
+
+       [ "$(facet_fstype mds1)" = "ldiskfs" ] && {
+               # restore initial r/o cache settings
+               restore_lustre_params < $p
+       }
+
+       return 0
+}
+run_test 148b "data corruption through resend (MDS)"
 
 test_149() {
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs"
