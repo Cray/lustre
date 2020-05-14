@@ -366,6 +366,7 @@ struct mdt_object {
 	loff_t			mot_restripe_offset;
 	/* link to mdt_restriper auto_splitting/migrating/updating */
 	struct list_head	mot_restripe_linkage;
+	struct range_lock_tree	mot_write_tree;
 };
 
 struct mdt_lock_handle {
@@ -567,6 +568,7 @@ struct mdt_thread_info {
 	struct md_layout_change	   mti_mlc;
 
 	struct lu_seq_range	   mti_range;
+	struct range_lock	   mti_write_range;
 };
 
 extern struct lu_context_key mdt_thread_key;

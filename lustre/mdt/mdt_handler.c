@@ -6320,6 +6320,7 @@ static struct lu_object *mdt_object_alloc(const struct lu_env *env,
 		mo->mot_lsom_size = 0;
 		mo->mot_lsom_blocks = 0;
 		mo->mot_lsom_inited = false;
+		range_lock_tree_init(&mo->mot_write_tree);
 		RETURN(o);
 	}
 	RETURN(NULL);
