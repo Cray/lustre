@@ -2799,7 +2799,7 @@ test_134() {
 run_test 134 "race between failover and search for reply data free slot"
 
 test_135a() {
-	local wce_param="obdfilter.$FSNAME-OST0000.writethrough_cache_enable"
+	local wce_param="osd-ldiskfs.$FSNAME-OST0000.writethrough_cache_enable"
 	local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
 	local amc=$(at_max_get client)
 	local amo=$(at_max_get ost1)

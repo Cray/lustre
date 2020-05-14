@@ -5684,6 +5684,7 @@ static struct lu_object *mdt_object_alloc(const struct lu_env *env,
 		init_rwsem(&mo->mot_dom_sem);
 		init_rwsem(&mo->mot_open_sem);
 		atomic_set(&mo->mot_open_count, 0);
+		range_lock_tree_init(&mo->mot_write_tree);
 		RETURN(o);
 	}
 	RETURN(NULL);

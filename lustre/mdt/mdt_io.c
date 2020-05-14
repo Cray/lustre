@@ -457,7 +457,7 @@ static int mdt_preprw_write(const struct lu_env *env, struct obd_export *exp,
 	struct dt_object *dob;
 	int i, j, k, rc = 0, tot_bytes = 0;
 	int maxlnb = *nr_local;
-
+	struct range_lock *range = &mdt_th_info(env)->mti_write_range;
 	ENTRY;
 
 	/* Process incoming grant info, set OBD_BRW_GRANTED flag and grant some
@@ -491,6 +491,12 @@ static int mdt_preprw_write(const struct lu_env *env, struct obd_export *exp,
 		 */
 	}
 
+	range_lock_init(range,
+			rnb[0].rnb_offset,
+			rnb[obj->ioo_bufcnt - 1].rnb_offset +
+			rnb[obj->ioo_bufcnt - 1].rnb_len - 1);
+	range_lock(&mo->mot_write_tree, range);
+
 	dob = mdt_obj2dt(mo);
 	/* parse remote buffers to local buffers and prepare the latter */
 	for (i = 0, j = 0; i < obj->ioo_bufcnt; i++) {
@@ -518,6 +524,7 @@ static int mdt_preprw_write(const struct lu_env *env, struct obd_export *exp,
 err:
 	dt_bufs_put(env, dob, lnb, *nr_local);
 unlock:
+	range_unlock(&mo->mot_write_tree, range);
 	mdt_dom_read_unlock(mo);
 	/* tgt_grant_prepare_write() was called, so we must commit */
 	tgt_grant_commit(exp, oa->o_grant_used, rc);
@@ -615,6 +622,7 @@ static int mdt_commitrw_write(const struct lu_env *env, struct obd_export *exp,
 	int rc = 0;
 	int retries = 0;
 	int i;
+	struct range_lock *range = &mdt_th_info(env)->mti_write_range;
 
 	ENTRY;
 
@@ -709,6 +717,7 @@ out_stop:
 
 out:
 	dt_bufs_put(env, dob, lnb, niocount);
+	range_unlock(&mo->mot_write_tree, range);
 	mdt_dom_read_unlock(mo);
 	if (granted > 0)
 		tgt_grant_commit(exp, granted, old_rc);
