@@ -314,6 +314,7 @@ struct mdt_object {
 	struct rw_semaphore	mot_open_sem;
 	atomic_t		mot_lease_count;
 	atomic_t		mot_open_count;
+	struct range_lock_tree	mot_write_tree;
 };
 
 struct mdt_lock_handle {
@@ -515,6 +516,7 @@ struct mdt_thread_info {
 
 	/* FLR: layout change API */
 	struct md_layout_change	   mti_layout;
+	struct range_lock	   mti_write_range;
 };
 
 extern struct lu_context_key mdt_thread_key;
