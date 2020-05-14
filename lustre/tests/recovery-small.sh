@@ -3161,7 +3161,7 @@ test_147() {
 run_test 147 "Check client reconnect"
 
 test_148a() {
-	local wce_param="obdfilter.$FSNAME-OST0000.writethrough_cache_enable"
+	local wce_param="osd-ldiskfs.$FSNAME-OST0000.writethrough_cache_enable"
 	local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
 	local amc=$(at_max_get client)
 	local amo=$(at_max_get ost1)
