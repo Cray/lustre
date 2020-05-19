@@ -182,6 +182,9 @@ static int ldlm_flock_lookup_cb(struct cfs_hash *hs, struct cfs_hash_bd *bd,
 	struct obd_export *exp = cfs_hash_object(hs, hnode);
 	struct ldlm_lock *lock;
 
+	if (exp->exp_failed)
+		return 0;
+
 	lock = cfs_hash_lookup(exp->exp_flock_hash, cb_data->bl_owner);
 	if (lock == NULL)
 		return 0;
