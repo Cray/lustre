@@ -22050,7 +22050,7 @@ test_810() {
 }
 run_test 810 "partial page writes on ZFS (LU-11663)"
 
-test_812() {
+test_812a() {
 	[ $OST1_VERSION -lt $(version_code 2.12.51) ] &&
 		skip "OST < 2.12.51 doesn't support this fail_loc"
 	[ "$SHARED_KEY" = true ] &&
@@ -22071,7 +22071,29 @@ test_812() {
 
 	stat $DIR/$tfile >/dev/null || error "can't stat file"
 }
-run_test 812 "do not drop reqs generated when imp is going to idle (LU-11951)"
+run_test 812a "do not drop reqs generated when imp is going to idle (LU-11951)"
+
+test_812c() {
+	local old
+
+	old=$($LCTL get_param -n osc.*.idle_timeout | head -n 1)
+
+	$LFS setstripe -c 1 -o 0 $DIR/$tfile
+	$LFS getstripe $DIR/$tfile
+	$LCTL set_param osc.*.idle_timeout=20
+	stack_trap "$LCTL set_param osc.*.idle_timeout=$old" EXIT
+	# ensure ost1 is connected
+	stat $DIR/$tfile >/dev/null || error "can't stat"
+	wait_osc_import_state client ost1 FULL
+	# no locks, no reqs to let the connection idle
+	cancel_lru_locks osc
+
+#define OBD_FAIL_PTLRPC_IDLE_RACE	 0x533
+	$LCTL set_param fail_loc=0x80000533
+	sleep 25
+	dd if=/dev/zero of=$DIR/$tfile bs=1k count=1 conv=sync || error "dd failed"
+}
+run_test 812c "idle import vs lock enqueue race"
 
 test_814()
 {
