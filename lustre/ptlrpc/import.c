@@ -1847,6 +1847,12 @@ int ptlrpc_disconnect_and_idle_import(struct obd_import *imp)
 	}
 	spin_unlock(&imp->imp_lock);
 
+	if (OBD_FAIL_PRECHECK(OBD_FAIL_PTLRPC_IDLE_RACE)) {
+		__u32 idx;
+		server_name2index(imp->imp_obd->obd_name, &idx, NULL);
+		if (idx == 0)
+			OBD_RACE(OBD_FAIL_PTLRPC_IDLE_RACE);
+	}
 	req = ptlrpc_disconnect_prep_req(imp);
 	if (IS_ERR(req))
 		RETURN(PTR_ERR(req));

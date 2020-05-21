@@ -1052,6 +1052,11 @@ enqueue_base:
 		if (osc_lock_is_lockless(oscl)) {
 			oio->oi_lockless = 1;
 		} else if (!async) {
+			if (OBD_FAIL_PRECHECK(OBD_FAIL_PTLRPC_IDLE_RACE)) {
+				OBD_RACE(OBD_FAIL_PTLRPC_IDLE_RACE);
+				set_current_state(TASK_UNINTERRUPTIBLE);
+				schedule_timeout(msecs_to_jiffies(500));
+			}
 			LASSERT(oscl->ols_state == OLS_GRANTED);
 			LASSERT(oscl->ols_hold);
 			LASSERT(oscl->ols_dlmlock != NULL);
