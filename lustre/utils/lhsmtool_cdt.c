@@ -631,7 +631,6 @@ int hsm_register(void *msg, struct hsm_queues *queues)
 		if (memcmp(&queues->copytools[i].uuid, &hrk->uuid,
 			   sizeof(struct obd_uuid)) == 0) {
 			fprintf(fp, "registered %d\n", i);
-			queues->copytools[i].registered++;
 			empty = i;
 			break;
 		}
@@ -642,6 +641,7 @@ int hsm_register(void *msg, struct hsm_queues *queues)
 		memcpy(&queues->copytools[empty].uuid, &hrk->uuid,
 		       sizeof(struct obd_uuid));
 		queues->copytools[empty].archives = hrk->archives;
+		queues->copytools[empty].registered++;
 		fprintf(fp, "registerd %s in slot %d\n", hrk->uuid.uuid, empty);
 	} else {
 		fprintf(fp, "could not register %s\n", hrk->uuid.uuid);
