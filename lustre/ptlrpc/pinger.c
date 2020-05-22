@@ -92,17 +92,9 @@ EXPORT_SYMBOL(ptlrpc_obd_ping);
 
 static bool ptlrpc_check_import_is_idle(struct obd_import *imp)
 {
-	struct ldlm_namespace *ns = imp->imp_obd->obd_namespace;
 	time64_t now;
 
 	if (!imp->imp_idle_timeout)
-		return false;
-
-	if (atomic_read(&imp->imp_reqs) > 0)
-		return false;
-
-	/* any lock increases ns_bref being a resource holder */
-	if (ns && atomic_read(&ns->ns_bref) > 0)
 		return false;
 
 	now = ktime_get_real_seconds();
@@ -133,7 +125,8 @@ static int ptlrpc_ping(struct obd_import *imp)
 	ENTRY;
 
 	if (ptlrpc_check_import_is_idle(imp))
-		RETURN(ptlrpc_disconnect_and_idle_import(imp));
+		if (ptlrpc_disconnect_and_idle_import(imp) == 1)
+			RETURN(0);
 
 	req = ptlrpc_prep_ping(imp);
 	if (req == NULL) {
