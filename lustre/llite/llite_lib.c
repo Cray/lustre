@@ -96,7 +96,7 @@ static struct ll_sb_info *ll_init_sbi(void)
 
 	ENTRY;
 
-	OBD_ALLOC_PTR(sbi);
+	OBD_ALLOC_LARGE(sbi, sizeof(*sbi));
 	if (sbi == NULL)
 		RETURN(ERR_PTR(-ENOMEM));
 
@@ -210,7 +210,7 @@ out_destroy_ra:
 out_pcc:
 	pcc_super_fini(&sbi->ll_pcc_super);
 out_sbi:
-	OBD_FREE_PTR(sbi);
+	OBD_FREE_LARGE(sbi, sizeof(*sbi));
 	RETURN(ERR_PTR(rc));
 }
 
@@ -256,7 +256,7 @@ static void ll_free_sbi(struct super_block *sb)
 		}
 		ll_free_rw_stats_info(sbi);
 		pcc_super_fini(&sbi->ll_pcc_super);
-		OBD_FREE(sbi, sizeof(*sbi));
+		OBD_FREE_LARGE(sbi, sizeof(*sbi));
 	}
 	EXIT;
 }
