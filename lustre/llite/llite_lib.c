@@ -79,7 +79,7 @@ static struct ll_sb_info *ll_init_sbi(void)
 	int i;
 	ENTRY;
 
-	OBD_ALLOC_PTR(sbi);
+	OBD_ALLOC_LARGE(sbi, sizeof(*sbi));
 	if (sbi == NULL)
 		RETURN(NULL);
 
@@ -97,7 +97,7 @@ static struct ll_sb_info *ll_init_sbi(void)
 	/* initialize ll_cache data */
 	sbi->ll_cache = cl_cache_init(lru_page_max);
 	if (sbi->ll_cache == NULL) {
-		OBD_FREE(sbi, sizeof(*sbi));
+		OBD_FREE_LARGE(sbi, sizeof(*sbi));
 		RETURN(NULL);
 	}
 
@@ -162,7 +162,7 @@ static void ll_free_sbi(struct super_block *sb)
 			cl_cache_decref(sbi->ll_cache);
 			sbi->ll_cache = NULL;
 		}
-		OBD_FREE(sbi, sizeof(*sbi));
+		OBD_FREE_LARGE(sbi, sizeof(*sbi));
 	}
 	EXIT;
 }
