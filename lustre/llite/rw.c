@@ -315,13 +315,13 @@ static int ria_page_count(struct ra_io_arg *ria)
 }
 
 static unsigned long ras_align(struct ll_readahead_state *ras,
-			       unsigned long index,
-			       unsigned long *remainder)
+			       unsigned long index)
 {
-	unsigned long rem = index % ras->ras_rpc_size;
-	if (remainder != NULL)
-		*remainder = rem;
-	return index - rem;
+	unsigned opt_size = min(ras->ras_window_len, ras->ras_rpc_size);
+
+	if (opt_size == 0)
+		opt_size = 1;
+	return index - (index % opt_size);
 }
 
 /*Check whether the index is in the defined ra-window */
@@ -373,7 +373,7 @@ ll_read_ahead_pages(const struct lu_env *env, struct cl_io *io,
 				    ra.cra_rpc_size > 0)
 					ras->ras_rpc_size = ra.cra_rpc_size;
 				/* trim it to align with optimal RPC size */
-				end = ras_align(ras, ria->ria_end + 1, NULL);
+				end = ras_align(ras, ria->ria_end + 1);
 				if (end > 0 && !ria->ria_eof)
 					ria->ria_end = end - 1;
 				if (ria->ria_end < ria->ria_end_min)
@@ -566,7 +566,7 @@ static int ll_readahead(const struct lu_env *env, struct cl_io *io,
 static void ras_set_start(struct inode *inode, struct ll_readahead_state *ras,
 			  unsigned long index)
 {
-	ras->ras_window_start = ras_align(ras, index, NULL);
+	ras->ras_window_start = ras_align(ras, index);
 }
 
 /* called with the ras_lock held or from places where it doesn't matter */
@@ -715,7 +715,7 @@ static void ras_increase_window(struct inode *inode,
 		if (wlen < ras->ras_rpc_size)
 			ras->ras_window_len = wlen;
 		else
-			ras->ras_window_len = ras_align(ras, wlen, NULL);
+			ras->ras_window_len = ras_align(ras, wlen);
 	}
 }
 
