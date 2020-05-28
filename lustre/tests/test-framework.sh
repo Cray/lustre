@@ -8911,8 +8911,14 @@ pool_add_targets() {
 	fi
 
 	local t=$(for i in $list; do printf "$FSNAME-OST%04x_UUID " $i; done)
+	local firstx=$(printf "%04x" $first)
+	local lastx=$(printf "%04x" $last)
+
 	do_facet mgs $LCTL pool_add \
-			$FSNAME.$pool $FSNAME-OST[$first-$last/$step]
+		$FSNAME.$pool $FSNAME-OST[$firstx-$lastx/$step] || {
+		error_noexit "pool_add $FSNAME-OST[$firstx-$lastx/$step failed"
+		return 4
+	}
 
 	# wait for OSTs to be added to the pool
 	for mds_id in $(seq $MDSCOUNT); do
