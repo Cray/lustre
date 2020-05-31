@@ -1009,9 +1009,10 @@ struct ldlm_lock {
 };
 
 enum ldlm_match_flags {
-    LDLM_MATCH_UNREF	= BIT(0),
-    LDLM_MATCH_AST	= BIT(1),
-    LDLM_MATCH_AST_ANY	= BIT(2),
+	LDLM_MATCH_UNREF   = BIT(0),
+	LDLM_MATCH_AST     = BIT(1),
+	LDLM_MATCH_AST_ANY = BIT(2),
+	LDLM_MATCH_RIGHT   = BIT(3),
 };
 
 /**
