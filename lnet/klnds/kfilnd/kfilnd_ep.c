@@ -196,15 +196,15 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	access = tn->sink_buffer ? KFI_REMOTE_WRITE : KFI_REMOTE_READ;
 
 	/* Use the kfabric API to register buffer for RMA target. */
-	if (tn->tn_kiov)
+	if (tn->tn_buf_type == TN_BUF_KIOV)
 		rc = kfi_mr_regbv(ep->end_dev->dom->domain,
-				  (struct bio_vec *)tn->tn_kiov,
-				  tn->tn_num_iovec, access, tn->tn_offset_iovec,
-				  tn->tn_mr_key, 0, &tn->tn_mr, tn);
+				  (struct bio_vec *)tn->tn_buf.kiov,
+				  tn->tn_num_iovec, access, 0, tn->tn_mr_key, 0,
+				  &tn->tn_mr, tn);
 	else
-		rc = kfi_mr_regv(ep->end_dev->dom->domain, tn->tn_iov,
-				 tn->tn_num_iovec, access, tn->tn_offset_iovec,
-				 tn->tn_mr_key, 0, &tn->tn_mr, tn);
+		rc = kfi_mr_regv(ep->end_dev->dom->domain, tn->tn_buf.iov,
+				 tn->tn_num_iovec, access, 0, tn->tn_mr_key, 0,
+				 &tn->tn_mr, tn);
 	if (rc) {
 		CERROR("Failed to register buffer of %u bytes, rc = %d\n",
 		       tn->tn_nob_iovec, rc);
@@ -419,13 +419,13 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		return 0;
 	}
 
-	if (tn->tn_kiov)
+	if (tn->tn_buf_type == TN_BUF_KIOV)
 		rc = kfi_writebv(ep->end_tx,
-				 (struct bio_vec *)tn->tn_kiov, NULL,
+				 (struct bio_vec *)tn->tn_buf.kiov, NULL,
 				 tn->tn_num_iovec, tn->tn_target_addr,
 				 0, tn->tn_response_mr_key, tn);
 	else
-		rc = kfi_writev(ep->end_tx, tn->tn_iov, NULL,
+		rc = kfi_writev(ep->end_tx, tn->tn_buf.iov, NULL,
 				tn->tn_num_iovec, tn->tn_target_addr, 0,
 				tn->tn_response_mr_key, tn);
 
@@ -467,14 +467,14 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		return 0;
 	}
 
-	if (tn->tn_kiov)
-		rc = kfi_readbv(ep->end_tx, (struct bio_vec *)tn->tn_kiov, NULL,
-				tn->tn_num_iovec, tn->tn_target_addr, 0,
+	if (tn->tn_buf_type == TN_BUF_KIOV)
+		rc = kfi_readbv(ep->end_tx, (struct bio_vec *)tn->tn_buf.kiov,
+				NULL, tn->tn_num_iovec, tn->tn_target_addr, 0,
 				tn->tn_response_mr_key, tn);
 	else
-		rc = kfi_readv(ep->end_tx, tn->tn_iov, NULL, tn->tn_num_iovec,
-			       tn->tn_target_addr, 0, tn->tn_response_mr_key,
-			       tn);
+		rc = kfi_readv(ep->end_tx, tn->tn_buf.iov, NULL,
+			       tn->tn_num_iovec, tn->tn_target_addr, 0,
+			       tn->tn_response_mr_key, tn);
 
 	return rc;
 }
