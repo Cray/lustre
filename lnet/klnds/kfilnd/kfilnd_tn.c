@@ -160,21 +160,19 @@ static u8 kfilnd_tn_prefer_rx(struct kfilnd_transaction *tn)
 
 static void kfilnd_tn_setup_immed(struct kfilnd_transaction *tn)
 {
-	if (tn->tn_kiov)
+	if (tn->tn_buf_type == TN_BUF_KIOV)
 		lnet_copy_kiov2flat(KFILND_IMMEDIATE_MSG_SIZE,
 				    tn->tn_tx_msg.msg,
 				    offsetof(struct kfilnd_msg,
 					     kfm_u.immed.payload),
-				    tn->tn_num_iovec, tn->tn_kiov,
-				    tn->tn_offset_iovec,
+				    tn->tn_num_iovec, tn->tn_buf.kiov, 0,
 				    tn->tn_nob_iovec);
 	else
 		lnet_copy_iov2flat(KFILND_IMMEDIATE_MSG_SIZE,
 				   tn->tn_tx_msg.msg,
 				   offsetof(struct kfilnd_msg,
 					    kfm_u.immed.payload),
-				   tn->tn_num_iovec, tn->tn_iov,
-				   tn->tn_offset_iovec,
+				   tn->tn_num_iovec, tn->tn_buf.iov, 0,
 				   tn->tn_nob_iovec);
 }
 
@@ -1430,4 +1428,105 @@ int kfilnd_tn_init(void)
 	if (!tn_cache)
 		return -ENOMEM;
 	return 0;
+}
+
+static void kfilnd_tn_set_kiov_buf(struct kfilnd_transaction *tn,
+				   lnet_kiov_t *kiov, size_t num_iov,
+				   size_t offset, size_t len)
+{
+	size_t i;
+	size_t cur_len = 0;
+	size_t cur_offset = offset;
+	size_t cur_iov = 0;
+	size_t tmp_len;
+	size_t tmp_offset;
+
+	for (i = 0; (i < num_iov) && (cur_len < len); i++) {
+		/* Skip KIOVs until a KIOV with a length less than the current
+		 * offset is found.
+		 */
+		if (kiov[i].kiov_len <= cur_offset) {
+			cur_offset -= kiov[i].kiov_len;
+			continue;
+		}
+
+		tmp_len = kiov[i].kiov_len - cur_offset;
+		tmp_offset = kiov[i].kiov_len - tmp_len + kiov[i].kiov_offset;
+
+		if (tmp_len + cur_len > len)
+			tmp_len = len - cur_len;
+
+		tn->tn_buf.kiov[cur_iov].kiov_page = kiov[i].kiov_page;
+		tn->tn_buf.kiov[cur_iov].kiov_len = tmp_len;
+		tn->tn_buf.kiov[cur_iov].kiov_offset = tmp_offset;
+
+		cur_iov++;
+		cur_len += tmp_len;
+		cur_offset = 0;
+	}
+
+	tn->tn_num_iovec = i;
+	tn->tn_nob_iovec = cur_len;
+	tn->tn_buf_type = TN_BUF_KIOV;
+}
+
+static void kfilnd_tn_set_iov_buf(struct kfilnd_transaction *tn,
+				  struct kvec *iov, size_t num_iov,
+				  size_t offset, size_t len)
+{
+	size_t i;
+	size_t cur_len = 0;
+	size_t cur_offset = offset;
+	size_t cur_iov = 0;
+	size_t tmp_len;
+
+	for (i = 0; (i < num_iov) && (cur_len < len); i++) {
+		/* Skip IOVs until an IOV with a length less than the current
+		 * offset is found.
+		 */
+		if (iov[i].iov_len <= cur_offset) {
+			cur_offset -= iov[i].iov_len;
+			continue;
+		}
+
+		tmp_len = iov[i].iov_len - cur_offset;
+		if (tmp_len + cur_len > len)
+			tmp_len = len - cur_len;
+
+		tn->tn_buf.iov[cur_iov].iov_base = iov[i].iov_base + cur_offset;
+		tn->tn_buf.iov[cur_iov].iov_len = tmp_len;
+
+		cur_iov++;
+		cur_len += tmp_len;
+		cur_offset = 0;
+	}
+
+	tn->tn_num_iovec = i;
+	tn->tn_nob_iovec = cur_len;
+	tn->tn_buf_type = TN_BUF_IOV;
+}
+
+/**
+ * kfilnd_tn_set_buf() - Set the buffer used for a transaction.
+ * @tn: Transaction to have buffer set.
+ * @kiov: LNet KIOV buffer.
+ * @iov: KVEC buffer.
+ * @num_iov: Number of IOVs.
+ * @offset: Offset into IOVs where the buffer starts.
+ * @len: Length of the buffer.
+ *
+ * This function takes the user provided IOV, offset, and len, and sets the
+ * transaction buffer. The user provided IOV is either a LNet KIOV or KVEC. When
+ * the transaction buffer is configured, the user provided offset is applied
+ * when the transaction buffer is configured (i.e. the transaction buffer
+ * offset is zero).
+ */
+void kfilnd_tn_set_buf(struct kfilnd_transaction *tn, lnet_kiov_t *kiov,
+		       struct kvec *iov, size_t num_iov, size_t offset,
+		       size_t len)
+{
+	if (kiov)
+		kfilnd_tn_set_kiov_buf(tn, kiov, num_iov, offset, len);
+	else
+		kfilnd_tn_set_iov_buf(tn, iov, num_iov, offset, len);
 }
