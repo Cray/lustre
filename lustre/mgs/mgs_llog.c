@@ -1140,7 +1140,13 @@ static int process_command(const struct lu_env *env, struct lustre_cfg *lcfg,
 			rc = record_add_uuid(env,
 					     mrd->temp_llh, nid,
 					     mrd->nodeuuid);
-			if (!rc)
+			if (rc)
+				CWARN("Can't add nid %s for "
+					"uuid %s, device %s\n",
+					libcfs_nid2str(nid),
+					mrd->nodeuuid,
+					mrd->target.mti_svname);
+			else
 				nids_added++;
 
 			if (*ptr == ':') {
@@ -1197,6 +1203,11 @@ static int process_command(const struct lu_env *env, struct lustre_cfg *lcfg,
 				rc = record_add_uuid(env, mrd->temp_llh, nid,
 						     mrd->nodeuuid);
 				if (rc) {
+					CWARN("Can't add nid %s for "
+						"failover %s, device %s\n",
+						libcfs_nid2str(nid),
+						mrd->nodeuuid,
+						mrd->target.mti_svname);
 					name_destroy(&mrd->nodeuuid);
 					return rc;
 				}
