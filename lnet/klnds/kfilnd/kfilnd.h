@@ -284,6 +284,11 @@ struct kfilnd_transaction_msg {
 	size_t length;
 };
 
+enum kfilnd_tn_buf_type {
+	TN_BUF_KIOV,
+	TN_BUF_IOV,
+};
+
 /* Initiator and target transaction structure. */
 struct kfilnd_transaction {
 	/* Endpoint list transaction lives on. */
@@ -312,11 +317,13 @@ struct kfilnd_transaction {
 	/* LNet buffer used to register a memory region or perform a RMA
 	 * operation.
 	 */
+	enum kfilnd_tn_buf_type	tn_buf_type;
+	union {
+		lnet_kiov_t	kiov[LNET_MAX_IOV];
+		struct kvec	iov[LNET_MAX_IOV];
+	} tn_buf;
 	unsigned int		tn_num_iovec;
 	unsigned int		tn_nob_iovec;
-	unsigned int		tn_offset_iovec;
-	lnet_kiov_t		*tn_kiov;
-	struct kvec		*tn_iov;
 
 	/* Bulk transaction buffer is sink or source buffer. */
 	bool sink_buffer;
