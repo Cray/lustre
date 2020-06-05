@@ -3839,6 +3839,7 @@ static struct inode *osd_create_local_agent_inode(const struct lu_env *env,
 	struct inode *local;
 	struct osd_thandle *oh;
 	struct iattr iattr, *piattr = NULL;
+	uid_t own[2] = {0, 0};
 	int rc;
 
 	ENTRY;
@@ -3857,7 +3858,7 @@ static struct inode *osd_create_local_agent_inode(const struct lu_env *env,
 	}
 
 	local = ldiskfs_create_inode(oh->ot_handle, pobj->oo_inode,
-				     type, NULL, piattr);
+				     type, own, piattr);
 	if (IS_ERR(local)) {
 		CERROR("%s: create local error %d\n", osd_name(osd),
 		       (int)PTR_ERR(local));
