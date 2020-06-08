@@ -603,7 +603,8 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 	struct ofd_object *fo;
 	int i, j, k, rc = 0, tot_bytes = 0;
 	enum dt_bufs_type dbt = DT_BUFS_TYPE_WRITE;
-	struct range_lock *range = &ofd_info(env)->fti_write_range;
+	struct ofd_thread_info *info = ofd_info(env);
+	struct range_lock *range = &info->fti_write_range;
 	int maxlnb = *nr_local;
 
 	ENTRY;
@@ -743,6 +744,8 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 
 	ofd_read_unlock(env, fo);
 
+	ofd_counter_incr(exp, LPROC_OFD_STATS_WRITE, jobid, tot_bytes);
+
 	/*
 	 * Reordering precautions: make sure that request processing that
 	 * was able to receive its bulk data should not get reordered with
@@ -761,8 +764,8 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 			rnb[obj->ioo_bufcnt - 1].rnb_offset +
 			rnb[obj->ioo_bufcnt - 1].rnb_len - 1);
 	range_lock(&fo->ofo_write_tree, range);
+	info->fti_range_locked = 1;
 
-	ofd_counter_incr(exp, LPROC_OFD_STATS_WRITE, jobid, tot_bytes);
 	RETURN(0);
 err:
 	dt_bufs_put(env, ofd_object_child(fo), lnb, *nr_local);
@@ -1138,7 +1141,8 @@ ofd_commitrw_write(const struct lu_env *env, struct obd_export *exp,
 	bool soft_sync = false;
 	bool cb_registered = false;
 	bool fake_write = false;
-	struct range_lock *range = &ofd_info(env)->fti_write_range;
+	struct ofd_thread_info	*info = ofd_info(env);
+	struct range_lock *range = &info->fti_write_range;
 
 	ENTRY;
 
@@ -1279,10 +1283,12 @@ out_stop:
 	else if (atomic_inc_return(&fed->fed_soft_sync_count) ==
 		 ofd->ofd_soft_sync_limit)
 		dt_commit_async(env, ofd->ofd_osd);
-
 out:
+	if (info->fti_range_locked) {
+		range_unlock(&fo->ofo_write_tree, range);
+		info->fti_range_locked = 0;
+	}
 	dt_bufs_put(env, o, lnb, niocount);
-	range_unlock(&fo->ofo_write_tree, range);
 	ofd_object_put(env, fo);
 	if (granted > 0)
 		tgt_grant_commit(exp, granted, old_rc);

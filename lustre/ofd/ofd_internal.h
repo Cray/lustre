@@ -274,6 +274,7 @@ struct ofd_thread_info {
 		struct obd_connect_data	 fti_ocd;
 	};
 	struct range_lock		 fti_write_range;
+	int				 fti_range_locked:1;
 };
 
 extern void target_recovery_fini(struct obd_device *obd);
