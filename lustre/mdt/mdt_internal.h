@@ -58,6 +58,7 @@
 #include <lustre_quota.h>
 #include <lustre_linkea.h>
 #include <lustre_lmv.h>
+#include <range_lock.h>
 
 struct mdt_object;
 
@@ -489,7 +490,8 @@ struct mdt_thread_info {
 	/* big_lmm buffer was used and must be used in reply */
 				   mti_big_lmm_used:1,
 				   mti_big_acl_used:1,
-				   mti_som_valid:1;
+				   mti_som_valid:1,
+				   mti_range_locked:1;
 
 	/* opdata for mdt_reint_open(), has the same as
 	 * ldlm_reply:lock_policy_res1.  mdt_update_last_rcvd() stores this
