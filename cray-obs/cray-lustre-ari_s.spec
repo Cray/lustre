@@ -39,7 +39,7 @@ BuildRequires: ofed-devel
 BuildRequires: e2fsprogs-devel
 Requires: ldiskfsprogs
 %endif
-BuildConflicts: post-build-checks
+#!BuildIgnore: post-build-checks
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}
