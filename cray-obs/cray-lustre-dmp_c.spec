@@ -13,7 +13,7 @@
 BuildRequires: kernel-source
 BuildRequires: kernel-syms
 BuildRequires: pkgconfig
-BuildRequires: -post-build-checks
+#!BuildIgnore: post-build-checks
 BuildRequires: module-init-tools
 BuildRequires: libtool
 BuildRequires: libyaml-devel
