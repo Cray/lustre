@@ -21,7 +21,7 @@ BuildRequires: ofed-devel
 %endif
 BuildRequires: pkgconfig
 BuildRequires: sles-release
-BuildRequires: -post-build-checks
+#!BuildIgnore: post-build-checks
 BuildRequires: libtool
 BuildRequires: libyaml-devel
 Group: System/Filesystems
