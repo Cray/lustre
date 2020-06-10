@@ -22,7 +22,7 @@ BuildRequires: module-init-tools
 BuildRequires: pkgconfig
 BuildRequires: libtool
 BuildRequires: libyaml-devel
-BuildConflicts: post-build-checks
+#!BuildIgnore: post-build-checks
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}
