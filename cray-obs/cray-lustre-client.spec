@@ -47,7 +47,7 @@ BuildRequires: redhat-rpm-config
 # Disable post-build-checks; See LUS-1345
 # Note: build checks can be run manually by first doing an incremental build
 # and then doing a second incremental build with post-build-checks enabled.
-BuildConflicts: post-build-checks
+#!BuildIgnore: post-build-checks
 
 %description
 Userspace tools and files for the Lustre filesystem.
