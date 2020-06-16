@@ -275,7 +275,6 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 	/* Store relevant fields to generate a bulk response. */
 	tn->tn_response_mr_key = rxmsg->kfm_u.bulk_req.mr_key;
 	tn->tn_response_rx = rxmsg->kfm_u.bulk_req.response_rx;
-	tn->tn_target_nid = msg->msg_initiator;
 	tn->tn_tx_msg.length = kfilnd_init_proto(tn->tn_tx_msg.msg,
 						 KFILND_MSG_BULK_RSP,
 						 sizeof(struct kfilnd_bulk_rsp),
