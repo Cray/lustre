@@ -63,10 +63,6 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	struct kvec *iov = NULL;
 
 	/* NB 'private' is different depending on what we're sending.... */
-
-	CDEBUG(D_NET, "sending %d bytes in %d frags to %s\n",
-	       msg->msg_len, msg->msg_niov, libcfs_id2str(target));
-
 	if (msg->msg_niov > LNET_MAX_IOV)
 		return -EINVAL;
 
@@ -110,7 +106,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	}
 
 	cpt = kfilnd_send_cpt(dev, target.nid);
-	tn = kfilnd_tn_alloc(dev, cpt, true);
+	tn = kfilnd_tn_alloc(dev, cpt, true, true);
 	if (!tn) {
 		CERROR("Can't send %d to %s: Tn descs exhausted\n",
 		       type, libcfs_nid2str(target.nid));
@@ -198,6 +194,10 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	tn->tn_target_nid = target.nid;
 	tn->tn_lntmsg = msg;	/* finalise msg on completion */
 
+	KFILND_TN_DEBUG(tn, "%s in %u bytes in %u frags",
+			msg_type_to_str(lnd_msg_type), tn->tn_nob_iovec,
+			tn->tn_num_iovec);
+
 	/* Start the state machine processing this transaction */
 	kfilnd_tn_event_handler(tn, event, 0);
 
@@ -267,6 +267,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		break;
 
 	default:
+		/* TODO: TN leaks here. */
 		CERROR("Invalid message type = %d\n", rxmsg->kfm_type);
 		return -EINVAL;
 	}
@@ -279,6 +280,10 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 						 KFILND_MSG_BULK_RSP,
 						 sizeof(struct kfilnd_bulk_rsp),
 						 ni);
+
+	KFILND_TN_DEBUG(tn, "%s in %u bytes in %u frags",
+			msg_type_to_str(rxmsg->kfm_type), tn->tn_nob_iovec,
+			tn->tn_num_iovec);
 
 	kfilnd_tn_event_handler(tn, TN_EVENT_RMA_PREP, 0);
 
