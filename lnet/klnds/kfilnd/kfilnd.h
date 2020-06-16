@@ -224,12 +224,80 @@ struct kfilnd_msg {
 #define KFILND_MSG_VERSION_1	0x11
 #define KFILND_MSG_VERSION	KFILND_MSG_VERSION_1
 
+/* Get the KFI RX context from a KFI RX address. RX context information is
+ * stored in the MSBs of the KFI address.
+ */
+#define KFILND_RX_CONTEXT(addr) ((addr) >> (64 - KFILND_FAB_RX_CTX_BITS))
+
+#define KFILND_EP_DEBUG(ep, fmt, ...) \
+	CDEBUG(D_NET, "%s:%d " fmt "\n", \
+	       libcfs_nid2str((ep)->end_dev->kfd_ni->ni_nid), \
+	       (ep)->end_context_id, ##__VA_ARGS__)
+
+#define KFILND_EP_ERROR(ep, fmt, ...) \
+	CNETERR("%s:%d " fmt "\n", \
+		libcfs_nid2str((ep)->end_dev->kfd_ni->ni_nid), \
+		(ep)->end_context_id, ##__VA_ARGS__)
+
+#define KFILND_TN_DIR_DEBUG(tn, fmt, dir, ...) \
+	CDEBUG(D_NET, "Transaction ID %u: %s:%u %s %s:%llu " fmt "\n", \
+	       (tn)->tn_mr_key, \
+	       libcfs_nid2str((tn)->tn_ep->end_dev->kfd_ni->ni_nid), \
+	       (tn)->tn_ep->end_context_id, dir, \
+	       libcfs_nid2str((tn)->tn_target_nid), \
+	       (tn)->peer ? KFILND_RX_CONTEXT((tn)->peer->addr) : 0, \
+	       ##__VA_ARGS__)
+
+#define KFILND_TN_DEBUG(tn, fmt, ...) \
+	do { \
+		if ((tn)->is_initiator) \
+			KFILND_TN_DIR_DEBUG(tn, fmt, "->", ##__VA_ARGS__); \
+		else \
+			KFILND_TN_DIR_DEBUG(tn, fmt, "<-", ##__VA_ARGS__); \
+	} while (0)
+
+#define KFILND_TN_DIR_ERROR(tn, fmt, dir, ...) \
+	CNETERR("Transaction ID %u: %s:%u %s %s:%llu " fmt "\n", \
+		(tn)->tn_mr_key, \
+		libcfs_nid2str((tn)->tn_ep->end_dev->kfd_ni->ni_nid), \
+		(tn)->tn_ep->end_context_id, dir, \
+		libcfs_nid2str((tn)->tn_target_nid), \
+		(tn)->peer ? KFILND_RX_CONTEXT((tn)->peer->addr) : 0, \
+		##__VA_ARGS__)
+
+#define KFILND_TN_ERROR(tn, fmt, ...) \
+	do { \
+		if ((tn)->is_initiator) \
+			KFILND_TN_DIR_ERROR(tn, fmt, "->", ##__VA_ARGS__); \
+		else \
+			KFILND_TN_DIR_ERROR(tn, fmt, "<-", ##__VA_ARGS__); \
+	} while (0)
+
 /* TODO: Support NOOPs? */
 enum kfilnd_msg_type {
-	KFILND_MSG_IMMEDIATE = 1,
+	/* Valid message types start at 1. */
+	KFILND_MSG_INVALID,
+
+	/* Valid message types. */
+	KFILND_MSG_IMMEDIATE,
 	KFILND_MSG_BULK_PUT_REQ,
 	KFILND_MSG_BULK_GET_REQ,
 	KFILND_MSG_BULK_RSP,
+
+	/* Invalid max value. */
+	KFILND_MSG_MAX,
+};
+
+static inline const char *msg_type_to_str(enum kfilnd_msg_type type)
+{
+	static const char *str[KFILND_MSG_MAX] = {
+		[KFILND_MSG_IMMEDIATE] = "KFILND_MSG_IMMEDIATE",
+		[KFILND_MSG_BULK_PUT_REQ] = "KFILND_MSG_BULK_PUT_REQ",
+		[KFILND_MSG_BULK_GET_REQ] = "KFILND_MSG_BULK_GET_REQ",
+		[KFILND_MSG_BULK_RSP] = "KFILND_MSG_BULK_RSP",
+	};
+
+	return str[type];
 };
 
 /* Transaction States */
@@ -251,6 +319,27 @@ enum tn_states {
 	/* Target states. */
 	TN_STATE_IMM_RECV,
 	TN_STATE_WAIT_RMA_COMP,
+
+	/* Invalid max value. */
+	TN_STATE_MAX,
+};
+
+static inline const char *tn_state_to_str(enum tn_states type)
+{
+	static const char *str[TN_STATE_MAX] = {
+		[TN_STATE_IDLE] = "TN_STATE_IDLE",
+		[TN_STATE_WAIT_TAG_COMP] = "TN_STATE_WAIT_TAG_COMP",
+		[TN_STATE_IMM_SEND] = "TN_STATE_IMM_SEND",
+		[TN_STATE_REG_MEM] = "TN_STATE_REG_MEM",
+		[TN_STATE_WAIT_COMP] = "TN_STATE_WAIT_COMP",
+		[TN_STATE_FAIL] = "TN_STATE_FAIL",
+		[TN_STATE_WAIT_TIMEOUT_COMP] = "TN_STATE_WAIT_TIMEOUT_COMP",
+		[TN_STATE_WAIT_SEND_COMP] = "TN_STATE_WAIT_SEND_COMP",
+		[TN_STATE_IMM_RECV] = "TN_STATE_IMM_RECV",
+		[TN_STATE_WAIT_RMA_COMP] = "TN_STATE_WAIT_RMA_COMP",
+	};
+
+	return str[type];
 };
 
 /* Transaction Events */
@@ -277,6 +366,34 @@ enum tn_events {
 	TN_EVENT_RMA_FAIL,
 	TN_EVENT_TAG_TX_OK,
 	TN_EVENT_TAG_TX_FAIL,
+
+	/* Invalid max value. */
+	TN_EVENT_MAX,
+};
+
+static inline const char *tn_event_to_str(enum tn_events type)
+{
+	static const char *str[TN_EVENT_MAX] = {
+		[TN_EVENT_INIT_IMMEDIATE] = "TN_EVENT_INIT_IMMEDIATE",
+		[TN_EVENT_INIT_BULK] = "TN_EVENT_INIT_BULK",
+		[TN_EVENT_TX_OK] = "TN_EVENT_TX_OK",
+		[TN_EVENT_TX_FAIL] = "TN_EVENT_TX_FAIL",
+		[TN_EVENT_MR_OK] = "TN_EVENT_MR_OK",
+		[TN_EVENT_MR_FAIL] = "TN_EVENT_MR_FAIL",
+		[TN_EVENT_TAG_RX_OK] = "TN_EVENT_TAG_RX_OK",
+		[TN_EVENT_TAG_RX_FAIL] = "TN_EVENT_TAG_RX_FAIL",
+		[TN_EVENT_TAG_RX_CANCEL] = "TN_EVENT_TAG_RX_CANCEL",
+		[TN_EVENT_TIMEOUT] = "TN_EVENT_TIMEOUT",
+		[TN_EVENT_RX_OK] = "TN_EVENT_RX_OK",
+		[TN_EVENT_TAG_RX_FAIL] = "TN_EVENT_TAG_RX_FAIL",
+		[TN_EVENT_RMA_PREP] = "TN_EVENT_RMA_PREP",
+		[TN_EVENT_RMA_OK] = "TN_EVENT_RMA_OK",
+		[TN_EVENT_RMA_FAIL] = "TN_EVENT_RMA_FAIL",
+		[TN_EVENT_TAG_TX_OK] = "TN_EVENT_TAG_TX_OK",
+		[TN_EVENT_TAG_TX_FAIL] = "TN_EVENT_TAG_TX_FAIL",
+	};
+
+	return str[type];
 };
 
 struct kfilnd_transaction_msg {
@@ -300,6 +417,8 @@ struct kfilnd_transaction {
 	enum tn_states		tn_state;	/* current state of Tn */
 	struct lnet_msg		*tn_lntmsg;	/* LNet msg to finalize */
 	struct lnet_msg		*tn_getreply;	/* GET LNet msg to finalize */
+
+	bool			is_initiator;	/* Initiated LNet transfer. */
 
 	/* Transaction send message and target address. */
 	lnet_nid_t		tn_target_nid;
