@@ -835,6 +835,8 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 	case TN_EVENT_RX_OK:
 		msg = tn->tn_rx_msg.msg;
 
+		tn->tn_target_nid = msg->kfm_srcnid;
+
 		/* Update the NID address with the new preferred RX context. */
 		peer = kfilnd_peer_get(tn->tn_ep->end_dev, msg->kfm_srcnid);
 		if (!IS_ERR(peer)) {
