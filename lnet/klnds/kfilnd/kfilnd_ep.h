@@ -9,11 +9,6 @@
 #define KFILND_BASE_ADDR(addr) \
 	((addr) & ((1UL << (64 - KFILND_FAB_RX_CTX_BITS)) - 1))
 
-/* Get the KFI RX context from a KFI RX address. RX context information is
- * stored in the MSBs of the KFI address.
- */
-#define KFILND_RX_CONTEXT(addr) ((addr) >> (64 - KFILND_FAB_RX_CTX_BITS))
-
 void kfilnd_ep_dereg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,
