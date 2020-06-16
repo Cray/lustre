@@ -206,23 +206,28 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 				 tn->tn_num_iovec, access, 0, tn->tn_mr_key, 0,
 				 &tn->tn_mr, tn);
 	if (rc) {
-		CERROR("Failed to register buffer of %u bytes, rc = %d\n",
-		       tn->tn_nob_iovec, rc);
+		KFILND_EP_ERROR(ep, "Failed to allocate memory region %d", rc);
 		goto err;
 	}
 
 	/* The MR needs to be bound to the RX context which owns it. */
 	rc = kfi_mr_bind(tn->tn_mr, &ep->end_rx->fid, 0);
 	if (rc) {
-		CERROR("kfi_mr_bind failed: rc = %d", rc);
+		KFILND_EP_ERROR(ep, "Failed to bind memory region to endpoint %d",
+				rc);
 		goto err_free_mr;
 	}
 
 	rc = kfi_mr_enable(tn->tn_mr);
 	if (rc) {
-		CERROR("kfi_mr_enable failed: rc = %d", rc);
+		KFILND_EP_ERROR(ep, "Failed to enable memory region %d", rc);
 		goto err_free_mr;
 	}
+
+	KFILND_EP_DEBUG(ep,
+			"Transaction ID %u: Memory region of %u bytes in %u frags with key 0x%x allocated",
+			tn->tn_mr_key, tn->tn_nob_iovec, tn->tn_num_iovec,
+			tn->tn_mr_key);
 
 	return 0;
 
@@ -258,6 +263,7 @@ int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,
 		.tag = tn->tn_response_mr_key,
 		.context = tn,
 	};
+	int rc;
 
 	if (!ep || !tn)
 		return -EINVAL;
@@ -266,7 +272,18 @@ int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
-	return kfi_tsendmsg(ep->end_tx, &msg, KFI_COMPLETION);
+	rc = kfi_tsendmsg(ep->end_tx, &msg, KFI_COMPLETION);
+	if (rc) {
+		KFILND_EP_ERROR(ep,
+				"Transaction ID %u: Failed to post tagged send of %lu bytes with tag 0x%llx to peer 0x%llx",
+				tn->tn_mr_key, iov.iov_len, msg.tag, msg.addr);
+	} else {
+		KFILND_EP_DEBUG(ep,
+				"Transaction ID %u: Posted tagged send of %lu bytes with tag 0x%llx to peer 0x%llx",
+				tn->tn_mr_key, iov.iov_len, msg.tag, msg.addr);
+	}
+
+	return rc;
 }
 
 /**
@@ -327,6 +344,7 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 		.flags = KFI_TAGGED | KFI_RECV,
 		.err = EIO,
 	};
+	int rc;
 
 	if (!ep || !tn)
 		return -EINVAL;
@@ -341,7 +359,18 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 		return 0;
 	}
 
-	return kfi_trecvmsg(ep->end_rx, &msg, KFI_COMPLETION);
+	rc = kfi_trecvmsg(ep->end_rx, &msg, KFI_COMPLETION);
+	if (rc) {
+		KFILND_EP_ERROR(ep,
+				"Transaction ID %u: Failed to post tagged recv of %lu bytes with tag 0x%llx",
+				tn->tn_mr_key, iov.iov_len, msg.tag);
+	} else {
+		KFILND_EP_DEBUG(ep,
+				"Transaction ID %u: Posted tagged recv of %lu bytes with tag 0x%llx",
+				tn->tn_mr_key, iov.iov_len, msg.tag);
+	}
+
+	return rc;
 }
 
 /**
@@ -363,6 +392,7 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		.flags = KFI_MSG | KFI_SEND,
 		.err = EIO,
 	};
+	int rc;
 
 	if (!ep || !tn)
 		return -EINVAL;
@@ -380,7 +410,18 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		return 0;
 	}
 
-	return kfi_send(ep->end_tx, buf, len, NULL, tn->tn_target_addr, tn);
+	rc = kfi_send(ep->end_tx, buf, len, NULL, tn->tn_target_addr, tn);
+	if (rc) {
+		KFILND_EP_ERROR(ep,
+				"Transaction ID %u: Failed to post send of %lu bytes to peer 0x%llx",
+				tn->tn_mr_key, len, tn->tn_target_addr);
+	} else {
+		KFILND_EP_DEBUG(ep,
+				"Transaction ID %u: Posted send of %lu bytes to peer 0x%llx",
+				tn->tn_mr_key, len, tn->tn_target_addr);
+	}
+
+	return rc;
 }
 
 /**
@@ -428,6 +469,19 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		rc = kfi_writev(ep->end_tx, tn->tn_buf.iov, NULL,
 				tn->tn_num_iovec, tn->tn_target_addr, 0,
 				tn->tn_response_mr_key, tn);
+	if (rc) {
+		KFILND_EP_ERROR(ep,
+				"Transaction ID %u: Failed to post write of %u bytes in %u frags with key 0x%x to peer 0x%llx",
+				tn->tn_mr_key, tn->tn_nob_iovec,
+				tn->tn_num_iovec, tn->tn_response_mr_key,
+				tn->tn_target_addr);
+	} else {
+		KFILND_EP_DEBUG(ep,
+				"Transaction ID %u: Posted write of %u bytes in %u frags with key 0x%x to peer 0x%llx",
+				tn->tn_mr_key, tn->tn_nob_iovec,
+				tn->tn_num_iovec, tn->tn_response_mr_key,
+				tn->tn_target_addr);
+	}
 
 	return rc;
 }
@@ -475,6 +529,21 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		rc = kfi_readv(ep->end_tx, tn->tn_buf.iov, NULL,
 			       tn->tn_num_iovec, tn->tn_target_addr, 0,
 			       tn->tn_response_mr_key, tn);
+
+	if (rc) {
+		KFILND_EP_ERROR(ep,
+				"Transaction ID %u: Failed to post read of %u bytes in %u frags with key 0x%x to peer 0x%llx",
+				tn->tn_mr_key, tn->tn_nob_iovec,
+				tn->tn_num_iovec, tn->tn_response_mr_key,
+				tn->tn_target_addr);
+	} else {
+		KFILND_EP_DEBUG(ep,
+				"Transaction ID %u: Posted read of %u bytes in %u frags with key 0x%x to peer 0x%llx",
+				tn->tn_mr_key, tn->tn_nob_iovec,
+				tn->tn_num_iovec, tn->tn_response_mr_key,
+				tn->tn_target_addr);
+	}
+
 
 	return rc;
 }
