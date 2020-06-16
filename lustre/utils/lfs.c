@@ -3747,9 +3747,11 @@ static int lfs_setstripe_internal(int argc, char **argv,
 		if (from_copy) {
 			layout = llapi_layout_get_by_path(template ?: fname, 0);
 			if (layout == NULL) {
-				fprintf(stderr, "%s: can't create composite "
-					"layout from file %s.\n",
-					progname, template ?: fname);
+				fprintf(stderr,
+					"%s: can't create composite layout from file %s: %s\n",
+					progname, template ?: fname,
+					strerror(errno));
+				result = -errno;
 				goto error;
 			}
 		}
