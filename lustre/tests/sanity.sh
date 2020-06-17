@@ -20951,6 +20951,11 @@ test_822() {
 	do_facet $SINGLEMDS "$LCTL set_param -n \
 			osp.$FSNAME-OST0000*MDT0000.max_create_count=20000"
 
+	# wait for statfs update to clear OS_STATE_NOPRECREATE
+	local maxage=$(do_facet mds1 $LCTL get_param -n \
+	    osp.$FSNAME-OST0000*MDT0000.maxage)
+	sleep $((maxage + 1))
+
 	#define OBD_FAIL_NET_ERROR_RPC          0x532
 	do_facet mds1 "$LCTL set_param fail_loc=0x80000532 fail_val=5"
 
