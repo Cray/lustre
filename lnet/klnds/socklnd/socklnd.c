@@ -368,12 +368,14 @@ ksocknal_add_route_locked(struct ksock_peer_ni *peer_ni, struct ksock_route *rou
 	struct list_head *tmp;
 	struct ksock_conn *conn;
 	struct ksock_route *route2;
+	struct ksock_net *net = peer_ni->ksnp_ni->ni_data;
 
 	LASSERT(!peer_ni->ksnp_closing);
 	LASSERT(route->ksnr_peer == NULL);
 	LASSERT(!route->ksnr_scheduled);
 	LASSERT(!route->ksnr_connecting);
 	LASSERT(route->ksnr_connected == 0);
+	LASSERT(net->ksnn_ninterfaces > 0);
 
 	/* LASSERT(unique) */
 	list_for_each(tmp, &peer_ni->ksnp_routes) {
@@ -389,6 +391,11 @@ ksocknal_add_route_locked(struct ksock_peer_ni *peer_ni, struct ksock_route *rou
 
 	route->ksnr_peer = peer_ni;
 	ksocknal_peer_addref(peer_ni);
+
+	/* set the route's interface to the current net's interface */
+	route->ksnr_myipaddr = net->ksnn_interfaces[0].ksni_ipaddr;
+	net->ksnn_interfaces[0].ksni_nroutes++;
+
 	/* peer_ni's routelist takes over my ref on 'route' */
 	list_add_tail(&route->ksnr_list, &peer_ni->ksnp_routes);
 
