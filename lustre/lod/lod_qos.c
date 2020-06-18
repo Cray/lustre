@@ -204,6 +204,7 @@ static int lod_statfs_and_check(const struct lu_env *env, struct lod_device *d,
 	ost = OST_TGT(d,index);
 	LASSERT(ost);
 
+	info.os_enable_pre = 1;
 	rc = dt_statfs_info(env, ost->ltd_ost, sfs, &info);
 
 	if (rc == 0 && ((sfs->os_state & OS_STATE_ENOSPC) ||
