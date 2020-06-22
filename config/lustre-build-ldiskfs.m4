@@ -62,13 +62,12 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 		# Extract release sub version
 		#   ex: 4.12.14-150.17.1_5.0.82-variant => 150
 		#               ^^^
-		# ga:  23.1     through 25.28.1 ->	sles15r25
-		# ga:  150.14.1 through 150.22.1 ->	sles15
+		# ga:  23.1				sles15r23
+		# ga:  25.1     through 150.22.1 ->	sles15
 		# sp1: 195.1    through 197.7.1 ->	sles15
 		KPLEV=$(echo $LINUXRELEASE | sed -e 's/4.12.14-//g' -e 's/\..*//g' -e 's/-.*//' -e 's/_.*//')
 		case $KPLEV in
 		23)  LDISKFS_SERIES="4.12-sles15r23.series" ;;
-		25)  LDISKFS_SERIES="4.12-sles15r25.series" ;;
 		*)   LDISKFS_SERIES="4.12-sles15.series"    ;;
 		esac
 	])
