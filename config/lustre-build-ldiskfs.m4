@@ -62,15 +62,30 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 	)], [LDISKFS_SERIES="4.4-sles12sp3.series"],
             [LDISKFS_SERIES="4.4-sles12sp3.series"]
 	)], [LDISKFS_SERIES="4.12-sles15r23.series"], [
-		# Extract release sub version
+		# Extract release sub version as KPMAJOR
 		#   ex: 4.12.14-150.17.1_5.0.82-variant => 150
 		#               ^^^
 		# ga:  23.1				sles15r23
 		# ga:  25.1     through 150.22.1 ->	sles15
 		# sp1: 195.1    through 197.7.1 ->	sles15
-		KPLEV=$(echo $LINUXRELEASE | sed -e 's/4.12.14-//g' -e 's/\..*//g' -e 's/-.*//' -e 's/_.*//')
-		case $KPLEV in
-		23)  LDISKFS_SERIES="4.12-sles15r23.series" ;;
+		# sp1: 197.26   not supported
+		# sp1: 197.37   through ?? ->		sles15sp1
+		#
+		KPVERS=$(echo $LINUXRELEASE | sed -e 's/4.12.14-//g' -e 's/-.*//' -e 's/_.*//')
+		KPMAJOR=$(echo $KPVERS | cut -d '.' -f 1)
+		case $KPMAJOR in
+		23)	LDISKFS_SERIES="4.12-sles15r23.series" ;;
+		25|150|195)
+			LDISKFS_SERIES="4.12-sles15.series"
+			;;
+		197)
+			KPMINOR=$(echo $KPVERS | cut -d '.' -f 2);
+			case $KPMINOR in
+			4|7)  LDISKFS_SERIES="4.12-sles15.series"    ;;
+			26) LDISKFS_SERIES="4.12-sles15-unsupported.series" ;;
+			*)  LDISKFS_SERIES="4.12-sles15sp1.series" ;;
+			esac
+			;;
 		*)   LDISKFS_SERIES="4.12-sles15.series"    ;;
 		esac
 	])
