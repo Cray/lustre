@@ -1622,15 +1622,21 @@ static int mdt_link_parents_lock(struct mdt_thread_info *info,
 
 	EXIT;
 out:
-	if (rc)
+	if (rc) {
 		mdt_unlock_list(info, link_locks, rc);
-	else if (local_lnkp_cnt > RS_MAX_LOCKS - 6)
+	} else if (local_lnkp_cnt > RS_MAX_LOCKS - 5) {
+		CDEBUG(D_INFO, "Too many links (%d), sync operations\n",
+		       local_lnkp_cnt);
 		/*
 		 * parent may have 3 local objects: master object and 2 stripes
-		 * (if it's being migrated too); source may have 2 local
-		 * objects: master and 1 stripe; target has 1 local object.
+		 * (if it's being migrated too); source may have 1 local object
+		 * if regular file: master and 1 stripe; target has 1 local
+		 * object.
+		 * Note, if source is directory it may also have 2 local objects
+		 * but can't has hardlinks, so consider only regular files here.
 		 */
 		rc = 1;
+	}
 	return rc;
 }
 
@@ -2139,23 +2145,23 @@ lock_parent:
 			 mdt_object_child(tobj), &info->mti_spec, ma);
 	EXIT;
 
-	mdt_object_unlock(info, tobj, lht, rc);
+	mdt_object_unlock(info, tobj, lht, rc || do_sync);
 put_target:
 	mdt_object_put(env, tobj);
 unlock_source:
 	mdt_migrate_object_unlock(info, sobj, lhs, seinfo,
-				  &child_slave_locks, rc);
+				  &child_slave_locks, rc || do_sync);
 unlock_open_sem:
 	if (open_sem_locked)
 		up_write(&sobj->mot_open_sem);
 unlock_links:
-	mdt_unlock_list(info, &link_locks, do_sync ? true : rc);
+	mdt_unlock_list(info, &link_locks, rc || do_sync);
 put_source:
 	mdt_object_put(env, sobj);
 	mdt_object_put(env, spobj);
 unlock_parent:
 	mdt_migrate_object_unlock(info, pobj, lhp, peinfo,
-				  &parent_slave_locks, rc);
+				  &parent_slave_locks, rc || do_sync);
 put_parent:
 	mdt_object_put(env, pobj);
 unlock_rename:
