@@ -1381,8 +1381,8 @@ lnet_select_peer_ni(struct lnet_ni *best_ni, lnet_nid_t dst_nid,
 		INT_MIN;
 	int best_lpni_healthv = (best_lpni) ?
 		atomic_read(&best_lpni->lpni_healthv) : 0;
-	bool preferred = false;
-	bool ni_is_pref;
+	bool best_lpni_is_preferred = false;
+	bool lpni_is_preferred;
 	int lpni_healthv;
 
 	while ((lpni = lnet_get_next_peer_ni_locked(peer, peer_net, lpni))) {
@@ -1390,57 +1390,59 @@ lnet_select_peer_ni(struct lnet_ni *best_ni, lnet_nid_t dst_nid,
 		 * if the best_ni we've chosen aleady has this lpni
 		 * preferred, then let's use it
 		 */
-		if (best_ni) {
-			ni_is_pref = lnet_peer_is_pref_nid_locked(lpni,
+		if (best_ni)
+			lpni_is_preferred = lnet_peer_is_pref_nid_locked(lpni,
 								best_ni->ni_nid);
-			CDEBUG(D_NET, "%s ni_is_pref = %d\n",
-			       libcfs_nid2str(best_ni->ni_nid), ni_is_pref);
-		} else {
-			ni_is_pref = false;
-		}
+		else
+			lpni_is_preferred = false;
 
 		lpni_healthv = atomic_read(&lpni->lpni_healthv);
 
 		if (best_lpni)
-			CDEBUG(D_NET, "%s c:[%d, %d], s:[%d, %d]\n",
-				libcfs_nid2str(lpni->lpni_nid),
-				lpni->lpni_txcredits, best_lpni_credits,
-				lpni->lpni_seq, best_lpni->lpni_seq);
+			CDEBUG(D_NET,
+			       "n:[%s, %s] h:[%d, %d] r:[%s, %s] c:[%d, %d] s:[%d, %d]\n",
+			       libcfs_nid2str(lpni->lpni_nid),
+			       libcfs_nid2str(best_lpni->lpni_nid),
+			       lpni_healthv, best_lpni_healthv,
+			       lpni_is_preferred ? "y" : "n",
+			       best_lpni_is_preferred ? "y" : "n",
+			       lpni->lpni_txcredits, best_lpni_credits,
+			       lpni->lpni_seq, best_lpni->lpni_seq);
+		else
+			goto select_lpni;
 
 		/* pick the healthiest peer ni */
-		if (lpni_healthv < best_lpni_healthv) {
+		if (lpni_healthv < best_lpni_healthv)
 			continue;
-		} else if (lpni_healthv > best_lpni_healthv) {
-			best_lpni_healthv = lpni_healthv;
-		/* if this is a preferred peer use it */
-		} else if (!preferred && ni_is_pref) {
-			preferred = true;
-		} else if (preferred && !ni_is_pref) {
-			/*
-			 * this is not the preferred peer so let's ignore
-			 * it.
-			 */
+		else if (lpni_healthv > best_lpni_healthv)
+			goto select_lpni;
+
+		/* Preferred NIs always beat non-preferred NIs */
+		if (best_lpni_is_preferred && !lpni_is_preferred)
 			continue;
-		} else if (lpni->lpni_txcredits < best_lpni_credits) {
+		else if (!best_lpni_is_preferred && lpni_is_preferred)
+			goto select_lpni;
+
+		if (lpni->lpni_txcredits < best_lpni_credits)
 			/*
 			 * We already have a peer that has more credits
 			 * available than this one. No need to consider
 			 * this peer further.
 			 */
 			continue;
-		} else if (lpni->lpni_txcredits == best_lpni_credits) {
-			/*
-			 * The best peer found so far and the current peer
-			 * have the same number of available credits let's
-			 * make sure to select between them using Round
-			 * Robin
-			 */
-			if (best_lpni) {
-				if (best_lpni->lpni_seq <= lpni->lpni_seq)
-					continue;
-			}
-		}
-
+		else if (lpni->lpni_txcredits > best_lpni_credits)
+			goto select_lpni;
+		/*
+		 * The best peer found so far and the current peer
+		 * have the same number of available credits let's
+		 * make sure to select between them using Round
+		 * Robin
+		 */
+		if (best_lpni->lpni_seq <= lpni->lpni_seq)
+			continue;
+select_lpni:
+		best_lpni_is_preferred = lpni_is_preferred;
+		best_lpni_healthv = lpni_healthv;
 		best_lpni = lpni;
 		best_lpni_credits = lpni->lpni_txcredits;
 	}
