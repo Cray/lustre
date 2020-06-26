@@ -294,6 +294,11 @@ static inline int d_in_lookup(struct dentry *dentry)
 # define XATTR_NAME_POSIX_ACL_DEFAULT POSIX_ACL_XATTR_DEFAULT
 #endif
 
+#ifndef HAVE_LM_XXX_LOCK_MANAGER_OPS
+# define lm_compare_owner	fl_compare_owner
+# define lm_grant		fl_grant
+#endif
+
 /*
  * After 3.1, kernel's nameidata.intent.open.flags is different
  * with lustre's lookup_intent.it_flags, as lustre's it_flags'
