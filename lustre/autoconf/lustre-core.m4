@@ -220,6 +220,25 @@ AC_DEFUN([LC_CONFIG_QUOTA], [
 ]) # LC_CONFIG_QUOTA
 
 #
+# LC_LM_XXX_LOCK_MANAGER_OPS
+#
+# 3.1 renames lock-manager ops(lock_manager_operations) from fl_xxx to lm_xxx
+# see kernel commit 8fb47a4fbf858a164e973b8ea8ef5e83e61f2e50
+#
+AC_DEFUN([LC_LM_XXX_LOCK_MANAGER_OPS], [
+LB_CHECK_COMPILE([if 'lock-manager' ops renamed to 'lm_xxx'],
+lock_manager_ops_lm_xxx, [
+	#include <linux/fs.h>
+],[
+	struct lock_manager_operations lm_ops;
+	lm_ops.lm_notify = NULL;
+],[
+	AC_DEFINE(HAVE_LM_XXX_LOCK_MANAGER_OPS, 1,
+		[lock-manager ops renamed to lm_xxx])
+])
+]) # LC_LM_XXX_LOCK_MANAGER_OPS
+
+#
 # LC_CONFIG_FHANDLE
 #
 # fhandle kernel support for open_by_handle_at() and name_to_handle_at()
@@ -5014,6 +5033,10 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	])
 	LC_CONFIG_FHANDLE
 	LC_POSIX_ACL_CONFIG
+	# 3.1
+	LC_LM_XXX_LOCK_MANAGER_OPS
+
+	# 3.10
 	LC_HAVE_PROJECT_QUOTA
 
 	# 3.11

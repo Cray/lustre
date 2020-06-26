@@ -134,6 +134,11 @@ static inline int d_in_lookup(struct dentry *dentry)
 	list_for_each_entry((child), &(dentry)->d_subdirs, d_child)
 #endif
 
+#ifndef HAVE_LM_XXX_LOCK_MANAGER_OPS
+# define lm_compare_owner	fl_compare_owner
+# define lm_grant		fl_grant
+#endif
+
 #ifndef HAVE_VM_FAULT_T
 #define vm_fault_t int
 #endif
