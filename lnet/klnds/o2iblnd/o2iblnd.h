@@ -34,6 +34,17 @@
  * Author: Eric Barton <eric@bartonsoftware.com>
  */
 
+#include <linux/module.h>
+#include <linux/kernel.h>
+
+#if defined(NEED_LOCKDEP_MOFED_WORKAROUND) \
+ && defined(CONFIG_LOCKDEP) \
+ && defined(lockdep_is_held)
+#undef lockdep_is_held
+	#define lockdep_is_held(lock) \
+		lock_is_held((struct lockdep_map *)&(lock)->dep_map)
+#endif
+
 #ifdef HAVE_COMPAT_RDMA
 #include <linux/compat-2.6.h>
 
@@ -43,8 +54,6 @@
 
 #endif
 
-#include <linux/module.h>
-#include <linux/kernel.h>
 #include <linux/kthread.h>
 #include <linux/mm.h>
 #include <linux/string.h>
