@@ -126,7 +126,7 @@ Instead, if you want to build Lustre for your kernel's built-in I/B stack rather
 				AC_MSG_ERROR([
 It appears that you have multiple OFED versions installed.
 If you still want to build Lustre for your OFED I/B stack, you need to install a single version with its devel headers RPM.
-Instead, if you want to build Lustre for your kernel's built-in I/B stack rather than your installed OFED stack, either remove the OFED package(s) or use --with-o2ib=no.
+Instead, if you want to build Lustre for the built-in I/B stack of your kernel rather than your installed OFED stack, either remove the OFED package(s) or use --with-o2ib=no.
 					     ])
 			])
 			if test -e $O2IBPATHS/${LINUXRELEASE}; then
@@ -216,6 +216,35 @@ AS_IF([test $ENABLEO2IB = "no"], [
 		O2IBPATH=$(readlink --canonicalize $O2IBPATH)
 		EXTRA_OFED_INCLUDE="$EXTRA_OFED_INCLUDE -I$O2IBPATH/include -I$O2IBPATH/include/uapi"
 		EXTRA_CHECK_INCLUDE="$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE"
+
+		tmp_flags="$EXTRA_KCFLAGS"
+		EXTRA_KCFLAGS="-Werror"
+		LB_CHECK_COMPILE([if o2ib is broken for RHEL debug kernel],
+		o2ib_rhel_debug_lockdep_works, [
+			#ifdef HAVE_COMPAT_RDMA
+			#undef PACKAGE_NAME
+			#undef PACKAGE_TARNAME
+			#undef PACKAGE_VERSION
+			#undef PACKAGE_STRING
+			#undef PACKAGE_BUGREPORT
+			#undef PACKAGE_URL
+			#include <linux/compat-2.6.h>
+			#endif
+			#include <linux/version.h>
+			#include <linux/pci.h>
+			#include <linux/gfp.h>
+			#include <rdma/rdma_cm.h>
+			#include <rdma/ib_cm.h>
+			#include <rdma/ib_verbs.h>
+			#include <rdma/ib_fmr_pool.h>
+		],[
+			;
+		],[],[
+			AC_DEFINE(NEED_LOCKDEP_MOFED_WORKAROUND, 1,
+				[o2ib is broken for RHEL debug kernel])
+		])
+		EXTRA_KCFLAGS="$tmp_flags"
+
 		LB_CHECK_COMPILE([whether to enable OpenIB gen2 support],
 		openib_gen2_support, [
 			#ifdef HAVE_COMPAT_RDMA
