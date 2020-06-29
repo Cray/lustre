@@ -3,6 +3,7 @@
  */
 #include <linux/hash.h>
 #include <linux/sched.h>
+#include <linux/module.h>
 #ifdef HAVE_SCHED_HEADERS
 #include <linux/sched/signal.h>
 #endif

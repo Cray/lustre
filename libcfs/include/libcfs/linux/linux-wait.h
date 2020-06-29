@@ -32,6 +32,18 @@ extern long prepare_to_wait_event(wait_queue_head_t *wq_head,
 #endif
 
 #ifndef HAVE_CLEAR_AND_WAKE_UP_BIT
+
+/**
+ * Linux v4.4-14-ga9e4252a9b14 added smp_mb__after_atomic
+ */
+#ifndef smp_mb__after_atomic
+#ifdef CONFIG_X86
+#define smp_mb__after_atomic()
+#else
+#define smp_mb__after_atomic()	smp_mb()
+#endif
+#endif /* !smp_mb__after_atomic */
+
 /**
  * clear_and_wake_up_bit - clear a bit and wake up anyone waiting on that bit
  *
