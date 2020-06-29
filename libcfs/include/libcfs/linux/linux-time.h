@@ -192,9 +192,30 @@ static inline ktime_t timespec64_to_ktime(struct timespec64 ts)
 }
 #endif
 
+#ifndef HAVE_NSECS_TO_JIFFIES
+static inline u64 cfs_nsecs_to_jiffies64(u64 n)
+{
+#if (NSEC_PER_SEC % HZ) == 0
+	/* Common case, HZ = 100, 128, 200, 250, 256, 500, 512, 1000 etc. */
+	return div_u64(n, NSEC_PER_SEC / HZ);
+#elif (HZ % 512) == 0
+	/* overflow after 292 years if HZ = 1024 */
+	return div_u64(n * HZ / 512, NSEC_PER_SEC / 512);
+#else
+	/*
+	 * Generic case - optimized for cases where HZ is a multiple of 3.
+	 * overflow after 64.99 years, exact for HZ = 60, 72, 90, 120 etc.
+	 */
+	return div_u64(n * 9, (9ull * NSEC_PER_SEC + HZ / 2) / HZ);
+#endif
+}
+#else
+#define cfs_nsecs_to_jiffies64(n) nsecs_to_jiffies64((n))
+#endif
+
 static inline unsigned long cfs_time_seconds(time64_t seconds)
 {
-	return nsecs_to_jiffies(seconds * NSEC_PER_SEC);
+	return cfs_nsecs_to_jiffies64(seconds * NSEC_PER_SEC);
 }
 
 #ifdef HAVE_NEW_DEFINE_TIMER
