@@ -82,6 +82,7 @@
 # include <uapi/linux/lustre/lustre_user.h> /* Defn's shared with user-space. */
 # include <uapi/linux/lustre/lustre_ver.h>
 #else
+# include <unistd.h>
 # include <linux/lnet/lnet-types.h>
 # include <linux/lustre/lustre_user.h>
 # include <linux/lustre/lustre_ver.h>
