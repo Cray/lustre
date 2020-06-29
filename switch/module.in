@@ -1,0 +1,10 @@
+#%Module
+#
+# cray-lustre module
+#
+
+prepend-path MANPATH @mandir@
+
+prepend-path PATH @bindir@
+prepend-path PATH @sbindir@
+
