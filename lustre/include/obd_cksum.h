@@ -35,6 +35,7 @@
 #include <libcfs/libcfs.h>
 #include <libcfs/libcfs_crypto.h>
 #include <uapi/linux/lustre/lustre_idl.h>
+#include <lustre_compat.h>
 
 int obd_t10_cksum_speed(const char *obd_name,
 			enum cksum_types cksum_type);

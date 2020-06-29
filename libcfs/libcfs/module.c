@@ -48,6 +48,7 @@
 #include <linux/sysctl.h>
 #include <linux/debugfs.h>
 #include <asm/div64.h>
+#include <linux/kallsyms.h>
 
 #define DEBUG_SUBSYSTEM S_LNET
 
@@ -608,6 +609,8 @@ struct dentry *d_hash_and_lookup(struct dentry *dir, struct qstr *name)
 }
 #endif
 
+static struct dentry *(*cfs_d_hash_and_lookup)(struct dentry *, struct qstr *);
+
 void lnet_remove_debugfs(struct ctl_table *table)
 {
 	for (; table && table->procname; table++) {
@@ -615,7 +618,7 @@ void lnet_remove_debugfs(struct ctl_table *table)
 					      strlen(table->procname));
 		struct dentry *dentry;
 
-		dentry = d_hash_and_lookup(lnet_debugfs_root, &dname);
+		dentry = cfs_d_hash_and_lookup(lnet_debugfs_root, &dname);
 		debugfs_remove(dentry);
 	}
 }
@@ -666,6 +669,11 @@ static int __init libcfs_init(void)
 		CERROR("cfs_crypto_regster: error %d\n", rc);
 		goto cleanup_wi;
 	}
+
+	cfs_d_hash_and_lookup = (void *)
+		kallsyms_lookup_name("d_hash_and_lookup");
+
+	BUG_ON(!cfs_d_hash_and_lookup);
 
 	lnet_insert_debugfs(lnet_table);
 	if (!IS_ERR_OR_NULL(lnet_debugfs_root))

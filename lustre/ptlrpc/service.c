@@ -1236,8 +1236,8 @@ static void ptlrpc_at_set_timer(struct ptlrpc_service_part *svcpt)
 	if (next <= 0) {
 		ptlrpc_at_timer(cfs_timer_cb_arg(svcpt, scp_at_timer));
 	} else {
-		mod_timer(&svcpt->scp_at_timer,
-			  jiffies + nsecs_to_jiffies(next * NSEC_PER_SEC));
+		mod_timer(&svcpt->scp_at_timer, jiffies +
+			  cfs_nsecs_to_jiffies64(next * NSEC_PER_SEC));
 		CDEBUG(D_INFO, "armed %s at %+llds\n",
 		       svcpt->scp_service->srv_name, next);
 	}

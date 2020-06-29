@@ -326,6 +326,10 @@ void vvp_global_fini(void);
 
 extern const struct file_operations vvp_dump_pgcache_file_ops;
 
+#ifndef HAVE_FILE_REMOVE_PRIVS
+#define file_remove_privs(file)		file_remove_suid((file))
+#endif
+
 /*
  * set_IS_NOSEC() is to turn file_remove_privs() into no-op by setting
  * inode's S_NOSEC flag.  restore_IS_NOSEC() is to restore state of

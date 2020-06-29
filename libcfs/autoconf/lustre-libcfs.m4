@@ -256,6 +256,26 @@ AS_IF([test "x$enable_crc32c_crypto" = xyes], [
 ]) # LIBCFS_ENABLE_CRC32C_ACCEL
 
 #
+# LIBCFS_MOD_DELAYED_WORK
+# v3.6-rc1-13-g8376fe22c7e7 added mod_delayed_work
+#
+AC_DEFUN([LIBCFS_MOD_DELAYED_WORK], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'mod_delayed_work' is present],
+nsecs_to_jiffies64, [
+	#include <linux/workqueue.h>
+],[
+	(void)mod_delayed_work((struct workqueue_struct *)NULL,
+			       (struct delayed_work *)NULL, 100ul);
+],[
+	AC_DEFINE(HAVE_MOD_DELAYED_WORK, 1,
+		[mod_delayed_work is present])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_MOD_DELAYED_WORK
+
+#
 # Kernel version v3.8-rc4-82-g4f522a247bc2 exported d_hash_and_lookup()
 # It was added in v2.6.16-3821-g3e7e241f8c5c, so no worries about header.
 #
@@ -622,6 +642,25 @@ ktime_get_seconds, [
 ]) # LIBCFS_KTIME_GET_SECONDS
 
 #
+# LIBCFS_NSECS_TO_JIFFIES64
+# v3.18-rc7-940-g7bd0e226e313 added EXPORT_SYMBOL
+#
+AC_DEFUN([LIBCFS_NSECS_TO_JIFFIES64], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'nsecs_to_jiffies64' is present],
+nsecs_to_jiffies64, [
+	#include <linux/jiffies.h>
+],[
+	(void)nsecs_to_jiffies64(5);
+],[
+	AC_DEFINE(HAVE_NSECS_TO_JIFFIES, 1,
+		[nsecs_to_jiffies64 is present and exported])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_NSECS_TO_JIFFIES64
+
+#
 # Kernel version 4.0 commit 41fbf3b39d5eca01527338b4d0ee15ee1ae1023c
 # introduced the helper function ktime_ms_delta.
 #
@@ -658,6 +697,25 @@ kernel_param_lock, [
 		['kernel_param_[un]lock' is available])
 ])
 ]) # LIBCFS_KERNEL_PARAM_LOCK
+
+#
+# LIBCFS_FILE_REMOVE_PRIVS
+# v4.1-rc3-149-g5fa8e0a1c6a7 added file_remove_privs
+#
+AC_DEFUN([LIBCFS_FILE_REMOVE_PRIVS], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'file_remove_privs' is present],
+nsecs_to_jiffies64, [
+	#include <linux/fs.h>
+],[
+	(void)file_remove_privs((struct file *)NULL);
+],[
+	AC_DEFINE(HAVE_FILE_REMOVE_PRIVS, 1,
+		[file_remove_privs is present and exported])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_FILE_REMOVE_PRIVS
 
 #
 # Kernel version 4.2 changed topology_thread_cpumask
@@ -1285,6 +1343,8 @@ LIBCFS_STACKTRACE_WARNING
 # 3.5
 LIBCFS_PROCESS_NAMESPACE
 LIBCFS_I_UID_READ
+# 3.7
+LIBCFS_MOD_DELAYED_WORK
 # 3.8
 LIBCFS_HAVE_CRC32
 LIBCFS_D_HASH_AND_LOOKUP
@@ -1317,10 +1377,12 @@ LIBCFS_TIMESPEC64_SUB
 LIBCFS_TIMESPEC64_TO_KTIME
 # 3.19
 LIBCFS_KTIME_GET_SECONDS
+LIBCFS_NSECS_TO_JIFFIES64
 # 4.0
 LIBCFS_KTIME_MS_DELTA
 # 4.1
 LIBCFS_KERNEL_PARAM_LOCK
+LIBCFS_FILE_REMOVE_PRIVS
 # 4.2
 LIBCFS_HAVE_TOPOLOGY_SIBLING_CPUMASK
 LIBCFS_FPU_API
