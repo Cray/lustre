@@ -286,6 +286,26 @@ LB_CHECK_EXPORT([d_hash_and_lookup], [fs/dcache.c],
 ]) # LIBCFS_D_HASH_AND_LOOKUP
 
 #
+# LIBCFS_DENTRY_D_HASH_2ARGS
+# Linux v3.10-rc6-112-gda53be12bbb4 changed d_hash to 2 args from 3
+#
+AC_DEFUN([LIBCFS_DENTRY_D_HASH_2ARGS],[
+LB_CHECK_COMPILE([does 'dentry_operations.d_hash()' have 2 arguments],
+ktime_get_ts64, [
+	#include <linux/dcache.h>
+],[
+	struct dentry_operations *d_op = NULL;
+	struct dentry *d = NULL;
+	struct qstr *name = NULL;
+
+	(void)d_op->d_hash(d, name);
+],[
+	AC_DEFINE(HAVE_D_HASH_2_ARGS, 1,
+		['dentry_operations.d_hash()' has 2 arguments])
+])
+]) # LIBCFS_DENTRY_D_HASH_2ARGS
+
+#
 # Kernel version 3.11 introduced ktime_get_ts64
 #
 AC_DEFUN([LIBCFS_KTIME_GET_TS64],[
@@ -1352,6 +1372,7 @@ LIBCFS_ENABLE_CRC32_ACCEL
 # 3.10
 LIBCFS_ENABLE_CRC32C_ACCEL
 # 3.11
+LIBCFS_DENTRY_D_HASH_2ARGS
 LIBCFS_KTIME_GET_TS64
 # 3.12
 LIBCFS_PREPARE_TO_WAIT_EVENT
