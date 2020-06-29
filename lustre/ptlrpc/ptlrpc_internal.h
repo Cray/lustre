@@ -415,4 +415,16 @@ static inline bool ptlrpc_req_is_disconnect(struct ptlrpc_request *req)
 		return false;
 }
 
+#ifndef HAVE_MOD_DELAYED_WORK
+static inline
+int mod_delayed_work(struct workqueue_struct *wq, struct delayed_work *dwork,
+		      unsigned long delay)
+{
+	int canceled = cancel_delayed_work(dwork);
+	if (canceled)
+		queue_delayed_work(wq, dwork, delay);
+	return canceled;
+}
+#endif
+
 #endif /* PTLRPC_INTERNAL_H */

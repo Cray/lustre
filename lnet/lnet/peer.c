@@ -46,6 +46,15 @@
 /* Value indicating that recovery needs to re-check a peer immediately. */
 #define LNET_REDISCOVER_PEER	(1)
 
+#ifndef list_first_entry_or_null
+#define list_first_entry_or_null(ptr, type, member) \
+	(!list_empty(ptr) ? list_first_entry(ptr, type, member) : NULL)
+#endif
+#ifndef list_next_entry
+#define list_next_entry(pos, member) \
+	list_entry((pos)->member.next, typeof(*(pos)), member)
+#endif
+
 static int lnet_peer_queue_for_discovery(struct lnet_peer *lp);
 
 static void
