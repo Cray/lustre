@@ -84,6 +84,16 @@
             </file>
             <file>
                 <name>
+                    cray-obs/cray-lustre-gem_s.spec
+                </name>
+            </file>
+            <file>
+                <name>
+                    cray-obs/cray-lustre-gem_c.spec
+                </name>
+            </file>
+            <file>
+                <name>
                     cray-obs/cray-lustre-dmp_c.spec
                 </name>
             </file>
@@ -110,6 +120,21 @@
                     </name>
                     <arcname>
                         cray-lustre-
+                        <extracted refer="version"/>
+                    </arcname>
+                </tarinfo>
+            </tarfile>
+            <tarfile compression="bz2">
+                <name>
+                    cray-lustre-switch-
+                    <extracted refer="version"/>
+                </name>
+                <tarinfo>
+                    <name>
+                        switch
+                    </name>
+                    <arcname>
+                        cray-lustre-switch-
                         <extracted refer="version"/>
                     </arcname>
                 </tarinfo>
