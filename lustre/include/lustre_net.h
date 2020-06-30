@@ -2321,6 +2321,10 @@ void ptlrpc_update_export_timer(struct obd_export *exp,
 int ptlrpc_hr_init(void);
 void ptlrpc_hr_fini(void);
 
+void ptlrpc_watchdog_init(struct delayed_work *work, time_t time);
+void ptlrpc_watchdog_disable(struct delayed_work *work);
+void ptlrpc_watchdog_touch(struct delayed_work *work, time_t time);
+
 /** @} */
 
 /* ptlrpc/import.c */
