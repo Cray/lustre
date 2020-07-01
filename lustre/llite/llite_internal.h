@@ -46,6 +46,10 @@
 #include <linux/aio.h>
 #include <lustre_compat.h>
 
+#ifndef VM_FAULT_RETRY
+#include <linux/mm_types.h>
+#endif
+
 #include "vvp_internal.h"
 
 #ifndef FMODE_EXEC
