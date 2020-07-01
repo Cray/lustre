@@ -163,6 +163,13 @@ void mdt_lock_reg_init(struct mdt_lock_handle *lh, enum ldlm_mode lm)
 	lh->mlh_type = MDT_REG_LOCK;
 }
 
+void mdt_lh_reg_init(struct mdt_lock_handle *lh, struct ldlm_lock *lock)
+{
+	mdt_lock_reg_init(lh, lock->l_req_mode);
+	if (lock->l_req_mode == LCK_GROUP)
+		lh->mlh_gid = lock->l_policy_data.l_inodebits.gid;
+}
+
 void mdt_lock_pdo_init(struct mdt_lock_handle *lh, enum ldlm_mode lock_mode,
 		       const struct lu_name *lname)
 {
@@ -3257,6 +3264,7 @@ static int mdt_object_local_lock(struct mdt_thread_info *info,
 
 	policy->l_inodebits.bits = *ibits;
 	policy->l_inodebits.try_bits = trybits;
+	policy->l_inodebits.gid = lh->mlh_gid;
 
         /*
          * Use LDLM_FL_LOCAL_ONLY for this lock. We do not know yet if it is
@@ -5370,8 +5378,9 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
 			m->mdt_skip_lfsck = 1;
 	}
 
-	/* DoM files get IO lock at open by default */
-	m->mdt_opts.mo_dom_lock = ALWAYS_DOM_LOCK_ON_OPEN;
+	/* Just try to get a DoM lock by default. Otherwise, having a group
+	 * lock granted, it may get blocked for a long time. */
+	m->mdt_opts.mo_dom_lock = TRYLOCK_DOM_ON_OPEN;
 	/* DoM files are read at open and data is packed in the reply */
 	m->mdt_opts.mo_dom_read_open = 1;
 

@@ -1225,6 +1225,11 @@ static int lock_matches(struct ldlm_lock *lock, struct ldlm_match_data *data)
 		     data->lmd_policy->l_inodebits.bits) !=
 		    data->lmd_policy->l_inodebits.bits)
 			return INTERVAL_ITER_CONT;
+
+		if (unlikely(match == LCK_GROUP) &&
+		    data->lmd_policy->l_inodebits.gid != LDLM_GID_ANY &&
+		    lpol->l_inodebits.gid != data->lmd_policy->l_inodebits.gid)
+			return INTERVAL_ITER_CONT;
 		break;
 	default:
 		;
@@ -2803,8 +2808,8 @@ void _ldlm_lock_debug(struct ldlm_lock *lock,
 	case LDLM_EXTENT:
 		libcfs_debug_vmsg2(msgdata, fmt, args,
 			" ns: %s lock: %p/%#llx lrc: %d/%d,%d mode: %s/%s "
-			"res: "DLDLMRES" rrc: %d type: %s [%llu->%llu] "
-			"(req %llu->%llu) flags: %#llx nid: %s remote: "
+			"res: "DLDLMRES" rrc: %d type: %s [%llu->%llu] (req "
+			"%llu->%llu) gid %llu flags: %#llx nid: %s remote: "
 			"%#llx expref: %d pid: %u timeout: %lld lvb_type: %d\n",
 			ldlm_lock_to_ns_name(lock), lock,
 			lock->l_handle.h_cookie, atomic_read(&lock->l_refc),
@@ -2817,6 +2822,7 @@ void _ldlm_lock_debug(struct ldlm_lock *lock,
 			lock->l_policy_data.l_extent.start,
 			lock->l_policy_data.l_extent.end,
 			lock->l_req_extent.start, lock->l_req_extent.end,
+			lock->l_req_extent.gid,
 			lock->l_flags, nid, lock->l_remote_handle.cookie,
 			exp ? atomic_read(&exp->exp_refcount) : -99,
 			lock->l_pid, lock->l_callback_timeout,
@@ -2849,8 +2855,8 @@ void _ldlm_lock_debug(struct ldlm_lock *lock,
 		libcfs_debug_vmsg2(msgdata, fmt, args,
 			" ns: %s lock: %p/%#llx lrc: %d/%d,%d mode: %s/%s "
 			"res: "DLDLMRES" bits %#llx/%#llx rrc: %d type: %s "
-			"flags: %#llx nid: %s remote: %#llx expref: %d "
-			"pid: %u timeout: %lld lvb_type: %d\n",
+			"gid %llu flags: %#llx nid: %s remote: %#llx expref: "
+			"%d pid: %u timeout: %lld lvb_type: %d\n",
 			ldlm_lock_to_ns_name(lock),
 			lock, lock->l_handle.h_cookie,
 			atomic_read(&lock->l_refc),
@@ -2862,6 +2868,7 @@ void _ldlm_lock_debug(struct ldlm_lock *lock,
 			lock->l_policy_data.l_inodebits.try_bits,
 			atomic_read(&resource->lr_refcount),
 			ldlm_typename[resource->lr_type],
+			lock->l_policy_data.l_inodebits.gid,
 			lock->l_flags, nid, lock->l_remote_handle.cookie,
 			exp ? atomic_read(&exp->exp_refcount) : -99,
 			lock->l_pid, lock->l_callback_timeout,

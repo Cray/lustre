@@ -38,10 +38,15 @@
 #include "mdc_internal.h"
 
 static void mdc_lock_build_policy(const struct lu_env *env,
+				  const struct cl_lock *lock,
 				  union ldlm_policy_data *policy)
 {
 	memset(policy, 0, sizeof *policy);
 	policy->l_inodebits.bits = MDS_INODELOCK_DOM;
+	if (lock) {
+		const struct cl_lock_descr *d = &lock->cll_descr;
+		policy->l_inodebits.gid = d->cld_gid;
+	}
 }
 
 int mdc_ldlm_glimpse_ast(struct ldlm_lock *dlmlock, void *data)
@@ -144,7 +149,8 @@ struct ldlm_lock *mdc_dlmlock_at_pgoff(const struct lu_env *env,
 	ENTRY;
 
 	fid_build_reg_res_name(lu_object_fid(osc2lu(obj)), resname);
-	mdc_lock_build_policy(env, policy);
+	mdc_lock_build_policy(env, NULL, policy);
+	policy->l_inodebits.gid = LDLM_GID_ANY;
 
 	flags = LDLM_FL_BLOCK_GRANTED | LDLM_FL_CBPENDING;
 	if (dap_flags & OSC_DAP_FL_TEST_LOCK)
@@ -885,7 +891,7 @@ enqueue_base:
 	 * osc_lock.
 	 */
 	fid_build_reg_res_name(lu_object_fid(osc2lu(osc)), resname);
-	mdc_lock_build_policy(env, policy);
+	mdc_lock_build_policy(env, lock, policy);
 	LASSERT(!oscl->ols_speculative);
 	result = mdc_enqueue_send(env, osc_export(osc), resname,
 				  &oscl->ols_flags, policy,
@@ -951,6 +957,8 @@ int mdc_lock_init(const struct lu_env *env, struct cl_object *obj,
 
 	ols->ols_flags = flags;
 	ols->ols_speculative = !!(enqflags & CEF_SPECULATIVE);
+	if (lock->cll_descr.cld_mode == CLM_GROUP)
+		ols->ols_flags |= LDLM_FL_ATOMIC_CB;
 
 	if (ols->ols_flags & LDLM_FL_HAS_INTENT) {
 		ols->ols_flags |= LDLM_FL_BLOCK_GRANTED;
