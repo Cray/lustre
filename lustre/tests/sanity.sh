@@ -21811,6 +21811,32 @@ test_901() {
 }
 run_test 901 "don't leak a mgc lock on client umount"
 
+test_903() {
+	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs"
+	[ "$mds1_FSTYPE" != "ldiskfs" ] && skip_env "ldiskfs only test"
+
+	local timeout
+
+	timeout=$(do_facet mds2 "$LCTL get_param -n mdt.$FSNAME-MDT0001.recovery_time_hard")
+	for idx in $(seq $MDSCOUNT); do
+		stop mds${idx}
+	done
+
+	echo device=$(mdsdevname 1) $MDS_MOUNT_OPTS
+
+	do_facet mds1 "mkdir -p /tmp/test_903 && mount -t ldiskfs -o loop $(mdsdevname 1) /tmp/test_903 &&
+		rm -f /tmp/test_903/update_log_dir/* && umount /tmp/test_903 && rm -rf /tmp/test_903"
+
+	for idx in $(seq $MDSCOUNT); do
+		start mds${idx} $(mdsdevname $idx) $MDS_MOUNT_OPTS ||
+			error "mount mds$idx failed"
+	done
+
+	wait_recovery_complete mds2 $((timeout + TIMEOUT))
+
+}
+run_test 903 "don't hang MDS recovery when failed to get update log"
+
 complete $SECONDS
 [ -f $EXT2_DEV ] && rm $EXT2_DEV || true
 check_and_cleanup_lustre
