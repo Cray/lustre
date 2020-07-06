@@ -839,6 +839,9 @@ struct ptlrpc_body_v2 {
 #define OBD_CONNECT2_SELINUX_POLICY	0x400ULL /* has client SELinux policy */
 #define OBD_CONNECT2_LSOM		0x800ULL /* LSOM support */
 #define OBD_CONNECT2_ASYNC_DISCARD	0x4000ULL /* support async DoM data discard */
+#define OBD_CONNECT2_ENCRYPT		0x8000ULL /* client-to-disk encrypt */
+#define OBD_CONNECT2_FIDMAP	       0x10000ULL /* FID map */
+#define OBD_CONNECT2_GETATTR_PFID      0x20000ULL /* pack parent FID in getattr */
 #define OBD_CONNECT2_DOM_LVB	       0x80000ULL /* pack DOM glimpse data in LVB */
 #define OBD_CONNECT2_REP_MBITS		0x100000ULL /* match reply by mbits, not xid */
 /* XXX README XXX:
