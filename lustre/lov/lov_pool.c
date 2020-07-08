@@ -54,7 +54,7 @@ static void lov_pool_getref(struct pool_desc *pool)
 	atomic_inc(&pool->pool_refcount);
 }
 
-static void lov_pool_putref(struct pool_desc *pool)
+void lov_pool_putref(struct pool_desc *pool)
 {
 	CDEBUG(D_INFO, "pool %p\n", pool);
 	if (atomic_dec_and_test(&pool->pool_refcount)) {
