@@ -320,6 +320,7 @@ extern struct lu_device_type lov_device_type;
 
 /* pools */
 extern struct cfs_hash_ops pool_hash_operations;
+extern void lov_pool_putref(struct pool_desc *pool);
 /* ost_pool methods */
 int lov_ost_pool_init(struct ost_pool *op, unsigned int count);
 int lov_ost_pool_extend(struct ost_pool *op, unsigned int min_count);
@@ -373,4 +374,5 @@ static inline void lov_lsm2layout(struct lov_stripe_md *lsm,
 		ol->ol_comp_id = 0;
 	}
 }
+
 #endif

@@ -221,6 +221,7 @@ struct cfs_hash_ops pool_hash_operations = {
 	.hs_get		= pool_hashrefcount_get,
 	.hs_put_locked  = pool_hashrefcount_put_locked,
 };
+EXPORT_SYMBOL(pool_hash_operations);
 
 /*
  * Methods for /proc seq_file iteration of the defined pools.
