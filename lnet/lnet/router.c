@@ -310,7 +310,7 @@ bool lnet_is_route_alive(struct lnet_route *route)
 	 * enabled.
 	 */
 	if (lnet_is_discovery_disabled(gw))
-		return route->lr_alive;
+		return atomic_read(&route->lr_alive) == 1;
 
 	/*
 	 * check the gateway's interfaces on the local network
@@ -403,21 +403,6 @@ lnet_set_route_hop_type(struct lnet_peer *gw, struct lnet_route *route)
 }
 
 /* Must hold net_lock/EX */
-static inline void
-lnet_set_route_aliveness(struct lnet_route *route, bool alive)
-{
-	/* Log when there's a state change */
-	if (route->lr_alive != alive) {
-		CERROR("route to %s through %s has gone from %s to %s\n",
-		       libcfs_net2str(route->lr_net),
-		       libcfs_nid2str(route->lr_gateway->lp_primary_nid),
-		       (route->lr_alive) ? "up" : "down",
-		       alive ? "up" : "down");
-		route->lr_alive = alive;
-	}
-}
-
-/* Must hold net_lock/EX */
 void
 lnet_router_discovery_ping_reply(struct lnet_peer *lp)
 {
@@ -425,7 +410,7 @@ lnet_router_discovery_ping_reply(struct lnet_peer *lp)
 	struct lnet_peer_net *llpn;
 	struct lnet_route *route;
 	bool single_hop = false;
-	bool net_up = false;
+	int net_up = 0;
 	unsigned lp_state;
 	__u32 net;
 	int i;
@@ -452,7 +437,7 @@ lnet_router_discovery_ping_reply(struct lnet_peer *lp)
 		 * mark the routes served by this peer down
 		 */
 		list_for_each_entry(route, &lp->lp_routes, lr_gwlist)
-			lnet_set_route_aliveness(route, false);
+			lnet_set_route_aliveness(route, 0);
 		return;
 	}
 
@@ -470,16 +455,17 @@ lnet_router_discovery_ping_reply(struct lnet_peer *lp)
 	list_for_each_entry(route, &lp->lp_routes, lr_gwlist) {
 		llpn = lnet_peer_get_net_locked(lp, route->lr_lnet);
 		if (!llpn) {
-			lnet_set_route_aliveness(route, false);
+			lnet_set_route_aliveness(route, 0);
 			continue;
 		}
 
 		if (!lnet_is_gateway_net_alive(llpn)) {
-			lnet_set_route_aliveness(route, false);
+			lnet_set_route_aliveness(route, 0);
 			continue;
 		}
 
-		single_hop = net_up = false;
+		single_hop = false;
+		net_up = 0;
 		for (i = 1; i < pbuf->pb_info.pi_nnis; i++) {
 			net = LNET_NIDNET(pbuf->pb_info.pi_ni[i].ns_nid);
 
@@ -487,7 +473,7 @@ lnet_router_discovery_ping_reply(struct lnet_peer *lp)
 				single_hop = true;
 				if (pbuf->pb_info.pi_ni[i].ns_status ==
 				    LNET_NI_STATUS_UP) {
-					net_up = true;
+					net_up = 1;
 					break;
 				}
 			}
@@ -497,7 +483,7 @@ lnet_router_discovery_ping_reply(struct lnet_peer *lp)
 		if (avoid_asym_router_failure && single_hop)
 			lnet_set_route_aliveness(route, net_up);
 		else
-			lnet_set_route_aliveness(route, true);
+			lnet_set_route_aliveness(route, 1);
 
 		/*
 		 * warn that the route is configured as single-hop but it
@@ -530,7 +516,7 @@ lnet_router_discovery_complete(struct lnet_peer *lp)
 		* gateway as multi-hop
 		*/
 		list_for_each_entry(route, &lp->lp_routes, lr_gwlist) {
-			lnet_set_route_aliveness(route, true);
+			lnet_set_route_aliveness(route, 1);
 			lnet_set_route_hop_type(lp, route);
 		}
 
@@ -552,7 +538,7 @@ lnet_router_discovery_complete(struct lnet_peer *lp)
 		lpni->lpni_ns_status = LNET_NI_STATUS_DOWN;
 
 	list_for_each_entry(route, &lp->lp_routes, lr_gwlist)
-		lnet_set_route_aliveness(route, false);
+		lnet_set_route_aliveness(route, 0);
 }
 
 static void
@@ -724,6 +710,10 @@ lnet_add_route(__u32 net, __u32 hops, lnet_nid_t gateway,
 	route->lr_nid = gateway;
 	route->lr_priority = priority;
 	route->lr_hops = hops;
+	if (lnet_peers_start_down())
+		atomic_set(&route->lr_alive, 0);
+	else
+		atomic_set(&route->lr_alive, 1);
 
 	lnet_net_lock(LNET_LOCK_EX);
 
@@ -1802,14 +1792,9 @@ lnet_notify(struct lnet_ni *ni, lnet_nid_t nid, bool alive, bool reset,
 		 */
 		if (lnet_is_discovery_disabled(lp)) {
 			list_for_each_entry(route, &lp->lp_routes, lr_gwlist) {
-				if (route->lr_nid == lpni->lpni_nid &&
-				    route->lr_alive != alive) {
-					lnet_net_unlock(0);
-					lnet_net_lock(LNET_LOCK_EX);
-					lnet_set_route_aliveness(route, alive);
-					lnet_net_unlock(LNET_LOCK_EX);
-					lnet_net_lock(0);
-				}
+				if (route->lr_nid == lpni->lpni_nid)
+					lnet_set_route_aliveness(route,
+								 alive ? 1 : 0);
 			}
 		}
 	}
