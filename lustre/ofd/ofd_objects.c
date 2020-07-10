@@ -66,8 +66,6 @@ static int ofd_version_get_check(struct ofd_thread_info *info,
 
 	OBD_FAIL_TIMEOUT(OBD_FAIL_OST_VERCHECK_DELAY, 5);
 
-	LASSERT(ofd_object_exists(fo));
-
 	if (info->fti_exp == NULL)
 		RETURN(0);
 
