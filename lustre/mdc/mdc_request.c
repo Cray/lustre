@@ -1286,14 +1286,6 @@ struct readpage_param {
 	struct md_callback	*rp_cb;
 };
 
-#ifndef HAVE_DELETE_FROM_PAGE_CACHE
-static inline void delete_from_page_cache(struct page *page)
-{
-	remove_from_page_cache(page);
-	put_page(page);
-}
-#endif
-
 /**
  * Read pages from server.
  *
@@ -1345,7 +1337,7 @@ static int mdc_read_page_remote(void *data, struct page *page0)
 	rc = mdc_getpage(rp->rp_exp, fid, rp->rp_off, page_pool, npages, &req);
 	if (rc < 0) {
 		/* page0 is special, which was added into page cache early */
-		delete_from_page_cache(page0);
+		ll_delete_from_page_cache(page0);
 	} else {
 		int lu_pgs;
 
