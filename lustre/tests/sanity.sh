@@ -22079,6 +22079,21 @@ test_822() {
 }
 run_test 822 "test precreate failure"
 
+
+test_830() {
+	[ $PARALLEL == "yes" ] && skip "skip parallel run"
+	[ $OST1_VERSION -lt $(version_code 2.12.4) ] &&
+		skip "lustre < 2.12.4 does not support"
+	test_mkdir $DIR/$tdir
+	$LFS setstripe -c 1 -i 0 $DIR/$tdir/$tfile
+	do_facet ost1 "$LCTL set_param fail_loc=0x23b"
+	chmod 0777 $DIR/$tdir/$tfile &
+	sleep 1
+	unlink $DIR/$tdir/$tfile
+	wait
+	do_facet ost1 "$LCTL set_param fail_loc=0x0"
+}
+run_test 830 "setattr vs destroy race (should not panic)"
 #
 # tests that do cleanup/setup should be run at the end
 #
