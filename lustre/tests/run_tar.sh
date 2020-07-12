@@ -33,7 +33,7 @@ do_tar() {
 
 while [ ! -e "$END_RUN_FILE" ]; do
 	echoerr "$(date +'%F %H:%M:%S'): tar run starting"
-	rm -rf $TESTDIR
+	rm -rf $TESTDIR & wait $!
 	client_load_mkdir $TESTDIR
 	if [ $? -ne 0 ]; then
 		echoerr "$(date +'%F %H:%M:%S'): failed to create $TESTDIR"
@@ -47,7 +47,7 @@ while [ ! -e "$END_RUN_FILE" ]; do
 	df $TESTDIR || true
 	sleep 2
 
-	do_tar
+	do_tar & wait $!
 	RC=$?
 	PREV_ERRORS=$(grep "exit delayed from previous errors" $LOG) || true
 	if [ $RC -ne 0 -a "$ERRORS_OK" -a "$PREV_ERRORS" ]; then
