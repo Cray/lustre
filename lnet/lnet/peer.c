@@ -2980,24 +2980,38 @@ __must_hold(&lp->lp_lock)
 static lnet_nid_t lnet_peer_select_nid(struct lnet_peer *lp)
 {
 	struct lnet_peer_ni *lpni;
+	__u32 srcnet_id = LNET_NIDNET(lp->lp_disc_src_nid);
+	__u32 net_any = LNET_NIDNET(LNET_NID_ANY);
+	struct lnet_route *route;
+	struct lnet_remotenet *rnet;
+	struct lnet_peer_net *peer_net =
+		lnet_peer_get_net_locked(lp, srcnet_id);
 
 	/* Look for a direct-connected NID for this peer. */
 	lpni = NULL;
-	while ((lpni = lnet_get_next_peer_ni_locked(lp, NULL, lpni)) != NULL) {
-		if (!lnet_get_net_locked(lpni->lpni_peer_net->lpn_net_id))
-			continue;
-		break;
+	while ((lpni = lnet_get_next_peer_ni_locked(lp, peer_net, lpni)) != NULL) {
+		if (lnet_get_net_locked(lpni->lpni_peer_net->lpn_net_id))
+			goto out;
 	}
-	if (lpni)
-		return lpni->lpni_nid;
 
-	/* Look for a routed-connected NID for this peer. */
+	/*
+	 * Look for a routed-connected NID for this peer that we can reach
+	 * from the source NID if specified
+	 */
 	lpni = NULL;
 	while ((lpni = lnet_get_next_peer_ni_locked(lp, NULL, lpni)) != NULL) {
-		if (!lnet_find_rnet_locked(lpni->lpni_peer_net->lpn_net_id))
+		rnet = lnet_find_rnet_locked(lpni->lpni_peer_net->lpn_net_id);
+		if (!rnet)
 			continue;
-		break;
+		if (srcnet_id == net_any)
+			goto out;
+		list_for_each_entry(route, &rnet->lrn_routes, lr_list) {
+			if (lnet_peer_get_net_locked(route->lr_gateway, srcnet_id))
+				goto out;
+		}
 	}
+
+out:
 	if (lpni)
 		return lpni->lpni_nid;
 
