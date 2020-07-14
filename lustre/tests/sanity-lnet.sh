@@ -941,8 +941,12 @@ test_99a() {
 	do_lnetctl peer del --prim_nid 1.1.1.1@o2ib &&
 		error "Command should have failed"
 
-	echo "Don't provide mandatory arguments peer del"
+	echo "Don't provide mandatory argument for peer del"
 	do_lnetctl peer del --nid 1.1.1.1@tcp &&
+		error "Command should have failed"
+
+	echo "Don't provide mandatory argument for peer add"
+	do_lnetctl peer add --nid 1.1.1.1@tcp &&
 		error "Command should have failed"
 
 	echo "Don't provide mandatory arguments peer add"
@@ -978,7 +982,7 @@ test_99a() {
 	local nidstr
 	for nidstr in ${invalid_strs}; do
 		echo "Check invalid nidstring - '$nidstr'"
-		do_lnetctl peer add --nid $nidstr &&
+		do_lnetctl peer add --prim_nid 1.1.1.1@tcp --nid $nidstr &&
 			error "Command should have failed"
 	done
 
