@@ -108,8 +108,8 @@ do
 	%{__install} -D -m 0644 libcfs/include/libcfs/${header} %{buildroot}/%{_includedir}/libcfs/${header}
 done
 
-for header in linux-fs.h linux-mem.h linux-time.h linux-cpu.h linux-crypto.h \
-	      linux-misc.h
+for header in linux-cpu.h linux-crypto.h linux-fs.h linux-hash.h linux-list.h \
+	      linux-mem.h linux-misc.h linux-time.h linux-wait.h
 do
 	%{__install} -D -m 0644 libcfs/include/libcfs/linux/${header} %{buildroot}/%{_includedir}/libcfs/linux/${header}
 done
