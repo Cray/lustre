@@ -1580,6 +1580,22 @@ set_default_debug_facet () {
 	set_default_debug_nodes $node "$debug" "$subsys" $debug_size
 }
 
+set_params_nodes () {
+	[[ $# -ge 2 ]] || return 0
+
+	local nodes=$1
+	shift
+	do_nodes $nodes $LCTL set_param $@
+}
+
+set_params_clients () {
+	local clients=${1:-$CLIENTS}
+	local params=${2:-$CLIENT_LCTL_SETPARAM_PARAM}
+
+	[[ -n $params ]] || return 0
+	set_params_nodes $clients $params
+}
+
 set_experimental_features_flag() {
 	local exp_flag=${1:-"$ENABLE_EXPERIMENTAL_FEATURES"}
 
@@ -2330,6 +2346,7 @@ zconf_mount() {
 
 	set_default_debug_nodes $client
 	set_experimental_features_flag_nodes $client
+	set_params_clients $client
 
 	return 0
 }
@@ -2542,6 +2559,7 @@ exit \\\$rc" || return ${PIPESTATUS[0]}
 
 	set_default_debug_nodes $clients
 	set_experimental_features_flag_nodes $clients
+	set_params_clients $clients
 	return 0
 }
 
@@ -5455,6 +5473,7 @@ check_and_setup_lustre() {
 
         set_default_debug_nodes $(comma_list $(nodes_list))
 	set_experimental_features_flag_nodes $(comma_list $(nodes_list))
+	set_params_clients
     fi
 
 	if [ -z "$CLIENTONLY" -a $(lower $OSD_TRACK_DECLARES_LBUG) == 'yes' ]; then
