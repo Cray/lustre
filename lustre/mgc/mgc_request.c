@@ -1939,11 +1939,26 @@ static int mgc_process_cfg_log(struct obd_device *mgc,
 	    lu2dt_dev(cli->cl_mgc_configs_dir->do_lu.lo_dev) ==
 	    lsi->lsi_dt_dev) {
 		CFS_RACE(OBD_FAIL_MGC_FS_CLEANUP_RACE);
-		if (!local_only && !lsi->lsi_dt_dev->dd_rdonly)
+		if (!local_only && !lsi->lsi_dt_dev->dd_rdonly) {
 			/* Only try to copy log if we have the lock. */
+			CDEBUG(D_INFO, "%s: copy local log %s\n",
+			       mgc->obd_name, cld->cld_logname);
+
 			rc = mgc_llog_local_copy(env, mgc, ctxt, lctxt,
 						 cld->cld_logname);
+			if (!rc)
+				lsi->lsi_flags &= ~LDD_F_NO_LOCAL_LOGS;
+		}
 		if (local_only || rc) {
+			if (unlikely(lsi->lsi_flags & LDD_F_NO_LOCAL_LOGS)
+			    || rc) {
+				CWARN("%s: local log %s are not valid and/or "
+				      "remote logs are not accessbile "
+				      "rc = %d\n", mgc->obd_name,
+				       cld->cld_logname, rc);
+				GOTO(out_pop, rc = -EIO);
+			}
+
 			if (strcmp(cld->cld_logname, PARAMS_FILENAME) != 0 &&
 			    llog_is_empty(env, lctxt, cld->cld_logname)) {
 				LCONSOLE_ERROR_MSG(0x13a, "Failed to get MGS "
@@ -1951,9 +1966,9 @@ static int mgc_process_cfg_log(struct obd_device *mgc,
 						   "\n", cld->cld_logname);
 				GOTO(out_pop, rc = -ENOENT);
 			}
-			CDEBUG(D_MGC, "Failed to get MGS log %s, using local "
+			CDEBUG(D_MGC, "%s: Failed to get MGS log %s, using local "
 			       "copy for now, will try to update later.\n",
-			       cld->cld_logname);
+			       mgc->obd_name, cld->cld_logname);
 			rc = 0;
 		}
 		/* Now, whether we copied or not, start using the local llog.
