@@ -2783,7 +2783,8 @@ ksocknal_startup(struct lnet_ni *ni)
 					   ni->ni_interfaces[i]) != 0)
 					continue;
 
-				ksi = &net->ksnn_interfaces[j];
+				ksi =
+				  &net->ksnn_interfaces[net->ksnn_ninterfaces];
 				ni->ni_dev_cpt = ifaces[j].li_cpt;
 				ksi->ksni_ipaddr = ifaces[j].li_ipaddr;
 				ksi->ksni_netmask = ifaces[j].li_netmask;
