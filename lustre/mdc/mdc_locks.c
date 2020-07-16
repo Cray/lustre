@@ -223,16 +223,15 @@ static inline void mdc_clear_replay_flag(struct ptlrpc_request *req, int rc)
  * original open if the MDS crashed just when this client also OOM'd)
  * but this is incredibly unlikely, and questionable whether the client
  * could do MDS recovery under OOM anyways... */
-int mdc_save_lovea(struct ptlrpc_request *req,
-		   const struct req_msg_field *field,
-		   void *data, u32 size)
+static int mdc_save_lovea(struct ptlrpc_request *req,
+			  void *data, u32 size)
 {
 	struct req_capsule *pill = &req->rq_pill;
-	struct lov_user_md *lmm;
+	void *lovea;
 	int rc = 0;
 
-	if (req_capsule_get_size(pill, field, RCL_CLIENT) < size) {
-		rc = sptlrpc_cli_enlarge_reqbuf(req, field, size);
+	if (req_capsule_get_size(pill, &RMF_EADATA, RCL_CLIENT) < size) {
+		rc = sptlrpc_cli_enlarge_reqbuf(req, &RMF_EADATA, size);
 		if (rc) {
 			CERROR("%s: Can't enlarge ea size to %d: rc = %d\n",
 			       req->rq_export->exp_obd->obd_name,
@@ -240,16 +239,14 @@ int mdc_save_lovea(struct ptlrpc_request *req,
 			return rc;
 		}
 	} else {
-		req_capsule_shrink(pill, field, size, RCL_CLIENT);
+		req_capsule_shrink(pill, &RMF_EADATA, size, RCL_CLIENT);
 	}
 
-	req_capsule_set_size(pill, field, RCL_CLIENT, size);
-	lmm = req_capsule_client_get(pill, field);
-	if (lmm) {
-		memcpy(lmm, data, size);
-		/* overwrite layout generation returned from the MDS */
-		lmm->lmm_stripe_offset =
-		  (typeof(lmm->lmm_stripe_offset))LOV_OFFSET_DEFAULT;
+	req_capsule_set_size(pill, &RMF_EADATA, RCL_CLIENT, size);
+	lovea= req_capsule_client_get(pill, &RMF_EADATA);
+	if (lovea) {
+		memcpy(lovea, data, size);
+		lov_fix_ea_for_replay(lovea);
 	}
 
 	return rc;
@@ -768,7 +765,7 @@ static int mdc_finish_enqueue(struct obd_export *exp,
                          * (for example error one).
                          */
                         if ((it->it_op & IT_OPEN) && req->rq_replay) {
-				rc = mdc_save_lovea(req, &RMF_EADATA, eadata,
+				rc = mdc_save_lovea(req,eadata,
 						    body->mbo_eadatasize);
 				if (rc) {
 					body->mbo_valid &= ~OBD_MD_FLEASIZE;
@@ -795,8 +792,7 @@ static int mdc_finish_enqueue(struct obd_export *exp,
 			 * another set of OST objects).
 			 */
 			if (req->rq_transno)
-				(void)mdc_save_lovea(req, &RMF_EADATA, lvb_data,
-						     lvb_len);
+				(void)mdc_save_lovea(req, lvb_data, lvb_len);
 		}
 	}
 
