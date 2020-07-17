@@ -552,8 +552,11 @@ int ext_cdt_send_hsm_progress(struct mdt_thread_info *mti,
 
 	rc = netlink_send_msg(EXT_HSM_PROGRESS, hpk,
 			      sizeof(struct hsm_progress_kernel_v2));
-	if (rc)
-		goto out;
+	if (rc) {
+		/* Ignore errors in sending the progress message */
+		CERROR("Sending HSM progress message failed; please verify that the external coordinator is running\n");
+		rc = 0;
+	}
 
 	if (!(hpk->hpk_flags & HP_FLAG_COMPLETED))
 		goto out;
@@ -889,7 +892,7 @@ static int hsm_send_to_ct(struct obd_uuid *uuid, struct hsm_action_list *hal,
 		rc = netlink_send_msg(EXT_HSM_COMPLETE, &hru,
 				      sizeof(struct hsm_record_update));
 		if (rc < 0)
-			CERROR("Extneral HSM failed to update %llx to FAILED\n",
+			CERROR("External HSM failed to update %llx to FAILED; please verify that the external coordinator is running\n",
 			       hru.cookie);
 	}
 
@@ -1147,6 +1150,12 @@ out:
 		hru.status = status;
 		rc = netlink_send_msg(EXT_HSM_COMPLETE, &hru,
 				      sizeof(struct hsm_record_update));
+		if (rc) {
+			/* Ignore errors in sending the progress message */
+			CERROR("Sending HSM progress message failed; please verify that the external coordinator is running\n");
+			rc = 0;
+		}
+
 	}
 
 	if (!IS_ERR(obj)) {
