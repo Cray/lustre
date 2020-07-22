@@ -627,7 +627,7 @@ lnet_peer_table_del_rtrs_locked(struct lnet_net *net,
 			gw_nid = lp->lpni_peer_net->lpn_peer->lp_primary_nid;
 
 			lnet_net_unlock(LNET_LOCK_EX);
-			lnet_del_route(LNET_NIDNET(LNET_NID_ANY), gw_nid);
+			lnet_del_route(LNET_NET_ANY, gw_nid);
 			lnet_net_lock(LNET_LOCK_EX);
 		}
 	}
@@ -3037,7 +3037,6 @@ static lnet_nid_t lnet_peer_select_nid(struct lnet_peer *lp)
 {
 	struct lnet_peer_ni *lpni;
 	__u32 srcnet_id = LNET_NIDNET(lp->lp_disc_src_nid);
-	__u32 net_any = LNET_NIDNET(LNET_NID_ANY);
 	struct lnet_route *route;
 	struct lnet_remotenet *rnet;
 	struct lnet_peer_net *peer_net =
@@ -3059,7 +3058,7 @@ static lnet_nid_t lnet_peer_select_nid(struct lnet_peer *lp)
 		rnet = lnet_find_rnet_locked(lpni->lpni_peer_net->lpn_net_id);
 		if (!rnet)
 			continue;
-		if (srcnet_id == net_any)
+		if (srcnet_id == LNET_NET_ANY)
 			goto out;
 		list_for_each_entry(route, &rnet->lrn_routes, lr_list) {
 			if (lnet_peer_get_net_locked(route->lr_gateway, srcnet_id))
