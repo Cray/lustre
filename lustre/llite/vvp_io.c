@@ -944,19 +944,33 @@ void vvp_set_pagevec_dirty(struct pagevec *pvec)
 	struct mem_cgroup *memcg;
 #endif
 	unsigned long flags;
+	unsigned long skip_pages = 0;
 	int count = pagevec_count(pvec);
 	int dirtied = 0;
-	int i = 0;
+	int i;
 
 	ENTRY;
 
-	/* From set_page_dirty */
-	for (i = 0; i < count; i++)
-		ClearPageReclaim(pvec->pages[i]);
+	BUILD_BUG_ON(PAGEVEC_SIZE > BITS_PER_LONG);
 
 	LASSERTF(page->mapping,
 		 "mapping must be set. page %p, page->private (cl_page) %p",
 		 page, (void *) page->private);
+
+	for (i = 0; i < count; i++) {
+		page = pvec->pages[i];
+
+		ClearPageReclaim(page);
+
+		lock_page_memcg(page);
+		if (TestSetPageDirty(page)) {
+			/* page is already dirty .. no extra work needed
+			 * set a flag for the i'th page to be skipped
+			 */
+			unlock_page_memcg(page);
+			skip_pages |= (1 << i);
+		}
+	}
 
 	/* Rest of code derived from __set_page_dirty_nobuffers */
 	xa_lock_irqsave(&mapping->i_pages, flags);
@@ -969,17 +983,13 @@ void vvp_set_pagevec_dirty(struct pagevec *pvec)
 	 * 3. No mapping is impossible. (Race w/truncate mentioned in
 	 * dirty_nobuffers should be impossible because we hold the page lock.)
 	 * 4. All mappings are the same because i/o is only to one file.
-	 * 5. We invert the lock order on lock_page_memcg(page) and the mapping
-	 * xa_lock, but this is the only function that should use that pair of
-	 * locks and it can't race because Lustre locks pages throughout i/o.
 	 */
 	for (i = 0; i < count; i++) {
 		page = pvec->pages[i];
-		lock_page_memcg(page);
-		if (TestSetPageDirty(page)) {
-			unlock_page_memcg(page);
+		/* if the i'th page was unlocked above, skip it here */
+		if ((skip_pages >> i) & 1)
 			continue;
-		}
+
 		LASSERTF(page->mapping == mapping,
 			 "all pages must have the same mapping.  page %p, mapping %p, first mapping %p\n",
 			 page, page->mapping, mapping);
