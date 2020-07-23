@@ -17882,7 +17882,7 @@ test_255c() {
 		skip "lustre < 2.7.22 does not support lockahead" && return
 
 	test_mkdir -p $DIR/$tdir
-	$SETSTRIPE -i 0 $DIR/$tdir
+	$SETSTRIPE -i 0 -c 1 $DIR/$tdir
 
 	#test 10 returns only success/failure
 	i=10
