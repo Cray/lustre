@@ -1637,9 +1637,17 @@ set_hostid () {
 mount_facets () {
 	local facets=${1:-$(get_facets)}
 	local facet
+	local -a mountpids
+	local total=0
+	local ret=0
 
 	for facet in ${facets//,/ }; do
-		mount_facet $facet
+		mount_facet $facet &
+		mountpids[total]=$!
+		total=$((total+1))
+	done
+	for ((index=0; index<$total; index++)); do
+		wait ${mountpids[index]}
 		local RC=$?
 		[ $RC -eq 0 ] && continue
 
@@ -1649,8 +1657,9 @@ mount_facets () {
 		else
 			error "Restart of $facet failed!"
 		fi
-		return $RC
+		ret=$RC
 	done
+	return $ret
 }
 
 #
@@ -3573,6 +3582,8 @@ facet_failover() {
 	$E2FSCK_ON_MDT0 && (run_e2fsck $(facet_active_host $SINGLEMDS) \
 		$(mdsdevname 1) "-n" || error "Running e2fsck")
 
+	local -a mountpids
+
 	for ((index=0; index<$total; index++)); do
 		change_active ${affecteds[index]}
 
@@ -3587,11 +3598,17 @@ facet_failover() {
 			affecteds[index]=$(exclude_items_from_list \
 				${affecteds[index]} mgs)
 		fi
-		# FIXME; has to be changed to mount all facets concurrently
 		if [ -n "${affecteds[index]}" ]; then
 			echo mount facets: ${affecteds[index]}
-			mount_facets ${affecteds[index]}
+			mount_facets ${affecteds[index]} &
+			mountpids[index]=$!
 		fi
+	done
+	for ((index=0; index<$total; index++)); do
+		if [ -n "${affecteds[index]}" ]; then
+			wait ${mountpids[index]}
+		fi
+
 		if $GSS_SK; then
 			do_nodes $(comma_list $(all_nodes)) \
 				"keyctl show | grep lustre | cut -c1-11 |
