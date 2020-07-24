@@ -1051,6 +1051,10 @@ run_rr_alloc() {
 
 	foeo_calc=$((rr_alloc_NFILES * total_MNTPTS / OSTCOUNT))
 	local create_count=$((2 * foeo_calc))
+
+	# create_count range: [OST_MIN_PRECREATE=32, OST_MAX_PRECREATE=20000]
+	[[ $create_count -lt 32 ]] && create_count=32
+	[[ $create_count -gt 20000 ]] && create_count=20000
 	do_facet mds1 "$LCTL set_param -n \
 		lov.$FSNAME-MDT0000*.qos_threshold_rr 100 \
 		osp.$FSNAME-OST*-osc-MDT0000.create_count $create_count" ||
