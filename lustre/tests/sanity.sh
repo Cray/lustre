@@ -22114,6 +22114,8 @@ run_test 900 "umount should not race with any mgc requeue thread"
 
 # LUS-6253/LU-11185
 test_901() {
+	local old
+	local count
 	local oldc
 	local newc
 	local olds
@@ -22122,7 +22124,22 @@ test_901() {
 
 	# some get_param have a bug to handle dot in param name
 	cancel_lru_locks MGC
-	oldc=$($LCTL get_param -n 'ldlm.namespaces.MGC*.lock_count')
+	old=$(mount -t lustre | wc -l)
+	# 1 config+sptlrpc
+	# 2 params
+	# 3 nodemap
+	# 4 IR
+	old=$((old * 4))
+	oldc=0
+	count=0
+	while [ $old -ne $oldc ]; do
+		oldc=$($LCTL get_param -n 'ldlm.namespaces.MGC*.lock_count')
+		sleep 1
+		((count++))
+		if [ $count -ge $TIMEOUT ]; then
+			error "too large timeout"
+		fi
+	done
 	olds=$(do_facet mgs $LCTL get_param -n 'ldlm.namespaces.MGS*.lock_count')
 	umount_client $MOUNT || error "umount failed"
 	mount_client $MOUNT || error "mount failed"
