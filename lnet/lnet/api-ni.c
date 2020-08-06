@@ -4577,8 +4577,18 @@ lnet_discover(struct lnet_process_id id, __u32 force,
 	if (rc)
 		goto out_decref;
 
-	/* Peer may have changed. */
+	/* The lpni (or lp) for this NID may have changed and our ref is
+	 * the only thing keeping the old one around. Release the ref
+	 * and lookup the lpni again
+	 */
+	lnet_peer_ni_decref_locked(lpni);
+	lpni = lnet_find_peer_ni_locked(id.nid);
+	if (!lpni) {
+		rc = -ENOENT;
+		goto out;
+	}
 	lp = lpni->lpni_peer_net->lpn_peer;
+
 	if (lp->lp_nnis < n_ids)
 		n_ids = lp->lp_nnis;
 
