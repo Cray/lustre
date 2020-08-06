@@ -465,6 +465,10 @@ lnet_peer_del_locked(struct lnet_peer *peer)
 
 	CDEBUG(D_NET, "peer %s\n", libcfs_nid2str(peer->lp_primary_nid));
 
+	spin_lock(&peer->lp_lock);
+	peer->lp_state |= LNET_PEER_MARK_DELETED;
+	spin_unlock(&peer->lp_lock);
+
 	lpni = lnet_get_next_peer_ni_locked(peer, NULL, lpni);
 	while (lpni != NULL) {
 		lpni2 = lnet_get_next_peer_ni_locked(peer, NULL, lpni);
@@ -477,9 +481,41 @@ lnet_peer_del_locked(struct lnet_peer *peer)
 	return rc2;
 }
 
+/*
+ * Discovering this peer is taking too long. Cancel any Ping or Push
+ * that discovery is waiting on by unlinking the relevant MDs. The
+ * lnet_discovery_event_handler() will proceed from here and complete
+ * the cleanup.
+ */
+static void lnet_peer_cancel_discovery(struct lnet_peer *lp)
+{
+	struct lnet_handle_md ping_mdh;
+	struct lnet_handle_md push_mdh;
+
+	LNetInvalidateMDHandle(&ping_mdh);
+	LNetInvalidateMDHandle(&push_mdh);
+
+	spin_lock(&lp->lp_lock);
+	if (lp->lp_state & LNET_PEER_PING_SENT) {
+		ping_mdh = lp->lp_ping_mdh;
+		LNetInvalidateMDHandle(&lp->lp_ping_mdh);
+	}
+	if (lp->lp_state & LNET_PEER_PUSH_SENT) {
+		push_mdh = lp->lp_push_mdh;
+		LNetInvalidateMDHandle(&lp->lp_push_mdh);
+	}
+	spin_unlock(&lp->lp_lock);
+
+	if (!LNetMDHandleIsInvalid(ping_mdh))
+		LNetMDUnlink(ping_mdh);
+	if (!LNetMDHandleIsInvalid(push_mdh))
+		LNetMDUnlink(push_mdh);
+}
+
 static int
 lnet_peer_del(struct lnet_peer *peer)
 {
+	lnet_peer_cancel_discovery(peer);
 	lnet_net_lock(LNET_LOCK_EX);
 	lnet_peer_del_locked(peer);
 	lnet_net_unlock(LNET_LOCK_EX);
@@ -2254,6 +2290,8 @@ again:
 			break;
 		if (lnet_peer_is_uptodate(lp))
 			break;
+		if (lp->lp_state & LNET_PEER_MARK_DELETED)
+			break;
 		lnet_peer_queue_for_discovery(lp);
 		count++;
 		CDEBUG(D_NET, "Discovery attempt # %d\n", count);
@@ -2298,7 +2336,9 @@ again:
 		rc = lp->lp_dc_error;
 	else if (!block)
 		CDEBUG(D_NET, "non-blocking discovery\n");
-	else if (!lnet_peer_is_uptodate(lp) && !lnet_is_discovery_disabled(lp))
+	else if (!lnet_peer_is_uptodate(lp) &&
+		 !(lnet_is_discovery_disabled(lp) ||
+		   (lp->lp_state & LNET_PEER_MARK_DELETED)))
 		goto again;
 
 	CDEBUG(D_NET, "peer %s NID %s: %d. %s\n",
@@ -2888,6 +2928,10 @@ __must_hold(&lp->lp_lock)
 	CDEBUG(D_NET, "peer %s(%p) state %#x\n",
 	       libcfs_nid2str(lp->lp_primary_nid), lp, lp->lp_state);
 
+	/* no-op if lnet_peer_del() has already been called on this peer */
+	if (lp->lp_state & LNET_PEER_MARK_DELETED)
+		return 0;
+
 	if (the_lnet.ln_dc_state != LNET_DC_STATE_RUNNING)
 		return -ESHUTDOWN;
 
@@ -3347,37 +3391,6 @@ static void lnet_peer_discovery_error(struct lnet_peer *lp, int error)
 }
 
 /*
- * Discovering this peer is taking too long. Cancel any Ping or Push
- * that discovery is waiting on by unlinking the relevant MDs. The
- * lnet_discovery_event_handler() will proceed from here and complete
- * the cleanup.
- */
-static void lnet_peer_cancel_discovery(struct lnet_peer *lp)
-{
-	struct lnet_handle_md ping_mdh;
-	struct lnet_handle_md push_mdh;
-
-	LNetInvalidateMDHandle(&ping_mdh);
-	LNetInvalidateMDHandle(&push_mdh);
-
-	spin_lock(&lp->lp_lock);
-	if (lp->lp_state & LNET_PEER_PING_SENT) {
-		ping_mdh = lp->lp_ping_mdh;
-		LNetInvalidateMDHandle(&lp->lp_ping_mdh);
-	}
-	if (lp->lp_state & LNET_PEER_PUSH_SENT) {
-		push_mdh = lp->lp_push_mdh;
-		LNetInvalidateMDHandle(&lp->lp_push_mdh);
-	}
-	spin_unlock(&lp->lp_lock);
-
-	if (!LNetMDHandleIsInvalid(ping_mdh))
-		LNetMDUnlink(ping_mdh);
-	if (!LNetMDHandleIsInvalid(push_mdh))
-		LNetMDUnlink(push_mdh);
-}
-
-/*
  * Wait for work to be queued or some other change that must be
  * attended to. Returns non-zero if the discovery thread should shut
  * down.
@@ -3536,7 +3549,8 @@ static int lnet_peer_discovery(void *arg)
 			CDEBUG(D_NET, "peer %s(%p) state %#x\n",
 				libcfs_nid2str(lp->lp_primary_nid), lp,
 				lp->lp_state);
-			if (lp->lp_state & LNET_PEER_MARK_DELETION)
+			if (lp->lp_state & (LNET_PEER_MARK_DELETION |
+					    LNET_PEER_MARK_DELETED))
 				rc = lnet_peer_deletion(lp);
 			else if (lp->lp_state & LNET_PEER_DATA_PRESENT)
 				rc = lnet_peer_data_present(lp);
