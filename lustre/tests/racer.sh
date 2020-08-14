@@ -71,6 +71,7 @@ RACER_ENABLE_DOM=${RACER_ENABLE_DOM:-true}
 RACER_ENABLE_FLR=${RACER_ENABLE_FLR:-true}
 RACER_ENABLE_SEL=${RACER_ENABLE_SEL:-true}
 RACER_LBUG_ON_EVICTION=${RACER_LBUG_ON_EVICTION:-false}
+RACER_FILE_STRIPECOUNT=${RACER_FILE_STRIPECOUNT:-""}
 
 check_progs_installed $CLIENTS $racer ||
 	{ skip_env "$racer not found" && exit 0; }
@@ -103,7 +104,9 @@ test_1() {
 
 		RDIRS="$RDIRS $d/racer"
 		mkdir -p $d/racer
-	#	lfs setstripe $d/racer -c -1
+		[[ -n $RACER_FILE_STRIPECOUNT ]] &&
+			$LFS setstripe $d/racer -c $RACER_FILE_STRIPECOUNT ||
+			true
 		if [ $MDSCOUNT -ge 2 ]; then
 			for i in $(seq $((MDSCOUNT - 1))); do
 				RDIRS="$RDIRS $d/racer$i"
@@ -111,6 +114,10 @@ test_1() {
 					$LFS mkdir -i $i $d/racer$i ||
 						error "lfs mkdir $i failed"
 				fi
+				[[ -n $RACER_FILE_STRIPECOUNT ]] &&
+					$LFS setstripe $d/racer$i \
+						-c $RACER_FILE_STRIPECOUNT ||
+					true
 			done
 		fi
 	done
@@ -130,6 +137,10 @@ test_1() {
 			RACER_ENABLE_FLR=$RACER_ENABLE_FLR \
 			RACER_ENABLE_SEL=$RACER_ENABLE_SEL \
 			RACER_MAX_CLEANUP_WAIT=$RACER_MAX_CLEANUP_WAIT \
+			RACER_FILE_STRIPECOUNT=$RACER_FILE_STRIPECOUNT \
+			RACER_PROGS=$RACER_PROGS \
+			NUM_THREADS=$NUM_THREADS \
+			MAX_FILES=$MAX_FILES \
 			LFS=$LFS \
 			LCTL=$LCTL \
 			$racer $rdir $NUM_RACER_THREADS" &

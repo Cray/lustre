@@ -3,6 +3,7 @@ RACER_ENABLE_PFL=${RACER_ENABLE_PFL:-true}
 RACER_ENABLE_DOM=${RACER_ENABLE_DOM:-true}
 RACER_ENABLE_FLR=${RACER_ENABLE_FLR:-true}
 RACER_ENABLE_SEL=${RACER_ENABLE_SEL:-true}
+RACER_FILE_STRIPECOUNT=${RACER_FILE_STRIPECOUNT:-""}
 DIR=$1
 MAX=$2
 MAX_MB=${RACER_MAX_MB:-8}
@@ -27,7 +28,7 @@ while /bin/true; do
 	file=$((RANDOM % MAX))
 	# $RANDOM is between 0 and 32767, and we want $blockcount in 64kB units
 	blockcount=$((RANDOM * MAX_MB / 32 / 64))
-	stripecount=$((RANDOM % (OSTCOUNT + 1)))
+	stripecount=${RACER_FILE_STRIPECOUNT:-$((RANDOM % (OSTCOUNT + 1)))}
 
 	[ $stripecount -gt 0 ] && {
 		stripesize=$(((1 << (RANDOM % 5)) * 64))K

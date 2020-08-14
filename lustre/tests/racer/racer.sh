@@ -13,9 +13,9 @@ RACER_MAX_CLEANUP_WAIT=${RACER_MAX_CLEANUP_WAIT:-$DURATION}
 
 mkdir -p $DIR
 
-RACER_PROGS="file_create dir_create file_rm file_rename file_link file_symlink \
+RACER_PROGS=${RACER_PROGS:-"file_create dir_create file_rm file_rename file_link file_symlink \
 file_list file_concat file_exec file_chown file_chmod file_mknod file_truncate \
-file_delxattr file_getxattr file_setxattr"
+file_delxattr file_getxattr file_setxattr"}
 
 if $RACER_ENABLE_REMOTE_DIRS || $RACER_ENABLE_STRIPED_DIRS; then
 	RACER_PROGS+=' dir_remote'
