@@ -58,6 +58,8 @@
 #include "cl_internal.h"
 
 static struct kmem_cache *cl_env_kmem;
+struct kmem_cache *cl_page_kmem_array[16];
+unsigned short cl_page_kmem_size_array[16];
 
 /** Lock class of cl_object_header::coh_attr_guard */
 static struct lock_class_key cl_attr_guard_class;
@@ -1102,6 +1104,14 @@ out:
  */
 void cl_global_fini(void)
 {
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(cl_page_kmem_array); i++) {
+		if (cl_page_kmem_array[i]) {
+			kmem_cache_destroy(cl_page_kmem_array[i]);
+			cl_page_kmem_array[i] = NULL;
+		}
+	}
 	cl_env_percpu_fini();
 	lu_context_key_degister(&cl_key);
 	lu_kmem_fini(cl_object_caches);
