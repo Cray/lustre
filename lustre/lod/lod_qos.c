@@ -2486,9 +2486,6 @@ int lod_prepare_create(const struct lu_env *env, struct lod_object *lo,
 
 		/* Check the inherited layouts */
 		if (!libcfs_experimental_flag) {
-			if (lov_pattern(lod_comp->llc_pattern) == LOV_PATTERN_MDT)
-				RETURN(-ENOSYS);
-
 			if (lod_comp->llc_flags & LCME_FL_EXTENSION)
 				RETURN(-ENOSYS);
 		}
