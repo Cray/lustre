@@ -112,6 +112,21 @@ static bool ptlrpc_check_import_is_idle(struct obd_import *imp)
 	return true;
 }
 
+static void ptlrpc_update_next_ping(struct obd_import *imp, int soon)
+{
+#ifdef ENABLE_PINGER
+	time64_t time = soon ? PING_INTERVAL_SHORT : PING_INTERVAL;
+
+	if (imp->imp_state == LUSTRE_IMP_DISCON) {
+		time64_t dtime = max_t(time64_t, CONNECTION_SWITCH_MIN,
+				       AT_OFF ? 0 :
+				       at_get(&imp->imp_at.iat_net_latency));
+		time = min(time, dtime);
+	}
+	imp->imp_next_ping = ktime_get_seconds() + time;
+#endif /* ENABLE_PINGER */
+}
+
 static int ptlrpc_ping(struct obd_import *imp)
 {
 	struct ptlrpc_request	*req;
@@ -130,29 +145,15 @@ static int ptlrpc_ping(struct obd_import *imp)
 
 	DEBUG_REQ(D_INFO, req, "pinging %s->%s",
 		  imp->imp_obd->obd_uuid.uuid, obd2cli_tgt(imp->imp_obd));
+	/* Updating imp_next_ping early, it allows pinger_check_timeout to
+	 * see an actual time for next awake. request_out_callback update
+	 * happens at another thread, and ptlrpc_pinger_main may sleep
+	 * already.
+	 */
+	ptlrpc_update_next_ping(imp, 0);
 	ptlrpcd_add_req(req);
 
 	RETURN(0);
-}
-
-static void ptlrpc_update_next_ping(struct obd_import *imp, int soon)
-{
-#ifdef ENABLE_PINGER
-	time64_t time = soon ? PING_INTERVAL_SHORT : PING_INTERVAL;
-
-	if (imp->imp_state == LUSTRE_IMP_DISCON) {
-		time64_t dtime = max_t(time64_t, CONNECTION_SWITCH_MIN,
-				       AT_OFF ? 0 :
-				       at_get(&imp->imp_at.iat_net_latency));
-		time = min(time, dtime);
-	}
-	imp->imp_next_ping = ktime_get_seconds() + time;
-#endif /* ENABLE_PINGER */
-}
-
-void ptlrpc_ping_import_soon(struct obd_import *imp)
-{
-	imp->imp_next_ping = ktime_get_seconds();
 }
 
 static inline int imp_is_deactive(struct obd_import *imp)
@@ -163,17 +164,31 @@ static inline int imp_is_deactive(struct obd_import *imp)
 
 static inline time64_t ptlrpc_next_reconnect(struct obd_import *imp)
 {
-	if (imp->imp_server_timeout)
-		return ktime_get_seconds() + (obd_timeout >> 1);
-	else
-		return ktime_get_seconds() + obd_timeout;
+	return ktime_get_seconds() + INITIAL_CONNECT_TIMEOUT;
 }
 
 static time64_t pinger_check_timeout(time64_t time)
 {
 	time64_t timeout = PING_INTERVAL;
+	time64_t now;
+	struct list_head *iter;
+	struct obd_import *imp;
 
-	return time + timeout - ktime_get_seconds();
+	mutex_lock(&pinger_mutex);
+	now = ktime_get_seconds();
+	/* Process imports to find a nearest next ping */
+	list_for_each(iter, &pinger_imports) {
+		imp = list_entry(iter, struct obd_import, imp_pinger_chain);
+		if (!imp->imp_pingable || imp->imp_next_ping < now)
+			continue;
+		/* make sure imp_next_ping in the future from time*/
+		if ((imp->imp_next_ping - now) > (now - time) &&
+		    timeout > (imp->imp_next_ping - now))
+			timeout = imp->imp_next_ping - now;
+	}
+	mutex_unlock(&pinger_mutex);
+
+	return time + timeout - now;
 }
 
 static bool ir_up;
@@ -226,7 +241,7 @@ static void ptlrpc_pinger_process_import(struct obd_import *imp,
 	       imp->imp_deactive, imp->imp_pingable, suppress);
 
         if (level == LUSTRE_IMP_DISCON && !imp_is_deactive(imp)) {
-                /* wait for a while before trying recovery again */
+		/*  Wait for a while before trying recovery again */
                 imp->imp_next_ping = ptlrpc_next_reconnect(imp);
 		spin_unlock(&imp->imp_lock);
 		if (!imp->imp_no_pinger_recover ||
@@ -339,7 +354,7 @@ int ptlrpc_stop_pinger(void)
 
 void ptlrpc_pinger_sending_on_import(struct obd_import *imp)
 {
-        ptlrpc_update_next_ping(imp, 0);
+	ptlrpc_update_next_ping(imp, 0);
 }
 
 void ptlrpc_pinger_commit_expected(struct obd_import *imp)
