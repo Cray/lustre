@@ -419,7 +419,7 @@ static int echo_page_init(const struct lu_env *env, struct cl_object *obj,
 
 	get_page(page->cp_vmpage);
 	mutex_init(&ep->ep_lock);
-	cl_page_slice_add(page, &ep->ep_cl, obj, index, &echo_page_ops);
+	cl_page_slice_add(page, &ep->ep_cl, obj, &echo_page_ops);
 	atomic_inc(&eco->eo_npages);
 	RETURN(0);
 }
