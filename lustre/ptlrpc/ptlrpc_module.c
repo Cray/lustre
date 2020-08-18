@@ -60,6 +60,7 @@ static __init int ptlrpc_init(void)
 	mutex_init(&pinger_mutex);
 	mutex_init(&ptlrpcd_mutex);
 	ptlrpc_init_xid();
+	__lustre_msg_early_size();
 
 	rc = req_layout_init();
 	if (rc)
