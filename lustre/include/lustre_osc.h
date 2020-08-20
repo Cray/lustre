@@ -238,7 +238,11 @@ enum osc_dap_flags {
 	/**
 	 * Return the lock even if it is being canceled.
 	 */
-	OSC_DAP_FL_CANCELING = 1 << 1
+	OSC_DAP_FL_CANCELING = 1 << 1,
+	/**
+	 * check ast data is present, requested to cancel cb
+	 */
+	OSC_DAP_FL_AST	     = 1 << 2,
 };
 
 /*

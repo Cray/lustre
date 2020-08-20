@@ -70,7 +70,7 @@ int osc_match_base(const struct lu_env *env, struct obd_export *exp,
 		   struct ldlm_res_id *res_id, enum ldlm_type type,
 		   union ldlm_policy_data *policy, enum ldlm_mode mode,
 		   __u64 *flags, struct osc_object *obj,
-		   struct lustre_handle *lockh, int unref);
+		   struct lustre_handle *lockh, unsigned int m_flags);
 
 int osc_setattr_async(struct obd_export *exp, struct obdo *oa,
 		      obd_enqueue_update_f upcall, void *cookie,
