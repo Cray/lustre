@@ -119,7 +119,7 @@ module_param_call(lnet_recovery_interval, recovery_interval_set, param_get_int,
 		  &lnet_recovery_interval, S_IRUGO|S_IWUSR);
 #endif
 MODULE_PARM_DESC(lnet_recovery_interval,
-		"Interval to recover unhealthy interfaces in seconds");
+		"DEPRECATED - Interval to recover unhealthy interfaces in seconds");
 
 unsigned int lnet_recovery_limit = 0;
 static int recovery_limit_set(const char *val, cfs_kernel_param_arg_t *kp);
@@ -405,6 +405,8 @@ recovery_interval_set(const char *val, cfs_kernel_param_arg_t *kp)
 	int rc;
 	unsigned *interval = (unsigned *)kp->arg;
 	unsigned long value;
+
+	CWARN("'lnet_recovery_interval' has been deprecated\n");
 
 	rc = kstrtoul(val, 0, &value);
 	if (rc) {
