@@ -121,6 +121,23 @@ module_param_call(lnet_recovery_interval, recovery_interval_set, param_get_int,
 MODULE_PARM_DESC(lnet_recovery_interval,
 		"Interval to recover unhealthy interfaces in seconds");
 
+unsigned int lnet_recovery_limit = 0;
+static int recovery_limit_set(const char *val, cfs_kernel_param_arg_t *kp);
+#ifdef HAVE_KERNEL_PARAM_OPS
+static struct kernel_param_ops param_ops_recovery_limit = {
+	.set = recovery_limit_set,
+	.get = param_get_int,
+};
+#define param_check_recovery_limit(name, p) \
+		__param_check(name, p, int)
+module_param(lnet_recovery_limit, recovery_limit, S_IRUGO|S_IWUSR);
+#else
+module_param_call(lnet_recovery_limit, recovery_limit_set, param_get_int,
+		  &lnet_recovery_limit, S_IRUGO|S_IWUSR);
+#endif
+MODULE_PARM_DESC(lnet_recovery_limit,
+		 "How long to attempt recovery of unhealthy peer interfaces in seconds. Set to 0 to allow indefinite recovery");
+
 static int lnet_interfaces_max = LNET_INTERFACES_MAX_DEFAULT;
 static int intf_max_set(const char *val, cfs_kernel_param_arg_t *kp);
 
@@ -409,6 +426,23 @@ recovery_interval_set(const char *val, cfs_kernel_param_arg_t *kp)
 	*interval = value;
 
 	mutex_unlock(&the_lnet.ln_api_mutex);
+
+	return 0;
+}
+
+static int
+recovery_limit_set(const char *val, cfs_kernel_param_arg_t *kp)
+{
+	int rc;
+	unsigned long new_value;
+
+	rc = kstrtoul(val, 0, &new_value);
+	if (rc) {
+		CERROR("Invalid value for 'lnet_recovery_limit'\n");
+		return -EINVAL;
+	}
+
+	lnet_recovery_limit = new_value;
 
 	return 0;
 }
