@@ -3557,6 +3557,12 @@ lnet_recover_peer_nis(void)
 		}
 
 		spin_unlock(&lpni->lpni_lock);
+
+		if (now < lpni->lpni_next_ping) {
+			lnet_net_unlock(0);
+			continue;
+		}
+
 		lnet_net_unlock(0);
 
 		/*
@@ -3607,6 +3613,8 @@ lnet_recover_peer_nis(void)
 			 * lnet_find_peer_ni_locked()
 			 */
 			lnet_peer_ni_decref_locked(lpni);
+
+			lpni->lpni_ping_count++;
 
 			lpni->lpni_recovery_ping_mdh = mdh;
 

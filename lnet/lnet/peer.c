@@ -3931,11 +3931,19 @@ lnet_peer_ni_add_to_recoveryq_locked(struct lnet_peer_ni *lpni,
 		CDEBUG(D_NET, "lpni %s aged out last alive %lld\n",
 		       libcfs_nid2str(lpni->lpni_nid),
 		       lpni->lpni_last_alive);
+		/* Reset the ping count so that if this peer NI is added back to
+		 * the recovery queue we will send the first ping right away.
+		 */
+		lpni->lpni_ping_count = 0;
 		return;
 	}
 
-	CDEBUG(D_NET, "%s added to recovery queue. last alive: %lld health: %d\n",
+	lnet_peer_ni_set_next_ping(lpni, now);
+
+	CDEBUG(D_NET, "%s added to recovery queue. ping count: %u next ping: %lld last alive: %lld health: %d\n",
 	       libcfs_nid2str(lpni->lpni_nid),
+	       lpni->lpni_ping_count,
+	       lpni->lpni_next_ping,
 	       lpni->lpni_last_alive,
 	       atomic_read(&lpni->lpni_healthv));
 
