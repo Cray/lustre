@@ -3511,6 +3511,7 @@ lnet_recover_peer_nis(void)
 	lnet_nid_t nid;
 	int healthv;
 	int rc;
+	time64_t now;
 
 	INIT_LIST_HEAD(&local_queue);
 	INIT_LIST_HEAD(&processed_list);
@@ -3523,6 +3524,8 @@ lnet_recover_peer_nis(void)
 	list_splice_init(&the_lnet.ln_mt_peerNIRecovq,
 			 &local_queue);
 	lnet_net_unlock(0);
+
+	now = ktime_get_seconds();
 
 	list_for_each_entry_safe(lpni, tmp, &local_queue,
 				 lpni_recovery) {
@@ -3592,34 +3595,24 @@ lnet_recover_peer_nis(void)
 					    ev_info, the_lnet.ln_mt_handler,
 					    true);
 			lnet_net_lock(0);
-			/*
-			 * lnet_find_peer_ni_locked() grabs a refcount for
-			 * us. No need to take it explicitly.
-			 */
 			lpni = lnet_find_peer_ni_locked(nid);
 			if (!lpni) {
 				lnet_net_unlock(0);
 				LNetMDUnlink(mdh);
 				continue;
 			}
+			/* lnet_peer_ni_add_to_recoveryq_locked() will take a
+			 * ref on lpni if it is added to the processed_list, so
+			 * we can drop the ref taken by
+			 * lnet_find_peer_ni_locked()
+			 */
+			lnet_peer_ni_decref_locked(lpni);
 
 			lpni->lpni_recovery_ping_mdh = mdh;
-			/*
-			 * While we're unlocked the lpni could've been
-			 * readded on the recovery queue. In this case we
-			 * don't need to add it to the local queue, since
-			 * it's already on there and the thread that added
-			 * it would've incremented the refcount on the
-			 * peer, which means we need to decref the refcount
-			 * that was implicitly grabbed by find_peer_ni_locked.
-			 * Otherwise, if the lpni is still not on
-			 * the recovery queue, then we'll add it to the
-			 * processed list.
-			 */
-			if (list_empty(&lpni->lpni_recovery))
-				list_add_tail(&lpni->lpni_recovery, &processed_list);
-			else
-				lnet_peer_ni_decref_locked(lpni);
+
+			lnet_peer_ni_add_to_recoveryq_locked(lpni,
+							     &processed_list,
+							     now);
 			lnet_net_unlock(0);
 
 			spin_lock(&lpni->lpni_lock);
@@ -4649,8 +4642,7 @@ lnet_parse(struct lnet_ni *ni, struct lnet_hdr *hdr, lnet_nid_t from_nid,
 		}
 	}
 
-	if (the_lnet.ln_routing)
-		lpni->lpni_last_alive = ktime_get_seconds();
+	lpni->lpni_last_alive = ktime_get_seconds();
 
 	msg->msg_rxpeer = lpni;
 	msg->msg_rxni = ni;
