@@ -6113,14 +6113,15 @@ int lfs_setquota_times(int argc, char **argv, struct if_quotactl *qctl)
 	{ .val = 'p',	.name = "projid",	.has_arg = no_argument },
 	{ .val = 't',	.name = "times",	.has_arg = no_argument },
 	{ .val = 'u',	.name = "user",		.has_arg = no_argument },
-	{ .val = 'o',   .name = "pool",		.has_arg = required_argument },
+	{ .val = LFS_POOL_OPT,
+			.name = "pool",		.has_arg = required_argument },
 	{ .name = NULL } };
 	int qtype;
 
 	qctl->qc_cmd  = LUSTRE_Q_SETINFO;
 	qctl->qc_type = ALLQUOTA;
 
-	while ((c = getopt_long(argc, argv, "b:gi:ptuo:",
+	while ((c = getopt_long(argc, argv, "b:gi:ptu",
 				long_opts, NULL)) != -1) {
 		switch (c) {
 		case 'u':
@@ -6157,7 +6158,7 @@ quota_type:
                         break;
                 case 't': /* Yes, of course! */
                         break;
-		case 'o':
+		case LFS_POOL_OPT:
 			if (lfs_verify_poolarg(optarg))
 				return -1;
 			fprintf(stdout,
@@ -6226,7 +6227,8 @@ int lfs_setquota(int argc, char **argv)
 	{ .val = 'P',	.name = "default-prj",	.has_arg = no_argument },
 	{ .val = 'u',	.name = "user",		.has_arg = required_argument },
 	{ .val = 'U',	.name = "default-usr",	.has_arg = no_argument },
-	{ .val = 'o',	.name = "pool",		.has_arg = required_argument },
+	{ .val = LFS_POOL_OPT,
+			.name = "pool",		.has_arg = required_argument },
 	{ .name = NULL } };
 	unsigned limit_mask = 0;
 	char *endptr;
@@ -6252,7 +6254,7 @@ int lfs_setquota(int argc, char **argv)
 				  * so it can be used as a marker that qc_type
 				  * isn't reinitialized from command line */
 
-	while ((c = getopt_long(argc, argv, "b:B:dg:Gi:I:p:Pu:Uo:",
+	while ((c = getopt_long(argc, argv, "b:B:dg:Gi:I:p:Pu:U",
 		long_opts, NULL)) != -1) {
 		switch (c) {
 		case 'U':
@@ -6365,7 +6367,7 @@ quota_type_def:
 					(unsigned long long)dqb->dqb_ihardlimit,
 					progname);
 			break;
-		case 'o':
+		case LFS_POOL_OPT:
 			if (lfs_verify_poolarg(optarg)) {
 				rc = -1;
 				goto out;
@@ -7072,7 +7074,7 @@ static int lfs_quota(int argc, char **argv)
 	bool show_default = false;
 	int qtype;
 	struct option long_opts[] = {
-	{ .val = 1,	.name = "pool",	.has_arg = required_argument },
+	{ .val = LFS_POOL_OPT, .name = "pool", .has_arg = required_argument },
 	{ .name = NULL } };
 
 	qctl = calloc(1, sizeof(*qctl) + LOV_MAXPOOLNAME + 1);
@@ -7148,7 +7150,7 @@ quota_type:
 		case 'h':
 			human_readable = true;
 			break;
-		case 1:
+		case LFS_POOL_OPT:
 			if (lfs_verify_poolarg(optarg)) {
 				rc = -1;
 				goto out;
