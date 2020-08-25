@@ -133,6 +133,17 @@ test_mib() {
 run_test mib "mib"
 
 test_cascading_rw() {
+    local old_dirty
+    local cache_size
+
+    do_nodes $clients $LCTL set_param osc.$FSNAME-OST*-osc-[^mM]*.cur_grant_bytes=$((10 * 1024))
+    old_dirty=$($LCTL get_param -n  osc.$FSNAME-OST*-osc-[^mM]*.max_dirty_mb | head -1)
+    cache_size=$(((OSTSIZE/$(get_clients_mount_count))/1024))
+    if (( $cache_size < $old_dirty )); then
+        echo "cache size $cache_size"
+	do_nodes $clients $LCTL set_param osc.$FSNAME-OST*-osc-[^mM]*.max_dirty_mb=$cache_size
+        stack_trap "do_nodes $clients $LCTL set_param osc.$FSNAME-OST*-osc-[^mM]*.max_dirty_mb=$old_dirty" EXIT
+    fi
     run_cascading_rw
 }
 run_test cascading_rw "cascading_rw"

@@ -772,7 +772,11 @@ run_cascading_rw() {
 		-np $((num_clients * $casc_THREADS)) $cmd
 
     local rc=$?
+
+    do_nodes $clients $LCTL get_param osc.*.cur_grant_bytes
     if [ $rc != 0 ] ; then
+	$LFS df -i
+	$LFS df -h
         error "cascading_rw failed! $rc"
     fi
     rm -rf $testdir
