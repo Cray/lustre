@@ -2203,14 +2203,16 @@ interpret:
 
 		if (req->rq_reqmsg)
 			CDEBUG(D_RPCTRACE,
-			       "Completed RPC req@%p pname:cluuid:pid:xid:nid:opc:job %s:%s:%d:%llu:%s:%d:%s\n",
+			       "Completed RPC req@%p pname:cluuid:pid:xid:nid:opc:job:rc %s:%s:%d:%llu:%s:%d:%s:%d/%d\n",
 			       req, current->comm,
 			       imp->imp_obd->obd_uuid.uuid,
 			       lustre_msg_get_status(req->rq_reqmsg),
 			       req->rq_xid,
 			       obd_import_nid2str(imp),
 			       lustre_msg_get_opc(req->rq_reqmsg),
-			       lustre_msg_get_jobid(req->rq_reqmsg) ?: "");
+			       lustre_msg_get_jobid(req->rq_reqmsg) ?: "",
+			       req->rq_status, req->rq_repmsg ?
+			       lustre_msg_get_status(req->rq_repmsg) : -1);
 
 		spin_lock(&imp->imp_lock);
 		/*
