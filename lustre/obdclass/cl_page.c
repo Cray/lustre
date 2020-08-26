@@ -1158,11 +1158,22 @@ void cl_page_complete(const struct lu_env *env, struct cl_page *cl_page,
 		}
 	}
 
-	if (anchor != NULL) {
-		LASSERT(cl_page->cp_sync_io == anchor);
-		cl_page->cp_sync_io = NULL;
-		cl_sync_io_note(env, anchor, ioret);
+	if (anchor == NULL)
+		GOTO(out, 0);
+
+	LASSERT(cl_page->cp_sync_io == anchor);
+	cl_page->cp_sync_io = NULL;
+
+	if (likely(ioret == 0)) {
+		if (anchor->csi_highest_success < cl_page_index(cl_page))
+			anchor->csi_highest_success = cl_page_index(cl_page);
+	} else {
+		if (anchor->csi_lowest_failed > cl_page_index(cl_page))
+			anchor->csi_lowest_failed = cl_page_index(cl_page);
 	}
+
+	cl_sync_io_note(env, anchor, ioret);
+out:
 	EXIT;
 }
 EXPORT_SYMBOL(cl_page_complete);
