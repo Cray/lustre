@@ -934,6 +934,7 @@ static int vvp_io_commit_sync(const struct lu_env *env, struct cl_io *io,
 	struct cl_page *page;
 	unsigned int bytes = 0;
 	int rc = 0;
+	bool hole = false;
 
 	ENTRY;
 
@@ -956,7 +957,7 @@ static int vvp_io_commit_sync(const struct lu_env *env, struct cl_io *io,
 
 	cl_2queue_init(queue);
 	cl_page_list_splice(plist, &queue->c2_qin);
-	rc = cl_io_submit_sync(env, io, CRT_WRITE, queue, 0);
+	rc = cl_io_submit_sync(env, io, CRT_WRITE, queue, 0, &hole);
 
 	/* plist is not sorted any more */
 	cl_page_list_splice(&queue->c2_qin, plist);
@@ -980,6 +981,16 @@ static int vvp_io_commit_sync(const struct lu_env *env, struct cl_io *io,
 			/* held in ll_cl_init() */
 			cl_page_put(env, page);
 		}
+	} else if (hole) {
+		struct vvp_io *vio = vvp_env_io(env);
+		struct inode *ino = vvp_object_inode(io->ci_obj);
+		/* fail write if error and some pages were written
+		 * at the end. For example 0 stripe failed and
+		 * 1 success
+		 */
+		vio->u.readwrite.vui_written = 0;
+		CERROR("Partial write was detected, fail it, fid "DFID"\n",
+		       PFID(ll_inode2fid(ino)));
 	}
 
 	RETURN(bytes > 0 ? bytes : rc);

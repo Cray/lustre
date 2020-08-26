@@ -2344,7 +2344,7 @@ int   cl_io_submit_rw(const struct lu_env *env, struct cl_io *io,
 		      enum cl_req_type iot, struct cl_2queue *queue);
 int   cl_io_submit_sync(const struct lu_env *env, struct cl_io *io,
 			enum cl_req_type iot, struct cl_2queue *queue,
-			long timeout);
+			long timeout, bool *hole);
 int   cl_io_commit_async(const struct lu_env *env, struct cl_io *io,
 			  struct cl_page_list *queue, int from, int to,
 			  cl_commit_cbt cb);
@@ -2501,6 +2501,8 @@ struct cl_sync_io {
 	cl_sync_io_end_t       *csi_end_io;
 	/* private pointer for an associated DIO/AIO */
 	void		       *csi_dio_aio;
+	pgoff_t csi_lowest_failed;
+	pgoff_t csi_highest_success;
 };
 
 /** direct IO pages */
