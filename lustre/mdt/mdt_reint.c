@@ -893,14 +893,6 @@ static int mdt_reint_unlink(struct mdt_thread_info *info,
 	if (IS_ERR(mp))
 		RETURN(PTR_ERR(mp));
 
-	if (mdt_object_remote(mp)) {
-		cos_incompat = true;
-	} else {
-		rc = mdt_version_get_check_save(info, mp, 0);
-		if (rc)
-			GOTO(put_parent, rc);
-	}
-
 relock:
 	parent_lh = &info->mti_lh[MDT_LH_PARENT];
 	mdt_lock_pdo_init(parent_lh, LCK_PW, &rr->rr_name);
@@ -908,6 +900,14 @@ relock:
 				   cos_incompat);
 	if (rc != 0)
 		GOTO(put_parent, rc);
+
+	if (mdt_object_remote(mp)) {
+		cos_incompat = true;
+	} else {
+		rc = mdt_version_get_check_save(info, mp, 0);
+		if (rc)
+			GOTO(unlock_parent, rc);
+	}
 
 	/* lookup child object along with version checking */
 	fid_zero(child_fid);
@@ -1137,10 +1137,6 @@ static int mdt_reint_link(struct mdt_thread_info *info,
 	if (IS_ERR(mp))
 		RETURN(PTR_ERR(mp));
 
-	rc = mdt_version_get_check_save(info, mp, 0);
-	if (rc)
-		GOTO(put_parent, rc);
-
 	/* step 2: find source */
 	ms = mdt_object_find(info->mti_env, info->mti_mdt, rr->rr_fid1);
 	if (IS_ERR(ms))
@@ -1162,6 +1158,10 @@ static int mdt_reint_link(struct mdt_thread_info *info,
 				   cos_incompat);
 	if (rc != 0)
 		GOTO(put_source, rc);
+
+	rc = mdt_version_get_check_save(info, mp, 0);
+	if (rc)
+		GOTO(unlock_parent, rc);
 
 	OBD_FAIL_TIMEOUT(OBD_FAIL_MDS_RENAME3, 5);
 
@@ -2492,9 +2492,6 @@ relock:
 	}
 
 	tgt_vbr_obj_set(info->mti_env, mdt_obj2dt(mold));
-	/* save version after locking */
-	mdt_version_get_save(info, mold, 2);
-
 	if (!cos_incompat && mdt_object_remote(mold)) {
 		cos_incompat = true;
 		mdt_object_put(info->mti_env, mold);
@@ -2573,6 +2570,9 @@ relock:
 		if (rc != 0)
 			GOTO(out_unlock_old, rc);
 
+		/* save version after locking */
+		mdt_version_get_save(info, mold, 2);
+
 		/* Check if @msrcdir is subdir of @mnew, before locking child
 		 * to avoid reverse locking. */
 		if (mtgtdir != msrcdir) {
@@ -2626,6 +2626,7 @@ relock:
 		if (rc != 0)
 			GOTO(out_unlock_old, rc);
 
+		mdt_version_get_save(info, mold, 2);
 		mdt_enoent_version_save(info, 3);
 	}
 
