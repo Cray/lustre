@@ -3801,6 +3801,50 @@ lnet_get_peer_ni_recovery_list(struct lnet_ioctl_recovery_list *list)
 	return 0;
 }
 
+int
+LNetAddPeer(lnet_nid_t pnid)
+{
+	int rc;
+
+	rc = LNetNIInit(LNET_PID_ANY);
+	if (rc < 0)
+		return rc;
+
+	mutex_lock(&the_lnet.ln_api_mutex);
+	if (lnet_peer_discovery_disabled)
+		rc = lnet_add_peer_ni(pnid, LNET_NID_ANY, false, true);
+	else
+		rc = lnet_add_peer_ni(pnid, LNET_NID_ANY, true, true);
+	mutex_unlock(&the_lnet.ln_api_mutex);
+
+	LNetNIFini();
+
+        return rc;
+}
+EXPORT_SYMBOL(LNetAddPeer);
+
+int
+LNetAddPeerNI(lnet_nid_t pnid, lnet_nid_t nid)
+{
+	int rc;
+
+	rc = LNetNIInit(LNET_PID_ANY);
+	if (rc < 0)
+		return rc;
+
+	mutex_lock(&the_lnet.ln_api_mutex);
+	if (lnet_peer_discovery_disabled)
+		rc = -EINVAL;
+	else
+		rc = lnet_add_peer_ni(pnid, nid, true, true);
+	mutex_unlock(&the_lnet.ln_api_mutex);
+
+	LNetNIFini();
+
+	return rc;
+}
+EXPORT_SYMBOL(LNetAddPeerNI);
+
 /**
  * LNet ioctl handler.
  *
@@ -4051,7 +4095,7 @@ LNetCtl(unsigned int cmd, void *arg)
 		mutex_lock(&the_lnet.ln_api_mutex);
 		rc = lnet_add_peer_ni(cfg->prcfg_prim_nid,
 				      cfg->prcfg_cfg_nid,
-				      cfg->prcfg_mr);
+				      cfg->prcfg_mr, false);
 		mutex_unlock(&the_lnet.ln_api_mutex);
 		return rc;
 	}
