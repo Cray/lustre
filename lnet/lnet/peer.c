@@ -1489,6 +1489,11 @@ lnet_peer_add(lnet_nid_t nid, unsigned flags)
 			else if ((lp->lp_state ^ flags) & LNET_PEER_MULTI_RAIL)
 				rc = -EPERM;
 			goto out;
+		} else if (!(flags & LNET_PEER_CONFIGURED)) {
+			if (lp->lp_primary_nid == nid) {
+				rc = -EEXIST;
+				goto out;
+			}
 		}
 		/* Delete and recreate as a configured peer. */
 		lnet_peer_del(lp);
@@ -1729,17 +1734,19 @@ out:
  * being created/modified/deleted by a different thread.
  */
 int
-lnet_add_peer_ni(lnet_nid_t prim_nid, lnet_nid_t nid, bool mr)
+lnet_add_peer_ni(lnet_nid_t prim_nid, lnet_nid_t nid, bool mr, bool temp)
 {
 	struct lnet_peer *lp = NULL;
 	struct lnet_peer_ni *lpni;
-	unsigned flags;
+	unsigned int flags = 0;
 
 	/* The prim_nid must always be specified */
 	if (prim_nid == LNET_NID_ANY)
 		return -EINVAL;
 
-	flags = LNET_PEER_CONFIGURED;
+	if (!temp)
+		flags = LNET_PEER_CONFIGURED;
+
 	if (mr)
 		flags |= LNET_PEER_MULTI_RAIL;
 
@@ -1758,7 +1765,7 @@ lnet_add_peer_ni(lnet_nid_t prim_nid, lnet_nid_t nid, bool mr)
 	lp = lpni->lpni_peer_net->lpn_peer;
 
 	/* Peer must have been configured. */
-	if (!(lp->lp_state & LNET_PEER_CONFIGURED)) {
+	if (!temp && !(lp->lp_state & LNET_PEER_CONFIGURED)) {
 		CDEBUG(D_NET, "peer %s was not configured\n",
 		       libcfs_nid2str(prim_nid));
 		return -ENOENT;
