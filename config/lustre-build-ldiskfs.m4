@@ -32,6 +32,7 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 	6[0-3])	LDISKFS_SERIES="2.6-rhel6.series"	;;
 	esac
 ], [test x$SUSE_KERNEL = xyes], [
+	AS_VERSION_COMPARE([$LINUXRELEASE],[5.3.18],[
 	AS_VERSION_COMPARE([$LINUXRELEASE],[4.12.14],[
 	AS_VERSION_COMPARE([$LINUXRELEASE],[4.4.82],[
 	AS_VERSION_COMPARE([$LINUXRELEASE],[4.4.0],[
@@ -61,7 +62,8 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 	    [LDISKFS_SERIES="4.4-sles12sp2.series"]
 	)], [LDISKFS_SERIES="4.4-sles12sp3.series"],
             [LDISKFS_SERIES="4.4-sles12sp3.series"]
-	)], [LDISKFS_SERIES="4.12-sles15r23.series"], [
+	)], [LDISKFS_SERIES="4.12-sles15r23.series"],
+	    [
 		# Extract release sub version as KPMAJOR
 		#   ex: 4.12.14-150.17.1_5.0.82-variant => 150
 		#               ^^^
@@ -88,7 +90,9 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 			;;
 		*)   LDISKFS_SERIES="4.12-sles15.series"    ;;
 		esac
-	])
+	    ]
+	)], [LDISKFS_SERIES="5.4.0-ml.series"],
+	    [LDISKFS_SERIES="5.4.0-ml.series"])
 ], [test x$UBUNTU_KERNEL = xyes], [
 	AS_VERSION_COMPARE([$LINUXRELEASE],[4.15.0],[
 	AS_VERSION_COMPARE([$LINUXRELEASE],[4.4.0], [],
