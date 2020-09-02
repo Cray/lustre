@@ -867,6 +867,9 @@ mdt_dom_lock_seq_write(struct file *file, const char __user *buffer,
 			return rc;
 	}
 
+	if (val == ALWAYS_DOM_LOCK_ON_OPEN)
+		val = TRYLOCK_DOM_ON_OPEN;
+
 	if (val < 0 || val >= NUM_DOM_LOCK_ON_OPEN_MODES)
 		return -EINVAL;
 
