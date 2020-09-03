@@ -13,6 +13,7 @@ sles15/ext4-large-eas.patch
 sles15/ext4-disable-mb-cache.patch
 sles15/ext4-nocmtime.patch
 sles15/ext4-large-dir.patch
+base/ext4-htree-lock.patch
 sles15/ext4-pdirop.patch
 sles15/ext4-max-dir-size.patch
 sles15/ext4-remove-truncate-warning.patch
