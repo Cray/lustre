@@ -1189,8 +1189,6 @@ static inline struct md_open_data *obd_mod_alloc(void)
 #define obd_mod_put(mod)                                          \
 ({                                                                \
 	if (atomic_dec_and_test(&(mod)->mod_refcount)) {      	  \
-		if ((mod)->mod_open_req)                          \
-			ptlrpc_req_finished((mod)->mod_open_req); \
 		OBD_FREE_PTR(mod);                                \
 	}                                                         \
 })
