@@ -135,6 +135,7 @@ static int ll_close_inode_openhandle(struct inode *inode,
 	struct md_op_data *op_data;
 	struct ptlrpc_request *req = NULL;
 	int rc;
+	int rc2 = 0;
 	ENTRY;
 
 	if (class_exp2obd(md_exp) == NULL) {
@@ -220,19 +221,19 @@ static int ll_close_inode_openhandle(struct inode *inode,
 
 		body = req_capsule_server_get(&req->rq_pill, &RMF_MDT_BODY);
 		if (!(body->mbo_valid & OBD_MD_CLOSE_INTENT_EXECED))
-			rc = -EBUSY;
+			rc2 = -EBUSY;
 	}
 
 	ll_finish_md_op_data(op_data);
 	EXIT;
 out:
-
-	md_clear_open_replay_data(md_exp, och);
-	och->och_open_handle.cookie = DEAD_HANDLE_MAGIC;
-	OBD_FREE_PTR(och);
-
+	if (rc) {
+		md_clear_open_replay_data(md_exp, och);
+		och->och_open_handle.cookie = DEAD_HANDLE_MAGIC;
+		OBD_FREE_PTR(och);
+	}
 	ptlrpc_req_finished(req);	/* This is close request */
-	return rc;
+	return rc2 ? rc2 : rc;
 }
 
 int ll_md_real_close(struct inode *inode, fmode_t fmode)

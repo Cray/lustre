@@ -822,38 +822,68 @@ static void mdc_free_open(struct md_open_data *mod)
 		  "= %d\n", mod->mod_open_req->rq_replay);
 
 	ptlrpc_request_committed(mod->mod_open_req, committed);
-	if (mod->mod_close_req)
-		ptlrpc_request_committed(mod->mod_close_req, committed);
 }
 
-int mdc_clear_open_replay_data(struct obd_export *exp,
-                               struct obd_client_handle *och)
+static void mdc_clear_open_replay_data_locked(struct md_open_data *mod)
 {
-        struct md_open_data *mod = och->och_mod;
         ENTRY;
-
-        /**
-         * It is possible to not have \var mod in a case of eviction between
-         * lookup and ll_file_open().
-         **/
-        if (mod == NULL)
-                RETURN(0);
 
 	LASSERT(mod != LP_POISON);
 	LASSERT(mod->mod_open_req != NULL);
 
 	spin_lock(&mod->mod_open_req->rq_lock);
+	mod->mod_open_req->rq_replay = 0;
 	if (mod->mod_och)
 		mod->mod_och->och_open_handle.cookie = 0;
 	mod->mod_open_req->rq_early_free_repbuf = 0;
 	spin_unlock(&mod->mod_open_req->rq_lock);
 	mdc_free_open(mod);
 
-        mod->mod_och = NULL;
-        och->och_mod = NULL;
-        obd_mod_put(mod);
+	ptlrpc_req_finished_with_imp_lock(mod->mod_open_req);
 
-        RETURN(0);
+        mod->mod_och->och_mod = NULL;
+        mod->mod_och = NULL;
+        obd_mod_put(mod);
+}
+
+int mdc_clear_open_replay_data(struct obd_export *exp,
+                               struct obd_client_handle *och)
+{
+	struct obd_import *imp;
+	struct md_open_data *mod = och->och_mod;
+
+        /**
+         * It is possible to not have \var mod in a case of eviction between
+         * lookup and ll_file_open().
+         **/
+        if (mod == NULL)
+		RETURN(0);
+
+	imp = mod->mod_open_req->rq_import;
+	spin_lock(&imp->imp_lock);
+	mdc_clear_open_replay_data_locked(mod);
+	spin_unlock(&imp->imp_lock);
+
+	RETURN(0);
+}
+
+static void mdc_commit_close(struct ptlrpc_request *req)
+{
+	struct obd_client_handle *och;
+	struct md_open_data *mod = req->rq_cb_data;
+
+        if (mod == NULL)
+		return;
+
+	req->rq_cb_data = NULL;
+	och = mod->mod_och;
+
+	if (!mod->mod_open_req->rq_committed)
+		mdc_commit_open(mod->mod_open_req);
+
+	mdc_clear_open_replay_data_locked(mod);
+	och->och_open_handle.cookie = DEAD_HANDLE_MAGIC;
+	OBD_FREE_PTR(och);
 }
 
 static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
@@ -910,11 +940,11 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 		mod->mod_close_req = req;
 
 		DEBUG_REQ(D_RPCTRACE, mod->mod_open_req, "matched open");
-		/* We no longer want to preserve this open for replay even
-		 * though the open was committed. b=3632, b=3633 */
-		spin_lock(&mod->mod_open_req->rq_lock);
-		mod->mod_open_req->rq_replay = 0;
-		spin_unlock(&mod->mod_open_req->rq_lock);
+
+		if (req) {
+			req->rq_cb_data = mod;
+			req->rq_commit_cb = mdc_commit_close;
+		}
 	} else {
 		CDEBUG(D_HA, "couldn't find open req; expecting close error\n");
 	}
