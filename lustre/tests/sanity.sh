@@ -18829,6 +18829,21 @@ test_273a() {
 }
 run_test 273a "DoM: layout swapping should fail with DOM"
 
+test_273b() {
+	mkdir -p $DIR/$tdir
+	$LFS setstripe -E 1M -L mdt -E -1 -c -1 $DIR/$tdir
+
+	$MULTIOP $DIR/$tdir/$tfile Ow2097152c
+
+	do_facet mds1 $LCTL set_param fail_loc=0x80000169
+
+	# first multiop is needed so that there were no layout change
+	# and cl_object_prune when second multiop's write crosses
+	# component boundary
+	$MULTIOP $DIR/$tdir/$tfile oO_WRONLY:Tw2097152uc
+}
+run_test 273b "DoM: race writeback and object destroy"
+
 test_275() {
 	remote_ost_nodsh && skip "remote OST with nodsh"
 	[ $OST1_VERSION -lt $(version_code 2.10.57) ] &&
