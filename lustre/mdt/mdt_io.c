@@ -637,6 +637,8 @@ retry:
 		GOTO(out, rc);
 	}
 
+	CFS_FAIL_TIMEOUT(OBD_FAIL_MDS_COMMITRW_DELAY, 2);
+
 	th = dt_trans_create(env, dt);
 	if (IS_ERR(th))
 		GOTO(out, rc = PTR_ERR(th));
