@@ -1941,7 +1941,25 @@ static int mdt_getattr_name_lock(struct mdt_thread_info *info,
 		GOTO(out_child, rc = -ESTALE);
 	}
 
-	if (lu_name_is_valid(lname)) {
+	if (!child && is_resent) {
+		lock = ldlm_handle2lock(&lhc->mlh_reg_lh);
+		if (lock == NULL) {
+			/* Lock is pinned by ldlm_handle_enqueue0() as it is
+			 * a resend case, however, it could be already destroyed
+			 * due to client eviction or a raced cancel RPC.
+			 */
+			LDLM_DEBUG_NOLOCK("Invalid lock handle %#llx",
+					  lhc->mlh_reg_lh.cookie);
+			RETURN(-ESTALE);
+		}
+		fid_extract_from_res_name(child_fid,
+					  &lock->l_resource->lr_name);
+		LDLM_LOCK_PUT(lock);
+		child = mdt_object_find(info->mti_env, info->mti_mdt,
+					child_fid);
+		if (IS_ERR(child))
+			RETURN(PTR_ERR(child));
+	} else if (lu_name_is_valid(lname)) {
 		/* Always allow to lookup ".." */
 		if (unlikely(lname->ln_namelen == 2 &&
 			     lname->ln_name[0] == '.' &&
@@ -2059,7 +2077,8 @@ static int mdt_getattr_name_lock(struct mdt_thread_info *info,
 	/* finally, we can get attr for child. */
 	rc = mdt_getattr_internal(info, child, ma_need);
 	if (unlikely(rc != 0)) {
-		mdt_object_unlock(info, child, lhc, 1);
+		if (!is_resent)
+			mdt_object_unlock(info, child, lhc, 1);
 		GOTO(out_child, rc);
 	}
 
