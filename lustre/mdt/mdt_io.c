@@ -622,12 +622,6 @@ static int mdt_commitrw_write(const struct lu_env *env, struct obd_export *exp,
 retry:
 	if (!dt_object_exists(dob))
 		GOTO(out, rc = -ENOENT);
-	if (lu_object_is_dying(&mo->mot_header)) {
-		/* Commit to stale object can be just skipped silently. */
-		CDEBUG(D_INODE, "skip commit to stale object "DFID"\n",
-			PFID(mdt_object_fid(mo)));
-		GOTO(out, rc = 0);
-	}
 
 	if (niocount == 0) {
 		rc = -EPROTO;
@@ -670,6 +664,12 @@ retry:
 		GOTO(out_stop, rc);
 
 	dt_write_lock(env, dob, 0);
+	if (lu_object_is_dying(&mo->mot_header)) {
+		/* Commit to stale object can be just skipped silently. */
+		CDEBUG(D_INODE, "skip commit to stale object "DFID"\n",
+			PFID(mdt_object_fid(mo)));
+		GOTO(unlock, rc = 0);
+	}
 	rc = dt_write_commit(env, dob, lnb, niocount, th);
 	if (rc)
 		GOTO(unlock, rc);
