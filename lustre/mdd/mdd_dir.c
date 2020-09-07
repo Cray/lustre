@@ -3949,7 +3949,7 @@ static int mdd_declare_migrate_create(const struct lu_env *env,
 	if (rc)
 		return rc;
 
-	if (S_ISDIR(attr->la_mode) && mdd_dir_is_empty(env, sobj) != 0) {
+	if (S_ISDIR(attr->la_mode)) {
 		if (!lmv) {
 			/*
 			 * if sobj is not striped, fake a 1-stripe LMV, which
@@ -4443,25 +4443,12 @@ static int mdd_migrate(const struct lu_env *env, struct md_object *md_pobj,
 
 		rc = mdd_stripe_get(env, sobj, &sbuf, XATTR_NAME_LMV);
 		if (rc == -ENODATA) {
-			if (mdd_dir_is_empty(env, sobj) == 0) {
-				/*
-				 * if sobj is empty, and target is not striped,
-				 * create target as a normal directory.
-				 */
-				if (le32_to_cpu(lmu->lum_stripe_count) == 1) {
-					info->mti_lmu = *lmu;
-					info->mti_lmu.lum_stripe_count = 0;
-					spec->u.sp_ea.eadata = &info->mti_lmu;
-					lmu = spec->u.sp_ea.eadata;
-				}
-			} else {
-				/*
-				 * sobj is not striped dir, if it's not empty,
-				 * it will be migrated to be a stripe of target,
-				 * don't destroy it after migration.
-				 */
-				do_destroy = false;
-			}
+			/*
+			 * sobj is not a striped dir,
+			 * it will be migrated to a stripe of the target,
+			 * don't destroy it after migration.
+			 */
+			do_destroy = false;
 		} else if (rc) {
 			GOTO(out, rc);
 		} else {
