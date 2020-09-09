@@ -708,7 +708,7 @@ test_17m() {
 }
 run_test 17m "run e2fsck against MDT which contains short/long symlink"
 
-check_fs_consistency_17n() {
+check_fs_consistency() {
 	local mdt_index
 	local rc=0
 
@@ -747,7 +747,7 @@ test_17n() {
 			error "create files under remote dir failed $i"
 	done
 
-	check_fs_consistency_17n ||
+	check_fs_consistency ||
 		error "e2fsck report error after create files under remote dir"
 
 	for ((i = 0; i < 10; i++)); do
@@ -755,7 +755,7 @@ test_17n() {
 			error "destroy remote dir error $i"
 	done
 
-	check_fs_consistency_17n ||
+	check_fs_consistency ||
 		error "e2fsck report error after unlink files under remote dir"
 
 	[ $MDS1_VERSION -lt $(version_code 2.4.50) ] &&
@@ -768,14 +768,14 @@ test_17n() {
 		$LFS migrate --mdt-index 1 $DIR/$tdir/remote_dir_${i} ||
 			error "migrate remote dir error $i"
 	done
-	check_fs_consistency_17n || error "e2fsck report error after migration"
+	check_fs_consistency || error "e2fsck report error after migration"
 
 	for ((i = 0; i < 10; i++)); do
 		rm -rf $DIR/$tdir/remote_dir_${i} ||
 			error "destroy remote dir error $i"
 	done
 
-	check_fs_consistency_17n || error "e2fsck report error after unlink"
+	check_fs_consistency || error "e2fsck report error after unlink"
 }
 run_test 17n "run e2fsck against master/slave MDT which contains remote dir"
 
@@ -2558,6 +2558,24 @@ test_27M() {
 	[ "$pool" = "" ] || error "(13) pool found: $pool"
 }
 run_test 27M "test O_APPEND striping"
+
+test_27O() {
+	[ $PARALLEL == "yes" ] && skip "skip parallel run"
+	[ "$mds1_FSTYPE" != "ldiskfs" ] && skip_env "ldiskfs only test"
+	[ $MDSCOUNT -lt 2 ] && skip_env "needs >= 2 MDTs"
+	[ $MDS1_VERSION -lt $(version_code 2.12.2) ] &&
+		skip "Need MDS version at least 2.12.2"
+
+	lfs setdirstripe -i 0 -c 2 $DIR/d || error "setdirstripe failed"
+	lfs migrate -m 0 $DIR/d || error "migrate failed"
+
+	check_fs_consistency |
+	    grep "Directory entry for .* is big\|Unconnected directory inode" &&
+	    error "fs corruption"
+
+	rm -rf $DIR/d
+}
+run_test 27O "restriping of an empty dir should not corrupt fs"
 
 # createtest also checks that device nodes are created and
 # then visible correctly (#2091)
