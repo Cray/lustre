@@ -585,7 +585,7 @@ static void kfilnd_tn_finalize(struct kfilnd_transaction *tn, bool *tn_released)
 		lnet_finalize(tn->tn_getreply, tn->tn_status);
 	}
 
-	if (!IS_ERR_OR_NULL(tn->peer))
+	if (KFILND_TN_PEER_VALID(tn))
 		kfilnd_peer_put(tn->peer);
 
 	kfilnd_tn_free(tn);
