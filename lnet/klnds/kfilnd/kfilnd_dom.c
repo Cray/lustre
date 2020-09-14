@@ -4,49 +4,12 @@
  * Copyright 2019 Cray Inc. All Rights Reserved.
  */
 #include "kfilnd_dom.h"
-#include "kfilnd_wkr.h"
 #include "kfilnd_tn.h"
+#include "kfilnd_eq.h"
 
 /* Global list of allocated KFI LND fabrics. */
 static LIST_HEAD(fab_list);
 static DEFINE_MUTEX(fab_list_lock);
-
-/**
- * kfilnd_dom_eq_handler() - Event handler for KFI domain event queue.
- * @eq: KFI event queue handler was raised for.
- * @context: user specific context.
- *
- * One type of event should appear on the event queue: memory registration
- * events. When this event occurs, asynchronous memory registration has
- * completed and the corresponding transaction structure needs to be progressed.
- */
-static void kfilnd_dom_eq_handler(struct kfid_eq *eq, void *context)
-{
-	uint32_t event_type;
-	struct kfi_eq_entry event;
-	size_t rc;
-	struct kfi_eq_err_entry err_event;
-
-	/* Schedule processing of all EQ events */
-	while (1) {
-		rc = kfi_eq_read(eq, &event_type, &event, sizeof(event), 0);
-		if (rc == -KFI_EAVAIL) {
-			/* We have error events */
-			while (kfi_eq_readerr(eq, &err_event, 0) == 1)
-				kfilnd_tn_eq_error(&err_event);
-
-			/* Processed error events, back to normal events */
-			continue;
-		}
-		if (rc != sizeof(event)) {
-			if (rc != -EAGAIN)
-				CERROR("Unexpected rc = %lu\n", rc);
-			break;
-		}
-
-		kfilnd_tn_eq_event(&event, event_type);
-	}
-}
 
 /**
  * kfilnd_dom_free() - Free a KFI LND domain.
@@ -69,7 +32,7 @@ static void kfilnd_dom_free(struct kref *kref)
 
 	kfi_close(&dom->domain->fid);
 	if (!sync_mr_reg)
-		kfi_close(&dom->eq->fid);
+		kfilnd_eq_free(dom->eq);
 	LIBCFS_FREE(dom, sizeof(*dom));
 }
 
@@ -117,14 +80,16 @@ static struct kfilnd_dom *kfilnd_dom_alloc(struct kfi_info *dom_info,
 	/* Bind EQ to domain for asynchronous memory registration. */
 	if (!sync_mr_reg) {
 		eq_attr.size = credits;
-		rc = kfi_eq_open(fab->fabric, &eq_attr, &dom->eq,
-				 kfilnd_dom_eq_handler, dom);
-		if (rc) {
-			CERROR("Failed to create KFI event queue: rc=%d\n", rc);
+		dom->eq = kfilnd_eq_alloc(dom, &eq_attr);
+		if (IS_ERR(dom->eq)) {
+			rc = PTR_ERR(dom->eq);
+			CERROR("Failed to create KFILND event queue: rc=%d\n",
+			       rc);
 			goto err_free_kfi_dom;
 		}
 
-		rc = kfi_domain_bind(dom->domain, &dom->eq->fid, KFI_REG_MR);
+		rc = kfi_domain_bind(dom->domain, &dom->eq->eq->fid,
+				     KFI_REG_MR);
 		if (rc) {
 			CERROR("Failed to bind KFI event queue to KFI domain: rc=%d\n",
 			       rc);
@@ -139,7 +104,7 @@ static struct kfilnd_dom *kfilnd_dom_alloc(struct kfi_info *dom_info,
 	return dom;
 
 err_free_eq:
-	kfi_close(&dom->eq->fid);
+	kfilnd_eq_free(dom->eq);
 err_free_kfi_dom:
 	kfi_close(&dom->domain->fid);
 err_free_dom:
