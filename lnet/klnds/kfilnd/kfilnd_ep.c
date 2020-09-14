@@ -4,9 +4,10 @@
  * Copyright 2019 Cray Inc. All Rights Reserved.
  */
 #include "kfilnd_ep.h"
-#include "kfilnd_wkr.h"
 #include "kfilnd_dev.h"
 #include "kfilnd_tn.h"
+#include "kfilnd_cq.h"
+#include "kfilnd_eq.h"
 
 /**
  * kfilnd_ep_post_recv() - Post a single receive buffer.
@@ -102,42 +103,6 @@ void kfilnd_ep_cancel_imm_buffers(struct kfilnd_ep *ep)
 }
 
 /**
- * kfilnd_ep_cq_handler() - Completion queue event handler.
- * @cq: KFI completion queue handler was raised for.
- * @context: User specific context.
- *
- * All events are handed off to the transaction system for processing.
- */
-static void kfilnd_ep_cq_handler(struct kfid_cq *cq, void *context)
-{
-	size_t rc;
-	struct kfi_cq_data_entry event;
-	struct kfi_cq_err_entry error;
-	struct kfilnd_ep *ep = cq->fid.context;
-
-	/* Drain all the events. */
-	while (1) {
-		rc = kfi_cq_read(cq, &event, 1);
-		if (rc == -KFI_EAVAIL) {
-			/* We have error events */
-			while (kfi_cq_readerr(cq, &error, 0) == 1)
-				kfilnd_tn_cq_error(ep, &error);
-
-			/* Processed error events, back to normal events */
-			continue;
-		}
-
-		if (rc != 1) {
-			if (rc != -EAGAIN)
-				CERROR("Unexpected rc = %lu\n", rc);
-			break;
-		}
-
-		kfilnd_tn_cq_event(ep, &event);
-	}
-}
-
-/**
  * kfilnd_ep_dereg_mr() - Deregister a memory region from an endpoint.
  * @ep: KFI LND endpoint used to allocate the memory region.
  * @tn: The transaction structure containing the memory region t be
@@ -181,7 +146,7 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		fake_error.context = tn;
 		fake_error.err = EIO;
 
-		kfilnd_tn_eq_error(&fake_error);
+		kfilnd_eq_process_error(&fake_error);
 
 		return 0;
 	}
@@ -350,7 +315,7 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 
 	/* Progress transaction to failure if send should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_RECV)) {
-		kfilnd_tn_cq_error(ep, &fake_error);
+		kfilnd_cq_process_error(ep, &fake_error);
 		return 0;
 	}
 
@@ -401,7 +366,7 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 
 	/* Progress transaction to failure if send should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND)) {
-		kfilnd_tn_cq_error(ep, &fake_error);
+		kfilnd_cq_process_error(ep, &fake_error);
 		return 0;
 	}
 
@@ -451,7 +416,7 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 
 	/* Progress transaction to failure if read should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE)) {
-		kfilnd_tn_cq_error(ep, &fake_error);
+		kfilnd_cq_process_error(ep, &fake_error);
 		return 0;
 	}
 
@@ -512,7 +477,7 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 
 	/* Progress transaction to failure if read should fail. */
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ)) {
-		kfilnd_tn_cq_error(ep, &fake_error);
+		kfilnd_cq_process_error(ep, &fake_error);
 		return 0;
 	}
 
@@ -590,8 +555,8 @@ void kfilnd_ep_free(struct kfilnd_ep *ep)
 
 	kfi_close(&ep->end_tx->fid);
 	kfi_close(&ep->end_rx->fid);
-	kfi_close(&ep->end_tx_cq->fid);
-	kfi_close(&ep->end_rx_cq->fid);
+	kfilnd_cq_free(ep->end_tx_cq);
+	kfilnd_cq_free(ep->end_rx_cq);
 	LIBCFS_FREE(ep, sizeof(*ep));
 }
 
@@ -651,20 +616,18 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 		cpumask_first(cfs_cpt_cpumask(lnet_cpt_table(), cpt));
 
 	cq_attr.size = credits * rx_cq_scale_factor;
-
-	rc = kfi_cq_open(dev->dom->domain, &cq_attr, &ep->end_rx_cq,
-			 kfilnd_ep_cq_handler, ep);
-	if (rc) {
-		CERROR("Could not open RX CQ, rc = %d\n", rc);
+	ep->end_rx_cq = kfilnd_cq_alloc(ep, &cq_attr);
+	if (IS_ERR(ep->end_rx_cq)) {
+		rc = PTR_ERR(ep->end_rx_cq);
+		CERROR("Failed to allocated KFILND RX CQ: rc=%d\n", rc);
 		goto err_free_ep;
 	}
 
 	cq_attr.size = credits * tx_cq_scale_factor;
-
-	rc = kfi_cq_open(dev->dom->domain, &cq_attr, &ep->end_tx_cq,
-			 kfilnd_ep_cq_handler, ep);
-	if (rc) {
-		CERROR("Could not open TX CQ, rc = %d\n", rc);
+	ep->end_tx_cq = kfilnd_cq_alloc(ep, &cq_attr);
+	if (IS_ERR(ep->end_tx_cq)) {
+		rc = PTR_ERR(ep->end_tx_cq);
+		CERROR("Failed to allocated KFILND TX CQ: rc=%d\n", rc);
 		goto err_free_rx_cq;
 	}
 
@@ -707,14 +670,14 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	}
 
 	/* Bind these two contexts to the CPT's CQ */
-	rc = kfi_ep_bind(ep->end_rx, &ep->end_rx_cq->fid, 0);
+	rc = kfi_ep_bind(ep->end_rx, &ep->end_rx_cq->cq->fid, 0);
 	if (rc) {
 		CERROR("Could not bind RX context on CPT %d, rc = %d\n", cpt,
 		       rc);
 		goto err_free_tx_context;
 	}
 
-	rc = kfi_ep_bind(ep->end_tx, &ep->end_tx_cq->fid, 0);
+	rc = kfi_ep_bind(ep->end_tx, &ep->end_tx_cq->cq->fid, 0);
 	if (rc) {
 		CERROR("Could not bind TX context on CPT %d, rc = %d\n", cpt,
 		       rc);
@@ -776,9 +739,9 @@ err_free_tx_context:
 err_free_rx_context:
 	kfi_close(&ep->end_rx->fid);
 err_free_tx_cq:
-	kfi_close(&ep->end_tx_cq->fid);
+	kfilnd_cq_free(ep->end_tx_cq);
 err_free_rx_cq:
-	kfi_close(&ep->end_rx_cq->fid);
+	kfilnd_cq_free(ep->end_rx_cq);
 err_free_ep:
 	LIBCFS_FREE(ep, sizeof(*ep));
 err:
