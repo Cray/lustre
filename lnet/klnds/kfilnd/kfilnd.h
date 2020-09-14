@@ -21,6 +21,7 @@
 #include <linux/rwsem.h>
 #include <linux/mutex.h>
 #include <linux/rhashtable.h>
+#include <linux/workqueue.h>
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -80,6 +81,7 @@ struct kfilnd_tunables {
 	int		*kfilnd_nscheds;	/* # threads on each CPT */
 };
 
+extern struct workqueue_struct *kfilnd_wq;
 extern struct kfilnd_tunables  kfilnd_tunable_vals;
 extern unsigned int sync_mr_reg;
 extern unsigned int tx_scale_factor;
@@ -104,14 +106,31 @@ struct kfilnd_immediate_buffer {
 	struct kfilnd_ep *immed_end;
 };
 
+extern atomic_t kfilnd_rx_count;
+
+struct kfilnd_cq;
+
+struct kfilnd_cq_work {
+	struct kfilnd_cq *cq;
+	unsigned int work_cpu;
+	struct work_struct work;
+};
+
+struct kfilnd_cq {
+	struct kfilnd_ep *ep;
+	struct kfid_cq *cq;
+	unsigned int cq_work_count;
+	struct kfilnd_cq_work cq_works[];
+};
+
 struct kfilnd_ep {
 	/* The contexts for this CPT */
 	struct kfid_ep *end_tx;
 	struct kfid_ep *end_rx;
 
 	/* Corresponding CQs */
-	struct kfid_cq *end_tx_cq;
-	struct kfid_cq *end_rx_cq;
+	struct kfilnd_cq *end_tx_cq;
+	struct kfilnd_cq *end_rx_cq;
 
 	/* Specific config values for this endpoint */
 	struct kfilnd_dev *end_dev;
@@ -147,12 +166,18 @@ struct kfilnd_fab {
 	struct kref cnt;
 };
 
+struct kfilnd_eq {
+	struct kfilnd_dom *dom;
+	struct kfid_eq *eq;
+	struct work_struct work;
+};
+
 struct kfilnd_dom {
 	struct list_head entry;
 	struct list_head dev_list;
 	spinlock_t lock;
 	struct kfilnd_fab *fab;
-	struct kfid_eq *eq;
+	struct kfilnd_eq *eq;
 	struct kfid_domain *domain;
 	struct kref cnt;
 	struct ida mr_keys;
