@@ -5,7 +5,6 @@
  */
 
 #include "kfilnd_tn.h"
-#include "kfilnd_wkr.h"
 #include "kfilnd_ep.h"
 #include "kfilnd_dev.h"
 #include "kfilnd_dom.h"
@@ -209,14 +208,15 @@ static bool kfilnd_tn_has_deadline_expired(struct kfilnd_transaction *tn)
  * For each immediate receive, a transaction structure needs to be allocated to
  * process the receive.
  */
-static void kfilnd_tn_process_rx_event(void *buf_context, void *msg_context,
-				       int msg_size)
+void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
+				struct kfilnd_msg *rx_msg, int msg_size)
 {
 	struct kfilnd_transaction *tn;
-	struct kfilnd_immediate_buffer *bufdesc = buf_context;
-	struct kfilnd_msg *rx_msg = msg_context;
 	bool alloc_msg = true;
 	int rc;
+
+	/* Increment buf ref count for this work */
+	atomic_inc(&bufdesc->immed_ref);
 
 	/* Unpack the message */
 	rc = kfilnd_tn_unpack_msg(rx_msg, msg_size);
@@ -246,7 +246,7 @@ static void kfilnd_tn_process_rx_event(void *buf_context, void *msg_context,
 			return;
 		}
 
-		tn->tn_rx_msg.msg = msg_context;
+		tn->tn_rx_msg.msg = rx_msg;
 		tn->tn_rx_msg.length = msg_size;
 		tn->tn_nob = msg_size;
 		tn->tn_posted_buf = bufdesc;
@@ -264,10 +264,9 @@ static void kfilnd_tn_process_rx_event(void *buf_context, void *msg_context,
 	kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK, 0);
 }
 
-static void kfilnd_tn_process_tagged_rx_event(void *ep_context,
-					      void *tn_context, int status)
+void kfilnd_tn_process_tagged_rx_event(struct kfilnd_transaction *tn,
+				       int status)
 {
-	struct kfilnd_transaction *tn = tn_context;
 	enum tn_events event = TN_EVENT_TAG_RX_OK;
 	int rc;
 	struct kfilnd_transaction_msg *msg = &tn->tn_tag_rx_msg;
@@ -314,229 +313,14 @@ out:
  * has been consumed or the buffer is manually unlinked (cancelled). A reference
  * needs to be returned to the immediate buffer.
  */
-static void kfilnd_tn_process_unlink_event(void *buf_context, void *context,
-					   int status)
+void kfilnd_tn_process_unlink_event(struct kfilnd_immediate_buffer *bufdesc)
 {
-	struct kfilnd_immediate_buffer *bufdesc = buf_context;
 	int rc;
 
 	rc = kfilnd_ep_imm_buffer_put(bufdesc->immed_end, bufdesc);
 	if (rc)
 		KFILND_EP_ERROR(bufdesc->immed_end,
 				"Could not repost recv buffer %d\n", rc);
-}
-
-static void kfilnd_tn_process_tagged_unlink_event(void *ep_context,
-						  void *tn_context, int status)
-{
-	struct kfilnd_transaction *tn = tn_context;
-
-	kfilnd_tn_event_handler(tn, TN_EVENT_TAG_RX_CANCEL, status);
-}
-
-/**
- * kfilnd_tn_process_rma_event() - Process a RMA transaction event.
- */
-static void kfilnd_tn_process_rma_event(void *ep_context, void *tn_context,
-					int status)
-{
-	struct kfilnd_transaction *tn = tn_context;
-	enum tn_events event = TN_EVENT_RMA_OK;
-
-	if (status) {
-		event = TN_EVENT_RMA_FAIL;
-		KFILND_TN_ERROR(tn, "%s failed %d",
-				tn->sink_buffer ? "Read" : "Write", status);
-	}
-
-	kfilnd_tn_event_handler(tn, event, status);
-}
-
-/**
- * kfilnd_tn_process_tx_event() - Process a transmit transaction event.
- */
-static void kfilnd_tn_process_tx_event(void *ep_context, void *tn_context,
-				       int status)
-{
-	struct kfilnd_transaction *tn = tn_context;
-	enum tn_events event = TN_EVENT_TX_OK;
-
-	if (status) {
-		event = TN_EVENT_TX_FAIL;
-		KFILND_TN_ERROR(tn, "Send failed %d", status);
-	}
-
-	kfilnd_tn_event_handler(tn, event, status);
-}
-
-static void kfilnd_tn_process_tagged_tx_event(void *ep_context,
-					      void *tn_context, int status)
-{
-	struct kfilnd_transaction *tn = tn_context;
-	enum tn_events event = TN_EVENT_TAG_TX_OK;
-
-	if (status) {
-		event = TN_EVENT_TAG_TX_FAIL;
-		KFILND_TN_ERROR(tn, "Tagged send failed %d", status);
-	}
-
-	kfilnd_tn_event_handler(tn, event, status);
-}
-
-/**
- * kfilnd_tn_cq_error() - Process a completion queue error entry.
- */
-void kfilnd_tn_cq_error(struct kfilnd_ep *ep, struct kfi_cq_err_entry *error)
-{
-	switch (error->flags) {
-	case KFI_MSG | KFI_RECV:
-		if (error->err != ECANCELED) {
-			KFILND_EP_ERROR(ep, "Dropping error receive event %d\n",
-					-error->err);
-			break;
-		}
-
-		/* Fall through. */
-	case KFI_MSG | KFI_RECV | KFI_MULTI_RECV:
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_unlink_event,
-				error->op_context, NULL, 0);
-		break;
-
-	case KFI_TAGGED | KFI_RECV:
-		if (error->err == ECANCELED)
-			kfilnd_wkr_post(ep->end_cpt,
-					kfilnd_tn_process_tagged_unlink_event,
-					ep, error->op_context, 0);
-		else
-			kfilnd_wkr_post(ep->end_cpt,
-					kfilnd_tn_process_tagged_rx_event, ep,
-					error->op_context, -error->err);
-		break;
-
-	case KFI_RMA | KFI_READ:
-	case KFI_RMA | KFI_WRITE:
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_rma_event, ep,
-				error->op_context, -error->err);
-		break;
-
-	case KFI_MSG | KFI_SEND:
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tx_event, ep,
-				error->op_context, -error->err);
-		break;
-
-	case KFI_TAGGED | KFI_SEND:
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tagged_tx_event,
-				ep, error->op_context, -error->err);
-		break;
-
-	default:
-		KFILND_EP_ERROR(ep, "Unhandled CQ event flags %llx",
-				error->flags);
-	}
-}
-
-/**
- * kfilnd_tn_process_eq_event() - Process a transaction event queue event.
- */
-static void kfilnd_tn_process_eq_event(void *devctx, void *context, int status)
-{
-	struct kfilnd_transaction *tn = context;
-
-	if (!tn)
-		return;
-
-	kfilnd_tn_event_handler(tn, TN_EVENT_MR_OK, status);
-}
-
-/**
- * kfilnd_tn_process_eq_error() - Process a transaction event queue error.
- */
-static void kfilnd_tn_process_eq_error(void *devctx, void *context, int status)
-{
-	struct kfilnd_transaction *tn = context;
-
-	if (!tn)
-		return;
-
-	kfilnd_tn_event_handler(tn, TN_EVENT_MR_FAIL, status);
-}
-
-/**
- * kfilnd_tn_eq_error() - Process a event queue error.
- */
-void kfilnd_tn_eq_error(struct kfi_eq_err_entry *error)
-{
-	struct kfilnd_transaction *tn = error->context;
-
-	kfilnd_wkr_post(tn->tn_ep->end_cpt, kfilnd_tn_process_eq_error,
-			tn->tn_ep->end_dev, tn, -error->err);
-}
-
-/**
- * kfilnd_tn_eq_event() - Process a event queue event.
- */
-void kfilnd_tn_eq_event(struct kfi_eq_entry *event, uint32_t event_type)
-{
-	struct kfilnd_transaction *tn = event->context;
-
-	if (event_type == KFI_MR_COMPLETE)
-		kfilnd_wkr_post(tn->tn_ep->end_cpt, kfilnd_tn_process_eq_event,
-				tn->tn_ep->end_dev, tn, 0);
-	else
-		KFILND_TN_ERROR(tn, "Unexpected EQ event %u", event_type);
-}
-
-/**
- * kfilnd_tn_cq_event() - Process a completion queue event entry.
- */
-void kfilnd_tn_cq_event(struct kfilnd_ep *ep, struct kfi_cq_data_entry *event)
-{
-	struct kfilnd_immediate_buffer *buf;
-
-	switch (event->flags) {
-	case KFI_MSG | KFI_RECV:
-	case KFI_MSG | KFI_RECV | KFI_MULTI_RECV:
-		buf = event->op_context;
-
-		/* Increment buf ref count for this work */
-		atomic_inc(&buf->immed_ref);
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_rx_event, buf,
-				event->buf, event->len);
-
-		/* If the KFI_MULTI_RECV flag is set, the buffer was
-		 * unlinked.
-		 */
-		if (event->flags & KFI_MULTI_RECV)
-			kfilnd_wkr_post(ep->end_cpt,
-					kfilnd_tn_process_unlink_event, buf,
-					NULL, 0);
-		break;
-
-	case KFI_TAGGED | KFI_RECV:
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tagged_rx_event,
-				ep, event->op_context, 0);
-		break;
-
-	case KFI_RMA | KFI_READ:
-	case KFI_RMA | KFI_WRITE:
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_rma_event, ep,
-				event->op_context, 0);
-		break;
-
-	case KFI_MSG | KFI_SEND:
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tx_event, ep,
-				event->op_context, 0);
-		break;
-
-	case KFI_TAGGED | KFI_SEND:
-		kfilnd_wkr_post(ep->end_cpt, kfilnd_tn_process_tagged_tx_event,
-				ep, event->op_context, 0);
-		break;
-
-	default:
-		KFILND_EP_ERROR(ep, "Unhandled CQ event flags %llx",
-				event->flags);
-	}
 }
 
 /**
@@ -617,20 +401,13 @@ static int kfilnd_tn_cancel_tag_recv(struct kfilnd_transaction *tn)
 	return 0;
 }
 
-static void kfilnd_tn_procces_timeout(void *ep_context, void *tn_context,
-				      int status)
-{
-	kfilnd_tn_event_handler(tn_context, TN_EVENT_TIMEOUT, status);
-}
-
 static void kfilnd_tn_timeout(unsigned long data)
 {
 	struct kfilnd_transaction *tn = (struct kfilnd_transaction *)data;
 
 	KFILND_TN_ERROR(tn, "Bulk operation timeout");
 
-	kfilnd_wkr_post(tn->tn_ep->end_cpt, kfilnd_tn_procces_timeout,
-			tn->tn_ep, tn, 0);
+	kfilnd_tn_event_handler(tn, TN_EVENT_TIMEOUT, 0);
 }
 
 static bool kfilnd_tn_timeout_cancel(struct kfilnd_transaction *tn)

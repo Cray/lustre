@@ -8,10 +8,11 @@
 
 #include "kfilnd.h"
 
-void kfilnd_tn_eq_error(struct kfi_eq_err_entry *error);
-void kfilnd_tn_eq_event(struct kfi_eq_entry *event, uint32_t event_type);
-void kfilnd_tn_cq_error(struct kfilnd_ep *ep, struct kfi_cq_err_entry *error);
-void kfilnd_tn_cq_event(struct kfilnd_ep *ep, struct kfi_cq_data_entry *event);
+void kfilnd_tn_process_unlink_event(struct kfilnd_immediate_buffer *bufdesc);
+void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
+				struct kfilnd_msg *rx_msg, int msg_size);
+void kfilnd_tn_process_tagged_rx_event(struct kfilnd_transaction *tn,
+				       int status);
 void kfilnd_tn_free(struct kfilnd_transaction *tn);
 struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 					   bool alloc_msg, bool is_initiator);
