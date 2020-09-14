@@ -7,7 +7,6 @@
 
 #include <linux/delay.h>
 #include "kfilnd.h"
-#include "kfilnd_wkr.h"
 #include "kfilnd_tn.h"
 #include "kfilnd_dev.h"
 
@@ -17,6 +16,9 @@
 /* Some constants which should be turned into tunables */
 #define KFILND_MAX_WORKER_THREADS 4
 #define KFILND_MAX_EVENT_QUEUE 100
+
+#define KFILND_WQ_FLAGS (WQ_MEM_RECLAIM | WQ_HIGHPRI | WQ_SYSFS)
+struct workqueue_struct *kfilnd_wq;
 
 static void kfilnd_shutdown(struct lnet_ni *ni)
 {
@@ -382,12 +384,11 @@ err:
 
 static void __exit kfilnd_exit(void)
 {
-	lnet_unregister_lnd(&lnd);
+	destroy_workqueue(kfilnd_wq);
 
-	if (kfilnd_wkr_stop() < 0)
-		CERROR("Cannot stop worker threads\n");
-	kfilnd_wkr_cleanup();
 	kfilnd_tn_cleanup();
+
+	lnet_unregister_lnd(&lnd);
 }
 
 static int __init kfilnd_init(void)
@@ -405,27 +406,19 @@ static int __init kfilnd_init(void)
 		goto err;
 	}
 
-	/* Initialize and Launch the worker threads */
-	rc = kfilnd_wkr_init(KFILND_MAX_WORKER_THREADS, KFILND_MAX_EVENT_QUEUE,
-			     false);
-	if (rc) {
-		CERROR("Cannot initialize worker queues\n");
-		goto err_mem_cleanup;
-	}
-
-	rc = kfilnd_wkr_start();
-	if (rc) {
-		CERROR("Cannot start worker threads\n");
-		goto err_wkr_cleanup;
+	kfilnd_wq = alloc_workqueue("kfilnd_wq", KFILND_WQ_FLAGS,
+				    WQ_MAX_ACTIVE);
+	if (!kfilnd_wq) {
+		rc = -ENOMEM;
+		CERROR("Failed to allocated kfilnd work queue\n");
+		goto err_tn_cleanup;
 	}
 
 	lnet_register_lnd(&lnd);
 
 	return 0;
 
-err_wkr_cleanup:
-	kfilnd_wkr_cleanup();
-err_mem_cleanup:
+err_tn_cleanup:
 	kfilnd_tn_cleanup();
 err:
 	return rc;
