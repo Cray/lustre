@@ -26,12 +26,6 @@ static int kfilnd_ep_post_recv(struct kfilnd_ep *ep,
 	if (buf->immed_no_repost)
 		return 0;
 
-	/* Only post multi-receive buffer if ref count is zero. This signifies
-	 * that the buffer is no longer in used.
-	 */
-	if (atomic_read(&buf->immed_ref))
-		return 0;
-
 	atomic_inc(&buf->immed_ref);
 	rc = kfi_recv(ep->end_rx, buf->immed_buf, buf->immed_buf_size, NULL, 0,
 		      buf);
@@ -58,7 +52,8 @@ int kfilnd_ep_imm_buffer_put(struct kfilnd_ep *ep,
 	if (!ep || !buf)
 		return -EINVAL;
 
-	atomic_dec(&buf->immed_ref);
+	if (atomic_sub_return(1, &buf->immed_ref) != 0)
+		return 0;
 
 	return kfilnd_ep_post_recv(ep, buf);
 }
