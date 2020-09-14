@@ -677,7 +677,7 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	rx_attr.op_flags = KFI_COMPLETION | KFI_MULTI_RECV;
 	rx_attr.msg_order = KFI_ORDER_NONE;
 	rx_attr.comp_order = KFI_ORDER_NONE;
-	rx_attr.size = credits * rx_scale_factor;
+	rx_attr.size = credits + KFILND_NUM_IMMEDIATE_BUFFERS;
 	rx_attr.iov_limit = LNET_MAX_IOV;
 	rc = kfi_rx_context(dev->kfd_sep, context_id, &rx_attr, &ep->end_rx,
 			    ep);
