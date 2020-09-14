@@ -82,7 +82,6 @@ struct kfilnd_tunables {
 
 extern struct kfilnd_tunables  kfilnd_tunable_vals;
 extern unsigned int sync_mr_reg;
-extern unsigned int rx_scale_factor;
 extern unsigned int tx_scale_factor;
 extern unsigned int rx_cq_scale_factor;
 extern unsigned int tx_cq_scale_factor;
