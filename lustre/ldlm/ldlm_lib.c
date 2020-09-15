@@ -1110,8 +1110,7 @@ int target_handle_connect(struct ptlrpc_request *req)
 			/* We do not support the MDT-MDT interoperations with
 			 * different version MDT because of protocol changes. */
 			if (unlikely(major != LUSTRE_MAJOR ||
-				     minor != LUSTRE_MINOR ||
-				     abs(patch - LUSTRE_PATCH) > 3)) {
+				     minor != LUSTRE_MINOR )) {
 				LCONSOLE_WARN("%s (%u.%u.%u.%u) refused the "
 					"connection from different version MDT "
 					"(%d.%d.%d.%d) %s %s\n",
