@@ -1141,8 +1141,7 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 		 * different version MDT because of protocol changes.
 		 */
 		if (unlikely(major != LUSTRE_MAJOR ||
-			     minor != LUSTRE_MINOR ||
-			     abs(patch - LUSTRE_PATCH) > 3)) {
+			     minor != LUSTRE_MINOR)) {
 			LCONSOLE_WARN("%s: import %p (%u.%u.%u.%u) tried the connection to different version MDT (%d.%d.%d.%d) %s\n",
 				      imp->imp_obd->obd_name, imp, LUSTRE_MAJOR,
 				      LUSTRE_MINOR, LUSTRE_PATCH, LUSTRE_FIX,
