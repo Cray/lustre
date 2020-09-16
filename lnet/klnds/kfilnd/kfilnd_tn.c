@@ -640,12 +640,16 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
 					&msg->kfm_u.bulk_req.hdr,
 					msg->kfm_srcnid, tn, 1);
-		if (rc) {
-			KFILND_TN_ERROR(tn, "Failed to parse LNet message %d",
-					rc);
-			kfilnd_tn_status_update(tn, rc,
-						LNET_MSG_STATUS_LOCAL_ERROR);
-		}
+
+		/* If successful, transaction has been accepted by LNet and we
+		 * must cannot process the transaction anymore within this
+		 * context.
+		 */
+		if (!rc)
+			return;
+
+		KFILND_TN_ERROR(tn, "Failed to parse LNet message %d", rc);
+		kfilnd_tn_status_update(tn, rc, LNET_MSG_STATUS_LOCAL_ERROR);
 		break;
 
 	default:
