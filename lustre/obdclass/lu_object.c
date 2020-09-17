@@ -1238,8 +1238,10 @@ EXPORT_SYMBOL(lu_device_put);
 int lu_device_init(struct lu_device *d, struct lu_device_type *t)
 {
 	if (atomic_inc_return(&t->ldt_device_nr) == 1 &&
-	    t->ldt_ops->ldto_start != NULL)
+	    t->ldt_ops->ldto_start != NULL) {
+		CFS_FAIL_TIMEOUT(OBD_FAIL_LU_DEV_TYPE_START_DELAY, 1);
 		t->ldt_ops->ldto_start(t);
+	}
 
 	memset(d, 0, sizeof *d);
 	d->ld_type = t;
