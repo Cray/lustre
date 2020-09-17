@@ -730,6 +730,8 @@ extern char obd_jobid_var[];
 
 #define OBD_FAIL_OSD_FAIL_AT_TRUNCATE		0x2301
 
+#define OBD_FAIL_LU_DEV_TYPE_START_DELAY	0x2400
+
 /* Assign references to moved code to reduce code changes */
 #define OBD_FAIL_PRECHECK(id)                   (unlikely(CFS_FAIL_PRECHECK(id)))
 #define OBD_FAIL_CHECK(id)                      CFS_FAIL_CHECK(id)

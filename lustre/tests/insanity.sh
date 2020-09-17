@@ -754,6 +754,15 @@ test_14() {
 }
 run_test 14 "Fourteen Failure Mode: OST0,OST1/CLIENTS/MDS0,MDS1 `date`"
 
+test_15() {
+#define OBD_FAIL_LU_DEV_TYPE_START_DELAY	0x2400
+	do_facet ost1 "$LCTL set_param fail_loc=0x2400"
+	fail ost1,ost2
+
+	clients_up
+}
+run_test 15 "race ost mounts on lu_device_type_operations->ldto_start"
+
 complete $SECONDS
 check_and_cleanup_lustre
 exit_status
