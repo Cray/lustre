@@ -87,6 +87,11 @@ static int mdt_version_check(struct ptlrpc_request *req,
                 RETURN(0);
 
         LASSERT(req_is_replay(req));
+
+	if (lustre_msg_get_transno(req->rq_reqmsg) <=
+	    req->rq_export->exp_last_committed)
+		RETURN(0);
+
         /** VBR: version is checked always because costs nothing */
         LASSERT(idx < PTLRPC_NUM_VERSIONS);
         /** Sanity check for malformed buffers */
