@@ -175,6 +175,35 @@ static void kfilnd_tn_setup_immed(struct kfilnd_transaction *tn)
 				   tn->tn_nob_iovec);
 }
 
+static void kfilnd_tn_record_state_change(struct kfilnd_transaction *tn)
+{
+	unsigned int data_size_bucket =
+		kfilnd_msg_len_to_data_size_bucket(tn->lnet_msg_len);
+	struct kfilnd_tn_duration_stat *stat;
+
+	if (tn->is_initiator)
+		stat = &tn->tn_ep->end_dev->initiator_state_stats.state[tn->tn_state].data_size[data_size_bucket];
+	else
+		stat = &tn->tn_ep->end_dev->target_state_stats.state[tn->tn_state].data_size[data_size_bucket];
+
+	atomic64_add(ktime_to_ns(ktime_sub(ktime_get(), tn->tn_state_ts)),
+		     &stat->accumulated_duration);
+	atomic_inc(&stat->accumulated_count);
+}
+
+static void kfilnd_tn_state_change(struct kfilnd_transaction *tn,
+				   enum tn_states new_state)
+{
+	KFILND_TN_DEBUG(tn, "%s -> %s state change",
+			tn_state_to_str(tn->tn_state),
+			tn_state_to_str(new_state));
+
+	kfilnd_tn_record_state_change(tn);
+
+	tn->tn_state = new_state;
+	tn->tn_state_ts = ktime_get();
+}
+
 static void kfilnd_tn_status_update(struct kfilnd_transaction *tn, int status,
 				    enum lnet_msg_hstatus hstatus)
 {
@@ -323,6 +352,22 @@ void kfilnd_tn_process_unlink_event(struct kfilnd_immediate_buffer *bufdesc)
 				"Could not repost recv buffer %d\n", rc);
 }
 
+static void kfilnd_tn_record_duration(struct kfilnd_transaction *tn)
+{
+	unsigned int data_size_bucket =
+		kfilnd_msg_len_to_data_size_bucket(tn->lnet_msg_len);
+	struct kfilnd_tn_duration_stat *stat;
+
+	if (tn->is_initiator)
+		stat = &tn->tn_ep->end_dev->initiator_stats.data_size[data_size_bucket];
+	else
+		stat = &tn->tn_ep->end_dev->target_stats.data_size[data_size_bucket];
+
+	atomic64_add(ktime_to_ns(ktime_sub(ktime_get(), tn->tn_alloc_ts)),
+		     &stat->accumulated_duration);
+	atomic_inc(&stat->accumulated_count);
+}
+
 /**
  * kfilnd_tn_finalize() - Cleanup resources and finalize LNet operation.
  *
@@ -371,6 +416,9 @@ static void kfilnd_tn_finalize(struct kfilnd_transaction *tn, bool *tn_released)
 
 	if (KFILND_TN_PEER_VALID(tn))
 		kfilnd_peer_put(tn->peer);
+
+	kfilnd_tn_record_state_change(tn);
+	kfilnd_tn_record_duration(tn);
 
 	kfilnd_tn_free(tn);
 }
@@ -473,10 +521,7 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 		if (!kfilnd_tn_has_deadline_expired(tn)) {
 			rc = kfilnd_ep_post_send(tn->tn_ep, tn);
 			if (!rc) {
-				KFILND_TN_DEBUG(tn,
-						"%s -> TN_STATE_IMM_SEND state change",
-						tn_state_to_str(tn->tn_state));
-				tn->tn_state = TN_STATE_IMM_SEND;
+				kfilnd_tn_state_change(tn, TN_STATE_IMM_SEND);
 				return;
 			}
 
@@ -539,16 +584,12 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			 * progress the transaction.
 			 */
 			rc = kfilnd_tn_cancel_tag_recv(tn);
-			if (rc) {
+			if (rc)
 				KFILND_TN_ERROR(tn,
 						"Failed to cancel tagged receive %d",
 						rc);
-			} else {
-				KFILND_TN_ERROR(tn,
-						"%s -> TN_STATE_FAIL state change",
-						tn_state_to_str(tn->tn_state));
-				tn->tn_state = TN_STATE_FAIL;
-			}
+			else
+				kfilnd_tn_state_change(tn, TN_STATE_FAIL);
 
 			/* Exit now since an asynchronous cancel event
 			 * will occur to progress the transaction.
@@ -562,10 +603,7 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			if (!kfilnd_tn_has_deadline_expired(tn)) {
 				rc = kfilnd_ep_post_send(tn->tn_ep, tn);
 				if (!rc) {
-					KFILND_TN_DEBUG(tn,
-							"%s -> TN_STATE_WAIT_COMP state change",
-							tn_state_to_str(tn->tn_state));
-					tn->tn_state = TN_STATE_WAIT_COMP;
+					kfilnd_tn_state_change(tn, TN_STATE_WAIT_COMP);
 					return;
 				}
 
@@ -585,16 +623,12 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			 * KFI_ECANCELED event will progress the transaction.
 			 */
 			rc = kfilnd_tn_cancel_tag_recv(tn);
-			if (rc) {
+			if (rc)
 				KFILND_TN_ERROR(tn,
 						"Failed to cancel tagged receive %d",
 						rc);
-			} else {
-				KFILND_TN_ERROR(tn,
-						"%s -> TN_STATE_FAIL state change",
-						tn_state_to_str(tn->tn_state));
-				tn->tn_state = TN_STATE_FAIL;
-			}
+			else
+				kfilnd_tn_state_change(tn, TN_STATE_FAIL);
 
 			/* Exit now since an asynchronous cancel
 			 * event will occur to progress the
@@ -602,10 +636,7 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			 */
 			return;
 		} else {
-			KFILND_TN_DEBUG(tn,
-					"%s -> TN_STATE_REG_MEM state change",
-					tn_state_to_str(tn->tn_state));
-			tn->tn_state = TN_STATE_REG_MEM;
+			kfilnd_tn_state_change(tn, TN_STATE_REG_MEM);
 		}
 		break;
 
@@ -629,6 +660,8 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 		 */
 		KFILND_TN_DEBUG(tn, "%s -> TN_STATE_IMM_RECV state change",
 				tn_state_to_str(tn->tn_state));
+
+		/* TODO: Do not manually update this state change. */
 		tn->tn_state = TN_STATE_IMM_RECV;
 		mutex_unlock(&tn->tn_lock);
 		*tn_released = true;
@@ -757,10 +790,8 @@ static void kfilnd_tn_state_imm_recv(struct kfilnd_transaction *tn,
 			else
 				rc = kfilnd_ep_post_write(tn->tn_ep, tn);
 			if (!rc) {
-				KFILND_TN_DEBUG(tn,
-						"%s -> TN_STATE_WAIT_RMA_COMP state change",
-						tn_state_to_str(tn->tn_state));
-				tn->tn_state = TN_STATE_WAIT_RMA_COMP;
+				kfilnd_tn_state_change(tn,
+						       TN_STATE_WAIT_RMA_COMP);
 				return;
 			}
 
@@ -811,10 +842,7 @@ static void kfilnd_tn_state_reg_mem(struct kfilnd_transaction *tn,
 		if (!kfilnd_tn_has_deadline_expired(tn)) {
 			rc = kfilnd_ep_post_send(tn->tn_ep, tn);
 			if (!rc) {
-				KFILND_TN_DEBUG(tn,
-						"%s -> TN_STATE_WAIT_COMP state change",
-						tn_state_to_str(tn->tn_state));
-				tn->tn_state = TN_STATE_WAIT_COMP;
+				kfilnd_tn_state_change(tn, TN_STATE_WAIT_COMP);
 				return;
 			}
 
@@ -849,9 +877,7 @@ static void kfilnd_tn_state_reg_mem(struct kfilnd_transaction *tn,
 	case TN_EVENT_TAG_RX_FAIL:
 		kfilnd_tn_status_update(tn, status,
 					LNET_MSG_STATUS_LOCAL_ERROR);
-		KFILND_TN_ERROR(tn, "%s -> TN_STATE_FAIL state change",
-				tn_state_to_str(tn->tn_state));
-		tn->tn_state = TN_STATE_FAIL;
+		kfilnd_tn_state_change(tn, TN_STATE_FAIL);
 		break;
 
 	default:
@@ -874,16 +900,11 @@ static void kfilnd_tn_state_wait_comp(struct kfilnd_transaction *tn,
 	case TN_EVENT_TX_OK:
 		kfilnd_peer_alive(tn->peer);
 		kfilnd_tn_timeout_enable(tn);
-		KFILND_TN_DEBUG(tn, "%s -> TN_STATE_WAIT_TAG_COMP state change",
-				tn_state_to_str(tn->tn_state));
-		tn->tn_state = TN_STATE_WAIT_TAG_COMP;
+		kfilnd_tn_state_change(tn, TN_STATE_WAIT_TAG_COMP);
 		break;
 
 	case TN_EVENT_TAG_RX_OK:
-		KFILND_TN_DEBUG(tn,
-				"%s -> TN_STATE_WAIT_SEND_COMP state change",
-				tn_state_to_str(tn->tn_state));
-		tn->tn_state = TN_STATE_WAIT_SEND_COMP;
+		kfilnd_tn_state_change(tn, TN_STATE_WAIT_SEND_COMP);
 		break;
 
 	case TN_EVENT_TX_FAIL:
@@ -911,9 +932,7 @@ static void kfilnd_tn_state_wait_comp(struct kfilnd_transaction *tn,
 	case TN_EVENT_TAG_RX_FAIL:
 		kfilnd_tn_status_update(tn, status,
 					LNET_MSG_STATUS_LOCAL_ERROR);
-		KFILND_TN_ERROR(tn, "%s -> TN_STATE_FAIL state change",
-				tn_state_to_str(tn->tn_state));
-		tn->tn_state = TN_STATE_FAIL;
+		kfilnd_tn_state_change(tn, TN_STATE_FAIL);
 		break;
 
 	default:
@@ -962,10 +981,8 @@ static void kfilnd_tn_state_wait_rma_comp(struct kfilnd_transaction *tn,
 		if (!kfilnd_tn_has_deadline_expired(tn)) {
 			rc = kfilnd_ep_post_tagged_send(tn->tn_ep, tn);
 			if (!rc) {
-				KFILND_TN_DEBUG(tn,
-						"%s -> TN_STATE_WAIT_TAG_COMP state change",
-						tn_state_to_str(tn->tn_state));
-				tn->tn_state = TN_STATE_WAIT_TAG_COMP;
+				kfilnd_tn_state_change(tn,
+						       TN_STATE_WAIT_TAG_COMP);
 				return;
 			}
 
@@ -1017,26 +1034,19 @@ static void kfilnd_tn_state_wait_tag_comp(struct kfilnd_transaction *tn,
 		/* Fall through. */
 	case TN_EVENT_TAG_RX_OK:
 		if (!kfilnd_tn_timeout_cancel(tn)) {
-			KFILND_TN_DEBUG(tn,
-					"%s -> TN_STATE_WAIT_TIMEOUT_COMP state change",
-					tn_state_to_str(tn->tn_state));
-			tn->tn_state = TN_STATE_WAIT_TIMEOUT_COMP;
+			kfilnd_tn_state_change(tn, TN_STATE_WAIT_TIMEOUT_COMP);
 			return;
 		}
 		break;
 
 	case TN_EVENT_TIMEOUT:
 		rc = kfilnd_tn_cancel_tag_recv(tn);
-		if (rc) {
+		if (rc)
 			KFILND_TN_ERROR(tn,
 					"Failed to cancel tagged receive %d",
 					rc);
-		} else {
-			KFILND_TN_DEBUG(tn,
-					"%s -> TN_STATE_WAIT_TIMEOUT_COMP state change",
-					tn_state_to_str(tn->tn_state));
-			tn->tn_state = TN_STATE_WAIT_TIMEOUT_COMP;
-		}
+		else
+			kfilnd_tn_state_change(tn, TN_STATE_WAIT_TIMEOUT_COMP);
 		return;
 
 	case TN_EVENT_TAG_TX_FAIL:
@@ -1231,9 +1241,12 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 	struct kfilnd_transaction *tn;
 	struct kfilnd_ep *ep;
 	int rc;
+	ktime_t tn_alloc_ts;
 
 	if (!dev)
 		goto err;
+
+	tn_alloc_ts = ktime_get();
 
 	/* If the CPT does not fall into the LNet NI CPT range, force the CPT
 	 * into the LNet NI CPT range. This should never happen.
@@ -1284,6 +1297,9 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 	spin_lock(&ep->tn_list_lock);
 	list_add_tail(&tn->tn_entry, &ep->tn_list);
 	spin_unlock(&ep->tn_list_lock);
+
+	tn->tn_alloc_ts = tn_alloc_ts;
+	tn->tn_state_ts = ktime_get();
 
 	return tn;
 
