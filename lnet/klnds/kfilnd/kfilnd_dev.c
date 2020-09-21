@@ -50,6 +50,8 @@ void kfilnd_dev_free(struct kfilnd_dev *dev)
 	if (!dev)
 		return;
 
+	debugfs_remove_recursive(dev->dev_dir);
+
 	/* Change state to shutting down so TNs stop using it */
 	dev->kfd_state = KFILND_STATE_SHUTTING_DOWN;
 
@@ -202,6 +204,29 @@ struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni)
 	/* Mark that the dev/NI has now been initialized */
 	dev->kfd_state = KFILND_STATE_INITIALIZED;
 
+	/* Initialize debugfs stats. */
+	dev->dev_dir = debugfs_create_dir(libcfs_nid2str(ni->ni_nid),
+					  kfilnd_debug_dir);
+	dev->initiator_state_stats_file =
+		debugfs_create_file("initiator_state_stats", 0444,
+				    dev->dev_dir, dev,
+				    &kfilnd_initiator_state_stats_file_ops);
+	dev->initiator_state_stats_file =
+		debugfs_create_file("initiator_stats", 0444,
+				    dev->dev_dir, dev,
+				    &kfilnd_initiator_stats_file_ops);
+	dev->initiator_state_stats_file =
+		debugfs_create_file("target_state_stats", 0444, dev->dev_dir,
+				    dev, &kfilnd_target_state_stats_file_ops);
+	dev->initiator_state_stats_file =
+		debugfs_create_file("target_stats", 0444, dev->dev_dir, dev,
+				    &kfilnd_target_stats_file_ops);
+	dev->initiator_state_stats_file =
+		debugfs_create_file("reset_stats", 0444, dev->dev_dir, dev,
+				    &kfilnd_reset_stats_file_ops);
+
+	kfilnd_dev_reset_stats(dev);
+
 	try_module_get(THIS_MODULE);
 
 	return dev;
@@ -227,4 +252,32 @@ err_free_dev:
 	LIBCFS_FREE(dev, sizeof(*dev));
 err:
 	return ERR_PTR(rc);
+}
+
+
+void kfilnd_dev_reset_stats(struct kfilnd_dev *dev)
+{
+	unsigned int data_size;
+	enum tn_states state;
+	struct kfilnd_tn_duration_stat *stat;
+
+	for (data_size = 0; data_size < KFILND_DATA_SIZE_BUCKETS; data_size++) {
+		stat = &dev->initiator_stats.data_size[data_size];
+		atomic64_set(&stat->accumulated_duration, 0);
+		atomic_set(&stat->accumulated_count, 0);
+
+		stat = &dev->target_stats.data_size[data_size];
+		atomic64_set(&stat->accumulated_duration, 0);
+		atomic_set(&stat->accumulated_count, 0);
+
+		for (state = 0; state < TN_STATE_MAX; state++) {
+			stat = &dev->initiator_state_stats.state[state].data_size[data_size];
+			atomic64_set(&stat->accumulated_duration, 0);
+			atomic_set(&stat->accumulated_count, 0);
+
+			stat = &dev->target_state_stats.state[state].data_size[data_size];
+			atomic64_set(&stat->accumulated_duration, 0);
+			atomic_set(&stat->accumulated_count, 0);
+		}
+	}
 }
