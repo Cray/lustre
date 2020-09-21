@@ -10,6 +10,7 @@ kkfilnd-objs := \
 	kfilnd_peer.o \
 	kfilnd_eq.o \
 	kfilnd_cq.o \
+	kfilnd_debugfs.o \
 
 EXTRA_POST_CFLAGS += @KFICPPFLAGS@
 

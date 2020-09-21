@@ -22,6 +22,9 @@
 #include <linux/mutex.h>
 #include <linux/rhashtable.h>
 #include <linux/workqueue.h>
+#include <linux/debugfs.h>
+#include <linux/seq_file.h>
+#include <linux/ktime.h>
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -81,6 +84,12 @@ struct kfilnd_tunables {
 	int		*kfilnd_nscheds;	/* # threads on each CPT */
 };
 
+extern struct dentry *kfilnd_debug_dir;
+extern const struct file_operations kfilnd_initiator_state_stats_file_ops;
+extern const struct file_operations kfilnd_target_state_stats_file_ops;
+extern const struct file_operations kfilnd_target_stats_file_ops;
+extern const struct file_operations kfilnd_initiator_stats_file_ops;
+extern const struct file_operations kfilnd_reset_stats_file_ops;
 extern struct workqueue_struct *kfilnd_wq;
 extern struct kfilnd_tunables  kfilnd_tunable_vals;
 extern unsigned int sync_mr_reg;
@@ -183,6 +192,69 @@ struct kfilnd_dom {
 	struct ida mr_keys;
 };
 
+/* Transaction States */
+enum tn_states {
+	TN_STATE_INVALID,
+
+	/* Shared initiator and target states. */
+	TN_STATE_IDLE,
+	TN_STATE_WAIT_TAG_COMP,
+
+	/* Initiator states. */
+	TN_STATE_IMM_SEND,
+	TN_STATE_REG_MEM,
+	TN_STATE_WAIT_COMP,
+	TN_STATE_FAIL,
+	TN_STATE_WAIT_TIMEOUT_COMP,
+	TN_STATE_WAIT_SEND_COMP,
+
+	/* Target states. */
+	TN_STATE_IMM_RECV,
+	TN_STATE_WAIT_RMA_COMP,
+
+	/* Invalid max value. */
+	TN_STATE_MAX,
+};
+
+/* Base duration state stats. */
+struct kfilnd_tn_duration_stat {
+	atomic64_t accumulated_duration;
+	atomic_t accumulated_count;
+};
+
+/* Transaction state stats group into 22 buckets. Bucket zero corresponds to
+ * LNet message size of 0 bytes and buckets 1 through 21 correspond to LNet
+ * message sizes of 1 to 1048576 bytes increasing by a power of 2. LNet message
+ * sizes are round up to the nearest power of 2.
+ */
+#define KFILND_DATA_SIZE_BUCKETS 22U
+#define KFILND_DATA_SIZE_MAX_SIZE (1U << (KFILND_DATA_SIZE_BUCKETS - 2))
+struct kfilnd_tn_data_size_duration_stats {
+	struct kfilnd_tn_duration_stat data_size[KFILND_DATA_SIZE_BUCKETS];
+};
+
+static inline unsigned int kfilnd_msg_len_to_data_size_bucket(size_t size)
+{
+	u64 bit;
+
+	if (size == 0)
+		return 0;
+	if (size >= KFILND_DATA_SIZE_MAX_SIZE)
+		return KFILND_DATA_SIZE_BUCKETS - 1;
+
+	/* Round size up to the nearest power of 2. */
+	bit = fls64(size);
+	if (BIT(bit) < size)
+		bit++;
+
+	return (unsigned int)bit + 1;
+}
+
+/* One data size duraction state bucket for each transaction state. */
+struct kfilnd_tn_state_data_size_duration_stats {
+	struct kfilnd_tn_data_size_duration_stats state[TN_STATE_MAX];
+};
+
 struct kfilnd_dev {
 	struct list_head	kfd_list;	/* chain on kfid_devs */
 	struct lnet_ni		*kfd_ni;
@@ -202,6 +274,20 @@ struct kfilnd_dev {
 
 	/* Hash of LNet NIDs to KFI addresses. */
 	struct rhashtable peer_cache;
+
+	/* Per LNet NI states. */
+	struct kfilnd_tn_state_data_size_duration_stats initiator_state_stats;
+	struct kfilnd_tn_state_data_size_duration_stats target_state_stats;
+	struct kfilnd_tn_data_size_duration_stats initiator_stats;
+	struct kfilnd_tn_data_size_duration_stats target_stats;
+
+	/* Per LNet NI debugfs stats. */
+	struct dentry *dev_dir;
+	struct dentry *initiator_state_stats_file;
+	struct dentry *initiator_stats_file;
+	struct dentry *target_state_stats_file;
+	struct dentry *target_stats_file;
+	struct dentry *reset_stats_file;
 };
 
 /* Invalid checksum value is treated as no checksum. */
@@ -327,30 +413,6 @@ static inline const char *msg_type_to_str(enum kfilnd_msg_type type)
 	};
 
 	return str[type];
-};
-
-/* Transaction States */
-enum tn_states {
-	TN_STATE_INVALID,
-
-	/* Shared initiator and target states. */
-	TN_STATE_IDLE,
-	TN_STATE_WAIT_TAG_COMP,
-
-	/* Initiator states. */
-	TN_STATE_IMM_SEND,
-	TN_STATE_REG_MEM,
-	TN_STATE_WAIT_COMP,
-	TN_STATE_FAIL,
-	TN_STATE_WAIT_TIMEOUT_COMP,
-	TN_STATE_WAIT_SEND_COMP,
-
-	/* Target states. */
-	TN_STATE_IMM_RECV,
-	TN_STATE_WAIT_RMA_COMP,
-
-	/* Invalid max value. */
-	TN_STATE_MAX,
 };
 
 static inline const char *tn_state_to_str(enum tn_states type)
@@ -495,6 +557,10 @@ struct kfilnd_transaction {
 
 	/* Transaction deadline. */
 	ktime_t deadline;
+
+	ktime_t tn_alloc_ts;
+	ktime_t tn_state_ts;
+	size_t lnet_msg_len;
 };
 
 #endif /* _KFILND_ */
