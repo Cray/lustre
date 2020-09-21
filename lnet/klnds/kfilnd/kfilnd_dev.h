@@ -18,5 +18,6 @@
 int kfilnd_dev_post_imm_buffers(struct kfilnd_dev *dev);
 void kfilnd_dev_free(struct kfilnd_dev *dev);
 struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni);
+void kfilnd_dev_reset_stats(struct kfilnd_dev *dev);
 
 #endif /* _KFILND_DEV_ */
