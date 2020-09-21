@@ -19,6 +19,7 @@
 
 #define KFILND_WQ_FLAGS (WQ_MEM_RECLAIM | WQ_HIGHPRI | WQ_SYSFS)
 struct workqueue_struct *kfilnd_wq;
+struct dentry *kfilnd_debug_dir;
 
 static void kfilnd_shutdown(struct lnet_ni *ni)
 {
@@ -195,6 +196,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	/* Setup remaining transaction fields */
 	tn->tn_target_nid = target.nid;
 	tn->tn_lntmsg = msg;	/* finalise msg on completion */
+	tn->lnet_msg_len = msg->msg_len;
 
 	KFILND_TN_DEBUG(tn, "%s in %u bytes in %u frags",
 			msg_type_to_str(lnd_msg_type), tn->tn_nob_iovec,
@@ -229,6 +231,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		return -EINVAL;
 
 	tn->tn_lntmsg = msg;
+	tn->lnet_msg_len = rlen;
 
 	switch (rxmsg->kfm_type) {
 	case KFILND_MSG_IMMEDIATE:
@@ -389,11 +392,15 @@ static void __exit kfilnd_exit(void)
 	kfilnd_tn_cleanup();
 
 	lnet_unregister_lnd(&lnd);
+
+	debugfs_remove_recursive(kfilnd_debug_dir);
 }
 
 static int __init kfilnd_init(void)
 {
 	int rc;
+
+	kfilnd_debug_dir = debugfs_create_dir("kfilnd", NULL);
 
 	rc = kfilnd_tunables_init();
 	if (rc)
