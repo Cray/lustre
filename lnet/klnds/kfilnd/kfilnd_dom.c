@@ -79,7 +79,7 @@ static struct kfilnd_dom *kfilnd_dom_alloc(struct kfi_info *dom_info,
 
 	/* Bind EQ to domain for asynchronous memory registration. */
 	if (!sync_mr_reg) {
-		eq_attr.size = credits;
+		eq_attr.size = eq_size;
 		dom->eq = kfilnd_eq_alloc(dom, &eq_attr);
 		if (IS_ERR(dom->eq)) {
 			rc = PTR_ERR(dom->eq);
