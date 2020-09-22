@@ -615,7 +615,8 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	cq_attr.signaling_vector =
 		cpumask_first(cfs_cpt_cpumask(lnet_cpt_table(), cpt));
 
-	cq_attr.size = credits * rx_cq_scale_factor;
+	cq_attr.size = dev->kfd_ni->ni_net->net_tunables.lct_max_tx_credits *
+		rx_cq_scale_factor;
 	ep->end_rx_cq = kfilnd_cq_alloc(ep, &cq_attr);
 	if (IS_ERR(ep->end_rx_cq)) {
 		rc = PTR_ERR(ep->end_rx_cq);
@@ -623,7 +624,8 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 		goto err_free_ep;
 	}
 
-	cq_attr.size = credits * tx_cq_scale_factor;
+	cq_attr.size = dev->kfd_ni->ni_net->net_tunables.lct_max_tx_credits *
+		tx_cq_scale_factor;
 	ep->end_tx_cq = kfilnd_cq_alloc(ep, &cq_attr);
 	if (IS_ERR(ep->end_tx_cq)) {
 		rc = PTR_ERR(ep->end_tx_cq);
@@ -635,7 +637,8 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	rx_attr.op_flags = KFI_COMPLETION | KFI_MULTI_RECV;
 	rx_attr.msg_order = KFI_ORDER_NONE;
 	rx_attr.comp_order = KFI_ORDER_NONE;
-	rx_attr.size = credits + KFILND_NUM_IMMEDIATE_BUFFERS;
+	rx_attr.size = dev->kfd_ni->ni_net->net_tunables.lct_max_tx_credits +
+		KFILND_NUM_IMMEDIATE_BUFFERS;
 	rx_attr.iov_limit = LNET_MAX_IOV;
 	rc = kfi_rx_context(dev->kfd_sep, context_id, &rx_attr, &ep->end_rx,
 			    ep);
@@ -658,7 +661,8 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	tx_attr.op_flags = KFI_COMPLETION | KFI_TRANSMIT_COMPLETE;
 	tx_attr.msg_order = KFI_ORDER_NONE;
 	tx_attr.comp_order = KFI_ORDER_NONE;
-	tx_attr.size = credits * tx_scale_factor;
+	tx_attr.size = dev->kfd_ni->ni_net->net_tunables.lct_max_tx_credits *
+		tx_scale_factor;
 	tx_attr.iov_limit = LNET_MAX_IOV;
 	tx_attr.rma_iov_limit = LNET_MAX_IOV;
 	rc = kfi_tx_context(dev->kfd_sep, context_id, &tx_attr, &ep->end_tx,
