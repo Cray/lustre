@@ -76,27 +76,21 @@ enum kfilnd_object_states {
 	KFILND_STATE_SHUTTING_DOWN
 };
 
-struct kfilnd_tunables {
-	unsigned int	*kfilnd_service;	/* PROCID number */
-	int		*kfilnd_cksum;		/* checksum kfilnd_msg? */
-	int		*kfilnd_timeout;	/* comms timeout (seconds) */
-	char		**kfilnd_default_ipif;	/* default CXI interface */
-	int		*kfilnd_nscheds;	/* # threads on each CPT */
-};
-
 extern struct dentry *kfilnd_debug_dir;
 extern const struct file_operations kfilnd_initiator_state_stats_file_ops;
 extern const struct file_operations kfilnd_target_state_stats_file_ops;
 extern const struct file_operations kfilnd_target_stats_file_ops;
 extern const struct file_operations kfilnd_initiator_stats_file_ops;
 extern const struct file_operations kfilnd_reset_stats_file_ops;
+
 extern struct workqueue_struct *kfilnd_wq;
-extern struct kfilnd_tunables  kfilnd_tunable_vals;
+
 extern unsigned int sync_mr_reg;
+extern unsigned int cksum;
 extern unsigned int tx_scale_factor;
 extern unsigned int rx_cq_scale_factor;
 extern unsigned int tx_cq_scale_factor;
-extern int credits;
+extern unsigned int eq_size;
 
 int kfilnd_tunables_setup(struct lnet_ni *ni);
 int kfilnd_tunables_init(void);
