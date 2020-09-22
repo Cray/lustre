@@ -15,7 +15,9 @@ static struct kmem_cache *tn_cache;
 
 static __sum16 kfilnd_tn_cksum(void *ptr, int nob)
 {
-	return csum_fold(csum_partial(ptr, nob, 0));
+	if (cksum)
+		return csum_fold(csum_partial(ptr, nob, 0));
+	return NO_CHECKSUM;
 }
 
 static const char *kfilnd_tn_msgtype2str(enum kfilnd_msg_type type)
