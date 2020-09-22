@@ -286,8 +286,10 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 		break;
 
 	default:
-		KFILND_EP_ERROR(bufdesc->immed_end, "Dropping receive message");
-		return;
+		KFILND_EP_ERROR(bufdesc->immed_end,
+				"Unhandled kfilnd message type: %d",
+				(enum kfilnd_msg_type)rx_msg->kfm_type);
+		LBUG();
 	};
 
 	kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK, 0);
@@ -687,7 +689,7 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 
 	default:
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
-		finalize = true;
+		LBUG();
 	}
 
 	if (kfilnd_tn_has_failed(tn))
@@ -723,7 +725,7 @@ static void kfilnd_tn_state_imm_send(struct kfilnd_transaction *tn,
 
 	default:
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
-		return;
+		LBUG();
 	}
 
 	kfilnd_tn_finalize(tn, tn_released);
@@ -811,8 +813,8 @@ static void kfilnd_tn_state_imm_recv(struct kfilnd_transaction *tn,
 		break;
 
 	default:
-		/* TODO: Handle this error. */
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
+		LBUG();
 	}
 
 	if (kfilnd_tn_has_failed(tn))
@@ -881,8 +883,8 @@ static void kfilnd_tn_state_reg_mem(struct kfilnd_transaction *tn,
 		break;
 
 	default:
-		/* TODO: Handle this error. */
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
+		LBUG();
 	}
 }
 
@@ -936,8 +938,8 @@ static void kfilnd_tn_state_wait_comp(struct kfilnd_transaction *tn,
 		break;
 
 	default:
-		/* TODO: Handle this error. */
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
+		LBUG();
 	}
 }
 
@@ -952,8 +954,8 @@ static void kfilnd_tn_state_wait_send_comp(struct kfilnd_transaction *tn,
 		kfilnd_peer_alive(tn->peer);
 		kfilnd_tn_finalize(tn, tn_released);
 	} else {
-		/* TODO: Handle this error. */
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
+		LBUG();
 	}
 }
 
@@ -1008,9 +1010,8 @@ static void kfilnd_tn_state_wait_rma_comp(struct kfilnd_transaction *tn,
 		break;
 
 	default:
-		/* TODO: Handle this error. */
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
-		return;
+		LBUG();
 	}
 
 	kfilnd_tn_finalize(tn, tn_released);
@@ -1064,9 +1065,8 @@ static void kfilnd_tn_state_wait_tag_comp(struct kfilnd_transaction *tn,
 		break;
 
 	default:
-		/* TODO: Handle this error. */
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
-		return;
+		LBUG();
 	}
 
 	kfilnd_tn_finalize(tn, tn_released);
@@ -1095,9 +1095,8 @@ static void kfilnd_tn_state_fail(struct kfilnd_transaction *tn,
 		break;
 
 	default:
-		/* TODO: Handle this error. */
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
-		return;
+		LBUG();
 	}
 
 	kfilnd_tn_finalize(tn, tn_released);
@@ -1127,8 +1126,8 @@ static void kfilnd_tn_state_wait_timeout_comp(struct kfilnd_transaction *tn,
 		break;
 
 	default:
-		/* TODO: Handle this error. */
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
+		LBUG();
 	}
 }
 
@@ -1186,8 +1185,8 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 						  &tn_released);
 		break;
 	default:
-		/* TODO: Transaction should be freed. */
 		KFILND_TN_ERROR(tn, "Transaction in unknown state");
+		LBUG();
 	}
 
 	if (!tn_released)
