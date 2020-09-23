@@ -241,7 +241,7 @@ static inline unsigned int kfilnd_msg_len_to_data_size_bucket(size_t size)
 	if (BIT(bit) < size)
 		bit++;
 
-	return (unsigned int)bit + 1;
+	return (unsigned int)bit;
 }
 
 /* One data size duraction state bucket for each transaction state. */
