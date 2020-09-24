@@ -64,7 +64,6 @@
 #define CFS_KFI_FAIL_BULK_TIMEOUT 0xF105
 
 /* Some constants which should be turned into tunables */
-#define KFILND_NUM_IMMEDIATE_MSG 100
 #define KFILND_IMMEDIATE_MSG_SIZE 4096
 
 #define KFILND_MY_PROCID 49152
@@ -91,6 +90,7 @@ extern unsigned int tx_scale_factor;
 extern unsigned int rx_cq_scale_factor;
 extern unsigned int tx_cq_scale_factor;
 extern unsigned int eq_size;
+extern unsigned int immediate_rx_buf_count;
 
 int kfilnd_tunables_setup(struct lnet_ni *ni);
 int kfilnd_tunables_init(void);
@@ -100,7 +100,6 @@ struct kfilnd_ep;
 struct kfilnd_dev;
 
 /* Multi-receive buffers for immediate receives */
-#define KFILND_NUM_IMMEDIATE_BUFFERS 2
 struct kfilnd_immediate_buffer {
 	void *immed_buf;
 	size_t immed_buf_size;
@@ -140,13 +139,12 @@ struct kfilnd_ep {
 	int end_cpt;
 	int end_context_id;
 
-	/* Pre-posted immediate buffers */
-	struct kfilnd_immediate_buffer
-		end_immed_bufs[KFILND_NUM_IMMEDIATE_BUFFERS];
-
 	/* List of transactions. */
 	struct list_head tn_list;
 	spinlock_t tn_list_lock;
+
+	/* Pre-posted immediate buffers */
+	struct kfilnd_immediate_buffer end_immed_bufs[];
 };
 
 struct kfilnd_peer {
