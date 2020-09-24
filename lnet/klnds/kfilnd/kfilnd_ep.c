@@ -75,7 +75,7 @@ int kfilnd_ep_post_imm_buffers(struct kfilnd_ep *ep)
 	if (!ep)
 		return -EINVAL;
 
-	for (i = 0; i < KFILND_NUM_IMMEDIATE_BUFFERS; i++) {
+	for (i = 0; i < immediate_rx_buf_count; i++) {
 		rc = kfilnd_ep_post_recv(ep, &ep->end_immed_bufs[i]);
 		if (rc)
 			goto out;
@@ -96,7 +96,7 @@ void kfilnd_ep_cancel_imm_buffers(struct kfilnd_ep *ep)
 	if (!ep)
 		return;
 
-	for (i = 0; i < KFILND_NUM_IMMEDIATE_BUFFERS; i++) {
+	for (i = 0; i < immediate_rx_buf_count; i++) {
 		ep->end_immed_bufs[i].immed_no_repost = true;
 		kfi_cancel(&ep->end_rx->fid, &ep->end_immed_bufs[i]);
 	}
@@ -508,6 +508,10 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	return rc;
 }
 
+#define KFILND_EP_ALLOC_SIZE \
+	(sizeof(struct kfilnd_ep) + \
+	 (sizeof(struct kfilnd_immediate_buffer) * immediate_rx_buf_count))
+
 /**
  * kfilnd_ep_free() - Free a KFI LND endpoint.
  * @ep: KFI LND endpoint to be freed.
@@ -526,7 +530,7 @@ void kfilnd_ep_free(struct kfilnd_ep *ep)
 	kfilnd_ep_cancel_imm_buffers(ep);
 
 	/* Wait for RX buffers to no longer be used and then free them. */
-	for (i = 0; i < KFILND_NUM_IMMEDIATE_BUFFERS; i++) {
+	for (i = 0; i < immediate_rx_buf_count; i++) {
 		while (atomic_read(&ep->end_immed_bufs[i].immed_ref)) {
 			k++;
 			CDEBUG(((k & (-k)) == k) ? D_WARNING : D_NET,
@@ -549,7 +553,7 @@ void kfilnd_ep_free(struct kfilnd_ep *ep)
 	spin_unlock(&ep->tn_list_lock);
 
 	/* Free all immediate buffers. */
-	for (i = 0; i < KFILND_NUM_IMMEDIATE_BUFFERS; i++)
+	for (i = 0; i < immediate_rx_buf_count; i++)
 		LIBCFS_FREE(ep->end_immed_bufs[i].immed_buf,
 			    ep->end_immed_bufs[i].immed_buf_size);
 
@@ -557,7 +561,7 @@ void kfilnd_ep_free(struct kfilnd_ep *ep)
 	kfi_close(&ep->end_rx->fid);
 	kfilnd_cq_free(ep->end_tx_cq);
 	kfilnd_cq_free(ep->end_rx_cq);
-	LIBCFS_FREE(ep, sizeof(*ep));
+	LIBCFS_FREE(ep, KFILND_EP_ALLOC_SIZE);
 }
 
 /**
@@ -593,7 +597,7 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 
 	ncpts = dev->kfd_ni->ni_ncpts;
 
-	LIBCFS_CPT_ALLOC(ep, lnet_cpt_table(), cpt, sizeof(*ep));
+	LIBCFS_CPT_ALLOC(ep, lnet_cpt_table(), cpt, KFILND_EP_ALLOC_SIZE);
 	if (!ep) {
 		rc = -ENOMEM;
 		goto err;
@@ -638,7 +642,7 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	rx_attr.msg_order = KFI_ORDER_NONE;
 	rx_attr.comp_order = KFI_ORDER_NONE;
 	rx_attr.size = dev->kfd_ni->ni_net->net_tunables.lct_max_tx_credits +
-		KFILND_NUM_IMMEDIATE_BUFFERS;
+		immediate_rx_buf_count;
 	rx_attr.iov_limit = LNET_MAX_IOV;
 	rc = kfi_rx_context(dev->kfd_sep, context_id, &rx_attr, &ep->end_rx,
 			    ep);
@@ -716,7 +720,7 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	 */
 	rx_buf_size = nrx * rx_size;
 
-	for (i = 0; i < KFILND_NUM_IMMEDIATE_BUFFERS; i++) {
+	for (i = 0; i < immediate_rx_buf_count; i++) {
 		LIBCFS_CPT_ALLOC(ep->end_immed_bufs[i].immed_buf,
 				 lnet_cpt_table(), cpt, rx_buf_size);
 		if (!ep->end_immed_bufs[i].immed_buf) {
@@ -732,7 +736,7 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	return ep;
 
 err_free_rx_buffers:
-	for (i = 0; i < KFILND_NUM_IMMEDIATE_BUFFERS; i++) {
+	for (i = 0; i < immediate_rx_buf_count; i++) {
 		if (ep->end_immed_bufs[i].immed_buf)
 			LIBCFS_FREE(ep->end_immed_bufs[i].immed_buf,
 				    ep->end_immed_bufs[i].immed_buf_size);
@@ -747,7 +751,7 @@ err_free_tx_cq:
 err_free_rx_cq:
 	kfilnd_cq_free(ep->end_rx_cq);
 err_free_ep:
-	LIBCFS_FREE(ep, sizeof(*ep));
+	LIBCFS_FREE(ep, KFILND_EP_ALLOC_SIZE);
 err:
 	return ERR_PTR(rc);
 }

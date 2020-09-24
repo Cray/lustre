@@ -40,6 +40,11 @@ unsigned int eq_size = 1024;
 module_param(eq_size, uint, 0444);
 MODULE_PARM_DESC(eq_size, "Default event queue size used by all kfi LNet NIs");
 
+unsigned int immediate_rx_buf_count = 2;
+module_param(immediate_rx_buf_count, uint, 0444);
+MODULE_PARM_DESC(immediate_rx_buf_count,
+		 "Number of immediate multi-receive buffers posted per CPT");
+
 /* Common LND network tunables. */
 static int credits = 256;
 module_param(credits, int, 0444);
@@ -93,6 +98,11 @@ int kfilnd_tunables_init(void)
 
 	if (tx_cq_scale_factor < 1) {
 		CERROR("TX CQ scale factor less than 1");
+		return -EINVAL;
+	}
+
+	if (immediate_rx_buf_count < 2) {
+		CERROR("Immediate multi-receive buffer count less than 2");
 		return -EINVAL;
 	}
 
