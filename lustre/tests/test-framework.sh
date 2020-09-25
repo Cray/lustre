@@ -10474,8 +10474,8 @@ check_mount_and_prep()
 
 	rm -rf $DIR/[df][0-9]* || error "Fail to cleanup the env!"
 	mkdir_on_mdt0 $DIR/$tdir || error "Fail to mkdir $DIR/$tdir."
-	for idx in $(seq $MDSCOUNT); do
-		local name="MDT$(printf '%04x' $((idx - 1)))"
+	for ((mdtidx = 0; mdtidx < $MDSCOUNT; mdtidx++)); do
+		local name="MDT$(printf '%04x' $mdtidx)"
 		rm -rf $MOUNT/.lustre/lost+found/$name/*
 	done
 }
@@ -12620,6 +12620,35 @@ zfs_or_rotational() {
 	else
 		return 1
 	fi
+}
+
+ost_fid2_objpath() {
+	local facet=$1
+	local fid=${2/[\[\]]/}
+	local seq
+	local oidhex
+	local ver
+	local oid
+
+	IFS=: read seq oidhex ver <<< $fid
+	seq=${seq#0x}
+	oid=${oidhex#0x}
+
+	(( seq == 1 )) && {
+		if [[ $(facet_fstype $facet) == ldiskfs ]]; then
+			oid=$((16#$oid))
+			echo "O/1/d$((oid%32))/$((oid))"
+		elif [[ $(facet_fstype $facet) == zfs ]]; then
+			echo "oi.1/$fid"
+		fi
+		return
+	}
+
+	if [ $seq == 0 ] || [ $(facet_fstype $facet) == zfs ]; then
+		oid=$((16#$oid))
+	fi
+
+	echo "O/$seq/d$((oidhex%32))/$oid"
 }
 
 init_stripe_dir_params() {

@@ -173,7 +173,7 @@ void lu_object_put(const struct lu_env *env, struct lu_object *o)
 		if (!atomic_dec_and_test(&top->loh_ref))
 			return;
 		list_for_each_entry_reverse(o, &top->loh_layers, lo_linkage) {
-			if (o->lo_ops->loo_object_release != NULL)
+			if (o->lo_ops->loo_object_release)
 				o->lo_ops->loo_object_release(env, o);
 		}
 		lu_object_free(env, orig);
@@ -212,7 +212,7 @@ still_active:
 	 * notify them that object is no longer busy.
 	 */
 	list_for_each_entry_reverse(o, &top->loh_layers, lo_linkage) {
-		if (o->lo_ops->loo_object_release != NULL)
+		if (o->lo_ops->loo_object_release)
 			o->lo_ops->loo_object_release(env, o);
 	}
 
