@@ -8,6 +8,9 @@ init_test_env $@
 . ${CONFIG:=$LUSTRE/tests/cfg/$NAME.sh}
 init_logging
 
+init_stripe_dir_params RECOVERY_SCALE_ENABLE_REMOTE_DIRS \
+	RECOVERY_SCALE_ENABLE_STRIPED_DIRS
+
 # bug number for skipped test:  LU-9429
      ALWAYS_EXCEPT="            parallel_grouplock  $PARALLEL_SCALE_EXCEPT "
 
