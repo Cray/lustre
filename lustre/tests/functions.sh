@@ -641,7 +641,7 @@ run_ior() {
 
 	print_opts IOR ior_THREADS ior_DURATION MACHINEFILE
 
-	test_mkdir -p $testdir
+	client_load_mkdir $testdir
 
 	# mpi_run uses mpiuser
 	chmod 0777 $testdir
@@ -1334,15 +1334,18 @@ client_load_mkdir () {
 	local parent=$(dirname $dir)
 
 	local mdtcount=$($LFS df $parent 2> /dev/null | grep -c MDT)
-	[[ $mdtcount -ne 0 ]] || return 1
-
-	mdt_idx=$((RANDOM % mdtcount))
-	if $RECOVERY_SCALE_ENABLE_STRIPED_DIRS; then
-		# stripe_count in range [1,mdtcount]
-		# $LFS mkdir treats stripe_count 0 and 1 the same
-		stripe_count_opt="-c$((RANDOM % mdtcount + 1))"
+	if [ $mdtcount -le 1 ] || ! is_lustre ${parent}; then
+		mkdir $dir || return 1
+		return 0
 	else
-		stripe_count_opt=""
+		mdt_idx=$((RANDOM % mdtcount))
+		if $RECOVERY_SCALE_ENABLE_STRIPED_DIRS; then
+			# stripe_count in range [1,mdtcount]
+			# $LFS mkdir treats stripe_count 0 and 1 the same
+			stripe_count_opt="-c$((RANDOM % mdtcount + 1))"
+		else
+			stripe_count_opt=""
+		fi
 	fi
 
 	if $RECOVERY_SCALE_ENABLE_REMOTE_DIRS ||
