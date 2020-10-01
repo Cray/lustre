@@ -638,6 +638,8 @@ static int __init libcfs_init(void)
 #ifndef HAVE_WAIT_VAR_EVENT
 	wait_bit_init();
 #endif
+	init_libcfs_vfree_atomic();
+
 	rc = libcfs_debug_init(5 * 1024 * 1024);
 	if (rc < 0) {
 		pr_err("LustreError: libcfs_debug_init: rc = %d\n", rc);
@@ -729,6 +731,8 @@ static void __exit libcfs_exit(void)
 	rc = libcfs_debug_cleanup();
 	if (rc)
 		pr_err("LustreError: libcfs_debug_cleanup: rc = %d\n", rc);
+
+	exit_libcfs_vfree_atomic();
 }
 
 MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
