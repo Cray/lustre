@@ -21218,6 +21218,41 @@ test_425() {
 }
 run_test 425 "lock count should not exceed lru size"
 
+test_426() {
+	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs"
+	[ $MDS1_VERSION -lt $(version_code 2.12.4) ] &&
+		skip "Need MDS version at least 2.12.4"
+	local log
+
+	mkdir $DIR/$tdir
+	mkdir $DIR/$tdir/1
+	mkdir $DIR/$tdir/2
+	test_mkdir -c $MDSCOUNT -i 1 $DIR/$tdir/1/dir
+	test_mkdir -c $MDSCOUNT -i 1 $DIR/$tdir/2/dir2
+
+	$LFS getdirstripe $DIR/$tdir/1/dir
+
+	#first setfattr for creating updatelog
+	setfattr -n user.attr0 -v "some text" $DIR/$tdir/1/dir
+
+#define OBD_FAIL_OUT_OBJECT_MISS        0x1707
+	do_nodes $(comma_list $(mdts_nodes)) $LCTL set_param fail_loc=0x80001707 fail_val=0
+	setfattr -n user.attr1 -v "some text" $DIR/$tdir/1/dir &
+	setfattr -n user.attr2 -v "another attr"  $DIR/$tdir/2/dir2 &
+
+	sleep 2
+	fail mds2
+	wait_recovery_complete mds2 $((2*TIMEOUT))
+
+	testid=$(echo $TESTNAME | tr '_' ' ')
+	log=$(do_facet mds1 dmesg | tac | sed "/$testid/,$ d")
+        echo $log | grep "get update log failed" &&
+		error "update log corruption is detected" || true
+
+	#error "make logs"
+}
+run_test 426 "Failed DNE2 update request shouldn't corrupt updatelog"
+
 prep_801() {
 	[[ $(lustre_version_code mds1) -lt $(version_code 2.9.55) ]] ||
 	[[ $OST1_VERSION -lt $(version_code 2.9.55) ]] &&
