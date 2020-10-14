@@ -1068,8 +1068,8 @@ test_30() {
 	dd if=/dev/zero of=$DIR/$tfile bs=4k count=10 seek=10 ||
 		error "dd on client failed"
 
-	#define OBD_FAIL_LDLM_REPLAY_PAUSE	 0x32d
-	lctl set_param fail_loc=0x32d fail_val=4
+	#define OBD_FAIL_LDLM_REPLAY_PAUSE	 0x32e
+	lctl set_param fail_loc=0x32e fail_val=4
 	dd of=/dev/null if=$DIR2/$tfile &
 	local pid=$!
 	sleep 1
