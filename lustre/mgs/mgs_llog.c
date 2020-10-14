@@ -1031,8 +1031,13 @@ static int check_markers(struct lustre_cfg *lcfg,
 			LASSERT(!(marker->cm_flags & CM_START) ||
 				!(marker->cm_flags & CM_END));
 			if (marker->cm_flags & CM_START) {
-				mrd->state = REPLACE_UUID;
-				mrd->failover = NULL;
+				if (!strncmp(marker->cm_comment,
+					     "add failnid", 11)) {
+					mrd->state = REPLACE_SKIP;
+				} else {
+					mrd->state = REPLACE_UUID;
+					mrd->failover = NULL;
+				}
 			} else if (marker->cm_flags & CM_END)
 				mrd->state = REPLACE_COPY;
 		}
