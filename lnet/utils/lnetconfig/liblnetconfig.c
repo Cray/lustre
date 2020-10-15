@@ -2179,6 +2179,14 @@ int lustre_lnet_show_net(char *nw, int detail, int seq_no,
 						hstats.hlni_local_error)
 							== NULL)
 				goto out;
+			if (cYAML_create_number(yhstats, "ping_count",
+						hstats.hlni_ping_count)
+							== NULL)
+				goto out;
+			if (cYAML_create_number(yhstats, "next_ping",
+						hstats.hlni_next_ping)
+							== NULL)
+				goto out;
 
 continue_without_msg_stats:
 			tunables = cYAML_create_object(item, "tunables");
@@ -3074,6 +3082,16 @@ int lustre_lnet_show_peer(char *knid, int detail, int seq_no,
 						hstats->hlpni_network_timeout)
 							== NULL)
 				goto out;
+			if (cYAML_create_number(yhstats, "ping_count",
+						hstats->hlpni_ping_count)
+							== NULL)
+				goto out;
+
+			if (cYAML_create_number(yhstats, "next_ping",
+						hstats->hlpni_next_ping)
+							== NULL)
+				goto out;
+
 		}
 	}
 
