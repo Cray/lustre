@@ -1454,7 +1454,8 @@ static int osp_precreate_timeout_condition(void *data)
  * \retval		-EAGAIN try later, slow precreation in progress
  * \retval		-EIO when no access to OST
  */
-int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d)
+int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d,
+			  bool can_block)
 {
 	time64_t expire = ktime_get_seconds() + obd_timeout;
 	struct l_wait_info lwi;
@@ -1541,6 +1542,12 @@ int osp_precreate_reserve(const struct lu_env *env, struct osp_device *d)
 				  osp_precreate_timeout_condition, d);
 		if (ktime_get_seconds() >= expire) {
 			rc = -ETIMEDOUT;
+			break;
+		}
+
+		if (!can_block) {
+			LASSERT(d->opd_pre);
+			rc = -ENOBUFS;
 			break;
 		}
 
