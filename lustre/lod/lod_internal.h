@@ -83,7 +83,7 @@ enum lq_flag {
 	LQ_SAME_SPACE	= 1, /* the ost's all have approx.
                                 the same space avail */
 	LQ_RESET	= 2, /* zero current penalties */
-
+	LQ_SF_PROGRESS	= 3  /* statfs op in progress */
 };
 
 struct lod_qos {

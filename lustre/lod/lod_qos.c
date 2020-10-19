@@ -291,11 +291,11 @@ void lod_qos_statfs_update(const struct lu_env *env, struct lod_device *lod)
 		/* statfs data are quite recent, don't need to refresh it */
 		RETURN_EXIT;
 
-	down_write(&lod->lod_qos.lq_rw_sem);
+	/* Check if statfs already in progress */
+	if (test_and_set_bit(LQ_SF_PROGRESS, &lod->lod_qos.lq_flags))
+		RETURN_EXIT;
 
-	if (obd->obd_osfs_age > max_age)
-		goto out;
-
+	down_read(&osts->op_rw_sem);
 	for (i = 0; i < osts->op_count; i++) {
 		idx = osts->op_array[i];
 		avail = OST_TGT(lod,idx)->ltd_statfs.os_bavail;
@@ -306,10 +306,12 @@ void lod_qos_statfs_update(const struct lu_env *env, struct lod_device *lod)
 			/* recalculate weigths */
 			set_bit(LQ_DIRTY, &lod->lod_qos.lq_flags);
 	}
+	up_read(&osts->op_rw_sem);
+
 	obd->obd_osfs_age = ktime_get_seconds();
 
-out:
-	up_write(&lod->lod_qos.lq_rw_sem);
+	clear_bit(LQ_SF_PROGRESS, &lod->lod_qos.lq_flags);
+
 	EXIT;
 }
 
