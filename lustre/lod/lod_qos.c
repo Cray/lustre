@@ -2484,12 +2484,6 @@ int lod_prepare_create(const struct lu_env *env, struct lod_object *lo,
 		extent = &lod_comp->llc_extent;
 		QOS_DEBUG("comp[%d] %lld "DEXT"\n", i, size, PEXT(extent));
 
-		/* Check the inherited layouts */
-		if (!libcfs_experimental_flag) {
-			if (lod_comp->llc_flags & LCME_FL_EXTENSION)
-				RETURN(-ENOSYS);
-		}
-
 		if (!lo->ldo_is_composite || size >= extent->e_start) {
 			rc = lod_qos_prep_create(env, lo, attr, th, i, 0);
 			if (rc)

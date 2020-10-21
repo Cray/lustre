@@ -1954,10 +1954,6 @@ recheck:
 			}
 		}
 
-		if ((le32_to_cpu(ent->lcme_flags) & LCME_FL_EXTENSION) &&
-		    !libcfs_experimental_flag && !is_from_disk)
-			RETURN(-ENOSYS);
-
 		prev_end = le64_to_cpu(ext->e_end);
 
 		rc = lod_verify_v1v3(d, &tmp, is_from_disk);
