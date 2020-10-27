@@ -116,15 +116,53 @@ enum {
 static DEFINE_IDR(chlg_minor_idr);
 static DEFINE_SPINLOCK(chlg_minor_lock);
 
+#ifndef HAVE_IDR_ALLOC
+static int cfs_idr_alloc(struct idr *idr, void *ptr, int start, int end,
+			 gfp_t gfp_mask)
+{
+	int id = -1;
+	int err = idr_get_new(idr, ptr, &id);
+
+	if (err)
+		return err;
+	if (id > end) {
+		idr_remove(idr, id);
+		return -ENOSPC;
+	}
+
+	return id;
+}
+
+static int cfs_idr_preload(struct idr *idr, gfp_t gfp_mask)
+{
+	return idr_pre_get(idr, gfp_mask);
+}
+
+#define idr_preload_end()
+
+#else
+
+#define cfs_idr_alloc(idr, ptr, start, end, gfp_mask) \
+	idr_alloc((idr), (ptr), (start), (end), (gfp_mask))
+
+static int cfs_idr_preload(struct idr *idr, gfp_t gfp_mask)
+{
+	idr_preload(gfp_mask);
+	return 1; /* returns 1 on success */
+}
+#endif
+
 static int chlg_minor_alloc(int *pminor)
 {
 	void *minor_allocated = (void *)-1;
 	int minor;
 
-	idr_preload(GFP_KERNEL);
+	if (!cfs_idr_preload(&chlg_minor_idr, GFP_KERNEL))
+		return -ENOMEM;
+
 	spin_lock(&chlg_minor_lock);
-	minor = idr_alloc(&chlg_minor_idr, minor_allocated, 0,
-			  MDC_CHANGELOG_DEV_COUNT, GFP_NOWAIT);
+	minor = cfs_idr_alloc(&chlg_minor_idr, minor_allocated, 0,
+			      MDC_CHANGELOG_DEV_COUNT, GFP_NOWAIT);
 	spin_unlock(&chlg_minor_lock);
 	idr_preload_end();
 
