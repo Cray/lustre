@@ -45,6 +45,82 @@
 #include <cl_object.h>
 #include "cl_internal.h"
 
+#ifndef HAVE_SMP_STORE_LOAD
+
+#ifdef __x86_64__
+#if defined(CONFIG_X86_PPRO_FENCE)
+
+/*
+ * For either of these options x86 doesn't have a strong TSO memory
+ * model and we should fall back to full barriers.
+ */
+
+#define smp_store_release(p, v)						\
+do {									\
+	smp_mb();							\
+	ACCESS_ONCE(*p) = (v);						\
+} while (0)
+
+#define smp_load_acquire(p)						\
+({									\
+	typeof(*p) ___p1 = ACCESS_ONCE(*p);				\
+	smp_mb();							\
+	___p1;								\
+})
+
+#else /* regular x86 TSO memory ordering */
+
+#define smp_store_release(p, v)						\
+do {									\
+	barrier();							\
+	ACCESS_ONCE(*p) = (v);						\
+} while (0)
+
+#define smp_load_acquire(p)						\
+({									\
+	typeof(*p) ___p1 = ACCESS_ONCE(*p);				\
+	barrier();							\
+	___p1;								\
+})
+
+#endif /* x86 */
+#endif /* CONFIG_X86_PPRO_FENCE */
+
+#ifdef __aarch64__
+
+#define smp_store_release(p, v)						\
+do {									\
+	switch (sizeof(*p)) {						\
+	case 4:								\
+		asm volatile ("stlr %w1, %0"				\
+				: "=Q" (*p) : "r" (v) : "memory");	\
+		break;							\
+	case 8:								\
+		asm volatile ("stlr %1, %0"				\
+				: "=Q" (*p) : "r" (v) : "memory");	\
+		break;							\
+	}								\
+} while (0)
+
+#define smp_load_acquire(p)						\
+({									\
+	typeof(*p) ___p1;						\
+	switch (sizeof(*p)) {						\
+	case 4:								\
+		asm volatile ("ldar %w0, %1"				\
+			: "=r" (___p1) : "Q" (*p) : "memory");		\
+		break;							\
+	case 8:								\
+		asm volatile ("ldar %0, %1"				\
+			: "=r" (___p1) : "Q" (*p) : "memory");		\
+		break;							\
+	}								\
+	___p1;								\
+})
+
+#endif /* __aarch64__ */
+#endif /* HAVE_SMP_STORE_LOAD */
+
 static void cl_page_delete0(const struct lu_env *env, struct cl_page *pg);
 static DEFINE_MUTEX(cl_page_kmem_mutex);
 

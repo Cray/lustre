@@ -275,6 +275,47 @@ nsecs_to_jiffies64, [
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LIBCFS_MOD_DELAYED_WORK
 
+
+#
+# LIBCFS_HAVE_IDR_ALLOC
+# v3.9
+#
+AC_DEFUN([LIBCFS_HAVE_IDR_ALLOC], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'idr_alloc()' is present],
+nsecs_to_jiffies64, [
+	#include <linux/idr.h>
+],[
+	(void)idr_alloc(NULL, NULL, 0, 0, GFP_NOFS);
+],[
+	AC_DEFINE(HAVE_IDR_ALLOC, 1,
+		['idr_alloc()' is present])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_HAVE_IDR_ALLOC
+
+#
+# LIBCFS_HAVE_SMP_STORE_LOAD
+# v3.12
+#
+AC_DEFUN([LIBCFS_HAVE_SMP_STORE_LOAD], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'smp_load_acquire()' is present],
+nsecs_to_jiffies64, [
+	#include <linux/rwsem.h>
+],[
+	long a[1] = {0};
+	long v = smp_load_acquire(&a[0]);
+	(void)v;
+],[
+	AC_DEFINE(HAVE_SMP_STORE_LOAD, 1,
+		['smp_load_acquire()' is present])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_HAVE_SMP_STORE_LOAD
+
 #
 # Kernel version v3.8-rc4-82-g4f522a247bc2 exported d_hash_and_lookup()
 # It was added in v2.6.16-3821-g3e7e241f8c5c, so no worries about header.
@@ -1369,12 +1410,14 @@ LIBCFS_MOD_DELAYED_WORK
 LIBCFS_HAVE_CRC32
 LIBCFS_D_HASH_AND_LOOKUP
 LIBCFS_ENABLE_CRC32_ACCEL
+LIBCFS_HAVE_IDR_ALLOC
 # 3.10
 LIBCFS_ENABLE_CRC32C_ACCEL
 # 3.11
 LIBCFS_DENTRY_D_HASH_2ARGS
 LIBCFS_KTIME_GET_TS64
 # 3.12
+LIBCFS_HAVE_SMP_STORE_LOAD
 LIBCFS_PREPARE_TO_WAIT_EVENT
 LIBCFS_KERNEL_PARAM_OPS
 LIBCFS_KTIME_ADD
