@@ -71,6 +71,45 @@ AS_IF([test "x$enable_panic_dumplog" = xyes], [
 ]) # LIBCFS_CONFIG_PANIC_DUMPLOG
 
 #
+# LIBCFS_HAVE_IDR_ALLOC
+# v3.9
+#
+AC_DEFUN([LIBCFS_HAVE_IDR_ALLOC], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'idr_alloc()' is present],
+nsecs_to_jiffies64, [
+	#include <linux/idr.h>
+],[
+	(void)idr_alloc(NULL, NULL, 0, 0, GFP_NOFS);
+],[
+	AC_DEFINE(HAVE_IDR_ALLOC, 1,
+		['idr_alloc()' is present])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_HAVE_IDR_ALLOC
+
+#
+# LIBCFS_HAVE_SMP_STORE_LOAD
+# v3.12
+#
+AC_DEFUN([LIBCFS_HAVE_SMP_STORE_LOAD], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'smp_load_acquire()' is present],
+nsecs_to_jiffies64, [
+	#include <linux/rwsem.h>
+],[
+	long a[1] = {0};
+	long v = smp_load_acquire(&a[0]);
+	(void)v;
+],[
+	AC_DEFINE(HAVE_SMP_STORE_LOAD, 1,
+		['smp_load_acquire()' is present])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_HAVE_SMP_STORE_LOAD
+
 # Kernel version 3.12-rc4 commit c2d816443ef30 added prepare_to_wait_event()
 #
 AC_DEFUN([LIBCFS_SRC_PREPARE_TO_WAIT_EVENT],[
@@ -2052,8 +2091,11 @@ dnl #
 dnl # Check results of kernel interface tests.
 dnl #
 AC_DEFUN([LIBCFS_PROG_LINUX_RESULTS], [
+	# 3.8
+	LIBCFS_HAVE_IDR_ALLOC
 	# 3.12
 	LIBCFS_PREPARE_TO_WAIT_EVENT
+	LIBCFS_HAVE_SMP_STORE_LOAD
 	LIBCFS_KERNEL_PARAM_OPS
 	# 3.14
 	LIBCFS_HAVE_MAPPING_AS_EXITING_FLAG
