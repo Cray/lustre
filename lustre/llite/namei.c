@@ -1570,6 +1570,7 @@ static int ll_rmdir(struct inode *dir, struct dentry *dchild)
 	struct qstr *name = &dchild->d_name;
         struct ptlrpc_request *request = NULL;
         struct md_op_data *op_data;
+	struct mdt_body *body;
         int rc;
         ENTRY;
 
@@ -1591,6 +1592,10 @@ static int ll_rmdir(struct inode *dir, struct dentry *dchild)
         rc = md_unlink(ll_i2sbi(dir)->ll_md_exp, op_data, &request);
         ll_finish_md_op_data(op_data);
         if (rc == 0) {
+		body = req_capsule_server_get(&request->rq_pill, &RMF_MDT_BODY);
+		if (body->mbo_valid & OBD_MD_FLNLINK)
+			set_nlink(dchild->d_inode, body->mbo_nlink);
+
                 ll_update_times(request, dir);
                 ll_stats_ops_tally(ll_i2sbi(dir), LPROC_LL_RMDIR, 1);
         }
