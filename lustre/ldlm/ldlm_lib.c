@@ -805,7 +805,7 @@ static int target_handle_reconnect(struct lustre_handle *conn,
 		GOTO(out_already, rc);
 	}
 
-	remaining = hrtimer_expires_remaining(&target->obd_recovery_timer);
+	remaining = hrtimer_get_remaining(&target->obd_recovery_timer);
 	timeout = ktime_divns(remaining, NSEC_PER_SEC);
 	if (timeout > 0) {
 		LCONSOLE_WARN("%s: Client %s (at %s) reconnected, waiting for %d clients in recovery for %lld:%.02lld\n",
@@ -1281,7 +1281,7 @@ no_export:
 			known =
 			   atomic_read(&target->obd_max_recoverable_clients);
 			stale = target->obd_stale_clients;
-			remaining = hrtimer_expires_remaining(timer);
+			remaining = hrtimer_get_remaining(timer);
 			left = ktime_divns(remaining, NSEC_PER_SEC);
 			if (ktime_to_ns(remaining) > 0) {
 				msg = "to recover in";
@@ -1776,7 +1776,7 @@ static void extend_recovery_timer(struct obd_device *obd, time_t dr_timeout,
 	}
 	LASSERT(obd->obd_recovery_start != 0);
 
-	left_ns = hrtimer_expires_remaining(&obd->obd_recovery_timer);
+	left_ns = hrtimer_get_remaining(&obd->obd_recovery_timer);
 	left = ktime_divns(left_ns, NSEC_PER_SEC);
 
 	if (extend) {
