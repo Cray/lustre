@@ -106,6 +106,8 @@ if [ -d /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor} ]; then
 	syms="$syms /usr/src/kernel-modules-ofed/%{_target_cpu}/%{flavor}/Modules.symvers"
 elif [ -d /usr/src/ofed/%{_target_cpu}/%{flavor} ]; then
 	O2IBPATH=/usr/src/ofed/%{_target_cpu}/%{flavor}
+elif [ $(uname -m) == "aarch64" ] ; then
+	O2IBPATH=no
 else
 	O2IBPATH=yes
 fi
