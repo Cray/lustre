@@ -125,6 +125,14 @@ do {									       \
 } while (0)
 #endif
 
+static void cfs_print_stack_trace(unsigned long *entries, unsigned int nr)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr; i++)
+		pr_info("[<0>] %pB\n", (void *)entries[i]);
+}
+
 #define MAX_ST_ENTRIES	100
 static DEFINE_SPINLOCK(st_lock);
 
@@ -142,27 +150,21 @@ static stack_trace_save_tsk_t *task_dump_stack;
 
 static void libcfs_call_trace(struct task_struct *tsk)
 {
-#ifdef CONFIG_ARCH_STACKWALK
 	static unsigned long entries[MAX_ST_ENTRIES];
-	unsigned int i, nr_entries;
-
-	if (!task_dump_stack)
-		task_dump_stack = (stack_trace_save_tsk_t *)
-			symbol_get("stack_trace_save_tsk");
+#ifdef CONFIG_ARCH_STACKWALK
+	unsigned int nr_entries;
 
 	spin_lock(&st_lock);
 	pr_info("Pid: %d, comm: %.20s %s %s\n", tsk->pid, tsk->comm,
-	       init_utsname()->release, init_utsname()->version);
+		init_utsname()->release, init_utsname()->version);
 	pr_info("Call Trace TBD:\n");
 	if (task_dump_stack) {
 		nr_entries = task_dump_stack(tsk, entries, MAX_ST_ENTRIES, 0);
-		for (i = 0; i < nr_entries; i++)
-			pr_info("[<0>] %pB\n", (void *)entries[i]);
+		cfs_print_stack_trace(entries, nr_entries);
 	}
 	spin_unlock(&st_lock);
 #else
 	struct stack_trace trace;
-	static unsigned long entries[MAX_ST_ENTRIES];
 
 	trace.nr_entries = 0;
 	trace.max_entries = MAX_ST_ENTRIES;
@@ -171,10 +173,10 @@ static void libcfs_call_trace(struct task_struct *tsk)
 
 	spin_lock(&st_lock);
 	pr_info("Pid: %d, comm: %.20s %s %s\n", tsk->pid, tsk->comm,
-	       init_utsname()->release, init_utsname()->version);
+		init_utsname()->release, init_utsname()->version);
 	pr_info("Call Trace:\n");
 	save_stack_trace_tsk(tsk, &trace);
-	print_stack_trace(&trace, 0);
+	cfs_print_stack_trace(entries, trace.nr_entries);
 	spin_unlock(&st_lock);
 #endif
 }
@@ -316,4 +318,13 @@ void libcfs_register_panic_notifier(void)
 void libcfs_unregister_panic_notifier(void)
 {
         atomic_notifier_chain_unregister(&panic_notifier_list, &libcfs_panic_notifier);
+}
+
+void __init cfs_debug_init(void)
+{
+#ifdef CONFIG_ARCH_STACKWALK
+	task_dump_stack = (stack_trace_save_tsk_t *)
+			kallsyms_lookup_name("stack_trace_save_tsk");
+
+#endif
 }
