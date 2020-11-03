@@ -3197,6 +3197,11 @@ static int lfs_setstripe_internal(int argc, char **argv,
 			migration_block = true;
 			break;
 		case 'C':
+			if (lsa.lsa_pattern == LLAPI_LAYOUT_MDT) {
+				fprintf(stderr,
+					"can not apply overstriping to MDT layout\n");
+				goto usage_error;
+			}
 			lsa.lsa_pattern = LLAPI_LAYOUT_OVERSTRIPING;
 			/* fall through */
 		case 'c':
