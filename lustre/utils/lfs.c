@@ -2257,7 +2257,8 @@ static inline bool setstripe_args_specified(struct lfs_setstripe_args *lsa)
 		lsa->lsa_stripe_count != LLAPI_LAYOUT_DEFAULT ||
 		lsa->lsa_stripe_off != LLAPI_LAYOUT_DEFAULT ||
 		lsa->lsa_pattern != LLAPI_LAYOUT_RAID0 ||
-		lsa->lsa_comp_end != 0);
+		lsa->lsa_comp_end != 0 ||
+		lsa->lsa_pool_name != NULL);
 }
 
 /**
