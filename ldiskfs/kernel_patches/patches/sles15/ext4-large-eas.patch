@@ -803,7 +803,7 @@ Index: b/fs/ext4/xattr.c
  	if (error)
  		goto out;
  
-@@ -1572,21 +1913,135 @@ cleanup:
+@@ -1572,21 +1913,140 @@ cleanup:
  }
  
  
@@ -908,7 +908,7 @@ Index: b/fs/ext4/xattr.c
  	struct buffer_head *bh = NULL;
 +	struct ext4_xattr_ibody_header *header;
 +	struct ext4_inode *raw_inode;
-+	struct ext4_iloc iloc;
++	struct ext4_iloc iloc = { .bh = NULL };
 +	struct ext4_xattr_entry *entry;
 +	int credits = 3, error = 0;
  
@@ -926,13 +926,18 @@ Index: b/fs/ext4/xattr.c
 +		if (!entry->e_value_inum)
 +			continue;
 +		if (ext4_expand_ino_array(lea_ino_array,
-+					  entry->e_value_inum) != 0) {
-+			brelse(iloc.bh);
++					  entry->e_value_inum) != 0)
 +			goto cleanup;
-+		}
++
++		error = ext4_journal_get_write_access(handle, iloc.bh);
++		if (error)
++			goto cleanup;
 +		entry->e_value_inum = 0;
++		entry->e_value_size = 0;
++		error = ext4_handle_dirty_metadata(handle, inode, iloc.bh);
++		if (error)
++			goto cleanup;
 +	}
-+	brelse(iloc.bh);
 +
 +delete_external_ea:
 +	if (!EXT4_I(inode)->i_file_acl) {
@@ -944,7 +949,7 @@ Index: b/fs/ext4/xattr.c
  	bh = sb_bread(inode->i_sb, EXT4_I(inode)->i_file_acl);
  	if (!bh) {
  		EXT4_ERROR_INODE(inode, "block %llu read error",
-@@ -1599,11 +2054,69 @@ ext4_xattr_delete_inode(handle_t *handle
+@@ -1599,11 +2054,78 @@ ext4_xattr_delete_inode(handle_t *handle
  				 EXT4_I(inode)->i_file_acl);
  		goto cleanup;
  	}
@@ -956,7 +961,15 @@ Index: b/fs/ext4/xattr.c
 +		if (ext4_expand_ino_array(lea_ino_array,
 +					  entry->e_value_inum) != 0)
 +			goto cleanup;
++
++		error = ext4_journal_get_write_access(handle, bh);
++		if (error)
++			goto cleanup;
 +		entry->e_value_inum = 0;
++		entry->e_value_size = 0;
++		error = ext4_handle_dirty_metadata(handle, inode, bh);
++		if (error)
++			goto cleanup;
 +	}
 +
 +	/* add xattr inode to orphan list */
@@ -984,6 +997,7 @@ Index: b/fs/ext4/xattr.c
  
  cleanup:
  	brelse(bh);
++	brelse(iloc.bh);
 +
 +	return error;
 +}
