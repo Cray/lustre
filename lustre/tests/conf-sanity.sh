@@ -8756,6 +8756,7 @@ run_test 127 "direct io overwrite on full ost"
 test_128()
 {
 	combined_mgs_mds && skip "need separate mgs device"
+	[ "$ost2_FSTYPE" == zfs ] && import_zpool ost2
 
 	format_ost 2
 	# Try to apply nolocallogs to the virgin OST. Should fail.
@@ -8765,17 +8766,20 @@ test_128()
 	setupall
 	stopall
 
+	[ "$ost1_FSTYPE" == zfs ] && import_zpool ost1
 	# Start OST without MGS (local configs)
 	do_facet ost1 "$TUNEFS --dryrun $(ostdevname 1)"
 	start_ost || error "unable to start OST1"
 	stop_ost || error "Unable to stop OST1"
 
+	[ "$ost1_FSTYPE" == zfs ] && import_zpool ost1
 	# Do not allow reading local configs, should fail
 	do_facet ost1 "$TUNEFS --nolocallogs $(ostdevname 1)" ||
 		error "Can not set nolocallogs"
 	start_ost && error "OST1 started, but should fail"
 
 	# Connect to MGS successfully, reset nolocallogs flag
+	[ "$ost1_FSTYPE" == zfs ] && import_zpool ost1
 	start_mgs || error "unable to start MGS"
 	start_ost || error "unable to start OST1"
 
