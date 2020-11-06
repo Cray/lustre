@@ -3700,6 +3700,9 @@ static void embed_pool_to_comp_v1(const struct lov_comp_md_v1 *src,
 		lum3 = (struct lov_user_md_v3 *)((char *)tgt + offset + shift);
 		*(struct lov_user_md_v1 *)lum3 = *lum;
 		lum3->lmm_magic = cpu_to_le32(LOV_USER_MAGIC_V3);
+		if (lum->lmm_pattern == cpu_to_le32(LOV_PATTERN_MDT))
+			continue;
+
 		strlcpy(lum3->lmm_pool_name, pool,
 			sizeof(lum3->lmm_pool_name));
 	}
