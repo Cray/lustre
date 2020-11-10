@@ -609,6 +609,7 @@ run_ior() {
 	ior_xferSize=${ior_xferSize:-1M}
 	ior_type=${ior_type:-POSIX}
 	ior_DURATION=${ior_DURATION:-30}        # minutes
+	ior_CLEANUP=${ior_CLEANUP:-true}
 	local multiplier=1
 	case ${ior_blockUnit} in
 		[G])
@@ -687,7 +688,7 @@ run_ior() {
     if [ $rc != 0 ] ; then
         error "ior failed! $rc"
     fi
-    rm -rf $testdir
+    $ior_CLEANUP && rm -rf $testdir || true
 }
 
 run_mib() {
