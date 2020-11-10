@@ -90,8 +90,7 @@ command_t cmd_list[] = {
 	{"net", jt_net, 0, "net {add | del | show | help}"},
 	{"routing", jt_routing, 0, "routing {show | help}"},
 	{"set", jt_set, 0, "set {tiny_buffers | small_buffers | large_buffers"
-			   " | routing | numa_range | max_interfaces"
-			   " | discovery}"},
+			   " | routing | numa_range | max_interfaces"},
 	{"import", jt_import, 0, "import FILE.yaml"},
 	{"export", jt_export, 0, "export FILE.yaml"},
 	{"stats", jt_stats, 0, "stats {show | help}"},
@@ -195,9 +194,8 @@ command_t set_cmds[] = {
 	{"max_interfaces", jt_set_max_intf, 0, "set the default value for "
 		"max interfaces\n"
 	 "\tValue must be greater than 16\n"},
-	{"discovery", jt_set_discovery, 0, "enable/disable peer discovery\n"
-	 "\t0 - disable peer discovery\n"
-	 "\t1 - enable peer discovery (default)\n"},
+	{"discovery", jt_set_discovery, 0,
+	 "toggling discovery via lnetctl is not supported\n"},
 	{"drop_asym_route", jt_set_drop_asym_route, 0,
 	 "drop/accept asymmetrical route messages\n"
 	 "\t0 - accept asymmetrical route messages (default)\n"
@@ -553,14 +551,42 @@ static int jt_set_retry_count(int argc, char **argv)
 static int jt_set_discovery(int argc, char **argv)
 {
 	long int value;
-	int rc;
+	int rc, opt;
 	struct cYAML *err_rc = NULL;
+	bool force = false;
+
+	const char *const short_options = "f";
+	static const struct option long_options[] = {
+		{ .name = "force", .has_arg = no_argument, .val = 'f' },
+		{ .name = NULL } };
 
 	rc = check_cmd(set_cmds, "set", "discovery", 2, argc, argv);
 	if (rc)
 		return rc;
 
-	rc = parse_long(argv[1], &value);
+	while ((opt = getopt_long(argc, argv, short_options,
+                                   long_options, NULL)) != -1) {
+		switch (opt) {
+		case 'f':
+			force = true;
+			break;
+		case '?':
+			print_help(set_cmds, "set", "discovery");
+		default:
+			return 0;
+		}
+	}
+
+	if (!force) {
+		cYAML_build_error(-22, -1, "set", "discovery",
+				  "toggling discovery is not supported via lnetctl",
+				  &err_rc);
+		cYAML_print_tree2file(stderr, err_rc);
+		cYAML_free_tree(err_rc);
+		return -22;
+	}
+
+	rc = parse_long(argv[argc - 1], &value);
 	if (rc != 0) {
 		cYAML_build_error(-1, -1, "parser", "set",
 				  "cannot parse discovery value", &err_rc);

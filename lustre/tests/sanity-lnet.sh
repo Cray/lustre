@@ -1271,6 +1271,7 @@ function restore_lnet_params() {
 	while read param value; do
 		[[ $param == max_intf ]] && continue
 		[[ $param == lnd_timeout ]] && continue
+		[[ $param == discovery ]] && continue
 		$LNETCTL set ${param} ${value} ||
 			error "Failed to restore ${param} to ${value}"
 	done < $LNET_PARAMS_FILE
