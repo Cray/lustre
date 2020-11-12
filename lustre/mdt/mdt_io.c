@@ -1058,19 +1058,23 @@ static void mdt_lvb2reply(struct ldlm_resource *res, struct mdt_body *mb,
 
 	lock_res(res);
 	res_lvb = res->lr_lvb_data;
-	if (lvb)
-		*lvb = *res_lvb;
 
-	if (mb) {
-		mb->mbo_dom_size = res_lvb->lvb_size;
-		mb->mbo_dom_blocks = res_lvb->lvb_blocks;
-		mb->mbo_mtime = res_lvb->lvb_mtime;
-		mb->mbo_ctime = res_lvb->lvb_ctime;
-		mb->mbo_atime = res_lvb->lvb_atime;
-		mb->mbo_valid |= OBD_MD_FLATIME | OBD_MD_FLCTIME |
-				 OBD_MD_FLMTIME | OBD_MD_DOM_SIZE;
+	if (res_lvb) {
+		if (lvb)
+			*lvb = *res_lvb;
+
+		if (mb) {
+			mb->mbo_dom_size = res_lvb->lvb_size;
+			mb->mbo_dom_blocks = res_lvb->lvb_blocks;
+			mb->mbo_mtime = res_lvb->lvb_mtime;
+			mb->mbo_ctime = res_lvb->lvb_ctime;
+			mb->mbo_atime = res_lvb->lvb_atime;
+			mb->mbo_valid |= OBD_MD_FLATIME | OBD_MD_FLCTIME |
+				         OBD_MD_FLMTIME | OBD_MD_DOM_SIZE;
+		}
+
+		CDEBUG(D_DLMTRACE, "size %llu\n", res_lvb->lvb_size);
 	}
-	CDEBUG(D_DLMTRACE, "size %llu\n", res_lvb->lvb_size);
 	unlock_res(res);
 }
 
@@ -1099,7 +1103,7 @@ int mdt_dom_object_size(const struct lu_env *env, struct mdt_device *mdt,
 
 	/* Update lvbo data if DoM lock returned or if LVB is not yet valid. */
 	if (dom_lock || !mdt_dom_lvb_is_valid(res))
-		mdt_dom_lvbo_update(res, NULL, NULL, false);
+		rc = mdt_dom_lvbo_update(res, NULL, NULL, false);
 
 	mdt_lvb2reply(res, mb, NULL);
 	ldlm_resource_putref(res);
@@ -1205,10 +1209,14 @@ int mdt_glimpse_enqueue(struct mdt_thread_info *mti, struct ldlm_namespace *ns,
 	rc = ELDLM_LOCK_ABORTED;
 fill_mbo:
 	/* LVB can be without valid data in case of DOM */
-	if (!mdt_dom_lvb_is_valid(res))
-		mdt_dom_lvbo_update(res, lock, NULL, false);
-	mdt_lvb2reply(res, mbo, lvb);
+	if (!mdt_dom_lvb_is_valid(res)) {
+		int rc2;
 
+		rc2 = mdt_dom_lvbo_update(res, lock, NULL, false);
+		if (rc2)
+			RETURN(rc2);
+	}
+	mdt_lvb2reply(res, mbo, lvb);
 	RETURN(rc);
 }
 
