@@ -8,7 +8,6 @@
 %define branch trunk
 
 %define kversion %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease)
-%define pc_files cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc cray-lustre-ptlctl-devel.pc
 %define _prefix /usr
 
 BuildRequires: kernel-source
@@ -73,8 +72,7 @@ fi
 make DESTDIR=${RPM_BUILD_ROOT} install
 
 %define cfgdir %{_includedir}/lustre/%{flavor}
-for f in cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc \
-	 cray-lustre-ptlctl-devel.pc cray-lnet.pc
+for f in cray-lustre-api-devel.pc cray-lnet.pc
 do
 	eval "sed -i 's,@includedir@,%{_includedir},' cray-obs/${f}"
 	eval "sed -i 's,@libdir@,%{_libdir},' cray-obs/${f}"
@@ -110,8 +108,6 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_libdir}/liblustreapi.a
 %{_libdir}/liblustreapi.so*
 %{_pkgconfigdir}/cray-lustre-api-devel.pc
-%{_pkgconfigdir}/cray-lustre-cfsutil-devel.pc
-%{_pkgconfigdir}/cray-lustre-ptlctl-devel.pc
 %dir %{_libdir}/lustre
 %{_libdir}/lustre/tests
 %{_modulefiles_prefix}
