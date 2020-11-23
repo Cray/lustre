@@ -164,8 +164,7 @@ done
 %{__install} -D -m 0644 lustre/include/interval_tree.h %{buildroot}/%{_includedir}/interval_tree.h
 
 %define cfgdir %{_includedir}/lustre/%{flavor}
-for f in cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc \
-	 cray-lustre-ptlctl-devel.pc cray-lnet.pc
+for f in cray-lustre-api-devel.pc cray-lnet.pc
 do
 	eval "sed -i 's,@includedir@,%{_includedir},' cray-obs/${f}"
 	eval "sed -i 's,@libdir@,%{_libdir},' cray-obs/${f}"
@@ -218,8 +217,6 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_libdir}/liblnetconfig.a
 %{_libdir}/liblnetconfig.so
 %{_pkgconfigdir}/cray-lustre-api-devel.pc
-%{_pkgconfigdir}/cray-lustre-cfsutil-devel.pc
-%{_pkgconfigdir}/cray-lustre-ptlctl-devel.pc
 %{_modulefiles_prefix}
 %exclude %{cfgdir}
 
