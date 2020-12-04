@@ -2819,6 +2819,7 @@ static int mdt_quotactl(struct tgt_session_info *tsi)
 	case LUSTRE_Q_SETDEFAULT:
 	case LUSTRE_Q_SETQUOTAPOOL:
 	case LUSTRE_Q_SETINFOPOOL:
+	case LUSTRE_Q_SETDEFAULT_POOL:
 		if (!nodemap_can_setquota(nodemap))
 			GOTO(out_nodemap, rc = -EPERM);
 		/* fallthrough */
@@ -2827,6 +2828,7 @@ static int mdt_quotactl(struct tgt_session_info *tsi)
 	case LUSTRE_Q_GETDEFAULT:
 	case LUSTRE_Q_GETQUOTAPOOL:
 	case LUSTRE_Q_GETINFOPOOL:
+	case LUSTRE_Q_GETDEFAULT_POOL:
 		if (qmt == NULL)
 			GOTO(out_nodemap, rc = -EOPNOTSUPP);
 		/* slave quotactl */
@@ -2885,6 +2887,8 @@ static int mdt_quotactl(struct tgt_session_info *tsi)
 	case LUSTRE_Q_GETQUOTAPOOL:
 	case LUSTRE_Q_SETINFOPOOL:
 	case LUSTRE_Q_GETINFOPOOL:
+	case LUSTRE_Q_SETDEFAULT_POOL:
+	case LUSTRE_Q_GETDEFAULT_POOL:
 		/* forward quotactl request to QMT */
 		rc = qmt_hdls.qmth_quotactl(tsi->tsi_env, qmt, oqctl);
 		break;
