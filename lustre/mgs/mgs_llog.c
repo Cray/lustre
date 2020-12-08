@@ -1034,6 +1034,10 @@ static int check_markers(struct lustre_cfg *lcfg,
 				}
 			} else if (marker->cm_flags & CM_END)
 				mrd->state = REPLACE_COPY;
+
+			if (!strncmp(marker->cm_comment,
+				"add failnid", 11))
+				return 1;
 		}
 	}
 
