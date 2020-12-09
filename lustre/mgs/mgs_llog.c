@@ -1249,6 +1249,11 @@ static int process_command(const struct lu_env *env, struct lustre_cfg *lcfg,
 		return rc ? rc : 1;
 	}
 
+	/* All new UUID are added. Skip. */
+	if (mrd->state == REPLACE_SETUP &&
+		lcfg->lcfg_command == LCFG_ADD_UUID)
+		return 1;
+
 	/* Another commands in target device block */
 	return 0;
 }
