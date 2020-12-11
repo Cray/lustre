@@ -2917,7 +2917,7 @@ __must_hold(&lp->lp_lock)
 		rc = lnet_peer_merge_data(lp, pbuf);
 	} else {
 		lpni = lnet_find_peer_ni_locked(nid);
-		if (!lpni) {
+		if (!lpni || lp == lpni->lpni_peer_net->lpn_peer) {
 			rc = lnet_peer_set_primary_nid(lp, nid, flags);
 			if (rc) {
 				CERROR("Primary NID error %s versus %s: %d\n",
@@ -2926,6 +2926,8 @@ __must_hold(&lp->lp_lock)
 			} else {
 				rc = lnet_peer_merge_data(lp, pbuf);
 			}
+			if (lpni)
+				lnet_peer_ni_decref_locked(lpni);
 		} else {
 			struct lnet_peer *new_lp;
 			new_lp = lpni->lpni_peer_net->lpn_peer;
