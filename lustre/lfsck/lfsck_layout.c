@@ -384,7 +384,8 @@ static int lfsck_layout_verify_header(struct dt_object *obj,
 {
 	int rc = 0;
 
-	if (le32_to_cpu(lmm->lmm_magic) == LOV_MAGIC_COMP_V1) {
+	if (le32_to_cpu(lmm->lmm_magic) == LOV_MAGIC_COMP_V1 ||
+	    le32_to_cpu(lmm->lmm_magic) == LOV_MAGIC_SEL) {
 		struct lov_comp_md_v1 *lcm = (struct lov_comp_md_v1 *)lmm;
 		int i;
 		__u16 count = le16_to_cpu(lcm->lcm_entry_count);
@@ -2904,7 +2905,7 @@ again:
 		GOTO(unlock_parent, rc = rc1);
 
 	magic = le32_to_cpu(lmm->lmm_magic);
-	if (magic == LOV_MAGIC_COMP_V1) {
+	if (magic == LOV_MAGIC_COMP_V1 || magic == LOV_MAGIC_SEL) {
 		__u64 start;
 		__u64 end;
 		__u16 mirror_id0 = mirror_id_of(ol->ol_comp_id);
@@ -3333,7 +3334,7 @@ static int lfsck_lov2layout(struct lov_mds_md_v1 *lmm, struct filter_fid *ff,
 		ol->ol_comp_id = 0;
 		ff->ff_layout_version = 0;
 		ff->ff_range = 0;
-	} else if (magic == LOV_MAGIC_COMP_V1) {
+	} else if (magic == LOV_MAGIC_COMP_V1 || magic == LOV_MAGIC_SEL) {
 		struct lov_comp_md_v1 *lcm = (struct lov_comp_md_v1 *)lmm;
 		struct lov_comp_md_entry_v1 *lcme = NULL;
 		__u16 count = le16_to_cpu(lcm->lcm_entry_count);
@@ -3492,7 +3493,7 @@ static int __lfsck_layout_repair_dangling(const struct lu_env *env,
 
 		lmm = lovea->lb_buf;
 		magic = le32_to_cpu(lmm->lmm_magic);
-		if (magic == LOV_MAGIC_COMP_V1) {
+		if (magic == LOV_MAGIC_COMP_V1 || magic == LOV_MAGIC_SEL) {
 			struct lov_comp_md_v1 *lcm = buf->lb_buf;
 			struct lov_comp_md_entry_v1 *lcme;
 			__u16 count = le16_to_cpu(lcm->lcm_entry_count);
@@ -3888,7 +3889,7 @@ static int lfsck_layout_repair_multiple_references(const struct lu_env *env,
 
 	lmm = buf->lb_buf;
 	magic = le32_to_cpu(lmm->lmm_magic);
-	if (magic == LOV_MAGIC_COMP_V1) {
+	if (magic == LOV_MAGIC_COMP_V1 || magic == LOV_MAGIC_SEL) {
 		struct lov_comp_md_v1 *lcm = buf->lb_buf;
 		struct lov_comp_md_entry_v1 *lcme;
 		__u16 count = le16_to_cpu(lcm->lcm_entry_count);
@@ -4102,7 +4103,7 @@ static int lfsck_layout_check_parent(const struct lu_env *env,
 
 	lmm = buf->lb_buf;
 	magic = le32_to_cpu(lmm->lmm_magic);
-	if (magic == LOV_MAGIC_COMP_V1) {
+	if (magic == LOV_MAGIC_COMP_V1 || magic == LOV_MAGIC_SEL) {
 		struct lov_comp_md_v1 *lcm = buf->lb_buf;
 		struct lov_comp_md_entry_v1 *lcme;
 
@@ -4886,7 +4887,7 @@ static int lfsck_layout_master_check_pairs(const struct lu_env *env,
 
 	lmm = buf->lb_buf;
 	magic = le32_to_cpu(lmm->lmm_magic);
-	if (magic == LOV_MAGIC_COMP_V1) {
+	if (magic == LOV_MAGIC_COMP_V1 || magic == LOV_MAGIC_SEL) {
 		struct lov_comp_md_v1 *lcm = buf->lb_buf;
 		struct lov_comp_md_entry_v1 *lcme;
 
@@ -5582,7 +5583,7 @@ again:
 	size = rc;
 	lmm = buf->lb_buf;
 	magic = le32_to_cpu(lmm->lmm_magic);
-	if (magic == LOV_MAGIC_COMP_V1) {
+	if (magic == LOV_MAGIC_COMP_V1 || magic == LOV_MAGIC_SEL) {
 		struct lov_mds_md_v1 *v1;
 		int i;
 
@@ -5639,7 +5640,7 @@ fix:
 		goto again;
 	}
 
-	if (magic == LOV_MAGIC_COMP_V1) {
+	if (magic == LOV_MAGIC_COMP_V1 || magic == LOV_MAGIC_SEL) {
 		struct lov_mds_md_v1 *v1;
 		int i;
 
@@ -5681,7 +5682,7 @@ out:
 		       PFID(lfsck_dto2fid(obj)), rc);
 
 	if (stripe) {
-		if (magic == LOV_MAGIC_COMP_V1) {
+		if (magic == LOV_MAGIC_COMP_V1 || magic == LOV_MAGIC_SEL) {
 			int i;
 
 			for (i = 0; i < count; i++) {
