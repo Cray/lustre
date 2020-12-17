@@ -58,14 +58,17 @@
 %if %{defined kdir}
 	%define _take_kver 1
 %endif
+%if %{defined kobjdir}
+	%define _take_kobj 1
+%endif
 %{!?kdir:    %global kdir    /lib/modules/%{_kver}/source}
 %{!?kobjdir: %global kobjdir %(if [ "%{kdir}" = "/lib/modules/%{_kver}/source" ]; then echo "/lib/modules/%{_kver}/build"; else echo "%{kdir}"; fi)}
 
 
-%if 0%{?suse_version} >= 1310
-	%define _flavor %(basename %{kobjdir})
+%if 0%{?suse_version} >= 1310 && %{defined _take_kobj}
+	%global _flavor %(basename "%{kobjdir}")
 %else
-	%define _flavor default
+	%global _flavor default
 %endif
 
 %if %{defined _take_kver}
