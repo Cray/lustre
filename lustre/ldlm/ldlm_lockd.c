@@ -1191,6 +1191,7 @@ int ldlm_handle_enqueue0(struct ldlm_namespace *ns,
 	struct ldlm_lock *lock = NULL;
 	void *cookie = NULL;
 	int rc = 0;
+	int rc2;
 	struct ldlm_resource *res = NULL;
 	const struct lu_env *env = req->rq_svc_thread->t_env;
 	ENTRY;
@@ -1402,9 +1403,9 @@ existing_lock:
  out:
         req->rq_status = rc ?: err; /* return either error - bug 11190 */
         if (!req->rq_packed_final) {
-                err = lustre_pack_reply(req, 1, NULL, NULL);
+                rc2 = lustre_pack_reply(req, 1, NULL, NULL);
                 if (rc == 0)
-                        rc = err;
+                        rc = rc2;
         }
 
         /* The LOCK_CHANGED code in ldlm_lock_enqueue depends on this
@@ -1481,7 +1482,8 @@ retry:
 			}
 		}
 
-		if (!err && !ldlm_is_cbpending(lock) &&
+		if (!err && (!ldlm_is_cbpending(lock) ||
+			     ldlm_is_destroyed(lock)) &&
 		    dlm_req->lock_desc.l_resource.lr_type != LDLM_FLOCK)
 			ldlm_reprocess_all(lock->l_resource,
 					   lock->l_policy_data.l_inodebits.bits);
