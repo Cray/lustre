@@ -5,6 +5,7 @@ RACER_ENABLE_FLR=${RACER_ENABLE_FLR:-true}
 RACER_ENABLE_SEL=${RACER_ENABLE_SEL:-true}
 RACER_ENABLE_OVERSTRIPE=${RACER_ENABLE_OVERSTRIPE:-true}
 RACER_FILE_STRIPECOUNT=${RACER_FILE_STRIPECOUNT:-""}
+RACER_LOV_MAX_STRIPECOUNT=${RACER_LOV_MAX_STRIPECOUNT:-$LOV_MAX_STRIPE_COUNT}
 DIR=$1
 MAX=$2
 MAX_MB=${RACER_MAX_MB:-8}
@@ -30,8 +31,10 @@ while /bin/true; do
 	# $RANDOM is between 0 and 32767, and we want $blockcount in 64kB units
 	blockcount=$((RANDOM * MAX_MB / 32 / 64))
 	$RACER_ENABLE_OVERSTRIPE &&
-		stripecount="-C ${RACER_FILE_STRIPECOUNT:-$((RANDOM % (LOV_MAX_STRIPE_COUNT +  1)))}" ||
-		stripecount="-c ${RACER_FILE_STRIPECOUNT:-$((RANDOM % (OSTCOUNT + 1)))}"
+		stripecount="-C ${RACER_FILE_STRIPECOUNT:-$((RANDOM %
+			(RACER_LOV_MAX_STRIPECOUNT +  1)))}" ||
+		stripecount="-c ${RACER_FILE_STRIPECOUNT:-$((RANDOM %
+			(OSTCOUNT + 1)))}"
 
 	[ ${stripecount:2} -gt 0 ] && {
 		stripesize=$(((1 << (RANDOM % 5)) * 64))K
