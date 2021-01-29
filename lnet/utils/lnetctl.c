@@ -83,6 +83,7 @@ static int jt_peers(int argc, char **argv);
 static int jt_set_ni_value(int argc, char **argv);
 static int jt_set_peer_ni_value(int argc, char **argv);
 static int jt_set_response_tracking(int argc, char **argv);
+static int jt_set_recovery_limit(int argc, char **argv);
 
 command_t cmd_list[] = {
 	{"lnet", jt_lnet, 0, "lnet {configure | unconfigure} [--all]"},
@@ -90,7 +91,11 @@ command_t cmd_list[] = {
 	{"net", jt_net, 0, "net {add | del | show | help}"},
 	{"routing", jt_routing, 0, "routing {show | help}"},
 	{"set", jt_set, 0, "set {tiny_buffers | small_buffers | large_buffers"
-			   " | routing | numa_range | max_interfaces"},
+			   " | routing | numa_range | max_interfaces"
+			   " | drop_asym_route | retry_count"
+			   " | transaction_timeout | health_sensitivity"
+			   " | recovery_interval | router_sensitivity"
+			   " | response_tracking | recovery_limit}"},
 	{"import", jt_import, 0, "import FILE.yaml"},
 	{"export", jt_export, 0, "export FILE.yaml"},
 	{"stats", jt_stats, 0, "stats {show | help}"},
@@ -221,6 +226,10 @@ command_t set_cmds[] = {
 	 "\t3 - All PUTs and GETs are eligible for response tracking (default)\n"
 	 "\tNote: Regardless of the value of the response_tracking parameter LNet\n"
 	 "\t      pings and discovery pushes always utilize response tracking\n"},
+	{"recovery_limit", jt_set_recovery_limit, 0,
+	 "Set how long LNet will attempt to recover unhealthy interfaces.\n"
+	 "\t0 - Recover indefinitely (default)\n"
+	 "\t>0 - Recover for the specified number of seconds.\n"},
 	{ 0, 0, 0, NULL }
 };
 
@@ -344,6 +353,35 @@ static int jt_set_response_tracking(int argc, char **argv)
 	}
 
 	rc = lustre_lnet_config_response_tracking(value, -1, &err_rc);
+	if (rc != LUSTRE_CFG_RC_NO_ERR)
+		cYAML_print_tree2file(stderr, err_rc);
+
+	cYAML_free_tree(err_rc);
+
+	return rc;
+}
+
+static int jt_set_recovery_limit(int argc, char **argv)
+{
+	long int value;
+	int rc;
+	struct cYAML *err_rc = NULL;
+
+	rc = check_cmd(set_cmds, "set", "recovery_limit", 2, argc, argv);
+	if (rc)
+		return rc;
+
+	rc = parse_long(argv[1], &value);
+	if (rc != 0) {
+		cYAML_build_error(-1, -1, "parser", "set",
+				  "cannot parse recovery_limit value",
+				  &err_rc);
+		cYAML_print_tree2file(stderr, err_rc);
+		cYAML_free_tree(err_rc);
+		return -1;
+	}
+
+	rc = lustre_lnet_config_recovery_limit(value, -1, &err_rc);
 	if (rc != LUSTRE_CFG_RC_NO_ERR)
 		cYAML_print_tree2file(stderr, err_rc);
 
@@ -1426,6 +1464,12 @@ static int jt_show_global(int argc, char **argv)
 		goto out;
 	}
 
+	rc = lustre_lnet_show_recovery_limit(-1, &show_rc, &err_rc);
+	if (rc != LUSTRE_CFG_RC_NO_ERR) {
+		cYAML_print_tree2file(stderr, err_rc);
+		goto out;
+	}
+
 	if (show_rc)
 		cYAML_print_tree(show_rc);
 
@@ -1720,6 +1764,13 @@ static int jt_export(int argc, char **argv)
 	}
 
 	rc = lustre_lnet_show_response_tracking(-1, &show_rc, &err_rc);
+	if (rc != LUSTRE_CFG_RC_NO_ERR) {
+		cYAML_print_tree2file(stderr, err_rc);
+		cYAML_free_tree(err_rc);
+		err_rc = NULL;
+	}
+
+	rc = lustre_lnet_show_recovery_limit(-1, &show_rc, &err_rc);
 	if (rc != LUSTRE_CFG_RC_NO_ERR) {
 		cYAML_print_tree2file(stderr, err_rc);
 		cYAML_free_tree(err_rc);
