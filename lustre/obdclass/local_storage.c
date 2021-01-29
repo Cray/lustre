@@ -637,6 +637,12 @@ static int local_object_declare_unlink(const struct lu_env *env,
 	if (rc < 0)
 		return rc;
 
+	if (c->do_lu.lo_header->loh_attr & S_IFDIR) {
+		rc = dt_declare_ref_del(env, p, th);
+		if (rc < 0)
+			return rc;
+	}
+
 	return dt_declare_destroy(env, c, th);
 }
 
@@ -672,7 +678,7 @@ int local_object_unlink(const struct lu_env *env, struct dt_device *dt,
 	if (rc < 0)
 		GOTO(stop, rc);
 
-	dt_write_lock(env, dto, 0);
+	dt_write_lock(env, dto, LOS_CHILD);
 	rc = dt_delete(env, parent, (struct dt_key *)name, th);
 	if (rc < 0)
 		GOTO(unlock, rc);
@@ -686,6 +692,16 @@ int local_object_unlink(const struct lu_env *env, struct dt_device *dt,
 		rc = dt_insert(env, parent, (const struct dt_rec *)rec,
 			       (const struct dt_key *)name, th);
 		GOTO(unlock, rc);
+	}
+
+	/* subdirs are accounted in nlink for the parent dir */
+	if (dto->do_lu.lo_header->loh_attr & S_IFDIR) {
+		/* use the same locking order as in create */
+		dt_write_lock(env, parent, LOS_PARENT);
+		rc = dt_ref_del(env, parent, th);
+		dt_write_unlock(env, parent);
+		if (rc < 0)
+			GOTO(unlock, rc);
 	}
 
 	rc = dt_destroy(env, dto, th);
