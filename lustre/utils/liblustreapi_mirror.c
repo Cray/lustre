@@ -174,12 +174,13 @@ int llapi_mirror_resync_file(int fd, __u16 *mirror_ids, int ids_nr)
 
 	rc1 = llapi_lease_set(fd, ioc);
 	if (rc1 <= 0) {
-		if (rc1 == 0) /* lost lease lock */
+		if (rc1 == 0 && rc == 0) /* lost lease lock */
 			rc = -EBUSY;
-		else
+		else if (rc == 0) /* return rc if set */
 			rc = rc1;
 		llapi_error(LLAPI_MSG_ERROR, rc,
-			    "resync file '%d' failed\n", fd);
+			    "resync file '%d' failed%s\n", fd,
+			    rc == -EBUSY ? ", lost lease lock" : "");
 	}
 
 free_layout:
