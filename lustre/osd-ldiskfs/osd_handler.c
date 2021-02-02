@@ -7525,14 +7525,8 @@ static void osd_key_fini(const struct lu_context *ctx,
 	if (info->oti_dio_pages) {
 		int i;
 		for (i = 0; i < PTLRPC_MAX_BRW_PAGES; i++) {
-			struct page *page = info->oti_dio_pages[i];
-			if (page) {
-				LASSERT(PagePrivate2(page));
-				LASSERT(PageLocked(page));
-				ClearPagePrivate2(info->oti_dio_pages[i]);
-				unlock_page(info->oti_dio_pages[i]);
+			if (info->oti_dio_pages[i])
 				__free_page(info->oti_dio_pages[i]);
-			}
 		}
 		OBD_FREE_LARGE(info->oti_dio_pages,
 			 sizeof(struct page *) * PTLRPC_MAX_BRW_PAGES);
