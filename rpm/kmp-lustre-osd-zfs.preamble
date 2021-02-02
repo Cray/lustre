@@ -1,4 +1,6 @@
 Summary:        Lustre osd-zfs feature support
 Requires:       lustre-osd-zfs-mount = %{version}
+BuildRequires:  kmod-zfs-devel
 Provides:       lustre-osd = %{version}
+Provides:       lustre-osd-zfs = %{version}
 Obsoletes:      lustre-osd-zfs < %{version}
