@@ -135,7 +135,6 @@
 
 %if %{_vendor}=="redhat" || %{_vendor}=="fedora"
 	%global requires_kmod_name kmod-%{lustre_name}
-	%global requires_kmod_zfs_name kmod-zfs
 	%global requires_kmod_osd_zfs_name kmod-%{lustre_name}-osd-zfs
 	%if %{with lustre_tests}
 		%global requires_kmod_tests_name kmod-%{lustre_name}-tests
@@ -143,7 +142,6 @@
 	%global requires_kmod_version %{version}
 %else	#for Suse
 	%global requires_kmod_name %{lustre_name}-kmp
-	%global requires_kmod_zfs_name zfs-kmp
 	%global requires_kmod_osd_zfs_name %{lustre_name}-osd-zfs-kmp
 	%if %{with lustre_tests}
 		%global requires_kmod_tests_name %{lustre_name}-tests-kmp
@@ -173,6 +171,10 @@
 %endif
 
 %{!?mpi_name: %global mpi_name openmpi}
+
+%if 0%{?zfs} == 0
+%define zfs 0
+%endif
 
 Summary: Lustre File System
 Name: %{lustre_name}
@@ -276,7 +278,9 @@ echo $TMPFILE
 Summary: osd-ldiskfs-mount contains mount's ldiskfs specific dso.
 BuildRequires: e2fsprogs-devel
 Requires: ldiskfsprogs
+Requires: lustre-osd-ldiskfs = %{version}
 Provides: lustre-osd-mount = %{version}
+Provides: lustre-osd-ldiskfs-mount = %{version}
 Obsoletes: lustre-osd-mount < %{version}
 Group: System Environment/Kernel
 
@@ -292,8 +296,14 @@ LDISKFS hooks for mount/mkfs into a dynamic library.
 %package osd-zfs-mount
 Summary: osd-zfs-mount contains mount's zfs specific dso.
 Provides: lustre-osd-mount = %{version}
-Requires: %{requires_kmod_zfs_name}
-Requires: %{requires_kmod_osd_zfs_name}
+Provides: lustre-osd-mount = %{version}
+Provides: lustre-osd-zfs-mount = %{version}
+Requires: lustre-osd-zfs = %{version}
+%if %{zfs} == 0
+BuildRequires: libzfs2-devel
+%else
+BuildRequires: libzfs4-devel
+%endif
 Requires: zfs
 Obsoletes: lustre-osd-mount < %{version}
 Group: System Environment/Kernel
