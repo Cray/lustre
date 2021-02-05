@@ -219,6 +219,7 @@ int class_register_type(struct obd_ops *dt_ops, struct md_ops *md_ops,
         if (type == NULL)
                 RETURN(rc);
 
+	type->typ_lu = ldt ? OBD_LU_TYPE_SETUP : NULL;
         OBD_ALLOC_PTR(type->typ_dt_ops);
         OBD_ALLOC_PTR(type->typ_md_ops);
         OBD_ALLOC(type->typ_name, strlen(name) + 1);
@@ -277,8 +278,9 @@ dir_exist:
 		GOTO(failed, rc = PTR_ERR(type->typ_kobj));
 
 	if (ldt) {
-		type->typ_lu = ldt;
 		rc = lu_device_type_init(ldt);
+		smp_store_release(&type->typ_lu, rc ? NULL : ldt);
+		wake_up_var(&type->typ_lu);
 		if (rc) {
 			kobject_put(type->typ_kobj);
 			GOTO(failed, rc);
