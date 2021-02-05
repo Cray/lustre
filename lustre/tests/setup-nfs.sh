@@ -35,7 +35,8 @@ setup_nfs() {
 
 	# restart nfs server according to distro
 	do_nodes $LUSTRE_CLIENT "service nfsserver restart ||
-				 service nfs restart" || return 1
+				 service nfs restart ||
+				 service nfs-server restart" || return 1
 
 	if nfslock_service $LUSTRE_CLIENT; then
 		do_nodes $LUSTRE_CLIENT "service nfslock restart" ||
@@ -77,7 +78,8 @@ cleanup_nfs() {
 			       true"
 
 	do_nodes $LUSTRE_CLIENT "service nfsserver stop ||
-				 service nfs stop" || return 1
+				 service nfs stop ||
+				 service nfs-server stop" || return 1
 
 	if nfslock_service $LUSTRE_CLIENT; then
 		do_nodes $LUSTRE_CLIENT "service nfslock stop" ||
