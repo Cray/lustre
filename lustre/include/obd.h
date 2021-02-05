@@ -114,6 +114,7 @@ struct obd_type {
 	spinlock_t		 obd_type_lock;
 	struct kobject		*typ_kobj;
 };
+#define OBD_LU_TYPE_SETUP ((void *)0x01UL)
 
 struct brw_page {
 	u64		 off;
