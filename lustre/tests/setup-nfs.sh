@@ -2,6 +2,11 @@
 #set -x
 EXPORT_OPTS=${EXPORT_OPTS:-"rw,async,no_root_squash"}
 
+nfslock_service() {
+	do_nodes $1 "systemctl list-unit-files |\
+		grep -q nfslock"
+}
+
 setup_nfs() {
 	local NFS_VER=${1}
 	local MNTPNT=${2}
@@ -27,10 +32,15 @@ setup_nfs() {
 				 >> /etc/exports" || return 1
 
 	# restart nfs server according to distro
-	do_nodes $LUSTRE_CLIENT "{ [[ -e /etc/SuSE-release ]] &&
-				 service nfsserver restart; } ||
+	do_nodes $LUSTRE_CLIENT "service nfsserver restart ||
 				 service nfs restart" || return 1
-	do_nodes $LUSTRE_CLIENT "service nfslock restart" || return 1
+
+	if nfslock_service $LUSTRE_CLIENT; then
+		do_nodes $LUSTRE_CLIENT "service nfslock restart" ||
+			return 1
+	else
+		echo "No nfslock service"
+	fi
 
 	do_nodes $NFS_CLIENTS "chkconfig --list rpcidmapd 2>/dev/null |
 			       grep -q rpcidmapd && service rpcidmapd restart ||
@@ -64,11 +74,13 @@ cleanup_nfs() {
 			       grep -q rpcidmapd && service rpcidmapd stop ||
 			       true"
 
-	do_nodes $LUSTRE_CLIENT "{ [[ -e /etc/SuSE-release ]] &&
-				 service nfsserver stop; } ||
+	do_nodes $LUSTRE_CLIENT "service nfsserver stop ||
 				 service nfs stop" || return 1
 
-	do_nodes $LUSTRE_CLIENT "service nfslock stop" || return 1
+	if nfslock_service $LUSTRE_CLIENT; then
+		do_nodes $LUSTRE_CLIENT "service nfslock stop" ||
+			return 1
+	fi
 	do_nodes $LUSTRE_CLIENT "sed -i '/${MNTPNT##*/}/d' /etc/exports" || return 1
 
 	do_nodes $LUSTRE_CLIENT "exportfs -v"
