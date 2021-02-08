@@ -205,6 +205,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 # lnetctl, so they are included in the base package
 %{_libdir}/liblnetconfig.so.*
 %{_datadir}/bash-completion/completions/*
+%exclude %{_pkgconfigdir}/lustre.pc
 
 %files devel
 %{_includedir}/lustre

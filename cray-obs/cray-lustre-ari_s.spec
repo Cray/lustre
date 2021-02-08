@@ -219,6 +219,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %exclude %{_mandir}/man5
 %exclude %{_mandir}/man8/lhbadm.8.gz
 %exclude %{_pkgconfigdir}/cray-lnet.pc
+%exclude %{_pkgconfigdir}/lustre.pc
 
 %files -n cray-lustre-cray_ari_s-%{_lnet_version}-devel
 %defattr(-,root,root)
