@@ -120,6 +120,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %exclude /etc/lnet_routes.conf
 %exclude /etc/lustre/perm.conf
 %exclude %{_pkgconfigdir}/cray-lnet.pc
+%exclude %{_pkgconfigdir}/lustre.pc
 
 %post
 DEPMOD_OPTS=""

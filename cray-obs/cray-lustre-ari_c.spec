@@ -105,7 +105,7 @@ eval "sed -i 's,@libdir@,%{_libdir},' cray-obs/cray-lustre-api-devel.pc"
 eval "sed -i 's,@symversdir@,%{_datadir}/symvers,' cray-obs/cray-lustre-api-devel.pc"
 eval "sed -i 's,@PACKAGE_VERSION@,%{_version},' cray-obs/cray-lustre-api-devel.pc"
 eval "sed -i 's,@cfgdir@,%{cfgdir},' cray-obs/cray-lustre-api-devel.pc"
-install -D -m 0644 cray-obs/${f} $RPM_BUILD_ROOT%{_pkgconfigdir}/cray-lustre-api-devel.pc
+install -D -m 0644 cray-obs/cray-lustre-api-devel.pc $RPM_BUILD_ROOT%{_pkgconfigdir}/cray-lustre-api-devel.pc
 
 # Many things are excluded from compute node packages to save space in
 # the compute node image. Here we remove everything that should be left
@@ -155,6 +155,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_libdir}/liblustreapi.so*
 %{_datadir}/bash-completion/completions/*
 %{_pkgconfigdir}/cray-lustre-api-devel.pc
+%exclude %{_pkgconfigdir}/lustre.pc
 
 %files -n cray-lustre-cray_ari_c-%{_lnet_version}-devel
 %defattr(-,root,root)
