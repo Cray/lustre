@@ -2635,7 +2635,9 @@ inline __u16 lod_comp_entry_stripe_count(struct lod_object *lo,
 		return lod->lod_desc.ld_tgt_count;
 	else
 		return lod_get_stripe_count(lod, lo, comp_idx,
-					    entry->llc_stripe_count, false);
+					    entry->llc_stripe_count,
+					    entry->llc_pattern &
+					    LOV_PATTERN_OVERSTRIPING);
 }
 
 static int lod_comp_md_size(struct lod_object *lo, bool is_dir)
