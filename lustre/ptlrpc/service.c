@@ -1332,7 +1332,8 @@ static int ptlrpc_at_send_early_reply(struct ptlrpc_request *req)
 
 	ENTRY;
 
-	if (CFS_FAIL_CHECK(OBD_FAIL_TGT_REPLAY_RECONNECT)) {
+	if (CFS_FAIL_CHECK(OBD_FAIL_TGT_REPLAY_RECONNECT) ||
+	    CFS_FAIL_PRECHECK(OBD_FAIL_PTLRPC_ENQ_RESEND)) {
 		/* don't send early reply */
 		RETURN(1);
 	}
@@ -2127,6 +2128,12 @@ ptlrpc_server_handle_req_in(struct ptlrpc_service_part *svcpt,
 		lu_context_enter(&req->rq_session);
 		thread->t_env->le_ses = &req->rq_session;
 	}
+
+
+	if (unlikely(OBD_FAIL_PRECHECK(OBD_FAIL_PTLRPC_ENQ_RESEND) &&
+		     (lustre_msg_get_opc(req->rq_reqmsg) == LDLM_ENQUEUE) &&
+		     (lustre_msg_get_flags(req->rq_reqmsg) & MSG_RESENT)))
+		OBD_FAIL_TIMEOUT(OBD_FAIL_PTLRPC_ENQ_RESEND, 6);
 
 	ptlrpc_at_add_timed(req);
 
