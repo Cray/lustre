@@ -2066,6 +2066,16 @@ static int mdt_getattr_name_lock(struct mdt_thread_info *info,
 			LDLM_LOCK_PUT(lock);
 			GOTO(out_parent, rc = 0);
 		}
+
+		if (unlikely(OBD_FAIL_PRECHECK(OBD_FAIL_PTLRPC_ENQ_RESEND))) {
+			if (!(lustre_msg_get_flags(req->rq_reqmsg) & MSG_RESENT))
+				OBD_FAIL_TIMEOUT(OBD_FAIL_PTLRPC_ENQ_RESEND,
+						 req->rq_deadline -
+						 req->rq_arrival_time.tv_sec + 3);
+			/* Put the lock to the waiting list and force the cancel */
+			ldlm_set_ast_sent(lock);
+		}
+
 		LDLM_LOCK_PUT(lock);
 	}
 
