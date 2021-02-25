@@ -366,7 +366,7 @@ wait_ost_reint() {
 disable_project_quota() {
 	is_project_quota_supported || return 0
 	[ "$(facet_fstype $SINGLEMDS)" != "ldiskfs" ] && return 0
-	stopall || error "failed to stopall (1)"
+	CLEANUP_DM_DEV=true stopall || error "failed to stopall (1)"
 
 	for num in $(seq $MDSCOUNT); do
 		do_facet mds$num $TUNE2FS -Q ^prj $(mdsdevname $num) ||
@@ -480,7 +480,7 @@ quota_show_check() {
 enable_project_quota() {
 	is_project_quota_supported || return 0
 	[ "$(facet_fstype $SINGLEMDS)" != "ldiskfs" ] && return 0
-	stopall || error "failed to stopall (1)"
+	CLEANUP_DM_DEV=true stopall || error "failed to stopall (1)"
 
 	for num in $(seq $MDSCOUNT); do
 		[[ $(facet_fstype mds$num) == "zfs" ]] && continue
@@ -498,17 +498,26 @@ enable_project_quota() {
 	setupall
 }
 
+is_project_facet() {
+	local mntpt=$(facet_mntpt $1)
+	local dev
+
+	dev=$(do_facet $1 "grep $mntpt /proc/mounts" | awk '{print $1}')
+	[ -n "$dev" ] || dev=$(facet_device  $1)
+
+	do_facet $1 $DEBUGFS -R features $dev | grep -q project && return 0
+	return 1
+}
+
 project_quota_enabled () {
 	local rc=0
 	for num in $(seq $MDSCOUNT); do
 		[[ $(facet_fstype mds$num) == "zfs" ]] && continue
-		do_facet mds$num $DEBUGFS -R features $(mdsdevname $num) |
-			grep -q project || rc=1
+		is_project_facet mds$num || rc=1
 	done
 	for num in $(seq $OSTCOUNT); do
 		[[ $(facet_fstype ost$num) == "zfs" ]] && continue
-		do_facet ost$num $DEBUGFS -R features $(ostdevname $num) |
-			grep -q project || rc=1
+		is_project_facet ost$num || rc=1
 	done
 	[ $rc -eq 0 ] && PQ_CLEANUP=false || PQ_CLEANUP=true
 	return $rc
