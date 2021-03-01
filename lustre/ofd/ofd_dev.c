@@ -2172,9 +2172,6 @@ static int ofd_ladvise_hdl(struct tgt_session_info *tsi)
 	LASSERT(fo != NULL);
 	dob = ofd_object_child(fo);
 
-	if (ptlrpc_connection_is_local(exp->exp_connection))
-		dbt |= DT_BUFS_TYPE_LOCAL;
-
 	for (i = 0; i < num_advise; i++, ladvise++) {
 		start = ladvise->lla_start;
 		end = ladvise->lla_end;
