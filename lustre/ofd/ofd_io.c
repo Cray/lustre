@@ -609,10 +609,6 @@ static int ofd_preprw_read(const struct lu_env *env, struct obd_export *exp,
 	if (unlikely(rc))
 		GOTO(obj_put, rc);
 
-	if (exp->exp_connection &&
-	    LNetIsPeerLocal(&exp->exp_connection->c_peer.nid))
-		dbt |= DT_BUFS_TYPE_LOCAL;
-
 	begin = -1;
 	end = 0;
 
@@ -784,10 +780,6 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 		       exp->exp_obd->obd_name, POSTID(&obj->ioo_oid));
 		GOTO(err_put, rc = -ENOENT);
 	}
-
-	if (exp->exp_connection &&
-	    LNetIsPeerLocal(&exp->exp_connection->c_peer.nid))
-		dbt |= DT_BUFS_TYPE_LOCAL;
 
 	begin = -1;
 	end = 0;
