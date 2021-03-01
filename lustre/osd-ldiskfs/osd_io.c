@@ -852,7 +852,6 @@ static int osd_bufs_get(const struct lu_env *env, struct dt_object *dt,
 	int npages, i, iosize, rc = 0;
 	bool cache, write;
 	loff_t fsize;
-	gfp_t gfp_mask;
 
 	LASSERT(obj->oo_inode);
 
@@ -906,12 +905,9 @@ bypass_checks:
 			return -ENOMEM;
 	}
 
-	/* this could also try less hard for DT_BUFS_TYPE_READAHEAD pages */
-	gfp_mask = rw & DT_BUFS_TYPE_LOCAL ? (GFP_NOFS | __GFP_HIGHMEM) :
-					     GFP_HIGHUSER;
 	for (i = 0; i < npages; i++, lnb++) {
 		lnb->lnb_page = osd_get_page(env, dt, lnb->lnb_file_offset,
-					     gfp_mask, cache);
+					     GFP_NOFS | __GFP_HIGHMEM, cache);
 		if (lnb->lnb_page == NULL)
 			GOTO(cleanup, rc = -ENOMEM);
 
