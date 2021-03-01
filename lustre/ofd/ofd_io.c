@@ -533,9 +533,6 @@ static int ofd_preprw_read(const struct lu_env *env, struct obd_export *exp,
 			GOTO(unlock, rc);
 	}
 
-	if (ptlrpc_connection_is_local(exp->exp_connection))
-		dbt |= DT_BUFS_TYPE_LOCAL;
-
 	for (*nr_local = 0, i = 0, j = 0; i < niocount; i++) {
 
 		if (OBD_FAIL_CHECK(OBD_FAIL_OST_2BIG_NIOBUF))
@@ -709,10 +706,6 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 
 		oa->o_valid &= ~OBD_MD_LAYOUT_VERSION;
 	}
-
-	if (ptlrpc_connection_is_local(exp->exp_connection))
-		dbt |= DT_BUFS_TYPE_LOCAL;
-
 
 	/* parse remote buffers to local buffers and prepare the latter */
 	for (*nr_local = 0, i = 0, j = 0; i < obj->ioo_bufcnt; i++) {
