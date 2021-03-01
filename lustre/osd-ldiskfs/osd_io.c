@@ -834,7 +834,6 @@ static int osd_bufs_get(const struct lu_env *env, struct dt_object *dt,
 	struct osd_thread_info *oti = osd_oti_get(env);
 	struct osd_object *obj = osd_dt_obj(dt);
 	int npages, i, rc = 0;
-	gfp_t gfp_mask;
 
 	LASSERT(obj->oo_inode);
 
@@ -851,12 +850,9 @@ static int osd_bufs_get(const struct lu_env *env, struct dt_object *dt,
 	if (rc)
 		RETURN(rc);
 
-	/* this could also try less hard for DT_BUFS_TYPE_READAHEAD pages */
-	gfp_mask = rw & DT_BUFS_TYPE_LOCAL ? (GFP_NOFS | __GFP_HIGHMEM) :
-					     GFP_HIGHUSER;
 	for (i = 0; i < npages; i++, lnb++) {
 		lnb->lnb_page = osd_get_page(env, dt, lnb->lnb_file_offset,
-					     gfp_mask);
+					     GFP_NOFS | __GFP_HIGHMEM);
 		if (lnb->lnb_page == NULL)
 			GOTO(cleanup, rc = -ENOMEM);
 	}
