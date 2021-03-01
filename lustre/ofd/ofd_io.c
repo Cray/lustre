@@ -612,9 +612,6 @@ static int ofd_preprw_read(const struct lu_env *env, struct obd_export *exp,
 	if (!ofd_object_exists(fo))
 		GOTO(obj_put, rc = -ENOENT);
 
-	if (ptlrpc_connection_is_local(exp->exp_connection))
-		dbt |= DT_BUFS_TYPE_LOCAL;
-
 	begin = -1;
 	end = 0;
 
@@ -784,9 +781,6 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 		ofd_object_put(env, fo);
 		GOTO(out, rc = -ENOENT);
 	}
-
-	if (ptlrpc_connection_is_local(exp->exp_connection))
-		dbt |= DT_BUFS_TYPE_LOCAL;
 
 	begin = -1;
 	end = 0;
