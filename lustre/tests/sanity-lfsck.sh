@@ -5609,7 +5609,7 @@ test_41()
 	old_debug=${old_debug#*=}
 	do_facet $SINGLEMDS $LCTL set_param debug=+lfsck
 
-	$LFS setstripe -E 1G -z 64M $DIR/$tfile
+	$LFS setstripe -E 1G -z 64M -E -1 -z 128M $DIR/$tfile
 	do_facet $SINGLEMDS $LCTL dk > /dev/null
 
 	echo "trigger LFSCK for SEL layout"
@@ -5622,7 +5622,7 @@ test_41()
 	}
 
 	local errors=$(do_facet $SINGLEMDS $LCTL dk |
-		       grep "Unsupported LOV EA magic")
+		       grep "lfsck_layout_verify_header")
 
 	[[ "x$errors" == "x" ]] || {
 		echo "$errors"
