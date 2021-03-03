@@ -654,15 +654,20 @@ out:
 EXPORT_SYMBOL(osc_ldlm_glimpse_ast);
 
 static int weigh_cb(const struct lu_env *env, struct cl_io *io,
-		    struct osc_page *ops, void *cbdata)
+		    void **pvec, int count, void *cbdata)
 {
-	struct cl_page *page = ops->ops_cl.cpl_page;
+	int i;
 
-	if (cl_page_is_vmlocked(env, page) || PageDirty(page->cp_vmpage) ||
-	    PageWriteback(page->cp_vmpage))
-		return CLP_GANG_ABORT;
+	for (i = 0; i < count; i++) {
+		struct osc_page *ops = pvec[i];
+		struct cl_page *page = ops->ops_cl.cpl_page;
 
-	*(pgoff_t *)cbdata = osc_index(ops) + 1;
+		if (cl_page_is_vmlocked(env, page) || PageDirty(page->cp_vmpage) ||
+				PageWriteback(page->cp_vmpage))
+			return CLP_GANG_ABORT;
+
+		*(pgoff_t *)cbdata = osc_index(ops) + 1;
+	}
 	return CLP_GANG_OKAY;
 }
 
