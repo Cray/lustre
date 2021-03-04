@@ -1803,6 +1803,7 @@ static int ptlrpc_server_request_add(struct ptlrpc_service_part *svcpt,
 				ptlrpc_at_remove_timed(orig);
 			spin_unlock(&orig->rq_rqbd->rqbd_svcpt->scp_at_lock);
 			orig->rq_deadline = req->rq_deadline;
+			orig->rq_rep_mbits = req->rq_rep_mbits;
 			if (likely(linked))
 				ptlrpc_at_add_timed(orig);
 			ptlrpc_server_drop_request(orig);
@@ -1992,6 +1993,7 @@ ptlrpc_server_handle_req_in(struct ptlrpc_service_part *svcpt,
 	struct ptlrpc_service	*svc = svcpt->scp_service;
 	struct ptlrpc_request	*req;
 	__u32			deadline;
+	__u32			opc;
 	int			rc;
 	ENTRY;
 
@@ -2045,7 +2047,8 @@ ptlrpc_server_handle_req_in(struct ptlrpc_service_part *svcpt,
                 goto err_req;
         }
 
-	if (unlikely(lustre_msg_get_opc(req->rq_reqmsg) == cfs_fail_val &&
+	opc = lustre_msg_get_opc(req->rq_reqmsg);
+	if (unlikely(opc == cfs_fail_val &&
 		     OBD_FAIL_CHECK(OBD_FAIL_PTLRPC_DROP_REQ_OPC))) {
 		CERROR("drop incoming rpc opc %u, x%llu\n",
 		       cfs_fail_val, req->rq_xid);
@@ -2060,7 +2063,7 @@ ptlrpc_server_handle_req_in(struct ptlrpc_service_part *svcpt,
                 goto err_req;
         }
 
-	switch (lustre_msg_get_opc(req->rq_reqmsg)) {
+	switch (opc) {
 	case MDS_WRITEPAGE:
 	case OST_WRITE:
 	case OUT_UPDATE:
@@ -2131,11 +2134,18 @@ ptlrpc_server_handle_req_in(struct ptlrpc_service_part *svcpt,
 
 
 	if (unlikely(OBD_FAIL_PRECHECK(OBD_FAIL_PTLRPC_ENQ_RESEND) &&
-		     (lustre_msg_get_opc(req->rq_reqmsg) == LDLM_ENQUEUE) &&
+		     (opc == LDLM_ENQUEUE) &&
 		     (lustre_msg_get_flags(req->rq_reqmsg) & MSG_RESENT)))
 		OBD_FAIL_TIMEOUT(OBD_FAIL_PTLRPC_ENQ_RESEND, 6);
 
 	ptlrpc_at_add_timed(req);
+
+	if (opc != OST_CONNECT && opc != MDS_CONNECT &&
+	    opc != MGS_CONNECT && req->rq_export != NULL)
+	{
+		if (exp_connect_flags2(req->rq_export) & OBD_CONNECT2_REP_MBITS)
+			req->rq_rep_mbits = lustre_msg_get_mbits(req->rq_reqmsg);
+	}
 
 	/* Move it over to the request processing queue */
 	rc = ptlrpc_server_request_add(svcpt, req);
