@@ -159,6 +159,38 @@ int lprocfs_num_exports_seq_show(struct seq_file *m, void *data)
 }
 EXPORT_SYMBOL(lprocfs_num_exports_seq_show);
 
+int lprocfs_grant_check_threshold_seq_show(struct seq_file *m, void *data)
+{
+	struct obd_device *obd = data;
+
+	LASSERT(obd != NULL);
+	seq_printf(m, "%u\n", obd->obd_grant_check_threshold);
+	return 0;
+}
+EXPORT_SYMBOL(lprocfs_grant_check_threshold_seq_show);
+
+ssize_t
+lprocfs_grant_check_threshold_seq_write(struct file *file,
+					const char __user *buffer,
+					size_t count, loff_t *off)
+{
+	struct seq_file *m = file->private_data;
+	struct obd_device *obd = m->private;
+	int val;
+	int rc;
+
+	LASSERT(obd != NULL);
+	rc = kstrtoint_from_user(buffer, count, 10, &val);
+	if (rc)
+		return rc;
+
+	if (val < 0)
+		return -EINVAL;
+	obd->obd_grant_check_threshold = val;
+	return count;
+}
+EXPORT_SYMBOL(lprocfs_grant_check_threshold_seq_write);
+
 static int obd_export_flags2str(struct obd_export *exp, struct seq_file *m)
 {
 	bool first = true;
