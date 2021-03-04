@@ -704,6 +704,7 @@ LPROC_SEQ_FOPS_RW_TYPE(ofd, recovery_time_soft);
 LPROC_SEQ_FOPS_RW_TYPE(ofd, recovery_time_hard);
 LPROC_SEQ_FOPS_WR_ONLY(ofd, evict_client);
 LPROC_SEQ_FOPS_RO_TYPE(ofd, num_exports);
+LPROC_SEQ_FOPS_RW_TYPE(ofd, grant_check_threshold);
 LPROC_SEQ_FOPS_RO_TYPE(ofd, target_instance);
 LPROC_SEQ_FOPS_RW_TYPE(ofd, ir_factor);
 LPROC_SEQ_FOPS_RW_TYPE(ofd, checksum_dump);
@@ -733,6 +734,8 @@ struct lprocfs_vars lprocfs_ofd_obd_vars[] = {
 	  .fops =	&ofd_evict_client_fops		},
 	{ .name =	"num_exports",
 	  .fops =	&ofd_num_exports_fops		},
+	{ .name =	"grant_check_threshold",
+	  .fops =	&ofd_grant_check_threshold_fops	},
 	{ .name =	"brw_size",
 	  .fops =	&ofd_brw_size_fops		},
 	{ .name =	"instance",

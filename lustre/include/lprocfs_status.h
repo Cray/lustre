@@ -596,6 +596,11 @@ extern int lprocfs_state_seq_show(struct seq_file *m, void *data);
 extern int lprocfs_connect_flags_seq_show(struct seq_file *m, void *data);
 #ifdef HAVE_SERVER_SUPPORT
 extern int lprocfs_num_exports_seq_show(struct seq_file *m, void *data);
+extern int lprocfs_grant_check_threshold_seq_show(struct seq_file *m, void *data);
+extern ssize_t
+lprocfs_grant_check_threshold_seq_write(struct file *file,
+					const char __user *buffer,
+					size_t count, loff_t *off);
 #endif
 struct adaptive_timeout;
 extern int lprocfs_at_hist_helper(struct seq_file *m,
