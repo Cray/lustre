@@ -307,10 +307,8 @@ static int llog_changelog_cancel_cb(const struct lu_env *env,
 				    struct llog_rec_hdr *hdr, void *data)
 {
 	struct llog_changelog_rec *rec = (struct llog_changelog_rec *)hdr;
-	struct llog_cookie	 cookie;
 	struct changelog_cancel_cookie *cl_cookie =
 		(struct changelog_cancel_cookie *)data;
-	int			 rc;
 
 	ENTRY;
 
@@ -346,15 +344,12 @@ static int llog_changelog_cancel_cb(const struct lu_env *env,
 		if (cfs_fail_val == hdr->lrh_index)
 			OBD_RACE(OBD_FAIL_MDS_CHANGELOG_RACE);
 	}
-	cookie.lgc_lgl = llh->lgh_id;
-	cookie.lgc_index = hdr->lrh_index;
 
 	/* cancel them one at a time.  I suppose we could store up the cookies
 	 * and cancel them all at once; probably more efficient, but this is
 	 * done as a user call, so who cares... */
-	rc = llog_cat_cancel_records(env, llh->u.phd.phd_cat_handle, 1,
-				     &cookie);
-	RETURN(rc < 0 ? rc : 0);
+
+	RETURN(LLOG_DEL_RECORD);
 }
 
 static int llog_changelog_cancel(const struct lu_env *env,
