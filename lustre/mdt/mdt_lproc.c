@@ -1017,6 +1017,7 @@ LPROC_SEQ_FOPS(mdt_enable_chprojid_gid);
 
 LPROC_SEQ_FOPS_RO_TYPE(mdt, recovery_status);
 LPROC_SEQ_FOPS_RO_TYPE(mdt, num_exports);
+LPROC_SEQ_FOPS_RW_TYPE(mdt, grant_check_threshold);
 LPROC_SEQ_FOPS_RO_TYPE(mdt, target_instance);
 LPROC_SEQ_FOPS_RO_TYPE(mdt, hash);
 LPROC_SEQ_FOPS_WR_ONLY(mdt, mds_evict_client);
@@ -1046,6 +1047,8 @@ static struct lprocfs_vars lprocfs_mdt_obd_vars[] = {
 	  .fops =	&mdt_recovery_status_fops		},
 	{ .name =	"num_exports",
 	  .fops =	&mdt_num_exports_fops			},
+	{ .name =       "grant_check_threshold",
+	  .fops =       &mdt_grant_check_threshold_fops },
 	{ .name =	"identity_expire",
 	  .fops =	&mdt_identity_expire_fops		},
 	{ .name =	"identity_acquire_expire",
