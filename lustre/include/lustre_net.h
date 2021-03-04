@@ -1031,6 +1031,8 @@ struct ptlrpc_request {
         __u64				 rq_xid;
 	/** bulk match bits */
 	__u64				 rq_mbits;
+	/** reply match bits */
+	__u64				 rq_rep_mbits;
 	/**
 	 * List item to for replay list. Not yet committed requests get linked
 	 * there.
