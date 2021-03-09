@@ -3668,13 +3668,6 @@ static int lfs_setstripe_internal(int argc, char **argv,
 		goto usage_error;
 	}
 
-	if (!migrate_mdt_mode && lsa.lsa_nr_tgts && lsa.lsa_pool_name) {
-		fprintf(stderr,
-			"%s %s: options --pool and --ost are mutually exclusive\n",
-			progname, argv[0]);
-		goto usage_error;
-	}
-
 	if (migrate_mdt_mode) {
 		struct lmv_user_md *lmu;
 
