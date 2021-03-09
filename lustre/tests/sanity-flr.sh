@@ -370,7 +370,6 @@ test_0b() {
 	verify_comp_attr stripe-size $tf ${ids[1]} 4194304
 	verify_comp_attr stripe-count $tf ${ids[1]} 2
 	verify_comp_attr stripe-index $tf ${ids[1]} 2
-	verify_comp_attr pool $tf ${ids[1]} flash
 
 	# verify component ${ids[2]}
 	verify_comp_attr stripe-size $tf ${ids[2]} 16777216
@@ -444,7 +443,6 @@ test_0c() {
 		verify_comp_attr_with_default stripe-size $tf ${ids[$i]}
 		verify_comp_attr stripe-count $tf ${ids[$i]} 2
 		verify_comp_attr stripe-index $tf ${ids[$i]} 1
-		verify_comp_attr pool $tf ${ids[$i]} flash
 		verify_comp_extent $tf ${ids[$i]} 0 4194304
 	done
 
@@ -560,13 +558,11 @@ test_0e() {
 	verify_comp_attr stripe-size $tf ${ids[0]} 33554432
 	verify_comp_attr stripe-count $tf ${ids[0]} 3
 	verify_comp_attr stripe-index $tf ${ids[0]} 1
-	verify_comp_attr pool $tf ${ids[0]} ssd
 
 	# verify component ${ids[1]}
 	verify_comp_attr stripe-size $tf ${ids[1]} 4194304
 	verify_comp_attr stripe-count $tf ${ids[1]} 2
 	verify_comp_attr stripe-index $tf ${ids[1]} 2
-	verify_comp_attr pool $tf ${ids[1]} flash
 
 	# verify component ${ids[2]}
 	verify_comp_attr stripe-size $tf ${ids[2]} 16777216
@@ -631,7 +627,6 @@ test_0f() {
 		verify_comp_attr_with_default stripe-size $tf ${ids[$i]}
 		verify_comp_attr stripe-count $tf ${ids[$i]} 2
 		verify_comp_attr stripe-index $tf ${ids[$i]} 1
-		verify_comp_attr pool $tf ${ids[$i]} flash
 		verify_comp_extent $tf ${ids[$i]} 0 4194304
 	done
 
