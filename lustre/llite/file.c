@@ -4162,12 +4162,13 @@ static int ll_file_flock_async_unlock(struct inode *inode,
  * detached from lock. So, locking isn't needed.
  * It should only report lock status to kernel.
  */
-static void ll_file_flock_async_cb(struct ldlm_flock_info *args, int err)
+static void ll_file_flock_async_cb(struct ldlm_flock_info *args)
 {
 	struct file_lock *file_lock = args->fa_fl;
 	struct file_lock *flc = &args->fa_flc;
 	struct file *file = args->fa_file;
 	struct inode *inode = file->f_path.dentry->d_inode;
+	int err = args->fa_err;
 	int rc;
 
 	ENTRY;
@@ -4188,6 +4189,9 @@ static void ll_file_flock_async_cb(struct ldlm_flock_info *args, int err)
 
 		if (err == 0)
 			ll_file_flock_lock(file, flc);
+
+		while (!args->fa_ready)
+			schedule();
 
 #ifdef HAVE_LM_GRANT_2ARGS
 		rc = args->fa_notify(&notify_lock, err);
@@ -4213,7 +4217,7 @@ static void ll_file_flock_async_cb(struct ldlm_flock_info *args, int err)
 static void ll_flock_run_flock_cb(struct ldlm_flock_info *args)
 {
 	if (args) {
-		ll_file_flock_async_cb(args, args->fa_err);
+		ll_file_flock_async_cb(args);
 		OBD_FREE_PTR(args);
 	}
 }
@@ -4379,6 +4383,7 @@ int ll_file_flock(struct file *file, int cmd, struct file_lock *file_lock)
 		if (rc) {
 			fput(file);
 			OBD_FREE_PTR(cb_data);
+			cb_data = NULL;
 		} else {
 			rc = FILE_LOCK_DEFERRED;
 		}
@@ -4400,6 +4405,7 @@ int ll_file_flock(struct file *file, int cmd, struct file_lock *file_lock)
 					       rc);
 				}
 				OBD_FREE_PTR(cb_data);
+				cb_data = NULL;
 				GOTO(out, rc);
 			}
 		}
@@ -4425,9 +4431,12 @@ int ll_file_flock(struct file *file, int cmd, struct file_lock *file_lock)
 			}
 		}
 		OBD_FREE_PTR(cb_data);
+		cb_data = NULL;
 	}
 out:
 	ll_finish_md_op_data(op_data);
+	if (cb_data)
+		cb_data->fa_ready = 1;
 
         RETURN(rc);
 }
