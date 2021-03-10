@@ -1279,6 +1279,7 @@ struct ldlm_flock_info {
 	int (*fa_notify)(struct file_lock *, struct file_lock *, int);
 #endif
 	int fa_err;
+	int fa_ready;
 };
 
 extern struct obd_ops ldlm_obd_ops;
