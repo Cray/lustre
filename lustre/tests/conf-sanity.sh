@@ -9000,6 +9000,25 @@ test_130()
 }
 run_test 130 "re-register an MDT after writeconf"
 
+test_131() {
+	local err_cnt
+	local err_cnt2
+
+	setup_noconfig
+
+	err_cnt=$(do_facet mds1 dmesg | grep -c "cannot take the layout locks")
+	stop mds1 || error "stop mds1 failed"
+
+	[ "$mds1_FSTYPE" == zfs ] && import_zpool mds1
+	do_facet mds1 $TUNEFS --param mdt.hsm_control=enabled $(mdsdevname 1) ||
+		error "tunefs failed"
+	start mds1 $(mdsdevname 1) $MDS_MOUNT_OPTS
+
+	err_cnt2=$(do_facet mds1 dmesg | grep -c "cannot take the layout locks")
+	[ $err_cnt -eq $err_cnt2 ] || error "Can not take the layout lock"
+}
+run_test 131 "hsm_actions processed after failover"
+
 if ! combined_mgs_mds ; then
 	stop mgs
 fi
