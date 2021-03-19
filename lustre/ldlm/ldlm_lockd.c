@@ -1243,7 +1243,6 @@ int ldlm_handle_enqueue0(struct ldlm_namespace *ns,
 	int rc2;
 	struct ldlm_resource *res = NULL;
 	const struct lu_env *env = req->rq_svc_thread->t_env;
-	bool is_resend;
 	ENTRY;
 
 	LDLM_DEBUG_NOLOCK("server-side enqueue handler START");
@@ -1279,8 +1278,8 @@ int ldlm_handle_enqueue0(struct ldlm_namespace *ns,
                 GOTO(out, rc = -EFAULT);
         }
 
-	is_resend = lustre_msg_get_flags(req->rq_reqmsg) & MSG_RESENT;
-	if (unlikely((flags & LDLM_FL_REPLAY) || is_resend)) {
+	if (unlikely((flags & LDLM_FL_REPLAY) ||
+		     (lustre_msg_get_flags(req->rq_reqmsg) & MSG_RESENT))) {
                 /* Find an existing lock in the per-export lock hash */
 		/* In the function below, .hs_keycmp resolves to
 		 * ldlm_export_lock_keycmp() */
@@ -1441,14 +1440,6 @@ existing_lock:
                                 unlock_res_and_lock(lock);
                                 ldlm_lock_cancel(lock);
                                 lock_res_and_lock(lock);
-			} else if (is_resend && !(flags & LDLM_FL_RESENT)) {
-				/* Send BL AST explicitly for a resend RPC
-				 * when the lock granted on the original RPC
-				 * is not found (probably was already cancelled
-				 * and we grant the lock 2nd time), so that
-				 * the client would be able to answer there
-				 * is no such lock on his side anymore. */
-				ldlm_clear_blocking_data(lock);
 			} else {
 				time64_t timeout =  ldlm_bl_timeout_by_rpc(req);
 				ldlm_add_waiting_lock(lock, timeout);
