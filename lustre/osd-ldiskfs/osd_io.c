@@ -899,8 +899,8 @@ static int osd_bufs_get(const struct lu_env *env, struct dt_object *dt,
 
 bypass_checks:
 	if (!cache && unlikely(!oti->oti_dio_pages)) {
-		OBD_ALLOC(oti->oti_dio_pages,
-			  sizeof(struct page *) * PTLRPC_MAX_BRW_PAGES);
+		OBD_ALLOC_PTR_ARRAY_LARGE(oti->oti_dio_pages,
+					  PTLRPC_MAX_BRW_PAGES);
 		if (!oti->oti_dio_pages)
 			return -ENOMEM;
 	}
