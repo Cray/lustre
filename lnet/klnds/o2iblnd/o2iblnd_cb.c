@@ -2262,10 +2262,11 @@ kiblnd_peer_connect_failed(struct kib_peer_ni *peer_ni, int active,
 			   int error)
 {
 	struct list_head zombies = LIST_HEAD_INIT(zombies);
-	unsigned long	flags;
+	unsigned long flags;
+	enum lnet_msg_hstatus hstatus;
 
-	LASSERT (error != 0);
-	LASSERT (!in_interrupt());
+	LASSERT(error != 0);
+	LASSERT(!in_interrupt());
 
 	write_lock_irqsave(&kiblnd_data.kib_global_lock, flags);
 
@@ -2308,12 +2309,20 @@ kiblnd_peer_connect_failed(struct kib_peer_ni *peer_ni, int active,
 	CNETERR("Deleting messages for %s: connection failed\n",
 		libcfs_nid2str(peer_ni->ibp_nid));
 
-	if (error == -EHOSTUNREACH || error == -ETIMEDOUT)
-		kiblnd_txlist_done(&zombies, error,
-				   LNET_MSG_STATUS_NETWORK_TIMEOUT);
-	else
-		kiblnd_txlist_done(&zombies, error,
-				   LNET_MSG_STATUS_LOCAL_DROPPED);
+	switch (error) {
+	case -EHOSTUNREACH:
+	case -ETIMEDOUT:
+		hstatus = LNET_MSG_STATUS_NETWORK_TIMEOUT;
+		break;
+	case -ECONNREFUSED:
+		hstatus = LNET_MSG_STATUS_REMOTE_DROPPED;
+		break;
+	default:
+		hstatus = LNET_MSG_STATUS_LOCAL_DROPPED;
+		break;
+	}
+
+	kiblnd_txlist_done(&zombies, error, hstatus);
 }
 
 static void
