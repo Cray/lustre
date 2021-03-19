@@ -2902,6 +2902,7 @@ static void
 kiblnd_rejected(struct kib_conn *conn, int reason, void *priv, int priv_nob)
 {
 	struct kib_peer_ni *peer_ni = conn->ibc_peer;
+	int status = -ECONNREFUSED;
 
 	LASSERT (!in_interrupt());
 	LASSERT (conn->ibc_state == IBLND_CONN_ACTIVE_CONNECT);
@@ -2913,6 +2914,7 @@ kiblnd_rejected(struct kib_conn *conn, int reason, void *priv, int priv_nob)
 		break;
 
 	case IB_CM_REJ_INVALID_SERVICE_ID:
+		status = -EHOSTUNREACH;
 		peer_ni->ibp_retries++;
 		kiblnd_check_reconnect(conn, IBLND_MSG_VERSION, 0,
 				       IBLND_REJECT_INVALID_SRV_ID, NULL);
@@ -3023,7 +3025,7 @@ kiblnd_rejected(struct kib_conn *conn, int reason, void *priv, int priv_nob)
                 break;
         }
 
-        kiblnd_connreq_done(conn, -ECONNREFUSED);
+	kiblnd_connreq_done(conn, status);
 }
 
 static void
