@@ -2088,6 +2088,34 @@ int ll_update_inode(struct inode *inode, struct lustre_md *md)
 	return 0;
 }
 
+void ll_truncate_inode_pages_final(struct inode *inode)
+{
+	struct address_space *mapping = &inode->i_data;
+	unsigned long nrpages;
+	unsigned long flags;
+
+	truncate_inode_pages_final(mapping);
+
+	/* Workaround for LU-118: Note nrpages may not be totally updated when
+	 * truncate_inode_pages() returns, as there can be a page in the process
+	 * of deletion (inside __delete_from_page_cache()) in the specified
+	 * range. Thus mapping->nrpages can be non-zero when this function
+	 * returns even after truncation of the whole mapping.  Only do this if
+	 * npages isn't already zero.
+	 */
+	nrpages = mapping->nrpages;
+	if (nrpages) {
+		xa_lock_irqsave(&mapping->i_pages, flags);
+		nrpages = mapping->nrpages;
+		xa_unlock_irqrestore(&mapping->i_pages, flags);
+	} /* Workaround end */
+
+	LASSERTF(nrpages == 0, "%s: inode="DFID"(%p) nrpages=%lu, "
+		 "see https://jira.whamcloud.com/browse/LU-118\n",
+		 ll_i2sbi(inode)->ll_fsname,
+		 PFID(ll_inode2fid(inode)), inode, nrpages);
+}
+
 int ll_read_inode2(struct inode *inode, void *opaque)
 {
         struct lustre_md *md = opaque;
@@ -2145,11 +2173,7 @@ int ll_read_inode2(struct inode *inode, void *opaque)
 void ll_delete_inode(struct inode *inode)
 {
 	struct ll_inode_info *lli = ll_i2info(inode);
-	struct address_space *mapping = &inode->i_data;
-	unsigned long nrpages;
 	int rc;
-	unsigned long flags;
-
 	ENTRY;
 
 	if (S_ISREG(inode->i_mode) && lli->lli_clob != NULL) {
@@ -2165,27 +2189,7 @@ void ll_delete_inode(struct inode *inode)
 		if (rc < 0)
 			CERROR("Final sync failed: %d\n", rc);
 	}
-	truncate_inode_pages_final(mapping);
-
-	/* Workaround for LU-118: Note nrpages may not be totally updated when
-	 * truncate_inode_pages() returns, as there can be a page in the process
-	 * of deletion (inside __delete_from_page_cache()) in the specified
-	 * range. Thus mapping->nrpages can be non-zero when this function
-	 * returns even after truncation of the whole mapping.  Only do this if
-	 * npages isn't already zero.
-	 */
-	nrpages = mapping->nrpages;
-	if (nrpages) {
-		xa_lock_irqsave(&mapping->i_pages, flags);
-		nrpages = mapping->nrpages;
-		xa_unlock_irqrestore(&mapping->i_pages, flags);
-	} /* Workaround end */
-
-	LASSERTF(nrpages == 0, "%s: inode="DFID"(%p) nrpages=%lu, "
-		 "see https://jira.whamcloud.com/browse/LU-118\n",
-		 ll_i2sbi(inode)->ll_fsname,
-		 PFID(ll_inode2fid(inode)), inode, nrpages);
-
+	ll_truncate_inode_pages_final(inode);
 #ifdef HAVE_SBOPS_EVICT_INODE
 	ll_clear_inode(inode);
 #endif
