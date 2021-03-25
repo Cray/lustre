@@ -127,7 +127,7 @@ static int osd_oi_index_create_one(struct osd_thread_info *info,
 		return PTR_ERR(jh);
 
 	inode = ldiskfs_create_inode(jh, dir, (S_IFREG | S_IRUGO | S_IWUSR),
-				     NULL, NULL);
+				     NULL);
 	if (IS_ERR(inode)) {
 		ldiskfs_journal_stop(jh);
 		return PTR_ERR(inode);
