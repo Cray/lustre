@@ -474,6 +474,8 @@ int client_obd_setup(struct obd_device *obddev, struct lustre_cfg *lcfg)
         imp->imp_connect_op = connect_op;
         memcpy(cli->cl_target_uuid.uuid, lustre_cfg_buf(lcfg, 1),
                LUSTRE_CFG_BUFLEN(lcfg, 1));
+	/* a temporary workaround until CAST-23689 gets fixed */
+	imp->imp_grant_shrink_disabled = 1;
         class_import_put(imp);
 
 	if (lustre_cfg_buf(lcfg, 4)) {
