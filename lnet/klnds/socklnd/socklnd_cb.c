@@ -1977,7 +1977,8 @@ ksocknal_connect(struct ksock_route *route)
                         type = SOCKLND_CONN_ANY;
                 } else if ((wanted & (1 << SOCKLND_CONN_CONTROL)) != 0) {
                         type = SOCKLND_CONN_CONTROL;
-                } else if ((wanted & (1 << SOCKLND_CONN_BULK_IN)) != 0) {
+                } else if ((wanted & (1 << SOCKLND_CONN_BULK_IN)) != 0 &&
+			   route->ksnr_blki_conn_count <= route->ksnr_blko_conn_count) {
                         type = SOCKLND_CONN_BULK_IN;
                 } else {
                         LASSERT ((wanted & (1 << SOCKLND_CONN_BULK_OUT)) != 0);

@@ -81,6 +81,9 @@ ksocknal_create_route(__u32 ipaddr, int port)
         route->ksnr_deleted = 0;
         route->ksnr_conn_count = 0;
         route->ksnr_share_count = 0;
+	route->ksnr_ctrl_conn_count = 0;
+	route->ksnr_blki_conn_count = 0;
+	route->ksnr_blko_conn_count = 0;
 
         return (route);
 }
@@ -318,6 +321,73 @@ out:
 	return rc;
 }
 
+static unsigned int
+ksocknal_get_conn_count_by_type(struct ksock_route *route,
+				int type)
+{
+	unsigned int count = 0;
+
+	switch (type) {
+	case SOCKLND_CONN_CONTROL:
+		count = route->ksnr_ctrl_conn_count;
+		break;
+	case SOCKLND_CONN_BULK_IN:
+		count = route->ksnr_blki_conn_count;
+		break;
+	case SOCKLND_CONN_BULK_OUT:
+		count = route->ksnr_blko_conn_count;
+		break;
+	case SOCKLND_CONN_ANY:
+		count = route->ksnr_conn_count;
+		break;
+	default:
+		LBUG();
+		break;
+	}
+
+	return count;
+}
+
+static void
+ksocknal_incr_conn_count(struct ksock_route *route,
+			 int type)
+{
+	route->ksnr_conn_count++;
+
+	/* check if all connections of the given type got created */
+	switch (type) {
+	case SOCKLND_CONN_CONTROL:
+		route->ksnr_ctrl_conn_count++;
+		/* there's a single control connection per peer */
+		route->ksnr_connected |= BIT(type);
+		break;
+	case SOCKLND_CONN_BULK_IN:
+		route->ksnr_blki_conn_count++;
+		if (route->ksnr_blki_conn_count >=
+		    *ksocknal_tunables.ksnd_conns_per_peer)
+			route->ksnr_connected |= BIT(type);
+		break;
+	case SOCKLND_CONN_BULK_OUT:
+		route->ksnr_blko_conn_count++;
+		if (route->ksnr_blko_conn_count >=
+		    *ksocknal_tunables.ksnd_conns_per_peer)
+			route->ksnr_connected |= BIT(type);
+		break;
+	case SOCKLND_CONN_ANY:
+		if (route->ksnr_conn_count >=
+		    *ksocknal_tunables.ksnd_conns_per_peer)
+			route->ksnr_connected |= BIT(type);
+		break;
+	default:
+		LBUG();
+		break;
+
+	}
+
+	CDEBUG(D_NET, "Add route type %d, ksnr_connected %x conns_per_peer %d\n",
+	       type, route->ksnr_connected, *ksocknal_tunables.ksnd_conns_per_peer);
+}
+
 static void
 ksocknal_associate_route_conn_locked(struct ksock_route *route, struct ksock_conn *conn)
 {
@@ -354,8 +424,7 @@ ksocknal_associate_route_conn_locked(struct ksock_route *route, struct ksock_con
                         iface->ksni_nroutes++;
         }
 
-        route->ksnr_connected |= (1<<type);
-        route->ksnr_conn_count++;
+	ksocknal_incr_conn_count(route, type);
 
         /* Successful connection => further attempts can
          * proceed immediately */
@@ -1042,6 +1111,7 @@ ksocknal_create_conn(struct lnet_ni *ni, struct ksock_route *route,
 	int rc;
 	int rc2;
 	int active;
+	int num_dup = 0;
 	char *warn = NULL;
 
         active = (route != NULL);
@@ -1157,9 +1227,9 @@ ksocknal_create_conn(struct lnet_ni *ni, struct ksock_route *route,
 			peer_ni = peer2;
 		}
 
-                /* +1 ref for me */
-                ksocknal_peer_addref(peer_ni);
-                peer_ni->ksnp_accepting++;
+		/* +1 ref for me */
+		ksocknal_peer_addref(peer_ni);
+		peer_ni->ksnp_accepting++;
 
                 /* Am I already connecting to this guy?  Resolve in
                  * favour of higher NID... */
@@ -1203,18 +1273,18 @@ ksocknal_create_conn(struct lnet_ni *ni, struct ksock_route *route,
                 goto failed_2;
         }
 
-        switch (rc) {
-        default:
-                LBUG();
-        case 0:
-                break;
-        case EALREADY:
-                warn = "lost conn race";
-                goto failed_2;
-        case EPROTO:
-                warn = "retry with different protocol version";
-                goto failed_2;
-        }
+	switch (rc) {
+	default:
+		LBUG();
+	case 0:
+		break;
+	case EALREADY:
+		warn = "lost conn race";
+		goto failed_2;
+	case EPROTO:
+		warn = "retry with different protocol version";
+		goto failed_2;
+	}
 
 	/* Refuse to duplicate an existing connection, unless this is a
 	 * loopback connection */
@@ -1227,17 +1297,21 @@ ksocknal_create_conn(struct lnet_ni *ni, struct ksock_route *route,
                             conn2->ksnc_type != conn->ksnc_type)
                                 continue;
 
-                        /* Reply on a passive connection attempt so the peer_ni
-                         * realises we're connected. */
-                        LASSERT (rc == 0);
-                        if (!active)
-                                rc = EALREADY;
+			num_dup++;
+			if (num_dup < *ksocknal_tunables.ksnd_conns_per_peer)
+				continue;
 
-                        warn = "duplicate";
-                        goto failed_2;
-                }
-        }
+			/* Reply on a passive connection attempt so the peer_ni
+			 * realises we're connected.
+			 */
+			LASSERT(rc == 0);
+			if (!active)
+				rc = EALREADY;
 
+			warn = "duplicate";
+			goto failed_2;
+		}
+	}
         /* If the connection created by this route didn't bind to the IP
          * address the route connected to, the connection/route matching
          * code below probably isn't going to work. */
@@ -1447,7 +1521,14 @@ ksocknal_close_conn_locked(struct ksock_conn *conn, int error)
 	if (route != NULL) {
 		/* dissociate conn from route... */
 		LASSERT(!route->ksnr_deleted);
-		LASSERT((route->ksnr_connected & (1 << conn->ksnc_type)) != 0);
+
+		/* connected bit is set only if all connections
+		 * of the given type got created
+		 */
+		if (ksocknal_get_conn_count_by_type(route, conn->ksnc_type) ==
+		    *ksocknal_tunables.ksnd_conns_per_peer)
+			LASSERT((route->ksnr_connected &
+				BIT(conn->ksnc_type)) != 0);
 
 		conn2 = NULL;
 		list_for_each(tmp, &peer_ni->ksnp_conns) {
