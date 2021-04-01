@@ -1645,12 +1645,11 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 		 * (possibly filling the OST), only precreate the last batch.
 		 * LFSCK will eventually clean up any orphans. LU-14 */
 		if (diff > 5 * OST_MAX_PRECREATE) {
+			LCONSOLE_WARN("%s: Too many FIDs to precreate OST replaced or reformatted: LFSCK will clean up.\n"
+				      "The difference between precreate FID "DOSTID" and LAST_ID "DOSTID" is %lld\n",
+				      ofd_name(ofd), POSTID(&oa->o_oi),
+				      POSTID(&oseq->os_oi), diff);
 			diff = OST_MAX_PRECREATE / 2;
-			LCONSOLE_WARN("%s: Too many FIDs to precreate "
-				      "OST replaced or reformatted: "
-				      "LFSCK will clean up",
-				      ofd_name(ofd));
-
 			CDEBUG(D_HA, "%s: precreate FID "DOSTID" is over "
 			       "%u larger than the LAST_ID "DOSTID", only "
 			       "precreating the last %lld objects.\n",
