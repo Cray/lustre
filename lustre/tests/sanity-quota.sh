@@ -946,7 +946,7 @@ run_test 1d "Quota pools: check block hardlimit on different pools"
 
 test_1e() {
 	local limit1=10  # 10M
-	local global_limit=200  # 200M
+	local global_limit=53  # 53T
 	local testfile="$DIR/$tdir/$tfile-0"
 	local testfile2="$DIR/$tdir/$tfile-1"
 	local qpool1="qpool1"
@@ -962,8 +962,8 @@ test_1e() {
 	# different qunit's on osts. Since 1st qunit shrinking
 	# on OST1(that belongs to qpool1), this qunit should
 	# be sent to OST1.
-	log "User quota (block hardlimit:$global_limit MB)"
-	$LFS setquota -u $TSTUSR -b 0 -B ${global_limit}M -i 0 -I 0 $DIR ||
+	log "User quota (block hardlimit:$global_limit TB)"
+	$LFS setquota -u $TSTUSR -b 0 -B ${global_limit}T -i 0 -I 0 $DIR ||
 		error "set user quota failed"
 
 	pool_add $qpool1 || error "pool_add failed"
