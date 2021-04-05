@@ -14114,34 +14114,6 @@ test_160i() {
 run_test 160i "changelog user register/unregister race"
 
 test_160j() {
-	[ $PARALLEL == "yes" ] && skip "skip parallel run"
-	remote_mds_nodsh && skip "remote MDS with nodsh"
-
-	mkdir -p $DIR/$tdir/1/1
-
-	changelog_register || error "changelog_register failed"
-	local cl_user="${CL_USERS[$SINGLEMDS]%% *}"
-
-	changelog_users $SINGLEMDS | grep -q $cl_user ||
-		error "User '$cl_user' not found in changelog_users"
-#define OBD_FAIL_MDS_CHANGELOG_REORDER 0x15d
-	do_facet mds1 $LCTL set_param fail_loc=0x8000015d fail_val=3
-	rmdir $DIR/$tdir/1/1 & sleep 1
-	mkdir $DIR/$tdir/2
-	touch $DIR/$tdir/2/2
-	rm -rf $DIR/$tdir/2
-
-	wait
-	sleep 4
-
-	changelog_dump | grep rmdir || error "rmdir not recorded"
-
-	rm -rf $DIR/$tdir
-	changelog_deregister
-}
-run_test 160j "Verify that changelog records are not lost"
-
-test_160j() {
 	remote_mds_nodsh && skip "remote MDS with nodsh"
 	[[ $MDS1_VERSION -lt $(version_code 2.12.56) ]] &&
 		skip "Need MDS version at least 2.12.56"
@@ -14183,6 +14155,73 @@ test_160j() {
 	mount_client $MOUNT || error "mount_client on $MOUNT failed"
 }
 run_test 160j "client can be umounted  while its chanangelog is being used"
+
+test_160k() {
+	[ $PARALLEL == "yes" ] && skip "skip parallel run"
+	remote_mds_nodsh && skip "remote MDS with nodsh"
+
+	mkdir -p $DIR/$tdir/1/1
+
+	changelog_register || error "changelog_register failed"
+	local cl_user="${CL_USERS[$SINGLEMDS]%% *}"
+
+	changelog_users $SINGLEMDS | grep -q $cl_user ||
+		error "User '$cl_user' not found in changelog_users"
+#define OBD_FAIL_MDS_CHANGELOG_REORDER 0x15d
+	do_facet mds1 $LCTL set_param fail_loc=0x8000015d fail_val=3
+	rmdir $DIR/$tdir/1/1 & sleep 1
+	mkdir $DIR/$tdir/2
+	touch $DIR/$tdir/2/2
+	rm -rf $DIR/$tdir/2
+
+	wait
+	sleep 4
+
+	changelog_dump | grep rmdir || error "rmdir not recorded"
+
+	rm -rf $DIR/$tdir
+	changelog_deregister
+}
+run_test 160k "Verify that changelog records are not lost"
+
+test_160l() {
+	remote_mds_nodsh && skip "remote MDS with nodsh" && return
+	[[ $MDS1_VERSION -ge $(version_code 2.12.4) ]] ||
+		skip "Need MDS version at least 2.12.4"
+	local cl_users
+	local cl_user1
+	local cl_user2
+	local pid1
+
+
+	# Create a user
+	changelog_register || error "first changelog_register failed"
+	changelog_register || error "second changelog_register failed"
+
+	cl_users=(${CL_USERS[mds1]})
+	cl_user1="${cl_users[0]}"
+	cl_user2="${cl_users[1]}"
+	# generate some changelog records to accumulate on MDT0
+	test_mkdir -i0 -c1 $DIR/$tdir || error "test_mkdir $tdir failed"
+	createmany -m $DIR/$tdir/$tfile 50 ||
+		error "create $DIR/$tdir/$tfile failed"
+
+	# check changelogs have been generated
+	local nbcl=$(changelog_dump | wc -l)
+	[[ $nbcl -eq 0 ]] && error "no changelogs found"
+
+#define OBD_FAIL_MDS_CHANGELOG_RACE	 0x15f
+	do_facet mds1 $LCTL set_param fail_loc=0x8000015f fail_val=0
+
+	__changelog_clear mds1 $cl_user1 +10
+	__changelog_clear mds1 $cl_user2 0 &
+	pid1=$!
+	sleep 2
+	__changelog_clear mds1 $cl_user1 0 || error "fail to cancel record for $cl_user1"
+	wait $pid1
+	[[ $? -eq 0 ]] || error "fail to cancel record for $cl_user2"
+}
+run_test 160l "Changelog clear race"
 
 test_161a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
