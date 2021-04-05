@@ -340,6 +340,12 @@ static int llog_changelog_cancel_cb(const struct lu_env *env,
 		/* records are in order, so we're done */
 		RETURN(LLOG_PROC_BREAK);
 
+	if (unlikely(OBD_FAIL_PRECHECK(OBD_FAIL_MDS_CHANGELOG_RACE))) {
+		if (cfs_fail_val == 0)
+			cfs_fail_val = hdr->lrh_index;
+		if (cfs_fail_val == hdr->lrh_index)
+			OBD_RACE(OBD_FAIL_MDS_CHANGELOG_RACE);
+	}
 	cookie.lgc_lgl = llh->lgh_id;
 	cookie.lgc_index = hdr->lrh_index;
 
