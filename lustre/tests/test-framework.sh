@@ -3576,16 +3576,22 @@ facet_failover() {
 		shutdown_facet $facet
 	done
 
-	# keep all nodes online after failover to allow the active
-	# facet detection logic to work
-	for ((index=0; index<$total; index++)); do
-		echo reboot facets: ${affecteds[index]}
-		facet=$(echo ${affecteds[index]} | tr -s " " | cut -d"," -f 1)
-		reboot_facet $facet
+	echo "$(date +'%H:%M:%S (%s)') shutdowned"
+
+	local hostlist
+
+	for facet in ${facets//,/ }; do
+		hostlist=$(expand_list $hostlist $(facet_active_host $facet))
 	done
-	for ((index=0; index<$total; index++)); do
-		wait_for_facet ${affecteds[index]}
-	done
+
+	if [ "$FAILURE_MODE" = HARD ]; then
+		for host in ${hostlist//,/ }; do
+			reboot_node $host
+		done
+		echo "$(date +'%H:%M:%S (%s)') $hostlist rebooted"
+	else
+		sleep 10
+	fi
 
 	$E2FSCK_ON_MDT0 && (run_e2fsck $(facet_active_host $SINGLEMDS) \
 		$(mdsdevname 1) "-n" || error "Running e2fsck")
@@ -3624,6 +3630,19 @@ facet_failover() {
 				xargs -IX keyctl setperm X 0x3f3f3f3f"
 		fi
 	done
+	echo "$(date +'%H:%M:%S (%s)') targets are mounted"
+
+	if [ "$FAILURE_MODE" = HARD ]; then
+		wait_for_host $hostlist
+		for host in ${hostlist//,/ }; do
+			if $LOAD_MODULES_REMOTE; then
+				echo "loading modules on $node: $facet"
+				do_rpc_nodes $host load_modules_local
+			fi
+		done
+	fi
+
+	echo "$(date +'%H:%M:%S (%s)') facet_failover done"
 }
 
 obd_name() {
