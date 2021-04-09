@@ -298,6 +298,17 @@ test_2() {
 run_test 2 "racer rename: ${CLIENTS:-$(hostname)} DURATION=$DURATION"
 
 complete_test $SECONDS
-FSCK_ALWAYS=${FSCK_ALWAYS:-"yes"} check_and_cleanup_lustre
 
+# remount clients to avoid evictions from terminated lock enqueue
+if is_mounted $MOUNT2; then
+	cleanup_mount $MOUNT2
+	restore_mount $MOUNT2
+fi
+
+if is_mounted $MOUNT; then
+	cleanup_mount $MOUNT
+	restore_mount $MOUNT
+fi
+
+FSCK_ALWAYS=${FSCK_ALWAYS:-"yes"} check_and_cleanup_lustre
 exit_status
