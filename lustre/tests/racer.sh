@@ -204,5 +204,17 @@ test_1() {
 run_test 1 "racer on clients: ${CLIENTS:-$(hostname)} DURATION=$DURATION"
 
 complete $SECONDS
+
+# remount clients to avoid evictions from terminated lock enqueue
+if is_mounted $MOUNT2; then
+	cleanup_mount $MOUNT2
+	restore_mount $MOUNT2
+fi
+
+if is_mounted $MOUNT; then
+	cleanup_mount $MOUNT
+	restore_mount $MOUNT
+fi
+
 check_and_cleanup_lustre
 exit_status
