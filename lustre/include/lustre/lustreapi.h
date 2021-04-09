@@ -730,6 +730,10 @@ int llapi_layout_stripe_count_get(const struct llapi_layout *layout,
  */
 int llapi_layout_stripe_count_set(struct llapi_layout *layout, uint64_t count);
 
+/**
+ * Check if the stripe count \a stripe_count \a is valid.
+ */
+bool llapi_layout_stripe_count_is_valid(int64_t stripe_count);
 /******************** Stripe Size ********************/
 
 /**
@@ -861,7 +865,7 @@ int llapi_layout_pool_name_get(const struct llapi_layout *layout,
  * \retval -1	Invalid argument, errno set to EINVAL.
  */
 int llapi_layout_pool_name_set(struct llapi_layout *layout,
-			      const char *pool_name);
+			       char *pool_name);
 
 /******************** File Creation ********************/
 
@@ -1076,7 +1080,8 @@ ssize_t llapi_mirror_read(int fd, unsigned int id,
 ssize_t llapi_mirror_copy_many(int fd, __u16 src, __u16 *dst, size_t count);
 int llapi_mirror_copy(int fd, unsigned int src, unsigned int dst,
 		       off_t pos, size_t count);
-int llapi_layout_sanity(struct llapi_layout *layout, bool incomplete, bool flr);
+int llapi_layout_sanity(struct llapi_layout *layout, const char *fname,
+			bool incomplete, bool flr);
 void llapi_layout_sanity_perror(int error);
 
 /**
