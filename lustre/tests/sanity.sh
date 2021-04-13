@@ -2389,7 +2389,7 @@ test_27Cd() {
 	large_xattr_enabled || skip_env "ea_inode feature disabled"
 
 	test_mkdir -p $DIR/$tdir
-	local setcount=$LOV_MAX_STRIPE_COUNT
+	local setcount=$LOV_MAX_OVERSTRIPE_COUNT
 
 	$LFS setstripe -C $setcount $DIR/$tdir/$tfile ||
 		error "setstripe failed"
