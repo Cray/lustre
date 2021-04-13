@@ -167,14 +167,14 @@ static void kfilnd_tn_setup_immed(struct kfilnd_transaction *tn)
 				    offsetof(struct kfilnd_msg,
 					     kfm_u.immed.payload),
 				    tn->tn_num_iovec, tn->tn_buf.kiov, 0,
-				    tn->tn_nob_iovec);
+				    tn->tn_nob);
 	else
 		lnet_copy_iov2flat(KFILND_IMMEDIATE_MSG_SIZE,
 				   tn->tn_tx_msg.msg,
 				   offsetof(struct kfilnd_msg,
 					    kfm_u.immed.payload),
 				   tn->tn_num_iovec, tn->tn_buf.iov, 0,
-				   tn->tn_nob_iovec);
+				   tn->tn_nob);
 }
 
 static void kfilnd_tn_record_state_change(struct kfilnd_transaction *tn)
@@ -279,7 +279,6 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 
 		tn->tn_rx_msg.msg = rx_msg;
 		tn->tn_rx_msg.length = msg_size;
-		tn->tn_nob = msg_size;
 		tn->tn_posted_buf = bufdesc;
 
 		KFILND_EP_DEBUG(bufdesc->immed_end, "%s transaction ID %u",
@@ -414,7 +413,8 @@ static void kfilnd_tn_finalize(struct kfilnd_transaction *tn, bool *tn_released)
 	if (tn->tn_getreply) {
 		tn->tn_getreply->msg_health_status = tn->hstatus;
 		lnet_set_reply_msg_len(tn->tn_ep->end_dev->kfd_ni,
-				       tn->tn_getreply, tn->tn_nob);
+				       tn->tn_getreply,
+				       tn->tn_status ? 0 : tn->tn_nob);
 		lnet_finalize(tn->tn_getreply, tn->tn_status);
 	}
 
@@ -1379,7 +1379,7 @@ static void kfilnd_tn_set_kiov_buf(struct kfilnd_transaction *tn,
 	}
 
 	tn->tn_num_iovec = i;
-	tn->tn_nob_iovec = cur_len;
+	tn->tn_nob = cur_len;
 	tn->tn_buf_type = TN_BUF_KIOV;
 }
 
@@ -1415,7 +1415,7 @@ static void kfilnd_tn_set_iov_buf(struct kfilnd_transaction *tn,
 	}
 
 	tn->tn_num_iovec = i;
-	tn->tn_nob_iovec = cur_len;
+	tn->tn_nob = cur_len;
 	tn->tn_buf_type = TN_BUF_IOV;
 }
 
