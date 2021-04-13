@@ -453,9 +453,9 @@ static int kfilnd_tn_cancel_tag_recv(struct kfilnd_transaction *tn)
 	return 0;
 }
 
-static void kfilnd_tn_timeout(unsigned long data)
+static void kfilnd_tn_timeout(cfs_timer_cb_arg_t data)
 {
-	struct kfilnd_transaction *tn = (struct kfilnd_transaction *)data;
+	struct kfilnd_transaction *tn = cfs_from_timer(tn, data, timeout_timer);
 
 	KFILND_TN_ERROR(tn, "Bulk operation timeout");
 
@@ -476,7 +476,8 @@ static void kfilnd_tn_timeout_enable(struct kfilnd_transaction *tn)
 	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_BULK_TIMEOUT))
 		expires = jiffies;
 
-	setup_timer(&tn->timeout_timer, kfilnd_tn_timeout, (unsigned long)tn);
+	cfs_timer_setup(&tn->timeout_timer, kfilnd_tn_timeout,
+			(unsigned long)tn, 0);
 	mod_timer(&tn->timeout_timer, expires);
 }
 
