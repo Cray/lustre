@@ -261,7 +261,7 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 	case KFILND_MSG_IMMEDIATE:
 		alloc_msg = false;
 
-		/* Fall through to allocate transaction strcture. */
+		/* fall through */
 	case KFILND_MSG_BULK_PUT_REQ:
 	case KFILND_MSG_BULK_GET_REQ:
 		/* Context points to a received buffer and status is the length.
@@ -860,7 +860,7 @@ static void kfilnd_tn_state_reg_mem(struct kfilnd_transaction *tn,
 						LNET_MSG_STATUS_LOCAL_TIMEOUT);
 		}
 
-		/* Fall through on bad transaction status. */
+		/* fall through */
 	case TN_EVENT_MR_FAIL:
 		kfilnd_tn_status_update(tn, status,
 					LNET_MSG_STATUS_LOCAL_ERROR);
@@ -1117,11 +1117,12 @@ static void kfilnd_tn_state_wait_timeout_comp(struct kfilnd_transaction *tn,
 					LNET_MSG_STATUS_REMOTE_TIMEOUT);
 		kfilnd_peer_down(tn->peer);
 
-		/* Fall through. */
+		/* fall through */
 	case TN_EVENT_TAG_RX_FAIL:
 		kfilnd_tn_status_update(tn, status,
 					LNET_MSG_STATUS_LOCAL_ERROR);
 
+		/* fall through */
 	case TN_EVENT_TIMEOUT:
 	case TN_EVENT_TAG_RX_OK:
 		kfilnd_tn_finalize(tn, tn_released);
