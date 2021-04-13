@@ -724,6 +724,7 @@ AC_ARG_WITH([kfi],
 			KFICPPFLAGS="-I$with_kfi/include"
 			EXTRA_KCFLAGS_save="$EXTRA_KCFLAGS"
 			EXTRA_KCFLAGS="$EXTRA_KCFLAGS $KFICPPFLAGS"
+			KBUILD_EXTRA_SYMBOLS="$KBUILD_EXTRA_SYMBOLS $with_kfi/Module.symvers"
 			LB_CHECK_COMPILE([if kfabric headers are present], KFI_header,
 			[
 				#include <kfi_endpoint.h>
