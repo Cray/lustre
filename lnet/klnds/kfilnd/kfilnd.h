@@ -493,7 +493,6 @@ struct kfilnd_transaction {
 	struct mutex		tn_lock;	/* to serialize events */
 	int			tn_status;	/* return code from ops */
 	struct kfilnd_ep	*tn_ep;		/* endpoint we operate under */
-	int			tn_nob;		/* bytes received into msg */
 	enum tn_states		tn_state;	/* current state of Tn */
 	struct lnet_msg		*tn_lntmsg;	/* LNet msg to finalize */
 	struct lnet_msg		*tn_getreply;	/* GET LNet msg to finalize */
@@ -522,7 +521,9 @@ struct kfilnd_transaction {
 		struct kvec	iov[LNET_MAX_IOV];
 	} tn_buf;
 	unsigned int		tn_num_iovec;
-	unsigned int		tn_nob_iovec;
+
+	/* LNet transaction payload byte count. */
+	unsigned int		tn_nob;
 
 	/* Bulk transaction buffer is sink or source buffer. */
 	bool sink_buffer;
