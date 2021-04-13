@@ -199,7 +199,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	tn->lnet_msg_len = msg->msg_len;
 
 	KFILND_TN_DEBUG(tn, "%s in %u bytes in %u frags",
-			msg_type_to_str(lnd_msg_type), tn->tn_nob_iovec,
+			msg_type_to_str(lnd_msg_type), tn->tn_nob,
 			tn->tn_num_iovec);
 
 	/* Start the state machine processing this transaction */
@@ -242,6 +242,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 			       nob, tn->tn_rx_msg.length);
 			return -EPROTO;
 		}
+		tn->tn_nob = nob;
 
 		if (kiov)
 			lnet_copy_flat2kiov(niov, kiov, offset,
@@ -286,7 +287,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 						 ni);
 
 	KFILND_TN_DEBUG(tn, "%s in %u bytes in %u frags",
-			msg_type_to_str(rxmsg->kfm_type), tn->tn_nob_iovec,
+			msg_type_to_str(rxmsg->kfm_type), tn->tn_nob,
 			tn->tn_num_iovec);
 
 	kfilnd_tn_event_handler(tn, TN_EVENT_RMA_PREP, 0);
