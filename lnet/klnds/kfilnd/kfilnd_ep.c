@@ -186,7 +186,7 @@ int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 
 	KFILND_EP_DEBUG(ep,
 			"Transaction ID %u: Memory region of %u bytes in %u frags with key 0x%x allocated",
-			tn->tn_mr_key, tn->tn_nob_iovec, tn->tn_num_iovec,
+			tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
 			tn->tn_mr_key);
 
 	return 0;
@@ -432,15 +432,13 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	if (rc) {
 		KFILND_EP_ERROR(ep,
 				"Transaction ID %u: Failed to post write of %u bytes in %u frags with key 0x%x to peer 0x%llx",
-				tn->tn_mr_key, tn->tn_nob_iovec,
-				tn->tn_num_iovec, tn->tn_response_mr_key,
-				tn->tn_target_addr);
+				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
+				tn->tn_response_mr_key, tn->tn_target_addr);
 	} else {
 		KFILND_EP_DEBUG(ep,
 				"Transaction ID %u: Posted write of %u bytes in %u frags with key 0x%x to peer 0x%llx",
-				tn->tn_mr_key, tn->tn_nob_iovec,
-				tn->tn_num_iovec, tn->tn_response_mr_key,
-				tn->tn_target_addr);
+				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
+				tn->tn_response_mr_key, tn->tn_target_addr);
 	}
 
 	return rc;
@@ -493,15 +491,13 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	if (rc) {
 		KFILND_EP_ERROR(ep,
 				"Transaction ID %u: Failed to post read of %u bytes in %u frags with key 0x%x to peer 0x%llx",
-				tn->tn_mr_key, tn->tn_nob_iovec,
-				tn->tn_num_iovec, tn->tn_response_mr_key,
-				tn->tn_target_addr);
+				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
+				tn->tn_response_mr_key, tn->tn_target_addr);
 	} else {
 		KFILND_EP_DEBUG(ep,
 				"Transaction ID %u: Posted read of %u bytes in %u frags with key 0x%x to peer 0x%llx",
-				tn->tn_mr_key, tn->tn_nob_iovec,
-				tn->tn_num_iovec, tn->tn_response_mr_key,
-				tn->tn_target_addr);
+				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
+				tn->tn_response_mr_key, tn->tn_target_addr);
 	}
 
 
