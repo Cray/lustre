@@ -4847,6 +4847,21 @@ test_74()
 }
 run_test 74 "check quota pools per user"
 
+test_75()
+{
+	local qpool="qpool1"
+	local path="/proc/fs/lustre/qmt/$FSNAME-QMT0000/dt-$qpool/info"
+	local stopf=$TMP/$tfile
+
+	do_facet mds1 "touch $stopf"
+	do_facet mds1 "while [ -e $stopf ]; do cat $path &>2; done"&
+	local pid=$!
+	pool_add $qpool || error "pool_add failed"
+	do_facet mds1 "rm $stopf"
+	wait $pid
+}
+run_test 75 "access to non-existed dt-pool/info doesn't cause a panic"
+
 quota_fini()
 {
 	do_nodes $(comma_list $(nodes_list)) "lctl set_param debug=-quota"
