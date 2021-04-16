@@ -5605,10 +5605,9 @@ run_test 40a "LFSCK correctly fixes lmm_oi in composite layout"
 
 test_41()
 {
-	local old_debug=$(do_facet $SINGLEMDS $LCTL get_param debug)
-	old_debug=${old_debug#*=}
-	do_facet $SINGLEMDS $LCTL set_param debug=+lfsck
+	local old_debug=$(do_facet $SINGLEMDS $LCTL get_param -n debug)
 
+	do_facet $SINGLEMDS $LCTL set_param debug=+lfsck
 	$LFS setstripe -E 1G -z 64M -E -1 -z 128M $DIR/$tfile
 	do_facet $SINGLEMDS $LCTL dk > /dev/null
 

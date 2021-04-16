@@ -349,7 +349,7 @@ static int lfsck_layout_verify_header_v1v3(struct dt_object *obj,
 		else
 			rc = -EINVAL;
 
-		CDEBUG(D_LFSCK, "%s LOV EA magic %u for the file "DFID"\n",
+		CDEBUG(D_LFSCK, "%s LOV EA magic 0x%X for the file "DFID"\n",
 		       rc == -EINVAL ? "Unknown" : "Unsupported",
 		       magic, PFID(lfsck_dto2fid(obj)));
 
@@ -359,9 +359,9 @@ static int lfsck_layout_verify_header_v1v3(struct dt_object *obj,
 	pattern = le32_to_cpu(lmm->lmm_pattern);
 	*dom = !!(lov_pattern(pattern) == LOV_PATTERN_MDT);
 
-#if 0
 	/* XXX: DoM file verification will be supportted via LU-11081. */
 	if (lov_pattern(pattern) == LOV_PATTERN_MDT) {
+#if 0
 		if (start != 0) {
 			CDEBUG(D_LFSCK, "The DoM entry for "DFID" is not "
 			       "the first component in the mirror %x/%llu\n",
@@ -369,10 +369,8 @@ static int lfsck_layout_verify_header_v1v3(struct dt_object *obj,
 
 			return -EINVAL;
 		}
-	}
 #endif
-
-	if (!lov_pattern_supported_normal_comp(lov_pattern(pattern))) {
+	} else if (!lov_pattern_supported_normal_comp(lov_pattern(pattern))) {
 		CDEBUG(D_LFSCK, "Unsupported LOV EA pattern %u for the file "
 		       DFID" in the component %x\n",
 		       pattern, PFID(lfsck_dto2fid(obj)), comp_id);
@@ -381,9 +379,8 @@ static int lfsck_layout_verify_header_v1v3(struct dt_object *obj,
 	}
 
 	size = le32_to_cpu(lmm->lmm_stripe_size);
-	if (!ext &&
-	    (!lfsck_comp_extent_aligned(start, size) ||
-	     (end != LUSTRE_EOF && !lfsck_comp_extent_aligned(end, size)))) {
+	if (!ext && end != LUSTRE_EOF && start != end &&
+	    !lfsck_comp_extent_aligned(end, size)){
 		CDEBUG(D_LFSCK, "not aligned border in PFL extent range "
 		       "[%llu - %llu) stripesize %u for the file "DFID
 		       " at idx %d\n", start, end, size,
