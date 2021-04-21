@@ -218,6 +218,8 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 	struct kfilnd_msg *rxmsg = tn->tn_rx_msg.msg;
 	int nob;
 	int rc = 0;
+	int status = 0;
+	enum tn_events event = TN_EVENT_RMA_PREP;
 
 	if (mlen > rlen)
 		return -EINVAL;
@@ -260,16 +262,26 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		return 0;
 
 	case KFILND_MSG_BULK_PUT_REQ:
-		/* Post the buffer given us as a sink  */
-		tn->sink_buffer = true;
-		kfilnd_tn_set_buf(tn, kiov, iov, niov, offset, mlen);
+		if (mlen == 0) {
+			event = TN_EVENT_RMA_SKIP;
+		} else {
+			/* Post the buffer given us as a sink  */
+			tn->sink_buffer = true;
+			kfilnd_tn_set_buf(tn, kiov, iov, niov, offset, mlen);
+		}
 		break;
 
 	case KFILND_MSG_BULK_GET_REQ:
-		/* Post the buffer given to us as a source  */
-		tn->sink_buffer = false;
-		kfilnd_tn_set_buf(tn, msg->msg_kiov, msg->msg_iov,
-				  msg->msg_niov, msg->msg_offset, msg->msg_len);
+		if (!msg) {
+			event = TN_EVENT_RMA_SKIP;
+			status = -ENODATA;
+		} else {
+			/* Post the buffer given to us as a source  */
+			tn->sink_buffer = false;
+			kfilnd_tn_set_buf(tn, msg->msg_kiov, msg->msg_iov,
+					  msg->msg_niov, msg->msg_offset,
+					  msg->msg_len);
+		}
 		break;
 
 	default:
@@ -290,7 +302,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 			msg_type_to_str(rxmsg->kfm_type), tn->tn_nob,
 			tn->tn_num_iovec);
 
-	kfilnd_tn_event_handler(tn, TN_EVENT_RMA_PREP, 0);
+	kfilnd_tn_event_handler(tn, event, status);
 
 	return rc;
 }
