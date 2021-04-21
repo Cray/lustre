@@ -901,9 +901,18 @@ static int llog_osd_next_block(const struct lu_env *env,
 	LASSERT(loghandle);
 	LASSERT(loghandle->lgh_ctxt);
 
+	if (OBD_FAIL_PRECHECK(OBD_FAIL_MDS_CHANGELOG_DEL) &&
+	    cfs_fail_val == ((unsigned long)loghandle & 0xFFFFFFFF)) {
+		OBD_RACE(OBD_FAIL_MDS_CHANGELOG_DEL);
+		msleep(MSEC_PER_SEC >> 2);
+	}
+
 	o = loghandle->lgh_obj;
 	LASSERT(o);
-	LASSERT(dt_object_exists(o));
+	dt_read_lock(env, o, 0);
+	if (!dt_object_exists(o))
+		GOTO(out, rc = -ESTALE); //object was destroyed
+
 	dt = lu2dt_dev(o->do_lu.lo_dev);
 	LASSERT(dt);
 
@@ -1033,6 +1042,7 @@ retry:
 	}
 	GOTO(out, rc = -EIO);
 out:
+	dt_read_unlock(env, o);
 	return rc;
 }
 
@@ -1077,7 +1087,10 @@ static int llog_osd_prev_block(const struct lu_env *env,
 
 	o = loghandle->lgh_obj;
 	LASSERT(o);
-	LASSERT(dt_object_exists(o));
+	dt_read_lock(env, o, 0);
+	if (!dt_object_exists(o))
+		GOTO(out, rc = -ESTALE);
+
 	dt = lu2dt_dev(o->do_lu.lo_dev);
 	LASSERT(dt);
 
@@ -1160,6 +1173,7 @@ static int llog_osd_prev_block(const struct lu_env *env,
 	}
 	GOTO(out, rc = -EIO);
 out:
+	dt_read_unlock(env, o);
 	return rc;
 }
 
