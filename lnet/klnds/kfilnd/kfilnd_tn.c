@@ -317,7 +317,7 @@ void kfilnd_tn_process_tagged_rx_event(struct kfilnd_transaction *tn,
 			if (msg->msg->kfm_u.bulk_rsp.status) {
 				KFILND_TN_ERROR(tn, "Peer error %d",
 						msg->msg->kfm_u.bulk_rsp.status);
-				rc = -EREMOTEIO;
+				rc = msg->msg->kfm_u.bulk_rsp.status;
 				event = TN_EVENT_TAG_RX_FAIL;
 			}
 		} else {
@@ -740,12 +740,14 @@ static void kfilnd_tn_state_imm_recv(struct kfilnd_transaction *tn,
 {
 	int rc = 0;
 	bool finalize = false;
+	struct kfilnd_msg *tx_msg = tn->tn_tx_msg.msg;
 
 	KFILND_TN_DEBUG(tn, "%s event status %d", tn_event_to_str(event),
 			status);
 
 	switch (event) {
 	case TN_EVENT_RMA_PREP:
+	case TN_EVENT_RMA_SKIP:
 		/* Release the buffer we received the request on. All relevant
 		 * information to perform the RMA operation is stored in the
 		 * transaction structure. This should be done before the RMA
@@ -788,22 +790,51 @@ static void kfilnd_tn_state_imm_recv(struct kfilnd_transaction *tn,
 			kfi_rx_addr(KFILND_BASE_ADDR(tn->peer->addr),
 				    tn->tn_response_rx, KFILND_FAB_RX_CTX_BITS);
 
-		/* Initiate the RMA operation to push/pull the LNet payload. */
+		/* Initiate the RMA operation to push/pull the LNet payload or
+		 * send a tagged message to finalize the bulk operation if the
+		 * RMA operation should be skipped.
+		 */
 		if (!kfilnd_tn_has_deadline_expired(tn)) {
-			if (tn->sink_buffer)
-				rc = kfilnd_ep_post_read(tn->tn_ep, tn);
-			else
-				rc = kfilnd_ep_post_write(tn->tn_ep, tn);
-			if (!rc) {
-				kfilnd_tn_state_change(tn,
-						       TN_STATE_WAIT_RMA_COMP);
-				return;
-			}
+			if (event == TN_EVENT_RMA_PREP) {
+				if (tn->sink_buffer)
+					rc = kfilnd_ep_post_read(tn->tn_ep, tn);
+				else
+					rc = kfilnd_ep_post_write(tn->tn_ep,
+								  tn);
+				if (!rc) {
+					kfilnd_tn_state_change(tn,
+							       TN_STATE_WAIT_RMA_COMP);
+					return;
+				}
 
-			KFILND_TN_ERROR(tn, "Failed to post %s %d",
-					tn->sink_buffer ? "read" : "write", rc);
-			kfilnd_tn_status_update(tn, rc,
-						LNET_MSG_STATUS_LOCAL_ERROR);
+				KFILND_TN_ERROR(tn, "Failed to post %s %d",
+						tn->sink_buffer ? "read" : "write",
+						rc);
+				kfilnd_tn_status_update(tn, rc,
+							LNET_MSG_STATUS_LOCAL_ERROR);
+			} else {
+				kfilnd_tn_status_update(tn, status,
+							LNET_MSG_STATUS_OK);
+
+				/* Build the completion message to finalize the
+				 * LNet operation.
+				 */
+				tx_msg->kfm_u.bulk_rsp.status = tn->tn_status;
+				kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
+
+				rc = kfilnd_ep_post_tagged_send(tn->tn_ep, tn);
+				if (!rc) {
+					kfilnd_tn_state_change(tn,
+							       TN_STATE_WAIT_TAG_COMP);
+					return;
+				}
+
+				KFILND_TN_ERROR(tn,
+						"Failed to post tagged send %d",
+						rc);
+				kfilnd_tn_status_update(tn, rc,
+							LNET_MSG_STATUS_LOCAL_ERROR);
+			}
 		} else {
 			KFILND_TN_ERROR(tn, "Transaction deadline expired");
 			kfilnd_tn_status_update(tn, -ETIMEDOUT,
