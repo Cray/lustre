@@ -915,6 +915,26 @@ LB_CHECK_LINUX_HEADER([linux/stringhash.h], [
 ]) # LIBCFS_STRINGHASH
 
 #
+# LIBCFS_TIME64_TO_TM
+#
+# Kernel version v4.7-rc2-4-ge6c2682a1da3 introduced time64_to_tm()
+#
+AC_DEFUN([LIBCFS_TIME64_TO_TM],[
+LB_CHECK_COMPILE([does function 'time64_to_tm' exist],
+fn_time64_to_tm_exists, [
+	#include <linux/time.h>
+],[
+	struct timespec now = {0, 0};
+	struct tm       ctm;
+
+	time64_to_tm(now.tv_sec, 0, &ctm);
+],[
+	AC_DEFINE(HAVE_TIME64_TO_TM, 1,
+		['time64_to_tm' is available])
+])
+]) # LIBCFS_TIME64_TO_TM
+
+#
 # LIBCFS_RHASHTABLE_INSERT_FAST
 #
 # 4.7+ kernel commit 5ca8cc5bf11faed257c762018aea9106d529232f
@@ -1485,6 +1505,7 @@ LIBCFS_STRINGHASH
 # 4.7
 LIBCFS_RHASHTABLE_INSERT_FAST
 # 4.8
+LIBCFS_TIME64_TO_TM
 LIBCFS_RHASHTABLE_LOOKUP
 LIBCFS_RHLTABLE
 LIBCFS_STACKTRACE_OPS
