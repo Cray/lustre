@@ -2524,7 +2524,7 @@ kgnilnd_dgram_mover(void *arg)
 
 		cfs_timer_setup(&timer.timer,
 				kgnilnd_dgram_poke_with_stick,
-				dev, 0);
+				&timer, 0);
 		timer.dev = dev;
 		mod_timer(&timer.timer, (long) jiffies + timeout);
 
