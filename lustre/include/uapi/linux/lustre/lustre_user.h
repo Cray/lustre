@@ -56,7 +56,6 @@
 # include <stdbool.h>
 # include <stdio.h> /* snprintf() */
 # include <string.h>
-# include <unistd.h>
 # define NEED_QUOTA_DEFS
 /* # include <sys/quota.h> - this causes complaints about caddr_t */
 # include <sys/stat.h>

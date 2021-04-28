@@ -48,7 +48,6 @@
 #include <linux/sysctl.h>
 #include <linux/debugfs.h>
 #include <asm/div64.h>
-#include <linux/kallsyms.h>
 
 #define DEBUG_SUBSYSTEM S_LNET
 
@@ -584,33 +583,6 @@ static void lnet_insert_debugfs_links(
 				       symlinks->target);
 }
 
-#ifndef HAVE_D_HASH_AND_LOOKUP
-/**
- * d_hash_and_lookup - hash the qstr then search for a dentry
- * @dir: Directory to search in
- * @name: qstr of name we wish to find
- *
- * On lookup failure NULL is returned; on bad name - ERR_PTR(-error)
- */
-struct dentry *d_hash_and_lookup(struct dentry *dir, struct qstr *name)
-{
-	/*
-	 * Check for a fs-specific hash function. Note that we must
-	 * calculate the standard hash first, as the d_op->d_hash()
-	 * routine may choose to leave the hash value unchanged.
-	 */
-	name->hash = full_name_hash(name->name, name->len);
-	if (dir->d_op && dir->d_op->d_hash) {
-		int err = dir->d_op->d_hash(dir, name);
-		if (unlikely(err < 0))
-			return ERR_PTR(err);
-	}
-	return d_lookup(dir, name);
-}
-#endif
-
-static struct dentry *(*cfs_d_hash_and_lookup)(struct dentry *, struct qstr *);
-
 void lnet_remove_debugfs(struct ctl_table *table)
 {
 	for (; table && table->procname; table++) {
@@ -618,7 +590,7 @@ void lnet_remove_debugfs(struct ctl_table *table)
 					      strlen(table->procname));
 		struct dentry *dentry;
 
-		dentry = cfs_d_hash_and_lookup(lnet_debugfs_root, &dname);
+		dentry = d_hash_and_lookup(lnet_debugfs_root, &dname);
 		debugfs_remove(dentry);
 	}
 }
@@ -666,11 +638,6 @@ static int __init libcfs_init(void)
 		CERROR("cfs_crypto_regster: error %d\n", rc);
 		goto cleanup_wi;
 	}
-
-	cfs_d_hash_and_lookup = (void *)
-		kallsyms_lookup_name("d_hash_and_lookup");
-
-	BUG_ON(!cfs_d_hash_and_lookup);
 
 	lnet_insert_debugfs(lnet_table);
 	if (!IS_ERR_OR_NULL(lnet_debugfs_root))
