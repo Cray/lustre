@@ -585,13 +585,6 @@ static void lnet_insert_debugfs_links(
 }
 
 #ifndef HAVE_D_HASH_AND_LOOKUP
-
-#ifdef HAVE_D_HASH_2_ARGS
-#define D_HASH(dir, name) (dir)->d_op->d_hash((dir), (name))
-#else
-#define D_HASH(dir, name) (dir)->d_op->d_hash((dir), (dir)->d_inode, (name))
-#endif
-
 /**
  * d_hash_and_lookup - hash the qstr then search for a dentry
  * @dir: Directory to search in
@@ -608,7 +601,7 @@ struct dentry *d_hash_and_lookup(struct dentry *dir, struct qstr *name)
 	 */
 	name->hash = full_name_hash(name->name, name->len);
 	if (dir->d_op && dir->d_op->d_hash) {
-		int err = D_HASH(dir, name);
+		int err = dir->d_op->d_hash(dir, name);
 		if (unlikely(err < 0))
 			return ERR_PTR(err);
 	}
