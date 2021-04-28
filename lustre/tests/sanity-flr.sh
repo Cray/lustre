@@ -2264,6 +2264,23 @@ test_48() {
 }
 run_test 48 "Verify snapshot mirror"
 
+test_50c() {
+	local tf=$DIR/$tdir/$tfile
+
+	test_mkdir $DIR/$tdir
+
+	$LFS setstripe -N2 -c-1 $tf || error "create FLR $tf failed"
+	verify_flr_state $tf "ro"
+
+	dd if=/dev/zero of=$tf bs=4096 count=4 || error "write $tf failed"
+	$LFS mirror resync $tf || error "mirror resync $tf failed"
+	verify_flr_state $tf "ro"
+
+	$MULTIOP $tf OSMWUc || error "$MULTIOP $tf failed"
+	verify_flr_state $tf "wp"
+}
+run_test 50c "punch_hole/mmap_write stale other mirrors"
+
 ctrl_file=$(mktemp /tmp/CTRL.XXXXXX)
 lock_file=$(mktemp /var/lock/FLR.XXXXXX)
 
