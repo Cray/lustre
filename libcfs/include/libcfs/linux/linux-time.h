@@ -211,6 +211,10 @@ static inline ktime_t timespec64_to_ktime(struct timespec64 ts)
 }
 #endif
 
+#ifndef HAVE_TIME64_TO_TM
+#define time64_to_tm time_to_tm
+#endif
+
 static inline unsigned long cfs_time_seconds(time64_t seconds)
 {
 	return nsecs_to_jiffies64(seconds * NSEC_PER_SEC);
@@ -243,7 +247,7 @@ static inline unsigned long cfs_time_seconds(time64_t seconds)
 #define cfs_timer_cb_arg_t unsigned long
 #define cfs_from_timer(var, data, timer_fieldname) (typeof(var))(data)
 #define cfs_timer_setup(timer, callback, data, flags) \
-	setup_timer((timer), (callback), (data))
+	setup_timer((timer), (callback), (unsigned long)(data))
 #define cfs_timer_cb_arg(var, timer_fieldname) (cfs_timer_cb_arg_t)(var)
 #endif
 
