@@ -33,6 +33,7 @@
 #define DEBUG_SUBSYSTEM S_LNET
 
 #include <linux/workqueue.h>
+#include <linux/llist.h>
 #include <libcfs/libcfs.h>
 #include <lustre_compat.h>
 
