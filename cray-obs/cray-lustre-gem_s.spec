@@ -320,6 +320,7 @@ popd
 /etc/ld.so.conf.d/cray-lustre.conf
 %exclude %{_sysconfdir}/lustre/perm.conf
 %exclude /etc/lustre
+/usr/share/bash-completion/completions/*
 
 %files lnet -f switch.directories.lnet
 %defattr(-,root,root)
