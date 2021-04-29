@@ -143,6 +143,7 @@ find %{buildroot}%{_sbindir} -type f -print | egrep -v '/lctl$|/mount.lustre$' |
 %exclude %{_sysconfdir}/lustre
 %exclude %{_sysconfdir}/ldev.conf
 %exclude %{_sysconfdir}/modprobe.d/ko2iblnd.conf
+/usr/share/bash-completion/completions/*
 
 %files lnet
 %defattr(-,root,root)
