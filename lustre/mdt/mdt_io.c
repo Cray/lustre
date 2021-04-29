@@ -1192,13 +1192,8 @@ int mdt_glimpse_enqueue(struct mdt_thread_info *mti, struct ldlm_namespace *ns,
 	rc = ELDLM_LOCK_ABORTED;
 fill_mbo:
 	/* LVB can be without valid data in case of DOM */
-	if (!mdt_dom_lvb_is_valid(res)) {
-		int rc2;
-
-		rc2 = mdt_dom_lvbo_update(res, lock, NULL, false);
-		if (rc2)
-			RETURN(rc2);
-	}
+	if (!mdt_dom_lvb_is_valid(res))
+		mdt_dom_lvbo_update(res, lock, NULL, false);
 	mdt_lvb2body(res, mbo);
 	RETURN(rc);
 }
