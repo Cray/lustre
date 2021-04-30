@@ -1171,6 +1171,30 @@ nla_strdup, [
 ]) # LIBCFS_NLA_STRDUP
 
 #
+# LIBCFS_WAIT_BIT_QUEUE_ENTRY_EXISTS
+#
+# Kernel version v4.12-rc6-23-g76c85ddc4695
+# sched/wait: Standardize wait_bit_queue naming
+#
+# renamed struct wait_bit_queue  => wait_bit_queue_entry
+#
+AC_DEFUN([LIBCFS_WAIT_BIT_QUEUE_ENTRY_EXISTS], [
+LB_CHECK_COMPILE([if struct wait_bit_queue_entry exists],
+struct_wait_bit_queue_entry_exists, [
+	#include <linux/wait.h>
+	#if HAVE_WAIT_BIT_HEADER_H
+		#include <linux/wait_bit.h>
+	#endif
+],[
+	struct wait_bit_queue_entry entry;
+	memset(&entry, 0, sizeof(entry));
+],[
+	AC_DEFINE(HAVE_WAIT_BIT_QUEUE_ENTRY, 1,
+		[if struct wait_bit_queue_entry exists])
+])
+]) # LIBCFS_WAIT_BIT_QUEUE_ENTRY_EXISTS
+
+#
 # LIBCFS_WAIT_QUEUE_ENTRY
 #
 # Kernel version 4.13 ac6424b981bce1c4bc55675c6ce11bfe1bbfa64f
@@ -2015,6 +2039,7 @@ LIBCFS_NL_EXT_ACK
 LIBCFS_WAIT_QUEUE_TASK_LIST_RENAME
 LIBCFS_CPUS_READ_LOCK
 LIBCFS_UUID_T
+LIBCFS_WAIT_BIT_QUEUE_ENTRY_EXISTS
 # 4.13
 LIBCFS_NLA_STRDUP
 LIBCFS_WAIT_QUEUE_ENTRY
