@@ -77,20 +77,24 @@ AS_IF([test x$RHEL_KERNEL = xyes], [
 		#
 		KPVERS=$(echo $LINUXRELEASE | sed -e 's/4.12.14-//g' -e 's/-.*//' -e 's/_.*//')
 		KPMAJOR=$(echo $KPVERS | cut -d '.' -f 1)
+		KPMINOR=$(echo $KPVERS | cut -d '.' -f 2)
 		case $KPMAJOR in
 		23)	LDISKFS_SERIES="4.12-sles15r23.series" ;;
 		25|150|195)
-			LDISKFS_SERIES="4.12-sles15.series"
-			;;
-		197)
-			KPMINOR=$(echo $KPVERS | cut -d '.' -f 2);
-			case $KPMINOR in
+			LDISKFS_SERIES="4.12-sles15.series" ;;
+		197)	case $KPMINOR in
 			4|7)  LDISKFS_SERIES="4.12-sles15.series"    ;;
 			26) LDISKFS_SERIES="4.12-sles15-unsupported.series" ;;
 			*)  LDISKFS_SERIES="4.12-sles15sp1.series" ;;
 			esac
 			;;
-		*)   LDISKFS_SERIES="4.12-sles15.series"    ;;
+		lp159)	LDISKFS_SERIES="4.12-sles15.series" ;;
+		lp151)	case $KPMINOR in
+			28)   LDISKFS_SERIES="4.12-sles15sp1.series" ;;
+			*)    LDISKFS_SERIES="4.12-sles15.series"    ;;
+			esac
+			;;
+		*)	LDISKFS_SERIES="4.12-sles15.series"    ;;
 		esac
 	    ]
 	)], [LDISKFS_SERIES="5.4.21-ml.series"],
