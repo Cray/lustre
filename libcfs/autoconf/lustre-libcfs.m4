@@ -494,6 +494,27 @@ shrinker_count_objects, [
 ]) # LIBCFS_SHRINKER_COUNT
 
 #
+# LIBCFS_HAVE_MAPPING_EXITING
+#
+# v3.14-7405-g91b0abe36a7b added AS_EXITING flag with
+# mapping_exiting() and mapping_set_exiting()
+#
+AC_DEFUN([LIBCFS_HAVE_MAPPING_EXITING], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if mapping_exiting exists],
+mapping_exiting_exists, [
+	#include <linux/pagemap.h>
+],[
+	mapping_set_exiting(NULL);
+],[
+	AC_DEFINE(HAVE_MAPPING_EXITING, 1,
+		[if mapping_exiting exists])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_HAVE_MAPPING_EXITING
+
+#
 # LIBCFS_IOV_ITER_HAS_TYPE
 #
 # kernel 3.15-rc4 commit 71d8e532b1549a478e6a6a8a44f309d050294d00
@@ -1492,6 +1513,7 @@ LIBCFS_KTIME_BEFORE
 LIBCFS_KTIME_COMPARE
 LIBCFS_SHRINKER_COUNT
 # 3.15
+LIBCFS_HAVE_MAPPING_EXITING
 LIBCFS_IOV_ITER_HAS_TYPE
 # 3.16
 LIBCFS_LINUX_RHASHTABLE_H
