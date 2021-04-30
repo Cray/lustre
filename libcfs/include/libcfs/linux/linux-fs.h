@@ -41,6 +41,7 @@
 #include <linux/stat.h>
 #include <linux/mount.h>
 #include <linux/backing-dev.h>
+#include <linux/pagemap.h>
 #include <linux/posix_acl_xattr.h>
 
 #ifndef HAVE_FILE_DENTRY
@@ -64,6 +65,13 @@ static inline struct dentry *file_dentry(const struct file *file)
 #ifndef DTTOIF
 #define DTTOIF(dirtype)		((dirtype) << IFSHIFT)
 #endif
+
+static inline void mapping_clear_exiting(struct address_space *mapping)
+{
+#ifdef HAVE_MAPPING_EXITING
+	clear_bit(AS_EXITING, &mapping->flags);
+#endif
+}
 
 #ifndef HAVE_POSIXACL_USER_NS
 /*
