@@ -614,9 +614,6 @@ fi
 %if %{with static}
 %{_libdir}/liblustreapi.a
 %endif
-%if %{with shared}
-%{_libdir}/liblustreapi.so
-%endif
 %{_includedir}/lustre
 %{_includedir}/linux/lnet
 %{_includedir}/linux/lustre
@@ -654,7 +651,7 @@ fi
 %endif
 
 %if %{with shared}
-%{_libdir}/liblustreapi.so.*
+%{_libdir}/liblustreapi.so*
 %endif
 %{_sysconfdir}/udev/rules.d/99-lustre.rules
 %if %{with servers}
