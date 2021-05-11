@@ -271,7 +271,7 @@ out_nolock:
 			LQUOTA_DEBUG(lqe, "notify all lqe with default quota");
 			iter_data.qeid_env = env;
 			iter_data.qeid_qmt = qmt;
-			cfs_hash_for_each_safe(lqe->lqe_site->lqs_hash,
+			cfs_hash_for_each(lqe->lqe_site->lqs_hash,
 					       qmt_entry_iter_cb, &iter_data);
 			/* Always notify slaves with default values. Don't
 			 * care about overhead as will be sent only not changed
@@ -282,7 +282,7 @@ out_nolock:
 		 * qmt_pool_lqes_lookup(qmt_dqacq, intent_policy ...). Thus
 		 * we can't init and add new lqes to don't overwrite already
 		 * added. */
-		if (!qti_lqes_inited(env) && need_id_notify && !is_updated)
+		if (!qti_lqes_inited(env) && need_id_notify)
 			qmt_set_id_notify(env, qmt, lqe);
 	}
 
