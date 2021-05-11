@@ -650,9 +650,6 @@ echo '%{_libdir}/lustre/tests/lutf/*' >>lustre-tests.files
 %if %{with static}
 %{_libdir}/liblustreapi.a
 %endif
-%if %{with shared}
-%{_libdir}/liblustreapi.so
-%endif
 %{_includedir}/lustre
 %if %{with lustre_modules}
 %{_includedir}/linux/lnet
@@ -698,7 +695,7 @@ echo '%{_libdir}/lustre/tests/lutf/*' >>lustre-tests.files
 %endif
 
 %if %{with shared}
-%{_libdir}/liblustreapi.so.*
+%{_libdir}/liblustreapi.so*
 %endif
 %{_sysconfdir}/udev/rules.d/99-lustre.rules
 %if %{with servers}
