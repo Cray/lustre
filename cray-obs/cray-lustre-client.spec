@@ -24,6 +24,8 @@ BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
+BuildRequires: cray-kfabric-devel
+Requires: cray-kfabric-kmp
 BuildRequires: mlnx-ofa_kernel-devel
 
 # Vendor specific requires/defines/etc.
@@ -136,6 +138,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{name}-%{version}/Makefile ];then
 		--enable-client \
 		--with-kmp-moddir=%{kmoddir}/%{name} \
 		--with-o2ib=${O2IBPATH} \
+		--with-kfi=/usr/src/kfabric/%{flavor} \
 		%{_with_linux} %{?_with_linux_obj}
 fi
 %{__make} %_smp_mflags
