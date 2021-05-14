@@ -31,6 +31,8 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 BuildRequires: %kernel_module_package_buildreqs
 BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
+BuildRequires: cray-kfabric-devel
+Requires: cray-kfabric-kmp
 %if %{with shasta}
 BuildRequires: mlnx-ofa_kernel-devel
 %if %{_vendor} == "redhat"
@@ -130,6 +132,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{name}-%{version}/Makefile ];then
 		--enable-client \
 		--with-kmp-moddir=%{kmoddir}/%{name} \
 		--with-o2ib=${O2IBPATH} \
+		--with-kfi=/usr/src/kfabric/%{flavor} \
 		%{_with_linux} %{?_with_linux_obj}
 fi
 %{__make} %_smp_mflags
