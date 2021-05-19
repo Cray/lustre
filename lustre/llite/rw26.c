@@ -520,7 +520,8 @@ out:
 			vio->u.readwrite.vui_written += tot_bytes;
 		else
 			vio->u.readwrite.vui_read += tot_bytes;
-		result = -EIOCBQUEUED;
+		if (result == 0)
+			result = -EIOCBQUEUED;
 	}
 
 	if (rw == READ)
