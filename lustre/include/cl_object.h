@@ -2492,11 +2492,12 @@ void cl_req_attr_set(const struct lu_env *env, struct cl_object *obj,
  * @{ */
 
 struct cl_sync_io;
+struct cl_dio_aio;
 
 typedef void (cl_sync_io_end_t)(const struct lu_env *, struct cl_sync_io *);
 
 void cl_sync_io_init_notify(struct cl_sync_io *anchor, int nr,
-			    cl_sync_io_end_t *end);
+			    struct cl_dio_aio *aio, cl_sync_io_end_t *end);
 
 int  cl_sync_io_wait(const struct lu_env *env, struct cl_sync_io *anchor,
 		     long timeout);
@@ -2504,7 +2505,7 @@ void cl_sync_io_note(const struct lu_env *env, struct cl_sync_io *anchor,
 		     int ioret);
 static inline void cl_sync_io_init(struct cl_sync_io *anchor, int nr)
 {
-	cl_sync_io_init_notify(anchor, nr, NULL);
+	cl_sync_io_init_notify(anchor, nr, NULL, NULL);
 }
 
 /**
@@ -2524,6 +2525,16 @@ struct cl_sync_io {
 	cl_sync_io_end_t       *csi_end_io;
 	pgoff_t csi_lowest_failed;
 	pgoff_t csi_highest_success;
+	/** aio private data */
+	struct cl_dio_aio      *csi_aio;
+};
+
+/** To support Direct AIO */
+struct cl_dio_aio {
+	struct cl_sync_io	cda_sync;
+	struct cl_page_list	cda_pages;
+	struct kiocb		*cda_iocb;
+	ssize_t			cda_bytes;
 };
 
 /** @} cl_sync_io */
