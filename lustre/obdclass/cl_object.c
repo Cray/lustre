@@ -60,6 +60,7 @@
 static struct kmem_cache *cl_env_kmem;
 struct kmem_cache *cl_page_kmem_array[16];
 unsigned short cl_page_kmem_size_array[16];
+struct kmem_cache *cl_dio_aio_kmem;
 
 /** Lock class of cl_object_header::coh_attr_guard */
 static struct lock_class_key cl_attr_guard_class;
@@ -1050,14 +1051,19 @@ static struct lu_context_key cl_key = {
 };
 
 static struct lu_kmem_descr cl_object_caches[] = {
-        {
-                .ckd_cache = &cl_env_kmem,
-                .ckd_name  = "cl_env_kmem",
-                .ckd_size  = sizeof (struct cl_env)
-        },
-        {
-                .ckd_cache = NULL
-        }
+	{
+		.ckd_cache = &cl_env_kmem,
+		.ckd_name  = "cl_env_kmem",
+		.ckd_size  = sizeof(struct cl_env)
+	},
+	{
+		.ckd_cache = &cl_dio_aio_kmem,
+		.ckd_name  = "cl_dio_aio_kmem",
+		.ckd_size  = sizeof(struct cl_dio_aio)
+	},
+	{
+		.ckd_cache = NULL
+	}
 };
 
 /**
