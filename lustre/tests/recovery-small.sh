@@ -3098,6 +3098,17 @@ test_141() {
 }
 run_test 141 "do not lose locks on MGS restart"
 
+test_145() {
+	remount_client $MOUNT
+
+	replay_barrier_nosync mds1
+
+	fail_nodf mds1
+
+	ls $MOUNT || error "ls failed"
+}
+run_test 145 "failover after client remount"
+
 complete $SECONDS
 check_and_cleanup_lustre
 exit_status
