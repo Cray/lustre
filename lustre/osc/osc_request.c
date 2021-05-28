@@ -2365,6 +2365,34 @@ out:
 	RETURN(rc);
 }
 
+/* This is to refresh our lock in face of no RPCs. */
+void osc_send_empty_rpc(struct osc_object *osc, pgoff_t start)
+{
+	struct ptlrpc_request *req;
+	struct obdo oa;
+	struct brw_page bpg = { .off = start, .count = 1};
+	struct brw_page *pga = &bpg;
+	int rc;
+
+	memset(&oa, 0, sizeof(oa));
+	oa.o_oi = osc->oo_oinfo->loi_oi;
+	oa.o_valid = OBD_MD_FLID | OBD_MD_FLGROUP | OBD_MD_FLFLAGS;
+	/* For updated servers - don't do a read */
+	oa.o_flags = OBD_FL_NORPC;
+
+	rc = osc_brw_prep_request(OBD_BRW_READ, osc_cli(osc), &oa, 1, &pga,
+				  &req, 0);
+
+	/* If we succeeded we ship it off, if not there's no point in doing
+	 * anything. Also no resends.
+	 * No interpret callback, no commit callback.
+	 */
+	if (!rc) {
+		req->rq_no_resend = 1;
+		ptlrpcd_add_req(req);
+	}
+}
+
 static int osc_set_lock_data(struct ldlm_lock *lock, void *data)
 {
         int set = 0;
