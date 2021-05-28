@@ -1851,6 +1851,9 @@ struct cl_io {
 			enum lu_ladvise_type	 li_advice;
 			__u64			 li_flags;
 		} ci_ladvise;
+		struct cl_misc_io {
+			time64_t		 lm_next_rpc_time;
+		} ci_misc;
         } u;
         struct cl_2queue     ci_queue;
         size_t               ci_nob;
