@@ -8997,6 +8997,19 @@ test_129()
 }
 run_test 129 "attempt to connect an OST with the same index should fail"
 
+test_130()
+{
+        [ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs"
+	start_mds || error "MDS start failed"
+	stop_mdt 2
+	do_facet mds2 "$TUNEFS --writeconf $(mdsdevname 2)"
+	start_mdt 2 || error "mds2 start failed"
+	do_facet mds2 "$LCTL dl" | grep MDT0001-osp-MDT0001 &&
+		error "Illegal OSP device created"
+	stop_mds
+}
+run_test 130 "re-register an MDT after writeconf"
+
 if ! combined_mgs_mds ; then
 	stop mgs
 fi
