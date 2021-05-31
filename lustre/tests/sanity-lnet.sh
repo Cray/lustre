@@ -1853,6 +1853,34 @@ test_211() {
 }
 run_test 211 "Remote NI recovery checks"
 
+test_213() {
+	have_interface "eth0" || skip "Need eth0 interface with ipv4 configured"
+
+	cleanup_netns || error "Failed to cleanup netns before test execution"
+	cleanup_lnet || error "Failed to unload modules before test execution"
+
+	setup_fakeif || error "Failed to add fake IF"
+	have_interface "$FAKE_IF" ||
+		error "Expect $FAKE_IF configured but not found"
+
+	reinit_dlc || return $?
+
+	add_net "tcp" "eth0" || return $?
+	add_net "tcp" "$FAKE_IF" || return $?
+
+	local nid1=$(lctl list_nids | head -n 1)
+	local nid2=$(lctl list_nids | tail --lines 1)
+
+	[[ $(lctl which_nid $nid1 $nid2) == $nid1 ]] ||
+		error "Expect nid1 \"$nid1\" to be preferred"
+
+	[[ $(lctl which_nid $nid2 $nid1) == $nid2 ]] ||
+		error "Expect nid2 \"$nid2\" to be preferred"
+
+	return 0
+}
+run_test 213 "Check LNetDist calculation for multiple local NIDs"
+
 complete $SECONDS
 
 cleanup_testsuite
