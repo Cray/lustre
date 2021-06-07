@@ -983,6 +983,7 @@ int target_handle_connect(struct ptlrpc_request *req)
         struct obd_connect_data *data, *tmpdata;
         int size, tmpsize;
         lnet_nid_t *client_nid = NULL;
+	struct ptlrpc_connection *pcon = NULL;
 	ENTRY;
 
         OBD_RACE(OBD_FAIL_TGT_CONN_RACE);
@@ -1345,7 +1346,19 @@ dont_check_exports:
          */
 	ptlrpc_request_change_export(req, export);
 
+	pcon = ptlrpc_connection_get(req->rq_peer,
+				     req->rq_self,
+				     &cluuid);
+	if (pcon == NULL)
+		GOTO(out, rc = -ENOTCONN);
+
 	spin_lock(&export->exp_lock);
+
+	if (export->exp_disconnected) {
+		spin_unlock(&export->exp_lock);
+		GOTO(out, rc = -ENODEV);
+	}
+
 	if (export->exp_conn_cnt >= lustre_msg_get_conn_cnt(req->rq_reqmsg)) {
 		spin_unlock(&export->exp_lock);
 		CDEBUG(D_RPCTRACE, "%s: %s already connected at greater "
@@ -1358,26 +1371,30 @@ dont_check_exports:
 	}
 	LASSERT(lustre_msg_get_conn_cnt(req->rq_reqmsg) > 0);
 	export->exp_conn_cnt = lustre_msg_get_conn_cnt(req->rq_reqmsg);
-	spin_unlock(&export->exp_lock);
 
-	if (export->exp_connection != NULL) {
-		/* Check to see if connection came from another NID. */
-		if ((export->exp_connection->c_peer.nid != req->rq_peer.nid) &&
-		    !hlist_unhashed(&export->exp_nid_hash))
+	/* Check to see if connection came from another NID. */
+	if (export->exp_connection != NULL &&
+	    export->exp_connection->c_peer.nid != req->rq_peer.nid) {
+		if (!hlist_unhashed(&export->exp_nid_hash))
 			cfs_hash_del(export->exp_obd->obd_nid_hash,
 				     &export->exp_connection->c_peer.nid,
 				     &export->exp_nid_hash);
 
 		ptlrpc_connection_put(export->exp_connection);
+
+		export->exp_connection = NULL;
 	}
 
-	export->exp_connection = ptlrpc_connection_get(req->rq_peer,
-						       req->rq_self,
-						       &cluuid);
+	if (export->exp_connection == NULL) {
+		export->exp_connection = pcon;
+		pcon = NULL;
+	}
+
 	if (hlist_unhashed(&export->exp_nid_hash))
 		cfs_hash_add(export->exp_obd->obd_nid_hash,
 			     &export->exp_connection->c_peer.nid,
 			     &export->exp_nid_hash);
+	spin_unlock(&export->exp_lock);
 
 	lustre_msg_set_handle(req->rq_repmsg, &conn);
 
@@ -1450,6 +1467,10 @@ out:
 		spin_unlock(&target->obd_dev_lock);
 		class_decref(target, "find", current);
 	}
+
+	if (pcon)
+		ptlrpc_connection_put(pcon);
+
 	req->rq_status = rc;
 	RETURN(rc);
 }
