@@ -2267,6 +2267,82 @@ ksocknal_free_buffers (void)
 	}
 }
 
+static int ksocknal_get_link_status(struct net_device *dev)
+{
+	int ret = -1;
+
+	LASSERT(dev);
+
+	if (!netif_running(dev))
+		ret = 0;
+	/* Some devices may not be providing link settings */
+	else if (dev->ethtool_ops->get_link)
+		ret = dev->ethtool_ops->get_link(dev);
+
+	return ret;
+}
+
+static int
+ksocknal_handle_link_state_change(struct net_device *dev,
+				  unsigned char operstate)
+{
+	struct lnet_ni *ni;
+	struct ksock_net *net;
+	struct ksock_net *cnxt;
+	int ifindex;
+	int i;
+	unsigned char link_down = !(operstate == IF_OPER_UP);
+
+	ifindex = dev->ifindex;
+
+	if (!ksocknal_data.ksnd_nnets)
+		goto out;
+
+	list_for_each_entry_safe(net, cnxt, &ksocknal_data.ksnd_nets,
+				 ksnn_list) {
+		for (i = 0; i < net->ksnn_ninterfaces; i++) {
+			if (strcmp(net->ksnn_interfaces[i].ksni_name,
+			    dev->name) != 0)
+				continue;
+			ni = net->ksnn_ni;
+			if (link_down)
+				atomic_set(&ni->ni_fatal_error_on, link_down);
+			else
+				atomic_set(&ni->ni_fatal_error_on,
+					   (ksocknal_get_link_status(dev) == 0));
+		}
+	}
+out:
+	return 0;
+}
+
+
+/************************************
+ * Net device notifier event handler
+ ************************************/
+static int ksocknal_device_event(struct notifier_block *unused,
+				 unsigned long event, void *ptr)
+{
+	struct net_device *dev = netdev_notifier_info_to_dev(ptr);
+	unsigned char operstate;
+
+	operstate = dev->operstate;
+
+	switch (event) {
+	case NETDEV_UP:
+	case NETDEV_DOWN:
+	case NETDEV_CHANGE:
+		ksocknal_handle_link_state_change(dev, operstate);
+		break;
+	}
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block ksocknal_notifier_block = {
+	.notifier_call = ksocknal_device_event,
+};
+
 static void
 ksocknal_base_shutdown(void)
 {
@@ -2276,6 +2352,9 @@ ksocknal_base_shutdown(void)
 	CDEBUG(D_MALLOC, "before NAL cleanup: kmem %d\n",
 	       atomic_read (&libcfs_kmemory));
 	LASSERT (ksocknal_data.ksnd_nnets == 0);
+
+	if (ksocknal_data.ksnd_init == SOCKNAL_INIT_ALL)
+		unregister_netdevice_notifier(&ksocknal_notifier_block);
 
 	switch (ksocknal_data.ksnd_init) {
 	default:
@@ -2460,6 +2539,8 @@ ksocknal_base_startup(void)
                 CERROR ("Can't spawn socknal reaper: %d\n", rc);
                 goto failed;
         }
+
+	register_netdevice_notifier(&ksocknal_notifier_block);
 
         /* flag everything initialised */
         ksocknal_data.ksnd_init = SOCKNAL_INIT_ALL;
@@ -2813,8 +2894,8 @@ ksocknal_startup(struct lnet_ni *ni)
 	LASSERT(ksi);
 	ni->ni_nid = LNET_MKNID(LNET_NIDNET(ni->ni_nid), ksi->ksni_ipaddr);
 	list_add(&net->ksnn_list, &ksocknal_data.ksnd_nets);
-
-        ksocknal_data.ksnd_nnets++;
+	net->ksnn_ni = ni;
+	ksocknal_data.ksnd_nnets++;
 
         return 0;
 
