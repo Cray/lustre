@@ -199,7 +199,7 @@ EXPORT_SYMBOL(tgt_pool_remove);
 
 int tgt_check_index(int idx, struct ost_pool *osts)
 {
-	int rc, i;
+	int i, rc = -ENOENT;
 	ENTRY;
 
 	down_read(&osts->op_rw_sem);
@@ -207,7 +207,6 @@ int tgt_check_index(int idx, struct ost_pool *osts)
 		if (osts->op_array[i] == idx)
 			GOTO(out, rc = 0);
 	}
-	rc = -ENOENT;
 	EXIT;
 out:
 	up_read(&osts->op_rw_sem);
@@ -223,15 +222,13 @@ EXPORT_SYMBOL(tgt_check_index);
  * deleted from memory.
  *
  * \param[in] op	pool to be freed.
- *
- * \retval		0 on success or if pool was already freed
  */
-int tgt_pool_free(struct ost_pool *op)
+void tgt_pool_free(struct ost_pool *op)
 {
 	ENTRY;
 
 	if (op->op_size == 0)
-		RETURN(0);
+		RETURN_EXIT;
 
 	down_write(&op->op_rw_sem);
 
@@ -241,6 +238,6 @@ int tgt_pool_free(struct ost_pool *op)
 	op->op_size = 0;
 
 	up_write(&op->op_rw_sem);
-	RETURN(0);
+	EXIT;
 }
 EXPORT_SYMBOL(tgt_pool_free);
