@@ -83,7 +83,7 @@ struct ost_pool {
 int tgt_pool_init(struct ost_pool *op, unsigned int count);
 int tgt_pool_add(struct ost_pool *op, __u32 idx, unsigned int min_count);
 int tgt_pool_remove(struct ost_pool *op, __u32 idx);
-int tgt_pool_free(struct ost_pool *op);
+void tgt_pool_free(struct ost_pool *op);
 int tgt_check_index(int idx, struct ost_pool *osts);
 int tgt_pool_extend(struct ost_pool *op, unsigned int min_count);
 
