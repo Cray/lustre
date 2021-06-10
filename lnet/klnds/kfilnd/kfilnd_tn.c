@@ -453,13 +453,20 @@ static int kfilnd_tn_cancel_tag_recv(struct kfilnd_transaction *tn)
 	return 0;
 }
 
+static void kfilnd_tn_timeout_work(struct work_struct *work)
+{
+	struct kfilnd_transaction *tn =
+		container_of(work, struct kfilnd_transaction, timeout_work);
+
+	KFILND_TN_ERROR(tn, "Bulk operation timeout");
+	kfilnd_tn_event_handler(tn, TN_EVENT_TIMEOUT, 0);
+}
+
 static void kfilnd_tn_timeout(cfs_timer_cb_arg_t data)
 {
 	struct kfilnd_transaction *tn = cfs_from_timer(tn, data, timeout_timer);
 
-	KFILND_TN_ERROR(tn, "Bulk operation timeout");
-
-	kfilnd_tn_event_handler(tn, TN_EVENT_TIMEOUT, 0);
+	queue_work(kfilnd_wq, &tn->timeout_work);
 }
 
 static bool kfilnd_tn_timeout_cancel(struct kfilnd_transaction *tn)
@@ -1324,6 +1331,7 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 	tn->hstatus = LNET_MSG_STATUS_OK;
 	tn->deadline = ktime_get_seconds() + lnet_get_lnd_timeout();
 	tn->is_initiator = is_initiator;
+	INIT_WORK(&tn->timeout_work, kfilnd_tn_timeout_work);
 
 	/* Add the transaction to an endpoint.  This is like
 	 * incrementing a ref counter.
