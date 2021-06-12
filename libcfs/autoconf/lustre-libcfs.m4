@@ -1273,6 +1273,46 @@ EXTRA_KCFLAGS="$tmp_flags"
 ]) # LIBCFS_TCP_SOCK_SET_KEEPCNT
 
 #
+# LIBCFS_TCP_SOCK_SET_NODELAY
+#
+# kernel 4.18.0-293.el8
+# tcp_sock_set_nodelay() was added
+AC_DEFUN([LIBCFS_TCP_SOCK_SET_NODELAY], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'tcp_sock_set_nodelay()' exists],
+tcp_sock_set_nodelay_exists, [
+	#include <linux/tcp.h>
+],[
+	tcp_sock_set_nodelay(NULL);
+],[
+	AC_DEFINE(HAVE_TCP_SOCK_SET_NODELAY, 1,
+		['tcp_sock_set_nodelay()' exists])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_TCP_SOCK_SET_NODELAY
+
+#
+# LIBCFS_TCP_SOCK_SET_KEEPIDLE
+#
+# kernel 4.18.0-293.el8
+# tcp_sock_set_keepidle() was added
+AC_DEFUN([LIBCFS_TCP_SOCK_SET_KEEPIDLE], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'tcp_sock_set_keepidle()' exists],
+tcp_sock_set_keepidle_exists, [
+	#include <linux/tcp.h>
+],[
+	tcp_sock_set_keepidle(NULL, 0);
+],[
+	AC_DEFINE(HAVE_TCP_SOCK_SET_KEEPIDLE, 1,
+		['tcp_sock_set_keepidle()' exists])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_TCP_SOCK_SET_KEEPIDLE
+
+#
 # LIBCFS_HAVE_IOV_ITER_TYPE
 #
 # kernel 4.20 commit 00e23707442a75b404392cef1405ab4fd498de6b
@@ -1589,6 +1629,9 @@ LIBCFS_TIMER_SETUP
 LIBCFS_WAIT_VAR_EVENT
 # 4.17
 LIBCFS_CLEAR_AND_WAKE_UP_BIT
+# 4.18
+LIBCFS_TCP_SOCK_SET_NODELAY
+LIBCFS_TCP_SOCK_SET_KEEPIDLE
 # 4.20
 LIBCFS_HAVE_IOV_ITER_TYPE
 # 5.0

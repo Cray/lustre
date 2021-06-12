@@ -37,6 +37,7 @@ static inline void tcp_sock_set_quickack(struct sock *sk, int opt)
 }
 #endif /* HAVE_TCP_SOCK_SET_QUICKACK */
 
+#if !defined(HAVE_TCP_SOCK_SET_NODELAY)
 static inline void tcp_sock_set_nodelay(struct sock *sk)
 {
 	int opt = 1;
@@ -45,7 +46,9 @@ static inline void tcp_sock_set_nodelay(struct sock *sk)
 	kernel_setsockopt(sock, SOL_TCP, TCP_NODELAY,
 			  (char *)&opt, sizeof(opt));
 }
+#endif /* HAVE_TCP_SOCK_SET_NODELAY */
 
+#if !defined(HAVE_TCP_SOCK_SET_KEEPIDLE)
 static inline int tcp_sock_set_keepidle(struct sock *sk, int opt)
 {
 	struct socket *sock = sk->sk_socket;
@@ -53,6 +56,7 @@ static inline int tcp_sock_set_keepidle(struct sock *sk, int opt)
 	return kernel_setsockopt(sock, SOL_TCP, TCP_KEEPIDLE,
 				 (char *)&opt, sizeof(opt));
 }
+#endif /* HAVE_TCP_SOCK_SET_KEEPIDLE */
 
 #if !defined(HAVE_TCP_SOCK_SET_KEEPINTVL)
 static inline int tcp_sock_set_keepintvl(struct sock *sk, int opt)
