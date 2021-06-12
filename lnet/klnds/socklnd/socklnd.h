@@ -61,6 +61,7 @@
 # define cfs_tcp_sendpage(sk, page, offset, size, flags) \
 	tcp_sendpage(sk, page, offset, size, flags)
 #endif /* HAVE_TCP_SENDPAGE_USE_SOCKET */
+#include <libcfs/linux/linux-net.h>
 
 #ifndef NETIF_F_CSUM_MASK
 # define NETIF_F_CSUM_MASK NETIF_F_ALL_CSUM
