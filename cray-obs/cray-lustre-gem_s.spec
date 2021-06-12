@@ -200,7 +200,7 @@ for header in bitmap.h curproc.h libcfs_cpu.h libcfs_debug.h \
 	      libcfs_prim.h libcfs_private.h libcfs_string.h  \
 	      libcfs_workitem.h range_lock.h \
 	      linux-cpu.h linux-crypto.h linux-fs.h linux-hash.h linux-list.h \
-	      linux-mem.h linux-misc.h linux-time.h linux-wait.h
+	      linux-mem.h linux-misc.h linux-time.h linux-wait.h linux-percpu-refcount.h
 do
     found=`find %{_builddir}/cray-lustre-%{_version}/libcfs/include/libcfs -name $header`
     if [ -n "${found}" ]; then
