@@ -159,7 +159,7 @@ do
 done
 
 for header in linux-cpu.h linux-crypto.h linux-fs.h linux-hash.h linux-list.h \
-	      linux-mem.h linux-misc.h linux-time.h linux-wait.h
+	      linux-mem.h linux-misc.h linux-time.h linux-wait.h linux-percpu-refcount.h
 do
 	%{__install} -D -m 0644 libcfs/include/libcfs/linux/${header} %{buildroot}/%{_includedir}/libcfs/linux/${header}
 done
