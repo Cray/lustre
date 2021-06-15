@@ -2739,8 +2739,8 @@ int osc_queue_sync_pages(const struct lu_env *env, struct cl_io *io,
 			list_for_each_entry(oap, list, oap_pending_item) {
 				osc_consume_write_grant(cli,
 							&oap->oap_brw_page);
-				atomic_long_inc(&obd_dirty_pages);
 			}
+			atomic_long_add(page_count, &obd_dirty_pages);
 			osc_unreserve_grant_nolock(cli, grants, 0);
 			ext->oe_grants = grants;
 		} else {
@@ -2754,6 +2754,7 @@ int osc_queue_sync_pages(const struct lu_env *env, struct cl_io *io,
 			"not enough grant available, switching to sync for this i/o\n");
 		}
 		spin_unlock(&cli->cl_loi_list_lock);
+		osc_update_next_shrink(cli);
 	}
 
 	ext->oe_nr_pages = page_count;
