@@ -7655,7 +7655,7 @@ quota_type:
 			if (!p) {
 				fprintf(stderr, "bad string format %.*s\n",
 					MAXNAMLEN, poollist[i]);
-				rc = EINVAL;
+				rc = -EINVAL;
 				goto out;
 			}
 			p++;
@@ -7672,8 +7672,7 @@ quota_type:
 	rc = get_print_quota(mnt, name, qctl, verbose, quiet,
 			     human_readable, show_default);
 out:
-	if (buf)
-		free(buf);
+	free(buf);
 	free(qctl);
 	return rc;
 }
