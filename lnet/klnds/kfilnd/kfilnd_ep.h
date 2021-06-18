@@ -9,6 +9,12 @@
 #define KFILND_BASE_ADDR(addr) \
 	((addr) & ((1UL << (64 - KFILND_FAB_RX_CTX_BITS)) - 1))
 
+struct kfilnd_ep_err_fail_loc_work {
+	struct kfilnd_ep *ep;
+	struct work_struct work;
+	struct kfi_cq_err_entry err;
+};
+
 void kfilnd_ep_dereg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,

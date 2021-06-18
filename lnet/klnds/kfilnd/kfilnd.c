@@ -136,7 +136,6 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	case KFILND_MSG_BULK_PUT_REQ:
 		/* Copy over the LNet header */
 		kfmsg->kfm_u.bulk_req.hdr = *hdr;
-
 		kfmsg->kfm_u.bulk_req.mr_key = tn->tn_mr_key;
 		kfmsg->kfm_u.bulk_req.response_rx = tn->tn_response_rx;
 
@@ -161,9 +160,9 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 			kfilnd_tn_free(tn);
 			return -EIO;
 		}
+
 		/* Copy over the LNet header */
 		kfmsg->kfm_u.bulk_req.hdr = *hdr;
-
 		kfmsg->kfm_u.bulk_req.mr_key = tn->tn_mr_key;
 		kfmsg->kfm_u.bulk_req.response_rx = tn->tn_response_rx;
 
@@ -196,7 +195,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	/* Setup remaining transaction fields */
 	tn->tn_target_nid = target.nid;
 	tn->tn_lntmsg = msg;	/* finalise msg on completion */
-	tn->lnet_msg_len = msg->msg_len;
+	tn->lnet_msg_len = tn->tn_nob;
 
 	KFILND_TN_DEBUG(tn, "%s in %u bytes in %u frags",
 			msg_type_to_str(lnd_msg_type), tn->tn_nob,
@@ -219,7 +218,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 	int nob;
 	int rc = 0;
 	int status = 0;
-	enum tn_events event = TN_EVENT_RMA_PREP;
+	enum tn_events event;
 
 	if (mlen > rlen)
 		return -EINVAL;
@@ -263,17 +262,18 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 
 	case KFILND_MSG_BULK_PUT_REQ:
 		if (mlen == 0) {
-			event = TN_EVENT_RMA_SKIP;
+			event = TN_EVENT_SKIP_TAG_RMA;
 		} else {
 			/* Post the buffer given us as a sink  */
 			tn->sink_buffer = true;
 			kfilnd_tn_set_buf(tn, kiov, iov, niov, offset, mlen);
+			event = TN_EVENT_INIT_TAG_RMA;
 		}
 		break;
 
 	case KFILND_MSG_BULK_GET_REQ:
 		if (!msg) {
-			event = TN_EVENT_RMA_SKIP;
+			event = TN_EVENT_SKIP_TAG_RMA;
 			status = -ENODATA;
 		} else {
 			/* Post the buffer given to us as a source  */
@@ -281,6 +281,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 			kfilnd_tn_set_buf(tn, msg->msg_kiov, msg->msg_iov,
 					  msg->msg_niov, msg->msg_offset,
 					  msg->msg_len);
+			event = TN_EVENT_INIT_TAG_RMA;
 		}
 		break;
 
