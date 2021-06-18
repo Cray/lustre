@@ -6,6 +6,7 @@
  */
 #include <linux/idr.h>
 #include <linux/mutex.h>
+#include <linux/byteorder/generic.h>
 
 #include "kfilnd_cq.h"
 #include "kfilnd_tn.h"
@@ -33,22 +34,16 @@ void kfilnd_cq_process_error(struct kfilnd_ep *ep,
 		return;
 
 	case KFI_TAGGED | KFI_RECV:
+	case KFI_TAGGED | KFI_RMA | KFI_READ | KFI_RECV:
+	case KFI_TAGGED | KFI_RMA | KFI_WRITE | KFI_RECV:
 		tn = error->op_context;
-
-		if (error->err != ECANCELED) {
-			kfilnd_tn_process_tagged_rx_event(tn, -error->err);
-			return;
+		if (error->err == ECANCELED) {
+			tn_event = TN_EVENT_TAG_RX_CANCEL;
+			status = 0;
+		} else {
+			tn_event = TN_EVENT_TAG_RX_FAIL;
+			status = -error->err;
 		}
-
-		tn_event = TN_EVENT_TAG_RX_CANCEL;
-		status = 0;
-		break;
-
-	case KFI_RMA | KFI_READ:
-	case KFI_RMA | KFI_WRITE:
-		tn = error->op_context;
-		tn_event = TN_EVENT_RMA_FAIL;
-		status = -error->err;
 		break;
 
 	case KFI_MSG | KFI_SEND:
@@ -58,6 +53,8 @@ void kfilnd_cq_process_error(struct kfilnd_ep *ep,
 		break;
 
 	case KFI_TAGGED | KFI_SEND:
+	case KFI_TAGGED | KFI_RMA | KFI_READ | KFI_SEND:
+	case KFI_TAGGED | KFI_RMA | KFI_WRITE | KFI_SEND:
 		tn = error->op_context;
 		tn_event = TN_EVENT_TAG_TX_FAIL;
 		status = -error->err;
@@ -76,6 +73,7 @@ static void kfilnd_cq_process_event(struct kfi_cq_data_entry *event)
 	struct kfilnd_msg *rx_msg;
 	struct kfilnd_transaction *tn;
 	enum tn_events tn_event;
+	int64_t status = 0;
 
 	switch (event->flags) {
 	case KFI_MSG | KFI_RECV:
@@ -93,14 +91,20 @@ static void kfilnd_cq_process_event(struct kfi_cq_data_entry *event)
 		return;
 
 	case KFI_TAGGED | KFI_RECV:
-		tn = event->op_context;
-		kfilnd_tn_process_tagged_rx_event(tn, 0);
-		return;
+		status = -1 * (int64_t)be64_to_cpu(event->data);
 
-	case KFI_RMA | KFI_READ:
-	case KFI_RMA | KFI_WRITE:
+		/* Fall through. */
+	case KFI_TAGGED | KFI_RMA | KFI_READ | KFI_RECV:
+	case KFI_TAGGED | KFI_RMA | KFI_WRITE | KFI_RECV:
+		tn_event = TN_EVENT_TAG_RX_OK;
 		tn = event->op_context;
-		tn_event = TN_EVENT_RMA_OK;
+		break;
+
+	case KFI_TAGGED | KFI_SEND:
+	case KFI_TAGGED | KFI_RMA | KFI_READ | KFI_SEND:
+	case KFI_TAGGED | KFI_RMA | KFI_WRITE | KFI_SEND:
+		tn = event->op_context;
+		tn_event = TN_EVENT_TAG_TX_OK;
 		break;
 
 	case KFI_MSG | KFI_SEND:
@@ -108,16 +112,11 @@ static void kfilnd_cq_process_event(struct kfi_cq_data_entry *event)
 		tn_event = TN_EVENT_TX_OK;
 		break;
 
-	case KFI_TAGGED | KFI_SEND:
-		tn = event->op_context;
-		tn_event = TN_EVENT_TAG_TX_OK;
-		break;
-
 	default:
 		LBUG();
 	}
 
-	kfilnd_tn_event_handler(tn, tn_event, 0);
+	kfilnd_tn_event_handler(tn, tn_event, status);
 }
 
 static void kfilnd_cq_process_completion(struct work_struct *work)
