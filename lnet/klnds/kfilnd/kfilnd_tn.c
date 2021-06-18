@@ -1003,6 +1003,24 @@ static void kfilnd_tn_state_wait_timeout_comp(struct kfilnd_transaction *tn,
 	}
 }
 
+static void
+(* const kfilnd_tn_state_dispatch_table[TN_STATE_MAX])(struct kfilnd_transaction *tn,
+						       enum tn_events event,
+						       int status,
+						       bool *tn_released) = {
+	[TN_STATE_IDLE] = kfilnd_tn_state_idle,
+	[TN_STATE_WAIT_TAG_COMP] = kfilnd_tn_state_wait_tag_comp,
+	[TN_STATE_IMM_SEND] = kfilnd_tn_state_imm_send,
+	[TN_STATE_WAIT_COMP] = kfilnd_tn_state_wait_comp,
+	[TN_STATE_WAIT_TIMEOUT_COMP] = kfilnd_tn_state_wait_timeout_comp,
+	[TN_STATE_WAIT_SEND_COMP] = kfilnd_tn_state_wait_send_comp,
+	[TN_STATE_WAIT_TIMEOUT_TAG_COMP] =
+		kfilnd_tn_state_wait_timeout_tag_comp,
+	[TN_STATE_FAIL] = kfilnd_tn_state_fail,
+	[TN_STATE_IMM_RECV] = kfilnd_tn_state_imm_recv,
+	[TN_STATE_WAIT_TAG_RMA_COMP] = kfilnd_tn_state_wait_tag_rma_comp,
+};
+
 /**
  * kfilnd_tn_event_handler() - Update transaction state machine with an event.
  * @tn: Transaction to be updated.
@@ -1023,46 +1041,8 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 		return;
 
 	mutex_lock(&tn->tn_lock);
-
-	switch (tn->tn_state) {
-	case TN_STATE_IDLE:
-		kfilnd_tn_state_idle(tn, event, status, &tn_released);
-		break;
-	case TN_STATE_IMM_SEND:
-		kfilnd_tn_state_imm_send(tn, event, status, &tn_released);
-		break;
-	case TN_STATE_WAIT_COMP:
-		kfilnd_tn_state_wait_comp(tn, event, status, &tn_released);
-		break;
-	case TN_STATE_WAIT_SEND_COMP:
-		kfilnd_tn_state_wait_send_comp(tn, event, status, &tn_released);
-		break;
-	case TN_STATE_FAIL:
-		kfilnd_tn_state_fail(tn, event, status, &tn_released);
-		break;
-	case TN_STATE_IMM_RECV:
-		kfilnd_tn_state_imm_recv(tn, event, status, &tn_released);
-		break;
-	case TN_STATE_WAIT_TAG_RMA_COMP:
-		kfilnd_tn_state_wait_tag_rma_comp(tn, event, status,
-						  &tn_released);
-		break;
-	case TN_STATE_WAIT_TAG_COMP:
-		kfilnd_tn_state_wait_tag_comp(tn, event, status, &tn_released);
-		break;
-	case TN_STATE_WAIT_TIMEOUT_COMP:
-		kfilnd_tn_state_wait_timeout_comp(tn, event, status,
-						  &tn_released);
-		break;
-	case TN_STATE_WAIT_TIMEOUT_TAG_COMP:
-		kfilnd_tn_state_wait_timeout_tag_comp(tn, event, status,
-						      &tn_released);
-		break;
-	default:
-		KFILND_TN_ERROR(tn, "Transaction in unknown state");
-		LBUG();
-	}
-
+	kfilnd_tn_state_dispatch_table[tn->tn_state](tn, event, status,
+						     &tn_released);
 	if (!tn_released)
 		mutex_unlock(&tn->tn_lock);
 }
