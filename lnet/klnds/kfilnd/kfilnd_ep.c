@@ -7,7 +7,6 @@
 #include "kfilnd_dev.h"
 #include "kfilnd_tn.h"
 #include "kfilnd_cq.h"
-#include "kfilnd_eq.h"
 
 /**
  * kfilnd_ep_post_recv() - Post a single receive buffer.
@@ -102,100 +101,30 @@ void kfilnd_ep_cancel_imm_buffers(struct kfilnd_ep *ep)
 	}
 }
 
-/**
- * kfilnd_ep_dereg_mr() - Deregister a memory region from an endpoint.
- * @ep: KFI LND endpoint used to allocate the memory region.
- * @tn: The transaction structure containing the memory region t be
- * deregistered.
- */
-void kfilnd_ep_dereg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
+static void kfilnd_ep_err_fail_loc_work(struct work_struct *work)
 {
-	if (!ep || !tn || !tn->tn_mr)
-		return;
+	struct kfilnd_ep_err_fail_loc_work *err =
+		container_of(work, struct kfilnd_ep_err_fail_loc_work, work);
 
-	kfi_close(&tn->tn_mr->fid);
+	kfilnd_cq_process_error(err->ep, &err->err);
+	kfree(err);
 }
 
-/**
- * kfilnd_ep_reg_mr() - Register a memory region against an endpoint.
- * @ep: KFI LND endpoint used to register the memory region.
- * @tn: The transaction structure containing the buffer to be registered.
- *
- * This function will make a transaction buffer targetable on the fabric for
- * read and/or write operations. The remote key used for the MR is the cookie
- * stored in the transaction.
- *
- * If the KFI domain is configured for memory register events, registration is
- * not complete until a event occurs on the KFI domain event queue.
- *
- * Return: On success, zero. Else, negative errno value.
- */
-int kfilnd_ep_reg_mr(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
+static int kfilnd_ep_gen_fake_err(struct kfilnd_ep *ep,
+				  const struct kfi_cq_err_entry *err)
 {
-	uint64_t access;
-	int rc;
-	struct kfi_eq_err_entry fake_error;
+	struct kfilnd_ep_err_fail_loc_work *fake_err;
 
-	if (!ep || !tn)
-		return -EINVAL;
+	fake_err = kmalloc(sizeof(*fake_err), GFP_KERNEL);
+	if (!fake_err)
+		return -ENOMEM;
 
-	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_REG_MR)) {
-		if (sync_mr_reg)
-			return -EIO;
-
-		fake_error.context = tn;
-		fake_error.err = EIO;
-
-		kfilnd_eq_process_error(&fake_error);
-
-		return 0;
-	}
-
-	/* Determine access setting based on whether this is a sink or source.
-	 */
-	access = tn->sink_buffer ? KFI_REMOTE_WRITE : KFI_REMOTE_READ;
-
-	/* Use the kfabric API to register buffer for RMA target. */
-	if (tn->tn_buf_type == TN_BUF_KIOV)
-		rc = kfi_mr_regbv(ep->end_dev->dom->domain,
-				  (struct bio_vec *)tn->tn_buf.kiov,
-				  tn->tn_num_iovec, access, 0, tn->tn_mr_key, 0,
-				  &tn->tn_mr, tn);
-	else
-		rc = kfi_mr_regv(ep->end_dev->dom->domain, tn->tn_buf.iov,
-				 tn->tn_num_iovec, access, 0, tn->tn_mr_key, 0,
-				 &tn->tn_mr, tn);
-	if (rc) {
-		KFILND_EP_ERROR(ep, "Failed to allocate memory region %d", rc);
-		goto err;
-	}
-
-	/* The MR needs to be bound to the RX context which owns it. */
-	rc = kfi_mr_bind(tn->tn_mr, &ep->end_rx->fid, 0);
-	if (rc) {
-		KFILND_EP_ERROR(ep, "Failed to bind memory region to endpoint %d",
-				rc);
-		goto err_free_mr;
-	}
-
-	rc = kfi_mr_enable(tn->tn_mr);
-	if (rc) {
-		KFILND_EP_ERROR(ep, "Failed to enable memory region %d", rc);
-		goto err_free_mr;
-	}
-
-	KFILND_EP_DEBUG(ep,
-			"Transaction ID %u: Memory region of %u bytes in %u frags with key 0x%x allocated",
-			tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
-			tn->tn_mr_key);
+	fake_err->ep = ep;
+	fake_err->err = *err;
+	INIT_WORK(&fake_err->work, kfilnd_ep_err_fail_loc_work);
+	queue_work(kfilnd_wq, &fake_err->work);
 
 	return 0;
-
-err_free_mr:
-	kfi_close(&tn->tn_mr->fid);
-	tn->tn_mr = NULL;
-err:
-	return rc;
 }
 
 /**
@@ -211,17 +140,10 @@ err:
 int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,
 			       struct kfilnd_transaction *tn)
 {
-	const struct kvec iov = {
-		.iov_base = tn->tn_tx_msg.msg,
-		.iov_len = tn->tn_tx_msg.length,
-	};
-	const struct kfi_msg_tagged msg = {
-		.type = KFI_KVEC,
-		.msg_iov = &iov,
-		.iov_count = 1,
-		.addr = tn->tn_target_addr,
-		.tag = tn->tn_response_mr_key,
-		.context = tn,
+	struct kfi_cq_err_entry fake_error = {
+		.op_context = tn,
+		.flags = KFI_TAGGED | KFI_SEND,
+		.err = EIO,
 	};
 	int rc;
 
@@ -232,15 +154,27 @@ int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
 
-	rc = kfi_tsendmsg(ep->end_tx, &msg, KFI_COMPLETION);
+	/* Progress transaction to failure if send should fail. */
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_SEND_EVENT)) {
+		rc = kfilnd_ep_gen_fake_err(ep, &fake_error);
+		if (!rc)
+			return 0;
+	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_SEND)) {
+		return -EAGAIN;
+	}
+
+	rc = kfi_tsenddata(ep->end_tx, NULL, 0, NULL, tn->tagged_data,
+			   tn->tn_target_addr, tn->tn_response_mr_key, tn);
 	if (rc) {
 		KFILND_EP_ERROR(ep,
-				"Transaction ID %u: Failed to post tagged send of %lu bytes with tag 0x%llx to peer 0x%llx",
-				tn->tn_mr_key, iov.iov_len, msg.tag, msg.addr);
+				"Transaction ID %u: Failed to post tagged send with tag 0x%x to peer 0x%llx",
+				tn->tn_mr_key, tn->tn_response_mr_key,
+				tn->tn_target_addr);
 	} else {
 		KFILND_EP_DEBUG(ep,
-				"Transaction ID %u: Posted tagged send of %lu bytes with tag 0x%llx to peer 0x%llx",
-				tn->tn_mr_key, iov.iov_len, msg.tag, msg.addr);
+				"Transaction ID %u: Posted tagged send of with tag 0x%x to peer 0x%llx",
+				tn->tn_mr_key, tn->tn_response_mr_key,
+				tn->tn_target_addr);
 	}
 
 	return rc;
@@ -288,14 +222,7 @@ int kfilnd_ep_cancel_tagged_recv(struct kfilnd_ep *ep,
 int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 			       struct kfilnd_transaction *tn)
 {
-	const struct kvec iov = {
-		.iov_base = tn->tn_tag_rx_msg.msg,
-		.iov_len = tn->tn_tag_rx_msg.length,
-	};
-	const struct kfi_msg_tagged msg = {
-		.type = KFI_KVEC,
-		.msg_iov = &iov,
-		.iov_count = 1,
+	struct kfi_msg_tagged msg = {
 		.tag = tn->tn_mr_key,
 		.context = tn,
 	};
@@ -314,20 +241,34 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 		return -EINVAL;
 
 	/* Progress transaction to failure if send should fail. */
-	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_RECV)) {
-		kfilnd_cq_process_error(ep, &fake_error);
-		return 0;
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_RECV_EVENT)) {
+		rc = kfilnd_ep_gen_fake_err(ep, &fake_error);
+		if (!rc)
+			return 0;
+	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_RECV)) {
+		return -EAGAIN;
+	}
+
+	msg.iov_count = tn->tn_num_iovec;
+	if (tn->tn_buf_type == TN_BUF_KIOV) {
+		msg.type = KFI_BVEC;
+		msg.msg_biov = (struct bio_vec *)tn->tn_buf.kiov;
+	} else {
+		msg.type = KFI_KVEC;
+		msg.msg_iov = tn->tn_buf.iov;
 	}
 
 	rc = kfi_trecvmsg(ep->end_rx, &msg, KFI_COMPLETION);
 	if (rc) {
 		KFILND_EP_ERROR(ep,
-				"Transaction ID %u: Failed to post tagged recv of %lu bytes with tag 0x%llx",
-				tn->tn_mr_key, iov.iov_len, msg.tag);
+				"Transaction ID %u: Failed to post tagged recv of %u bytes (%u frags) with tag 0x%llx",
+				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
+				msg.tag);
 	} else {
 		KFILND_EP_DEBUG(ep,
-				"Transaction ID %u: Posted tagged recv of %lu bytes with tag 0x%llx",
-				tn->tn_mr_key, iov.iov_len, msg.tag);
+				"Transaction ID %u: Posted tagged recv of %u bytes (%u frags) with tag 0x%llx",
+				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
+				msg.tag);
 	}
 
 	return rc;
@@ -365,9 +306,12 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		return -EINVAL;
 
 	/* Progress transaction to failure if send should fail. */
-	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND)) {
-		kfilnd_cq_process_error(ep, &fake_error);
-		return 0;
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND_EVENT)) {
+		rc = kfilnd_ep_gen_fake_err(ep, &fake_error);
+		if (!rc)
+			return 0;
+	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND)) {
+		return -EAGAIN;
 	}
 
 	rc = kfi_send(ep->end_tx, buf, len, NULL, tn->tn_target_addr, tn);
@@ -403,8 +347,18 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	int rc;
 	struct kfi_cq_err_entry fake_error = {
 		.op_context = tn,
-		.flags = KFI_RMA | KFI_WRITE,
+		.flags = KFI_TAGGED | KFI_RMA | KFI_WRITE | KFI_SEND,
 		.err = EIO,
+	};
+	struct kfi_rma_iov rma_iov = {
+		.len = tn->tn_nob,
+		.key = tn->tn_response_mr_key,
+	};
+	struct kfi_msg_rma rma = {
+		.addr = tn->tn_target_addr,
+		.rma_iov = &rma_iov,
+		.rma_iov_count = 1,
+		.context = tn,
 	};
 
 	if (!ep || !tn)
@@ -415,20 +369,24 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		return -EINVAL;
 
 	/* Progress transaction to failure if read should fail. */
-	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE)) {
-		kfilnd_cq_process_error(ep, &fake_error);
-		return 0;
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE_EVENT)) {
+		rc = kfilnd_ep_gen_fake_err(ep, &fake_error);
+		if (!rc)
+			return 0;
+	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE)) {
+		return -EAGAIN;
 	}
 
-	if (tn->tn_buf_type == TN_BUF_KIOV)
-		rc = kfi_writebv(ep->end_tx,
-				 (struct bio_vec *)tn->tn_buf.kiov, NULL,
-				 tn->tn_num_iovec, tn->tn_target_addr,
-				 0, tn->tn_response_mr_key, tn);
-	else
-		rc = kfi_writev(ep->end_tx, tn->tn_buf.iov, NULL,
-				tn->tn_num_iovec, tn->tn_target_addr, 0,
-				tn->tn_response_mr_key, tn);
+	rma.iov_count = tn->tn_num_iovec;
+	if (tn->tn_buf_type == TN_BUF_KIOV) {
+		rma.type = KFI_BVEC;
+		rma.msg_biov = (struct bio_vec *)tn->tn_buf.kiov;
+	} else {
+		rma.type = KFI_KVEC;
+		rma.msg_iov = tn->tn_buf.iov;
+	}
+
+	rc = kfi_writemsg(ep->end_tx, &rma, KFI_TAGGED | KFI_COMPLETION);
 	if (rc) {
 		KFILND_EP_ERROR(ep,
 				"Transaction ID %u: Failed to post write of %u bytes in %u frags with key 0x%x to peer 0x%llx",
@@ -462,8 +420,18 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	int rc;
 	struct kfi_cq_err_entry fake_error = {
 		.op_context = tn,
-		.flags = KFI_RMA | KFI_READ,
+		.flags = KFI_TAGGED | KFI_RMA | KFI_READ | KFI_SEND,
 		.err = EIO,
+	};
+	struct kfi_rma_iov rma_iov = {
+		.len = tn->tn_nob,
+		.key = tn->tn_response_mr_key,
+	};
+	struct kfi_msg_rma rma = {
+		.addr = tn->tn_target_addr,
+		.rma_iov = &rma_iov,
+		.rma_iov_count = 1,
+		.context = tn,
 	};
 
 	if (!ep || !tn)
@@ -474,20 +442,24 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		return -EINVAL;
 
 	/* Progress transaction to failure if read should fail. */
-	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ)) {
-		kfilnd_cq_process_error(ep, &fake_error);
-		return 0;
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ_EVENT)) {
+		rc = kfilnd_ep_gen_fake_err(ep, &fake_error);
+		if (!rc)
+			return 0;
+	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ)) {
+		return -EAGAIN;
 	}
 
-	if (tn->tn_buf_type == TN_BUF_KIOV)
-		rc = kfi_readbv(ep->end_tx, (struct bio_vec *)tn->tn_buf.kiov,
-				NULL, tn->tn_num_iovec, tn->tn_target_addr, 0,
-				tn->tn_response_mr_key, tn);
-	else
-		rc = kfi_readv(ep->end_tx, tn->tn_buf.iov, NULL,
-			       tn->tn_num_iovec, tn->tn_target_addr, 0,
-			       tn->tn_response_mr_key, tn);
+	rma.iov_count = tn->tn_num_iovec;
+	if (tn->tn_buf_type == TN_BUF_KIOV) {
+		rma.type = KFI_BVEC;
+		rma.msg_biov = (struct bio_vec *)tn->tn_buf.kiov;
+	} else {
+		rma.type = KFI_KVEC;
+		rma.msg_iov = tn->tn_buf.iov;
+	}
 
+	rc = kfi_readmsg(ep->end_tx, &rma, KFI_TAGGED | KFI_COMPLETION);
 	if (rc) {
 		KFILND_EP_ERROR(ep,
 				"Transaction ID %u: Failed to post read of %u bytes in %u frags with key 0x%x to peer 0x%llx",

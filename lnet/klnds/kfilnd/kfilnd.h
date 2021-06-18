@@ -53,12 +53,18 @@
 #include "kfi_tagged.h"
 
 /* KFILND CFS fail range 0xF100 - 0xF1FF. */
-#define CFS_KFI_FAIL_SEND 0xF100
-#define CFS_KFI_FAIL_READ 0xF101
-#define CFS_KFI_FAIL_WRITE 0xF102
-#define CFS_KFI_FAIL_REG_MR 0xF103
-#define CFS_KFI_FAIL_TAGGED_RECV 0xF104
+
+#define CFS_KFI_FAIL_SEND_EVENT 0xF100
+#define CFS_KFI_FAIL_READ_EVENT 0xF101
+#define CFS_KFI_FAIL_WRITE_EVENT 0xF102
+#define CFS_KFI_FAIL_TAGGED_SEND_EVENT 0xF103
+#define CFS_KFI_FAIL_TAGGED_RECV_EVENT 0xF104
 #define CFS_KFI_FAIL_BULK_TIMEOUT 0xF105
+#define CFS_KFI_FAIL_SEND 0xF106
+#define CFS_KFI_FAIL_READ 0xF107
+#define CFS_KFI_FAIL_WRITE 0xF108
+#define CFS_KFI_FAIL_TAGGED_SEND 0xF109
+#define CFS_KFI_FAIL_TAGGED_RECV 0xF10A
 
 /* Some constants which should be turned into tunables */
 #define KFILND_IMMEDIATE_MSG_SIZE 4096
@@ -81,7 +87,6 @@ extern const struct file_operations kfilnd_reset_stats_file_ops;
 
 extern struct workqueue_struct *kfilnd_wq;
 
-extern unsigned int sync_mr_reg;
 extern unsigned int cksum;
 extern unsigned int tx_scale_factor;
 extern unsigned int rx_cq_scale_factor;
@@ -164,18 +169,11 @@ struct kfilnd_fab {
 	struct kref cnt;
 };
 
-struct kfilnd_eq {
-	struct kfilnd_dom *dom;
-	struct kfid_eq *eq;
-	struct work_struct work;
-};
-
 struct kfilnd_dom {
 	struct list_head entry;
 	struct list_head dev_list;
 	spinlock_t lock;
 	struct kfilnd_fab *fab;
-	struct kfilnd_eq *eq;
 	struct kfid_domain *domain;
 	struct kref cnt;
 	struct ida mr_keys;
@@ -191,15 +189,15 @@ enum tn_states {
 
 	/* Initiator states. */
 	TN_STATE_IMM_SEND,
-	TN_STATE_REG_MEM,
 	TN_STATE_WAIT_COMP,
-	TN_STATE_FAIL,
 	TN_STATE_WAIT_TIMEOUT_COMP,
 	TN_STATE_WAIT_SEND_COMP,
+	TN_STATE_WAIT_TIMEOUT_TAG_COMP,
+	TN_STATE_FAIL,
 
 	/* Target states. */
 	TN_STATE_IMM_RECV,
-	TN_STATE_WAIT_RMA_COMP,
+	TN_STATE_WAIT_TAG_RMA_COMP,
 
 	/* Invalid max value. */
 	TN_STATE_MAX,
@@ -407,16 +405,17 @@ static inline const char *msg_type_to_str(enum kfilnd_msg_type type)
 static inline const char *tn_state_to_str(enum tn_states type)
 {
 	static const char *str[TN_STATE_MAX] = {
+		[TN_STATE_INVALID] = "TN_STATE_INVALID",
 		[TN_STATE_IDLE] = "TN_STATE_IDLE",
 		[TN_STATE_WAIT_TAG_COMP] = "TN_STATE_WAIT_TAG_COMP",
 		[TN_STATE_IMM_SEND] = "TN_STATE_IMM_SEND",
-		[TN_STATE_REG_MEM] = "TN_STATE_REG_MEM",
 		[TN_STATE_WAIT_COMP] = "TN_STATE_WAIT_COMP",
-		[TN_STATE_FAIL] = "TN_STATE_FAIL",
 		[TN_STATE_WAIT_TIMEOUT_COMP] = "TN_STATE_WAIT_TIMEOUT_COMP",
 		[TN_STATE_WAIT_SEND_COMP] = "TN_STATE_WAIT_SEND_COMP",
+		[TN_STATE_WAIT_TIMEOUT_TAG_COMP] = "TN_STATE_WAIT_TIMEOUT_TAG_COMP",
+		[TN_STATE_FAIL] = "TN_STATE_FAIL",
 		[TN_STATE_IMM_RECV] = "TN_STATE_IMM_RECV",
-		[TN_STATE_WAIT_RMA_COMP] = "TN_STATE_WAIT_RMA_COMP",
+		[TN_STATE_WAIT_TAG_RMA_COMP] = "TN_STATE_WAIT_TAG_RMA_COMP",
 	};
 
 	return str[type];
@@ -431,8 +430,6 @@ enum tn_events {
 	TN_EVENT_INIT_BULK,
 	TN_EVENT_TX_OK,
 	TN_EVENT_TX_FAIL,
-	TN_EVENT_MR_OK,
-	TN_EVENT_MR_FAIL,
 	TN_EVENT_TAG_RX_OK,
 	TN_EVENT_TAG_RX_FAIL,
 	TN_EVENT_TAG_RX_CANCEL,
@@ -441,10 +438,8 @@ enum tn_events {
 	/* Target events. */
 	TN_EVENT_RX_OK,
 	TN_EVENT_RX_FAIL,
-	TN_EVENT_RMA_PREP,
-	TN_EVENT_RMA_OK,
-	TN_EVENT_RMA_FAIL,
-	TN_EVENT_RMA_SKIP,
+	TN_EVENT_INIT_TAG_RMA,
+	TN_EVENT_SKIP_TAG_RMA,
 	TN_EVENT_TAG_TX_OK,
 	TN_EVENT_TAG_TX_FAIL,
 
@@ -455,22 +450,19 @@ enum tn_events {
 static inline const char *tn_event_to_str(enum tn_events type)
 {
 	static const char *str[TN_EVENT_MAX] = {
+		[TN_EVENT_INVALID] = "TN_EVENT_INVALID",
 		[TN_EVENT_INIT_IMMEDIATE] = "TN_EVENT_INIT_IMMEDIATE",
 		[TN_EVENT_INIT_BULK] = "TN_EVENT_INIT_BULK",
 		[TN_EVENT_TX_OK] = "TN_EVENT_TX_OK",
 		[TN_EVENT_TX_FAIL] = "TN_EVENT_TX_FAIL",
-		[TN_EVENT_MR_OK] = "TN_EVENT_MR_OK",
-		[TN_EVENT_MR_FAIL] = "TN_EVENT_MR_FAIL",
 		[TN_EVENT_TAG_RX_OK] = "TN_EVENT_TAG_RX_OK",
 		[TN_EVENT_TAG_RX_FAIL] = "TN_EVENT_TAG_RX_FAIL",
 		[TN_EVENT_TAG_RX_CANCEL] = "TN_EVENT_TAG_RX_CANCEL",
 		[TN_EVENT_TIMEOUT] = "TN_EVENT_TIMEOUT",
 		[TN_EVENT_RX_OK] = "TN_EVENT_RX_OK",
 		[TN_EVENT_RX_FAIL] = "TN_EVENT_RX_FAIL",
-		[TN_EVENT_RMA_OK] = "TN_EVENT_RMA_OK",
-		[TN_EVENT_RMA_FAIL] = "TN_EVENT_RMA_FAIL",
-		[TN_EVENT_RMA_SKIP] = "TN_EVENT_RMA_SKIP",
-		[TN_EVENT_TAG_TX_OK] = "TN_EVENT_TAG_TX_OK",
+		[TN_EVENT_INIT_TAG_RMA] = "TN_EVENT_INIT_TAG_RMA",
+		[TN_EVENT_SKIP_TAG_RMA] = "TN_EVENT_SKIP_TAG_RMA",
 		[TN_EVENT_TAG_TX_FAIL] = "TN_EVENT_TAG_TX_FAIL",
 	};
 
@@ -510,9 +502,6 @@ struct kfilnd_transaction {
 	struct kfilnd_immediate_buffer *tn_posted_buf;
 	struct kfilnd_transaction_msg tn_rx_msg;
 
-	/* Transaction tagged multi-receive buffer. */
-	struct kfilnd_transaction_msg tn_tag_rx_msg;
-
 	/* LNet buffer used to register a memory region or perform a RMA
 	 * operation.
 	 */
@@ -530,7 +519,6 @@ struct kfilnd_transaction {
 	bool sink_buffer;
 
 	/* Memory region and remote key used to cover initiator's buffer. */
-	struct kfid_mr		*tn_mr;
 	u32			tn_mr_key;
 
 	/* RX context used to perform response operations to a Put/Get
@@ -539,6 +527,11 @@ struct kfilnd_transaction {
 	 */
 	u32			tn_response_mr_key;
 	u8			tn_response_rx;
+
+	/* Immediate data used to convey transaction state from LNet target to
+	 * LNet intiator.
+	 */
+	u64 tagged_data;
 
 	/* Bulk operation timeout timer. */
 	struct timer_list timeout_timer;
