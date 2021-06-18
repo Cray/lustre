@@ -228,11 +228,6 @@ static bool kfilnd_tn_has_failed(struct kfilnd_transaction *tn)
 	return tn->tn_status != 0;
 }
 
-static bool kfilnd_tn_has_deadline_expired(struct kfilnd_transaction *tn)
-{
-	return ktime_get_seconds() >= tn->deadline;
-}
-
 /**
  * kfilnd_tn_process_rx_event() - Process an immediate receive event.
  *
@@ -296,47 +291,6 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 	kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK, 0);
 }
 
-void kfilnd_tn_process_tagged_rx_event(struct kfilnd_transaction *tn,
-				       int status)
-{
-	enum tn_events event = TN_EVENT_TAG_RX_OK;
-	int rc;
-	struct kfilnd_transaction_msg *msg = &tn->tn_tag_rx_msg;
-
-	if (!status) {
-		/* Unpack the message */
-		rc = kfilnd_tn_unpack_msg(msg->msg, msg->length);
-		if (rc) {
-			KFILND_TN_ERROR(tn, "Failed to unpack message %d\n",
-					rc);
-			goto out;
-		}
-
-		if ((enum kfilnd_msg_type)tn->tn_tag_rx_msg.msg->kfm_type ==
-		    KFILND_MSG_BULK_RSP) {
-			if (msg->msg->kfm_u.bulk_rsp.status) {
-				KFILND_TN_ERROR(tn, "Peer error %d",
-						msg->msg->kfm_u.bulk_rsp.status);
-				rc = msg->msg->kfm_u.bulk_rsp.status;
-				event = TN_EVENT_TAG_RX_FAIL;
-			}
-		} else {
-			KFILND_TN_ERROR(tn,
-					"Bad tagged receive message type %s",
-					msg_type_to_str((enum kfilnd_msg_type)msg->msg->kfm_type));
-			rc = -EIO;
-			event = TN_EVENT_TAG_RX_FAIL;
-		}
-	} else {
-		KFILND_TN_ERROR(tn, "Bad tagged receive %d\n", status);
-		rc = status;
-		event = TN_EVENT_TAG_RX_FAIL;
-	}
-
-out:
-	kfilnd_tn_event_handler(tn, event, rc);
-}
-
 /**
  * kfilnd_tn_process_unlink_event() - Process unlink of immediate receive
  * buffer.
@@ -387,12 +341,6 @@ static void kfilnd_tn_finalize(struct kfilnd_transaction *tn, bool *tn_released)
 		mutex_unlock(&tn->tn_lock);
 		*tn_released = true;
 	}
-
-	/* Free memory region before finalizing LNet operation and thus
-	 * releasing the LNet buffer.
-	 */
-	if (tn->tn_mr)
-		kfilnd_ep_dereg_mr(tn->tn_ep, tn);
 
 	/* Release the reference on the multi-receive buffer. */
 	if (tn->tn_posted_buf) {
@@ -530,21 +478,15 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
 
 		/* Send immediate message. */
-		if (!kfilnd_tn_has_deadline_expired(tn)) {
-			rc = kfilnd_ep_post_send(tn->tn_ep, tn);
-			if (!rc) {
-				kfilnd_tn_state_change(tn, TN_STATE_IMM_SEND);
-				return;
-			}
-
-			KFILND_TN_ERROR(tn, "Failed to post send %d", rc);
-			kfilnd_tn_status_update(tn, rc,
-						LNET_MSG_STATUS_LOCAL_ERROR);
-		} else {
-			KFILND_TN_ERROR(tn, "Transaction deadline expired");
-			kfilnd_tn_status_update(tn, -ETIMEDOUT,
-						LNET_MSG_STATUS_LOCAL_TIMEOUT);
+		rc = kfilnd_ep_post_send(tn->tn_ep, tn);
+		if (!rc) {
+			kfilnd_tn_state_change(tn, TN_STATE_IMM_SEND);
+			return;
 		}
+
+		KFILND_TN_ERROR(tn, "Failed to post send %d", rc);
+		kfilnd_tn_status_update(tn, rc,
+					LNET_MSG_STATUS_LOCAL_ERROR);
 		break;
 
 	case TN_EVENT_INIT_BULK:
@@ -581,76 +523,34 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			break;
 		}
 
-		/* Target source or sink RMA buffer. */
-		rc = kfilnd_ep_reg_mr(tn->tn_ep, tn);
-		if (rc) {
+		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
+		rc = kfilnd_ep_post_send(tn->tn_ep, tn);
+		if (!rc) {
+			kfilnd_tn_state_change(tn, TN_STATE_WAIT_COMP);
+			return;
+		}
+
+		KFILND_TN_ERROR(tn, "Failed to post send %d",
+				rc);
+		kfilnd_tn_status_update(tn, rc,
+					LNET_MSG_STATUS_LOCAL_ERROR);
+
+		/* Need to cancel the tagged receive in order to prevent
+		 * resources from being leaked. If successful, a error
+		 * KFI_ECANCELED event will progress the transaction.
+		 */
+		rc = kfilnd_tn_cancel_tag_recv(tn);
+		if (rc)
 			KFILND_TN_ERROR(tn,
-					"Failed to register memory region %d",
+					"Failed to cancel tagged receive %d",
 					rc);
-			kfilnd_tn_status_update(tn, rc,
-						LNET_MSG_STATUS_LOCAL_ERROR);
+		else
+			kfilnd_tn_state_change(tn, TN_STATE_FAIL);
 
-			/* Need to cancel the tagged receive in order to
-			 * prevent resources from being leaked. If
-			 * successful, a error KFI_ECANCELED event will
-			 * progress the transaction.
-			 */
-			rc = kfilnd_tn_cancel_tag_recv(tn);
-			if (rc)
-				KFILND_TN_ERROR(tn,
-						"Failed to cancel tagged receive %d",
-						rc);
-			else
-				kfilnd_tn_state_change(tn, TN_STATE_FAIL);
-
-			/* Exit now since an asynchronous cancel event
-			 * will occur to progress the transaction.
-			 */
-			return;
-		}
-
-		if (sync_mr_reg) {
-			kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
-
-			if (!kfilnd_tn_has_deadline_expired(tn)) {
-				rc = kfilnd_ep_post_send(tn->tn_ep, tn);
-				if (!rc) {
-					kfilnd_tn_state_change(tn, TN_STATE_WAIT_COMP);
-					return;
-				}
-
-				KFILND_TN_ERROR(tn, "Failed to post send %d",
-						rc);
-				kfilnd_tn_status_update(tn, rc,
-							LNET_MSG_STATUS_LOCAL_ERROR);
-			} else {
-				KFILND_TN_ERROR(tn,
-						"Transaction deadline expired");
-				kfilnd_tn_status_update(tn, -ETIMEDOUT,
-							LNET_MSG_STATUS_LOCAL_TIMEOUT);
-			}
-
-			/* Need to cancel the tagged receive in order to prevent
-			 * resources from being leaked. If successful, a error
-			 * KFI_ECANCELED event will progress the transaction.
-			 */
-			rc = kfilnd_tn_cancel_tag_recv(tn);
-			if (rc)
-				KFILND_TN_ERROR(tn,
-						"Failed to cancel tagged receive %d",
-						rc);
-			else
-				kfilnd_tn_state_change(tn, TN_STATE_FAIL);
-
-			/* Exit now since an asynchronous cancel
-			 * event will occur to progress the
-			 * transaction.
-			 */
-			return;
-		} else {
-			kfilnd_tn_state_change(tn, TN_STATE_REG_MEM);
-		}
-		break;
+		/* Exit now since an asynchronous cancel event will occur to
+		 * progress the transaction.
+		 */
+		return;
 
 	case TN_EVENT_RX_OK:
 		msg = tn->tn_rx_msg.msg;
@@ -747,14 +647,13 @@ static void kfilnd_tn_state_imm_recv(struct kfilnd_transaction *tn,
 {
 	int rc = 0;
 	bool finalize = false;
-	struct kfilnd_msg *tx_msg = tn->tn_tx_msg.msg;
 
 	KFILND_TN_DEBUG(tn, "%s event status %d", tn_event_to_str(event),
 			status);
 
 	switch (event) {
-	case TN_EVENT_RMA_PREP:
-	case TN_EVENT_RMA_SKIP:
+	case TN_EVENT_INIT_TAG_RMA:
+	case TN_EVENT_SKIP_TAG_RMA:
 		/* Release the buffer we received the request on. All relevant
 		 * information to perform the RMA operation is stored in the
 		 * transaction structure. This should be done before the RMA
@@ -801,51 +700,49 @@ static void kfilnd_tn_state_imm_recv(struct kfilnd_transaction *tn,
 		 * send a tagged message to finalize the bulk operation if the
 		 * RMA operation should be skipped.
 		 */
-		if (!kfilnd_tn_has_deadline_expired(tn)) {
-			if (event == TN_EVENT_RMA_PREP) {
-				if (tn->sink_buffer)
-					rc = kfilnd_ep_post_read(tn->tn_ep, tn);
-				else
-					rc = kfilnd_ep_post_write(tn->tn_ep,
-								  tn);
-				if (!rc) {
-					kfilnd_tn_state_change(tn,
-							       TN_STATE_WAIT_RMA_COMP);
-					return;
-				}
-
-				KFILND_TN_ERROR(tn, "Failed to post %s %d",
-						tn->sink_buffer ? "read" : "write",
-						rc);
-				kfilnd_tn_status_update(tn, rc,
-							LNET_MSG_STATUS_LOCAL_ERROR);
-			} else {
-				kfilnd_tn_status_update(tn, status,
-							LNET_MSG_STATUS_OK);
-
-				/* Build the completion message to finalize the
-				 * LNet operation.
-				 */
-				tx_msg->kfm_u.bulk_rsp.status = tn->tn_status;
-				kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
-
-				rc = kfilnd_ep_post_tagged_send(tn->tn_ep, tn);
-				if (!rc) {
-					kfilnd_tn_state_change(tn,
-							       TN_STATE_WAIT_TAG_COMP);
-					return;
-				}
-
-				KFILND_TN_ERROR(tn,
-						"Failed to post tagged send %d",
-						rc);
-				kfilnd_tn_status_update(tn, rc,
-							LNET_MSG_STATUS_LOCAL_ERROR);
+		if (event == TN_EVENT_INIT_TAG_RMA) {
+			if (tn->sink_buffer)
+				rc = kfilnd_ep_post_read(tn->tn_ep, tn);
+			else
+				rc = kfilnd_ep_post_write(tn->tn_ep,
+								tn);
+			if (!rc) {
+				kfilnd_tn_state_change(tn,
+						       TN_STATE_WAIT_TAG_RMA_COMP);
+				return;
 			}
+
+			KFILND_TN_ERROR(tn, "Failed to post %s %d",
+					tn->sink_buffer ? "read" : "write", rc);
+			kfilnd_tn_status_update(tn, rc,
+						LNET_MSG_STATUS_LOCAL_ERROR);
 		} else {
-			KFILND_TN_ERROR(tn, "Transaction deadline expired");
-			kfilnd_tn_status_update(tn, -ETIMEDOUT,
-						LNET_MSG_STATUS_LOCAL_TIMEOUT);
+			kfilnd_tn_status_update(tn, status,
+						LNET_MSG_STATUS_OK);
+
+			/* Since the LNet initiator has posted a unique tagged
+			 * buffer specific for this LNet transaction and the
+			 * LNet target has decide not to push/pull to/for the
+			 * LNet initiator tagged buffer, a noop operation is
+			 * done to this tagged buffer (i/e payload transfer size
+			 * is zero). But, immediate data, which contains the
+			 * LNet target status for the transaction, is sent to
+			 * the LNet initiator. Immediate data only appears in
+			 * the completion event at the LNet initiator and not in
+			 * the tagged buffer.
+			 */
+			tn->tagged_data = cpu_to_be64(abs(tn->tn_status));
+			rc = kfilnd_ep_post_tagged_send(tn->tn_ep, tn);
+			if (!rc) {
+				kfilnd_tn_state_change(tn,
+							TN_STATE_WAIT_TAG_COMP);
+				return;
+			}
+
+			KFILND_TN_ERROR(tn, "Failed to post tagged send %d",
+					rc);
+			kfilnd_tn_status_update(tn, rc,
+						LNET_MSG_STATUS_LOCAL_ERROR);
 		}
 		break;
 
@@ -863,70 +760,6 @@ static void kfilnd_tn_state_imm_recv(struct kfilnd_transaction *tn,
 
 	if (finalize)
 		kfilnd_tn_finalize(tn, tn_released);
-}
-
-static void kfilnd_tn_state_reg_mem(struct kfilnd_transaction *tn,
-				    enum tn_events event, int status,
-				    bool *tn_released)
-{
-	int rc;
-
-	KFILND_TN_DEBUG(tn, "%s event status %d", tn_event_to_str(event),
-			status);
-
-	switch (event) {
-	case TN_EVENT_MR_OK:
-		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
-
-		/* Post an immediate message only with the KFI LND header. The
-		 * peer will perform an RMA operation to push/pull the LNet
-		 * payload.
-		 */
-		if (!kfilnd_tn_has_deadline_expired(tn)) {
-			rc = kfilnd_ep_post_send(tn->tn_ep, tn);
-			if (!rc) {
-				kfilnd_tn_state_change(tn, TN_STATE_WAIT_COMP);
-				return;
-			}
-
-			KFILND_TN_ERROR(tn, "Failed to post immediate send %d",
-					rc);
-			kfilnd_tn_status_update(tn, rc,
-						LNET_MSG_STATUS_LOCAL_ERROR);
-		} else {
-			KFILND_TN_ERROR(tn, "Transaction deadline expired");
-			kfilnd_tn_status_update(tn, -ETIMEDOUT,
-						LNET_MSG_STATUS_LOCAL_TIMEOUT);
-		}
-
-		/* fall through */
-	case TN_EVENT_MR_FAIL:
-		kfilnd_tn_status_update(tn, status,
-					LNET_MSG_STATUS_LOCAL_ERROR);
-
-		/* Need to cancel the tagged receive in order to prevent
-		 * resources from being leaked. If successful, a error
-		 * KFI_ECANCELED event will progress the transaction.
-		 */
-		rc = kfilnd_tn_cancel_tag_recv(tn);
-		if (rc) {
-			KFILND_TN_ERROR(tn,
-					"Failed to cancel tagged receive %d",
-					rc);
-			break;
-		}
-
-		/* Fall through. */
-	case TN_EVENT_TAG_RX_FAIL:
-		kfilnd_tn_status_update(tn, status,
-					LNET_MSG_STATUS_LOCAL_ERROR);
-		kfilnd_tn_state_change(tn, TN_STATE_FAIL);
-		break;
-
-	default:
-		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
-		LBUG();
-	}
 }
 
 static void kfilnd_tn_state_wait_comp(struct kfilnd_transaction *tn,
@@ -1000,47 +833,21 @@ static void kfilnd_tn_state_wait_send_comp(struct kfilnd_transaction *tn,
 	}
 }
 
-static void kfilnd_tn_state_wait_rma_comp(struct kfilnd_transaction *tn,
-					  enum tn_events event, int status,
-					  bool *tn_released)
+static void kfilnd_tn_state_wait_tag_rma_comp(struct kfilnd_transaction *tn,
+					      enum tn_events event, int status,
+					      bool *tn_released)
 {
-	int rc;
-	struct kfilnd_msg *tx_msg = tn->tn_tx_msg.msg;
 	enum lnet_msg_hstatus hstatus;
 
 	KFILND_TN_DEBUG(tn, "%s event status %d", tn_event_to_str(event),
 			status);
 
 	switch (event) {
-	case TN_EVENT_RMA_OK:
+	case TN_EVENT_TAG_TX_OK:
 		kfilnd_peer_alive(tn->peer);
-
-		/* Build the completion message to finalize the LNet operation.
-		 */
-		tx_msg->kfm_u.bulk_rsp.status = tn->tn_status;
-
-		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
-
-		if (!kfilnd_tn_has_deadline_expired(tn)) {
-			rc = kfilnd_ep_post_tagged_send(tn->tn_ep, tn);
-			if (!rc) {
-				kfilnd_tn_state_change(tn,
-						       TN_STATE_WAIT_TAG_COMP);
-				return;
-			}
-
-			KFILND_TN_ERROR(tn, "Failed to post tagged send %d",
-					rc);
-			kfilnd_tn_status_update(tn, rc,
-						LNET_MSG_STATUS_LOCAL_ERROR);
-		} else {
-			KFILND_TN_ERROR(tn, "Transaction deadline expired");
-			kfilnd_tn_status_update(tn, -ETIMEDOUT,
-						LNET_MSG_STATUS_LOCAL_TIMEOUT);
-		}
 		break;
 
-	case TN_EVENT_RMA_FAIL:
+	case TN_EVENT_TAG_TX_FAIL:
 		if (status == -ETIMEDOUT)
 			hstatus = LNET_MSG_STATUS_NETWORK_TIMEOUT;
 		else
@@ -1070,11 +877,20 @@ static void kfilnd_tn_state_wait_tag_comp(struct kfilnd_transaction *tn,
 
 	switch (event) {
 	case TN_EVENT_TAG_RX_FAIL:
-		kfilnd_tn_status_update(tn, status,
-					LNET_MSG_STATUS_LOCAL_ERROR);
-
-		/* Fall through. */
 	case TN_EVENT_TAG_RX_OK:
+		/* Status can be set for both TN_EVENT_TAG_RX_FAIL and
+		 * TN_EVENT_TAG_RX_OK. For TN_EVENT_TAG_RX_OK, if status is set,
+		 * LNet target returned -ENODATA.
+		 */
+		if (status) {
+			if (event == TN_EVENT_TAG_RX_FAIL)
+				kfilnd_tn_status_update(tn, status,
+							LNET_MSG_STATUS_LOCAL_ERROR);
+			else
+				kfilnd_tn_status_update(tn, status,
+							LNET_MSG_STATUS_OK);
+		}
+
 		if (!kfilnd_tn_timeout_cancel(tn)) {
 			kfilnd_tn_state_change(tn, TN_STATE_WAIT_TIMEOUT_COMP);
 			return;
@@ -1088,7 +904,8 @@ static void kfilnd_tn_state_wait_tag_comp(struct kfilnd_transaction *tn,
 					"Failed to cancel tagged receive %d",
 					rc);
 		else
-			kfilnd_tn_state_change(tn, TN_STATE_WAIT_TIMEOUT_COMP);
+			kfilnd_tn_state_change(tn,
+					       TN_STATE_WAIT_TIMEOUT_TAG_COMP);
 		return;
 
 	case TN_EVENT_TAG_TX_FAIL:
@@ -1129,10 +946,38 @@ static void kfilnd_tn_state_fail(struct kfilnd_transaction *tn,
 		kfilnd_peer_alive(tn->peer);
 		break;
 
-	case TN_EVENT_MR_OK:
-	case TN_EVENT_MR_FAIL:
 	case TN_EVENT_TAG_RX_FAIL:
 	case TN_EVENT_TAG_RX_CANCEL:
+		break;
+
+	default:
+		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
+		LBUG();
+	}
+
+	kfilnd_tn_finalize(tn, tn_released);
+}
+
+static void kfilnd_tn_state_wait_timeout_tag_comp(struct kfilnd_transaction *tn,
+						  enum tn_events event,
+						  int status, bool *tn_released)
+{
+	KFILND_TN_DEBUG(tn, "%s event status %d", tn_event_to_str(event),
+			status);
+
+	switch (event) {
+	case TN_EVENT_TAG_RX_CANCEL:
+		kfilnd_tn_status_update(tn, -ETIMEDOUT,
+					LNET_MSG_STATUS_REMOTE_TIMEOUT);
+		kfilnd_peer_down(tn->peer);
+		break;
+
+	case TN_EVENT_TAG_RX_FAIL:
+		kfilnd_tn_status_update(tn, status,
+					LNET_MSG_STATUS_LOCAL_ERROR);
+		break;
+
+	case TN_EVENT_TAG_RX_OK:
 		break;
 
 	default:
@@ -1150,24 +995,9 @@ static void kfilnd_tn_state_wait_timeout_comp(struct kfilnd_transaction *tn,
 	KFILND_TN_DEBUG(tn, "%s event status %d", tn_event_to_str(event),
 			status);
 
-	switch (event) {
-	case TN_EVENT_TAG_RX_CANCEL:
-		kfilnd_tn_status_update(tn, -ETIMEDOUT,
-					LNET_MSG_STATUS_REMOTE_TIMEOUT);
-		kfilnd_peer_down(tn->peer);
-
-		/* fall through */
-	case TN_EVENT_TAG_RX_FAIL:
-		kfilnd_tn_status_update(tn, status,
-					LNET_MSG_STATUS_LOCAL_ERROR);
-
-		/* fall through */
-	case TN_EVENT_TIMEOUT:
-	case TN_EVENT_TAG_RX_OK:
+	if (event == TN_EVENT_TIMEOUT) {
 		kfilnd_tn_finalize(tn, tn_released);
-		break;
-
-	default:
+	} else {
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
 		LBUG();
 	}
@@ -1201,9 +1031,6 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 	case TN_STATE_IMM_SEND:
 		kfilnd_tn_state_imm_send(tn, event, status, &tn_released);
 		break;
-	case TN_STATE_REG_MEM:
-		kfilnd_tn_state_reg_mem(tn, event, status, &tn_released);
-		break;
 	case TN_STATE_WAIT_COMP:
 		kfilnd_tn_state_wait_comp(tn, event, status, &tn_released);
 		break;
@@ -1216,8 +1043,9 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 	case TN_STATE_IMM_RECV:
 		kfilnd_tn_state_imm_recv(tn, event, status, &tn_released);
 		break;
-	case TN_STATE_WAIT_RMA_COMP:
-		kfilnd_tn_state_wait_rma_comp(tn, event, status, &tn_released);
+	case TN_STATE_WAIT_TAG_RMA_COMP:
+		kfilnd_tn_state_wait_tag_rma_comp(tn, event, status,
+						  &tn_released);
 		break;
 	case TN_STATE_WAIT_TAG_COMP:
 		kfilnd_tn_state_wait_tag_comp(tn, event, status, &tn_released);
@@ -1225,6 +1053,10 @@ void kfilnd_tn_event_handler(struct kfilnd_transaction *tn,
 	case TN_STATE_WAIT_TIMEOUT_COMP:
 		kfilnd_tn_state_wait_timeout_comp(tn, event, status,
 						  &tn_released);
+		break;
+	case TN_STATE_WAIT_TIMEOUT_TAG_COMP:
+		kfilnd_tn_state_wait_timeout_tag_comp(tn, event, status,
+						      &tn_released);
 		break;
 	default:
 		KFILND_TN_ERROR(tn, "Transaction in unknown state");
@@ -1255,9 +1087,6 @@ void kfilnd_tn_free(struct kfilnd_transaction *tn)
 	/* Free send message buffer if needed. */
 	if (tn->tn_tx_msg.msg)
 		LIBCFS_FREE(tn->tn_tx_msg.msg, KFILND_IMMEDIATE_MSG_SIZE);
-	if (tn->tn_tag_rx_msg.msg)
-		LIBCFS_FREE(tn->tn_tag_rx_msg.msg,
-			    sizeof(*tn->tn_tag_rx_msg.msg));
 
 	kmem_cache_free(tn_cache, tn);
 }
@@ -1308,12 +1137,6 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 				 KFILND_IMMEDIATE_MSG_SIZE);
 		if (!tn->tn_tx_msg.msg)
 			goto err_free_tn;
-
-		LIBCFS_CPT_ALLOC(tn->tn_tag_rx_msg.msg, lnet_cpt_table(), cpt,
-				 sizeof(*tn->tn_tag_rx_msg.msg));
-		if (!tn->tn_tag_rx_msg.msg)
-			goto err_free_tn;
-		tn->tn_tag_rx_msg.length = sizeof(*tn->tn_tag_rx_msg.msg);
 	}
 
 	mutex_init(&tn->tn_lock);

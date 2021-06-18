@@ -11,8 +11,6 @@
 void kfilnd_tn_process_unlink_event(struct kfilnd_immediate_buffer *bufdesc);
 void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 				struct kfilnd_msg *rx_msg, int msg_size);
-void kfilnd_tn_process_tagged_rx_event(struct kfilnd_transaction *tn,
-				       int status);
 void kfilnd_tn_free(struct kfilnd_transaction *tn);
 struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 					   bool alloc_msg, bool is_initiator);

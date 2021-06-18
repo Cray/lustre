@@ -7,10 +7,6 @@
 
 #include "kfilnd.h"
 
-unsigned int sync_mr_reg;
-module_param(sync_mr_reg, uint, 0444);
-MODULE_PARM_DESC(sync_mr_reg, "Enable synchronous memory registration");
-
 unsigned int cksum;
 module_param(cksum, uint, 0444);
 MODULE_PARM_DESC(cksum, "Enable checksums for non-zero messages (not RDMA)");
