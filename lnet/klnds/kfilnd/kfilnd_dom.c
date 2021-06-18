@@ -5,7 +5,6 @@
  */
 #include "kfilnd_dom.h"
 #include "kfilnd_tn.h"
-#include "kfilnd_eq.h"
 
 /* Global list of allocated KFI LND fabrics. */
 static LIST_HEAD(fab_list);
@@ -31,8 +30,6 @@ static void kfilnd_dom_free(struct kref *kref)
 	ida_destroy(&dom->mr_keys);
 
 	kfi_close(&dom->domain->fid);
-	if (!sync_mr_reg)
-		kfilnd_eq_free(dom->eq);
 	LIBCFS_FREE(dom, sizeof(*dom));
 }
 
@@ -52,7 +49,6 @@ static struct kfilnd_dom *kfilnd_dom_alloc(struct kfi_info *dom_info,
 {
 	int rc;
 	struct kfilnd_dom *dom;
-	struct kfi_eq_attr eq_attr = {};
 
 	if (!dom_info || !fab) {
 		rc = -EINVAL;
@@ -77,36 +73,12 @@ static struct kfilnd_dom *kfilnd_dom_alloc(struct kfi_info *dom_info,
 		goto err_free_dom;
 	}
 
-	/* Bind EQ to domain for asynchronous memory registration. */
-	if (!sync_mr_reg) {
-		eq_attr.size = eq_size;
-		dom->eq = kfilnd_eq_alloc(dom, &eq_attr);
-		if (IS_ERR(dom->eq)) {
-			rc = PTR_ERR(dom->eq);
-			CERROR("Failed to create KFILND event queue: rc=%d\n",
-			       rc);
-			goto err_free_kfi_dom;
-		}
-
-		rc = kfi_domain_bind(dom->domain, &dom->eq->eq->fid,
-				     KFI_REG_MR);
-		if (rc) {
-			CERROR("Failed to bind KFI event queue to KFI domain: rc=%d\n",
-			       rc);
-			goto err_free_eq;
-		}
-	}
-
 	mutex_lock(&fab->dom_list_lock);
 	list_add_tail(&dom->entry, &fab->dom_list);
 	mutex_unlock(&fab->dom_list_lock);
 
 	return dom;
 
-err_free_eq:
-	kfilnd_eq_free(dom->eq);
-err_free_kfi_dom:
-	kfi_close(&dom->domain->fid);
 err_free_dom:
 	LIBCFS_FREE(dom, sizeof(*dom));
 err:
@@ -342,7 +314,7 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
 	hints->caps = KFI_MSG | KFI_RMA | KFI_SEND | KFI_RECV | KFI_READ |
 		KFI_WRITE | KFI_REMOTE_READ | KFI_REMOTE_WRITE |
 		KFI_MULTI_RECV | KFI_REMOTE_COMM | KFI_NAMED_RX_CTX |
-		KFI_TAGGED;
+		KFI_TAGGED | KFI_TAGGED_RMA;
 	hints->domain_attr->mr_iov_limit = 256; /* 1 MiB LNet message */
 	hints->domain_attr->mr_key_size = sizeof(int);
 	hints->domain_attr->resource_mgmt = KFI_RM_DISABLED;

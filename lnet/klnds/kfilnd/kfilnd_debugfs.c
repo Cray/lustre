@@ -31,24 +31,24 @@ static void seq_print_tn_state_stats(struct seq_file *s, struct kfilnd_dev *dev,
 	else
 		state_stats = &dev->target_state_stats;
 
-	seq_printf(s, "%-16s %-16s %-16s %-16s %-16s %-16s %-16s %-16s %-16s %-16s %-16s\n",
-		   "MSG_SIZE", "IDLE", "WAIT_TAG_COMP", "IMM_SEND", "REG_MEM",
-		   "WAIT_COMP", "FAIL", "WAIT_TOUT_COMP", "WAIT_SEND_COMP",
-		   "IMM_RECV", "WAIT_RMA_COMP");
+	seq_printf(s, "%-20s %-20s %-20s %-20s %-20s %-20s %-20s %-20s %-20s %-20s %-20s\n",
+		   "MSG_SIZE", "IDLE", "WAIT_TAG_COMP", "IMM_SEND", "WAIT_COMP",
+		   "WAIT_TOUT_COMP", "SEND_COMP", "WAIT_TOUT_TAG_COMP", "FAIL",
+		   "IMM_RECV", "WAIT_TAG_RMA_COMP");
 
 	for (data_size = 0; data_size < KFILND_DATA_SIZE_BUCKETS; data_size++) {
-		seq_printf(s, "%-16lu %-16llu %-16llu %-16llu %-16llu %-16llu %-16llu %-16llu %-16llu %-16llu %-16llu\n",
+		seq_printf(s, "%-20lu %-20llu %-20llu %-20llu %-20llu %-20llu %-20llu %-20llu %-20llu %-20llu %-20llu\n",
 			   data_size == 0 ? 0 : BIT(data_size - 1),
 			   print_duration(&state_stats->state[TN_STATE_IDLE].data_size[data_size]),
 			   print_duration(&state_stats->state[TN_STATE_WAIT_TAG_COMP].data_size[data_size]),
 			   print_duration(&state_stats->state[TN_STATE_IMM_SEND].data_size[data_size]),
-			   print_duration(&state_stats->state[TN_STATE_REG_MEM].data_size[data_size]),
 			   print_duration(&state_stats->state[TN_STATE_WAIT_COMP].data_size[data_size]),
-			   print_duration(&state_stats->state[TN_STATE_FAIL].data_size[data_size]),
 			   print_duration(&state_stats->state[TN_STATE_WAIT_TIMEOUT_COMP].data_size[data_size]),
 			   print_duration(&state_stats->state[TN_STATE_WAIT_SEND_COMP].data_size[data_size]),
+			   print_duration(&state_stats->state[TN_STATE_WAIT_TIMEOUT_TAG_COMP].data_size[data_size]),
+			   print_duration(&state_stats->state[TN_STATE_FAIL].data_size[data_size]),
 			   print_duration(&state_stats->state[TN_STATE_IMM_RECV].data_size[data_size]),
-			   print_duration(&state_stats->state[TN_STATE_WAIT_RMA_COMP].data_size[data_size]));
+			   print_duration(&state_stats->state[TN_STATE_WAIT_TAG_RMA_COMP].data_size[data_size]));
 	}
 }
 
