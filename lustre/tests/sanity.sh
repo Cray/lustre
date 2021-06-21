@@ -15628,6 +15628,11 @@ test_209() {
 	done
 
 	echo 3 > /proc/sys/vm/drop_caches
+
+	local mdts=$(comma_list $(mdts_nodes))
+	do_nodes $mdts sync
+	df $DIR
+
 	req_after=$(awk '/ptlrpc_cache / { print $2 }' /proc/slabinfo)
 
 	echo "before: $req_before, after: $req_after"
