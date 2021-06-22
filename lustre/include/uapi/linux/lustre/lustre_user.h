@@ -620,6 +620,7 @@ struct ll_ioc_lease_id {
 #define LL_IOC_FID2MDTIDX		_IOWR('f', 248, struct lu_fid)
 #define LL_IOC_GETPARENT		_IOWR('f', 249, struct getparent)
 #define LL_IOC_LADVISE			_IOR('f', 250, struct llapi_lu_ladvise)
+#define LL_IOC_PROJECT			_IOW('f', 253, struct lu_project)
 
 #ifndef	FS_IOC_FSGETXATTR
 /*
@@ -2497,6 +2498,21 @@ enum ext_hsm_cmd {
 	EXT_HSM_CANCEL_ALL = 10,
 	EXT_HSM_ACTION_REP = 11,
 	EXT_HSM_LAST_OPC
+};
+
+enum lu_project_type {
+	LU_PROJECT_NONE = 0,
+	LU_PROJECT_SET,
+	LU_PROJECT_GET,
+	LU_PROJECT_MAX
+};
+
+struct lu_project {
+	__u32	project_type; /* enum lu_project_type */
+	__u32	project_id;
+	__u32	project_xflags;
+	__u32	project_reserved;
+	char	project_name[NAME_MAX + 1];
 };
 
 struct fid_array {

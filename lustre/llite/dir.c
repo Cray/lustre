@@ -2213,6 +2213,8 @@ migrate_free:
 		RETURN(ll_ioctl_fsgetxattr(inode, cmd, arg));
 	case LL_IOC_FSSETXATTR:
 		RETURN(ll_ioctl_fssetxattr(inode, cmd, arg));
+	case LL_IOC_PROJECT:
+		RETURN(ll_ioctl_project(file, cmd, arg));
 	default:
 		RETURN(obd_iocontrol(cmd, sbi->ll_dt_exp, 0, NULL,
 				     (void __user *)arg));
