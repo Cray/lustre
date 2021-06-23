@@ -136,19 +136,20 @@ int tgt_pool_add(struct ost_pool *op, __u32 idx, unsigned int min_count)
 {
 	unsigned int i;
 	int rc = 0;
+
 	ENTRY;
-
 	down_write(&op->op_rw_sem);
-
-	rc = tgt_pool_extend(op, min_count);
-	if (rc)
-		GOTO(out, rc);
 
 	/* search ost in pool array */
 	for (i = 0; i < op->op_count; i++) {
 		if (op->op_array[i] == idx)
 			GOTO(out, rc = -EEXIST);
 	}
+
+	rc = tgt_pool_extend(op, min_count);
+	if (rc)
+		GOTO(out, rc);
+
 	/* ost not found we add it */
 	op->op_array[op->op_count] = idx;
 	op->op_count++;

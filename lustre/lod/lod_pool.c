@@ -483,7 +483,7 @@ int lod_pool_new(struct obd_device *obd, char *poolname)
 	atomic_set(&new_pool->pool_refcount, 1);
 	rc = tgt_pool_init(&new_pool->pool_obds, 0);
 	if (rc)
-		GOTO(out_err, rc);
+		GOTO(out_free_pool_obds, rc);
 
 	lod_qos_rr_init(&new_pool->pool_rr);
 	rc = tgt_pool_init(&new_pool->pool_rr.lqr_pool, 0);
@@ -528,9 +528,7 @@ out_err:
 	list_del_init(&new_pool->pool_list);
 	lod->lod_pool_count--;
 	spin_unlock(&obd->obd_dev_lock);
-
 	lprocfs_remove(&new_pool->pool_proc_entry);
-
 	tgt_pool_free(&new_pool->pool_rr.lqr_pool);
 out_free_pool_obds:
 	tgt_pool_free(&new_pool->pool_obds);

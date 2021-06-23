@@ -359,27 +359,27 @@ int lov_ost_pool_extend(struct ost_pool *op, unsigned int min_count)
 
 int lov_ost_pool_add(struct ost_pool *op, __u32 idx, unsigned int min_count)
 {
-        int rc = 0, i;
-        ENTRY;
+	int rc = 0, i;
 
+	ENTRY;
 	down_write(&op->op_rw_sem);
+	/* search ost in pool array */
+	for (i = 0; i < op->op_count; i++) {
+		if (op->op_array[i] == idx)
+			GOTO(out, rc = -EEXIST);
+	}
 
-        rc = lov_ost_pool_extend(op, min_count);
-        if (rc)
-                GOTO(out, rc);
+	rc = lov_ost_pool_extend(op, min_count);
+	if (rc)
+		GOTO(out, rc);
 
-        /* search ost in pool array */
-        for (i = 0; i < op->op_count; i++) {
-                if (op->op_array[i] == idx)
-                        GOTO(out, rc = -EEXIST);
-        }
-        /* ost not found we add it */
-        op->op_array[op->op_count] = idx;
-        op->op_count++;
-        EXIT;
+	/* ost not found we add it */
+	op->op_array[op->op_count] = idx;
+	op->op_count++;
+	EXIT;
 out:
 	up_write(&op->op_rw_sem);
-        return rc;
+	return rc;
 }
 
 int lov_ost_pool_remove(struct ost_pool *op, __u32 idx)
@@ -447,7 +447,7 @@ int lov_pool_new(struct obd_device *obd, char *poolname)
 	atomic_set(&new_pool->pool_refcount, 1);
 	rc = lov_ost_pool_init(&new_pool->pool_obds, 0);
 	if (rc)
-		GOTO(out_err, rc);
+		GOTO(out_free_pool, rc);
 
 	INIT_HLIST_NODE(&new_pool->pool_hash);
 
@@ -489,6 +489,7 @@ out_err:
 	spin_unlock(&obd->obd_dev_lock);
         lprocfs_remove(&new_pool->pool_proc_entry);
 	lov_ost_pool_free(&new_pool->pool_obds);
+out_free_pool:
 	OBD_FREE_PTR(new_pool);
 
 	return rc;
