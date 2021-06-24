@@ -4997,6 +4997,16 @@ test_76()
 }
 run_test 76 "check for EDQUOT after OST failover"
 
+test_77()
+{
+	[ "$OSTCOUNT" -lt "2" ] && skip "needs >= 2 OSTs"
+
+	stop ost1
+	$LFS quota -u $TSTUSR $DIR && error "lfs quota does not return error"
+	start ost1 $(ostdevname 1) $OST_MOUNT_OPTS || error "start ost2 failed"
+}
+run_test 77 "check lfs quota error value"
+
 quota_fini()
 {
 	do_nodes $(comma_list $(nodes_list)) "lctl set_param debug=-quota"
