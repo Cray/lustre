@@ -7191,13 +7191,12 @@ static int get_print_quota(char *mnt, char *name, struct if_quotactl *qctl,
 			   int verbose, int quiet, bool human_readable,
 			   bool show_default)
 {
-	int rc1 = 0, rc2 = 0, rc3 = 0;
+	int rc1 = 0, rc2 = 0;
 	char *obd_type = (char *)qctl->obd_type;
 	char *obd_uuid = (char *)qctl->obd_uuid.uuid;
 	__u64 total_ialloc = 0, total_balloc = 0;
 	bool use_default_for_blk = false;
 	bool use_default_for_file = false;
-	int inacc;
 
 	rc1 = llapi_quotactl(mnt, qctl);
 	if (rc1 < 0) {
@@ -7252,10 +7251,11 @@ static int get_print_quota(char *mnt, char *name, struct if_quotactl *qctl,
 	if (qctl->qc_valid != QC_GENERAL)
 		mnt = "";
 
-	inacc = (qctl->qc_cmd == LUSTRE_Q_GETQUOTA ||
-		 qctl->qc_cmd == LUSTRE_Q_GETQUOTAPOOL) &&
-		((qctl->qc_dqblk.dqb_valid & (QIF_LIMITS|QIF_USAGE)) !=
-		 (QIF_LIMITS|QIF_USAGE));
+	if (!rc1 && (qctl->qc_cmd == LUSTRE_Q_GETQUOTA ||
+	    qctl->qc_cmd == LUSTRE_Q_GETQUOTAPOOL) &&
+	    ((qctl->qc_dqblk.dqb_valid & (QIF_LIMITS|QIF_USAGE)) !=
+	    (QIF_LIMITS|QIF_USAGE)))
+		rc1 = -EINVAL;
 
 	print_quota(mnt, qctl, QC_GENERAL, rc1, human_readable, show_default);
 
@@ -7266,8 +7266,10 @@ static int get_print_quota(char *mnt, char *name, struct if_quotactl *qctl,
 
 		rc2 = print_obd_quota(mnt, qctl, 1, human_readable,
 				      &total_ialloc);
-		rc3 = print_obd_quota(mnt, qctl, 0, human_readable,
+		rc1 ? : rc2;
+		rc2 = print_obd_quota(mnt, qctl, 0, human_readable,
 				      &total_balloc);
+		rc1 ? : rc2;
 		kbytes2str(total_balloc, strbuf, sizeof(strbuf),
 			   human_readable);
 		printf("Total allocated inode limit: %ju, total "
@@ -7283,7 +7285,7 @@ static int get_print_quota(char *mnt, char *name, struct if_quotactl *qctl,
 		printf("%cid %u is using default file quota setting\n",
 		       *qtype_name(qctl->qc_type), qctl->qc_id);
 
-	if (rc1 || rc2 || rc3 || inacc)
+	if (rc1)
 		printf("Some errors happened when getting quota info. "
 		       "Some devices may be not working or deactivated. "
 		       "The data in \"[]\" is inaccurate.\n");
