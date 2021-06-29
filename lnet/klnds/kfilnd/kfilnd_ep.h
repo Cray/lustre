@@ -3,12 +3,6 @@
 
 #include "kfilnd.h"
 
-/* Get the KFI base address from a KFI RX address. RX context information is
- * stored in the MSBs of the KFI address.
- */
-#define KFILND_BASE_ADDR(addr) \
-	((addr) & ((1UL << (64 - KFILND_FAB_RX_CTX_BITS)) - 1))
-
 struct kfilnd_ep_err_fail_loc_work {
 	struct kfilnd_ep *ep;
 	struct work_struct work;
