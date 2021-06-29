@@ -8,9 +8,6 @@
 
 #include "kfilnd.h"
 
-/* 256 Rx contexts max */
-#define KFILND_FAB_RX_CTX_BITS 8
-
 /* TODO: Module parameters? */
 #define KFILND_CURRENT_HASH_BITS 7
 #define KFILND_MAX_HASH_BITS 12
