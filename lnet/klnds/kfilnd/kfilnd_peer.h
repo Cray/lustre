@@ -17,5 +17,6 @@ void kfilnd_peer_update(struct kfilnd_peer *peer, unsigned int rx_context);
 void kfilnd_peer_alive(struct kfilnd_peer *peer);
 void kfilnd_peer_destroy(struct kfilnd_dev *dev);
 void kfilnd_peer_init(struct kfilnd_dev *dev);
+kfi_addr_t kfilnd_peer_get_kfi_addr(struct kfilnd_peer *peer);
 
 #endif /* _KFILND_PEER_ */
