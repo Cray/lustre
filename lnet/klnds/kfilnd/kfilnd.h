@@ -71,6 +71,15 @@
 
 #define KFILND_MY_PROCID 49152
 
+/* 256 Rx contexts max */
+#define KFILND_FAB_RX_CTX_BITS 8
+
+/* Get the KFI base address from a KFI RX address. RX context information is
+ * stored in the MSBs of the KFI address.
+ */
+#define KFILND_BASE_ADDR(addr) \
+	((addr) & ((1UL << (64 - KFILND_FAB_RX_CTX_BITS)) - 1))
+
 /* States used by all kfilnd structures */
 enum kfilnd_object_states {
 	KFILND_STATE_UNINITIALIZED,
