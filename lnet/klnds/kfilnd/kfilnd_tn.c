@@ -469,10 +469,10 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			break;
 		}
 
-		KFILND_TN_DEBUG(tn, "Using peer %s(0x%llx)",
-				libcfs_nid2str(tn->peer->nid), tn->peer->addr);
-
-		tn->tn_target_addr = tn->peer->addr;
+		tn->tn_target_addr = kfilnd_peer_get_kfi_addr(tn->peer);
+		KFILND_TN_DEBUG(tn, "Using peer %s(%#llx)",
+				libcfs_nid2str(tn->peer->nid),
+				tn->tn_target_addr);
 
 		kfilnd_tn_setup_immed(tn);
 		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
@@ -508,10 +508,10 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			break;
 		}
 
-		KFILND_TN_DEBUG(tn, "Using peer %s(0x%llx)",
-				libcfs_nid2str(tn->peer->nid), tn->peer->addr);
-
-		tn->tn_target_addr = tn->peer->addr;
+		tn->tn_target_addr = kfilnd_peer_get_kfi_addr(tn->peer);
+		KFILND_TN_DEBUG(tn, "Using peer %s(%#llx)",
+				libcfs_nid2str(tn->peer->nid),
+				tn->tn_target_addr);
 
 		/* Post tagged receive buffer used to land bulk response. */
 		rc = kfilnd_ep_post_tagged_recv(tn->tn_ep, tn);

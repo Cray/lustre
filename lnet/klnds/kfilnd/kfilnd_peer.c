@@ -174,6 +174,25 @@ err:
 }
 
 /**
+ * kfilnd_peer_get_kfi_addr() - Return kfi_addr_t used for eager untagged send
+ * kfi operations.
+ * @peer: Peer struct.
+ *
+ * The returned kfi_addr_t is updated to target a specific RX context. The
+ * address return by this function should not be used if a specific RX context
+ * needs to be targeted (i/e the response RX context for a bulk transfer
+ * operation).
+ *
+ * Return: kfi_addr_t.
+ */
+kfi_addr_t kfilnd_peer_get_kfi_addr(struct kfilnd_peer *peer)
+{
+	return kfi_rx_addr(KFILND_BASE_ADDR(peer->addr),
+			   atomic_read(&peer->rx_context),
+			   KFILND_FAB_RX_CTX_BITS);
+}
+
+/**
  * kfilnd_peer_update() - Update the RX context for a peer.
  * @peer: Peer to be updated.
  * @rx_context: New RX context for peer.
