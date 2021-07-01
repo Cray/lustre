@@ -1417,6 +1417,13 @@ proc_remove, [
 ])
 ]) # LC_HAVE_PROC_REMOVE
 
+# LC_HAVE_LIBAIO
+AC_DEFUN([LC_HAVE_LIBAIO], [
+	AC_CHECK_HEADER([libaio.h],
+		enable_libaio="yes",
+		AC_MSG_WARN([libaio is not installed in the system]))
+]) # LC_HAVE_LIBAIO
+
 AC_DEFUN([LC_HAVE_PROJECT_QUOTA], [
 LB_CHECK_COMPILE([if get_projid exists],
 get_projid, [
@@ -3988,6 +3995,7 @@ AM_CONDITIONAL(LDAP_BUILD, test x$enable_ldap != x)
 AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
 AM_CONDITIONAL(SELINUX, test "$SELINUX" = "-lselinux")
 AM_CONDITIONAL(GETSEPOL, test x$enable_getsepol = xyes)
+AM_CONDITIONAL(LIBAIO, test x$enable_libaio = xyes)
 ]) # LC_CONDITIONALS
 
 #

@@ -78,6 +78,9 @@ THETESTS += create_foreign_file parse_foreign_file
 THETESTS += create_foreign_dir parse_foreign_dir
 THETESTS += expand_truncate_test
 
+if LIBAIO
+THETESTS += aiocp
+endif
 
 if TESTS
 if MPITESTS
@@ -110,4 +113,8 @@ mirror_io_LDADD = $(LIBLUSTREAPI)
 ll_dirstripe_verify_LDADD = $(LIBLUSTREAPI)
 flocks_test_LDADD = $(LIBLUSTREAPI) $(PTHREAD_LIBS)
 create_foreign_dir_LDADD = $(LIBLUSTREAPI)
+if LIBAIO
+aiocp_LDADD= -laio
+endif
+
 endif # TESTS

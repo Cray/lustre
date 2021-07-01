@@ -552,6 +552,12 @@ static void vvp_io_advance(const struct lu_env *env,
 	if (!cl_is_normalio(env, io))
 		return;
 
+	/*
+	 * Since 3.16(26978b8b4) vfs revert iov iter to
+	 * original position even io succeed, so instead
+	 * of relying on VFS, we move iov iter by ourselves.
+	 */
+	iov_iter_advance(vio->vui_iter, nob);
 	vio->vui_tot_count -= nob;
 	iov_iter_reexpand(vio->vui_iter, vio->vui_tot_count);
 }
@@ -791,17 +797,18 @@ static void vvp_io_setattr_fini(const struct lu_env *env,
 static int vvp_io_read_start(const struct lu_env *env,
 			     const struct cl_io_slice *ios)
 {
-	struct vvp_io		*vio   = cl2vvp_io(env, ios);
-	struct cl_io		*io    = ios->cis_io;
-	struct cl_object	*obj   = io->ci_obj;
-	struct inode		*inode = vvp_object_inode(obj);
-	struct ll_inode_info	*lli   = ll_i2info(inode);
-	struct file		*file  = vio->vui_fd->fd_file;
-	loff_t  pos = io->u.ci_rd.rd.crw_pos;
-	long    cnt = io->u.ci_rd.rd.crw_count;
-	long    tot = vio->vui_tot_count;
-	int     exceed = 0;
-	int     result;
+	struct vvp_io *vio = cl2vvp_io(env, ios);
+	struct cl_io *io = ios->cis_io;
+	struct cl_object *obj = io->ci_obj;
+	struct inode *inode = vvp_object_inode(obj);
+	struct ll_inode_info *lli   = ll_i2info(inode);
+	struct file *file = vio->vui_fd->fd_file;
+	loff_t pos = io->u.ci_rd.rd.crw_pos;
+	size_t cnt = io->u.ci_rd.rd.crw_count;
+	size_t tot = vio->vui_tot_count;
+	int exceed = 0;
+	int result;
+	struct iov_iter iter;
 	ENTRY;
 
 	CLOBINVRNT(env, obj, vvp_object_invariant(obj));
@@ -843,7 +850,8 @@ static int vvp_io_read_start(const struct lu_env *env,
 	switch (vio->vui_io_subtype) {
 	case IO_NORMAL:
 		LASSERT(vio->vui_iocb->ki_pos == pos);
-		result = generic_file_read_iter(vio->vui_iocb, vio->vui_iter);
+		iter = *vio->vui_iter;
+		result = generic_file_read_iter(vio->vui_iocb, &iter);
 		break;
 	case IO_SPLICE:
 		result = generic_file_splice_read(file, &pos,
@@ -1277,8 +1285,7 @@ static int vvp_io_write_start(const struct lu_env *env,
 
 		if (unlikely(lock_inode))
 			inode_lock(inode);
-		result = __generic_file_write_iter(vio->vui_iocb,
-						   vio->vui_iter);
+		result = __generic_file_write_iter(vio->vui_iocb, &iter);
 		if (unlikely(lock_inode))
 			inode_unlock(inode);
 
@@ -1328,11 +1335,6 @@ static int vvp_io_write_start(const struct lu_env *env,
 		 * successfully committed.
 		 */
 		vio->vui_iocb->ki_pos = pos + io->ci_nob - nob;
-		iov_iter_advance(&iter, io->ci_nob - nob);
-		vio->vui_iter->iov = iter.iov;
-		vio->vui_iter->nr_segs = iter.nr_segs;
-		vio->vui_iter->iov_offset = iter.iov_offset;
-		vio->vui_iter->count = iter.count;
 	}
 	if (result > 0 || result == -EIOCBQUEUED) {
 		ll_file_set_flag(ll_i2info(inode), LLIF_DATA_MODIFIED);
