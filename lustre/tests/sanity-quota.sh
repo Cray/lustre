@@ -5073,6 +5073,31 @@ test_77()
 }
 run_test 77 "check lfs quota error value"
 
+test_78()
+{
+	local glbl_hard=200 # 200M
+	local glbl_soft=100 # 100M
+	local pool_hard=10 # 10M
+	local qpool="qpool1"
+
+	pool_add $qpool || error "pool_add failed"
+	pool_add_targets $qpool 0 1 ||
+		error "pool_add_targets failed"
+
+	$LFS setquota -u $TSTUSR -b ${glbl_soft}M -B ${glbl_hard}M $DIR ||
+		error "set user quota failed"
+	$LFS setquota -u $TSTUSR -B ${pool_hard}M --pool $qpool $DIR ||
+		error "set user quota failed"
+
+	local tmp=$(getquota -u $TSTUSR global bhardlimit $qpool)
+	[ $tmp -eq $((pool_hard * 1024)) ] ||
+		error "wrong block hard limit $tmp for $qpool"
+	local tmp=$(getquota -u $TSTUSR global bsoftlimit $qpool)
+	# soft limit hasn't been set and should be zero
+	[ $tmp -eq 0 ] || error "wrong soft block limit $tmp for $qpool"
+}
+run_test 78 "lfs setquota pool works properly"
+
 quota_fini()
 {
 	do_nodes $(comma_list $(nodes_list)) "lctl set_param debug=-quota"
