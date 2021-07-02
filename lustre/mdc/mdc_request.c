@@ -969,8 +969,6 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 			 mod->mod_open_req->rq_type != LI_POISON,
 			 "POISONED open %p!\n", mod->mod_open_req);
 
-		mod->mod_close_req = req;
-
 		DEBUG_REQ(D_RPCTRACE, mod->mod_open_req, "matched open");
 
 		if (req) {
@@ -1011,8 +1009,12 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 	    !(exp_connect_flags2(exp) & OBD_CONNECT2_LSOM))
 		op_data->op_xvalid &= ~(OP_XVALID_LAZYSIZE |
 					OP_XVALID_LAZYBLOCKS);
-
+	if (mod)
+		op_data->op_open_handle = mod->mod_och->och_open_handle;
 	mdc_close_pack(&req->rq_pill, op_data);
+
+	if (mod)
+		mod->mod_close_req = req;
 
 	req_capsule_set_size(&req->rq_pill, &RMF_MDT_MD, RCL_SERVER,
 			     obd->u.cli.cl_default_mds_easize);
