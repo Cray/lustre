@@ -1280,13 +1280,16 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 			*lustre_msg_get_handle(request->rq_repmsg);
 		import_set_state(imp, LUSTRE_IMP_RECOVER);
 	} else {
-		DEBUG_REQ(D_HA, request,
-			  "%s: evicting (reconnect/recover flags not set: %x)",
-			  imp->imp_obd->obd_name, msg_flags);
 		imp->imp_remote_handle =
 			*lustre_msg_get_handle(request->rq_repmsg);
-		import_set_state(imp, LUSTRE_IMP_EVICTED);
-	}
+		if (imp->imp_modified) {
+			DEBUG_REQ(D_HA, request, "%s: evicting (reconnect/recover flags"
+				  " not set: %x)", imp->imp_obd->obd_name, msg_flags);
+			import_set_state(imp, LUSTRE_IMP_EVICTED);
+		} else {
+			ptlrpc_activate_import(imp, true);
+		}
+        }
 
 	/* Sanity checks for a reconnected import. */
 	if (!(imp->imp_replayable) != !(msg_flags & MSG_CONNECT_REPLAYABLE))
