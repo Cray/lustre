@@ -320,7 +320,9 @@ struct obd_import {
 				  /* grant shrink disabled */
 				  imp_grant_shrink_disabled:1,
 				  /* to supress LCONSOLE() at conn.restore */
-				  imp_was_idle:1;
+				  imp_was_idle:1,
+				  /* mod rpcs were made */
+				  imp_modified:1;
 	u32			  imp_connect_op;
 	u32			  imp_idle_timeout;
 	u32			  imp_idle_debug;
