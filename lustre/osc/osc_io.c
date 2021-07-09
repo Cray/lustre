@@ -683,17 +683,6 @@ void osc_io_setattr_end(const struct lu_env *env,
 		result = io->ci_result = cbargs->opc_rc;
 	}
 
-	if (result == 0) {
-		if (oio->oi_lockless) {
-			/* lockless truncate */
-			struct osc_device *osd = lu2osc_dev(obj->co_lu.lo_dev);
-
-			LASSERT(cl_io_is_trunc(io));
-			/* XXX: Need a lock. */
-			osd->od_stats.os_lockless_truncates++;
-		}
-	}
-
 	if (cl_io_is_trunc(io)) {
 		__u64 size = io->u.ci_setattr.sa_attr.lvb_size;
 
