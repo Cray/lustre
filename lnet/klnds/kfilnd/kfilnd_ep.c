@@ -38,7 +38,6 @@ static int kfilnd_ep_post_recv(struct kfilnd_ep *ep,
 /**
  * kfilnd_ep_imm_buffer_put() - Decrement the immediate buffer count reference
  * counter.
- * @ep: KFI LND endpoint the buffer should be reposted to.
  * @buf: Immediate buffer to have reference count decremented.
  *
  * If the immediate buffer's reference count reaches zero, the buffer will
@@ -46,16 +45,15 @@ static int kfilnd_ep_post_recv(struct kfilnd_ep *ep,
  *
  * Return: On success, zero. Else, negative errno value.
  */
-int kfilnd_ep_imm_buffer_put(struct kfilnd_ep *ep,
-			     struct kfilnd_immediate_buffer *buf)
+int kfilnd_ep_imm_buffer_put(struct kfilnd_immediate_buffer *buf)
 {
-	if (!ep || !buf)
+	if (!buf)
 		return -EINVAL;
 
 	if (atomic_sub_return(1, &buf->immed_ref) != 0)
 		return 0;
 
-	return kfilnd_ep_post_recv(ep, buf);
+	return kfilnd_ep_post_recv(buf->immed_end, buf);
 }
 
 /**
