@@ -20,8 +20,7 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
 int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn);
-int kfilnd_ep_imm_buffer_put(struct kfilnd_ep *ep,
-			     struct kfilnd_immediate_buffer *buf);
+int kfilnd_ep_imm_buffer_put(struct kfilnd_immediate_buffer *buf);
 int kfilnd_ep_post_imm_buffers(struct kfilnd_ep *ep);
 void kfilnd_ep_cancel_imm_buffers(struct kfilnd_ep *ep);
 void kfilnd_ep_free(struct kfilnd_ep *ep);
