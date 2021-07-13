@@ -303,7 +303,7 @@ void kfilnd_tn_process_unlink_event(struct kfilnd_immediate_buffer *bufdesc)
 {
 	int rc;
 
-	rc = kfilnd_ep_imm_buffer_put(bufdesc->immed_end, bufdesc);
+	rc = kfilnd_ep_imm_buffer_put(bufdesc);
 	if (rc)
 		KFILND_EP_ERROR(bufdesc->immed_end,
 				"Could not repost recv buffer %d\n", rc);
@@ -344,9 +344,9 @@ static void kfilnd_tn_finalize(struct kfilnd_transaction *tn, bool *tn_released)
 
 	/* Release the reference on the multi-receive buffer. */
 	if (tn->tn_posted_buf) {
-		rc = kfilnd_ep_imm_buffer_put(tn->tn_ep, tn->tn_posted_buf);
+		rc = kfilnd_ep_imm_buffer_put(tn->tn_posted_buf);
 		if (rc) {
-			KFILND_EP_ERROR(tn->tn_ep,
+			KFILND_TN_ERROR(tn,
 					"Failed to repost receive buffer %d\n",
 					rc);
 		}
@@ -660,7 +660,7 @@ static void kfilnd_tn_state_imm_recv(struct kfilnd_transaction *tn,
 		 * operation to prevent two contexts from potentially processing
 		 * the same transaction.
 		 */
-		rc = kfilnd_ep_imm_buffer_put(tn->tn_ep, tn->tn_posted_buf);
+		rc = kfilnd_ep_imm_buffer_put(tn->tn_posted_buf);
 		if (rc) {
 			KFILND_TN_ERROR(tn, "Failed to repost recv buffer %d",
 					rc);
