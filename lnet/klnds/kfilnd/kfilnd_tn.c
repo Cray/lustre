@@ -156,7 +156,11 @@ static int kfilnd_tn_unpack_msg(struct kfilnd_msg *msg, int nob)
 /* Get a prefer rx (CPT) number from the target NID */
 static u8 kfilnd_tn_prefer_rx(struct kfilnd_transaction *tn)
 {
-	return tn->tn_target_nid % tn->tn_ep->end_dev->kfd_ni->ni_ncpts;
+	struct kfilnd_dev *dev = tn->tn_ep->end_dev;
+	int cpt = lnet_cpt_of_nid(tn->peer->nid, dev->kfd_ni);
+	struct kfilnd_ep *ep = dev->cpt_to_endpoint[cpt];
+
+	return ep->end_context_id;
 }
 
 static void kfilnd_tn_setup_immed(struct kfilnd_transaction *tn)
