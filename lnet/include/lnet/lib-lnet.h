@@ -976,7 +976,7 @@ struct lnet_peer_net *lnet_peer_get_net_locked(struct lnet_peer *peer,
 					       __u32 net_id);
 bool lnet_peer_is_pref_nid_locked(struct lnet_peer_ni *lpni, lnet_nid_t nid);
 int lnet_peer_ni_set_non_mr_pref_nid(struct lnet_peer_ni *lpni, lnet_nid_t nid);
-int lnet_add_peer_ni(lnet_nid_t key_nid, lnet_nid_t nid, bool mr, bool temp);
+int lnet_add_peer_ni(lnet_nid_t key_nid, lnet_nid_t nid, bool mr);
 int lnet_del_peer_ni(lnet_nid_t key_nid, lnet_nid_t nid);
 int lnet_get_peer_info(struct lnet_ioctl_peer_cfg *cfg, void __user *bulk);
 int lnet_get_peer_ni_info(__u32 peer_index, __u64 *nid,
