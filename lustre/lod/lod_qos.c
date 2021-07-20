@@ -1706,7 +1706,7 @@ static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
 		 * 0-weight OSTs will always get used last (only when rand=0) */
 		for (i = 0; i < osts->op_count; i++) {
 			__u32 idx = osts->op_array[i];
-			struct lod_tgt_desc *ost = OST_TGT(lod, idx);
+			struct lod_tgt_desc *ost;
 
 			if (lod_should_avoid_ost(lo, lag, idx))
 				continue;
