@@ -942,6 +942,7 @@ inline void qti_lqes_fini(const struct lu_env *env)
 			 qti->qti_lqes_num * sizeof(struct lquota_entry *));
 
 	qti->qti_lqes_num = 0;
+	qti->qti_lqes_cnt = 0;
 }
 
 inline int qti_lqes_min_qunit(const struct lu_env *env)
@@ -973,7 +974,7 @@ inline int qti_lqes_restore_init(const struct lu_env *env)
 {
 	int rc = 0;
 
-	if (qti_lqes_cnt(env) > QMT_MAX_POOL_NUM) {
+	if (qti_lqes_inited(env) && qti_lqes_cnt(env) > QMT_MAX_POOL_NUM) {
 		OBD_ALLOC(qmt_info(env)->qti_lqes_rstr,
 			  qti_lqes_cnt(env) * sizeof(struct qmt_lqe_restore));
 		if (!qti_lqes_rstr(env))
@@ -985,7 +986,7 @@ inline int qti_lqes_restore_init(const struct lu_env *env)
 
 inline void qti_lqes_restore_fini(const struct lu_env *env)
 {
-	if (qti_lqes_cnt(env) > QMT_MAX_POOL_NUM)
+	if (qti_lqes_inited(env) && qti_lqes_cnt(env) > QMT_MAX_POOL_NUM)
 		OBD_FREE(qmt_info(env)->qti_lqes_rstr,
 			 qti_lqes_cnt(env) * sizeof(struct qmt_lqe_restore));
 }
