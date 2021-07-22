@@ -27,6 +27,7 @@
 
 #include <net/tcp.h>
 
+#if !defined(HAVE_TCP_SOCK_SET_QUICKACK)
 static inline void tcp_sock_set_quickack(struct sock *sk, int opt)
 {
 	struct socket *sock = sk->sk_socket;
@@ -34,6 +35,7 @@ static inline void tcp_sock_set_quickack(struct sock *sk, int opt)
 	kernel_setsockopt(sock, SOL_TCP, TCP_QUICKACK,
 			  (char *)&opt, sizeof(opt));
 }
+#endif /* HAVE_TCP_SOCK_SET_QUICKACK */
 
 #if !defined(HAVE_TCP_SOCK_SET_NODELAY)
 static inline void tcp_sock_set_nodelay(struct sock *sk)
@@ -56,6 +58,7 @@ static inline int tcp_sock_set_keepidle(struct sock *sk, int opt)
 }
 #endif /* HAVE_TCP_SOCK_SET_KEEPIDLE */
 
+#if !defined(HAVE_TCP_SOCK_SET_KEEPINTVL)
 static inline int tcp_sock_set_keepintvl(struct sock *sk, int opt)
 {
 	struct socket *sock = sk->sk_socket;
@@ -63,7 +66,9 @@ static inline int tcp_sock_set_keepintvl(struct sock *sk, int opt)
 	return kernel_setsockopt(sock, SOL_TCP, TCP_KEEPINTVL,
 				 (char *)&opt, sizeof(opt));
 }
+#endif /* HAVE_TCP_SOCK_SET_KEEPINTVL */
 
+#if !defined(HAVE_TCP_SOCK_SET_KEEPCNT)
 static inline int tcp_sock_set_keepcnt(struct sock *sk, int opt)
 {
 	struct socket *sock = sk->sk_socket;
@@ -71,6 +76,7 @@ static inline int tcp_sock_set_keepcnt(struct sock *sk, int opt)
 	return kernel_setsockopt(sock, SOL_TCP, TCP_KEEPCNT,
 				 (char *)&opt, sizeof(opt));
 }
+#endif /* HAVE_TCP_SOCK_SET_KEEPCNT */
 #endif /* HAVE_KERNEL_SETSOCKOPT */
 
 #endif /* __LIBCFS_LINUX_NET_H__ */
