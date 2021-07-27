@@ -12,6 +12,7 @@
 #include <asm/checksum.h>
 
 static struct kmem_cache *tn_cache;
+static struct kmem_cache *imm_buf_cache;
 
 static __sum16 kfilnd_tn_cksum(void *ptr, int nob)
 {
@@ -1060,7 +1061,7 @@ void kfilnd_tn_free(struct kfilnd_transaction *tn)
 
 	/* Free send message buffer if needed. */
 	if (tn->tn_tx_msg.msg)
-		LIBCFS_FREE(tn->tn_tx_msg.msg, KFILND_IMMEDIATE_MSG_SIZE);
+		kmem_cache_free(imm_buf_cache, tn->tn_tx_msg.msg);
 
 	kmem_cache_free(tn_cache, tn);
 }
@@ -1101,14 +1102,12 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 		      libcfs_nid2str(dev->kfd_ni->ni_nid), cpt);
 		ep = dev->kfd_endpoints[0];
 	}
-	tn = kmem_cache_alloc(tn_cache, GFP_KERNEL);
+	tn = kmem_cache_zalloc(tn_cache, GFP_KERNEL);
 	if (!tn)
 		goto err;
 
-	memset(tn, 0, sizeof(*tn));
 	if (alloc_msg) {
-		LIBCFS_CPT_ALLOC(tn->tn_tx_msg.msg, lnet_cpt_table(), cpt,
-				 KFILND_IMMEDIATE_MSG_SIZE);
+		tn->tn_tx_msg.msg = kmem_cache_alloc(imm_buf_cache, GFP_KERNEL);
 		if (!tn->tn_tx_msg.msg)
 			goto err_free_tn;
 	}
@@ -1144,7 +1143,7 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 
 err_free_tn:
 	if (tn->tn_tx_msg.msg)
-		LIBCFS_FREE(tn->tn_tx_msg.msg, KFILND_IMMEDIATE_MSG_SIZE);
+		kmem_cache_free(imm_buf_cache, tn->tn_tx_msg.msg);
 	kmem_cache_free(tn_cache, tn);
 err:
 	return NULL;
@@ -1158,8 +1157,8 @@ err:
  */
 void kfilnd_tn_cleanup(void)
 {
+	kmem_cache_destroy(imm_buf_cache);
 	kmem_cache_destroy(tn_cache);
-	tn_cache = NULL;
 }
 
 /**
@@ -1169,14 +1168,24 @@ void kfilnd_tn_cleanup(void)
  */
 int kfilnd_tn_init(void)
 {
-	if (WARN_ON_ONCE(tn_cache))
-		return -EINVAL;
 	tn_cache = kmem_cache_create("kfilnd_tn",
 				     sizeof(struct kfilnd_transaction), 0,
 				     SLAB_HWCACHE_ALIGN, NULL);
 	if (!tn_cache)
-		return -ENOMEM;
+		goto err;
+
+	imm_buf_cache = kmem_cache_create("kfilnd_imm_buf",
+					  KFILND_IMMEDIATE_MSG_SIZE, 0,
+					  SLAB_HWCACHE_ALIGN, NULL);
+	if (!imm_buf_cache)
+		goto err_tn_cache_destroy;
+
 	return 0;
+
+err_tn_cache_destroy:
+	kmem_cache_destroy(tn_cache);
+err:
+	return -ENOMEM;
 }
 
 static void kfilnd_tn_set_kiov_buf(struct kfilnd_transaction *tn,
