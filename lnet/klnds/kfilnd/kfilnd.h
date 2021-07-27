@@ -168,6 +168,7 @@ struct kfilnd_peer {
 	atomic_t remove_peer;
 	refcount_t cnt;
 	time64_t last_alive;
+	u8 prefer_rx;
 };
 
 struct kfilnd_fab {
