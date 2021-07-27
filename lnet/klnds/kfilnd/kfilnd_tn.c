@@ -153,16 +153,6 @@ static int kfilnd_tn_unpack_msg(struct kfilnd_msg *msg, int nob)
 	return 0;
 }
 
-/* Get a prefer rx (CPT) number from the target NID */
-static u8 kfilnd_tn_prefer_rx(struct kfilnd_transaction *tn)
-{
-	struct kfilnd_dev *dev = tn->tn_ep->end_dev;
-	int cpt = lnet_cpt_of_nid(tn->peer->nid, dev->kfd_ni);
-	struct kfilnd_ep *ep = dev->cpt_to_endpoint[cpt];
-
-	return ep->end_context_id;
-}
-
 static void kfilnd_tn_setup_immed(struct kfilnd_transaction *tn)
 {
 	if (tn->tn_buf_type == TN_BUF_KIOV)
@@ -479,7 +469,7 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 				tn->tn_target_addr);
 
 		kfilnd_tn_setup_immed(tn);
-		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
+		kfilnd_tn_pack_msg(tn, tn->peer->prefer_rx);
 
 		/* Send immediate message. */
 		rc = kfilnd_ep_post_send(tn->tn_ep, tn);
@@ -527,7 +517,7 @@ static void kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			break;
 		}
 
-		kfilnd_tn_pack_msg(tn, kfilnd_tn_prefer_rx(tn));
+		kfilnd_tn_pack_msg(tn, tn->peer->prefer_rx);
 		rc = kfilnd_ep_post_send(tn->tn_ep, tn);
 		if (!rc) {
 			kfilnd_tn_state_change(tn, TN_STATE_WAIT_COMP);
