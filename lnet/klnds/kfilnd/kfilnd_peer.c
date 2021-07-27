@@ -68,6 +68,14 @@ void kfilnd_peer_put(struct kfilnd_peer *peer)
 	rcu_read_unlock();
 }
 
+static u8 kfilnd_nid_prefer_rx(struct kfilnd_dev *dev, lnet_nid_t nid)
+{
+	int cpt = lnet_cpt_of_nid(nid, dev->kfd_ni);
+	struct kfilnd_ep *ep = dev->cpt_to_endpoint[cpt];
+
+	return ep->end_context_id;
+}
+
 /**
  * kfilnd_peer_get() - Get a reference for a peer.
  * @dev: Device used to lookup peer.
@@ -135,6 +143,7 @@ again:
 	peer->nid = nid;
 	atomic_set(&peer->rx_context, 0);
 	atomic_set(&peer->remove_peer, 0);
+	peer->prefer_rx = kfilnd_nid_prefer_rx(dev, nid);
 
 	/* One reference for the allocation and another for get operation
 	 * performed for this peer. The allocation reference is returned when
