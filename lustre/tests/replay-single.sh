@@ -923,8 +923,8 @@ count_ost_writes() {
 #b=2477,2532
 test_40(){
 	# always need connection to MDS to verify layout during IO. LU-2628.
-	$LCTL get_param mdc.*.connect_flags | grep -q layout_lock ||
-		skip "layout_lock needs MDS connection for IO"
+	lctl get_param mdc.*.connect_flags | grep -q layout_lock &&
+		skip "layout_lock needs MDS connection for IO" && return 0
 
 	$LCTL mark multiop $MOUNT/$tfile OS_c
 	multiop $MOUNT/$tfile OS_c  &
