@@ -2333,6 +2333,7 @@ ksocknal_find_timed_out_conn(struct ksock_peer_ni *peer_ni)
 	struct ksock_conn *conn;
 	struct list_head *ctmp;
 	struct ksock_tx *tx;
+	struct ksock_sched *sched;
 
 	list_for_each(ctmp, &peer_ni->ksnp_conns) {
 		int error;
@@ -2341,6 +2342,7 @@ ksocknal_find_timed_out_conn(struct ksock_peer_ni *peer_ni)
 
                 /* Don't need the {get,put}connsock dance to deref ksnc_sock */
                 LASSERT (!conn->ksnc_closing);
+		sched = conn->ksnc_scheduler;
 
 		error = conn->ksnc_sock->sk->sk_err;
                 if (error != 0) {
@@ -2391,6 +2393,7 @@ ksocknal_find_timed_out_conn(struct ksock_peer_ni *peer_ni)
                         return (conn);
                 }
 
+		spin_lock_bh(&sched->kss_lock);
 		if ((!list_empty(&conn->ksnc_tx_queue) ||
 		     conn->ksnc_sock->sk->sk_wmem_queued != 0) &&
 		    ktime_get_seconds() >= conn->ksnc_tx_deadline) {
@@ -2405,8 +2408,10 @@ ksocknal_find_timed_out_conn(struct ksock_peer_ni *peer_ni)
                                 "the network or that node may be down.\n",
                                 libcfs_id2str(peer_ni->ksnp_id),
 				&conn->ksnc_ipaddr, conn->ksnc_port);
+			spin_unlock_bh(&sched->kss_lock);
                         return (conn);
                 }
+		spin_unlock_bh(&sched->kss_lock);
         }
 
         return (NULL);
