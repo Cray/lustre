@@ -520,8 +520,8 @@ void kfilnd_ep_free(struct kfilnd_ep *ep)
 
 	/* Free all immediate buffers. */
 	for (i = 0; i < immediate_rx_buf_count; i++)
-		LIBCFS_FREE(ep->end_immed_bufs[i].immed_buf,
-			    ep->end_immed_bufs[i].immed_buf_size);
+		__free_pages(ep->end_immed_bufs[i].immed_buf_page,
+			     order_base_2(ep->end_immed_bufs[i].immed_buf_size / PAGE_SIZE));
 
 	kfi_close(&ep->end_tx->fid);
 	kfi_close(&ep->end_rx->fid);
@@ -684,17 +684,27 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	 * spread of buffers to receive messages from multiple peers.  A better
 	 * way should be devised in the future.
 	 */
-	rx_buf_size = nrx * rx_size;
+	rx_buf_size = roundup_pow_of_two(max(nrx * rx_size, PAGE_SIZE));
 
 	for (i = 0; i < immediate_rx_buf_count; i++) {
-		LIBCFS_CPT_ALLOC(ep->end_immed_bufs[i].immed_buf,
-				 lnet_cpt_table(), cpt, rx_buf_size);
-		if (!ep->end_immed_bufs[i].immed_buf) {
+
+		/* Using physically contiguous allocations can allow for
+		 * underlying kfabric providers to use untranslated addressing
+		 * instead of having to setup NIC memory mappings. This
+		 * typically leads to improved performance.
+		 */
+		ep->end_immed_bufs[i].immed_buf_page =
+			alloc_pages_node(cfs_cpt_spread_node(lnet_cpt_table(), cpt),
+					 GFP_KERNEL | __GFP_NOWARN,
+					 order_base_2(rx_buf_size / PAGE_SIZE));
+		if (!ep->end_immed_bufs[i].immed_buf_page) {
 			rc = -ENOMEM;
 			goto err_free_rx_buffers;
 		}
 
 		atomic_set(&ep->end_immed_bufs[i].immed_ref, 0);
+		ep->end_immed_bufs[i].immed_buf =
+			page_address(ep->end_immed_bufs[i].immed_buf_page);
 		ep->end_immed_bufs[i].immed_buf_size = rx_buf_size;
 		ep->end_immed_bufs[i].immed_end = ep;
 	}
@@ -703,9 +713,9 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 
 err_free_rx_buffers:
 	for (i = 0; i < immediate_rx_buf_count; i++) {
-		if (ep->end_immed_bufs[i].immed_buf)
-			LIBCFS_FREE(ep->end_immed_bufs[i].immed_buf,
-				    ep->end_immed_bufs[i].immed_buf_size);
+		if (ep->end_immed_bufs[i].immed_buf_page)
+			__free_pages(ep->end_immed_bufs[i].immed_buf_page,
+				     order_base_2(ep->end_immed_bufs[i].immed_buf_size / PAGE_SIZE));
 	}
 
 err_free_tx_context:
