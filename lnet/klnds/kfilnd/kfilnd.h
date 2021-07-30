@@ -114,6 +114,7 @@ struct kfilnd_dev;
 struct kfilnd_immediate_buffer {
 	void *immed_buf;
 	size_t immed_buf_size;
+	struct page *immed_buf_page;
 	atomic_t immed_ref;
 	bool immed_no_repost;
 	struct kfilnd_ep *immed_end;
