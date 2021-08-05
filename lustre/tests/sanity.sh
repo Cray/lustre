@@ -45,6 +45,9 @@ ALWAYS_EXCEPT+="                42a     42b     42c     77k"
 # skipped tests: LU-9054 ..
 ALWAYS_EXCEPT="  312     $ALWAYS_EXCEPT"
 
+# skipped tests: LU-12587
+ALWAYS_EXCEPT="  398a     $ALWAYS_EXCEPT"
+
 if $SHARED_KEY; then
 # bug number for skipped tests:	LU-9795 (all below)
 	ALWAYS_EXCEPT="$ALWAYS_EXCEPT	17n	60a	133g	300f"
@@ -21023,6 +21026,54 @@ test_319() {
 	[ -z "$evict" ] || [[ $evict -le $before ]] || error "eviction happened"
 }
 run_test 319 "lost lease lock on migrate error"
+
+test_398a() { # LU-4198
+	$LFS setstripe -c 1 -i 0 $DIR/$tfile
+	$LCTL set_param ldlm.namespaces.*.lru_size=clear
+
+	# request a new lock on client
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1
+
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 oflag=direct conv=notrunc
+	local lock_count=$($LCTL get_param -n \
+			   ldlm.namespaces.*-OST0000-osc-ffff*.lru_size)
+	[[ $lock_count -eq 0 ]] || error "lock should be cancelled by direct IO"
+
+	$LCTL set_param ldlm.namespaces.*-OST0000-osc-ffff*.lru_size=clear
+
+	# no lock cached, should use lockless IO and not enqueue new lock
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 oflag=direct conv=notrunc
+	lock_count=$($LCTL get_param -n \
+		     ldlm.namespaces.*-OST0000-osc-ffff*.lru_size)
+	[[ $lock_count -eq 0 ]] || error "no lock should be held by direct IO"
+}
+run_test 398a "direct IO should cancel lock otherwise lockless"
+
+test_398b() { # LU-4198
+	which fio || skip_env "no fio installed"
+	$LFS setstripe -c -1 $DIR/$tfile
+
+	local size=12
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=$size
+
+	local njobs=4
+	echo "mix direct rw ${size}M to OST0 by fio with $njobs jobs..."
+	fio --name=rand-rw --rw=randrw --bs=$PAGE_SIZE --direct=1 \
+		--numjobs=$njobs --fallocate=none \
+		--iodepth=16 --allow_file_create=0 --size=$((size/njobs))M \
+		--filename=$DIR/$tfile &
+	bg_pid=$!
+
+	echo "mix buffer rw ${size}M to OST0 by fio with $njobs jobs..."
+	fio --name=rand-rw --rw=randrw --bs=$PAGE_SIZE \
+		--numjobs=$njobs --fallocate=none \
+		--iodepth=16 --allow_file_create=0 --size=$((size/njobs))M \
+		--filename=$DIR/$tfile || true
+	wait $bg_pid
+
+	rm -rf $DIR/$tfile
+}
+run_test 398b "DIO and buffer IO race"
 
 test_fake_rw() {
 	local read_write=$1
