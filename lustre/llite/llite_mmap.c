@@ -34,6 +34,7 @@
 #include <linux/delay.h>
 #include <linux/kernel.h>
 #include <linux/mm.h>
+#include <linux/file.h>
 
 #define DEBUG_SUBSYSTEM S_LLITE
 
@@ -307,6 +308,7 @@ static vm_fault_t ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
 
 	result = io->ci_result;
 	if (result == 0) {
+		struct file *vm_file = vma->vm_file;
 		vio = vvp_env_io(env);
 		vio->u.fault.ft_vma       = vma;
 		vio->u.fault.ft_vmpage    = NULL;
@@ -314,13 +316,15 @@ static vm_fault_t ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
 		vio->u.fault.ft_flags = 0;
 		vio->u.fault.ft_flags_valid = 0;
 
+		get_file(vm_file);
+
 		/* May call ll_readpage() */
-		ll_cl_add(vma->vm_file, env, io, LCC_MMAP);
+		ll_cl_add(vm_file, env, io, LCC_MMAP);
 
 		result = cl_io_loop(env, io);
 
-		ll_cl_remove(vma->vm_file, env);
-
+		ll_cl_remove(vm_file, env);
+		fput(vm_file);
 		/* ft_flags are only valid if we reached
 		 * the call to filemap_fault */
 		if (vio->u.fault.ft_flags_valid)
@@ -334,8 +338,12 @@ static vm_fault_t ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
         }
 	cl_io_fini(env, io);
 
-	vma->vm_flags |= ra_flags;
-
+	/* vma could be lost during cl_io_loop */
+	if (!(fault_ret & VM_FAULT_RETRY)) {
+		/* equal to ll_fault_io_init */
+		vma->vm_flags &= ~(VM_RAND_READ|VM_SEQ_READ);
+		vma->vm_flags |= ra_flags;
+	}
 out:
 	cl_env_put(env, &refcheck);
 	if (result != 0 && !(fault_ret & VM_FAULT_RETRY))
