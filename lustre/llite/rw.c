@@ -212,7 +212,7 @@ static int ll_read_ahead_page(const struct lu_env *env, struct cl_io *io,
 	if (!vpg->vpg_defer_uptodate && !PageUptodate(vmpage)) {
 		vpg->vpg_defer_uptodate = 1;
 		vpg->vpg_ra_used = 0;
-		cl_page_list_add(queue, page);
+		cl_page_list_add(queue, page, true);
 	} else {
 		/* skip completed pages */
 		cl_page_unassume(env, io, page);
@@ -1124,7 +1124,7 @@ int ll_io_read_page(const struct lu_env *env, struct cl_io *io,
 		cl_sync_io_init(anchor, 1);
 		page->cp_sync_io = anchor;
 
-		cl_2queue_add(queue, page);
+		cl_2queue_add(queue, page, true);
 	}
 
 	if (sbi->ll_ra_info.ra_max_pages_per_file > 0 &&

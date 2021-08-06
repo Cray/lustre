@@ -1301,7 +1301,7 @@ static void echo_commit_callback(const struct lu_env *env, struct cl_io *io,
 		struct page *vmpage = pvec->pages[i];
 		struct cl_page *page = (struct cl_page *)vmpage->private;
 
-		cl_page_list_add(&queue->c2_qout, page);
+		cl_page_list_add(&queue->c2_qout, page, true);
 	}
 }
 
@@ -1365,7 +1365,7 @@ static int cl_echo_object_brw(struct echo_object *eco, int rw, u64 offset,
                         break;
                 }
 
-                cl_2queue_add(queue, clp);
+                cl_2queue_add(queue, clp, true);
 
                 /* drop the reference count for cl_page_find, so that the page
                  * will be freed in cl_2queue_fini. */
