@@ -64,6 +64,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	enum tn_events event = TN_EVENT_INVALID;
 	lnet_kiov_t *kiov = NULL;
 	struct kvec *iov = NULL;
+	int rc;
 
 	/* NB 'private' is different depending on what we're sending.... */
 	if (msg->msg_niov > LNET_MAX_IOV)
@@ -109,11 +110,11 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	}
 
 	cpt = kfilnd_send_cpt(dev, target.nid);
-	tn = kfilnd_tn_alloc(dev, cpt, true, true);
-	if (!tn) {
-		CERROR("Can't send %d to %s: Tn descs exhausted\n",
-		       type, libcfs_nid2str(target.nid));
-		return -ENOMEM;
+	tn = kfilnd_tn_alloc(dev, cpt, target.nid, true, true);
+	if (IS_ERR(tn)) {
+		rc = PTR_ERR(tn);
+		CERROR("Failed to allocate transaction struct: rc=%d\n", rc);
+		return rc;
 	}
 
 	kfmsg = tn->tn_tx_msg.msg;
@@ -193,7 +194,6 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 						 lnd_msg_type, nob, ni);
 
 	/* Setup remaining transaction fields */
-	tn->tn_target_nid = target.nid;
 	tn->tn_lntmsg = msg;	/* finalise msg on completion */
 	tn->lnet_msg_len = tn->tn_nob;
 
