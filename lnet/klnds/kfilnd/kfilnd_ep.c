@@ -26,6 +26,11 @@ static int kfilnd_ep_post_recv(struct kfilnd_ep *ep,
 	if (buf->immed_no_repost)
 		return 0;
 
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_RECV))
+		return -EIO;
+	else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_RECV_EAGAIN))
+		return -EAGAIN;
+
 	atomic_inc(&buf->immed_ref);
 	rc = kfi_recv(ep->end_rx, buf->immed_buf, buf->immed_buf_size, NULL, 0,
 		      buf);
@@ -35,6 +40,8 @@ static int kfilnd_ep_post_recv(struct kfilnd_ep *ep,
 	return rc;
 }
 
+#define KFILND_EP_REPLAY_TIMER_MSEC (100U)
+
 /**
  * kfilnd_ep_imm_buffer_put() - Decrement the immediate buffer count reference
  * counter.
@@ -42,18 +49,52 @@ static int kfilnd_ep_post_recv(struct kfilnd_ep *ep,
  *
  * If the immediate buffer's reference count reaches zero, the buffer will
  * automatically be reposted.
- *
- * Return: On success, zero. Else, negative errno value.
  */
-int kfilnd_ep_imm_buffer_put(struct kfilnd_immediate_buffer *buf)
+void kfilnd_ep_imm_buffer_put(struct kfilnd_immediate_buffer *buf)
 {
+	unsigned long expires;
+	int rc;
+
 	if (!buf)
-		return -EINVAL;
+		return;
 
 	if (atomic_sub_return(1, &buf->immed_ref) != 0)
-		return 0;
+		return;
 
-	return kfilnd_ep_post_recv(buf->immed_end, buf);
+	rc = kfilnd_ep_post_recv(buf->immed_end, buf);
+	switch (rc) {
+	case 0:
+		break;
+
+	/* Return the buffer reference and queue the immediate buffer put to be
+	 * replayed.
+	 */
+	case -EAGAIN:
+		expires = msecs_to_jiffies(KFILND_EP_REPLAY_TIMER_MSEC) +
+			jiffies;
+		atomic_inc(&buf->immed_ref);
+
+		spin_lock(&buf->immed_end->replay_lock);
+		list_add_tail(&buf->replay_entry,
+			      &buf->immed_end->imm_buffer_replay);
+		atomic_inc(&buf->immed_end->replay_count);
+		spin_unlock(&buf->immed_end->replay_lock);
+
+		if (!timer_pending(&buf->immed_end->replay_timer))
+			mod_timer(&buf->immed_end->replay_timer, expires);
+		break;
+
+	/* Unexpected error resulting in immediate buffer not being able to be
+	 * posted. Since immediate buffers are used to sink incoming messages,
+	 * failure to post immediate buffers means failure to communicate.
+	 *
+	 * TODO: Prevent LNet NI from doing sends/recvs?
+	 */
+	default:
+		KFILND_EP_ERROR(buf->immed_end,
+				"Failed to post immediate receive buffer: rc=%d",
+				rc);
+	}
 }
 
 /**
@@ -95,7 +136,13 @@ void kfilnd_ep_cancel_imm_buffers(struct kfilnd_ep *ep)
 
 	for (i = 0; i < immediate_rx_buf_count; i++) {
 		ep->end_immed_bufs[i].immed_no_repost = true;
-		kfi_cancel(&ep->end_rx->fid, &ep->end_immed_bufs[i]);
+
+		/* Since this is called during LNet NI teardown, no need to
+		 * pipeline retries. Just spin until -EAGAIN is not returned.
+		 */
+		while (kfi_cancel(&ep->end_rx->fid, &ep->end_immed_bufs[i]) ==
+		       -EAGAIN)
+			schedule();
 	}
 }
 
@@ -158,21 +205,27 @@ int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,
 		if (!rc)
 			return 0;
 	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_SEND)) {
+		return -EIO;
+	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_SEND_EAGAIN)) {
 		return -EAGAIN;
 	}
 
 	rc = kfi_tsenddata(ep->end_tx, NULL, 0, NULL, tn->tagged_data,
 			   tn->tn_target_addr, tn->tn_response_mr_key, tn);
-	if (rc) {
-		KFILND_EP_ERROR(ep,
-				"Transaction ID %u: Failed to post tagged send with tag 0x%x to peer 0x%llx",
-				tn->tn_mr_key, tn->tn_response_mr_key,
-				tn->tn_target_addr);
-	} else {
+	switch (rc) {
+	case 0:
+	case -EAGAIN:
 		KFILND_EP_DEBUG(ep,
-				"Transaction ID %u: Posted tagged send of with tag 0x%x to peer 0x%llx",
+				"Transaction ID %u: %s tagged send of with tag 0x%x to peer 0x%llx: rc=%d",
+				tn->tn_mr_key, rc ? "Failed to post" : "Posted",
+				tn->tn_response_mr_key, tn->tn_target_addr, rc);
+		break;
+
+	default:
+		KFILND_EP_ERROR(ep,
+				"Transaction ID %u: Failed to post tagged send with tag 0x%x to peer 0x%llx: rc=%d",
 				tn->tn_mr_key, tn->tn_response_mr_key,
-				tn->tn_target_addr);
+				tn->tn_target_addr, rc);
 	}
 
 	return rc;
@@ -200,6 +253,9 @@ int kfilnd_ep_cancel_tagged_recv(struct kfilnd_ep *ep,
 	/* Make sure the device is not being shut down */
 	if (ep->end_dev->kfd_state != KFILND_STATE_INITIALIZED)
 		return -EINVAL;
+
+	if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_RECV_CANCEL_EAGAIN))
+		return -EAGAIN;
 
 	/* The async event count is not decremented for a cancel operation since
 	 * it was incremented for the post tagged receive.
@@ -244,6 +300,8 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 		if (!rc)
 			return 0;
 	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_RECV)) {
+		return -EIO;
+	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_TAGGED_RECV_EAGAIN)) {
 		return -EAGAIN;
 	}
 
@@ -257,16 +315,20 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 	}
 
 	rc = kfi_trecvmsg(ep->end_rx, &msg, KFI_COMPLETION);
-	if (rc) {
-		KFILND_EP_ERROR(ep,
-				"Transaction ID %u: Failed to post tagged recv of %u bytes (%u frags) with tag 0x%llx",
-				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
-				msg.tag);
-	} else {
+	switch (rc) {
+	case 0:
+	case -EAGAIN:
 		KFILND_EP_DEBUG(ep,
-				"Transaction ID %u: Posted tagged recv of %u bytes (%u frags) with tag 0x%llx",
+				"Transaction ID %u: %s tagged recv of %u bytes (%u frags) with tag 0x%llx: rc=%d",
+				tn->tn_mr_key, rc ? "Failed to post" : "Posted",
+				tn->tn_nob, tn->tn_num_iovec, msg.tag, rc);
+		break;
+
+	default:
+		KFILND_EP_ERROR(ep,
+				"Transaction ID %u: Failed to post tagged recv of %u bytes (%u frags) with tag 0x%llx: rc=%d",
 				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
-				msg.tag);
+				msg.tag, rc);
 	}
 
 	return rc;
@@ -309,18 +371,25 @@ int kfilnd_ep_post_send(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		if (!rc)
 			return 0;
 	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND)) {
+		return -EIO;
+	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_SEND_EAGAIN)) {
 		return -EAGAIN;
 	}
 
 	rc = kfi_send(ep->end_tx, buf, len, NULL, tn->tn_target_addr, tn);
-	if (rc) {
-		KFILND_EP_ERROR(ep,
-				"Transaction ID %u: Failed to post send of %lu bytes to peer 0x%llx",
-				tn->tn_mr_key, len, tn->tn_target_addr);
-	} else {
+	switch (rc) {
+	case 0:
+	case -EAGAIN:
 		KFILND_EP_DEBUG(ep,
-				"Transaction ID %u: Posted send of %lu bytes to peer 0x%llx",
-				tn->tn_mr_key, len, tn->tn_target_addr);
+				"Transaction ID %u: %s send of %lu bytes to peer 0x%llx: rc=%d",
+				tn->tn_mr_key, rc ? "Failed to post" : "Posted",
+				len, tn->tn_target_addr, rc);
+		break;
+
+	default:
+		KFILND_EP_ERROR(ep,
+				"Transaction ID %u: Failed to post send of %lu bytes to peer 0x%llx: rc=%d",
+				tn->tn_mr_key, len, tn->tn_target_addr, rc);
 	}
 
 	return rc;
@@ -372,6 +441,8 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		if (!rc)
 			return 0;
 	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE)) {
+		return -EIO;
+	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_WRITE_EAGAIN)) {
 		return -EAGAIN;
 	}
 
@@ -385,16 +456,22 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	}
 
 	rc = kfi_writemsg(ep->end_tx, &rma, KFI_TAGGED | KFI_COMPLETION);
-	if (rc) {
-		KFILND_EP_ERROR(ep,
-				"Transaction ID %u: Failed to post write of %u bytes in %u frags with key 0x%x to peer 0x%llx",
-				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
-				tn->tn_response_mr_key, tn->tn_target_addr);
-	} else {
+	switch (rc) {
+	case 0:
+	case -EAGAIN:
 		KFILND_EP_DEBUG(ep,
-				"Transaction ID %u: Posted write of %u bytes in %u frags with key 0x%x to peer 0x%llx",
+				"Transaction ID %u: %s write of %u bytes in %u frags with key 0x%x to peer 0x%llx: rc=%d",
+				tn->tn_mr_key, rc ? "Failed to post" : "Posted",
+				tn->tn_nob, tn->tn_num_iovec,
+				tn->tn_response_mr_key, tn->tn_target_addr, rc);
+		break;
+
+	default:
+		KFILND_EP_ERROR(ep,
+				"Transaction ID %u: Failed to post write of %u bytes in %u frags with key 0x%x to peer 0x%llx: rc=%d",
 				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
-				tn->tn_response_mr_key, tn->tn_target_addr);
+				tn->tn_response_mr_key, tn->tn_target_addr,
+				rc);
 	}
 
 	return rc;
@@ -445,6 +522,8 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 		if (!rc)
 			return 0;
 	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ)) {
+		return -EIO;
+	} else if (CFS_FAIL_CHECK(CFS_KFI_FAIL_READ_EAGAIN)) {
 		return -EAGAIN;
 	}
 
@@ -458,20 +537,113 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	}
 
 	rc = kfi_readmsg(ep->end_tx, &rma, KFI_TAGGED | KFI_COMPLETION);
-	if (rc) {
-		KFILND_EP_ERROR(ep,
-				"Transaction ID %u: Failed to post read of %u bytes in %u frags with key 0x%x to peer 0x%llx",
-				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
-				tn->tn_response_mr_key, tn->tn_target_addr);
-	} else {
+	switch (rc) {
+	case 0:
+	case -EAGAIN:
 		KFILND_EP_DEBUG(ep,
-				"Transaction ID %u: Posted read of %u bytes in %u frags with key 0x%x to peer 0x%llx",
+				"Transaction ID %u: %s read of %u bytes in %u frags with key 0x%x to peer 0x%llx: rc=%d",
+				tn->tn_mr_key, rc ? "Failed to post" : "Posted",
+				tn->tn_nob, tn->tn_num_iovec,
+				tn->tn_response_mr_key, tn->tn_target_addr, rc);
+		break;
+
+	default:
+		KFILND_EP_ERROR(ep,
+				"Transaction ID %u: Failed to post read of %u bytes in %u frags with key 0x%x to peer 0x%llx: rc=%d",
 				tn->tn_mr_key, tn->tn_nob, tn->tn_num_iovec,
-				tn->tn_response_mr_key, tn->tn_target_addr);
+				tn->tn_response_mr_key, tn->tn_target_addr, rc);
 	}
 
-
 	return rc;
+}
+
+void kfilnd_ep_queue_tn_replay(struct kfilnd_ep *ep,
+			       struct kfilnd_transaction *tn)
+{
+	unsigned long expires = msecs_to_jiffies(KFILND_EP_REPLAY_TIMER_MSEC) +
+		jiffies;
+
+	spin_lock(&ep->replay_lock);
+	list_add_tail(&tn->replay_entry, &ep->tn_replay);
+	atomic_inc(&ep->replay_count);
+	spin_unlock(&ep->replay_lock);
+
+	if (!timer_pending(&ep->replay_timer))
+		mod_timer(&ep->replay_timer, expires);
+}
+
+void kfilnd_ep_flush_replay_queue(struct kfilnd_ep *ep)
+{
+	LIST_HEAD(tn_replay);
+	LIST_HEAD(imm_buf_replay);
+	struct kfilnd_transaction *tn_first;
+	struct kfilnd_transaction *tn_last;
+	struct kfilnd_immediate_buffer *buf_first;
+	struct kfilnd_immediate_buffer *buf_last;
+
+	/* Since the endpoint replay lists can be manipulated while
+	 * attempting to do replays, the entire replay list is moved to a
+	 * temporary list.
+	 */
+	spin_lock(&ep->replay_lock);
+
+	tn_first = list_first_entry_or_null(&ep->tn_replay,
+					    struct kfilnd_transaction,
+					    replay_entry);
+	if (tn_first) {
+		tn_last = list_last_entry(&ep->tn_replay,
+					  struct kfilnd_transaction,
+					  replay_entry);
+		list_bulk_move_tail(&tn_replay, &tn_first->replay_entry,
+				    &tn_last->replay_entry);
+		LASSERT(list_empty(&ep->tn_replay));
+	}
+
+	buf_first = list_first_entry_or_null(&ep->imm_buffer_replay,
+					     struct kfilnd_immediate_buffer,
+					     replay_entry);
+	if (buf_first) {
+		buf_last = list_last_entry(&ep->imm_buffer_replay,
+					   struct kfilnd_immediate_buffer,
+					   replay_entry);
+		list_bulk_move_tail(&imm_buf_replay, &buf_first->replay_entry,
+				    &buf_last->replay_entry);
+		LASSERT(list_empty(&ep->imm_buffer_replay));
+	}
+
+	spin_unlock(&ep->replay_lock);
+
+	/* Replay all queued transactions. */
+	list_for_each_entry_safe(tn_first, tn_last, &tn_replay, replay_entry) {
+		list_del(&tn_first->replay_entry);
+		atomic_dec(&ep->replay_count);
+		kfilnd_tn_event_handler(tn_first, tn_first->replay_event,
+					tn_first->replay_status);
+	}
+
+	list_for_each_entry_safe(buf_first, buf_last, &imm_buf_replay,
+				 replay_entry) {
+		list_del(&buf_first->replay_entry);
+		atomic_dec(&ep->replay_count);
+		kfilnd_ep_imm_buffer_put(buf_first);
+	}
+}
+
+static void kfilnd_ep_replay_work(struct work_struct *work)
+{
+	struct kfilnd_ep *ep =
+		container_of(work, struct kfilnd_ep, replay_work);
+
+	kfilnd_ep_flush_replay_queue(ep);
+}
+
+static void kfilnd_ep_replay_timer(cfs_timer_cb_arg_t data)
+{
+	struct kfilnd_ep *ep = cfs_from_timer(ep, data, replay_timer);
+	unsigned int cpu =
+		cpumask_first(cfs_cpt_cpumask(lnet_cpt_table(), ep->end_cpt));
+
+	queue_work_on(cpu, kfilnd_wq, &ep->replay_work);
 }
 
 #define KFILND_EP_ALLOC_SIZE \
@@ -492,11 +664,20 @@ void kfilnd_ep_free(struct kfilnd_ep *ep)
 	if (IS_ERR_OR_NULL(ep))
 		return;
 
+	while (atomic_read(&ep->replay_count)) {
+		k++;
+		CDEBUG(((k & (-k)) == k) ? D_WARNING : D_NET,
+			"Waiting for replay count %d not zero\n",
+			atomic_read(&ep->replay_count));
+		schedule_timeout_uninterruptible(HZ);
+	}
+
 	/* Cancel any outstanding immediate receive buffers. */
 	kfilnd_ep_cancel_imm_buffers(ep);
 
 	/* Wait for RX buffers to no longer be used and then free them. */
 	for (i = 0; i < immediate_rx_buf_count; i++) {
+		k = 2;
 		while (atomic_read(&ep->end_immed_bufs[i].immed_ref)) {
 			k++;
 			CDEBUG(((k & (-k)) == k) ? D_WARNING : D_NET,
@@ -574,6 +755,13 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 	ep->end_context_id = context_id;
 	INIT_LIST_HEAD(&ep->tn_list);
 	spin_lock_init(&ep->tn_list_lock);
+	INIT_LIST_HEAD(&ep->tn_replay);
+	INIT_LIST_HEAD(&ep->imm_buffer_replay);
+	spin_lock_init(&ep->replay_lock);
+	cfs_timer_setup(&ep->replay_timer, kfilnd_ep_replay_timer,
+			(unsigned long)ep, 0);
+	INIT_WORK(&ep->replay_work, kfilnd_ep_replay_work);
+	atomic_set(&ep->replay_count, 0);
 
 	/* Create a CQ for this CPT */
 	cq_attr.flags = KFI_AFFINITY;
