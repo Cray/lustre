@@ -10,6 +10,7 @@
 
 #include "kfilnd_cq.h"
 #include "kfilnd_tn.h"
+#include "kfilnd_ep.h"
 
 void kfilnd_cq_process_error(struct kfilnd_ep *ep,
 			     struct kfi_cq_err_entry *error)
@@ -30,7 +31,7 @@ void kfilnd_cq_process_error(struct kfilnd_ep *ep,
 		/* Fall through. */
 	case KFI_MSG | KFI_RECV | KFI_MULTI_RECV:
 		buf = error->op_context;
-		kfilnd_tn_process_unlink_event(buf);
+		kfilnd_ep_imm_buffer_put(buf);
 		return;
 
 	case KFI_TAGGED | KFI_RECV:
@@ -87,7 +88,7 @@ static void kfilnd_cq_process_event(struct kfi_cq_data_entry *event)
 		 * unlinked.
 		 */
 		if (event->flags & KFI_MULTI_RECV)
-			kfilnd_tn_process_unlink_event(buf);
+			kfilnd_ep_imm_buffer_put(buf);
 		return;
 
 	case KFI_TAGGED | KFI_RECV:
@@ -146,6 +147,9 @@ static void kfilnd_cq_process_completion(struct work_struct *work)
 			done = true;
 		}
 	}
+
+	if (kfilnd_ep_replays_pending(kfilnd_cq->ep))
+		kfilnd_ep_flush_replay_queue(kfilnd_cq->ep);
 }
 
 static void kfilnd_cq_completion(struct kfid_cq *cq, void *context)
