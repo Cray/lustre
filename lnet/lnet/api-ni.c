@@ -256,8 +256,9 @@ unsigned int lnet_current_net_count;
  */
 static atomic_t lnet_dlc_seq_no = ATOMIC_INIT(0);
 
-static int lnet_ping(struct lnet_process_id id, signed long timeout,
-		     struct lnet_process_id __user *ids, int n_ids);
+static int lnet_ping(struct lnet_process_id id, lnet_nid_t src_nid,
+		     signed long timeout, struct lnet_process_id __user *ids,
+		     int n_ids);
 
 static int lnet_discover(struct lnet_process_id id, __u32 force,
 			 struct lnet_process_id __user *ids, int n_ids);
@@ -4137,7 +4138,7 @@ LNetCtl(unsigned int cmd, void *arg)
 		else
 			timeout = msecs_to_jiffies(data->ioc_u32[1]);
 
-		rc = lnet_ping(id, timeout, data->ioc_pbuf1,
+		rc = lnet_ping(id, LNET_NID_ANY, timeout, data->ioc_pbuf1,
 			       data->ioc_plen1 / sizeof(struct lnet_process_id));
 
 		if (rc < 0)
@@ -4151,6 +4152,18 @@ LNetCtl(unsigned int cmd, void *arg)
 		struct lnet_ioctl_ping_data *ping = arg;
 		struct lnet_peer *lp;
 		signed long timeout;
+		lnet_nid_t src_nid = LNET_NID_ANY;
+
+		/* Check if the supplied ping data supports source nid
+		 * NB: This check is sufficient if lnet_ioctl_ping_data has
+		 * additional fields added, but if they are re-ordered or
+		 * fields removed then this will break. It is expected that
+		 * these ioctls will be replaced with netlink implementation, so
+		 * it is probably not worth coming up with a more robust version
+		 * compatibility scheme.
+		 */
+		if (ping->ping_hdr.ioc_len >= sizeof(struct lnet_ioctl_ping_data))
+			src_nid = ping->ping_src;
 
 		/* If timeout is negative then set default of 3 minutes */
 		if (((s32)ping->op_param) <= 0 ||
@@ -4159,7 +4172,7 @@ LNetCtl(unsigned int cmd, void *arg)
 		else
 			timeout = msecs_to_jiffies(ping->op_param);
 
-		rc = lnet_ping(ping->ping_id, timeout,
+		rc = lnet_ping(ping->ping_id, src_nid, timeout,
 			       ping->ping_buf,
 			       ping->ping_count);
 		if (rc < 0)
@@ -4320,8 +4333,9 @@ lnet_ping_event_handler(struct lnet_event *event)
 		complete(&pd->completion);
 }
 
-static int lnet_ping(struct lnet_process_id id, signed long timeout,
-		     struct lnet_process_id __user *ids, int n_ids)
+static int lnet_ping(struct lnet_process_id id, lnet_nid_t src_nid,
+		     signed long timeout, struct lnet_process_id __user *ids,
+		     int n_ids)
 {
 	struct lnet_md md = { NULL };
 	struct ping_data pd = { 0 };
@@ -4367,7 +4381,7 @@ static int lnet_ping(struct lnet_process_id id, signed long timeout,
 		goto fail_ping_buffer_decref;
 	}
 
-	rc = LNetGet(LNET_NID_ANY, pd.mdh, id,
+	rc = LNetGet(src_nid, pd.mdh, id,
 		     LNET_RESERVED_PORTAL,
 		     LNET_PROTO_PING_MATCHBITS, 0, false);
 
