@@ -65,6 +65,14 @@
 #define CFS_KFI_FAIL_WRITE 0xF108
 #define CFS_KFI_FAIL_TAGGED_SEND 0xF109
 #define CFS_KFI_FAIL_TAGGED_RECV 0xF10A
+#define CFS_KFI_FAIL_SEND_EAGAIN 0xF10B
+#define CFS_KFI_FAIL_READ_EAGAIN 0xF10C
+#define CFS_KFI_FAIL_WRITE_EAGAIN 0xF10D
+#define CFS_KFI_FAIL_TAGGED_SEND_EAGAIN 0xF10E
+#define CFS_KFI_FAIL_TAGGED_RECV_EAGAIN 0xF10F
+#define CFS_KFI_FAIL_TAGGED_RECV_CANCEL_EAGAIN 0xF110
+#define CFS_KFI_FAIL_RECV_EAGAIN 0xF111
+#define CFS_KFI_FAIL_RECV 0xF112
 
 /* Some constants which should be turned into tunables */
 #define KFILND_IMMEDIATE_MSG_SIZE 4096
@@ -117,6 +125,7 @@ struct kfilnd_immediate_buffer {
 	struct page *immed_buf_page;
 	atomic_t immed_ref;
 	bool immed_no_repost;
+	struct list_head replay_entry;
 	struct kfilnd_ep *immed_end;
 };
 
@@ -154,6 +163,14 @@ struct kfilnd_ep {
 	/* List of transactions. */
 	struct list_head tn_list;
 	spinlock_t tn_list_lock;
+
+	/* Replay queues. */
+	struct list_head tn_replay;
+	struct list_head imm_buffer_replay;
+	spinlock_t replay_lock;
+	struct timer_list replay_timer;
+	struct work_struct replay_work;
+	atomic_t replay_count;
 
 	/* Pre-posted immediate buffers */
 	struct kfilnd_immediate_buffer end_immed_bufs[];
@@ -198,8 +215,12 @@ enum tn_states {
 	TN_STATE_IDLE,
 	TN_STATE_WAIT_TAG_COMP,
 
-	/* Initiator states. */
+	/* Initiator immediate states. */
 	TN_STATE_IMM_SEND,
+
+	/* Initiator bulk states. */
+	TN_STATE_TAGGED_RECV_POSTED,
+	TN_STATE_SEND_FAILED,
 	TN_STATE_WAIT_COMP,
 	TN_STATE_WAIT_TIMEOUT_COMP,
 	TN_STATE_WAIT_SEND_COMP,
@@ -355,7 +376,7 @@ struct kfilnd_msg {
 	       (tn)->tn_mr_key, \
 	       libcfs_nid2str((tn)->tn_ep->end_dev->kfd_ni->ni_nid), \
 	       (tn)->tn_ep->end_context_id, dir, \
-	       libcfs_nid2str((tn)->tn_target_nid), \
+	       libcfs_nid2str((tn)->peer->nid), \
 	       KFILND_TN_PEER_VALID(tn) ? \
 		KFILND_RX_CONTEXT((tn)->peer->addr) : 0, \
 	       ##__VA_ARGS__)
@@ -373,7 +394,7 @@ struct kfilnd_msg {
 		(tn)->tn_mr_key, \
 		libcfs_nid2str((tn)->tn_ep->end_dev->kfd_ni->ni_nid), \
 		(tn)->tn_ep->end_context_id, dir, \
-		libcfs_nid2str((tn)->tn_target_nid), \
+		libcfs_nid2str((tn)->peer->nid), \
 		KFILND_TN_PEER_VALID(tn) ? \
 			KFILND_RX_CONTEXT((tn)->peer->addr) : 0, \
 		##__VA_ARGS__)
@@ -420,6 +441,8 @@ static inline const char *tn_state_to_str(enum tn_states type)
 		[TN_STATE_IDLE] = "TN_STATE_IDLE",
 		[TN_STATE_WAIT_TAG_COMP] = "TN_STATE_WAIT_TAG_COMP",
 		[TN_STATE_IMM_SEND] = "TN_STATE_IMM_SEND",
+		[TN_STATE_TAGGED_RECV_POSTED] = "TN_STATE_TAGGED_RECV_POSTED",
+		[TN_STATE_SEND_FAILED] = "TN_STATE_SEND_FAILED",
 		[TN_STATE_WAIT_COMP] = "TN_STATE_WAIT_COMP",
 		[TN_STATE_WAIT_TIMEOUT_COMP] = "TN_STATE_WAIT_TIMEOUT_COMP",
 		[TN_STATE_WAIT_SEND_COMP] = "TN_STATE_WAIT_SEND_COMP",
@@ -504,7 +527,6 @@ struct kfilnd_transaction {
 	bool			is_initiator;	/* Initiated LNet transfer. */
 
 	/* Transaction send message and target address. */
-	lnet_nid_t		tn_target_nid;
 	kfi_addr_t		tn_target_addr;
 	struct kfilnd_peer	*peer;
 	struct kfilnd_transaction_msg tn_tx_msg;
@@ -557,6 +579,11 @@ struct kfilnd_transaction {
 	ktime_t tn_alloc_ts;
 	ktime_t tn_state_ts;
 	size_t lnet_msg_len;
+
+	/* Fields used to replay transaction. */
+	struct list_head replay_entry;
+	enum tn_events replay_event;
+	int replay_status;
 };
 
 #endif /* _KFILND_ */
