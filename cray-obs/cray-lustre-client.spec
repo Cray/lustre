@@ -174,6 +174,10 @@ do
 	install -D -m 0644 cray-obs/${f} $RPM_BUILD_ROOT%{_pkgconfigdir}/${f}
 done
 
+if [[ -e %{buildroot}/%{_sysconfdir}/modprobe.d/ko2iblnd.conf ]]; then
+	%{__sed} -i -e 's/^\(install ko2iblnd .*\)/\#\1/' %{buildroot}/%{_sysconfdir}/modprobe.d/ko2iblnd.conf
+fi
+
 # Install Module.symvers and config.h for the lnet devel package
 %{__install} -D -m 0644 ${PWD}/Module.symvers %{buildroot}/%{_datadir}/symvers/%{_arch}/%{flavor}/Module.symvers
 %{__install} -D -m 0644 config.h %{buildroot}/%{cfgdir}/config.h
