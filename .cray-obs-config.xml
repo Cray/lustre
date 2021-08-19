@@ -74,6 +74,11 @@
             </file>
             <file>
                 <name>
+                    cray-obs/cray-lustre-client-ofed.spec
+                </name>
+            </file>
+            <file>
+                <name>
                     cray-obs/cray-lustre-ari_s.spec
                 </name>
             </file>
