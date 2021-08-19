@@ -2389,6 +2389,12 @@ void ptlrpc_expired_set(struct ptlrpc_request_set *set)
 	}
 }
 
+static int sigpending(int sig)
+{
+	return sigismember(&current->pending.signal, sig) ||
+	       sigismember(&current->signal->shared_pending.signal, sig);
+}
+
 /**
  * Interrupts (sets interrupted flag) all uncompleted requests in
  * a set \a data. This is called when a wait_event is interrupted
@@ -2399,7 +2405,11 @@ static void ptlrpc_interrupted_set(struct ptlrpc_request_set *set)
 	struct ptlrpc_request *req;
 
 	LASSERT(set != NULL);
-	CDEBUG(D_RPCTRACE, "INTERRUPTED SET %p\n", set);
+	CDEBUG(D_ERROR, "INTERRUPTED SET %p SIGUSR2 pending: %d\n",
+	       set, sigpending(SIGUSR2));
+
+	if (sigpending(SIGUSR2))
+		return;
 
 	list_for_each_entry(req, &set->set_requests, rq_set_chain) {
 		if (req->rq_intr)

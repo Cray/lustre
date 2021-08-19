@@ -2032,6 +2032,9 @@ int obd_get_request_slot(struct client_obd *cli)
 	}
 	spin_unlock(&cli->cl_loi_list_lock);
 
+	if (rc == -EINTR)
+		rc = -ERESTARTSYS;
+
 	return rc;
 }
 EXPORT_SYMBOL(obd_get_request_slot);
