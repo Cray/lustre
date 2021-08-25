@@ -112,7 +112,7 @@ again:
 		goto err;
 	}
 
-	node = kasprintf(GFP_KERNEL, "%pI4h", &nid_addr);
+	node = kasprintf(GFP_KERNEL, "%#x", nid_addr);
 	if (!node) {
 		rc = -ENOMEM;
 		goto err_free_peer;

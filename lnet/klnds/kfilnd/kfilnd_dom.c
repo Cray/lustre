@@ -265,6 +265,7 @@ void kfilnd_dom_put(struct kfilnd_dom *dom)
 /**
  * kfilnd_dom_get() - Get a KFI LND domain.
  * @ni: LNet NI used to define the KFI LND domain address.
+ * @node: Node string which can be passed into kfi_getinfo().
  * @dev_info: KFI info structure which should be used to allocate a KFI LND
  * device using this domain.
  *
@@ -274,7 +275,7 @@ void kfilnd_dom_put(struct kfilnd_dom *dom)
  * Return: On success, dev_info is set to a valid KFI info structure and a valid
  * KFI LND domain is returned. Else, negative errno pointer is returned.
  */
-struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
+struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni, const char *node,
 				  struct kfi_info **dev_info)
 {
 	int rc;
@@ -282,19 +283,10 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
 	struct kfi_info *info;
 	struct kfilnd_fab *fab;
 	struct kfilnd_dom *dom;
-	char *node;
 	char *service;
-	uint32_t ni_addr;
 
 	if (!ni || !dev_info) {
 		rc = -EINVAL;
-		goto err;
-	}
-
-	ni_addr = LNET_NIDADDR(ni->ni_nid);
-	node = kasprintf(GFP_KERNEL, "%pI4h", &ni_addr);
-	if (!node) {
-		rc = -ENOMEM;
 		goto err;
 	}
 
@@ -302,7 +294,7 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
 			    LNET_NETNUM(LNET_NIDNET(ni->ni_nid)));
 	if (!service) {
 		rc = -ENOMEM;
-		goto err_free_node;
+		goto err;
 	}
 
 	hints = kfi_allocinfo();
@@ -343,7 +335,6 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
 	rc = kfi_getinfo(0, node, service, KFI_SOURCE, hints, &info);
 
 	kfi_freeinfo(hints);
-	kfree(node);
 	kfree(service);
 	node = NULL;
 	service = NULL;
@@ -378,8 +369,6 @@ err_free_info:
 	kfi_freeinfo(info);
 err_free_service:
 	kfree(service);
-err_free_node:
-	kfree(node);
 err:
 	return ERR_PTR(rc);
 }
