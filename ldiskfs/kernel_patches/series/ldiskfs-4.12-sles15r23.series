@@ -16,7 +16,6 @@ sles15/ext4-large-dir.patch
 base/ext4-htree-lock.patch
 sles15/ext4-pdirop_r23.patch
 sles15/ext4-max-dir-size.patch
-sles15/ext4-remove-truncate-warning.patch
 sles15/ext4-corrupted-inode-block-bitmaps-handling-patches_r23.patch
 sles12sp2/ext4-give-warning-with-dir-htree-growing.patch
 sles15/ext4-jcb-optimization.patch
