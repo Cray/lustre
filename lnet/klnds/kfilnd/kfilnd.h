@@ -51,6 +51,7 @@
 #include "kfi_errno.h"
 #include "kfi_rma.h"
 #include "kfi_tagged.h"
+#include "kfi_cxi_ext.h"
 
 /* KFILND CFS fail range 0xF100 - 0xF1FF. */
 
@@ -307,6 +308,9 @@ struct kfilnd_dev {
 	struct dentry *target_state_stats_file;
 	struct dentry *target_stats_file;
 	struct dentry *reset_stats_file;
+
+	/* Physical NIC address. */
+	unsigned int nic_addr;
 };
 
 /* Invalid checksum value is treated as no checksum. */
