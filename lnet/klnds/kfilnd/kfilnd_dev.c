@@ -85,6 +85,7 @@ void kfilnd_dev_free(struct kfilnd_dev *dev)
 /**
  * kfilnd_dev_alloc() - Allocate a new KFI LND device a LNet NI.
  * @ni: LNet NI used to allocate the KFI LND device.
+ * @node: Node string which can be passed into kfi_getinfo().
  *
  * During KFI LND device allocation, the LNet NID NID is used to build node
  * and service string. The LNet NID address (IPv4 address) is used for the node
@@ -99,7 +100,8 @@ void kfilnd_dev_free(struct kfilnd_dev *dev)
  *
  * Return: On success, valid pointer. On error, negative errno pointer.
  */
-struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni)
+struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni,
+				    const char *node)
 {
 	int i;
 	int rc;
@@ -126,12 +128,28 @@ struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni)
 	dev->kfd_ni = ni;
 	spin_lock_init(&dev->kfd_lock);
 
-	dev->dom = kfilnd_dom_get(ni, &dev_info);
+	dev->dom = kfilnd_dom_get(ni, node, &dev_info);
 	if (IS_ERR(dev->dom)) {
 		rc = PTR_ERR(dev->dom);
 		CERROR("Failed to get KFI LND domain: rc=%d\n", rc);
 		goto err_free_dev;
 	}
+
+	/* KFI LNet NID address needs to be unique per LNet NID and something
+	 * which can be inserted into the KFI AV. The NIC address is one of the
+	 * unique components. Local interface NIC address needs to be extracted
+	 * and used to build the LNet NID.
+	 *
+	 * At this point, only the KFI CXI provider is supported.
+	 */
+	if (!dev_info->src_addr ||
+	    dev_info->src_addrlen != sizeof(struct kcxi_addr)) {
+		rc = -EADDRNOTAVAIL;
+		CERROR("No kfabric source address returned\n");
+		goto err_put_dom;
+	}
+
+	dev->nic_addr = ((struct kcxi_addr *)dev_info->src_addr)->nic;
 
 	/* Create an AV for this device */
 	av_attr.type = KFI_AV_UNSPEC;
