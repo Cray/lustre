@@ -66,6 +66,7 @@
 
 #define modparam_path "/sys/module/lnet/parameters/"
 #define gni_nid_path "/proc/cray_xt/"
+#define cxi_nic_addr_path "/sys/class/cxi/cxi%u/device/properties/"
 
 const char *gmsg_stat_names[] = {"sent_stats", "received_stats",
 				 "dropped_stats"};
@@ -1187,6 +1188,35 @@ static int lustre_lnet_queryip(struct lnet_dlc_intf_descr *intf, __u32 *ip)
 	return LUSTRE_CFG_RC_NO_ERR;
 }
 
+static int lustre_lnet_kfi_intf2nid(struct lnet_dlc_intf_descr *intf,
+				    __u32 *nid_addr)
+{
+	unsigned int nic_index;
+	int rc;
+	char *nic_addr_path;
+	char val[128];
+	int size;
+
+	rc = sscanf(intf->intf_name, "cxi%u", &nic_index);
+	if (rc != 1)
+		return LUSTRE_CFG_RC_NO_MATCH;
+
+	size = snprintf(NULL, 0, cxi_nic_addr_path, nic_index) + 1;
+	nic_addr_path = malloc(size);
+	if (!nic_addr_path)
+		return LUSTRE_CFG_RC_OUT_OF_MEM;
+	sprintf(nic_addr_path, cxi_nic_addr_path, nic_index);
+
+	rc = read_sysfs_file(nic_addr_path, "nic_addr", val, 1, sizeof(val));
+	free(nic_addr_path);
+	if (rc)
+		return LUSTRE_CFG_RC_NO_MATCH;
+
+	*nid_addr = atoi(val);
+
+	return LUSTRE_CFG_RC_NO_ERR;
+}
+
 /*
  * for each interface in the array of interfaces find the IP address of
  * that interface, create its nid and add it to an array of NIDs.
@@ -1200,6 +1230,7 @@ static int lustre_lnet_intf2nids(struct lnet_dlc_network_descr *nw,
 	struct lnet_dlc_intf_descr *intf;
 	char val[LNET_MAX_STR_LEN];
 	__u32 ip;
+	__u32 nic_addr;
 	int gni_num;
 
 
@@ -1242,6 +1273,21 @@ static int lustre_lnet_intf2nids(struct lnet_dlc_network_descr *nw,
 
 		(*nids)[i] = LNET_MKNID(nw->nw_id, gni_num);
 
+		goto out;
+	} else if (LNET_NETTYP(nw->nw_id) == KFILND) {
+		list_for_each_entry(intf, &nw->nw_intflist, intf_on_network) {
+			rc = lustre_lnet_kfi_intf2nid(intf, &nic_addr);
+			if (rc != LUSTRE_CFG_RC_NO_ERR) {
+				snprintf(err_str, str_len,
+					"\"couldn't query kfi intf %s\"",
+					intf->intf_name);
+				err_str[str_len - 1] = '\0';
+				goto failed;
+			}
+
+			(*nids)[i] = LNET_MKNID(nw->nw_id, nic_addr);
+			i++;
+		}
 		goto out;
 	}
 

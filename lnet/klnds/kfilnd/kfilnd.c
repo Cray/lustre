@@ -320,12 +320,9 @@ static struct lnet_lnd lnd = {
 
 static int kfilnd_startup(struct lnet_ni *ni)
 {
-	char *ifname;
-	struct lnet_inetdev *ifaces = NULL;
-	struct kfilnd_dev *kfdev;
+	const char *node;
 	int rc;
-	int i;
-	uint32_t ip = 0;
+	struct kfilnd_dev *kfdev;
 
 	if (!ni)
 		return -EINVAL;
@@ -337,50 +334,31 @@ static int kfilnd_startup(struct lnet_ni *ni)
 
 	kfilnd_tunables_setup(ni);
 
-	/* Verify that the Ethernet/IP interface is active. */
-	if (ni->ni_interfaces[0] != NULL) {
-		/* Use the IP interface specified in 'networks=' */
-
-		if (ni->ni_interfaces[1] != NULL) {
-			rc = -EINVAL;
-			CERROR("Multiple interfaces not supported\n");
-			goto err;
-		}
-
-		ifname = ni->ni_interfaces[0];
-	} else {
-		ifname = KFILND_DEFAULT_DEVICE;
-	}
-
-	rc = lnet_inet_enumerate(&ifaces, &init_net);
-	if (rc < 0)
-		goto err;
-
-	for (i = 0; i < rc; i++) {
-		if (strcmp(ifname, ifaces[i].li_name) == 0) {
-			ip = ifaces[i].li_ipaddr;
-			break;
-		}
-	}
-
-	kfree(ifaces);
-
-	if (i == rc) {
-		CERROR("No matching interfaces\n");
-		rc = -ENOENT;
+	/* Only a single interface is supported. */
+	if (ni->ni_interfaces[0] == NULL) {
+		rc = -ENODEV;
+		CERROR("No LNet network interface address defined\n");
 		goto err;
 	}
 
-	/* TODO: Set physical CPT of KFI LND device in LNet NI. */
-	ni->ni_nid = LNET_MKNID(LNET_NIDNET(ni->ni_nid), ip);
+	node = ni->ni_interfaces[0];
 
-	kfdev = kfilnd_dev_alloc(ni);
+	if (ni->ni_interfaces[1] != NULL) {
+		rc = -EINVAL;
+		CERROR("Multiple LNet network interface addresses not supported\n");
+		goto err;
+	}
+
+	kfdev = kfilnd_dev_alloc(ni, node);
 	if (IS_ERR(kfdev)) {
 		rc = PTR_ERR(kfdev);
-		CERROR("Failed to allocate KFI LND device for %s\n", ifname);
+		CERROR("Failed to allocate KFILND device for %s: rc=%d\n", node,
+		       rc);
 		goto err;
 	}
+
 	ni->ni_data = kfdev;
+	ni->ni_nid = LNET_MKNID(LNET_NIDNET(ni->ni_nid), kfdev->nic_addr);
 
 	/* Post a series of immediate receive buffers */
 	rc = kfilnd_dev_post_imm_buffers(kfdev);
@@ -394,8 +372,6 @@ static int kfilnd_startup(struct lnet_ni *ni)
 err_free_dev:
 	kfilnd_dev_free(kfdev);
 err:
-	CDEBUG(D_NET, "kfilnd_startup failed\n");
-
 	return rc;
 }
 
