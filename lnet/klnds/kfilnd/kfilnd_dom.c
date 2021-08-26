@@ -327,6 +327,10 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
 	hints->tx_attr->op_flags = KFI_COMPLETION;
 	hints->tx_attr->iov_limit = 256; /* 1 MiB LNet message */
 	hints->tx_attr->rma_iov_limit = 256; /* 1 MiB LNet message */
+	hints->ep_attr->auth_key =
+		(void *)&ni->ni_lnd_tunables.lnd_tun_u.lnd_kfi.lnd_auth_key;
+	hints->ep_attr->auth_key_size =
+		sizeof(ni->ni_lnd_tunables.lnd_tun_u.lnd_kfi.lnd_auth_key);
 
 	/* Check to see if any KFI LND fabrics/domains can be reused. */
 	fab = kfilnd_fab_reuse(node, service, hints);
@@ -341,6 +345,14 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
 	 * device allocation.
 	 */
 	rc = kfi_getinfo(0, node, service, KFI_SOURCE, hints, &info);
+
+	/* Authorization key information is now stored in the returned kfi_info
+	 * structure. Since kfi_freeinfo() will try to free the auth_key pointer
+	 * and this memory is owned as part of the LNet NI, need to zero this
+	 * information in the hints to prevent LNet NI corruption.
+	 */
+	hints->ep_attr->auth_key = NULL;
+	hints->ep_attr->auth_key_size = 0;
 
 	kfi_freeinfo(hints);
 	kfree(node);
