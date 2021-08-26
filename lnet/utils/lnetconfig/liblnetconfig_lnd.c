@@ -95,6 +95,9 @@ lustre_kfilnd_show_tun(struct cYAML *lndparams,
 
 	if (cYAML_create_number(lndparams, "prov_minor_version",
 				lnd_cfg->lnd_prov_minor_version) == NULL)
+
+	if (cYAML_create_number(lndparams, "auth_key",
+				lnd_cfg->lnd_auth_key) == NULL)
 		return LUSTRE_CFG_RC_OUT_OF_MEM;
 
 	return LUSTRE_CFG_RC_NO_ERR;
@@ -200,6 +203,7 @@ yaml_extract_kfi_tun(struct cYAML *tree,
 {
 	struct cYAML *prov_major_version = NULL;
 	struct cYAML *prov_minor_version = NULL;
+	struct cYAML *auth_key = NULL;
 	struct cYAML *lndparams = NULL;
 
 	lndparams = cYAML_get_object_item(tree, "lnd tunables");
@@ -215,6 +219,10 @@ yaml_extract_kfi_tun(struct cYAML *tree,
 		cYAML_get_object_item(lndparams, "prov_minor_version");
 	lnd_cfg->lnd_prov_minor_version =
 		(prov_minor_version) ? prov_minor_version->cy_valueint : 0;
+
+	auth_key = cYAML_get_object_item(lndparams, "auth_key");
+	lnd_cfg->lnd_auth_key =
+		(auth_key) ? auth_key->cy_valueint : 0;
 }
 
 static void
