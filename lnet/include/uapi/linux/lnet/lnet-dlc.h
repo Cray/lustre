@@ -87,6 +87,7 @@ struct lnet_ioctl_config_kfilnd_tunables {
 	__u32 lnd_version;
 	__u32 lnd_prov_major_version;
 	__u32 lnd_prov_minor_version;
+	__u32 lnd_auth_key;
 };
 
 struct lnet_lnd_tunables {
