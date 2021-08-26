@@ -69,6 +69,10 @@ module_param(prov_minor_version, int, 0444);
 MODULE_PARM_DESC(prov_minor_version,
 		 "Default kfabric provider minor version kfilnd should use");
 
+static unsigned int auth_key = 255;
+module_param(auth_key, uint, 0444);
+MODULE_PARM_DESC(auth_key, "Default authorization key to be used for LNet NIs");
+
 int kfilnd_tunables_setup(struct lnet_ni *ni)
 {
 	struct lnet_ioctl_config_lnd_cmn_tunables *net_tunables;
@@ -93,6 +97,11 @@ int kfilnd_tunables_setup(struct lnet_ni *ni)
 	if (!ni->ni_lnd_tunables_set) {
 		kfilnd_tunables->lnd_prov_major_version = prov_major_version;
 		kfilnd_tunables->lnd_prov_minor_version = prov_minor_version;
+
+		/* Treat zero as uninitialized. */
+		if (ni->ni_lnd_tunables.lnd_tun_u.lnd_kfi.lnd_auth_key == 0)
+			ni->ni_lnd_tunables.lnd_tun_u.lnd_kfi.lnd_auth_key =
+				auth_key;
 	}
 
 	return 0;
@@ -117,6 +126,11 @@ int kfilnd_tunables_init(void)
 
 	if (immediate_rx_buf_count < 2) {
 		CERROR("Immediate multi-receive buffer count less than 2");
+		return -EINVAL;
+	}
+
+	if (auth_key < 1) {
+		CERROR("Authorization key cannot be less than 1");
 		return -EINVAL;
 	}
 
