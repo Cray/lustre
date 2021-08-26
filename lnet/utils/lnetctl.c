@@ -143,7 +143,8 @@ command_t net_cmds[] = {
 	 "\t--peer-credits: define the max number of inflight messages\n"
 	 "\t--peer-buffer-credits: the number of buffer credits per peer\n"
 	 "\t--credits: Network Interface credits\n"
-	 "\t--cpt: CPU Partitions configured net uses (e.g. [0,1]\n"},
+	 "\t--cpt: CPU Partitions configured net uses (e.g. [0,1])\n"
+	 "\t--auth-key: Network authorization key (kfilnd only)\n"},
 	{"del", jt_del_ni, 0, "delete a network\n"
 	 "\t--net: net name (e.g. tcp0)\n"
 	 "\t--if: physical interface (e.g. eth0)\n"},
@@ -853,7 +854,7 @@ static int jt_add_route(int argc, char **argv)
 static int jt_add_ni(int argc, char **argv)
 {
 	char *ip2net = NULL;
-	long int pto = -1, pc = -1, pbc = -1, cre = -1;
+	long int pto = -1, pc = -1, pbc = -1, cre = -1, auth_key = -1;
 	struct cYAML *err_rc = NULL;
 	int rc, opt, cpt_rc = -1;
 	struct lnet_dlc_network_descr nw_descr;
@@ -864,7 +865,7 @@ static int jt_add_ni(int argc, char **argv)
 	memset(&tunables, 0, sizeof(tunables));
 	lustre_lnet_init_nw_descr(&nw_descr);
 
-	const char *const short_options = "n:i:p:t:c:b:r:s:";
+	const char *const short_options = "n:i:p:t:c:b:r:s:k:";
 	static const struct option long_options[] = {
 	{ .name = "net",	  .has_arg = required_argument, .val = 'n' },
 	{ .name = "if",		  .has_arg = required_argument, .val = 'i' },
@@ -875,6 +876,7 @@ static int jt_add_ni(int argc, char **argv)
 				  .has_arg = required_argument, .val = 'b' },
 	{ .name = "credits",	  .has_arg = required_argument, .val = 'r' },
 	{ .name = "cpt",	  .has_arg = required_argument, .val = 's' },
+	{ .name = "auth-key",	  .has_arg = required_argument, .val = 'k' },
 	{ .name = NULL } };
 
 	rc = check_cmd(net_cmds, "net", "add", 0, argc, argv);
@@ -936,11 +938,24 @@ static int jt_add_ni(int argc, char **argv)
 						     strlen(optarg), 0,
 						     UINT_MAX, &global_cpts);
 			break;
+		case 'k':
+			rc = parse_long(optarg, &auth_key);
+			if (rc != 0) {
+				/* ignore option */
+				auth_key = -1;
+				continue;
+			}
+			break;
 		case '?':
 			print_help(net_cmds, "net", "add");
 		default:
 			return 0;
 		}
+	}
+
+	if (auth_key > 0 && LNET_NETTYP(nw_descr.nw_id) == KFILND) {
+		tunables.lt_tun.lnd_tun_u.lnd_kfi.lnd_auth_key = auth_key;
+		found = true;
 	}
 
 	if (pto > 0 || pc > 0 || pbc > 0 || cre > 0) {
