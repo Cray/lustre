@@ -1549,8 +1549,7 @@ dont_check_exports:
 			CWARN("Connect with zero transno!\n");
 
 		if (has_transno && transno > 0 &&
-		    transno < target->obd_next_recovery_transno &&
-		    transno > target->obd_last_committed) {
+                    transno < target->obd_next_recovery_transno) {
 			/* Another way is to use cmpxchg() to be lock-free. */
 			spin_lock(&target->obd_recovery_task_lock);
 			if (transno < target->obd_next_recovery_transno)
@@ -2636,11 +2635,20 @@ static void replay_request_or_update(struct lu_env *env,
 				  lustre_msg_get_transno(req->rq_reqmsg),
 				  libcfs_nid2str(req->rq_peer.nid));
 
-			ptlrpc_watchdog_init(&thread->t_watchdog,
-					     WATCHDOG_TIMEOUT);
-			handle_recovery_req(thread, req,
-					    trd->trd_recovery_handler);
-			ptlrpc_watchdog_disable(&thread->t_watchdog);
+			if (transno > obd->obd_last_committed ||
+			    lustre_msg_get_opc(req->rq_reqmsg) == LDLM_ENQUEUE) {
+				ptlrpc_watchdog_init(&thread->t_watchdog,
+						     WATCHDOG_TIMEOUT);
+				handle_recovery_req(thread, req,
+						    trd->trd_recovery_handler);
+				ptlrpc_watchdog_disable(&thread->t_watchdog);
+			} else {
+				DEBUG_REQ(D_ERROR, req,
+					"skipping  already committed request 0x%llu t%lld from %s",
+					req->rq_xid,
+					lustre_msg_get_transno(req->rq_reqmsg),
+					libcfs_nid2str(req->rq_peer.nid));
+			}
 
 			/**
 			 * bz18031: increase next_recovery_transno before
