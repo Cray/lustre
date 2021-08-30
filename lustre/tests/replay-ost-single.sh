@@ -462,14 +462,11 @@ test_11() {
 run_test 11 "delayed reply on client"
 
 test_12() {
-	[ $FAILURE_MODE != "HARD" ] &&
-		skip "Test needs FAILURE_MODE HARD" && return 0
 	remote_ost || { skip "need remote OST" && return 0; }
 
 	local tmp=$TMP/$tdir
 	local dir=$DIR/$tdir
 	declare -a pids
-
 
 	mkdir -p $tmp || error "can't create $tmp"
 	mkdir -p $dir || error "can't create $dir"
@@ -478,13 +475,11 @@ test_12() {
 
 	for i in `seq 1 10`; do mkdir $dir/d$i; done
 
-	#define OBD_FAIL_OST_DELAY_TRANS        0x246
-	do_facet ost1 "$LCTL set_param fail_loc=0x246" ||
-		error "can't set fail_loc"
+	replay_barrier ost1
 
 	for i in `seq 1 10`;
 	do
-		createmany -o $dir/d$i/$(openssl rand -base64 12) 500 &
+		createmany -o $dir/d$i/file 500 &
 		pids+=($!)
 	done
 	echo "Waiting createmany pids"
@@ -502,7 +497,7 @@ test_12() {
 	rm -rf $tmp
 	rm -rf $dir
 }
-run_test 12 "check stat after OST failover"
+run_test 12 "glimpse after OST failover to a missing object"
 
 complete $SECONDS
 check_and_cleanup_lustre
