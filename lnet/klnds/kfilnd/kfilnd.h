@@ -315,41 +315,68 @@ struct kfilnd_dev {
 
 /* Invalid checksum value is treated as no checksum. */
 /* TODO: Module parameter to disable checksum? */
-#define NO_CHECKSUM 0xFFFF
+#define NO_CHECKSUM 0x0
 
+/* Immediate message header. */
 struct kfilnd_immed_msg {
+	/* Entire LNet header needed by the destination to match incoming
+	 * message.
+	 */
 	struct lnet_hdr	hdr;
+
+	/* Entire LNet message payload. */
 	char payload[0];
 } WIRE_ATTR;
 
-struct kfilnd_bulk_req {
+/* Bulk request message header. */
+struct kfilnd_bulk_req_msg {
+	/* Entire LNet header needed by the destination to match incoming
+	 * message.
+	 */
 	struct lnet_hdr	hdr;
-	__u32 mr_key;
-	__u8 response_rx;
 
+	/* Memory key needed by the target to push/pull LNet payload. */
+	__u32 key;
+
+	/* Specific RX context the target must target to push/pull LNet
+	 * payload.
+	 */
+	__u32 response_rx;
 } WIRE_ATTR;
 
-struct kfilnd_bulk_rsp {
-	__s32 status;
-} WIRE_ATTR;
-
+/* Kfilnd message. Includes base transport header plus embedded protocol
+ * message.
+ */
 struct kfilnd_msg {
-	/* First 2 fields fixed FOR ALL TIME */
-	__u32	kfm_magic;	/* I'm an ibnal message */
-	__u16	kfm_version;	/* this is my version number */
+	/* Unique kfilnd magic. */
+	__u32 magic;
 
-	__u8	kfm_type;	/* msg type */
-	__u8	kfm_prefer_rx;	/* RX endpoint dest should switch to */
-	__u32	kfm_nob;	/* # bytes in whole message */
-	__sum16	kfm_cksum;	/* checksum */
-	__u64	kfm_srcnid;	/* sender's NID */
+	/* Version of the kfilnd protocol. */
+	__u16 version;
 
-	/* Message payload based on message type. */
+	/* Specific kfilnd protocol type. */
+	__u8 type;
+
+	/* Preferred RX context for peer. */
+	__u8 prefer_rx;
+
+	/* Number of bytes in message. */
+	__u16 nob;
+
+	/* Checksum of entire message. 0 is checksum disabled. */
+	__sum16 cksum;
+
+	/* Message LNet source NID. */
+	__u64 srcnid;
+
+	/* Message LNet target NID. */
+	__u64 dstnid;
+
+	/* Embedded protocol headers. Must remain at bottom. */
 	union {
 		struct kfilnd_immed_msg immed;
-		struct kfilnd_bulk_req bulk_req;
-		struct kfilnd_bulk_rsp bulk_rsp;
-	} WIRE_ATTR kfm_u;
+		struct kfilnd_bulk_req_msg bulk_req;
+	} WIRE_ATTR proto;
 } WIRE_ATTR;
 
 #define KFILND_MSG_MAGIC LNET_PROTO_KFI_MAGIC	/* unique magic */
@@ -420,7 +447,6 @@ enum kfilnd_msg_type {
 	KFILND_MSG_IMMEDIATE,
 	KFILND_MSG_BULK_PUT_REQ,
 	KFILND_MSG_BULK_GET_REQ,
-	KFILND_MSG_BULK_RSP,
 
 	/* Invalid max value. */
 	KFILND_MSG_MAX,
@@ -429,11 +455,14 @@ enum kfilnd_msg_type {
 static inline const char *msg_type_to_str(enum kfilnd_msg_type type)
 {
 	static const char *str[KFILND_MSG_MAX] = {
+		[KFILND_MSG_INVALID] = "KFILND_MSG_INVALID",
 		[KFILND_MSG_IMMEDIATE] = "KFILND_MSG_IMMEDIATE",
 		[KFILND_MSG_BULK_PUT_REQ] = "KFILND_MSG_BULK_PUT_REQ",
 		[KFILND_MSG_BULK_GET_REQ] = "KFILND_MSG_BULK_GET_REQ",
-		[KFILND_MSG_BULK_RSP] = "KFILND_MSG_BULK_RSP",
 	};
+
+	if (type >= KFILND_MSG_MAX)
+		return "KFILND_MSG_INVALID";
 
 	return str[type];
 };
@@ -588,6 +617,8 @@ struct kfilnd_transaction {
 	struct list_head replay_entry;
 	enum tn_events replay_event;
 	int replay_status;
+
+	enum kfilnd_msg_type msg_type;
 };
 
 #endif /* _KFILND_ */
