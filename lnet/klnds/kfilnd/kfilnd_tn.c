@@ -21,155 +21,150 @@ static __sum16 kfilnd_tn_cksum(void *ptr, int nob)
 	return NO_CHECKSUM;
 }
 
-static const char *kfilnd_tn_msgtype2str(enum kfilnd_msg_type type)
-{
-	switch (type) {
-	case KFILND_MSG_IMMEDIATE:
-		return "IMMEDIATE";
-
-	case KFILND_MSG_BULK_PUT_REQ:
-		return "BULK_PUT_REQUEST";
-
-	case KFILND_MSG_BULK_GET_REQ:
-		return "BULK_GET_REQUEST";
-
-	case KFILND_MSG_BULK_RSP:
-		return "BULK_RESPONSE";
-
-	default:
-		return "???";
-	}
-}
-
 static int kfilnd_tn_msgtype2size(enum kfilnd_msg_type type)
 {
-	const int hdr_size = offsetof(struct kfilnd_msg, kfm_u);
+	const int hdr_size = offsetof(struct kfilnd_msg, proto);
 
 	switch (type) {
 	case KFILND_MSG_IMMEDIATE:
-		return offsetof(struct kfilnd_msg, kfm_u.immed.payload[0]);
+		return offsetof(struct kfilnd_msg, proto.immed.payload[0]);
 
 	case KFILND_MSG_BULK_PUT_REQ:
 	case KFILND_MSG_BULK_GET_REQ:
-		return hdr_size + sizeof(struct kfilnd_bulk_req);
+		return hdr_size + sizeof(struct kfilnd_bulk_req_msg);
 
-	case KFILND_MSG_BULK_RSP:
-		return hdr_size + sizeof(struct kfilnd_bulk_rsp);
 	default:
 		return -1;
 	}
 }
 
-static void kfilnd_tn_pack_msg(struct kfilnd_transaction *tn, u8 prefer_rx)
+static void kfilnd_tn_pack_bulk_req(struct kfilnd_transaction *tn)
 {
 	struct kfilnd_msg *msg = tn->tn_tx_msg.msg;
 
-	/* Commented out members should be set already */
-	msg->kfm_magic    = KFILND_MSG_MAGIC;
-	msg->kfm_version  = KFILND_MSG_VERSION;
-	/*  kfm_type */
-	msg->kfm_prefer_rx = prefer_rx;
-	/*  kfm_nob */
-	/*  kfm_srcnid */
-	msg->kfm_cksum    = kfilnd_tn_cksum(msg, msg->kfm_nob);
+	/* Pack the protocol header and payload. */
+	msg->proto.bulk_req.hdr = tn->tn_lntmsg->msg_hdr;
+	msg->proto.bulk_req.key = tn->tn_mr_key;
+	msg->proto.bulk_req.response_rx = tn->tn_response_rx;
+
+	/* Pack the transport header. */
+	msg->magic = KFILND_MSG_MAGIC;
+	msg->version = KFILND_MSG_VERSION;
+	msg->type = tn->msg_type;
+	msg->prefer_rx = tn->peer->prefer_rx;
+	msg->nob = sizeof(struct kfilnd_bulk_req_msg) +
+		offsetof(struct kfilnd_msg, proto);
+	msg->cksum = NO_CHECKSUM;
+	msg->srcnid = tn->tn_ep->end_dev->kfd_ni->ni_nid;
+	msg->dstnid = tn->peer->nid;
+
+	/* Checksum entire message. */
+	msg->cksum = kfilnd_tn_cksum(msg, msg->nob);
+
+	tn->tn_tx_msg.length = msg->nob;
 }
 
-static int kfilnd_tn_unpack_msg(struct kfilnd_msg *msg, int nob)
+static void kfilnd_tn_pack_immed_msg(struct kfilnd_transaction *tn)
 {
-	const int hdr_size = offsetof(struct kfilnd_msg, kfm_u);
-	u16	version;
-	int	msg_nob;
-	bool	flip;
+	struct kfilnd_msg *msg = tn->tn_tx_msg.msg;
+
+	/* Pack the protocol header and payload. */
+	msg->proto.immed.hdr = tn->tn_lntmsg->msg_hdr;
+
+	if (tn->tn_buf_type == TN_BUF_KIOV)
+		lnet_copy_kiov2flat(KFILND_IMMEDIATE_MSG_SIZE,
+				    msg,
+				    offsetof(struct kfilnd_msg,
+					     proto.immed.payload),
+				    tn->tn_num_iovec, tn->tn_buf.kiov, 0,
+				    tn->tn_nob);
+	else
+		lnet_copy_iov2flat(KFILND_IMMEDIATE_MSG_SIZE, msg,
+				   offsetof(struct kfilnd_msg,
+					    proto.immed.payload),
+				   tn->tn_num_iovec, tn->tn_buf.iov, 0,
+				   tn->tn_nob);
+
+	/* Pack the transport header. */
+	msg->magic = KFILND_MSG_MAGIC;
+	msg->version = KFILND_MSG_VERSION;
+	msg->type = tn->msg_type;
+	msg->prefer_rx = tn->peer->prefer_rx;
+	msg->nob = offsetof(struct kfilnd_msg, proto.immed.payload[tn->tn_nob]);
+	msg->cksum = NO_CHECKSUM;
+	msg->srcnid = tn->tn_ep->end_dev->kfd_ni->ni_nid;
+	msg->dstnid = tn->peer->nid;
+
+	/* Checksum entire message. */
+	msg->cksum = kfilnd_tn_cksum(msg, msg->nob);
+
+	tn->tn_tx_msg.length = msg->nob;
+}
+
+static int kfilnd_tn_unpack_msg(struct kfilnd_ep *ep, struct kfilnd_msg *msg,
+				unsigned int nob)
+{
+	const unsigned int hdr_size = offsetof(struct kfilnd_msg, proto);
 
 	if (nob < hdr_size) {
-		CWARN("Short message: %d\n", nob);
+		KFILND_EP_ERROR(ep, "Short message: %u", nob);
 		return -EPROTO;
 	}
 
-	if (msg->kfm_magic == KFILND_MSG_MAGIC) {
-		flip = false;
-	} else if (msg->kfm_magic == __swab32(KFILND_MSG_MAGIC)) {
-		flip = true;
-	} else {
-		CWARN("Bad magic: %08x\n", msg->kfm_magic);
+	/* TODO: Support byte swapping on mixed endian systems. */
+	if (msg->magic != KFILND_MSG_MAGIC) {
+		KFILND_EP_ERROR(ep, "Bad magic: %#x", msg->magic);
 		return -EPROTO;
 	}
 
-	version = flip ? __swab16(msg->kfm_version) : msg->kfm_version;
-	if (version != KFILND_MSG_VERSION) {
-		CWARN("Bad version: %x\n", version);
+	/* TODO: Allow for older versions. */
+	if (msg->version != KFILND_MSG_VERSION) {
+		KFILND_EP_ERROR(ep, "Bad version: %#x", msg->version);
 		return -EPROTO;
 	}
 
-	msg_nob = flip ? __swab32(msg->kfm_nob) : msg->kfm_nob;
-	if (msg_nob > nob) {
-		CWARN("Short message: got %d, wanted %d\n", nob, msg_nob);
+	if (msg->nob > nob) {
+		KFILND_EP_ERROR(ep, "Short message: got=%u, expected=%u", nob,
+				msg->nob);
 		return -EPROTO;
 	}
 
 	/* If kfilnd_tn_cksum() returns a non-zero value, checksum is bad. */
-	if (msg->kfm_cksum != NO_CHECKSUM && kfilnd_tn_cksum(msg, msg_nob)) {
-		CERROR("Bad checksum\n");
+	if (msg->cksum != NO_CHECKSUM && kfilnd_tn_cksum(msg, msg->nob)) {
+		KFILND_EP_ERROR(ep, "Bad checksum");
 		return -EPROTO;
 	}
 
-	if (flip) {
-		/* Leave magic unflipped as a clue to peer endianness */
-		msg->kfm_version = version;
-		msg->kfm_nob     = msg_nob;
-		__swab64s(&msg->kfm_srcnid);
-	}
-
-	if (msg->kfm_srcnid == LNET_NID_ANY) {
-		CWARN("Bad src nid: %s\n", libcfs_nid2str(msg->kfm_srcnid));
+	if (msg->dstnid != ep->end_dev->kfd_ni->ni_nid) {
+		KFILND_EP_ERROR(ep, "Bad destination nid: %s",
+				libcfs_nid2str(msg->dstnid));
 		return -EPROTO;
 	}
 
-	if (msg_nob < kfilnd_tn_msgtype2size(msg->kfm_type)) {
-		CWARN("Short %s: %d(%d)\n",
-		      kfilnd_tn_msgtype2str(msg->kfm_type),
-		      msg_nob, kfilnd_tn_msgtype2size(msg->kfm_type));
+	if (msg->srcnid == LNET_NID_ANY) {
+		KFILND_EP_ERROR(ep, "Bad source nid: %s",
+				libcfs_nid2str(msg->srcnid));
 		return -EPROTO;
 	}
 
-	switch ((enum kfilnd_msg_type)msg->kfm_type) {
+	if (msg->nob < kfilnd_tn_msgtype2size(msg->type)) {
+		KFILND_EP_ERROR(ep, "Short %s: %d(%d)\n",
+				msg_type_to_str(msg->type),
+				msg->nob, kfilnd_tn_msgtype2size(msg->type));
+		return -EPROTO;
+	}
+
+	switch ((enum kfilnd_msg_type)msg->type) {
 	case KFILND_MSG_IMMEDIATE:
-		break;
-
 	case KFILND_MSG_BULK_PUT_REQ:
 	case KFILND_MSG_BULK_GET_REQ:
-		if (flip)
-			__swab32s(&msg->kfm_u.bulk_req.mr_key);
-		break;
-
-	case KFILND_MSG_BULK_RSP:
-		if (flip)
-			__swab32s(&msg->kfm_u.bulk_rsp.status);
 		break;
 
 	default:
-		CERROR("Unknown message type %x\n", msg->kfm_type);
+		CERROR("Unknown message type %x\n", msg->type);
 		return -EPROTO;
 	}
 	return 0;
-}
-
-static void kfilnd_tn_setup_immed(struct kfilnd_transaction *tn)
-{
-	if (tn->tn_buf_type == TN_BUF_KIOV)
-		lnet_copy_kiov2flat(KFILND_IMMEDIATE_MSG_SIZE,
-				    tn->tn_tx_msg.msg,
-				    offsetof(struct kfilnd_msg,
-					     kfm_u.immed.payload),
-				    tn->tn_num_iovec, tn->tn_buf.kiov, 0,
-				    tn->tn_nob);
-	else
-		lnet_copy_iov2flat(KFILND_IMMEDIATE_MSG_SIZE,
-				   tn->tn_tx_msg.msg,
-				   offsetof(struct kfilnd_msg,
-					    kfm_u.immed.payload),
-				   tn->tn_num_iovec, tn->tn_buf.iov, 0,
-				   tn->tn_nob);
 }
 
 static void kfilnd_tn_record_state_change(struct kfilnd_transaction *tn)
@@ -240,14 +235,14 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 	atomic_inc(&bufdesc->immed_ref);
 
 	/* Unpack the message */
-	rc = kfilnd_tn_unpack_msg(rx_msg, msg_size);
+	rc = kfilnd_tn_unpack_msg(bufdesc->immed_end, rx_msg, msg_size);
 	if (rc) {
 		KFILND_EP_ERROR(bufdesc->immed_end,
 				"Failed to unpack message %d", rc);
 		return;
 	}
 
-	switch ((enum kfilnd_msg_type)rx_msg->kfm_type) {
+	switch ((enum kfilnd_msg_type)rx_msg->type) {
 	case KFILND_MSG_IMMEDIATE:
 		alloc_msg = false;
 
@@ -260,7 +255,7 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 		 */
 		tn = kfilnd_tn_alloc(bufdesc->immed_end->end_dev,
 				     bufdesc->immed_end->end_cpt,
-				     rx_msg->kfm_srcnid, alloc_msg, false);
+				     rx_msg->srcnid, alloc_msg, false);
 		if (IS_ERR(tn)) {
 			kfilnd_ep_imm_buffer_put(bufdesc);
 			KFILND_EP_ERROR(bufdesc->immed_end,
@@ -274,14 +269,14 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 		tn->tn_posted_buf = bufdesc;
 
 		KFILND_EP_DEBUG(bufdesc->immed_end, "%s transaction ID %u",
-				msg_type_to_str((enum kfilnd_msg_type)rx_msg->kfm_type),
+				msg_type_to_str((enum kfilnd_msg_type)rx_msg->type),
 				tn->tn_mr_key);
 		break;
 
 	default:
 		KFILND_EP_ERROR(bufdesc->immed_end,
 				"Unhandled kfilnd message type: %d",
-				(enum kfilnd_msg_type)rx_msg->kfm_type);
+				(enum kfilnd_msg_type)rx_msg->type);
 		LBUG();
 	};
 
@@ -468,7 +463,8 @@ static int kfilnd_tn_state_tagged_recv_posted(struct kfilnd_transaction *tn,
 				libcfs_nid2str(tn->peer->nid),
 				tn->tn_target_addr);
 
-		kfilnd_tn_pack_msg(tn, tn->peer->prefer_rx);
+		kfilnd_tn_pack_bulk_req(tn);
+
 		rc = kfilnd_ep_post_send(tn->tn_ep, tn);
 		switch (rc) {
 		/* Async event will progress immediate send. */
@@ -529,8 +525,7 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 				libcfs_nid2str(tn->peer->nid),
 				tn->tn_target_addr);
 
-		kfilnd_tn_setup_immed(tn);
-		kfilnd_tn_pack_msg(tn, tn->peer->prefer_rx);
+		kfilnd_tn_pack_immed_msg(tn);
 
 		/* Send immediate message. */
 		rc = kfilnd_ep_post_send(tn->tn_ep, tn);
@@ -595,7 +590,7 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 
 		/* Update the NID address with the new preferred RX context. */
 		kfilnd_peer_alive(tn->peer);
-		kfilnd_peer_update(tn->peer, msg->kfm_prefer_rx);
+		kfilnd_peer_update(tn->peer, msg->prefer_rx);
 
 		/*
 		 * Pass message up to LNet
@@ -609,14 +604,14 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 		tn->tn_state = TN_STATE_IMM_RECV;
 		mutex_unlock(&tn->tn_lock);
 		*tn_released = true;
-		if (msg->kfm_type == KFILND_MSG_IMMEDIATE)
+		if (msg->type == KFILND_MSG_IMMEDIATE)
 			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
-					&msg->kfm_u.immed.hdr, msg->kfm_srcnid,
+					&msg->proto.immed.hdr, msg->srcnid,
 					tn, 0);
 		else
 			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
-					&msg->kfm_u.bulk_req.hdr,
-					msg->kfm_srcnid, tn, 1);
+					&msg->proto.bulk_req.hdr,
+					msg->srcnid, tn, 1);
 
 		/* If successful, transaction has been accepted by LNet and we
 		 * cannot process the transaction anymore within this context.

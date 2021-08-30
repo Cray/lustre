@@ -28,15 +28,6 @@ static void kfilnd_shutdown(struct lnet_ni *ni)
 	kfilnd_dev_free(dev);
 }
 
-static unsigned int kfilnd_init_proto(struct kfilnd_msg *msg, int type,
-				      int body_nob, struct lnet_ni *ni)
-{
-	msg->kfm_type = type;
-	msg->kfm_nob  = offsetof(struct kfilnd_msg, kfm_u) + body_nob;
-	msg->kfm_srcnid = ni->ni_nid;
-	return msg->kfm_nob;
-}
-
 static int kfilnd_send_cpt(struct kfilnd_dev *dev, lnet_nid_t nid)
 {
 	int cpt;
@@ -52,10 +43,8 @@ static int kfilnd_send_cpt(struct kfilnd_dev *dev, lnet_nid_t nid)
 
 static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 {
-	struct lnet_hdr *hdr = &msg->msg_hdr;
 	int type = msg->msg_type;
 	struct lnet_process_id target = msg->msg_target;
-	struct kfilnd_msg *kfmsg;
 	struct kfilnd_transaction *tn;
 	int nob;
 	struct kfilnd_dev *dev = ni->ni_data;
@@ -85,12 +74,11 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		break;
 
 	case LNET_MSG_GET:
-		/* Is the src buffer too small for RDMA? */
 		nob = offsetof(struct kfilnd_msg,
-			      kfm_u.immed.payload[msg->msg_md->md_length]);
+			       proto.immed.payload[msg->msg_md->md_length]);
 		if (nob <= KFILND_IMMEDIATE_MSG_SIZE) {
 			lnd_msg_type = KFILND_MSG_IMMEDIATE;
-			break;		/* send IMMEDIATE */
+			break;
 		}
 
 		lnd_msg_type = KFILND_MSG_BULK_GET_REQ;
@@ -98,13 +86,13 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 
 	case LNET_MSG_REPLY:
 	case LNET_MSG_PUT:
-		/* Is the payload small enough not to need RDMA? */
 		nob = offsetof(struct kfilnd_msg,
-			       kfm_u.immed.payload[msg->msg_len]);
+			       proto.immed.payload[msg->msg_len]);
 		if (nob <= KFILND_IMMEDIATE_MSG_SIZE) {
 			lnd_msg_type = KFILND_MSG_IMMEDIATE;
-			break;			/* send IMMEDIATE */
+			break;
 		}
+
 		lnd_msg_type = KFILND_MSG_BULK_PUT_REQ;
 		break;
 	}
@@ -117,17 +105,8 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		return rc;
 	}
 
-	kfmsg = tn->tn_tx_msg.msg;
-
 	switch (lnd_msg_type) {
 	case KFILND_MSG_IMMEDIATE:
-		/* Copy over the LNet header */
-		kfmsg->kfm_u.immed.hdr = *hdr;
-
-		/* Determine size of LNet message (exclude LND header) */
-		nob = offsetof(struct kfilnd_immed_msg, payload[msg->msg_len]);
-
-		/* Transaction fields for immediate messages */
 		kfilnd_tn_set_buf(tn, msg->msg_kiov, msg->msg_iov,
 				  msg->msg_niov, msg->msg_offset, msg->msg_len);
 
@@ -135,14 +114,6 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		break;
 
 	case KFILND_MSG_BULK_PUT_REQ:
-		/* Copy over the LNet header */
-		kfmsg->kfm_u.bulk_req.hdr = *hdr;
-		kfmsg->kfm_u.bulk_req.mr_key = tn->tn_mr_key;
-		kfmsg->kfm_u.bulk_req.response_rx = tn->tn_response_rx;
-
-		/* Determine size of LNet message (exclude LND header) */
-		nob = sizeof(struct kfilnd_bulk_req);
-
 		tn->sink_buffer = false;
 		kfilnd_tn_set_buf(tn, msg->msg_kiov, msg->msg_iov,
 				  msg->msg_niov, msg->msg_offset, msg->msg_len);
@@ -162,21 +133,11 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 			return -EIO;
 		}
 
-		/* Copy over the LNet header */
-		kfmsg->kfm_u.bulk_req.hdr = *hdr;
-		kfmsg->kfm_u.bulk_req.mr_key = tn->tn_mr_key;
-		kfmsg->kfm_u.bulk_req.response_rx = tn->tn_response_rx;
-
-		/* Determine size of LNet message (exclude LND header) */
-		nob = sizeof(struct kfilnd_bulk_req);
-
 		tn->sink_buffer = true;
-
 		if (msg->msg_md->md_options & LNET_MD_KIOV)
 			kiov = msg->msg_md->md_iov.kiov;
 		else
 			iov = msg->msg_md->md_iov.iov;
-
 		kfilnd_tn_set_buf(tn, kiov, iov, msg->msg_md->md_niov,
 				  msg->msg_md->md_offset,
 				  msg->msg_md->md_length);
@@ -189,11 +150,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		return -EIO;
 	}
 
-	/* Initialize the protocol header */
-	tn->tn_tx_msg.length = kfilnd_init_proto(tn->tn_tx_msg.msg,
-						 lnd_msg_type, nob, ni);
-
-	/* Setup remaining transaction fields */
+	tn->msg_type = lnd_msg_type;
 	tn->tn_lntmsg = msg;	/* finalise msg on completion */
 	tn->lnet_msg_len = tn->tn_nob;
 
@@ -234,12 +191,12 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 	tn->tn_lntmsg = msg;
 	tn->lnet_msg_len = rlen;
 
-	switch (rxmsg->kfm_type) {
+	switch (rxmsg->type) {
 	case KFILND_MSG_IMMEDIATE:
-		nob = offsetof(struct kfilnd_msg, kfm_u.immed.payload[rlen]);
+		nob = offsetof(struct kfilnd_msg, proto.immed.payload[rlen]);
 		if (nob > tn->tn_rx_msg.length) {
 			CERROR("Immediate message from %s too big: %d(%lu)\n",
-			       libcfs_nid2str(rxmsg->kfm_u.immed.hdr.src_nid),
+			       libcfs_nid2str(rxmsg->proto.immed.hdr.src_nid),
 			       nob, tn->tn_rx_msg.length);
 			return -EPROTO;
 		}
@@ -249,13 +206,13 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 			lnet_copy_flat2kiov(niov, kiov, offset,
 					    KFILND_IMMEDIATE_MSG_SIZE, rxmsg,
 					    offsetof(struct kfilnd_msg,
-						     kfm_u.immed.payload),
+						     proto.immed.payload),
 					    mlen);
 		else
 			lnet_copy_flat2iov(niov, iov, offset,
 					   KFILND_IMMEDIATE_MSG_SIZE, rxmsg,
 					   offsetof(struct kfilnd_msg,
-						    kfm_u.immed.payload), mlen);
+						    proto.immed.payload), mlen);
 
 		kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK, 0);
 		return 0;
@@ -287,20 +244,23 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 
 	default:
 		/* TODO: TN leaks here. */
-		CERROR("Invalid message type = %d\n", rxmsg->kfm_type);
+		CERROR("Invalid message type = %d\n", rxmsg->type);
 		return -EINVAL;
 	}
 
 	/* Store relevant fields to generate a bulk response. */
-	tn->tn_response_mr_key = rxmsg->kfm_u.bulk_req.mr_key;
-	tn->tn_response_rx = rxmsg->kfm_u.bulk_req.response_rx;
+	tn->tn_response_mr_key = rxmsg->proto.bulk_req.key;
+	tn->tn_response_rx = rxmsg->proto.bulk_req.response_rx;
+
+#if 0
 	tn->tn_tx_msg.length = kfilnd_init_proto(tn->tn_tx_msg.msg,
 						 KFILND_MSG_BULK_RSP,
 						 sizeof(struct kfilnd_bulk_rsp),
 						 ni);
+#endif
 
 	KFILND_TN_DEBUG(tn, "%s in %u bytes in %u frags",
-			msg_type_to_str(rxmsg->kfm_type), tn->tn_nob,
+			msg_type_to_str(rxmsg->type), tn->tn_nob,
 			tn->tn_num_iovec);
 
 	kfilnd_tn_event_handler(tn, event, status);
