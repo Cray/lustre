@@ -461,7 +461,7 @@ test_11() {
 }
 run_test 11 "delayed reply on client"
 
-test_12() {
+test_12a() {
 	remote_ost || { skip "need remote OST" && return 0; }
 
 	local tmp=$TMP/$tdir
@@ -477,13 +477,9 @@ test_12() {
 
 	replay_barrier ost1
 
-	for i in `seq 1 10`;
-	do
-		createmany -o $dir/d$i/file 500 &
-		pids+=($!)
+	for i in `seq 1 10`; do
+		createmany -o $dir/d$i/file 500
 	done
-	echo "Waiting createmany pids"
-	wait ${pids[@]}
 
 	ls -lR $dir > $tmp/ls_r_out 2>&1&
 	local ls_pid=$!
@@ -497,7 +493,37 @@ test_12() {
 	rm -rf $tmp
 	rm -rf $dir
 }
-run_test 12 "glimpse after OST failover to a missing object"
+run_test 12a "glimpse after OST failover to a missing object"
+
+test_12b() {
+	remote_ost || { skip "need remote OST" && return 0; }
+
+	local dir=$DIR/$tdir
+	declare -a pids
+
+	test_mkdir -p -i 0 $dir || error "can't create $dir"
+
+	$LFS setstripe -c 1 -i 0 $dir
+
+	for i in `seq 1 10`; do mkdir $dir/d$i; done
+	replay_barrier ost1
+
+	for i in `seq 1 10`; do
+		createmany -o $dir/d$i/file 500
+	done
+
+	#define OBD_FAIL_MDS_DELAY_DELORPH	 0x16d
+	do_facet mds1 "$LCTL set_param fail_loc=0x16d fail_val=10" ||
+		error "can't set fail_loc"
+	facet_failover ost1
+
+	dd if=/dev/zero of=$dir/d10/file499 count=1 bs=4K > /dev/null
+	rc=$?
+	[[ $rc -eq 0 ]] || error "dd failed: $rc"
+
+	rm -rf $dir
+}
+run_test 12b "write after OST failover to a missing object"
 
 complete $SECONDS
 check_and_cleanup_lustre
