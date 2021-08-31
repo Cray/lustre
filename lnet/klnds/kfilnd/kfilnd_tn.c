@@ -38,6 +38,58 @@ static int kfilnd_tn_msgtype2size(enum kfilnd_msg_type type)
 	}
 }
 
+static void kfilnd_tn_pack_hello_req(struct kfilnd_transaction *tn)
+{
+	struct kfilnd_msg *msg = tn->tn_tx_msg.msg;
+
+	/* Pack the protocol header and payload. */
+	msg->proto.hello.version = KFILND_MSG_VERSION;
+
+	/* Pack the transport header. */
+	msg->magic = KFILND_MSG_MAGIC;
+
+	/* Mesage version zero is only valid for hello requests. */
+	msg->version = 0;
+	msg->type = KFILND_MSG_HELLO_REQ;
+	msg->prefer_rx = tn->peer->prefer_rx;
+	msg->nob = sizeof(struct kfilnd_hello_msg) +
+		offsetof(struct kfilnd_msg, proto);
+	msg->cksum = NO_CHECKSUM;
+	msg->srcnid = tn->tn_ep->end_dev->kfd_ni->ni_nid;
+	msg->dstnid = tn->peer->nid;
+
+	/* Checksum entire message. */
+	msg->cksum = kfilnd_tn_cksum(msg, msg->nob);
+
+	tn->tn_tx_msg.length = msg->nob;
+}
+
+static void kfilnd_tn_pack_hello_rsp(struct kfilnd_transaction *tn)
+{
+	struct kfilnd_msg *msg = tn->tn_tx_msg.msg;
+
+	/* Pack the protocol header and payload. */
+	msg->proto.hello.version = tn->peer->version;
+
+	/* Pack the transport header. */
+	msg->magic = KFILND_MSG_MAGIC;
+
+	/* Mesage version zero is only valid for hello requests. */
+	msg->version = 0;
+	msg->type = KFILND_MSG_HELLO_RSP;
+	msg->prefer_rx = tn->peer->prefer_rx;
+	msg->nob = sizeof(struct kfilnd_hello_msg) +
+		offsetof(struct kfilnd_msg, proto);
+	msg->cksum = NO_CHECKSUM;
+	msg->srcnid = tn->tn_ep->end_dev->kfd_ni->ni_nid;
+	msg->dstnid = tn->peer->nid;
+
+	/* Checksum entire message. */
+	msg->cksum = kfilnd_tn_cksum(msg, msg->nob);
+
+	tn->tn_tx_msg.length = msg->nob;
+}
+
 static void kfilnd_tn_pack_bulk_req(struct kfilnd_transaction *tn)
 {
 	struct kfilnd_msg *msg = tn->tn_tx_msg.msg;
@@ -118,7 +170,7 @@ static int kfilnd_tn_unpack_msg(struct kfilnd_ep *ep, struct kfilnd_msg *msg,
 	}
 
 	/* TODO: Allow for older versions. */
-	if (msg->version != KFILND_MSG_VERSION) {
+	if (msg->version > KFILND_MSG_VERSION) {
 		KFILND_EP_ERROR(ep, "Bad version: %#x", msg->version);
 		return -EPROTO;
 	}
@@ -158,6 +210,24 @@ static int kfilnd_tn_unpack_msg(struct kfilnd_ep *ep, struct kfilnd_msg *msg,
 	case KFILND_MSG_IMMEDIATE:
 	case KFILND_MSG_BULK_PUT_REQ:
 	case KFILND_MSG_BULK_GET_REQ:
+		if (msg->version == 0) {
+			KFILND_EP_ERROR(ep,
+					"Bad message type and version: type=%s version=%u",
+					msg_type_to_str(msg->type),
+					msg->version);
+			return -EPROTO;
+		}
+		break;
+
+	case KFILND_MSG_HELLO_REQ:
+	case KFILND_MSG_HELLO_RSP:
+		if (msg->version != 0) {
+			KFILND_EP_ERROR(ep,
+					"Bad message type and version: type=%s version=%u",
+					msg_type_to_str(msg->type),
+					msg->version);
+			return -EPROTO;
+		}
 		break;
 
 	default:
@@ -230,13 +300,15 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 	struct kfilnd_transaction *tn;
 	bool alloc_msg = true;
 	int rc;
+	enum tn_events event = TN_EVENT_RX_HELLO;
 
 	/* Increment buf ref count for this work */
 	atomic_inc(&bufdesc->immed_ref);
 
 	/* Unpack the message */
 	rc = kfilnd_tn_unpack_msg(bufdesc->immed_end, rx_msg, msg_size);
-	if (rc) {
+	if (rc || CFS_FAIL_CHECK(CFS_KFI_FAIL_MSG_UNPACK)) {
+		kfilnd_ep_imm_buffer_put(bufdesc);
 		KFILND_EP_ERROR(bufdesc->immed_end,
 				"Failed to unpack message %d", rc);
 		return;
@@ -244,11 +316,16 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 
 	switch ((enum kfilnd_msg_type)rx_msg->type) {
 	case KFILND_MSG_IMMEDIATE:
+	case KFILND_MSG_BULK_PUT_REQ:
+	case KFILND_MSG_BULK_GET_REQ:
+		event = TN_EVENT_RX_OK;
+
+		/* fall through */
+	case KFILND_MSG_HELLO_RSP:
 		alloc_msg = false;
 
 		/* fall through */
-	case KFILND_MSG_BULK_PUT_REQ:
-	case KFILND_MSG_BULK_GET_REQ:
+	case KFILND_MSG_HELLO_REQ:
 		/* Context points to a received buffer and status is the length.
 		 * Allocate a Tn structure, set its values, then launch the
 		 * receive.
@@ -280,7 +357,7 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 		LBUG();
 	};
 
-	kfilnd_tn_event_handler(tn, TN_EVENT_RX_OK, 0);
+	kfilnd_tn_event_handler(tn, event, 0);
 }
 
 static void kfilnd_tn_record_duration(struct kfilnd_transaction *tn)
@@ -514,18 +591,48 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 	struct kfilnd_msg *msg;
 	int rc;
 	bool finalize = false;
+	ktime_t remaining_time;
 
 	KFILND_TN_DEBUG(tn, "%s event status %d", tn_event_to_str(event),
 			status);
 
+	/* For new peers, send a hello request message and queue the true LNet
+	 * message for replay.
+	 */
+	if (kfilnd_peer_is_new_peer(tn->peer) &&
+	    (event == TN_EVENT_INIT_IMMEDIATE || event == TN_EVENT_INIT_BULK)) {
+		remaining_time = max_t(ktime_t, 0,
+				       tn->deadline - ktime_get_seconds());
+
+		/* If transaction deadline has not be met, return -EAGAIN. This
+		 * will cause this transaction event to be replayed. During this
+		 * time, an async message from the peer should occur at which
+		 * point the kfilnd version should be negotiated.
+		 */
+		if (remaining_time > 0) {
+			KFILND_TN_DEBUG(tn, "%s hello response pending",
+					libcfs_nid2str(tn->peer->nid));
+			return -EAGAIN;
+		}
+
+		rc = 0;
+		kfilnd_tn_status_update(tn, -ETIMEDOUT,
+					LNET_MSG_STATUS_REMOTE_TIMEOUT);
+		goto out;
+	}
+
 	switch (event) {
 	case TN_EVENT_INIT_IMMEDIATE:
+	case TN_EVENT_TX_HELLO:
 		tn->tn_target_addr = kfilnd_peer_get_kfi_addr(tn->peer);
 		KFILND_TN_DEBUG(tn, "Using peer %s(%#llx)",
 				libcfs_nid2str(tn->peer->nid),
 				tn->tn_target_addr);
 
-		kfilnd_tn_pack_immed_msg(tn);
+		if (event == TN_EVENT_INIT_IMMEDIATE)
+			kfilnd_tn_pack_immed_msg(tn);
+		else
+			kfilnd_tn_pack_hello_req(tn);
 
 		/* Send immediate message. */
 		rc = kfilnd_ep_post_send(tn->tn_ep, tn);
@@ -586,6 +693,33 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 		break;
 
 	case TN_EVENT_RX_OK:
+		/* If TN_EVENT_RX_OK occurs on a new peer, this is a sign of a
+		 * peer having a stale peer structure. Stale peer structures
+		 * requires dropping the incoming message and initiating a hello
+		 * handshake.
+		 */
+		if (kfilnd_peer_is_new_peer(tn->peer)) {
+			rc = kfilnd_send_hello_request(tn->tn_ep->end_dev,
+						       tn->tn_ep->end_cpt,
+						       tn->peer->nid);
+			if (rc)
+				KFILND_TN_ERROR(tn,
+						"Failed to send hello request: rc=%d",
+						rc);
+
+			/* Need to drop this message since it is uses stale
+			 * peer.
+			 */
+			KFILND_TN_ERROR(tn,
+					"Dropping message from %s due to stale peer",
+					libcfs_nid2str(tn->peer->nid));
+			kfilnd_tn_status_update(tn, -EPROTO,
+						LNET_MSG_STATUS_LOCAL_DROPPED);
+			rc = 0;
+			goto out;
+		}
+
+		LASSERT(kfilnd_peer_is_new_peer(tn->peer) == false);
 		msg = tn->tn_rx_msg.msg;
 
 		/* Update the NID address with the new preferred RX context. */
@@ -623,11 +757,74 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 		kfilnd_tn_status_update(tn, rc, LNET_MSG_STATUS_LOCAL_ERROR);
 		break;
 
+	case TN_EVENT_RX_HELLO:
+		msg = tn->tn_rx_msg.msg;
+
+		switch (msg->type) {
+		case KFILND_MSG_HELLO_REQ:
+			/* Negotiate kfilnd version used between peers. Fallback
+			 * to the minimum implemented kfilnd version.
+			 */
+			kfilnd_peer_set_version(tn->peer,
+						MIN(KFILND_MSG_VERSION,
+						    msg->proto.hello.version));
+			KFILND_TN_DEBUG(tn,
+					"Peer kfilnd version: %u; Local kfilnd version: %u; Negotiated kfilnd verions: %u",
+					msg->proto.hello.version,
+					KFILND_MSG_VERSION, tn->peer->version);
+
+			tn->tn_target_addr = kfilnd_peer_get_kfi_addr(tn->peer);
+			KFILND_TN_DEBUG(tn, "Using peer %s(%#llx)",
+					libcfs_nid2str(tn->peer->nid),
+					tn->tn_target_addr);
+
+			kfilnd_tn_pack_hello_rsp(tn);
+
+			/* Send immediate message. */
+			rc = kfilnd_ep_post_send(tn->tn_ep, tn);
+			switch (rc) {
+			case 0:
+				kfilnd_tn_state_change(tn, TN_STATE_IMM_SEND);
+				return 0;
+
+			case -EAGAIN:
+				KFILND_TN_DEBUG(tn, "Need to replay send to %s(%#llx)",
+						libcfs_nid2str(tn->peer->nid),
+						tn->tn_target_addr);
+				return -EAGAIN;
+
+			default:
+				KFILND_TN_ERROR(tn,
+						"Failed to post send to %s(%#llx): rc=%d",
+						libcfs_nid2str(tn->peer->nid),
+						tn->tn_target_addr, rc);
+				kfilnd_tn_status_update(tn, rc,
+							LNET_MSG_STATUS_LOCAL_ERROR);
+			}
+			break;
+
+		case KFILND_MSG_HELLO_RSP:
+			rc = 0;
+			kfilnd_peer_set_version(tn->peer,
+						msg->proto.hello.version);
+			KFILND_TN_DEBUG(tn, "Negotiated kfilnd version: %u",
+					msg->proto.hello.version);
+			finalize = true;
+			break;
+
+		default:
+			KFILND_TN_ERROR(tn, "Invalid message type: %s",
+					msg_type_to_str(msg->type));
+			LBUG();
+		}
+		break;
+
 	default:
 		KFILND_TN_ERROR(tn, "Invalid %s event", tn_event_to_str(event));
 		LBUG();
 	}
 
+out:
 	if (kfilnd_tn_has_failed(tn))
 		finalize = true;
 
