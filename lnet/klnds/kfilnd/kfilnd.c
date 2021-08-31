@@ -41,6 +41,23 @@ static int kfilnd_send_cpt(struct kfilnd_dev *dev, lnet_nid_t nid)
 	return  dev->kfd_endpoints[nid % dev->kfd_ni->ni_ncpts]->end_cpt;
 }
 
+int kfilnd_send_hello_request(struct kfilnd_dev *dev, int cpt, lnet_nid_t nid)
+{
+	struct kfilnd_transaction *tn;
+	int rc;
+
+	tn = kfilnd_tn_alloc(dev, cpt, nid, true, true);
+	if (IS_ERR(tn)) {
+		rc = PTR_ERR(tn);
+		CERROR("Failed to allocate transaction struct: rc=%d\n", rc);
+		return rc;
+	}
+
+	kfilnd_tn_event_handler(tn, TN_EVENT_TX_HELLO, 0);
+
+	return 0;
+}
+
 static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 {
 	int type = msg->msg_type;
@@ -103,6 +120,15 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		rc = PTR_ERR(tn);
 		CERROR("Failed to allocate transaction struct: rc=%d\n", rc);
 		return rc;
+	}
+
+	/* Need to fire off special transaction if this is a new peer. */
+	if (kfilnd_peer_is_new_peer(tn->peer)) {
+		rc = kfilnd_send_hello_request(dev, cpt, target.nid);
+		if (rc) {
+			kfilnd_tn_free(tn);
+			return 0;
+		}
 	}
 
 	switch (lnd_msg_type) {
