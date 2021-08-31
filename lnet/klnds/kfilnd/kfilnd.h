@@ -74,6 +74,7 @@
 #define CFS_KFI_FAIL_TAGGED_RECV_CANCEL_EAGAIN 0xF110
 #define CFS_KFI_FAIL_RECV_EAGAIN 0xF111
 #define CFS_KFI_FAIL_RECV 0xF112
+#define CFS_KFI_FAIL_MSG_UNPACK 0xF113
 
 /* Some constants which should be turned into tunables */
 #define KFILND_IMMEDIATE_MSG_SIZE 4096
@@ -188,7 +189,19 @@ struct kfilnd_peer {
 	refcount_t cnt;
 	time64_t last_alive;
 	u8 prefer_rx;
+	u16 version;
 };
+
+static inline bool kfilnd_peer_is_new_peer(struct kfilnd_peer *peer)
+{
+	return peer->version == 0;
+}
+
+static inline void kfilnd_peer_set_version(struct kfilnd_peer *peer,
+					   u16 version)
+{
+	peer->version = version;
+}
 
 struct kfilnd_fab {
 	struct list_head entry;
@@ -317,6 +330,12 @@ struct kfilnd_dev {
 /* TODO: Module parameter to disable checksum? */
 #define NO_CHECKSUM 0x0
 
+/* Hello message header. */
+struct kfilnd_hello_msg {
+	/* Support kfilnd version. */
+	__u16 version;
+} WIRE_ATTR;
+
 /* Immediate message header. */
 struct kfilnd_immed_msg {
 	/* Entire LNet header needed by the destination to match incoming
@@ -376,12 +395,13 @@ struct kfilnd_msg {
 	union {
 		struct kfilnd_immed_msg immed;
 		struct kfilnd_bulk_req_msg bulk_req;
+		struct kfilnd_hello_msg hello;
 	} WIRE_ATTR proto;
 } WIRE_ATTR;
 
 #define KFILND_MSG_MAGIC LNET_PROTO_KFI_MAGIC	/* unique magic */
 
-#define KFILND_MSG_VERSION_1	0x11
+#define KFILND_MSG_VERSION_1	0x1
 #define KFILND_MSG_VERSION	KFILND_MSG_VERSION_1
 
 /* Get the KFI RX context from a KFI RX address. RX context information is
@@ -447,6 +467,8 @@ enum kfilnd_msg_type {
 	KFILND_MSG_IMMEDIATE,
 	KFILND_MSG_BULK_PUT_REQ,
 	KFILND_MSG_BULK_GET_REQ,
+	KFILND_MSG_HELLO_REQ,
+	KFILND_MSG_HELLO_RSP,
 
 	/* Invalid max value. */
 	KFILND_MSG_MAX,
@@ -459,6 +481,8 @@ static inline const char *msg_type_to_str(enum kfilnd_msg_type type)
 		[KFILND_MSG_IMMEDIATE] = "KFILND_MSG_IMMEDIATE",
 		[KFILND_MSG_BULK_PUT_REQ] = "KFILND_MSG_BULK_PUT_REQ",
 		[KFILND_MSG_BULK_GET_REQ] = "KFILND_MSG_BULK_GET_REQ",
+		[KFILND_MSG_HELLO_REQ] = "KFILND_MSG_HELLO_REQ",
+		[KFILND_MSG_HELLO_RSP] = "KFILND_MSG_HELLO_RSP",
 	};
 
 	if (type >= KFILND_MSG_MAX)
@@ -495,6 +519,7 @@ enum tn_events {
 	/* Initiator events. */
 	TN_EVENT_INIT_IMMEDIATE,
 	TN_EVENT_INIT_BULK,
+	TN_EVENT_TX_HELLO,
 	TN_EVENT_TX_OK,
 	TN_EVENT_TX_FAIL,
 	TN_EVENT_TAG_RX_OK,
@@ -503,6 +528,7 @@ enum tn_events {
 	TN_EVENT_TIMEOUT,
 
 	/* Target events. */
+	TN_EVENT_RX_HELLO,
 	TN_EVENT_RX_OK,
 	TN_EVENT_RX_FAIL,
 	TN_EVENT_INIT_TAG_RMA,
@@ -520,12 +546,14 @@ static inline const char *tn_event_to_str(enum tn_events type)
 		[TN_EVENT_INVALID] = "TN_EVENT_INVALID",
 		[TN_EVENT_INIT_IMMEDIATE] = "TN_EVENT_INIT_IMMEDIATE",
 		[TN_EVENT_INIT_BULK] = "TN_EVENT_INIT_BULK",
+		[TN_EVENT_TX_HELLO] = "TN_EVENT_TX_HELLO",
 		[TN_EVENT_TX_OK] = "TN_EVENT_TX_OK",
 		[TN_EVENT_TX_FAIL] = "TN_EVENT_TX_FAIL",
 		[TN_EVENT_TAG_RX_OK] = "TN_EVENT_TAG_RX_OK",
 		[TN_EVENT_TAG_RX_FAIL] = "TN_EVENT_TAG_RX_FAIL",
 		[TN_EVENT_TAG_RX_CANCEL] = "TN_EVENT_TAG_RX_CANCEL",
 		[TN_EVENT_TIMEOUT] = "TN_EVENT_TIMEOUT",
+		[TN_EVENT_RX_HELLO] = "TN_EVENT_RX_HELLO",
 		[TN_EVENT_RX_OK] = "TN_EVENT_RX_OK",
 		[TN_EVENT_RX_FAIL] = "TN_EVENT_RX_FAIL",
 		[TN_EVENT_INIT_TAG_RMA] = "TN_EVENT_INIT_TAG_RMA",
@@ -620,5 +648,7 @@ struct kfilnd_transaction {
 
 	enum kfilnd_msg_type msg_type;
 };
+
+int kfilnd_send_hello_request(struct kfilnd_dev *dev, int cpt, lnet_nid_t nid);
 
 #endif /* _KFILND_ */
