@@ -102,6 +102,17 @@ lnet_genl_dumpit_info(struct netlink_callback *cb)
 #ifdef HAVE_KERNEL_SETSOCKOPT
 
 #include <net/tcp.h>
+#include <net/sock.h>
+
+static inline void libcfs_set_so_reuseport(struct socket *sock, int option)
+{
+#ifndef HAVE_SOCKET_SK_SK_REUSEPORT
+	(void)kernel_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+				(char *)&option, sizeof(option));
+#else
+	sock->sk->sk_reuseport = option;
+#endif
+}
 
 #if !defined(HAVE_TCP_SOCK_SET_QUICKACK)
 static inline void tcp_sock_set_quickack(struct sock *sk, int opt)
