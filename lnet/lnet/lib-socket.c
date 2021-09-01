@@ -209,7 +209,7 @@ retry:
 		return ERR_PTR(rc);
 	}
 
-	sock->sk->sk_reuseport = 1;
+	libcfs_set_so_reuseport(sock, 1);
 
 	if (interface >= 0 || local_port != 0) {
 		struct sockaddr_storage locaddr = {};
