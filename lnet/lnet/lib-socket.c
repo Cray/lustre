@@ -213,7 +213,7 @@ lnet_sock_create(struct socket **sockp, int *fatal,
 		return rc;
 	}
 
-	sock->sk->sk_reuseport = 1;
+	libcfs_set_so_reuseport(sock, 1);
 
 	if (local_ip != 0 || local_port != 0) {
 		memset(&locaddr, 0, sizeof(locaddr));
