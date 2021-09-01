@@ -70,6 +70,29 @@ EXTRA_KCFLAGS="$tmp_flags"
 ]) # LIBCFS_HAVE_PERCPU_REFCOUNT
 
 #
+# LIBCFS_HAVE_SOCKET_SK_SK_REUSEPORT
+#
+# v3.8-rc3-650-g055dc21a1d1d
+# soreuseport: infrastructure
+#
+AC_DEFUN([LIBCFS_HAVE_SOCKET_SK_SK_REUSEPORT], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'struct socket' has 'sk->sk_reuseport' member],
+nsecs_to_jiffies64, [
+	#include <net/sock.h>
+],[
+	struct socket *sock = NULL;
+
+	sock->sk->sk_reuseport = 1;
+],[
+	AC_DEFINE(HAVE_SOCKET_SK_SK_REUSEPORT, 1,
+		['struct socket' member 'sk->sk_reuseport' is available])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_HAVE_SOCKET_SK_SK_REUSEPORT
+
+#
 # LIBCFS_HAVE_IDR_ALLOC
 # v3.9
 #
@@ -2076,6 +2099,7 @@ LIBCFS_CONFIG_PANIC_DUMPLOG
 
 # 3.8
 LIBCFS_D_HASH_AND_LOOKUP
+LIBCFS_HAVE_SOCKET_SK_SK_REUSEPORT
 LIBCFS_HAVE_IDR_ALLOC
 # 3.11
 LIBCFS_HAVE_PERCPU_REFCOUNT
