@@ -173,7 +173,11 @@
 %{!?mpi_name: %global mpi_name openmpi}
 
 %if 0%{?zfs} == 0
-%define zfs 0
+%global libzfsver %(rpm -qf /usr/include/libzfs/libzfs.h | sed -e 's/libzfs//' -e 's/-.*//')
+%global libzfsver_err %(echo %libzfsver | grep -q "not owned" && echo 1 || echo 0)
+%if %libzfsver_err == 0
+%define zfs %libzfsver
+%endif
 %endif
 
 Summary: Lustre File System
@@ -299,11 +303,7 @@ Provides: lustre-osd-mount = %{version}
 Provides: lustre-osd-mount = %{version}
 Provides: lustre-osd-zfs-mount = %{version}
 Requires: lustre-osd-zfs = %{version}
-%if %{zfs} == 0
-BuildRequires: libzfs2-devel
-%else
-BuildRequires: libzfs4-devel
-%endif
+BuildRequires: libzfs%{zfs}-devel
 Requires: zfs
 Obsoletes: lustre-osd-mount < %{version}
 Group: System Environment/Kernel
