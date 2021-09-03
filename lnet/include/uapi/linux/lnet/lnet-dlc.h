@@ -83,9 +83,16 @@ struct lnet_ioctl_config_o2iblnd_tunables {
 	__u16 lnd_ntx;
 };
 
+struct lnet_ioctl_config_kfilnd_tunables {
+	__u32 lnd_version;
+	__u32 lnd_prov_major_version;
+	__u32 lnd_prov_minor_version;
+};
+
 struct lnet_lnd_tunables {
 	union {
 		struct lnet_ioctl_config_o2iblnd_tunables lnd_o2ib;
+		struct lnet_ioctl_config_kfilnd_tunables lnd_kfi;
 	} lnd_tun_u;
 };
 
