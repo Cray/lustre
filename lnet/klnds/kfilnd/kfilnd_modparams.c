@@ -59,11 +59,23 @@ module_param(peer_timeout, int, 0444);
 MODULE_PARM_DESC(peer_timeout,
 		 "Seconds without aliveness news to declare peer dead (less than or equal to 0 to disable).");
 
+static unsigned int prov_major_version = 1;
+module_param(prov_major_version, int, 0444);
+MODULE_PARM_DESC(prov_major_version,
+		 "Default kfabric provider major version kfilnd should use");
+
+static unsigned int prov_minor_version;
+module_param(prov_minor_version, int, 0444);
+MODULE_PARM_DESC(prov_minor_version,
+		 "Default kfabric provider minor version kfilnd should use");
+
 int kfilnd_tunables_setup(struct lnet_ni *ni)
 {
 	struct lnet_ioctl_config_lnd_cmn_tunables *net_tunables;
+	struct lnet_ioctl_config_kfilnd_tunables *kfilnd_tunables;
 
 	net_tunables = &ni->ni_net->net_tunables;
+	kfilnd_tunables = &ni->ni_lnd_tunables.lnd_tun_u.lnd_kfi;
 
 	if (!ni->ni_net->net_tunables_set) {
 		net_tunables->lct_max_tx_credits = credits;
@@ -75,6 +87,12 @@ int kfilnd_tunables_setup(struct lnet_ni *ni)
 		    net_tunables->lct_max_tx_credits)
 			net_tunables->lct_peer_tx_credits =
 				net_tunables->lct_max_tx_credits;
+	}
+
+	kfilnd_tunables->lnd_version = KFILND_MSG_VERSION;
+	if (!ni->ni_lnd_tunables_set) {
+		kfilnd_tunables->lnd_prov_major_version = prov_major_version;
+		kfilnd_tunables->lnd_prov_minor_version = prov_minor_version;
 	}
 
 	return 0;
