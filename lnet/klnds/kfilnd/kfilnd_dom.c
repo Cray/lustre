@@ -315,6 +315,9 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni,
 		KFI_WRITE | KFI_REMOTE_READ | KFI_REMOTE_WRITE |
 		KFI_MULTI_RECV | KFI_REMOTE_COMM | KFI_NAMED_RX_CTX |
 		KFI_TAGGED | KFI_TAGGED_RMA;
+	hints->fabric_attr->prov_version =
+		KFI_VERSION(ni->ni_lnd_tunables.lnd_tun_u.lnd_kfi.lnd_prov_major_version,
+			    ni->ni_lnd_tunables.lnd_tun_u.lnd_kfi.lnd_prov_minor_version);
 	hints->domain_attr->mr_iov_limit = 256; /* 1 MiB LNet message */
 	hints->domain_attr->mr_key_size = sizeof(int);
 	hints->domain_attr->resource_mgmt = KFI_RM_DISABLED;
