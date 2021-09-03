@@ -73,6 +73,21 @@ lustre_o2iblnd_show_tun(struct cYAML *lndparams,
 	return LUSTRE_CFG_RC_NO_ERR;
 }
 
+static int
+lustre_kfilnd_show_tun(struct cYAML *lndparams,
+			struct lnet_ioctl_config_kfilnd_tunables *lnd_cfg)
+{
+	if (cYAML_create_number(lndparams, "prov_major_version",
+				lnd_cfg->lnd_prov_major_version) == NULL)
+		return LUSTRE_CFG_RC_OUT_OF_MEM;
+
+	if (cYAML_create_number(lndparams, "prov_minor_version",
+				lnd_cfg->lnd_prov_minor_version) == NULL)
+		return LUSTRE_CFG_RC_OUT_OF_MEM;
+
+	return LUSTRE_CFG_RC_NO_ERR;
+}
+
 int
 lustre_net_show_tunables(struct cYAML *tunables,
 			 struct lnet_ioctl_config_lnd_cmn_tunables *cmn)
@@ -116,6 +131,9 @@ lustre_ni_show_tunables(struct cYAML *lnd_tunables,
 	if (net_type == O2IBLND)
 		rc = lustre_o2iblnd_show_tun(lnd_tunables,
 					     &lnd->lnd_tun_u.lnd_o2ib);
+	else if (net_type == KFILND)
+		rc = lustre_kfilnd_show_tun(lnd_tunables,
+					    &lnd->lnd_tun_u.lnd_kfi);
 
 	return rc;
 }
@@ -162,6 +180,28 @@ yaml_extract_o2ib_tun(struct cYAML *tree,
 		(conns_per_peer) ? conns_per_peer->cy_valueint : 1;
 }
 
+static void
+yaml_extract_kfi_tun(struct cYAML *tree,
+		      struct lnet_ioctl_config_kfilnd_tunables *lnd_cfg)
+{
+	struct cYAML *prov_major_version = NULL;
+	struct cYAML *prov_minor_version = NULL;
+	struct cYAML *lndparams = NULL;
+
+	lndparams = cYAML_get_object_item(tree, "lnd tunables");
+	if (!lndparams)
+		return;
+
+	prov_major_version =
+		cYAML_get_object_item(lndparams, "prov_major_version");
+	lnd_cfg->lnd_prov_major_version =
+		(prov_major_version) ? prov_major_version->cy_valueint : 0;
+
+	prov_minor_version =
+		cYAML_get_object_item(lndparams, "prov_minor_version");
+	lnd_cfg->lnd_prov_minor_version =
+		(prov_minor_version) ? prov_minor_version->cy_valueint : 0;
+}
 
 void
 lustre_yaml_extract_lnd_tunables(struct cYAML *tree,
@@ -171,6 +211,8 @@ lustre_yaml_extract_lnd_tunables(struct cYAML *tree,
 	if (net_type == O2IBLND)
 		yaml_extract_o2ib_tun(tree,
 				      &tun->lnd_tun_u.lnd_o2ib);
-
+	else if (net_type == KFILND)
+		yaml_extract_kfi_tun(tree,
+				     &tun->lnd_tun_u.lnd_kfi);
 }
 
