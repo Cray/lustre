@@ -855,7 +855,7 @@ restart:
 	mutex_unlock(&lli->lli_och_mutex);
 
 	/* lockless for direct IO so that it can do IO in parallel */
-	if (file->f_flags & O_DIRECT)
+	if ((file->f_flags & O_DIRECT) && !(file->f_flags & O_APPEND))
 		fd->fd_flags |= LL_FILE_LOCKLESS_IO;
 	fd = NULL;
 
@@ -1445,6 +1445,8 @@ ll_file_io_generic(const struct lu_env *env, struct vvp_io_args *args,
 restart:
 	io = vvp_env_thread_io(env);
 	ll_io_init(io, file, iot);
+	if ((file->f_flags & O_APPEND) && (file->f_flags & O_DIRECT))
+		ignore_lockless = 1;
 	io->ci_ignore_lockless = ignore_lockless;
 	io->ci_ndelay_tried = retried;
 
