@@ -461,6 +461,9 @@ enum stats_track_type {
 					 2.10, abandoned */
 #define LL_SBI_TINY_WRITE   0x2000000 /* tiny write support */
 
+#define LL_SBI_PARALLEL_DIO	0x80000000 /* parallel (async) submission of
+					      RPCs for DIO */
+
 #define LL_SBI_FLAGS { 	\
 	"nolck",	\
 	"checksum",	\
@@ -488,6 +491,7 @@ enum stats_track_type {
 	"file_secctx",	\
 	"pio",		\
 	"tiny_write",	\
+	"parallel_dio",	\
 }
 
 /* This is embedded into llite super-blocks to keep track of connect
@@ -739,6 +743,11 @@ static inline bool ll_sbi_has_fast_read(struct ll_sb_info *sbi)
 static inline bool ll_sbi_has_tiny_write(struct ll_sb_info *sbi)
 {
 	return !!(sbi->ll_flags & LL_SBI_TINY_WRITE);
+}
+
+static inline bool ll_sbi_has_parallel_dio(struct ll_sb_info *sbi)
+{
+	return !!(sbi->ll_flags & LL_SBI_PARALLEL_DIO);
 }
 
 void ll_ras_enter(struct file *f);

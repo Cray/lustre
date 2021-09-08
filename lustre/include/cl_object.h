@@ -1923,7 +1923,21 @@ struct cl_io {
 	 * the read IO will check to-be-read OSCs' status, and make fast-switch
 	 * another mirror if some of the OSTs are not healthy.
 	 */
-			     ci_tried_all_mirrors:1;
+			     ci_tried_all_mirrors:1,
+	/**
+	 * Random read hints, readahead will be disabled.
+	 */
+			     ci_rand_read:1,
+	/**
+	 * Sequential read hints.
+	 */
+			     ci_seq_read:1,
+	/**
+	 * Do parallel (async) submission of DIO RPCs.  Note DIO is still sync
+	 * to userspace, only the RPCs are submitted async, then waited for at
+	 * the llite layer before returning.
+	 */
+			     ci_parallel_dio:1;
 	/**
 	 * Bypass quota check
 	 */
@@ -2500,10 +2514,12 @@ typedef void (cl_sync_io_end_t)(const struct lu_env *, struct cl_sync_io *);
 void cl_sync_io_init_notify(struct cl_sync_io *anchor, int nr,
 			    struct cl_dio_aio *aio, cl_sync_io_end_t *end);
 
-int  cl_sync_io_wait(const struct lu_env *env, struct cl_sync_io *anchor,
-		     long timeout);
+int cl_sync_io_wait(const struct lu_env *env, struct cl_sync_io *anchor,
+		    long timeout);
 void cl_sync_io_note(const struct lu_env *env, struct cl_sync_io *anchor,
 		     int ioret);
+int cl_sync_io_wait_recycle(const struct lu_env *env, struct cl_sync_io *anchor,
+			    long timeout, int ioret);
 struct cl_dio_aio *cl_aio_alloc(struct kiocb *iocb);
 void cl_aio_free(struct cl_dio_aio *aio);
 static inline void cl_sync_io_init(struct cl_sync_io *anchor, int nr)
