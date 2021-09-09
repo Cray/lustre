@@ -68,10 +68,10 @@ void kfilnd_peer_put(struct kfilnd_peer *peer)
 	rcu_read_unlock();
 }
 
-static u8 kfilnd_nid_prefer_rx(struct kfilnd_dev *dev, lnet_nid_t nid)
+u16 kfilnd_peer_target_rx_base(struct kfilnd_peer *peer)
 {
-	int cpt = lnet_cpt_of_nid(nid, dev->kfd_ni);
-	struct kfilnd_ep *ep = dev->cpt_to_endpoint[cpt];
+	int cpt = lnet_cpt_of_nid(peer->nid, peer->dev->kfd_ni);
+	struct kfilnd_ep *ep = peer->dev->cpt_to_endpoint[cpt];
 
 	return ep->end_context_id;
 }
@@ -141,9 +141,8 @@ again:
 
 	peer->dev = dev;
 	peer->nid = nid;
-	atomic_set(&peer->rx_context, 0);
+	atomic_set(&peer->rx_base, 0);
 	atomic_set(&peer->remove_peer, 0);
-	peer->prefer_rx = kfilnd_nid_prefer_rx(dev, nid);
 
 	/* One reference for the allocation and another for get operation
 	 * performed for this peer. The allocation reference is returned when
@@ -196,19 +195,25 @@ err:
  */
 kfi_addr_t kfilnd_peer_get_kfi_addr(struct kfilnd_peer *peer)
 {
+	/* TODO: Support RX count by round-robining the generated kfi_addr_t's
+	 * across multiple RX contexts using RX base and RX count.
+	 */
 	return kfi_rx_addr(KFILND_BASE_ADDR(peer->addr),
-			   atomic_read(&peer->rx_context),
-			   KFILND_FAB_RX_CTX_BITS);
+			   atomic_read(&peer->rx_base), KFILND_FAB_RX_CTX_BITS);
 }
 
 /**
- * kfilnd_peer_update() - Update the RX context for a peer.
+ * kfilnd_peer_update_rx_contexts() - Update the RX context for a peer.
  * @peer: Peer to be updated.
- * @rx_context: New RX context for peer.
+ * @rx_base: New RX base for peer.
+ * @rx_count: New RX count for peer.
  */
-void kfilnd_peer_update(struct kfilnd_peer *peer, unsigned int rx_context)
+void kfilnd_peer_update_rx_contexts(struct kfilnd_peer *peer,
+				    unsigned int rx_base, unsigned int rx_count)
 {
-	atomic_set(&peer->rx_context, rx_context);
+	/* TODO: Support RX count. */
+	LASSERT(rx_count > 0);
+	atomic_set(&peer->rx_base, rx_base);
 }
 
 /**
