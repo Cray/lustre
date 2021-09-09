@@ -184,11 +184,10 @@ struct kfilnd_peer {
 	struct kfilnd_dev *dev;
 	lnet_nid_t nid;
 	kfi_addr_t addr;
-	atomic_t rx_context;
+	atomic_t rx_base;
 	atomic_t remove_peer;
 	refcount_t cnt;
 	time64_t last_alive;
-	u8 prefer_rx;
 	u16 version;
 };
 
@@ -334,6 +333,12 @@ struct kfilnd_dev {
 struct kfilnd_hello_msg {
 	/* Support kfilnd version. */
 	__u16 version;
+
+	/* Base RX context peer should used. */
+	__u16 rx_base;
+
+	/* RX context count peer can target. */
+	__u16 rx_count;
 } WIRE_ATTR;
 
 /* Immediate message header. */
@@ -376,8 +381,8 @@ struct kfilnd_msg {
 	/* Specific kfilnd protocol type. */
 	__u8 type;
 
-	/* Preferred RX context for peer. */
-	__u8 prefer_rx;
+	/* Unused 8 bits. */
+	__u8 reserved;
 
 	/* Number of bytes in message. */
 	__u16 nob;
