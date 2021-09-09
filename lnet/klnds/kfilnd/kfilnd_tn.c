@@ -44,6 +44,10 @@ static void kfilnd_tn_pack_hello_req(struct kfilnd_transaction *tn)
 
 	/* Pack the protocol header and payload. */
 	msg->proto.hello.version = KFILND_MSG_VERSION;
+	msg->proto.hello.rx_base = kfilnd_peer_target_rx_base(tn->peer);
+
+	/* TODO: Support multiple RX contexts per peer. */
+	msg->proto.hello.rx_count = 1;
 
 	/* Pack the transport header. */
 	msg->magic = KFILND_MSG_MAGIC;
@@ -51,7 +55,6 @@ static void kfilnd_tn_pack_hello_req(struct kfilnd_transaction *tn)
 	/* Mesage version zero is only valid for hello requests. */
 	msg->version = 0;
 	msg->type = KFILND_MSG_HELLO_REQ;
-	msg->prefer_rx = tn->peer->prefer_rx;
 	msg->nob = sizeof(struct kfilnd_hello_msg) +
 		offsetof(struct kfilnd_msg, proto);
 	msg->cksum = NO_CHECKSUM;
@@ -70,6 +73,10 @@ static void kfilnd_tn_pack_hello_rsp(struct kfilnd_transaction *tn)
 
 	/* Pack the protocol header and payload. */
 	msg->proto.hello.version = tn->peer->version;
+	msg->proto.hello.rx_base = kfilnd_peer_target_rx_base(tn->peer);
+
+	/* TODO: Support multiple RX contexts per peer. */
+	msg->proto.hello.rx_count = 1;
 
 	/* Pack the transport header. */
 	msg->magic = KFILND_MSG_MAGIC;
@@ -77,7 +84,6 @@ static void kfilnd_tn_pack_hello_rsp(struct kfilnd_transaction *tn)
 	/* Mesage version zero is only valid for hello requests. */
 	msg->version = 0;
 	msg->type = KFILND_MSG_HELLO_RSP;
-	msg->prefer_rx = tn->peer->prefer_rx;
 	msg->nob = sizeof(struct kfilnd_hello_msg) +
 		offsetof(struct kfilnd_msg, proto);
 	msg->cksum = NO_CHECKSUM;
@@ -103,7 +109,6 @@ static void kfilnd_tn_pack_bulk_req(struct kfilnd_transaction *tn)
 	msg->magic = KFILND_MSG_MAGIC;
 	msg->version = KFILND_MSG_VERSION;
 	msg->type = tn->msg_type;
-	msg->prefer_rx = tn->peer->prefer_rx;
 	msg->nob = sizeof(struct kfilnd_bulk_req_msg) +
 		offsetof(struct kfilnd_msg, proto);
 	msg->cksum = NO_CHECKSUM;
@@ -141,7 +146,6 @@ static void kfilnd_tn_pack_immed_msg(struct kfilnd_transaction *tn)
 	msg->magic = KFILND_MSG_MAGIC;
 	msg->version = KFILND_MSG_VERSION;
 	msg->type = tn->msg_type;
-	msg->prefer_rx = tn->peer->prefer_rx;
 	msg->nob = offsetof(struct kfilnd_msg, proto.immed.payload[tn->tn_nob]);
 	msg->cksum = NO_CHECKSUM;
 	msg->srcnid = tn->tn_ep->end_dev->kfd_ni->ni_nid;
@@ -724,7 +728,6 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 
 		/* Update the NID address with the new preferred RX context. */
 		kfilnd_peer_alive(tn->peer);
-		kfilnd_peer_update(tn->peer, msg->prefer_rx);
 
 		/*
 		 * Pass message up to LNet
@@ -762,6 +765,10 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 
 		switch (msg->type) {
 		case KFILND_MSG_HELLO_REQ:
+			kfilnd_peer_update_rx_contexts(tn->peer,
+						       msg->proto.hello.rx_base,
+						       msg->proto.hello.rx_count);
+
 			/* Negotiate kfilnd version used between peers. Fallback
 			 * to the minimum implemented kfilnd version.
 			 */
@@ -805,6 +812,9 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 
 		case KFILND_MSG_HELLO_RSP:
 			rc = 0;
+			kfilnd_peer_update_rx_contexts(tn->peer,
+						       msg->proto.hello.rx_base,
+						       msg->proto.hello.rx_count);
 			kfilnd_peer_set_version(tn->peer,
 						msg->proto.hello.version);
 			KFILND_TN_DEBUG(tn, "Negotiated kfilnd version: %u",
