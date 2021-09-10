@@ -32,8 +32,8 @@ static int kfilnd_ep_post_recv(struct kfilnd_ep *ep,
 		return -EAGAIN;
 
 	atomic_inc(&buf->immed_ref);
-	rc = kfi_recv(ep->end_rx, buf->immed_buf, buf->immed_buf_size, NULL, 0,
-		      buf);
+	rc = kfi_recv(ep->end_rx, buf->immed_buf, buf->immed_buf_size, NULL,
+		      KFI_ADDR_UNSPEC, buf);
 	if (rc)
 		atomic_dec(&buf->immed_ref);
 
@@ -279,6 +279,7 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 	struct kfi_msg_tagged msg = {
 		.tag = tn->tn_mr_key,
 		.context = tn,
+		.addr = tn->peer->addr,
 	};
 	struct kfi_cq_err_entry fake_error = {
 		.op_context = tn,
