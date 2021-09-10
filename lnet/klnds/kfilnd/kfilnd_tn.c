@@ -338,7 +338,8 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 		 */
 		tn = kfilnd_tn_alloc(bufdesc->immed_end->end_dev,
 				     bufdesc->immed_end->end_cpt,
-				     rx_msg->srcnid, alloc_msg, false);
+				     rx_msg->srcnid, alloc_msg, false,
+				     false);
 		if (IS_ERR(tn)) {
 			kfilnd_ep_imm_buffer_put(bufdesc);
 			KFILND_EP_ERROR(bufdesc->immed_end,
@@ -1370,8 +1371,10 @@ void kfilnd_tn_free(struct kfilnd_transaction *tn)
 	list_del(&tn->tn_entry);
 	spin_unlock(&tn->tn_ep->tn_list_lock);
 
-	KFILND_TN_DEBUG(tn, "Transaction ID freed");
-	kfilnd_ep_put_key(tn->tn_ep, tn->tn_mr_key);
+	KFILND_TN_DEBUG(tn, "Transaction freed");
+
+	if (tn->tn_mr_key)
+		kfilnd_ep_put_key(tn->tn_ep, tn->tn_mr_key);
 
 	/* Free send message buffer if needed. */
 	if (tn->tn_tx_msg.msg)
@@ -1388,6 +1391,7 @@ void kfilnd_tn_free(struct kfilnd_transaction *tn)
  * @target_nid: Target NID of the transaction.
  * @alloc_msg: Allocate an immediate message for the transaction.
  * @is_initiator: Is initiator of LNet transaction.
+ * @key: Is transaction memory region key need.
  *
  * During transaction allocation, each transaction is associated with a KFI LND
  * endpoint use to post data transfer operations. The CPT argument is used to
@@ -1397,7 +1401,8 @@ void kfilnd_tn_free(struct kfilnd_transaction *tn)
  */
 struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 					   lnet_nid_t target_nid,
-					   bool alloc_msg, bool is_initiator)
+					   bool alloc_msg, bool is_initiator,
+					   bool key)
 {
 	struct kfilnd_transaction *tn;
 	struct kfilnd_ep *ep;
@@ -1435,10 +1440,12 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 		}
 	}
 
-	rc = kfilnd_ep_get_key(ep);
-	if (rc < 0)
-		goto err_free_tn;
-	tn->tn_mr_key = rc;
+	if (key) {
+		rc = kfilnd_ep_get_key(ep);
+		if (rc < 0)
+			goto err_free_tn;
+		tn->tn_mr_key = rc;
+	}
 
 	tn->peer = kfilnd_peer_get(dev, target_nid);
 	if (IS_ERR(tn->peer)) {
@@ -1470,7 +1477,8 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 	return tn;
 
 err_put_mr_key:
-	kfilnd_ep_put_key(ep, tn->tn_mr_key);
+	if (key)
+		kfilnd_ep_put_key(ep, tn->tn_mr_key);
 err_free_tn:
 	if (tn->tn_tx_msg.msg)
 		kmem_cache_free(imm_buf_cache, tn->tn_tx_msg.msg);

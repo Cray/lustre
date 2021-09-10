@@ -446,8 +446,8 @@ struct kfilnd_msg {
 	!IS_ERR_OR_NULL((tn)->peer)
 
 #define KFILND_TN_DIR_DEBUG(tn, fmt, dir, ...) \
-	CDEBUG(D_NET, "Transaction ID %u: %s:%u %s %s:%llu " fmt "\n", \
-	       (tn)->tn_mr_key, \
+	CDEBUG(D_NET, "Transaction ID %p: %s:%u %s %s:%llu " fmt "\n", \
+	       (tn), \
 	       libcfs_nid2str((tn)->tn_ep->end_dev->kfd_ni->ni_nid), \
 	       (tn)->tn_ep->end_context_id, dir, \
 	       libcfs_nid2str((tn)->peer->nid), \
@@ -464,8 +464,8 @@ struct kfilnd_msg {
 	} while (0)
 
 #define KFILND_TN_DIR_ERROR(tn, fmt, dir, ...) \
-	CNETERR("Transaction ID %u: %s:%u %s %s:%llu " fmt "\n", \
-		(tn)->tn_mr_key, \
+	CNETERR("Transaction ID %p: %s:%u %s %s:%llu " fmt "\n", \
+		(tn), \
 		libcfs_nid2str((tn)->tn_ep->end_dev->kfd_ni->ni_nid), \
 		(tn)->tn_ep->end_context_id, dir, \
 		libcfs_nid2str((tn)->peer->nid), \
