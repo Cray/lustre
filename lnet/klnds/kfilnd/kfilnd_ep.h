@@ -36,4 +36,8 @@ void kfilnd_ep_flush_replay_queue(struct kfilnd_ep *ep);
 void kfilnd_ep_queue_tn_replay(struct kfilnd_ep *ep,
 			       struct kfilnd_transaction *tn);
 
+int kfilnd_ep_get_key(struct kfilnd_ep *ep);
+void kfilnd_ep_put_key(struct kfilnd_ep *ep, unsigned int key);
+
+
 #endif /* _KFILND_EP_ */
