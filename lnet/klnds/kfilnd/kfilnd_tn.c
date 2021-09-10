@@ -1369,7 +1369,7 @@ void kfilnd_tn_free(struct kfilnd_transaction *tn)
 		KFILND_TN_ERROR(tn, "Transaction ID leaked");
 	} else {
 		KFILND_TN_DEBUG(tn, "Transaction ID freed");
-		kfilnd_dom_put_mr_key(tn->tn_ep->end_dev->dom, tn->tn_mr_key);
+		kfilnd_ep_put_key(tn->tn_ep, tn->tn_mr_key);
 	}
 
 	/* Free send message buffer if needed. */
@@ -1434,7 +1434,7 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 		}
 	}
 
-	rc = kfilnd_dom_get_mr_key(dev->dom);
+	rc = kfilnd_ep_get_key(ep);
 	if (rc < 0)
 		goto err_free_tn;
 	tn->tn_mr_key = rc;
@@ -1469,7 +1469,7 @@ struct kfilnd_transaction *kfilnd_tn_alloc(struct kfilnd_dev *dev, int cpt,
 	return tn;
 
 err_put_mr_key:
-	kfilnd_dom_put_mr_key(dev->dom, tn->tn_mr_key);
+	kfilnd_ep_put_key(ep, tn->tn_mr_key);
 err_free_tn:
 	if (tn->tn_tx_msg.msg)
 		kmem_cache_free(imm_buf_cache, tn->tn_tx_msg.msg);
