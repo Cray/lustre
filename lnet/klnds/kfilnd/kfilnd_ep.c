@@ -172,6 +172,12 @@ static int kfilnd_ep_gen_fake_err(struct kfilnd_ep *ep,
 	return 0;
 }
 
+static uint64_t gen_init_tag_bits(struct kfilnd_transaction *tn)
+{
+	return (tn->peer->remote_session_key << KFILND_EP_KEY_BITS) |
+		tn->tn_response_mr_key;
+}
+
 /**
  * kfilnd_ep_post_tagged_send() - Post a tagged send operation.
  * @ep: KFI LND endpoint used to post the tagged receivce operation.
@@ -211,7 +217,7 @@ int kfilnd_ep_post_tagged_send(struct kfilnd_ep *ep,
 	}
 
 	rc = kfi_tsenddata(ep->end_tx, NULL, 0, NULL, tn->tagged_data,
-			   tn->tn_target_addr, tn->tn_response_mr_key, tn);
+			   tn->tn_target_addr, gen_init_tag_bits(tn), tn);
 	switch (rc) {
 	case 0:
 	case -EAGAIN:
@@ -263,6 +269,12 @@ int kfilnd_ep_cancel_tagged_recv(struct kfilnd_ep *ep,
 	return kfi_cancel(&ep->end_rx->fid, tn);
 }
 
+static uint64_t gen_target_tag_bits(struct kfilnd_transaction *tn)
+{
+	return (tn->peer->local_session_key << KFILND_EP_KEY_BITS) |
+		tn->tn_mr_key;
+}
+
 /**
  * kfilnd_ep_post_tagged_recv() - Post a tagged receive operation.
  * @ep: KFI LND endpoint used to post the tagged receivce operation.
@@ -277,7 +289,7 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 			       struct kfilnd_transaction *tn)
 {
 	struct kfi_msg_tagged msg = {
-		.tag = tn->tn_mr_key,
+		.tag = gen_target_tag_bits(tn),
 		.context = tn,
 		.addr = tn->peer->addr,
 	};
@@ -420,7 +432,7 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	};
 	struct kfi_rma_iov rma_iov = {
 		.len = tn->tn_nob,
-		.key = tn->tn_response_mr_key,
+		.key = gen_init_tag_bits(tn),
 	};
 	struct kfi_msg_rma rma = {
 		.addr = tn->tn_target_addr,
@@ -501,7 +513,7 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	};
 	struct kfi_rma_iov rma_iov = {
 		.len = tn->tn_nob,
-		.key = tn->tn_response_mr_key,
+		.key = gen_init_tag_bits(tn),
 	};
 	struct kfi_msg_rma rma = {
 		.addr = tn->tn_target_addr,
