@@ -46,7 +46,7 @@ int kfilnd_send_hello_request(struct kfilnd_dev *dev, int cpt, lnet_nid_t nid)
 	struct kfilnd_transaction *tn;
 	int rc;
 
-	tn = kfilnd_tn_alloc(dev, cpt, nid, true, true);
+	tn = kfilnd_tn_alloc(dev, cpt, nid, true, true, false);
 	if (IS_ERR(tn)) {
 		rc = PTR_ERR(tn);
 		CERROR("Failed to allocate transaction struct: rc=%d\n", rc);
@@ -71,6 +71,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	lnet_kiov_t *kiov = NULL;
 	struct kvec *iov = NULL;
 	int rc;
+	bool tn_key = false;
 
 	/* NB 'private' is different depending on what we're sending.... */
 	if (msg->msg_niov > LNET_MAX_IOV)
@@ -99,6 +100,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		}
 
 		lnd_msg_type = KFILND_MSG_BULK_GET_REQ;
+		tn_key = true;
 		break;
 
 	case LNET_MSG_REPLY:
@@ -111,11 +113,12 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		}
 
 		lnd_msg_type = KFILND_MSG_BULK_PUT_REQ;
+		tn_key = true;
 		break;
 	}
 
 	cpt = kfilnd_send_cpt(dev, target.nid);
-	tn = kfilnd_tn_alloc(dev, cpt, target.nid, true, true);
+	tn = kfilnd_tn_alloc(dev, cpt, target.nid, true, true, tn_key);
 	if (IS_ERR(tn)) {
 		rc = PTR_ERR(tn);
 		CERROR("Failed to allocate transaction struct: rc=%d\n", rc);
