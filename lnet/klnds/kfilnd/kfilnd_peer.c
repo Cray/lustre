@@ -4,6 +4,7 @@
  * Copyright 2019 Cray Inc. All Rights Reserved.
  */
 #include "kfilnd_peer.h"
+#include "kfilnd_dev.h"
 
 static const struct rhashtable_params peer_cache_params = {
 	.head_offset = offsetof(struct kfilnd_peer, node),
@@ -143,6 +144,7 @@ again:
 	peer->nid = nid;
 	atomic_set(&peer->rx_base, 0);
 	atomic_set(&peer->remove_peer, 0);
+	peer->local_session_key = kfilnd_dev_get_session_key(dev);
 
 	/* One reference for the allocation and another for get operation
 	 * performed for this peer. The allocation reference is returned when

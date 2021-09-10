@@ -45,6 +45,7 @@ static void kfilnd_tn_pack_hello_req(struct kfilnd_transaction *tn)
 	/* Pack the protocol header and payload. */
 	msg->proto.hello.version = KFILND_MSG_VERSION;
 	msg->proto.hello.rx_base = kfilnd_peer_target_rx_base(tn->peer);
+	msg->proto.hello.session_key = tn->peer->local_session_key;
 
 	/* TODO: Support multiple RX contexts per peer. */
 	msg->proto.hello.rx_count = 1;
@@ -74,6 +75,7 @@ static void kfilnd_tn_pack_hello_rsp(struct kfilnd_transaction *tn)
 	/* Pack the protocol header and payload. */
 	msg->proto.hello.version = tn->peer->version;
 	msg->proto.hello.rx_base = kfilnd_peer_target_rx_base(tn->peer);
+	msg->proto.hello.session_key = tn->peer->local_session_key;
 
 	/* TODO: Support multiple RX contexts per peer. */
 	msg->proto.hello.rx_count = 1;
@@ -768,6 +770,8 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			kfilnd_peer_update_rx_contexts(tn->peer,
 						       msg->proto.hello.rx_base,
 						       msg->proto.hello.rx_count);
+			kfilnd_peer_set_remote_session_key(tn->peer,
+							   msg->proto.hello.session_key);
 
 			/* Negotiate kfilnd version used between peers. Fallback
 			 * to the minimum implemented kfilnd version.
@@ -815,6 +819,8 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			kfilnd_peer_update_rx_contexts(tn->peer,
 						       msg->proto.hello.rx_base,
 						       msg->proto.hello.rx_count);
+			kfilnd_peer_set_remote_session_key(tn->peer,
+							   msg->proto.hello.session_key);
 			kfilnd_peer_set_version(tn->peer,
 						msg->proto.hello.version);
 			KFILND_TN_DEBUG(tn, "Negotiated kfilnd version: %u",
@@ -1364,13 +1370,8 @@ void kfilnd_tn_free(struct kfilnd_transaction *tn)
 	list_del(&tn->tn_entry);
 	spin_unlock(&tn->tn_ep->tn_list_lock);
 
-	if (tn->tn_status == -ETIMEDOUT) {
-		/* TODO: Don't leak transaction IDs. */
-		KFILND_TN_ERROR(tn, "Transaction ID leaked");
-	} else {
-		KFILND_TN_DEBUG(tn, "Transaction ID freed");
-		kfilnd_ep_put_key(tn->tn_ep, tn->tn_mr_key);
-	}
+	KFILND_TN_DEBUG(tn, "Transaction ID freed");
+	kfilnd_ep_put_key(tn->tn_ep, tn->tn_mr_key);
 
 	/* Free send message buffer if needed. */
 	if (tn->tn_tx_msg.msg)

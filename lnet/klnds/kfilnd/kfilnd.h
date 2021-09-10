@@ -77,7 +77,8 @@
 #define CFS_KFI_FAIL_MSG_UNPACK 0xF113
 
 /* Maximum number of transaction keys supported. */
-#define KFILND_EP_KEY_MAX (BIT(16) - 1)
+#define KFILND_EP_KEY_BITS 16U
+#define KFILND_EP_KEY_MAX (BIT(KFILND_EP_KEY_BITS) - 1)
 
 /* Some constants which should be turned into tunables */
 #define KFILND_IMMEDIATE_MSG_SIZE 4096
@@ -195,6 +196,8 @@ struct kfilnd_peer {
 	refcount_t cnt;
 	time64_t last_alive;
 	u16 version;
+	u32 local_session_key;
+	u32 remote_session_key;
 };
 
 static inline bool kfilnd_peer_is_new_peer(struct kfilnd_peer *peer)
@@ -206,6 +209,12 @@ static inline void kfilnd_peer_set_version(struct kfilnd_peer *peer,
 					   u16 version)
 {
 	peer->version = version;
+}
+
+static inline void kfilnd_peer_set_remote_session_key(struct kfilnd_peer *peer,
+						      u32 session_key)
+{
+	peer->remote_session_key = session_key;
 }
 
 struct kfilnd_fab {
@@ -328,6 +337,7 @@ struct kfilnd_dev {
 
 	/* Physical NIC address. */
 	unsigned int nic_addr;
+	atomic_t session_keys;
 };
 
 /* Invalid checksum value is treated as no checksum. */
@@ -341,6 +351,9 @@ struct kfilnd_hello_msg {
 
 	/* Base RX context peer should used. */
 	__u16 rx_base;
+
+	/* Session key used by peer. */
+	__u32 session_key;
 
 	/* RX context count peer can target. */
 	__u16 rx_count;
@@ -364,13 +377,13 @@ struct kfilnd_bulk_req_msg {
 	 */
 	struct lnet_hdr	hdr;
 
-	/* Memory key needed by the target to push/pull LNet payload. */
-	__u32 key;
-
 	/* Specific RX context the target must target to push/pull LNet
 	 * payload.
 	 */
 	__u32 response_rx;
+
+	/* Memory key needed by the target to push/pull LNet payload. */
+	__u16 key;
 } WIRE_ATTR;
 
 /* Kfilnd message. Includes base transport header plus embedded protocol
@@ -623,13 +636,13 @@ struct kfilnd_transaction {
 	bool sink_buffer;
 
 	/* Memory region and remote key used to cover initiator's buffer. */
-	u32			tn_mr_key;
+	u16			tn_mr_key;
 
 	/* RX context used to perform response operations to a Put/Get
 	 * request. This is required since the request initiator locks in a
 	 * transactions to a specific RX context.
 	 */
-	u32			tn_response_mr_key;
+	u16			tn_response_mr_key;
 	u8			tn_response_rx;
 
 	/* Immediate data used to convey transaction state from LNet target to
