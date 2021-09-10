@@ -76,6 +76,9 @@
 #define CFS_KFI_FAIL_RECV 0xF112
 #define CFS_KFI_FAIL_MSG_UNPACK 0xF113
 
+/* Maximum number of transaction keys supported. */
+#define KFILND_EP_KEY_MAX (BIT(16) - 1)
+
 /* Some constants which should be turned into tunables */
 #define KFILND_IMMEDIATE_MSG_SIZE 4096
 
@@ -174,6 +177,9 @@ struct kfilnd_ep {
 	struct work_struct replay_work;
 	atomic_t replay_count;
 
+	/* Key used to build the tag for tagged buffers. */
+	struct ida keys;
+
 	/* Pre-posted immediate buffers */
 	struct kfilnd_immediate_buffer end_immed_bufs[];
 };
@@ -217,7 +223,6 @@ struct kfilnd_dom {
 	struct kfilnd_fab *fab;
 	struct kfid_domain *domain;
 	struct kref cnt;
-	struct ida mr_keys;
 };
 
 /* Transaction States */
