@@ -127,6 +127,7 @@ struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni,
 
 	dev->kfd_ni = ni;
 	spin_lock_init(&dev->kfd_lock);
+	atomic_set(&dev->session_keys, 0);
 
 	dev->dom = kfilnd_dom_get(ni, node, &dev_info);
 	if (IS_ERR(dev->dom)) {
@@ -299,4 +300,9 @@ void kfilnd_dev_reset_stats(struct kfilnd_dev *dev)
 			atomic_set(&stat->accumulated_count, 0);
 		}
 	}
+}
+
+u32 kfilnd_dev_get_session_key(struct kfilnd_dev *dev)
+{
+	return (u32)atomic_add_return(1, &dev->session_keys);
 }
