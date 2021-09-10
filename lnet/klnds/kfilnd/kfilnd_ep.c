@@ -708,6 +708,7 @@ void kfilnd_ep_free(struct kfilnd_ep *ep)
 	kfi_close(&ep->end_rx->fid);
 	kfilnd_cq_free(ep->end_tx_cq);
 	kfilnd_cq_free(ep->end_rx_cq);
+	ida_destroy(&ep->keys);
 	LIBCFS_FREE(ep, KFILND_EP_ALLOC_SIZE);
 }
 
@@ -762,6 +763,7 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 			(unsigned long)ep, 0);
 	INIT_WORK(&ep->replay_work, kfilnd_ep_replay_work);
 	atomic_set(&ep->replay_count, 0);
+	ida_init(&ep->keys);
 
 	/* Create a CQ for this CPT */
 	cq_attr.flags = KFI_AFFINITY;
@@ -918,4 +920,14 @@ err_free_ep:
 	LIBCFS_FREE(ep, KFILND_EP_ALLOC_SIZE);
 err:
 	return ERR_PTR(rc);
+}
+
+int kfilnd_ep_get_key(struct kfilnd_ep *ep)
+{
+	return ida_simple_get(&ep->keys, 1, KFILND_EP_KEY_MAX, GFP_KERNEL);
+}
+
+void kfilnd_ep_put_key(struct kfilnd_ep *ep, unsigned int key)
+{
+	ida_simple_remove(&ep->keys, key);
 }
