@@ -27,8 +27,6 @@ static void kfilnd_dom_free(struct kref *kref)
 	list_del(&dom->entry);
 	mutex_unlock(&dom->fab->dom_list_lock);
 
-	ida_destroy(&dom->mr_keys);
-
 	kfi_close(&dom->domain->fid);
 	LIBCFS_FREE(dom, sizeof(*dom));
 }
@@ -65,7 +63,6 @@ static struct kfilnd_dom *kfilnd_dom_alloc(struct kfi_info *dom_info,
 	spin_lock_init(&dom->lock);
 	dom->fab = fab;
 	kref_init(&dom->cnt);
-	ida_init(&dom->mr_keys);
 
 	rc = kfi_domain(fab->fabric, dom_info, &dom->domain, dom);
 	if (rc) {
@@ -383,14 +380,4 @@ err_free_service:
 	kfree(service);
 err:
 	return ERR_PTR(rc);
-}
-
-int kfilnd_dom_get_mr_key(struct kfilnd_dom *dom)
-{
-	return ida_simple_get(&dom->mr_keys, 1, INT_MAX, GFP_KERNEL);
-}
-
-void kfilnd_dom_put_mr_key(struct kfilnd_dom *dom, unsigned int mr_key)
-{
-	ida_simple_remove(&dom->mr_keys, mr_key);
 }

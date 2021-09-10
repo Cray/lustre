@@ -104,6 +104,16 @@ int kfilnd_tunables_setup(struct lnet_ni *ni)
 				auth_key;
 	}
 
+	if (net_tunables->lct_max_tx_credits > KFILND_EP_KEY_MAX) {
+		CERROR("Credits cannot exceed %lu\n", KFILND_EP_KEY_MAX);
+		return -EINVAL;
+	}
+
+	if (net_tunables->lct_peer_tx_credits > KFILND_EP_KEY_MAX) {
+		CERROR("Peer credits cannot exceed %lu\n", KFILND_EP_KEY_MAX);
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -131,6 +141,16 @@ int kfilnd_tunables_init(void)
 
 	if (auth_key < 1) {
 		CERROR("Authorization key cannot be less than 1");
+		return -EINVAL;
+	}
+
+	if (credits > KFILND_EP_KEY_MAX) {
+		CERROR("Credits cannot exceed %lu\n", KFILND_EP_KEY_MAX);
+		return -EINVAL;
+	}
+
+	if (peer_credits > KFILND_EP_KEY_MAX) {
+		CERROR("Peer credits cannot exceed %lu\n", KFILND_EP_KEY_MAX);
 		return -EINVAL;
 	}
 
