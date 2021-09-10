@@ -303,7 +303,7 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni, const char *node,
 	hints->caps = KFI_MSG | KFI_RMA | KFI_SEND | KFI_RECV | KFI_READ |
 		KFI_WRITE | KFI_REMOTE_READ | KFI_REMOTE_WRITE |
 		KFI_MULTI_RECV | KFI_REMOTE_COMM | KFI_NAMED_RX_CTX |
-		KFI_TAGGED | KFI_TAGGED_RMA;
+		KFI_TAGGED | KFI_TAGGED_RMA | KFI_DIRECTED_RECV;
 	hints->fabric_attr->prov_version =
 		KFI_VERSION(ni->ni_lnd_tunables.lnd_tun_u.lnd_kfi.lnd_prov_major_version,
 			    ni->ni_lnd_tunables.lnd_tun_u.lnd_kfi.lnd_prov_minor_version);
