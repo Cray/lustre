@@ -2212,7 +2212,7 @@ restore_quota() {
 	if [ "$old_MDT_QUOTA_TYPE" ]; then
 		if [[ $PERM_CMD = *"set_param -P"* ]]; then
 			do_facet mgs $PERM_CMD \
-				osd-*.$FSNAME-MDT*.quota_slave.enable = \
+				osd-*.$FSNAME-MDT*.quota_slave.enabled = \
 				$old_MDT_QUOTA_TYPE
 		else
 			do_facet mgs $PERM_CMD \
@@ -2222,7 +2222,7 @@ restore_quota() {
 	if [ "$old_OST_QUOTA_TYPE" ]; then
 		if [[ $PERM_CMD = *"set_param -P"* ]]; then
 			do_facet mgs $PERM_CMD \
-				osd-*.$FSNAME-OST*.quota_slave.enable = \
+				osd-*.$FSNAME-OST*.quota_slave.enabled = \
 				$old_OST_QUOTA_TYPE
 		else
 			do_facet mgs $LCTL conf_param \
@@ -2283,9 +2283,9 @@ setup_quota(){
 
 	if [[ $PERM_CMD = *"set_param -P"* ]]; then
 		do_facet mgs $PERM_CMD \
-			osd-*.$FSNAME-MDT*.quota_slave.enable=$QUOTA_TYPE
+			osd-*.$FSNAME-MDT*.quota_slave.enabled=$QUOTA_TYPE
 		do_facet mgs $PERM_CMD \
-			osd-*.$FSNAME-OST*.quota_slave.enable=$QUOTA_TYPE
+			osd-*.$FSNAME-OST*.quota_slave.enabled=$QUOTA_TYPE
 	else
 		do_facet mgs $PERM_CMD $FSNAME.quota.mdt=$QUOTA_TYPE ||
 			error "set mdt quota type failed"
