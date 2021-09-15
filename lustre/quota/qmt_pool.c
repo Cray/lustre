@@ -121,8 +121,8 @@ qpi_soft_least_qunit_seq_write(struct file *file, const char __user *buffer,
 			       size_t count, loff_t *off)
 {
 	struct qmt_pool_info *pool;
-	long long least_qunit;
-	int qunit, rc;
+	long long least_qunit, qunit;
+	int rc;
 
 	pool = ((struct seq_file *)file->private_data)->private;
 	LASSERT(pool != NULL);
