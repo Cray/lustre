@@ -1154,6 +1154,7 @@ static int lustre_lnet_kfi_intf2nid(struct lnet_dlc_intf_descr *intf,
 	char *nic_addr_path;
 	char val[128];
 	int size;
+	long int addr;
 
 	rc = sscanf(intf->intf_name, "cxi%u", &nic_index);
 	if (rc != 1)
@@ -1170,7 +1171,11 @@ static int lustre_lnet_kfi_intf2nid(struct lnet_dlc_intf_descr *intf,
 	if (rc)
 		return LUSTRE_CFG_RC_NO_MATCH;
 
-	*nid_addr = atoi(val);
+	addr = strtol(val, NULL, 16);
+	if (addr == LONG_MIN || addr == LONG_MAX)
+		return LUSTRE_CFG_RC_NO_MATCH;
+
+	*nid_addr = addr;
 
 	return LUSTRE_CFG_RC_NO_ERR;
 }
