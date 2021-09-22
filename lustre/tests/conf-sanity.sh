@@ -8170,18 +8170,12 @@ test_109a()
 	reformat
 	setup_noconfig
 	client_up || error "client_up failed"
-	#pool commands requires a client on MGS for procfs interfaces
-	if ! combined_mgs_mds ; then
-		mount_mgs_client
-		stack_trap umount_mgs_client EXIT
-	fi
 
 	#
 	# set number of permanent parameters
 	#
 	test_109_set_params $FSNAME
 
-	combined_mgs_mds || umount_mgs_client
 	umount_client $MOUNT || error "umount_client failed"
 	stop_ost || error "stop_ost failed"
 	stop_mds || error "stop_mds failed"
@@ -8196,7 +8190,6 @@ test_109a()
 		error "failed to clear client config"
 
 	setup_noconfig
-	combined_mgs_mds || mount_mgs_client
 
 	#
 	# check that configurations are intact
@@ -8208,7 +8201,6 @@ test_109a()
 	#
 	destroy_test_pools || error "destroy test pools failed"
 
-	combined_mgs_mds || umount_mgs_client
 	cleanup
 }
 run_test 109a "test lctl clear_conf fsname"
@@ -8221,18 +8213,12 @@ test_109b()
 	reformat
 	setup_noconfig
 	client_up || error "client_up failed"
-	#pool commands requires a client on MGS for procfs interfaces
-	if ! combined_mgs_mds ; then
-		mount_mgs_client
-		stack_trap umount_mgs_client EXIT
-	fi
 
 	#
 	# set number of permanent parameters
 	#
 	test_109_set_params $FSNAME
 
-	combined_mgs_mds || umount_mgs_client
 	umount_client $MOUNT || error "umount_client failed"
 	stop_ost || error "stop_ost failed"
 	stop_mds || error "stop_mds failed"
@@ -8247,7 +8233,6 @@ test_109b()
 		error "failed to clear client config"
 
 	setup_noconfig
-	combined_mgs_mds || mount_mgs_client
 	#
 	# check that configurations are intact
 	#
@@ -8258,7 +8243,6 @@ test_109b()
 	#
 	destroy_test_pools || error "destroy test pools failed"
 
-	combined_mgs_mds || umount_mgs_client
 	cleanup
 }
 run_test 109b "test lctl clear_conf one config"

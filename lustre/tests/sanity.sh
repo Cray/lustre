@@ -2900,11 +2900,6 @@ test_27L() {
 
 	local POOL=${POOL:-$TESTNAME}
 
-	if ! combined_mgs_mds ; then
-		mount_mgs_client
-		trap umount_mgs_client EXIT
-	fi
-
 	pool_add $POOL || error "pool_add failed"
 
 	lfs pool_list $MOUNT | grep -Fx "${FSNAME}.${POOL}" ||
