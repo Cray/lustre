@@ -213,8 +213,10 @@ struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni,
 			kfilnd_ep_alloc(dev, i, cpt,
 					ni->ni_net->net_tunables.lct_max_tx_credits,
 					KFILND_IMMEDIATE_MSG_SIZE);
-		if (IS_ERR(dev->kfd_endpoints[i]))
+		if (IS_ERR(dev->kfd_endpoints[i])) {
+			rc = PTR_ERR(dev->kfd_endpoints[i]);
 			goto err_free_endpoints;
+		}
 
 		dev->cpt_to_endpoint[cpt] = dev->kfd_endpoints[i];
 	}
