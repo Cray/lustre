@@ -30,8 +30,8 @@ GRANT_CHECK_LIST=${GRANT_CHECK_LIST:-""}
 export PARALLEL=${PARALLEL:-"no"}
 
 TRACE=${TRACE:-""}
-LUSTRE_TESTS_API_DIR=${LUSTRE_TESTS_API_DIR:-${LUSTRE}/tests/clientapi}
 LUSTRE=${LUSTRE:-$(dirname $0)/..}
+LUSTRE_TESTS_API_DIR=${LUSTRE_TESTS_API_DIR:-${LUSTRE}/tests/clientapi}
 . $LUSTRE/tests/test-framework.sh
 init_test_env $@
 
