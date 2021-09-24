@@ -38,8 +38,8 @@ if $RACER_FAILOVER; then
 	echo Victim facets ${victims[@]}
 fi
 
-#LU-4684
-RACER_ENABLE_MIGRATION=false
+#LU-4684 landed to cray-2.12-int, let's test it
+RACER_ENABLE_MIGRATION=${RACER_ENABLE_MIGRATION:-false}
 
 init_stripe_dir_params RACER_ENABLE_REMOTE_DIRS \
 	RACER_ENABLE_STRIPED_DIRS
