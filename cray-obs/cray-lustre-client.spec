@@ -6,16 +6,8 @@
 %define prefix /usr
 %define _sysconfdir /etc
 
-%if %{_vendor}=="redhat"
-%global kversion %(make -s -C /usr/src/kernels/* kernelversion)
-%global _with_linux --with-linux=/usr/src/kernels/%{kversion}
-%else
-%global kversion %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease)
-%global _with_linux --with-linux=/usr/src/linux
-%global _with_linux_obj --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor}
-%endif
-
 %global lustre_name cray-lustre-client
+
 Name: %{lustre_name}
 Summary: Cray Lustre Filesystem
 Version: %{_version}
@@ -27,22 +19,30 @@ Source1: kmp-lustre.preamble
 Source2: kmp-lustre.files
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
-
 BuildRequires: %kernel_module_package_buildreqs
 BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
-%if %{with shasta}
 BuildRequires: mlnx-ofa_kernel-devel
-%if %{_vendor} == "redhat"
+
+# Vendor specific requires/defines/etc.
+%if %{_vendor}=="redhat"
+%global kversion %(make -s -C /usr/src/kernels/* kernelversion)
+%global _with_linux --with-linux=/usr/src/kernels/%{kversion}
+%global requires_kmod_name kmod-%{lustre_name}
+%global requires_kmod_version %{version}
 Requires: kmod-mlnx-ofa_kernel
+BuildRequires: redhat-rpm-config
 %else
+%global kversion %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease)
+%global _with_linux --with-linux=/usr/src/linux
+%global _with_linux_obj --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor}
+%global requires_kmod_name %{lustre_name}-kmp
+%global krequires %(echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/\.aarch64$//' -e 's/-default$//' -e 's/-%{flavor}//')
+%global requires_kmod_version %{version}_k%(echo %{krequires} | sed -r 'y/-/_/; s/^(2\.6\.[0-9]+)_/\\1.0_/;')
 Requires: mlnx-ofa_kernel-kmp
 %endif
-%endif
-%if %{_vendor}=="redhat"
-BuildRequires: redhat-rpm-config
-%endif
 
+Requires: %{requires_kmod_name} = %{requires_kmod_version}
 
 # Disable post-build-checks; See LUS-1345
 # Note: build checks can be run manually by first doing an incremental build
@@ -55,6 +55,8 @@ Compiled for kernel: %{kversion}
 
 %package devel
 Group: Development/Libraries
+Requires: %{lustre_name} = %{version}
+Requires: %{requires_kmod_name} = %{requires_kmod_version}
 License: GPL
 Summary: Cray Lustre Header files
 
@@ -210,17 +212,20 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 # The versioned shared library files for liblnetconfig are needed for
 # lnetctl, so they are included in the base package
 %{_libdir}/liblnetconfig.so.*
+%{_libdir}/liblustreapi.so*
 %{_datadir}/bash-completion/completions/*
 %exclude %{_pkgconfigdir}/lustre.pc
 
 %files devel
+%defattr(-,root,root)
+%dir %{_includedir}/lustre
 %{_includedir}/lustre
-%dir %{_includedir}/linux
 %dir %{_includedir}/linux/lustre
-%{_includedir}/linux/lustre/lustre_fiemap.h
-%{_includedir}/linux/lustre/lustre_user.h
+%dir %{_includedir}/linux/lnet
+%{_includedir}/linux/lnet
+%{_includedir}/linux/lustre
 %{_libdir}/liblustreapi.a
-%{_libdir}/liblustreapi.so*
+%{_libdir}/liblustreapi.so
 %{_libdir}/liblnetconfig.a
 %{_libdir}/liblnetconfig.so
 %{_pkgconfigdir}/cray-lustre-api-devel.pc
