@@ -75,31 +75,31 @@ test_0b() {
 
 	test_mkdir $DIR/$tdir
 
-	$LFS setstripe -E -1 -C $LOV_MAX_OVERSTRIPE_COUNT $comp_file ||
+	$LFS setstripe -E -1 -C $LOV_MAX_STRIPE_COUNT $comp_file ||
 		error "Create $comp_file failed"
 
 	local count=$($LFS getstripe -I1 -c $comp_file)
-	[ $count -eq $LOV_MAX_OVERSTRIPE_COUNT ] ||
+	[ $count -eq $LOV_MAX_STRIPE_COUNT ] ||
 		error "stripe count of first component is shrinked to $count"
 
 	rm -f $comp_file || error "Delete $comp_file failed"
 
-	# Create file with 1.1*LOV_MAX_OVERSTRIPE_COUNT stripes should succeed
-	$LFS setstripe -E 1m -C $((LOV_MAX_OVERSTRIPE_COUNT / 10)) -E -1 \
-		-C $LOV_MAX_OVERSTRIPE_COUNT $comp_file ||
+	# Create file with 1.1*LOV_MAX_STRIPE_COUNT stripes should succeed
+	$LFS setstripe -E 1m -C $((LOV_MAX_STRIPE_COUNT / 10)) -E -1 \
+		-C $LOV_MAX_STRIPE_COUNT $comp_file ||
 		error "Create $comp_file failed"
 
 	local count=$($LFS getstripe -I2 -c $comp_file)
-	[ $count -eq $LOV_MAX_OVERSTRIPE_COUNT ] ||
+	[ $count -eq $LOV_MAX_STRIPE_COUNT ] ||
 		error "stripe count of second component is shrinked to $count"
 
 	rm -f $comp_file || error "Delete $comp_file failed"
 
 	# Create file with 3*LOV_MAX_STRIPE_COUNT stripes should fail
-#	$LFS setstripe -E 200G -C $LOV_MAX_STRIPE_COUNT \
-#		-E 500G -C $LOV_MAX_STRIPE_COUNT \
-#		-E -1 -C $LOV_MAX_STRIPE_COUNT $comp_file &&
-#		error "Create $comp_file succeeded"
+	$LFS setstripe -E 200G -C $LOV_MAX_STRIPE_COUNT \
+		-E 500G -C $LOV_MAX_STRIPE_COUNT \
+		-E -1 -C $LOV_MAX_STRIPE_COUNT $comp_file &&
+		error "Create $comp_file succeeded"
 
 	rm -f $comp_file || error "Delete $comp_file failed"
 }
@@ -118,11 +118,11 @@ test_0c() {
 
 	test_mkdir $DIR/$tdir
 
-	$LFS setstripe -E -1 -C $LOV_MAX_OVERSTRIPE_COUNT -z 128M $comp_file ||
+	$LFS setstripe -E -1 -C $LOV_MAX_STRIPE_COUNT -z 128M $comp_file ||
 		error "Create $comp_file failed"
 
 	local count=$($LFS getstripe -I1 -c $comp_file)
-	[ $count -eq $LOV_MAX_OVERSTRIPE_COUNT ] ||
+	[ $count -eq $LOV_MAX_STRIPE_COUNT ] ||
 		error "stripe count is shrinked to $count"
 }
 run_test 0c "Verify SEL comp stripe count limits"
@@ -200,7 +200,7 @@ test_1c() {
 	test_mkdir $DIR/$tdir
 
 	$LFS setstripe -E 1m -C 10 -E 10M -C 100 -E -1 \
-	    -C $LOV_MAX_OVERSTRIPE_COUNT $comp_file ||
+	    -C $LOV_MAX_STRIPE_COUNT $comp_file ||
 		error "Create $comp_file failed"
 
 	# Seek & write in to last component so all objects are allocated
@@ -211,8 +211,8 @@ test_1c() {
 	count=$($LFS getstripe -c -I2 $DIR/$tdir/$tfile)
 	[ $count -eq 100 ] || error "comp2 stripe count $count, should be 100"
 	count=$($LFS getstripe -c -I3 $DIR/$tdir/$tfile)
-	[ $count -eq $LOV_MAX_OVERSTRIPE_COUNT ] ||
-		error "comp4 stripe count $count != $LOV_MAX_OVERSTRIPE_COUNT"
+	[ $count -eq $LOV_MAX_STRIPE_COUNT ] ||
+		error "comp4 stripe count $count != $LOV_MAX_STRIPE_COUNT"
 
 	small_write $comp_file $rw_len || error "Verify RW failed"
 
@@ -859,15 +859,15 @@ test_16b() {
 		grep "connect_flags:.*overstriping") ]] ||
 		skip "server does not support overstriping"
 	[ $OSTCOUNT -lt 2 ] && skip "needs >= 2 OSTs"
-	[[ $OSTCOUNT -ge $(($LOV_MAX_OVERSTRIPE_COUNT / 2)) ]] &&
+	[[ $OSTCOUNT -ge $(($LOV_MAX_STRIPE_COUNT / 2)) ]] &&
 		skip_env "too many osts, skipping"
 	large_xattr_enabled || skip_env "ea_inode feature disabled"
 
 	local file=$DIR/$tdir/$tfile
 	local dir=$DIR/$tdir/dir
 	local temp=$DIR/$tdir/template
-	# We know OSTCOUNT < (LOV_MAX_OVERSTRIPE_COUNT / 2), so this is overstriping
-	local large_count=$((LOV_MAX_OVERSTRIPE_COUNT / 2 + 10))
+	# We know OSTCOUNT < (LOV_MAX_STRIPE_COUNT / 2), so this is overstriping
+	local large_count=$((LOV_MAX_STRIPE_COUNT / 2 + 10))
 
 	rm -rf $DIR/$tdir
 	test_mkdir $DIR/$tdir

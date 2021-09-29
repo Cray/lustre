@@ -425,7 +425,6 @@ init_test_env() {
 
 	# Constants used in more than one test script
 	export LOV_MAX_STRIPE_COUNT=2000
-	export LOV_MAX_OVERSTRIPE_COUNT=256
 	export DELETE_OLD_POOLS=${DELETE_OLD_POOLS:-false}
 	export KEEP_POOLS=${KEEP_POOLS:-false}
 
