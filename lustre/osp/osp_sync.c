@@ -331,6 +331,13 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
 	 * but we can do this as a sanity check, for a while */
 	LASSERT(th->th_top != NULL);
 
+        if (atomic_read(&d->opd_sync_changes) > d->opd_sync_max_changes) {
+                /* Attempt to slow sync changes queuing rate */
+                CDEBUG(D_OTHER, "%s: queued changes counter exceeds limit %d > %d\n",
+                        d->opd_obd->obd_name, atomic_read(&d->opd_sync_changes),
+                        d->opd_sync_max_changes);
+                RETURN(-EINPROGRESS);
+        }
 	storage_th = thandle_get_sub_by_dt(env, th->th_top, d->opd_storage);
 	if (IS_ERR(storage_th))
 		RETURN(PTR_ERR(storage_th));
