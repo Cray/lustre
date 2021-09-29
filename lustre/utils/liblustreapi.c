@@ -466,12 +466,6 @@ static int llapi_stripe_param_verify(const struct llapi_stripe_param *param,
 				  "be specified with -E\n",
 				  param->lsp_stripe_pattern);
 		return -EINVAL;
-	} else if (param->lsp_stripe_pattern & LOV_PATTERN_OVERSTRIPING) {
-		if (!llapi_layout_overstripe_count_is_valid(count)) {
-			fprintf(stderr, "Invalid overstripe count %d\n",
-				count);
-			return -EINVAL;
-		}
 	} else {
 		if (!llapi_stripe_count_is_valid(count)) {
 			llapi_err_noerrno(LLAPI_MSG_ERROR,

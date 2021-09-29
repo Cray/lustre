@@ -731,14 +731,6 @@ int llapi_layout_stripe_count_set(struct llapi_layout *layout, uint64_t count);
  * Check if the stripe count \a stripe_count \a is valid.
  */
 bool llapi_layout_stripe_count_is_valid(int64_t stripe_count);
-
-/**
- * Check if the overstripe count \a stripe_count \a is valid.
- */
-static inline bool llapi_layout_overstripe_count_is_valid(int64_t stripe_count)
-{
-	return stripe_count >= 0 && stripe_count <= LOV_MAX_OVERSTRIPE_COUNT;
-}
 /******************** Stripe Size ********************/
 
 /**

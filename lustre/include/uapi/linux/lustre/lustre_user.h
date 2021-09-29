@@ -740,7 +740,6 @@ static inline bool lov_pattern_supported_normal_comp(__u32 pattern)
  *
  * (max buffer size - lov+rpc header) / sizeof(struct lov_ost_data_v1) */
 #define LOV_MAX_STRIPE_COUNT 2000  /* ~((12 * 4096 - 256) / 24) */
-#define LOV_MAX_OVERSTRIPE_COUNT 256  /* XXX: due to LUS-9580 */
 #define LOV_ALL_STRIPES       0xffff /* only valid for directories */
 #define LOV_V1_INSANE_STRIPE_COUNT 65532 /* maximum stripe count bz13933 */
 

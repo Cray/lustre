@@ -2439,18 +2439,11 @@ new_comp:
 		/* Data-on-MDT component has always single stripe up to end */
 		lsa->lsa_stripe_size = lsa->lsa_comp_end;
 	} else if (lsa->lsa_pattern == LLAPI_LAYOUT_OVERSTRIPING) {
-		int64_t count = lsa->lsa_nr_tgts ?: lsa->lsa_stripe_count;
-
 		rc = llapi_layout_pattern_set(layout, lsa->lsa_pattern);
 		if (rc) {
 			fprintf(stderr, "Set stripe pattern %#llx failed. %s\n",
 				lsa->lsa_pattern, strerror(errno));
 			return rc;
-		}
-		if (!llapi_layout_overstripe_count_is_valid(count)) {
-			fprintf(stderr, "wrong overstripe count %ld\n", count);
-			errno = EINVAL;
-			return -1;
 		}
 	}
 
