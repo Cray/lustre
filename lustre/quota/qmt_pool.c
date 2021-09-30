@@ -393,7 +393,7 @@ struct qmt_pool_info *qmt_pool_lookup(const struct lu_env *env,
 					     int idx, bool add)
 {
 	struct qmt_pool_info	*pos, *pool;
-	int rc;
+	int rc = 0;
 	ENTRY;
 
 	down_read(&qmt->qmt_pool_lock);
@@ -419,7 +419,7 @@ struct qmt_pool_info *qmt_pool_lookup(const struct lu_env *env,
 		if (idx >= 0 && !qmt_sarr_check_idx(pos, idx)) {
 			rc = qti_pools_add(env, pos);
 			if (rc)
-				GOTO(out_err, rc);
+				break;
 			continue;
 		}
 
@@ -429,7 +429,7 @@ struct qmt_pool_info *qmt_pool_lookup(const struct lu_env *env,
 			if (add) {
 				rc = qti_pools_add(env, pos);
 				if (rc)
-					GOTO(out_err, rc);
+					break;
 			} else {
 				qpi_getref(pool);
 			}
@@ -438,6 +438,9 @@ struct qmt_pool_info *qmt_pool_lookup(const struct lu_env *env,
 	}
 	up_read(&qmt->qmt_pool_lock);
 
+	if (rc)
+		GOTO(out_err, rc);
+
 	if (idx >= 0 && qti_pools_cnt(env))
 		pool = qti_pools_env(env)[0];
 
@@ -445,7 +448,7 @@ struct qmt_pool_info *qmt_pool_lookup(const struct lu_env *env,
 out_err:
 	CERROR("%s: cannot add pool %s: err = %d\n",
 		qmt->qmt_svname, pos->qpi_name, rc);
-	RETURN(ERR_PTR(rc));
+	return ERR_PTR(rc);
 }
 
 /*
