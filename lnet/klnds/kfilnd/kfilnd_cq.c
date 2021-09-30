@@ -34,6 +34,7 @@ void kfilnd_cq_process_error(struct kfilnd_ep *ep,
 		kfilnd_ep_imm_buffer_put(buf);
 		return;
 
+	case KFI_TAGGED | KFI_RECV:
 	case KFI_TAGGED | KFI_RECV | KFI_REMOTE_CQ_DATA:
 	case KFI_TAGGED | KFI_RMA | KFI_READ | KFI_RECV:
 	case KFI_TAGGED | KFI_RMA | KFI_WRITE | KFI_RECV:
