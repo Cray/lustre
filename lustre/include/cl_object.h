@@ -771,7 +771,7 @@ struct cl_page {
 	/** Link to a queue, for debugging. */
 	struct lu_ref_link	cp_queue_ref;
 	/** Assigned if doing a sync_io */
-	struct cl_sync_io	*cp_sync_io;
+	struct cl_sync_io       *cp_sync_io;
 };
 
 /**
