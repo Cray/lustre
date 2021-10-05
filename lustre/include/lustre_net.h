@@ -653,7 +653,8 @@ struct ptlrpc_reply_state {
         unsigned long          rs_scheduled:1;     /* being handled? */
         unsigned long          rs_scheduled_ever:1;/* any schedule attempts? */
         unsigned long          rs_handled:1;  /* been handled yet? */
-        unsigned long          rs_on_net:1;   /* reply_out_callback pending? */
+        unsigned long          rs_sent:1;   /* Got LNET_EVENT_SEND? */
+        unsigned long          rs_unlinked:1; /* Reply MD unlinked? */
         unsigned long          rs_prealloc:1; /* rs from prealloc list */
         unsigned long          rs_committed:1;/* the transaction was committed
                                                  and the rs was dispatched
