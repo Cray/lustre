@@ -406,6 +406,7 @@ void reply_out_callback(struct lnet_event *ev)
 	struct ptlrpc_cb_id	  *cbid = ev->md.user_ptr;
 	struct ptlrpc_reply_state *rs = cbid->cbid_arg;
 	struct ptlrpc_service_part *svcpt = rs->rs_svcpt;
+	bool need_schedule = false;
         ENTRY;
 
         LASSERT (ev->type == LNET_EVENT_SEND ||
@@ -421,15 +422,28 @@ void reply_out_callback(struct lnet_event *ev)
                 return;
         }
 
-        LASSERT (rs->rs_on_net);
+	if (ev->type == LNET_EVENT_SEND) {
+		spin_lock(&rs->rs_lock);
+		rs->rs_sent = 1;
+		/* If transaction was committed before the SEND, and the ACK
+		 * is lost, then we need to schedule so ptlrpc_hr can unlink
+		 * the MD.
+		 */
+		if (rs->rs_handled)
+			need_schedule = true;
+		spin_unlock(&rs->rs_lock);
+	}
 
-        if (ev->unlinked) {
-                /* Last network callback. The net's ref on 'rs' stays put
-                 * until ptlrpc_handle_rs() is done with it */
+	if (ev->unlinked || need_schedule) {
+		LASSERT(rs->rs_sent);
+
+		/* Last network callback. The net's ref on 'rs' stays put
+		 * until ptlrpc_handle_rs() is done with it
+		 */
 		spin_lock(&svcpt->scp_rep_lock);
 		spin_lock(&rs->rs_lock);
 
-		rs->rs_on_net = 0;
+		rs->rs_unlinked = ev->unlinked;
 		if (!rs->rs_no_ack ||
 		    rs->rs_transno <=
 		    rs->rs_export->exp_obd->obd_last_committed ||
