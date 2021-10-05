@@ -3068,20 +3068,22 @@ void target_send_reply(struct ptlrpc_request *req, int rc, int fail_id)
 	LASSERT(!rs->rs_scheduled);
 	LASSERT(!rs->rs_scheduled_ever);
 	LASSERT(!rs->rs_handled);
-	LASSERT(!rs->rs_on_net);
+	LASSERT(!rs->rs_sent);
+	LASSERT(!rs->rs_unlinked);
 	LASSERT(rs->rs_export == NULL);
 	LASSERT(list_empty(&rs->rs_obd_list));
 	LASSERT(list_empty(&rs->rs_exp_list));
 
 	exp = class_export_get(req->rq_export);
 
-        /* disable reply scheduling while I'm setting up */
-        rs->rs_scheduled = 1;
-        rs->rs_on_net    = 1;
-        rs->rs_xid       = req->rq_xid;
-        rs->rs_transno   = req->rq_transno;
-        rs->rs_export    = exp;
-        rs->rs_opc       = lustre_msg_get_opc(req->rq_reqmsg);
+	/* disable reply scheduling while I'm setting up */
+	rs->rs_scheduled = 1;
+	rs->rs_sent      = 0;
+	rs->rs_unlinked  = 0;
+	rs->rs_xid       = req->rq_xid;
+	rs->rs_transno   = req->rq_transno;
+	rs->rs_export    = exp;
+	rs->rs_opc       = lustre_msg_get_opc(req->rq_reqmsg);
 
 	spin_lock(&exp->exp_uncommitted_replies_lock);
 	CDEBUG(D_NET, "rs transno = %llu, last committed = %llu\n",
@@ -3109,13 +3111,14 @@ void target_send_reply(struct ptlrpc_request *req, int rc, int fail_id)
 		 * with the reply state (if the send was successful, there
 		 * would have been +1 ref for the net, which
 		 * reply_out_callback leaves alone) */
-		rs->rs_on_net = 0;
+		rs->rs_sent = 1;
+		rs->rs_unlinked = 1;
 		ptlrpc_rs_addref(rs);
 	}
 
 	spin_lock(&rs->rs_lock);
 	if (rs->rs_transno <= exp->exp_last_committed ||
-	    (!rs->rs_on_net && !rs->rs_no_ack) ||
+	    (rs->rs_unlinked && !rs->rs_no_ack) ||
 	    list_empty(&rs->rs_exp_list) ||     /* completed already */
 	    list_empty(&rs->rs_obd_list)) {
 		CDEBUG(D_HA, "Schedule reply immediately\n");
