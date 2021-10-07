@@ -23,6 +23,7 @@ BuildRequires: %kernel_module_package_buildreqs
 BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
 BuildRequires: mlnx-ofa_kernel-devel
+Requires: cray-kfabric-udev
 
 # Vendor specific requires/defines/etc.
 %if %{_vendor}=="redhat"
