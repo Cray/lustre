@@ -25,6 +25,7 @@ BuildRequires: systemd
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
 BuildRequires: cray-kfabric-devel
+Requires: cray-kfabric-udev
 
 # Vendor specific requires/defines/etc.
 %if %{_vendor}=="redhat"

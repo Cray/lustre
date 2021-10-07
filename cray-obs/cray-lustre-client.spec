@@ -26,6 +26,7 @@ BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
 BuildRequires: cray-kfabric-devel
 BuildRequires: mlnx-ofa_kernel-devel
+Requires: cray-kfabric-udev
 
 # Vendor specific requires/defines/etc.
 %if %{_vendor}=="redhat"
