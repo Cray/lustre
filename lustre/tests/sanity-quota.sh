@@ -4828,7 +4828,7 @@ run_test 71b "Check SEL with quota pools"
 test_72()
 {
 	local limit=10  # 10M
-	local global_limit=50  # 50M
+	local global_limit=20  # 20M
 	local testfile="$DIR/$tdir/$tfile-0"
 	local qpool="qpool1"
 
