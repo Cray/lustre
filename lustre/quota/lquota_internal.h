@@ -188,6 +188,8 @@ struct lquota_entry {
 			lqe_is_default:1, /* the default quota is used */
 			lqe_is_global:1;  /* lqe belongs to global pool "0x0"*/
 
+	/* the lock to protect lqe_glbl_data */
+	struct mutex		 lqe_glbl_data_lock;
 	struct lqe_glbl_data	*lqe_glbl_data;
 };
 
