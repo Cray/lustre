@@ -1741,7 +1741,7 @@ static ssize_t osd_declare_write(const struct lu_env *env, struct dt_object *dt,
 		 * level.
 		 */
 		depth = inode != NULL ? ext_depth(inode) : 0;
-		depth = max(depth, 1) + 1;
+		depth = max(depth, 1) + 3;
 		credits = depth;
 		/* if not append, then split may need to modify
 		 * existing blocks moving entries into the new ones
