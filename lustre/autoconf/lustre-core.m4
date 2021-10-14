@@ -2936,6 +2936,12 @@ AC_SUBST(SELINUX)
 
 AC_CHECK_LIB([keyutils], [add_key])
 
+# l_getidenity_nss
+AC_ARG_ENABLE([getidentity_nss],
+      AC_HELP_STRING([--enable-getidentity-nss],
+                      [Compile l_getidentity_nss utility with NSS modules support]),
+      [],[enable_getidentity_nss=yes])
+
 # Super safe df
 AC_MSG_CHECKING([whether to report minimum OST free space])
 AC_ARG_ENABLE([mindf],
@@ -3044,6 +3050,7 @@ AM_CONDITIONAL(SELINUX, test "$SELINUX" = "-lselinux")
 AM_CONDITIONAL(GETSEPOL, test x$enable_getsepol = xyes)
 AM_CONDITIONAL(LLCRYPT, test x$enable_llcrypt = xyes)
 AM_CONDITIONAL(LIBAIO, test x$enable_libaio = xyes)
+AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
 ]) # LC_CONDITIONALS
 
 #

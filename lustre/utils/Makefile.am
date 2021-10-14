@@ -46,6 +46,9 @@ sbin_PROGRAMS += mkfs.lustre tunefs.lustre llverdev lr_reader lshowmount \
 		 ll_decode_filter_fid llog_reader l_tunedisk \
 		 ofd_access_log_reader
 endif
+if GETIDENTITY_NSS_BUILD
+sbin_PROGRAMS += l_getidentity_nss
+endif
 if LIBPTHREAD
 sbin_PROGRAMS += lhsmtool_posix
 endif
@@ -244,6 +247,13 @@ lhsmtool_posix_LDADD := liblustreapi.la $(PTHREAD_LIBS) \
 l_getsepol_SOURCES = l_getsepol.c
 l_getsepol_LDADD := liblustreapi.la -lcrypto $(SELINUX)
 l_getsepol_DEPENDENCIES := liblustreapi.la
+
+if GETIDENTITY_NSS_BUILD
+l_getidentity_nss_SOURCES = l_getidentity_nss.c
+l_getidentity_nss_LDADD := liblustreapi.la $(LIBPTLCTL)
+l_getidentity_nss_LDFLAGS = -ldl
+l_getidentity_nss_DEPENDENCIES := liblustreapi.la $(LIBPTLCTL)
+endif
 
 wirecheck_SOURCES = wirecheck.c
 wirecheck_CPPFLAGS := -DCC="\"$(CC)\""
