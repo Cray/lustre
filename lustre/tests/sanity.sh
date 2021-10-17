@@ -21450,6 +21450,46 @@ test_398n() { #  LU-13798
 }
 run_test 398n "test append with parallel DIO"
 
+test_398o() {
+	$LFS setstripe -c 1 -i 0 $DIR/$tfile
+	$LCTL set_param ldlm.namespaces.*.lru_size=clear
+
+	# request a new lock on client
+	log "buffered io and check lock count"
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1
+	local lock_count=$($LCTL get_param -n \
+			   ldlm.namespaces.*-OST0000-osc-ffff*.lru_size)
+	log ".. lock count: $lock_count, should be 1"
+	[[ $lock_count -eq 0 ]] && error "no lock held for buffered I/O"
+
+	log "direct io and check lock count"
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 oflag=direct conv=notrunc
+	lock_count=$($LCTL get_param -n \
+			   ldlm.namespaces.*-OST0000-osc-ffff*.lru_size)
+	log ".. lock count: $lock_count, should be 1"
+	[[ $lock_count -eq 0 ]] && error "lock cancelled by direct IO"
+
+	log "clear locks and repeat direct io"
+	$LCTL set_param ldlm.namespaces.*-OST0000-osc-ffff*.lru_size=clear
+
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 oflag=direct conv=notrunc
+	lock_count=$($LCTL get_param -n \
+			   ldlm.namespaces.*-OST0000-osc-ffff*.lru_size)
+	log ".. lock count: $lock_count, should be 0"
+	[[ $lock_count -eq 0 ]] || error "lockless direct IO"
+
+	# no lock cached, should use locked DIO append
+	log "repeat direct io with append, locks required"
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=1 oflag=direct oflag=append \
+		conv=notrunc || error "DIO append failed"
+	lock_count=$($LCTL get_param -n \
+		     ldlm.namespaces.*-OST0000-osc-ffff*.lru_size)
+	log ".. lock count: $lock_count, should be 1"
+	[[ $lock_count -eq 0 ]] && error "no lock held for DIO append"
+	log "398o complete"
+}
+run_test 398o "direct IO should not lockless"
+
 test_fake_rw() {
 	local read_write=$1
 	if [ "$read_write" = "write" ]; then
