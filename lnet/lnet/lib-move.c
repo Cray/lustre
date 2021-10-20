@@ -3647,7 +3647,9 @@ lnet_recover_peer_nis(void)
 static int
 lnet_monitor_thread(void *arg)
 {
+	time64_t recovery_timeout = 0;
 	time64_t rsp_timeout = 0;
+	int interval;
 	time64_t now;
 
 	wait_for_completion(&the_lnet.ln_started);
@@ -3676,8 +3678,11 @@ lnet_monitor_thread(void *arg)
 			rsp_timeout = now + (lnet_transaction_timeout / 2);
 		}
 
-		lnet_recover_local_nis();
-		lnet_recover_peer_nis();
+		if (now >= recovery_timeout) {
+			lnet_recover_local_nis();
+			lnet_recover_peer_nis();
+			recovery_timeout = now + lnet_recovery_interval;
+		}
 
 		/*
 		 * TODO do we need to check if we should sleep without
@@ -3687,10 +3692,18 @@ lnet_monitor_thread(void *arg)
 		 * if we wake up every 1 second? Although, we've seen
 		 * cases where we get a complaint that an idle thread
 		 * is waking up unnecessarily.
+		 *
+		 * Take into account the current net_count when you wake
+		 * up for alive router checking, since we need to check
+		 * possibly as many networks as we have configured.
 		 */
+		interval = min(lnet_recovery_interval,
+			       min((unsigned int) alive_router_check_interval /
+					lnet_current_net_count,
+				   lnet_transaction_timeout / 2));
 		wait_event_interruptible_timeout(the_lnet.ln_mt_waitq,
 						false,
-						cfs_time_seconds(1));
+						cfs_time_seconds(interval));
 	}
 
 	/* Shutting down */
