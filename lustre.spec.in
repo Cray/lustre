@@ -211,10 +211,6 @@ Provides: lustre-server = %{version}-%{release}
 %endif
 Obsoletes: lustre-client < %{version}
 Provides: lustre-client = %{version}-%{release}
-%if %{_vendor}=="redhat" || %{_vendor}=="fedora"
-#suse don't support selinux
-BuildRequires: libselinux-devel
-%endif
 %if %{with lustre_modules}
 %if %{with mofed}
 BuildRequires: mlnx-ofa_kernel-devel
