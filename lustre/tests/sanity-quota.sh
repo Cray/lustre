@@ -2573,6 +2573,39 @@ test_13(){
 }
 run_test 13 "Cancel per-ID lock in the LRU list"
 
+test_14()
+{
+	local qpool="qpool1"
+	local tfile1="$DIR/$tdir/$tfile-0"
+
+	mds_supports_qp
+	setup_quota_test || error "setup quota failed with $?"
+	# enable ost quota
+	set_ost_qtype $QTYPE || error "enable ost quota failed"
+
+	$LFS setquota -u $TSTUSR -b 0 -B 100M -i 0 -I 0 $DIR ||
+		error "set user quota failed"
+	pool_add $qpool || error "pool_add failed"
+	pool_add_targets $qpool 0 ||
+		error "pool_add_targets failed"
+	$LFS setstripe -p $qpool $DIR/$tdir || error "cannot set stripe"
+	$LFS setquota -u $TSTUSR -B 30M --pool $qpool $DIR ||
+		error "set user quota failed"
+
+	# don't care about returned value
+	$RUNAS $DD of=$tfile1 count=10 oflag=direct
+
+	echo "Stop ost1..."
+	stop ost1
+	$LFS setquota -u $TSTUSR -b 0 -B 0 -i 0 -I 0 $DIR ||
+		error "set user quota failed"
+
+	# no panic after removing OST0000 from the pool
+	pool_remove_target $qpool 0
+	start ost1 $(ostdevname 1) $OST_MOUNT_OPTS || error "start ost1 failed"
+}
+run_test 14 "check panic in qmt_site_recalc_cb"
+
 test_15(){
 	local LIMIT=$((24 * 1024 * 1024 * 1024 * 1024)) # 24 TB
 
@@ -5529,73 +5562,34 @@ run_test 81 "Race qmt_start_pool_recalc with qmt_pool_free"
 
 test_82()
 {
-	local limit=3 # 3M
-	local qpool="qpool1"
-	local qpool2="qpool2"
-	local tfile1="$DIR/$tdir/$tfile-0"
+	(( $MDS1_VERSION >= $(version_code 2.14.55) )) ||
+		skip "need MDS 2.14.55 or later"
+	is_project_quota_supported ||
+		skip "skip project quota unsupported"
 
-	[ "$OSTCOUNT" -lt "2" ] && skip "needs >= 2 OSTs"
-	mds_supports_qp
 	setup_quota_test || error "setup quota failed with $?"
+	stack_trap cleanup_quota_test
+	quota_init
 
-	# enable ost quota
-	set_ost_qtype $QTYPE || error "enable ost quota failed"
+	local parent_dir="$DIR/$tdir.parent"
+	local child_dir="$parent_dir/child"
 
-	$LFS setquota -u $TSTUSR -b 0 -B 50T -i 0 -I 0 $DIR ||
-		error "set user quota failed"
+	mkdir -p $child_dir
+	stack_trap "chown -R 0:0 $parent_dir"
 
-	pool_add $qpool || error "pool_add failed"
-	pool_add_targets $qpool 0 1 ||
-		error "pool_add_targets failed"
+	chown $TSTUSR:$TSTUSR $parent_dir ||
+		error "failed to chown on $parent_dir"
+	chown $TSTUSR2:$TSTUSRS2 $child_dir ||
+		error "failed to chown on $parent_dir"
 
-	pool_add $qpool2 || error "pool_add failed"
-	pool_add_targets $qpool2 0 1 ||
-		error "pool_add_targets failed"
+	$LFS project -p 1000 $parent_dir ||
+		error "failed to set project id on $parent_dir"
+	$LFS project -p 1001 $child_dir ||
+		error "failed to set project id on $child_dir"
 
-	$LFS setstripe -p $qpool $DIR/$tdir || error "cannot set stripe"
-	$LFS setquota -u $TSTUSR -B 30M --pool $qpool $DIR ||
-		error "set user quota failed"
-	$LFS setquota -u $TSTUSR -B ${limit}M --pool $qpool $DIR ||
-		error "set user quota failed"
-
-	# don't care about returned value. Just check we don't hung on write.
-	$RUNAS $DD of=$tfile1 count=10
-	return 0
+	rmdir $child_dir || error "cannot remove child dir, test failed"
 }
-run_test 82 "do not hung at write with the least_qunit"
-
-test_84()
-{
-	local qpool="qpool1"
-	local tfile1="$DIR/$tdir/$tfile-0"
-
-	mds_supports_qp
-	setup_quota_test || error "setup quota failed with $?"
-	# enable ost quota
-	set_ost_qtype $QTYPE || error "enable ost quota failed"
-
-	$LFS setquota -u $TSTUSR -b 0 -B 100M -i 0 -I 0 $DIR ||
-		error "set user quota failed"
-	pool_add $qpool || error "pool_add failed"
-	pool_add_targets $qpool 0 ||
-		error "pool_add_targets failed"
-	$LFS setstripe -p $qpool $DIR/$tdir || error "cannot set stripe"
-	$LFS setquota -u $TSTUSR -B 30M --pool $qpool $DIR ||
-		error "set user quota failed"
-
-	# don't care about returned value
-	$RUNAS $DD of=$tfile1 count=10 oflag=direct
-
-	echo "Stop ost1..."
-	stop ost1
-	$LFS setquota -u $TSTUSR -b 0 -B 0 -i 0 -I 0 $DIR ||
-		error "set user quota failed"
-
-	# no panic after removing OST0000 from the pool
-	pool_remove_target $qpool 0
-	start ost1 $(ostdevname 1) $OST_MOUNT_OPTS || error "start ost1 failed"
-}
-run_test 84 "check panic in qmt_site_recalc_cb"
+run_test 82 "verify more than 8 qids for single operation"
 
 test_84()
 {
@@ -5731,6 +5725,43 @@ test_84()
 		quota_error g $TSTUSR "dd failed, expect succeed"
 }
 run_test 84 "Reset quota should fix the insane granted quota"
+
+test_85()
+{
+	local limit=3 # 3M
+	local qpool="qpool1"
+	local qpool2="qpool2"
+	local tfile1="$DIR/$tdir/$tfile-0"
+
+	[ "$OSTCOUNT" -lt "2" ] && skip "needs >= 2 OSTs"
+	mds_supports_qp
+	setup_quota_test || error "setup quota failed with $?"
+
+	# enable ost quota
+	set_ost_qtype $QTYPE || error "enable ost quota failed"
+
+	$LFS setquota -u $TSTUSR -b 0 -B 50T -i 0 -I 0 $DIR ||
+		error "set user quota failed"
+
+	pool_add $qpool || error "pool_add failed"
+	pool_add_targets $qpool 0 1 ||
+		error "pool_add_targets failed"
+
+	pool_add $qpool2 || error "pool_add failed"
+	pool_add_targets $qpool2 0 1 ||
+		error "pool_add_targets failed"
+
+	$LFS setstripe -p $qpool $DIR/$tdir || error "cannot set stripe"
+	$LFS setquota -u $TSTUSR -B 30M --pool $qpool $DIR ||
+		error "set user quota failed"
+	$LFS setquota -u $TSTUSR -B ${limit}M --pool $qpool $DIR ||
+		error "set user quota failed"
+
+	# don't care about returned value. Just check we don't hung on write.
+	$RUNAS $DD of=$tfile1 count=10
+	return 0
+}
+run_test 85 "do not hung at write with the least_qunit"
 
 quota_fini()
 {
