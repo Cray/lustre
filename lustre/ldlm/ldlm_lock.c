@@ -1845,9 +1845,26 @@ enum ldlm_error ldlm_lock_enqueue(const struct lu_env *env,
 		        RETURN(rc);
 		}
 	}
-#endif
 
-        lock_res_and_lock(lock);
+	if (!local && res->lr_type == LDLM_FLOCK) {
+		if (lock->l_req_mode == LCK_NL) {
+			atomic_inc(&res->lr_flock_unlock_pending);
+			lock_res_and_lock(lock);
+			atomic_dec(&res->lr_flock_unlock_pending);
+		} else {
+			lock_res_and_lock(lock);
+
+			while (atomic_read(&res->lr_flock_unlock_pending)) {
+				unlock_res_and_lock(lock);
+				cond_resched();
+				lock_res_and_lock(lock);
+			}
+		}
+	} else
+#endif
+	{
+		lock_res_and_lock(lock);
+	}
         if (local && lock->l_req_mode == lock->l_granted_mode) {
                 /* The server returned a blocked lock, but it was granted
                  * before we got a chance to actually enqueue it.  We don't

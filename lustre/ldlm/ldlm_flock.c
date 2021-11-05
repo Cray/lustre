@@ -625,7 +625,8 @@ reprocess:
                          * note that ldlm_process_flock_lock() will recurse,
 			 * but only once because 'intention' won't be
 			 * LDLM_PROCESS_ENQUEUE from ldlm_reprocess_queue. */
-			if ((mode == LCK_NL) && overlaps) {
+			if (mode == LCK_NL && overlaps &&
+			    atomic_read(&res->lr_flock_unlock_pending) == 0) {
 				struct list_head rpc_list;
                                 int rc;
 
