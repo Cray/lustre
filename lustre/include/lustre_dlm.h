@@ -1090,6 +1090,8 @@ struct ldlm_resource {
 		 */
 		struct ldlm_interval_tree *lr_itree;
 		struct ldlm_ibits_queues *lr_ibits_queues;
+		atomic_t	lr_flock_unlock_pending;
+
 	};
 
 	union {

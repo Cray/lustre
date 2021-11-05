@@ -606,7 +606,8 @@ reprocess:
 			 * but only once because 'intention' won't be
 			 * LDLM_PROCESS_ENQUEUE from ldlm_reprocess_queue.
 			 */
-			if ((mode == LCK_NL) && overlaps) {
+			if (mode == LCK_NL && overlaps &&
+			    atomic_read(&res->lr_flock_unlock_pending) == 0) {
 				LIST_HEAD(rpc_list);
 				int rc;
 
