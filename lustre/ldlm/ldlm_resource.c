@@ -1450,6 +1450,10 @@ static struct ldlm_resource *ldlm_resource_new(enum ldlm_type ldlm_type)
 	case LDLM_IBITS:
 		rc = ldlm_resource_inodebits_new(res);
 		break;
+	case LDLM_FLOCK:
+		atomic_set(&res->lr_flock_unlock_pending, 0);
+		rc = true;
+		break;
 	default:
 		rc = true;
 		break;
