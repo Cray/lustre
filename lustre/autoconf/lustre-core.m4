@@ -2915,6 +2915,18 @@ AS_IF([test "$enable_dist" = "no"], [
 		])
 ])
 
+LDAP=""
+AC_CHECK_LIB([ldap],
+             [ldap_sasl_bind_s],
+             [AC_CHECK_HEADERS([ldap.h],
+                               [LDAP="-lldap"
+                                AC_DEFINE([HAVE_LDAP], 1,
+                                          [support alder32 checksum type])],
+                               [AC_MSG_WARN([No ldap-devel package found])])],
+             [AC_MSG_WARN([No ldap package found])]
+)
+AC_SUBST(LDAP)
+
 SELINUX=""
 
 AC_CHECK_LIB([selinux], [is_selinux_enabled],
@@ -3044,6 +3056,7 @@ AM_CONDITIONAL(SELINUX, test "$SELINUX" = "-lselinux")
 AM_CONDITIONAL(GETSEPOL, test x$enable_getsepol = xyes)
 AM_CONDITIONAL(LLCRYPT, test x$enable_llcrypt = xyes)
 AM_CONDITIONAL(LIBAIO, test x$enable_libaio = xyes)
+AM_CONDITIONAL(LDAP_BUILD, test x$LDAP != x)
 ]) # LC_CONDITIONALS
 
 #
