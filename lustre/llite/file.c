@@ -227,7 +227,7 @@ static int ll_close_inode_openhandle(struct inode *inode,
 	ll_finish_md_op_data(op_data);
 	EXIT;
 out:
-	if (rc) {
+	if (rc && (req == NULL || req->rq_repmsg == NULL)) {
 		md_clear_open_replay_data(md_exp, och);
 		och->och_open_handle.cookie = DEAD_HANDLE_MAGIC;
 		OBD_FREE_PTR(och);
