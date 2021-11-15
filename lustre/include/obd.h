@@ -208,6 +208,11 @@ struct client_obd {
 	 */
 	__u32			 cl_dom_min_inline_repsize;
 
+	/* Tuneable parameter for Lazy Size  On MDS updates, don't send it
+	 * if value is false.
+	 */
+	bool			 cl_lsom_update;
+
 	enum lustre_sec_part	 cl_sp_me;
 	enum lustre_sec_part	 cl_sp_to;
 	struct sptlrpc_flavor	 cl_flvr_mgc; /* fixed flavor of mgc->mgs */

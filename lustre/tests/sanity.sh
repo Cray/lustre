@@ -22617,8 +22617,11 @@ test_806() {
 
 	local save="$TMP/$TESTSUITE-$TESTNAME.parameters"
 	save_lustre_params client "llite.*.xattr_cache" > $save
+	local lsom=$($LCTL get_param -n mdc.*.mdc_lsom | head -n1)
+	do_nodes $CLIENTS $LCTL set_param mdc.*.mdc_lsom=On
 	lctl set_param llite.*.xattr_cache=0
-	stack_trap "restore_lustre_params < $save" EXIT
+	stack_trap "restore_lustre_params < $save;
+       		do_nodes $CLIENTS $LCTL set_param mdc.*.mdc_lsom=$lsom" EXIT
 
 	# single-threaded write
 	echo "Test SOM for single-threaded write"
@@ -22714,8 +22717,11 @@ test_807() {
 
 	local save="$TMP/$TESTSUITE-$TESTNAME.parameters"
 	save_lustre_params client "llite.*.xattr_cache" > $save
+	local lsom=$($LCTL get_param -n mdc.*.mdc_lsom | head -n1)
+	do_nodes $CLIENTS $LCTL set_param mdc.*.mdc_lsom=On
 	lctl set_param llite.*.xattr_cache=0
-	stack_trap "restore_lustre_params < $save" EXIT
+	stack_trap "restore_lustre_params < $save;
+       		do_nodes $CLIENTS $LCTL set_param mdc.*.mdc_lsom=$lsom" EXIT
 
 	rm -rf $DIR/$tdir || error "rm $tdir failed"
 	mkdir -p $DIR/$tdir || error "mkdir $tdir failed"
