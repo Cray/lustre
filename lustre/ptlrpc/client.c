@@ -2428,6 +2428,9 @@ static void ptlrpc_interrupted_set(struct ptlrpc_request_set *set)
 
 /**
  * Get the smallest timeout in the set; this does NOT set a timeout.
+ * \retval		timeout > 0
+ * \retval		0 if can't determine timeout
+ * \retval		-1 if set has a request expired already
  */
 time64_t ptlrpc_set_next_timeout(struct ptlrpc_request_set *set)
 {
@@ -2460,7 +2463,7 @@ time64_t ptlrpc_set_next_timeout(struct ptlrpc_request_set *set)
 			deadline = req->rq_sent + req->rq_timeout;
 
 		if (deadline <= now)    /* actually expired already */
-			timeout = 1;    /* ASAP */
+			timeout = -1;    /* ASAP */
 		else if (timeout == 0 || timeout > deadline - now)
 			timeout = deadline - now;
 	}
@@ -2512,7 +2515,7 @@ int ptlrpc_set_wait(const struct lu_env *env, struct ptlrpc_request_set *set)
 			rc = l_wait_event_abortable_timeout(
 				set->set_waitq,
 				ptlrpc_check_set(NULL, set),
-				cfs_time_seconds(timeout ? timeout : 1));
+				cfs_time_seconds(timeout > 0 ? timeout : 1));
 			if (rc == 0) {
 				rc = -ETIMEDOUT;
 				ptlrpc_expired_set(set);
@@ -2531,7 +2534,7 @@ int ptlrpc_set_wait(const struct lu_env *env, struct ptlrpc_request_set *set)
 			rc = wait_event_idle_timeout(
 				set->set_waitq,
 				ptlrpc_check_set(NULL, set),
-				cfs_time_seconds(timeout ? timeout : 1));
+				cfs_time_seconds(timeout > 0 ? timeout : 1));
 			if (rc == 0) {
 				ptlrpc_expired_set(set);
 				rc = -ETIMEDOUT;

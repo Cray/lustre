@@ -480,7 +480,12 @@ static int ptlrpcd(void *arg)
 		DEFINE_WAIT_FUNC(wait, woken_wake_function);
 		time64_t timeout;
 
-		timeout = cfs_time_seconds(ptlrpc_set_next_timeout(set));
+		timeout = ptlrpc_set_next_timeout(set);
+		if (timeout < 0) {
+			ptlrpc_expired_set(set);
+			timeout = 1;
+		}
+		timeout = cfs_time_seconds(timeout);
 
 		lu_context_enter(&env.le_ctx);
 		lu_context_enter(env.le_ses);
