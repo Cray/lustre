@@ -64,16 +64,16 @@ init_stripe_dir_params RECOVERY_SCALE_ENABLE_REMOTE_DIRS \
 	RECOVERY_SCALE_ENABLE_STRIPED_DIRS
 
 numfailovers () {
-    local facet
-    local var
+	local facet
+	local var
 
-    for facet in $MDTS ${FAILED_CLIENTS//,/ }; do
-        var=${facet}_nums
-        val=${!var}
-        if [ "$val" ] ; then
-            echo "$facet failed over $val times"
-        fi
-    done
+	for facet in ${MDTS//,/ } ${FAILED_CLIENTS//,/ }; do
+		var=$(node_var_name $facet)_nums
+		val=${!var}
+		if [ "$val" ] ; then
+			echo "$facet failed over $val times"
+		fi
+	done
 }
 
 summary_and_cleanup () {
@@ -173,8 +173,8 @@ test_fail_client_mds() {
         # lists are comma separated
         FAILED_CLIENTS=$(expand_list $FAILED_CLIENTS $fail_client)
 
-        serverfacet=$(get_random_entry $MDTS)
-        var=${serverfacet}_nums
+	serverfacet=$(get_random_entry $MDTS)
+	var=$(node_var_name $serverfacet)_nums
 
         # Check that our client loads are still running. If any have died,
         # that means they have died outside of recovery, which is unacceptable.
