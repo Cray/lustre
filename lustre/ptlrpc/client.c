@@ -2620,6 +2620,9 @@ static void ptlrpc_interrupted_set(struct ptlrpc_request_set *set)
 
 /*
  * Get the smallest timeout in the set; this does NOT set a timeout.
+ * \retval		timeout > 0
+ * \retval		0 if can't determine timeout
+ * \retval		-1 if set has a request expired already
  */
 time64_t ptlrpc_set_next_timeout(struct ptlrpc_request_set *set)
 {
@@ -2652,7 +2655,7 @@ time64_t ptlrpc_set_next_timeout(struct ptlrpc_request_set *set)
 			deadline = req->rq_sent + req->rq_timeout;
 
 		if (deadline <= now)    /* actually expired already */
-			timeout = 1;    /* ASAP */
+			timeout = -1;    /* ASAP */
 		else if (timeout == 0 || timeout > deadline - now)
 			timeout = deadline - now;
 	}
@@ -2697,7 +2700,7 @@ int ptlrpc_set_wait(const struct lu_env *env, struct ptlrpc_request_set *set)
 
 		rc = 0;
 		timeout = ptlrpc_set_next_timeout(set);
-		remaining = cfs_time_seconds(timeout ? timeout : 1);
+		remaining = cfs_time_seconds(timeout > 0 ? timeout : 1);
 
 		/*
 		 * wait until all complete, interrupted, or an in-flight
