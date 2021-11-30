@@ -442,6 +442,7 @@ cleanup_quota_test() {
 	echo "Wait for unlink objects finished..."
 	wait_delete_completed
 	sync_all_data || true
+	reset_quota_settings
 }
 
 quota_show_check() {
@@ -586,7 +587,6 @@ test_0() {
 	test_quota_performance $MB
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 run_test 0 "Test basic quota performance"
 
@@ -700,10 +700,8 @@ test_1a() {
 	cleanup_quota_test
 
 	used=$(getquota -p $TSTPRJID global curspace)
-	[ $used -ne 0 ] && quota_error p $TSTPRJID \
+	[ $used -eq 0 ] || quota_error p $TSTPRJID \
 		"project quota isn't released after deletion"
-
-	resetquota -p $TSTPRJID
 }
 run_test 1a "Block hard limit (normal use and out of quota)"
 
@@ -813,8 +811,6 @@ test_1b() {
 	used=$(getquota -p $TSTPRJID global curspace)
 	[ $used -eq 0 ] || quota_error p $TSTPRJID \
 		"project quota isn't released after deletion"
-
-	resetquota -p $TSTPRJID
 }
 run_test 1b "Quota pools: Block hard limit (normal use and out of quota)"
 
@@ -873,7 +869,6 @@ test_1c() {
 	used=$(getquota -u $TSTUSR global curspace $qpool1)
 	[ $used -ne 0 ] && quota_error u $TSTUSR \
 		"user quota isn't released after deletion"
-	resetquota -u $TSTUSR
 
 	# cleanup
 	cleanup_quota_test
@@ -997,7 +992,6 @@ test_1e() {
 	used=$(getquota -u $TSTUSR global curspace $qpool1)
 	[ $used -ne 0 ] && quota_error u $TSTUSR \
 		"user quota isn't released after deletion"
-	resetquota -u $TSTUSR
 
 	# cleanup
 	cleanup_quota_test
@@ -1294,11 +1288,8 @@ test_2() {
 
 	cleanup_quota_test
 	USED=$(getquota -p $TSTPRJID global curinodes)
-	[ $USED -ne 0 ] && quota_error p $TSTPRJID \
+	[ $USED -eq 0 ] || quota_error p $TSTPRJID \
 		"project quota isn't released after deletion"
-
-	resetquota -p $TSTPRJID
-
 }
 run_test 2 "File hard limit (normal use and out of quota)"
 
@@ -1426,7 +1417,6 @@ test_3a() {
 		error "set user quota failed"
 
 	test_block_soft $testfile $grace $limit "u"
-	resetquota -u $TSTUSR
 
 	echo "Group quota (soft limit:$limit MB  grace:$grace seconds)"
 	testfile=$DIR/$tdir/$tfile-1
@@ -1440,7 +1430,6 @@ test_3a() {
 		error "set group quota failed"
 
 	test_block_soft $testfile $grace $limit "g"
-	resetquota -g $TSTUSR
 
 	if is_project_quota_supported; then
 		echo "Project quota (soft limit:$limit MB  grace:$grace sec)"
@@ -1457,7 +1446,6 @@ test_3a() {
 			$DIR || error "set project quota failed"
 
 		test_block_soft $testfile $grace $limit "p"
-		resetquota -p $TSTPRJID
 		$LFS setquota -t -p --block-grace $MAX_DQ_TIME --inode-grace \
 			$MAX_IQ_TIME $DIR ||
 				error "restore project grace time failed"
@@ -1728,7 +1716,6 @@ test_4a() {
 		error "set user quota failed"
 
 	test_file_soft $TESTFILE $LIMIT $GRACE "u"
-	resetquota -u $TSTUSR
 
 	echo "Group quota (soft limit:$LIMIT files  grace:$GRACE seconds)"
 	# make sure the system is clean
@@ -1742,7 +1729,6 @@ test_4a() {
 	TESTFILE=$DIR/$tdir/$tfile-1
 
 	test_file_soft $TESTFILE $LIMIT $GRACE "g"
-	resetquota -g $TSTUSR
 
 	if is_project_quota_supported; then
 		echo "Project quota (soft limit:$LIMIT files grace:$GRACE sec)"
@@ -1759,7 +1745,6 @@ test_4a() {
 		TESTFILE=$DIR/$tdir/$tfile-1
 		# one less than limit, because of parent directory included.
 		test_file_soft $TESTFILE $((LIMIT-1)) $GRACE "p"
-		resetquota -p $TSTPRJID
 		$LFS setquota -t -p --block-grace $MAX_DQ_TIME --inode-grace \
 			$MAX_IQ_TIME $DIR ||
 				error "restore project grace time failed"
@@ -1867,10 +1852,6 @@ test_5() {
 	unlinkmany $DIR/$tdir/$tfile-0_ $((ILIMIT + 1)) ||
 		error "unlinkmany $DIR/$tdir/$tfile-0_ failed"
 	cleanup_quota_test
-
-	resetquota -u $TSTUSR
-	resetquota -g $TSTUSR
-	resetquota -p $TSTPRJID
 }
 run_test 5 "Chown & chgrp successfully even out of block/file quota"
 
@@ -1982,7 +1963,6 @@ test_6() {
 	done
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 run_test 6 "Test dropping acquire request on master"
 
@@ -2055,7 +2035,6 @@ test_7a() {
 		quota_error u $TSTUSR "write error, but expect success"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 run_test 7a "Quota reintegration (global index)"
 
@@ -2115,7 +2094,6 @@ test_7b() {
 	[ $USED -gt $old_used ] || error "limit on $OSTUUID $USED <= $old_used"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 	$SHOW_QUOTA_USER
 }
 run_test 7b "Quota reintegration (slave index)"
@@ -2168,7 +2146,6 @@ test_7c() {
 		quota_error u $TSTUSR "write success, but expect EDQUOT"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 run_test 7c "Quota reintegration (restart mds during reintegration)"
 
@@ -2205,8 +2182,6 @@ test_7d(){
 		quota_error u $TSTUSR2 "$TSTUSR2 write success, expect EDQUOT"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
-	resetquota -u $TSTUSR2
 }
 run_test 7d "Quota reintegration (Transfer index in multiple bulks)"
 
@@ -2293,7 +2268,6 @@ test_7e() {
 	rmdir $DIR/${tdir}-1 || error "unlink remote dir failed"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 run_test 7e "Quota reintegration (inode limits)"
 
@@ -2329,9 +2303,6 @@ test_8() {
 
 	is_project_quota_supported && change_project -C $DIR/$tdir
 	cleanup_quota_test
-	resetquota -u $TSTUSR
-	resetquota -g $TSTUSR
-	resetquota -p $TSTPRJID
 }
 run_test 8 "Run dbench with quota enabled"
 
@@ -2391,8 +2362,6 @@ test_9() {
 	$SHOW_QUOTA_GROUP
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
-	resetquota -g $TSTUSR
 
 	$SHOW_QUOTA_USER
 	$SHOW_QUOTA_GROUP
@@ -2427,7 +2396,6 @@ test_10() {
 		error "write failure, expect success"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 run_test 10 "Test quota for root user"
 
@@ -2451,7 +2419,6 @@ test_11() {
 	[ $USED -ge 2 ] || error "Used inodes($USED) is less than 2"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 run_test 11 "Chown/chgrp ignores quota"
 
@@ -2495,7 +2462,6 @@ test_12a() {
 		quota_error a $TSTUSR "rebalancing failed"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 run_test 12a "Block quota rebalancing"
 
@@ -2540,7 +2506,6 @@ test_12b() {
 	rmdir $DIR/${tdir}-1 || error "unlink remote dir failed"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 run_test 12b "Inode quota rebalancing"
 
@@ -2671,7 +2636,6 @@ test_17sub() {
 		"Used space(${USED}K) is less than ${BLKS}M"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 
 # DQACQ return recoverable error
@@ -2754,7 +2718,6 @@ test_18_sub () {
 			"got ${testfile_size}. Verifying file failed!"
 	fi
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 
 # test when mds does failover, the ost still could work well
@@ -2807,7 +2770,6 @@ test_19() {
 	$SHOW_QUOTA_USER
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 run_test 19 "Updating admin limits doesn't zero operational limits(b14790)"
 
@@ -2924,9 +2886,6 @@ test_21() {
 	echo "(dd_pid=$DDPID2, time=$count)successful"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
-	resetquota -g $TSTUSR
-	resetquota -p $TSTPRJID
 }
 run_test 21 "Setquota while writing & deleting (b16053)"
 
@@ -3013,7 +2972,6 @@ test_23_sub() {
 		($SHOW_QUOTA_USER; \
 		quota_error u $TSTUSR "quota isn't released")
 	$SHOW_QUOTA_USER
-	resetquota -u $TSTUSR
 }
 
 test_23() {
@@ -3059,7 +3017,6 @@ test_24() {
 	$SHOW_QUOTA_USER | grep '*' || error "no matching *"
 
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 }
 run_test 24 "lfs draws an asterix when limit is reached (b16646)"
 
@@ -3169,7 +3126,6 @@ test_30() {
 		error "grace times were reset"
 	# cleanup
 	cleanup_quota_test
-	resetquota -u $TSTUSR
 	$LFS setquota -t -u --block-grace $MAX_DQ_TIME --inode-grace \
 		$MAX_IQ_TIME $DIR || error "restore grace time failed"
 }
@@ -3858,7 +3814,6 @@ test_55() {
 
 	$LFS quota -v -g $TSTUSR2 $DIR
 
-	resetquota -g $TSTUSR2
 	cleanup_quota_test
 }
 run_test 55 "Chgrp should be affected by group quota"
@@ -3945,7 +3900,6 @@ test_60() {
 		error "root user should succeed"
 
 	cleanup_quota_test
-	resetquota -g $TSTUSR
 }
 run_test 60 "Test quota for root with setgid"
 
