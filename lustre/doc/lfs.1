@@ -84,7 +84,9 @@ lfs \- client utility for Lustre-specific file layout and other attributes
 [\fB--pool\fR|\fB-p\fR \fR<\fIpool_name\fR>]
             [\fB-o\fR|\fB--ost-list \fR<\fIost_indices\fR>]
 [\fB--block\fR|\fB-b\fR]
-            [\fB--non-block\fR|\fB-n\fR] <\fIfile\fR|\fIdirectory\fR>
+            [\fB--non-block\fR|\fB-n\fR]
+            [\fB--hsm\fR [\fB-a | --archive <archive_idx>\fR]]
+            <\fIdirname\fR|\fIfilename\fR> ...
 .br
 .B lfs migrate \fR<\fB--component-end\fR|\fB-E\fR \fIcomp_end1\fR>
 [\fISTRIPE_OPTIONS\fR]

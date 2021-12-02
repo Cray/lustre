@@ -445,6 +445,9 @@ int mdt_hsm_action(struct tgt_session_info *tsi)
 	case HSMA_CANCEL:
 		hca->hca_action = HUA_CANCEL;
 		break;
+	case HSMA_MIGRATE:
+		hca->hca_action = HUA_MIGRATE;
+		break;
 	default:
 		hca->hca_action = HUA_NONE;
 		CERROR("%s: Unknown hsm action: %d on "DFID"\n",
@@ -559,6 +562,9 @@ int mdt_hsm_request(struct tgt_session_info *tsi)
 	case HUA_CANCEL:
 		action = HSMA_CANCEL;
 		break;
+	case HUA_MIGRATE:
+		action = HSMA_MIGRATE;
+		break;
 	default:
 		CERROR("Unknown hsm action: %d\n", hr->hr_action);
 		GOTO(out_ucred, rc = -EINVAL);
@@ -590,6 +596,19 @@ int mdt_hsm_request(struct tgt_session_info *tsi)
 		hai->hai_cookie = 0;
 		hai->hai_gid = 0;
 		hai->hai_fid = hui[i].hui_fid;
+		/*
+		 * for migrate we pack the destination temp file in the data
+		 * field, since there is no dfid in hui. It's stupid, but makes
+		 * everything easier
+		 */
+		if (action == HSMA_MIGRATE) {
+			sscanf((char *)(data + 1), SFID, RFID(&hai->hai_dfid));
+			if (!fid_is_sane(&hai->hai_dfid)) {
+				rc = -EINVAL;
+				CERROR("Bad FID in HSM migrate\n");
+				goto out_ucred;
+			}
+		}
 		hai->hai_extent = hui[i].hui_extent;
 		memcpy(hai->hai_data, data, hr->hr_data_len);
 		hai->hai_len = sizeof(*hai) + hr->hr_data_len;

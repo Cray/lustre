@@ -914,7 +914,7 @@ static int ll_ioc_copy_start(struct super_block *sb, struct hsm_copy *copy)
 	hpk.hpk_data_version = 0;
 
 
-	/* For archive request, we need to read the current file version. */
+	/* For archive requests, we need to read the current file version. */
 	if (copy->hc_hai.hai_action == HSMA_ARCHIVE) {
 		struct inode	*inode;
 		__u64		 data_version = 0;
@@ -996,13 +996,15 @@ static int ll_ioc_copy_end(struct super_block *sb, struct hsm_copy *copy)
 	hpk.hpk_errval = copy->hc_errval;
 	hpk.hpk_data_version = 0;
 
-	/* For archive request, we need to check the file data was not changed.
+	/* For archive and migrate requests, we need to check the file data
+	 * was not changed.
 	 *
 	 * For restore request, we need to send the file data version, this is
 	 * useful when the file was created using hsm_import.
 	 */
-	if (((copy->hc_hai.hai_action == HSMA_ARCHIVE) ||
-	     (copy->hc_hai.hai_action == HSMA_RESTORE)) &&
+	if ((copy->hc_hai.hai_action == HSMA_ARCHIVE ||
+	     copy->hc_hai.hai_action == HSMA_RESTORE ||
+	     copy->hc_hai.hai_action == HSMA_MIGRATE) &&
 	    (copy->hc_errval == 0)) {
 		struct inode	*inode;
 		__u64		 data_version = 0;
