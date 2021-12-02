@@ -28,6 +28,7 @@ include $(libcfs_dir)/../../lustre_compat/Makefile
 libcfs-compat-objs += $(patsubst %,$(COMPAT_MODULE)%,$(module_objs))
 
 libcfs-linux-objs := linux-prim.o
+libcfs-linux-objs += linux-percpu-refcount.o
 
 EXTRA_DIST = $(libcfs-compat-objs:.o=.c)
 

@@ -4,4 +4,5 @@
 # This file is part of Lustre, http://www.lustre.org/
 #
 
-EXTRA_DIST = linux-prim.c
+EXTRA_DIST = linux-prim.c \
+	     linux-percpu-refcount.c

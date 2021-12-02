@@ -28,6 +28,7 @@
 #include <lustre_compat/linux/wait_bit.h>
 #include <lustre_compat/linux/wait.h>
 #include <lustre_compat/linux/fortify-string.h>
+#include <lustre_compat/linux/linux-percpu-refcount.h>
 
 #include <uapi/linux/lnet/libcfs_ioctl.h>
 #include <linux/libcfs/libcfs_debug.h>
