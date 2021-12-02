@@ -10858,3 +10858,23 @@ exhaust_all_precreations() {
 	done
 	sleep_maxage
 }
+
+init_stripe_dir_params() {
+	local varremote=$1
+	local varstriped=$2
+
+	if ((MDSCOUNT > 1 &&
+		$(lustre_version_code $SINGLEMDS) >=
+		$(version_code 2.8.0))); then
+		eval $varremote=${!varremote:-true}
+		eval $varstriped=${!varstriped:-true}
+	elif ((MDSCOUNT > 1 &&
+		$(lustre_version_code $SINGLEMDS) >=
+		$(version_code 2.5.0))); then
+		eval $varremote=${!varremote:-true}
+		eval $varstriped=${!varstriped:-false}
+	fi
+
+	eval $varremote=${!varremote:-false}
+	eval $varstriped=${!varstriped:-false}
+}
