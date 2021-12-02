@@ -45,6 +45,9 @@ fi
 # but not for other clients.
 ERRORS_OK="yes"
 
+init_stripe_dir_params RECOVERY_SCALE_ENABLE_REMOTE_DIRS \
+	RECOVERY_SCALE_ENABLE_STRIPED_DIRS
+
 numfailovers () {
 	local facet
 	local var
