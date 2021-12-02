@@ -1563,6 +1563,9 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 			       pgs->hpk_cookie,
 			       PFID(&pgs->hpk_fid));
 			break;
+		case HSMA_MIGRATE:
+			hsm_set_cl_event(&clf_flags, HE_MIGRATE);
+			break;
 		default:
 			CERROR("%s: Failed request %#llx on "DFID
 			       " %d is an unknown action\n",
@@ -1594,6 +1597,10 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 			/* Restoring has changed the file version on
 			 * disk. */
 			mh.mh_arch_ver = pgs->hpk_data_version;
+			is_mh_changed = true;
+			break;
+		case HSMA_MIGRATE:
+			hsm_set_cl_event(&clf_flags, HE_MIGRATE);
 			is_mh_changed = true;
 			break;
 		case HSMA_REMOVE:
@@ -1705,8 +1712,10 @@ int mdt_hsm_update_request_state(struct mdt_thread_info *mti,
 	if (!cdt_getref_try(cdt))
 		RETURN(-EAGAIN);
 
-	/* first do sanity checks */
+	/* update progress in request */
 	car = mdt_cdt_update_request(cdt, pgs);
+
+	/* do sanity checks before using updated request */
 	if (IS_ERR(car)) {
 		CERROR("%s: Cannot find running request for cookie %#llx"
 		       " on fid="DFID"\n",
@@ -1732,7 +1741,8 @@ int mdt_hsm_update_request_state(struct mdt_thread_info *mti,
 		car->car_hai->hai_dfid = pgs->hpk_fid;
 
 	if ((car->car_hai->hai_action == HSMA_RESTORE ||
-	     car->car_hai->hai_action == HSMA_ARCHIVE) &&
+	     car->car_hai->hai_action == HSMA_ARCHIVE ||
+	     car->car_hai->hai_action == HSMA_MIGRATE) &&
 	    (!lu_fid_eq(&pgs->hpk_fid, &car->car_hai->hai_dfid) &&
 	     !lu_fid_eq(&pgs->hpk_fid, &car->car_hai->hai_fid))) {
 		CERROR("%s: Progress on "DFID" for cookie %#llx"
@@ -2020,6 +2030,10 @@ bool mdt_hsm_is_action_compat(const struct hsm_action_item *hai,
 		break;
 	case HSMA_CANCEL:
 		is_compat = true;
+		break;
+	case HSMA_MIGRATE:
+		if (!(hsm_flags & HS_RELEASED) && !(hsm_flags & HS_NOMIGRATE))
+			is_compat = true;
 		break;
 	}
 	CDEBUG(D_HSM, "fid="DFID" action=%s flags=%#llx"
@@ -2488,6 +2502,8 @@ hsm_copytool_name2action(const char *name)
 		return HSMA_REMOVE;
 	else if (strcasecmp(name, "CANCEL") == 0)
 		return HSMA_CANCEL;
+	else if (strcasecmp(name, "MIGRATE") == 0)
+		return HSMA_MIGRATE;
 	else
 		return -1;
 }
