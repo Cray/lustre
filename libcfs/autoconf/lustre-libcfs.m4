@@ -49,6 +49,27 @@ AS_IF([test "x$enable_panic_dumplog" = xyes],
 ]) # LIBCFS_CONFIG_PANIC_DUMPLOG
 
 #
+# LIBCFS_HAVE_PERCPU_REFCOUNT
+#
+# v3.10-rc4-35-g215e262f2aeb added percpu refcount API
+#
+AC_DEFUN([LIBCFS_HAVE_PERCPU_REFCOUNT], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if percpu_refcount is available],
+mapping_exiting_exists, [
+	#include <linux/pagemap.h>
+],[
+	struct percpu_ref *pcp = NULL;
+	percpu_ref_get(pcp);
+],[
+	AC_DEFINE(HAVE_PERCPU_REFCOUNT, 1,
+		[if percpu_refcount is available])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LIBCFS_HAVE_PERCPU_REFCOUNT
+
+#
 # LIBCFS_HAVE_IDR_ALLOC
 # v3.9
 #
@@ -1897,6 +1918,7 @@ LIBCFS_CONFIG_PANIC_DUMPLOG
 LIBCFS_D_HASH_AND_LOOKUP
 LIBCFS_HAVE_IDR_ALLOC
 # 3.11
+LIBCFS_HAVE_PERCPU_REFCOUNT
 LIBCFS_KTIME_GET_TS64
 # 3.12
 LIBCFS_PREPARE_TO_WAIT_EVENT
