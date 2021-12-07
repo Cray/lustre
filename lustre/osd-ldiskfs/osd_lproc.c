@@ -110,6 +110,9 @@ static int osd_stats_init(struct osd_device *osd)
                                      LPROCFS_CNTR_AVGMINMAX,
                                      "thandle closing", "usec");
 #endif
+		lprocfs_counter_init(osd->od_stats, LPROC_OSD_TOO_MANY_CREDITS,
+				     LPROCFS_CNTR_AVGMINMAX|LPROCFS_TYPE_REQS,
+				     "many_credits", "num");
 		result = 0;
 	}
 
@@ -787,14 +790,14 @@ ssize_t index_backup_store(struct kobject *kobj, struct attribute *attr,
 LUSTRE_RW_ATTR(index_backup);
 
 struct ldebugfs_vars ldebugfs_osd_obd_vars[] = {
-	{ .name	=	"oi_scrub",
-	  .fops	=	&ldiskfs_osd_oi_scrub_fops	},
-	{ .name	=	"readcache_max_filesize",
-	  .fops	=	&ldiskfs_osd_readcache_fops	},
-	{ .name	=	"readcache_max_io_mb",
-	  .fops	=	&ldiskfs_osd_readcache_max_io_fops	},
-	{ .name	=	"writethrough_max_io_mb",
-	  .fops	=	&ldiskfs_osd_writethrough_max_io_fops	},
+	{ .name =	"oi_scrub",
+	  .fops =	&ldiskfs_osd_oi_scrub_fops      },
+	{ .name =	"readcache_max_filesize",
+	  .fops =	&ldiskfs_osd_readcache_fops     },
+	{ .name =	"readcache_max_io_mb",
+	  .fops =	&ldiskfs_osd_readcache_max_io_fops      },
+	{ .name =	"writethrough_max_io_mb",
+	  .fops =	&ldiskfs_osd_writethrough_max_io_fops   },
 	{ NULL }
 };
 
