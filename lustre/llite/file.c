@@ -2243,7 +2243,6 @@ out:
 	OBD_FREE_LARGE(klum, lum_size);
 	RETURN(rc);
 }
-static DECLARE_WAIT_QUEUE_HEAD(group_lock_waitq);
 
 static int
 ll_get_grouplock(struct inode *inode, struct file *file, unsigned long arg)
@@ -2252,7 +2251,6 @@ ll_get_grouplock(struct inode *inode, struct file *file, unsigned long arg)
 	struct cl_object *obj = lli->lli_clob;
 	struct ll_file_data *fd = LUSTRE_FPRIVATE(file);
 	struct ll_grouplock grouplock;
-	struct l_wait_info lwi = { 0 };
 	int rc;
 	ENTRY;
 
@@ -2261,28 +2259,18 @@ ll_get_grouplock(struct inode *inode, struct file *file, unsigned long arg)
 		RETURN(-EINVAL);
 	}
 
-	if (ll_file_nolock(file))
-		RETURN(-EOPNOTSUPP);
-retry:
-	if (file->f_flags & O_NONBLOCK) {
-		if (!mutex_trylock(&lli->lli_group_mutex))
-			RETURN(-EAGAIN);
-	} else
-		mutex_lock(&lli->lli_group_mutex);
+        if (ll_file_nolock(file))
+                RETURN(-EOPNOTSUPP);
 
+	spin_lock(&lli->lli_lock);
 	if (fd->fd_flags & LL_FILE_GROUP_LOCKED) {
 		CWARN("group lock already existed with gid %lu\n",
 		      fd->fd_grouplock.lg_gid);
-		GOTO(out, rc = -EINVAL);
-	}
-	if (arg != lli->lli_group_gid && lli->lli_group_users != 0) {
-		if (file->f_flags & O_NONBLOCK)
-			GOTO(out, rc = -EAGAIN);
-		mutex_unlock(&lli->lli_group_mutex);
-		l_wait_event(group_lock_waitq, !lli->lli_group_users, &lwi);
-		GOTO(retry, rc = 0);
+		spin_unlock(&lli->lli_lock);
+		RETURN(-EINVAL);
 	}
 	LASSERT(fd->fd_grouplock.lg_lock == NULL);
+	spin_unlock(&lli->lli_lock);
 
 	/**
 	 * XXX: group lock needs to protect all OST objects while PFL
@@ -2302,7 +2290,7 @@ retry:
 
 		env = cl_env_get(&refcheck);
 		if (IS_ERR(env))
-			GOTO(out, rc = PTR_ERR(env));
+			RETURN(PTR_ERR(env));
 
 		rc = cl_object_layout_get(env, obj, &cl);
 		if (!rc && cl.cl_is_composite)
@@ -2311,26 +2299,28 @@ retry:
 
 		cl_env_put(env, &refcheck);
 		if (rc)
-			GOTO(out, rc);
+			RETURN(rc);
 	}
 
 	rc = cl_get_grouplock(ll_i2info(inode)->lli_clob,
 			      arg, (file->f_flags & O_NONBLOCK), &grouplock);
-
 	if (rc)
-		GOTO(out, rc);
+		RETURN(rc);
+
+	spin_lock(&lli->lli_lock);
+	if (fd->fd_flags & LL_FILE_GROUP_LOCKED) {
+		spin_unlock(&lli->lli_lock);
+		CERROR("another thread just won the race\n");
+		cl_put_grouplock(&grouplock);
+		RETURN(-EINVAL);
+	}
 
 	fd->fd_flags |= LL_FILE_GROUP_LOCKED;
 	fd->fd_grouplock = grouplock;
-	if (lli->lli_group_users == 0)
-		lli->lli_group_gid = grouplock.lg_gid;
-	lli->lli_group_users++;
+	spin_unlock(&lli->lli_lock);
 
 	CDEBUG(D_INFO, "group lock %lu obtained\n", arg);
-out:
-	mutex_unlock(&lli->lli_group_mutex);
-
-	RETURN(rc);
+	RETURN(0);
 }
 
 static int ll_put_grouplock(struct inode *inode, struct file *file,
@@ -2339,40 +2329,32 @@ static int ll_put_grouplock(struct inode *inode, struct file *file,
 	struct ll_inode_info   *lli = ll_i2info(inode);
 	struct ll_file_data    *fd = LUSTRE_FPRIVATE(file);
 	struct ll_grouplock	grouplock;
-	int			rc;
 	ENTRY;
 
-	mutex_lock(&lli->lli_group_mutex);
+	spin_lock(&lli->lli_lock);
 	if (!(fd->fd_flags & LL_FILE_GROUP_LOCKED)) {
-		CWARN("no group lock held\n");
-		GOTO(out, rc = -EINVAL);
-	}
+		spin_unlock(&lli->lli_lock);
+                CWARN("no group lock held\n");
+                RETURN(-EINVAL);
+        }
 
 	LASSERT(fd->fd_grouplock.lg_lock != NULL);
 
 	if (fd->fd_grouplock.lg_gid != arg) {
 		CWARN("group lock %lu doesn't match current id %lu\n",
 		      arg, fd->fd_grouplock.lg_gid);
-		GOTO(out, rc = -EINVAL);
+		spin_unlock(&lli->lli_lock);
+		RETURN(-EINVAL);
 	}
 
 	grouplock = fd->fd_grouplock;
 	memset(&fd->fd_grouplock, 0, sizeof(fd->fd_grouplock));
 	fd->fd_flags &= ~LL_FILE_GROUP_LOCKED;
+	spin_unlock(&lli->lli_lock);
 
 	cl_put_grouplock(&grouplock);
-
-	lli->lli_group_users--;
-	if (lli->lli_group_users == 0) {
-		lli->lli_group_gid = 0;
-		wake_up_all(&group_lock_waitq);
-	}
 	CDEBUG(D_INFO, "group lock %lu released\n", arg);
-	GOTO(out, rc = 0);
-out:
-	mutex_unlock(&lli->lli_group_mutex);
-
-	RETURN(rc);
+	RETURN(0);
 }
 
 /**
