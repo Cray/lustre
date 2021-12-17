@@ -712,7 +712,7 @@ int llog_cat_cancel_arr_rec(const struct lu_env *env,
 	rc = llog_cat_id2handle(env, cathandle, &loghandle, lgl);
 	if (rc) {
 		CDEBUG(D_HA, "%s: cannot find llog for handle "DFID":%x"
-		       ": rc = %d\n", loghandle2name(loghandle),
+		       ": rc = %d\n", loghandle2name(cathandle),
 		       PFID(&lgl->lgl_oi.oi_fid), lgl->lgl_ogen, rc);
 		RETURN(rc);
 	}
@@ -726,7 +726,7 @@ int llog_cat_cancel_arr_rec(const struct lu_env *env,
 		 */
 		rc = -ENOENT;
 		CDEBUG(D_HA, "%s: llog "DFID":%x does not exist"
-		       ": rc = %d\n", loghandle2name(loghandle),
+		       ": rc = %d\n", loghandle2name(cathandle),
 		       PFID(&lgl->lgl_oi.oi_fid), lgl->lgl_ogen, rc);
 
 		llog_handle_put(env, loghandle);
