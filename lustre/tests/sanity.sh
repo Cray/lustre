@@ -23703,15 +23703,12 @@ test_901() {
 			error "too large timeout"
 		fi
 	done
-	olds=$(do_facet mgs $LCTL get_param -n 'ldlm.namespaces.MGS*.lock_count')
 	umount_client $MOUNT || error "umount failed"
 	mount_client $MOUNT || error "mount failed"
 	cancel_lru_locks MGC
 	newc=$($LCTL get_param -n 'ldlm.namespaces.MGC*.lock_count')
-	news=$(do_facet mgs $LCTL get_param -n 'ldlm.namespaces.MGS*.lock_count')
 
 	[ $oldc -lt $newc ] && error "mgc lock leak ($oldc != $newc)"
-	[ $olds -lt $news ] && error "mgs lock leak ($olds != $news)"
 
 	return 0
 }
