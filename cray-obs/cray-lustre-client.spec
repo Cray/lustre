@@ -22,9 +22,7 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 BuildRequires: %kernel_module_package_buildreqs
 BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
-BuildRequires: cray-kfabric-devel
 BuildRequires: mlnx-ofa_kernel-devel
-Requires: cray-kfabric-udev
 
 # Vendor specific requires/defines/etc.
 %if %{_vendor}=="redhat"
@@ -33,7 +31,6 @@ Requires: cray-kfabric-udev
 %global requires_kmod_name kmod-%{lustre_name}
 %global requires_kmod_version %{version}
 Requires: kmod-mlnx-ofa_kernel
-Requires: kmod-cray-kfabric
 BuildRequires: redhat-rpm-config
 %else
 %global kversion %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease)
@@ -43,7 +40,6 @@ BuildRequires: redhat-rpm-config
 %global krequires %(echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/\.aarch64$//' -e 's/-default$//' -e 's/-%{flavor}//')
 %global requires_kmod_version %{version}_k%(echo %{krequires} | sed -r 'y/-/_/; s/^(2\.6\.[0-9]+)_/\\1.0_/;')
 Requires: mlnx-ofa_kernel-kmp
-Requires: cray-kfabric-kmp
 %endif
 
 Requires: %{requires_kmod_name} = %{requires_kmod_version}
@@ -138,7 +134,6 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{name}-%{version}/Makefile ];then
 		--enable-client \
 		--with-kmp-moddir=%{kmoddir}/%{name} \
 		--with-o2ib=${O2IBPATH} \
-		--with-kfi=/usr/src/kfabric/%{flavor} \
 		%{_with_linux} %{?_with_linux_obj}
 fi
 %{__make} %_smp_mflags
