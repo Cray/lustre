@@ -82,7 +82,6 @@ int class_add_uuid(const char *uuid, __u64 nid)
 {
 	struct uuid_nid_data *data, *entry;
 	int found = 0;
-	int rc;
 
 	LASSERT(nid != 0);  /* valid newconfig NID is never zero */
 
@@ -124,9 +123,6 @@ int class_add_uuid(const char *uuid, __u64 nid)
 		OBD_FREE(data, sizeof(*data));
 	} else {
 		CDEBUG(D_INFO, "add uuid %s %s\n", uuid, libcfs_nid2str(nid));
-		rc = LNetAddPeer(data->un_nids, data->un_nid_count);
-		CDEBUG(D_INFO, "Add peer %s rc = %d\n",
-		       libcfs_nid2str(data->un_nids[0]), rc);
 	}
 	return 0;
 }
