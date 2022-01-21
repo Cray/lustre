@@ -4999,7 +4999,7 @@ test_60() { # LU-471
 }
 run_test 60 "check mkfs.lustre --mkfsoptions -E -O options setting"
 
-test_61() { # LU-80
+test_61a() { # LU-80
 	local lxattr=$(large_xattr_enabled)
 
 	[ "$MDS1_VERSION" -ge $(version_code 2.1.53) ] ||
@@ -5073,7 +5073,74 @@ test_61() { # LU-80
 	rm -f $file
 	cleanup || error "stopping systems failed"
 }
-run_test 61 "large xattr"
+run_test 61a "large xattr"
+
+test_61b() {
+	if [ "$mds1_FSTYPE" != ldiskfs ]; then
+		skip "ldiskfs only test"
+	fi
+
+	if ! large_xattr_enabled; then
+		for num in $(seq $MDSCOUNT); do
+			do_facet mds${num} $TUNE2FS -O ea_inode \
+				$(mdsdevname $num) ||
+				error "tune2fs on mds $num failed"
+		done
+	fi
+
+	setup || error "setting up the filesystem failed"
+	client_up || error "starting client failed"
+
+	local file=$MOUNT/panda
+	touch $file || error "touch $file failed"
+
+	local large_value="$(generate_string $(max_xattr_size))"
+
+	local name="trusted.big"
+	log "save large xattr $name on $file"
+	setfattr -n $name -v $large_value $file ||
+		error "saving $name on $file failed"
+
+	MDT_DEV="${FSNAME}-MDT0000"
+	MDT_DEVNAME=$(mdsdevname ${SINGLEMDS//mds/})
+
+	stopall || error "stopping for e2fsck run"
+
+	ino=$(do_facet $SINGLEMDS "$DEBUGFS -R 'stat /ROOT/panda' ${MDT_DEVNAME} | grep trusted.big")
+	echo "large ea "${ino}
+	ino=$(echo "${ino}" | awk '{print $2;}')
+	echo "large ea "${ino}
+
+	do_facet $SINGLEMDS "$DEBUGFS -w -R \\\"ln $ino /lost+found\\\" ${MDT_DEVNAME}"
+
+	do_facet $SINGLEMDS "$DEBUGFS -R \\\"ls /lost+found\\\" ${MDT_DEVNAME}"
+
+	setup_noconfig || error "remounting the filesystem failed"
+
+	do_facet $SINGLEMDS $LCTL lfsck_start -M ${MDT_DEV} -t namespace || {
+		error "can't start lfsck namespace"
+	}
+
+	sleep 5
+	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
+		mdd.${MDT_DEV}.lfsck_namespace |
+		awk '/^status/ { print \\\$2 }'" "completed" 32 || {
+		error "(2) unexpected status"
+	}
+
+	stopall || error "stopping for e2fsck run"
+	for num in $(seq $MDSCOUNT); do
+		run_e2fsck $(facet_active_host mds$num) \
+			$(mdsdevname $num) "-y" ||
+			error "e2fsck MDT$num failed"
+	done
+	setup_noconfig || error "remounting the filesystem failed"
+
+	# need to delete this file to avoid problems in other tests
+	rm -f $file
+	cleanup || error "stopping systems failed"
+}
+run_test 61b "lfsck crash on unconnected large EA inode"
 
 test_62() {
 	if [ "$mds1_FSTYPE" != ldiskfs ]; then
