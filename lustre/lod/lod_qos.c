@@ -425,7 +425,8 @@ static int lod_qos_calc_ppo(struct lod_device *lod)
 	/* If each ost has almost same free space,
 	 * do rr allocation for better creation performance */
 	clear_bit(LQ_SAME_SPACE, &lod->lod_qos.lq_flags);
-	if ((ba_max * (256 - lod->lod_qos.lq_threshold_rr)) >> 8 < ba_min) {
+	if ((ba_max * (QOS_THRESHOLD_MAX - lod->lod_qos.lq_threshold_rr)) /
+	    QOS_THRESHOLD_MAX < ba_min) {
 		set_bit(LQ_SAME_SPACE, &lod->lod_qos.lq_flags);
 		/* Reset weights for the next time we enter qos mode */
 		set_bit(LQ_RESET, &lod->lod_qos.lq_flags);
@@ -1583,6 +1584,10 @@ static int lod_alloc_qos(const struct lu_env *env, struct lod_object *lo,
 	bool slow = false;
 	int rc = 0;
 	ENTRY;
+
+	/* Totally skip qos part when qos_threshold_rr=100% */
+	if (lod->lod_qos.lq_threshold_rr == QOS_THRESHOLD_MAX)
+		return -EAGAIN;
 
 	LASSERT(lo->ldo_comp_cnt > comp_idx && lo->ldo_comp_entries != NULL);
 	lod_comp = &lo->ldo_comp_entries[comp_idx];

@@ -480,7 +480,8 @@ static int lod_qos_thresholdrr_seq_show(struct seq_file *m, void *v)
 	LASSERT(dev != NULL);
 	lod = lu2lod_dev(dev->obd_lu_dev);
 	seq_printf(m, "%d%%\n",
-		   (lod->lod_qos.lq_threshold_rr * 100 + 255) >> 8);
+		   (lod->lod_qos.lq_threshold_rr * 100 +
+		    (QOS_THRESHOLD_MAX - 1)) / QOS_THRESHOLD_MAX);
 	return 0;
 }
 
@@ -521,7 +522,7 @@ lod_qos_thresholdrr_seq_write(struct file *file, const char __user *buffer,
 	if (val > 100 || val < 0)
 		return -EINVAL;
 
-	lod->lod_qos.lq_threshold_rr = (val << 8) / 100;
+	lod->lod_qos.lq_threshold_rr = (val * QOS_THRESHOLD_MAX) / 100;
 	set_bit(LQ_DIRTY, &lod->lod_qos.lq_flags);
 
 	return count;

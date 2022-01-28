@@ -86,6 +86,7 @@ enum lq_flag {
 	LQ_SF_PROGRESS	= 3  /* statfs op in progress */
 };
 
+#define QOS_THRESHOLD_MAX 256 /* should be power of two */
 struct lod_qos {
 	struct list_head	 lq_oss_list;
 	struct rw_semaphore	 lq_rw_sem;
