@@ -32,6 +32,10 @@ BuildRequires: module-init-tools
 BuildRequires: pkgconfig
 BuildRequires: libtool
 BuildRequires: libyaml-devel
+BuildRequires: binutils-devel
+BuildRequires: libext2fs-devel
+BuildRequires: libnl3-devel
+BuildRequires: keyutils-devel
 %if 0%{?sle_version} <= 120000
 BuildRequires: ofed-devel
 %endif
@@ -63,6 +67,8 @@ Group: Development/Libraries
 License: GPL
 Summary: Cray Lustre Header files
 Provides: cray-lnet-%{_lnet_version}-devel
+Requires: libnl3-devel
+Requires: keyutils-devel
 
 %description -n cray-lustre-cray_ari_s-%{_lnet_version}-devel
 Development files for building against Lustre library.
@@ -134,34 +140,48 @@ export SVN_CODE_REV=%{lustre_version}
 
 make DESTDIR=${RPM_BUILD_ROOT} install
 
-for header in api.h lib-lnet.h lib-types.h
+for header in api.h lib-lnet.h lib-types.h lnet_rdma.h socklnd.h udsp.h
 do
-	%{__install} -D -m 0644 lnet/include/lnet/${header} %{buildroot}/%{_includedir}/lnet/${header}
+	%{__install} -D -m 0644 lnet/include/lnet/${header} \
+	         %{buildroot}/%{_includedir}/lnet/${header}
 done
 
-for header in libcfs_debug.h lnetctl.h lnetst.h libcfs_ioctl.h lnet-dlc.h \
-	      lnet-types.h nidstr.h
+for header in libcfs_debug.h libcfs_ioctl.h lnetctl.h lnet-dlc.h lnet-idl.h \
+	      lnet-nl.h lnetst.h lnet-types.h nidstr.h socklnd.h
 do
-	%{__install} -D -m 0644 lnet/include/uapi/linux/lnet/${header} %{buildroot}/%{_includedir}/uapi/linux/lnet/${header}
+	%{__install} -D -m 0644 lnet/include/uapi/linux/lnet/${header} \
+		 %{buildroot}/%{_includedir}/uapi/linux/lnet/${header}
 done
 
-for header in libcfs.h util/list.h curproc.h bitmap.h libcfs_private.h libcfs_cpu.h \
-	      libcfs_prim.h libcfs_string.h libcfs_workitem.h \
-	      libcfs_hash.h libcfs_heap.h libcfs_fail.h libcfs_debug.h range_lock.h
+for header in bitmap.h libcfs_cpu.h libcfs_crypto.h libcfs_debug.h \
+	      libcfs_fail.h libcfs.h libcfs_hash.h libcfs_private.h \
+	      libcfs_string.h libcfs_workitem.h
 do
 	%{__install} -D -m 0644 libcfs/include/libcfs/${header} %{buildroot}/%{_includedir}/libcfs/${header}
 done
 
-for header in linux-cpu.h linux-crypto.h linux-fs.h linux-hash.h linux-list.h \
-	      linux-mem.h linux-misc.h linux-time.h linux-wait.h linux-percpu-refcount.h
+for header in linux-cpu.h linux-fs.h linux-hash.h linux-list.h \
+	      linux-mem.h linux-misc.h linux-net.h linux-time.h linux-uuid.h \
+	      linux-wait.h processor.h refcount.h xarray.h linux-percpu-refcount.h
 do
 	%{__install} -D -m 0644 libcfs/include/libcfs/linux/${header} %{buildroot}/%{_includedir}/libcfs/linux/${header}
+done
+
+for header in hash.h ioctl.h list.h param.h parser.h string.h 
+do
+	%{__install} -D -m 0644 libcfs/include/libcfs/util/${header} %{buildroot}/%{_includedir}/libcfs/util/${header}
+done
+
+for header in llcrypt.h
+do
+	%{__install} -D -m 0644 libcfs/include/libcfs/crypto/${header} %{buildroot}/%{_includedir}/libcfs/crypto/${header}
 done
 
 %{__install} -D -m 0644 lustre/include/interval_tree.h %{buildroot}/%{_includedir}/interval_tree.h
 
 %define cfgdir %{_includedir}/lustre/%{flavor}
-for f in cray-lustre-api-devel.pc cray-lnet.pc
+for f in cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc \
+	 cray-lustre-ptlctl-devel.pc cray-lnet.pc
 do
 	eval "sed -i 's,@includedir@,%{_includedir},' cray-obs/${f}"
 	eval "sed -i 's,@libdir@,%{_libdir},' cray-obs/${f}"
@@ -187,6 +207,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %files
 %defattr(-,root,root)
 /sbin/mount.lustre
+/sbin/mount.lustre_tgt
 /etc/udev
 /lib/modules/%{kversion}
 %{_sbindir}/*
@@ -201,6 +222,9 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_libdir}/liblnetconfig.a
 %{_libdir}/liblnetconfig.so*
 %{_pkgconfigdir}/cray-lustre-api-devel.pc
+%{_pkgconfigdir}/cray-lustre-cfsutil-devel.pc
+%{_pkgconfigdir}/cray-lustre-ptlctl-devel.pc
+%{_libdir}/pkgconfig/lustre.pc
 %dir %{_libdir}/lustre
 %{_libdir}/lustre/tests
 %{_modulefiles_prefix}
@@ -219,7 +243,6 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %exclude %{_mandir}/man5
 %exclude %{_mandir}/man8/lhbadm.8.gz
 %exclude %{_pkgconfigdir}/cray-lnet.pc
-%exclude %{_pkgconfigdir}/lustre.pc
 
 %files -n cray-lustre-cray_ari_s-%{_lnet_version}-devel
 %defattr(-,root,root)
