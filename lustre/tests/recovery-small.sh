@@ -2285,7 +2285,7 @@ test_110k() {
 	umount $MOUNT
 
 #define OBD_FAIL_FLD_QUERY_REQ 0x1103
-	do_facet mds2 lctl set_param fail_loc=0x1103
+	do_facet mds2 lctl set_param fail_loc=0x80001103
 	start mds2 $(mdsdevname 2) -o abort_recovery ||
 		error "start MDS with abort_recovery should succeed"
 	do_facet mds2 lctl set_param fail_loc=0
