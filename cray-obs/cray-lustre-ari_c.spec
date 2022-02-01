@@ -22,6 +22,10 @@ BuildRequires: module-init-tools
 BuildRequires: pkgconfig
 BuildRequires: libtool
 BuildRequires: libyaml-devel
+BuildRequires: binutils-devel
+BuildRequires: libext2fs-devel
+BuildRequires: libnl3-devel
+BuildRequires: keyutils-devel
 #!BuildIgnore: post-build-checks
 Group: System/Filesystems
 License: GPL
@@ -100,12 +104,16 @@ make DESTDIR=${RPM_BUILD_ROOT} install
 %{__install} -D -m 0644 ${PWD}/Module.symvers %{buildroot}/%{_datadir}/symvers/%{_arch}/%{flavor}/Module.symvers
 %{__install} -D -m 0644 config.h %{buildroot}/%{_includedir}/lustre/%{flavor}/config.h
 
-eval "sed -i 's,@includedir@,%{_includedir},' cray-obs/cray-lustre-api-devel.pc"
-eval "sed -i 's,@libdir@,%{_libdir},' cray-obs/cray-lustre-api-devel.pc"
-eval "sed -i 's,@symversdir@,%{_datadir}/symvers,' cray-obs/cray-lustre-api-devel.pc"
-eval "sed -i 's,@PACKAGE_VERSION@,%{_version},' cray-obs/cray-lustre-api-devel.pc"
-eval "sed -i 's,@cfgdir@,%{cfgdir},' cray-obs/cray-lustre-api-devel.pc"
-install -D -m 0644 cray-obs/cray-lustre-api-devel.pc $RPM_BUILD_ROOT%{_pkgconfigdir}/cray-lustre-api-devel.pc
+for f in cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc \
+	 cray-lustre-ptlctl-devel.pc
+do
+	eval "sed -i 's,@includedir@,%{_includedir},' cray-obs/${f}"
+	eval "sed -i 's,@libdir@,%{_libdir},' cray-obs/${f}"
+	eval "sed -i 's,@symversdir@,%{_datadir}/symvers,' cray-obs/${f}"
+	eval "sed -i 's,@PACKAGE_VERSION@,%{_version},' cray-obs/${f}"
+	eval "sed -i 's,@cfgdir@,%{cfgdir},' cray-obs/${f}"
+	install -D -m 0644 cray-obs/${f} $RPM_BUILD_ROOT%{_pkgconfigdir}/${f}
+done
 
 # Many things are excluded from compute node packages to save space in
 # the compute node image. Here we remove everything that should be left
@@ -155,7 +163,9 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_libdir}/liblustreapi.so*
 %{_datadir}/bash-completion/completions/*
 %{_pkgconfigdir}/cray-lustre-api-devel.pc
-%exclude %{_pkgconfigdir}/lustre.pc
+%{_pkgconfigdir}/cray-lustre-cfsutil-devel.pc
+%{_pkgconfigdir}/cray-lustre-ptlctl-devel.pc
+%{_libdir}/pkgconfig/lustre.pc
 
 %files -n cray-lustre-cray_ari_c-%{_lnet_version}-devel
 %defattr(-,root,root)
