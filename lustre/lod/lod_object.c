@@ -3793,21 +3793,24 @@ static void embed_pool_to_comp_v1(const struct lov_comp_md_v1 *src,
 	__u32 offset;
 
 	entry = tgt->lcm_entries;
+	shift = 0;
 	for (i = 0; i < le16_to_cpu(src->lcm_entry_count); i++, entry++) {
 		*entry = src->lcm_entries[i];
 		offset = le32_to_cpu(src->lcm_entries[i].lcme_offset);
-		shift = i * (sizeof(*lum3) - sizeof(*lum));
 		entry->lcme_offset = cpu_to_le32(offset + shift);
 
 		lum = (struct lov_user_md_v1 *)((char *)src + offset);
 		lum3 = (struct lov_user_md_v3 *)((char *)tgt + offset + shift);
 		*(struct lov_user_md_v1 *)lum3 = *lum;
-		lum3->lmm_magic = cpu_to_le32(LOV_USER_MAGIC_V3);
-		if (lum->lmm_pattern == cpu_to_le32(LOV_PATTERN_MDT))
-			memset(lum3->lmm_pool_name, 0, LOV_MAXPOOLNAME);
-		else
+		if (lum->lmm_pattern == cpu_to_le32(LOV_PATTERN_MDT)) {
+			lum3->lmm_magic = cpu_to_le32(LOV_USER_MAGIC_V1);
+		} else {
+			lum3->lmm_magic = cpu_to_le32(LOV_USER_MAGIC_V3);
+			entry->lcme_size = cpu_to_le32(sizeof(*lum3));
 			strlcpy(lum3->lmm_pool_name, pool,
 				sizeof(lum3->lmm_pool_name));
+			shift += sizeof(*lum3) - sizeof(*lum);
+		}
 	}
 }
 
@@ -3910,6 +3913,8 @@ static int lod_xattr_set_default_lov_on_dir(const struct lu_env *env,
 		int size;
 
 		entry_count = le16_to_cpu(comp_v1->lcm_entry_count);
+		size = sizeof(*comp_v1) +
+			entry_count * sizeof(comp_v1->lcm_entries[0]);
 		entry = comp_v1->lcm_entries;
 		for (i = 0; i < entry_count; i++, entry++) {
 			offset = le32_to_cpu(entry->lcme_offset);
@@ -3918,6 +3923,10 @@ static int lod_xattr_set_default_lov_on_dir(const struct lu_env *env,
 			if (le32_to_cpu(lum->lmm_magic) != LOV_USER_MAGIC_V1)
 				/* the i-th compoment includes pool info */
 				break;
+			if (lum->lmm_pattern == cpu_to_le32(LOV_PATTERN_MDT))
+				size += sizeof(struct lov_user_md_v1);
+			else
+				size += sizeof(struct lov_user_md_v3);
 		}
 
 		if (i == entry_count) {
@@ -3925,9 +3934,8 @@ static int lod_xattr_set_default_lov_on_dir(const struct lu_env *env,
 			 * re-compose the layout to include the pool for
 			 * each component
 			 */
-			size = sizeof(*comp_v1);
-			size += entry_count * sizeof(comp_v1->lcm_entries[0]);
-			size += entry_count * sizeof(struct lov_user_md_v3);
+			if (info->lti_ea_store_size < size)
+				rc = lod_ea_store_resize(info, size);
 
 			if (info->lti_ea_store_size < size)
 				rc = lod_ea_store_resize(info, size);
