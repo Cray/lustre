@@ -3734,9 +3734,15 @@ facet_failover() {
 	echo "$(date +'%H:%M:%S (%s)') shutdowned"
 
 	local hostlist
+	local waithostlist
 
 	for facet in ${facets//,/ }; do
-		hostlist=$(expand_list $hostlist $(facet_active_host $facet))
+		local host=$(facet_active_host $facet)
+		hostlist=$(expand_list $hostlist $host)
+		if [ $(facet_host $facet) = \
+			$(facet_failover_host $facet) ]; then
+			waithostlist=$(expand_list $waithostlist $host)
+		fi
 	done
 
 	if [ "$FAILURE_MODE" = HARD ]; then
@@ -3744,18 +3750,32 @@ facet_failover() {
 			reboot_node $host
 		done
 		echo "$(date +'%H:%M:%S (%s)') $hostlist rebooted"
+		# We need to wait the rebooted hosts in case if
+		# facet_HOST == facetfailover_HOST
+		if ! [ -z "$waithostlist" ]; then
+			wait_for_host $waithostlist
+			if $LOAD_MODULES_REMOTE; then
+				echo "loading modules on $waithostlist"
+				do_rpc_nodes $waithostlist load_modules_local
+			fi
+		fi
 	else
 		sleep 10
 	fi
 
+	if [[ " ${affecteds[@]} " =~ " $SINGLEMDS " ]]; then
+		change_active $SINGLEMDS
+	fi
+
 	$E2FSCK_ON_MDT0 && (run_e2fsck $(facet_active_host $SINGLEMDS) \
-		$(mdsdevname 1) "-n" || error "Running e2fsck")
+		$(facet_device $SINGLEMDS) "-n" || error "Running e2fsck")
 
 	local -a mountpids
 
 	for ((index=0; index<$total; index++)); do
-		change_active ${affecteds[index]}
-
+		if [[ ${affecteds[index]} != $SINGLEMDS ]]; then
+			change_active ${affecteds[index]}
+		fi
 		if $GSS_SK; then
 			init_gss
 			init_facets_vars_simple
@@ -3791,13 +3811,14 @@ facet_failover() {
 	echo "$(date +'%H:%M:%S (%s)') targets are mounted"
 
 	if [ "$FAILURE_MODE" = HARD ]; then
-		wait_for_host $hostlist
-		for host in ${hostlist//,/ }; do
+		hostlist=$(exclude_items_from_list $hostlist $waithostlist)
+		if ! [ -z "$hostlist" ]; then
+			wait_for_host $hostlist
 			if $LOAD_MODULES_REMOTE; then
-				echo "loading modules on $node: $facet"
-				do_rpc_nodes $host load_modules_local
+				echo "loading modules on $hostlist"
+				do_rpc_nodes $hostlist load_modules_local
 			fi
-		done
+		fi
 	fi
 
 	echo "$(date +'%H:%M:%S (%s)') facet_failover done"
