@@ -30,10 +30,10 @@ build_test_filter
 
 DIRECTIO=${DIRECTIO:-$LUSTRE/tests/directio}
 ORIG_PWD=${PWD}
-TSTID=${TSTID:-60000}
-TSTID2=${TSTID2:-60001}
 TSTUSR=${TSTUSR:-"quota_usr"}
 TSTUSR2=${TSTUSR2:-"quota_2usr"}
+TSTID=${TSTID:-$(id -u $TSTUSR)}
+TSTID2=${TSTID2:-$(id -u $TSTUSR2)}
 TSTPRJID=${TSTPRJID:-1000}
 BLK_SZ=1024
 MAX_DQ_TIME=604800
@@ -5359,6 +5359,43 @@ test_81() {
 	clients_up || true
 }
 run_test 81 "Race qmt_start_pool_recalc with qmt_pool_free"
+
+test_82()
+{
+	local limit=3 # 3M
+	local qpool="qpool1"
+	local qpool2="qpool2"
+	local tfile1="$DIR/$tdir/$tfile-0"
+
+	[ "$OSTCOUNT" -lt "2" ] && skip "needs >= 2 OSTs"
+	mds_supports_qp
+	setup_quota_test || error "setup quota failed with $?"
+
+	# enable ost quota
+	set_ost_qtype $QTYPE || error "enable ost quota failed"
+
+	$LFS setquota -u $TSTUSR -b 0 -B 50T -i 0 -I 0 $DIR ||
+		error "set user quota failed"
+
+	pool_add $qpool || error "pool_add failed"
+	pool_add_targets $qpool 0 1 ||
+		error "pool_add_targets failed"
+
+	pool_add $qpool2 || error "pool_add failed"
+	pool_add_targets $qpool2 0 1 ||
+		error "pool_add_targets failed"
+
+	$LFS setstripe -p $qpool $DIR/$tdir || error "cannot set stripe"
+	$LFS setquota -u $TSTUSR -B 30M --pool $qpool $DIR ||
+		error "set user quota failed"
+	$LFS setquota -u $TSTUSR -B ${limit}M --pool $qpool $DIR ||
+		error "set user quota failed"
+
+	# don't care about returned value. Just check we don't hung on write.
+	$RUNAS $DD of=$tfile1 count=10
+	return 0
+}
+run_test 82 "do not hung at write with the least_qunit"
 
 quota_fini()
 {
