@@ -1637,11 +1637,13 @@ lnet_get_best_ni(struct lnet_net *local_net, struct lnet_ni *best_ni,
 	unsigned int best_dev_prio;
 	int best_ni_fatal;
 	unsigned int dev_idx = UINT_MAX;
-	struct page *page = lnet_get_first_page(md, offset);
-	msg->msg_rdma_force = lnet_is_rdma_only_page(page);
+	bool gpu = md->md_flags & LNET_MD_FLAG_GPU;
 
-	if (msg->msg_rdma_force)
+	if (gpu) {
+		struct page *page = lnet_get_first_page(md, offset);
+
 		dev_idx = lnet_get_dev_idx(page);
+	}
 
 	/*
 	 * If there is no peer_ni that we can send to on this network,
@@ -1695,7 +1697,7 @@ lnet_get_best_ni(struct lnet_net *local_net, struct lnet_ni *best_ni,
 		 * All distances smaller than the NUMA range
 		 * are treated equally.
 		 */
-		if (distance < lnet_numa_range)
+		if (!gpu && distance < lnet_numa_range)
 			distance = lnet_numa_range;
 
 		/*
