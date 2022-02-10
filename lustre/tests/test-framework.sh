@@ -157,6 +157,8 @@ print_summary () {
 # output: No return values, environment variables are exported
 
 get_lustre_env() {
+	get_mounted_devices
+	init_facets_devices_mounted
 
 	export mds1_FSTYPE=${mds1_FSTYPE:-$(facet_fstype mds1)}
 	export ost1_FSTYPE=${ost1_FSTYPE:-$(facet_fstype ost1)}
@@ -2050,7 +2052,6 @@ export_dm_dev() {
 unexport_dm_dev() {
 	local facet=$1
 
-	[[ $facet = mgs ]] && combined_mgs_mds && facet=mds1
 	local dev_alias=$(facet_device_alias $facet)
 
 	local saved_dev=${dev_alias}_dev_saved
@@ -2081,7 +2082,9 @@ dm_cleanup_dev() {
 	do_facet $facet "$DMSETUP mknodes >/dev/null 2>&1"
 
 	unexport_dm_dev $facet
-
+	if [[ $facet == mds1 ]] && combined_mgs_mds; then
+		unexport_dm_dev mgs
+	fi
 	# detach a loop device
 	[[ $major -ne 7 ]] || cleanup_loop_device $facet /dev/loop$minor
 
@@ -3701,6 +3704,8 @@ facet_failover() {
 	local index=0
 	local skip
 
+	CLEANUP_DM_DEV=true
+
 	#Because it will only get up facets, we need get affected
 	#facets before shutdown
 	#For HARD Failure mode, it needs make sure facets on the same
@@ -3780,6 +3785,9 @@ facet_failover() {
 				xargs -IX keyctl setperm X 0x3f3f3f3f"
 		fi
 	done
+
+	CLEANUP_DM_DEV=false
+
 	echo "$(date +'%H:%M:%S (%s)') targets are mounted"
 
 	if [ "$FAILURE_MODE" = HARD ]; then
@@ -3903,7 +3911,7 @@ fail_abort() {
 	local facet=$1
 	local abort_type=${2:-"abort_recovery"}
 
-	stop $facet
+	CLEANUP_DM_DEV=true stop $facet
 	change_active $facet
 	wait_for_facet $facet
 	mount_facet $facet -o $abort_type
@@ -4120,7 +4128,10 @@ detect_active() {
 
 	local failover=$(facet_failover_host $facet)
 
-	# failover is not associated with all facet types:
+	# facet_failover_host()
+	#    returns <facet>failover_HOST if set, or
+	#    sets and exports <facet>failover_host if not set,
+	# but failover is not associated with all facet types:
 	# "AGT" facet type (remote HSM agents) does not
 	# have a failover.
 	[[ -z "$failover" ]] && echo $facet && return
@@ -4134,9 +4145,15 @@ detect_active() {
 
 	# active facet is ${facet}failover if device is mounted on failover
 	# on other cases active facet is $facet
-	[[ $dev = $(do_node $failover \
-			lctl get_param -n *.$svc.mntdev 2>/dev/null | head -1 ) ]] &&
-		echo ${facet}failover && return
+	# mntdevsA[] could be empty if no Lustre devices mounted yet
+	if [[ ${#mntdevsA[@]} -ne 0 ]]; then
+		local node=$(facet_failover_host $facet)
+		local mntdevs=${mntdevsA[$node]}
+		[[ "$mntdevs" =~ $dev ]] &&
+			((combined_mgs_mds && [[ $facet == "mgs" ]]) &&
+			echo mds1failover || echo ${facet}failover) &&
+			return
+	fi
 
 	echo $facet
 }
@@ -4534,11 +4551,12 @@ mgsdevname() {
 
 	case $fstype in
 	ldiskfs )
-		if [ $(facet_host mgs) = $(facet_host mds1) ] &&
+		if [[ -n $mgs_dev ]]; then
+			DEVPTR=$mgs_dev
+		elif [ $(facet_host mgs) = $(facet_host mds1) ] &&
 		   ( [ -z "$MGSDEV" ] || [ $MGSDEV = $MDSDEV1 ] ); then
 			DEVPTR=$(mdsdevname 1)
 		else
-			[[ -n $mgs_dev ]] && DEVPTR=$mgs_dev ||
 			DEVPTR=$MGSDEV
 		fi;;
 	zfs )
@@ -4736,8 +4754,13 @@ cleanupall() {
 }
 
 combined_mgs_mds () {
-	[[ "$(mdsdevname 1)" = "$(mgsdevname)" ]] &&
-		[[ "$(facet_host mds1)" = "$(facet_host mgs)" ]]
+	if ! [[ -v combined_MGS_MDS ]]; then
+		[[ "$(mdsdevname 1)" = "$(mgsdevname)" ]] &&
+			[[ "$(facet_host mds1)" = "$(facet_host mgs)" ]] &&
+			export combined_MGS_MDS=true ||
+			export combined_MGS_MDS=false
+	fi
+	eval $combined_MGS_MDS
 }
 
 lower() {
@@ -5345,6 +5368,93 @@ init_facet_vars () {
 		mntpt=$(facet_mntpt $facet)
 	fi
 	eval export ${facet}_MOUNT=$mntpt
+}
+
+declare -A devicesA
+declare -A mntdevsA
+
+get_mounted_devices () {
+	local -a params
+	local node
+	local o
+
+	# save_lustre_params $(get_facets OST) can not be used here
+	# because get_facet () uses active facet, which is not
+	# detected yet, the detection is to use mounted already devices.
+	# Get the list of nodes with mounted devices.
+	# Some nodes could have no devices mounted if
+	# device is mounted on failover host.
+	params=($(do_nodesv $(comma_list $(all_server_nodes)) \
+		lctl get_param  *.*.mntdev 2>/dev/null | sort | tr -d ' ')) ||
+		true
+
+	for ((i=0; i<${#params[@]}; i++)); do
+		node=${params[i]%%:*}
+		o=""
+		[[ ${params[i]} =~ : ]] && o=${params[i]##*:}
+		mntdevsA[$node]+=" $o"
+	done
+}
+
+get_devs_mounted_node () {
+	local node=$1
+	local device
+	local -a dvs=(${mntdevsA[$node]})
+	local devices=""
+
+	for ((j=0; j<${#dvs[@]}; j++)); do
+		device=${dvs[j]##*mntdev=}
+		devices+=" $device"
+	done
+	echo $devices
+}
+
+init_facets_devices_mounted () {
+	local i
+	local facets
+	local facet
+	local host
+	local -a devs
+	local flakeydev
+	local var
+	local device
+
+	# init <facet>failover_device first because
+	# if it does not set on cfg file for value differs from <facet>_device
+	# -- it is equal to <facet>_device which will be re-exported in
+	# according to mounted flakey if any
+	# re-order facets proccesing, first is mgs because for combined_mgs_mds
+	# facet_device mgs depends on mds1_dev value
+	facets=$(exclude_items_from_list $(get_facets) mgs)
+	for facet in mgs ${facets//,/ }; do
+		local dev=$(facet_device $facet)
+		var=${facet}failover_dev
+		if [ -n "${!var}" ] ; then
+			eval export ${facet}failover_dev=${!var}
+		else
+			eval export ${facet}failover_dev=$dev
+		fi
+
+		flakeydev=$(dm_facet_devname $facet)
+		# 1st check devices mounted on <facet>_HOST
+		# 2nd check devices mounted on facetfaillover_HOST
+		eval export ${var}_saved=$dev
+		var=${facet}_dev
+		for host in $(facet_host $facet) \
+			$(facet_failover_host $facet); do
+			devs=($(get_devs_mounted_node $host))
+			for ((i=0; i<${#devs[@]}; i++)); do
+				if [[ ${devs[$i]} =~ $flakeydev ]]; then
+					devicesA[$facet]=${devs[$i]}
+					local facet_dev=${facet}_dev
+					eval export ${facet_dev}_saved=$dev
+					eval export ${var}=${devs[$i]}
+					# TODO: do not check failover if mounted on facet found ...
+					break
+				fi
+			done
+		done
+        done
 }
 
 init_facets_vars () {
