@@ -8666,14 +8666,17 @@ test_110()
 	combined_mgs_mds || replace=" --replace "
 	local opts="$(mkfs_opts mds1 $(mdsdevname 1)) \
 		    $replace --reformat $(mdsdevname 1) $(mdsvdevname 1)"
-	if [[ $opts != *large_dir* ]]; then
-		if [[ $opts != *mkfsoptions* ]]; then
-			opts+=" --mkfsoptions=\\\"-O large_dir -b 1024 -i 65536\\\""
-		else
-			opts="${opts//--mkfsoptions=\\\"/ \
-				--mkfsoptions=\\\"-O large_dir -b 1024 -i 65536 }"
-		fi
+
+	[[ $opts != *large_dir* ]] &&
+		skip "Only applicable when large_dir is enabled"
+
+	if [[ $opts != *mkfsoptions* ]]; then
+		opts+=" --mkfsoptions=\\\"-b 1024 -i 65536\\\""
+	else
+		opts="${opts//--mkfsoptions=\\\"/ \
+			--mkfsoptions=\\\"-b 1024 -i 65536 }"
 	fi
+
 	echo "MDT params: $opts"
 	load_modules
 	combined_mgs_mds || start_mgs
@@ -8683,14 +8686,6 @@ test_110()
 	opts="$(mkfs_opts ost1 $(ostdevname 1)) \
 		$replace --reformat $(ostdevname 1) $(ostvdevname 1)"
 
-	if [[ $opts != *large_dir* ]]; then
-		if [[ $opts != *mkfsoptions* ]]; then
-			opts+=" --mkfsoptions=\\\"-O large_dir\\\" "
-		else
-			opts="${opts//--mkfsoptions=\\\"/ \
-				--mkfsoptions=\\\"-O large_dir }"
-		fi
-	fi
 	echo "OST params: $opts"
 	add ost1 $opts || error "add ost1 failed with new params"
 	start ost1 $(ostdevname 1) $OST_MOUNT_OPTS
@@ -8723,7 +8718,7 @@ test_110()
 	umount_client $MOUNT2 -f
 	cleanup
 
-	run_e2fsck $(facet_active_host mds1) $(mdsdevname 1) -n
+	FSCK_MAX_ERR=3 run_e2fsck $(facet_active_host mds1) $(mdsdevname 1) -n
 	MDSCOUNT=$old_mdscount
 	OSTCOUNT=$old_ostcount
 }
@@ -8757,14 +8752,17 @@ test_111() {
 	combined_mgs_mds || replace=" --replace "
 	local opts="$(mkfs_opts mds1 $(mdsdevname 1)) \
 		    $replace --reformat $(mdsdevname 1) $(mdsvdevname 1)"
-	if [[ $opts != *large_dir* ]]; then
-		if [[ $opts != *mkfsoptions* ]]; then
-			opts+=" --mkfsoptions=\\\"-O large_dir -i 1048576 \\\" "
-		else
-			opts="${opts//--mkfsoptions=\\\"/ \
-				--mkfsoptions=\\\"-O large_dir -i 1048576 }"
-		fi
+	[[ $opts != *large_dir* ]] &&
+		skip "Only applicable when large_dir is enabled"
+
+
+	if [[ $opts != *mkfsoptions* ]]; then
+		opts+=" --mkfsoptions=\\\"-i 1048576 \\\" "
+	else
+		opts="${opts//--mkfsoptions=\\\"/ \
+			--mkfsoptions=\\\"-i 1048576 }"
 	fi
+
 	echo "MDT params: $opts"
 	load_modules
 	combined_mgs_mds || start_mgs
@@ -8774,13 +8772,6 @@ test_111() {
 
 	opts="$(mkfs_opts ost1 $(ostdevname 1)) \
 		$replace --reformat $(ostdevname 1) $(ostvdevname 1)"
-	if [[ $opts != *large_dir* ]]; then
-		if [[ $opts != *mkfsoptions* ]]; then
-			opts+=" --mkfsoptions=\\\"-O large_dir \\\""
-		else
-			opts="${opts//--mkfsoptions=\\\"/ --mkfsoptions=\\\"-O large_dir }"
-		fi
-	fi
 	echo "OST params: $opts"
 	__touch_device ost 1
 	add ost1 $opts || error "add ost1 failed with new params"
