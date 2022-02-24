@@ -2,6 +2,5 @@
 @BUILD_O2IBLND_TRUE@obj-m += o2iblnd/
 @BUILD_KFILND_TRUE@obj-m += kfilnd/
 obj-m += socklnd/
->>>>>>> LUS-6565 kfilnd: Adapted kfilnd prototype to NEO
 
 @INCLUDE_RULES@
