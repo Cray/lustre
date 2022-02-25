@@ -173,7 +173,7 @@ struct kfilnd_cq *kfilnd_cq_alloc(struct kfilnd_ep *ep,
 				  struct kfi_cq_attr *attr)
 {
 	struct kfilnd_cq *cq;
-	cpumask_t *cpu_mask;
+	cpumask_var_t *cpu_mask;
 	int rc;
 	unsigned int cpu_count = 0;
 	unsigned int cpu;
@@ -182,7 +182,7 @@ struct kfilnd_cq *kfilnd_cq_alloc(struct kfilnd_ep *ep,
 	struct kfilnd_cq_work *cq_work;
 
 	cpu_mask = cfs_cpt_cpumask(lnet_cpt_table(), ep->end_cpt);
-	for_each_cpu(cpu, cpu_mask)
+	for_each_cpu(cpu, *cpu_mask)
 		cpu_count++;
 
 	alloc_size = CQ_ALLOC_SIZE(cpu_count);
@@ -203,7 +203,7 @@ struct kfilnd_cq *kfilnd_cq_alloc(struct kfilnd_ep *ep,
 	}
 
 	i = 0;
-	for_each_cpu(cpu, cpu_mask) {
+	for_each_cpu(cpu, *cpu_mask) {
 		cq_work = &cq->cq_works[i];
 		cq_work->cq = cq;
 		cq_work->work_cpu = cpu;
