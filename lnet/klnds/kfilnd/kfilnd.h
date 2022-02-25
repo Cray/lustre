@@ -357,7 +357,7 @@ struct kfilnd_hello_msg {
 
 	/* RX context count peer can target. */
 	__u16 rx_count;
-} WIRE_ATTR;
+} __packed;
 
 /* Immediate message header. */
 struct kfilnd_immed_msg {
@@ -368,7 +368,7 @@ struct kfilnd_immed_msg {
 
 	/* Entire LNet message payload. */
 	char payload[0];
-} WIRE_ATTR;
+} __packed;
 
 /* Bulk request message header. */
 struct kfilnd_bulk_req_msg {
@@ -384,7 +384,7 @@ struct kfilnd_bulk_req_msg {
 
 	/* Memory key needed by the target to push/pull LNet payload. */
 	__u16 key;
-} WIRE_ATTR;
+} __packed;
 
 /* Kfilnd message. Includes base transport header plus embedded protocol
  * message.
@@ -419,8 +419,8 @@ struct kfilnd_msg {
 		struct kfilnd_immed_msg immed;
 		struct kfilnd_bulk_req_msg bulk_req;
 		struct kfilnd_hello_msg hello;
-	} WIRE_ATTR proto;
-} WIRE_ATTR;
+	} __packed proto;
+} __packed;
 
 #define KFILND_MSG_MAGIC LNET_PROTO_KFI_MAGIC	/* unique magic */
 
@@ -434,12 +434,12 @@ struct kfilnd_msg {
 
 #define KFILND_EP_DEBUG(ep, fmt, ...) \
 	CDEBUG(D_NET, "%s:%d " fmt "\n", \
-	       libcfs_nid2str((ep)->end_dev->kfd_ni->ni_nid), \
+	       libcfs_nidstr(&(ep)->end_dev->kfd_ni->ni_nid), \
 	       (ep)->end_context_id, ##__VA_ARGS__)
 
 #define KFILND_EP_ERROR(ep, fmt, ...) \
 	CNETERR("%s:%d " fmt "\n", \
-		libcfs_nid2str((ep)->end_dev->kfd_ni->ni_nid), \
+		libcfs_nidstr(&(ep)->end_dev->kfd_ni->ni_nid), \
 		(ep)->end_context_id, ##__VA_ARGS__)
 
 #define KFILND_TN_PEER_VALID(tn) \
@@ -448,7 +448,7 @@ struct kfilnd_msg {
 #define KFILND_TN_DIR_DEBUG(tn, fmt, dir, ...) \
 	CDEBUG(D_NET, "Transaction ID %p: %s:%u %s %s:%llu " fmt "\n", \
 	       (tn), \
-	       libcfs_nid2str((tn)->tn_ep->end_dev->kfd_ni->ni_nid), \
+	       libcfs_nidstr(&(tn)->tn_ep->end_dev->kfd_ni->ni_nid), \
 	       (tn)->tn_ep->end_context_id, dir, \
 	       libcfs_nid2str((tn)->peer->nid), \
 	       KFILND_TN_PEER_VALID(tn) ? \
@@ -466,7 +466,7 @@ struct kfilnd_msg {
 #define KFILND_TN_DIR_ERROR(tn, fmt, dir, ...) \
 	CNETERR("Transaction ID %p: %s:%u %s %s:%llu " fmt "\n", \
 		(tn), \
-		libcfs_nid2str((tn)->tn_ep->end_dev->kfd_ni->ni_nid), \
+		libcfs_nidstr(&(tn)->tn_ep->end_dev->kfd_ni->ni_nid), \
 		(tn)->tn_ep->end_context_id, dir, \
 		libcfs_nid2str((tn)->peer->nid), \
 		KFILND_TN_PEER_VALID(tn) ? \
@@ -592,11 +592,6 @@ struct kfilnd_transaction_msg {
 	size_t length;
 };
 
-enum kfilnd_tn_buf_type {
-	TN_BUF_KIOV,
-	TN_BUF_IOV,
-};
-
 /* Initiator and target transaction structure. */
 struct kfilnd_transaction {
 	/* Endpoint list transaction lives on. */
@@ -622,11 +617,7 @@ struct kfilnd_transaction {
 	/* LNet buffer used to register a memory region or perform a RMA
 	 * operation.
 	 */
-	enum kfilnd_tn_buf_type	tn_buf_type;
-	union {
-		lnet_kiov_t	kiov[LNET_MAX_IOV];
-		struct kvec	iov[LNET_MAX_IOV];
-	} tn_buf;
+	struct bio_vec		tn_kiov[LNET_MAX_IOV];
 	unsigned int		tn_num_iovec;
 
 	/* LNet transaction payload byte count. */

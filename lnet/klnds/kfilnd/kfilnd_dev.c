@@ -227,7 +227,7 @@ struct kfilnd_dev *kfilnd_dev_alloc(struct lnet_ni *ni,
 	dev->kfd_state = KFILND_STATE_INITIALIZED;
 
 	/* Initialize debugfs stats. */
-	dev->dev_dir = debugfs_create_dir(libcfs_nid2str(ni->ni_nid),
+	dev->dev_dir = debugfs_create_dir(libcfs_nidstr(&ni->ni_nid),
 					  kfilnd_debug_dir);
 	dev->initiator_state_stats_file =
 		debugfs_create_file("initiator_state_stats", 0444,

@@ -319,13 +319,8 @@ int kfilnd_ep_post_tagged_recv(struct kfilnd_ep *ep,
 	}
 
 	msg.iov_count = tn->tn_num_iovec;
-	if (tn->tn_buf_type == TN_BUF_KIOV) {
-		msg.type = KFI_BVEC;
-		msg.msg_biov = (struct bio_vec *)tn->tn_buf.kiov;
-	} else {
-		msg.type = KFI_KVEC;
-		msg.msg_iov = tn->tn_buf.iov;
-	}
+	msg.type = KFI_BVEC;
+	msg.msg_biov = tn->tn_kiov;
 
 	rc = kfi_trecvmsg(ep->end_rx, &msg, KFI_COMPLETION);
 	switch (rc) {
@@ -459,13 +454,8 @@ int kfilnd_ep_post_write(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	}
 
 	rma.iov_count = tn->tn_num_iovec;
-	if (tn->tn_buf_type == TN_BUF_KIOV) {
-		rma.type = KFI_BVEC;
-		rma.msg_biov = (struct bio_vec *)tn->tn_buf.kiov;
-	} else {
-		rma.type = KFI_KVEC;
-		rma.msg_iov = tn->tn_buf.iov;
-	}
+	rma.type = KFI_BVEC;
+	rma.msg_biov = tn->tn_kiov;
 
 	rc = kfi_writemsg(ep->end_tx, &rma, KFI_TAGGED | KFI_COMPLETION);
 	switch (rc) {
@@ -540,13 +530,8 @@ int kfilnd_ep_post_read(struct kfilnd_ep *ep, struct kfilnd_transaction *tn)
 	}
 
 	rma.iov_count = tn->tn_num_iovec;
-	if (tn->tn_buf_type == TN_BUF_KIOV) {
-		rma.type = KFI_BVEC;
-		rma.msg_biov = (struct bio_vec *)tn->tn_buf.kiov;
-	} else {
-		rma.type = KFI_KVEC;
-		rma.msg_iov = tn->tn_buf.iov;
-	}
+	rma.type = KFI_BVEC;
+	rma.msg_biov = tn->tn_kiov;
 
 	rc = kfi_readmsg(ep->end_tx, &rma, KFI_TAGGED | KFI_COMPLETION);
 	switch (rc) {
@@ -653,7 +638,7 @@ static void kfilnd_ep_replay_timer(cfs_timer_cb_arg_t data)
 {
 	struct kfilnd_ep *ep = cfs_from_timer(ep, data, replay_timer);
 	unsigned int cpu =
-		cpumask_first(cfs_cpt_cpumask(lnet_cpt_table(), ep->end_cpt));
+		cpumask_first(*cfs_cpt_cpumask(lnet_cpt_table(), ep->end_cpt));
 
 	queue_work_on(cpu, kfilnd_wq, &ep->replay_work);
 }
@@ -785,7 +770,7 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 
 	/* Vector is set to first core in the CPT */
 	cq_attr.signaling_vector =
-		cpumask_first(cfs_cpt_cpumask(lnet_cpt_table(), cpt));
+		cpumask_first(*cfs_cpt_cpumask(lnet_cpt_table(), cpt));
 
 	cq_attr.size = dev->kfd_ni->ni_net->net_tunables.lct_max_tx_credits *
 		rx_cq_scale_factor;
