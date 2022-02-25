@@ -287,8 +287,7 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni, const char *node,
 		goto err;
 	}
 
-	service = kasprintf(GFP_KERNEL, "%u",
-			    LNET_NETNUM(LNET_NIDNET(ni->ni_nid)));
+	service = kasprintf(GFP_KERNEL, "%u", ni->ni_nid.nid_num);
 	if (!service) {
 		rc = -ENOMEM;
 		goto err;
