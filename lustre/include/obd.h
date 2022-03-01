@@ -1353,6 +1353,9 @@ static inline void client_adjust_max_dirty(struct client_obd *cli)
 					   1 << (20 - PAGE_SHIFT));
 }
 
+/* Must be used for page cache pages only,
+ * not safe otherwise (e.g. direct IO pages)
+ */
 static inline struct inode *page2inode(struct page *page)
 {
 	if (page->mapping) {
