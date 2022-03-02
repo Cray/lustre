@@ -1906,7 +1906,7 @@ sub_test_41i() {
 }
 
 test_41i() {
-	[[ $MDS1_VERSION -le $(version_code 2.13.56) ]] ||
+	(( $MDS1_VERSION >= $(version_code 2.13.56) )) ||
 		skip "Need MDS version newer than 2.13.56"
 	local msg fail_loc
 
@@ -2271,6 +2271,7 @@ sub_test_43k() {
 	# cfs_race() if LCK_PW is taken on the parent by mdt_reint_unlink.
 	test_mkdir $DIR2/$tdir
 	touch $DIR2/$tdir/$tfile
+	pdo_lru_clear
 
 	do_nodes $(comma_list $(mdts_nodes)) \
 		"lctl set_param -n fail_loc=${fail_loc} || true" &>/dev/null
@@ -2294,7 +2295,7 @@ sub_test_43k() {
 }
 
 test_43k() {
-	[[ $MDS1_VERSION -le $(version_code 2.13.56) ]] ||
+	(( $MDS1_VERSION >= $(version_code 2.13.56) )) ||
 		skip "Need MDS version newer than 2.13.56"
 	local msg fail_loc
 
@@ -2675,6 +2676,7 @@ sub_test_45j() {
 	test_mkdir $DIR2/$tdir
 	echo file1 > $DIR2/$tdir/$tfile
 	echo file2 > $DIR2/$tdir/$tfile-2
+	pdo_lru_clear
 
 	do_nodes $(comma_list $(mdts_nodes)) \
 		"lctl set_param -n fail_loc=${fail_loc} || true" &>/dev/null
@@ -2700,7 +2702,7 @@ sub_test_45j() {
 }
 
 test_45j() {
-	[[ $MDS1_VERSION -le $(version_code 2.13.56) ]] ||
+	(( $MDS1_VERSION >= $(version_code 2.13.56) )) ||
 		skip "Need MDS version newer than 2.13.56"
 	local msg fail_loc
 
