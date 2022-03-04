@@ -4596,7 +4596,6 @@ test_80b() {
 	local migrate_dir2=$DIR2/$tdir/migrate_dir
 	local migrate_run=$LUSTRE/tests/migrate.sh
 	local start_time
-	local end_time
 	local show_time=1
 	local mdt_idx
 	local rc=0
@@ -4618,14 +4617,14 @@ test_80b() {
 			$LFS migrate -m $mdt_idx $migrate_dir1 &>/dev/null ||
 				rc=$?
 			echo "migrate rc=$rc"
-			[ $rc -ne 0 -o $rc -ne 16 ] || break
+			(( $rc != 0 && $rc != 16 )) || break
 		done
 	) &
 	migrate_pid=$!
 
 	echo "start migration thread $migrate_pid"
 	#Access the files at the same time
-	start_time=$(date +%s)
+	start_time=$SECONDS
 	echo "accessing the migrating directory for 5 minutes..."
 	while true; do
 		ls $migrate_dir2 > /dev/null || {
@@ -4653,7 +4652,7 @@ test_80b() {
 		}
 
 		touch $migrate_dir2/source_file > /dev/null || rc1=$?
-		[ $rc1 -ne 0 -o $rc1 -ne 1 ] || {
+		(( $rc != 0 && $rc != 1 )) || {
 			echo "touch file failed with $rc1"
 			break;
 		}
@@ -4667,7 +4666,7 @@ test_80b() {
 
 			mrename $migrate_dir2/source_file \
 				$migrate_dir2/target_file &>/dev/null || rc1=$?
-			[ $rc1 -ne 0 -o $rc1 -ne 1 ] || {
+			(( $rc != 0 && $rc != 1 )) || {
 				echo "rename failed with $rc1"
 				break
 			}
@@ -4679,16 +4678,15 @@ test_80b() {
 				rm -rf $migrate_dir2/source_file &>/dev/null ||
 								rc1=$?
 			fi
-			[ $rc1 -ne 0 -o $rc1 -ne 1 ] || {
+			(( $rc != 0 && $rc != 1 )) || {
 				echo "unlink failed with $rc1"
 				break
 			}
 		fi
 
-		end_time=$(date +%s)
-		duration=$((end_time - start_time))
-		if [ $((duration % 10)) -eq 0 ]; then
-			if [ $show_time -eq 1 ]; then
+		local duration=$((SECONDS - start_time))
+		if (( duration % 10 == 0 )); then
+			if (( $show_time == 1 )); then
 				echo "...$duration seconds"
 				show_time=0
 			fi
@@ -4701,7 +4699,7 @@ test_80b() {
 			break
 		}
 
-		[ $duration -ge 300 ] && break
+		(( $duration < 300 )) || break
 	done
 
 	#check migration are still there
