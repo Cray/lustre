@@ -69,6 +69,8 @@
 #define PARAM_NETWORK              "network="          /* bind on nid */
 #define PARAM_ID_UPCALL		"identity_upcall="  /* identity upcall */
 #define PARAM_AUTODEGRADE         "autodegrade="      /* autodegrade OST's */
+#define PARAM_ROOTSQUASH	   "root_squash="      /* root squash */
+#define PARAM_NOSQUASHNIDS	   "nosquash_nids="    /* no squash nids */
 
 /* Prefixes for parameters handled by obd's proc methods (XXX_process_config) */
 #define PARAM_OST		"ost."
