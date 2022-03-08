@@ -122,6 +122,8 @@ fi
 
 if [ -d /usr/src/ofa_kernel/%{flavor} ]; then
 	O2IBPATH=/usr/src/ofa_kernel/%{flavor}
+elif [ -d /usr/src/ofa_kernel/default ]; then
+	O2IBPATH=/usr/src/ofa_kernel/default
 else
 	O2IBPATH=yes
 fi
