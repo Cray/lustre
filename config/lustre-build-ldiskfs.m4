@@ -449,6 +449,23 @@ EXTRA_KCFLAGS="$tmp_flags"
 ]) # LB_JBD2_H_TOTAL_CREDITS
 
 #
+# LB_EXT4_INC_DEC_COUNT_2ARGS
+#
+# Linux v5.9-rc7-8-g15ed2851b0f4
+# ext4: remove unused argument from ext4_(inc|dec)_count
+#
+AC_DEFUN([LB_EXT4_INC_DEC_COUNT_2ARGS], [
+	AC_MSG_CHECKING([if ext4_(inc|dec)_count() have 2 arguments])
+	AS_IF([grep -q -E 'void ext4_inc_count.handle_t \*handle' $EXT4_SRC_DIR/namei.c],[
+		AC_DEFINE(HAVE_EXT4_INC_DEC_COUNT_2ARGS, 1,
+			[ext4_(inc|dec)_count() has 2 arguments])
+		AC_MSG_RESULT(yes)
+	],[
+		AC_MSG_RESULT(no)
+	])
+]) # LB_EXT4_INC_DEC_COUNT_2ARGS
+
+#
 # LB_EXT4_JOURNAL_GET_WRITE_ACCESS_4A
 #
 # Linux v5.14-rc2-19-g188c299e2a26
@@ -578,6 +595,7 @@ AS_IF([test x$enable_ldiskfs != xno],[
 	LB_LDISKFS_FIND_ENTRY_LOCKED_EXISTS
 	LB_LDISKFSFS_DIRHASH_WANTS_DIR
 	LB_JBD2_H_TOTAL_CREDITS
+	LB_EXT4_INC_DEC_COUNT_2ARGS
 	LB_EXT4_JOURNAL_GET_WRITE_ACCESS_4A
 	LB_EXT4_INC_DEC_COUNT_2ARGS
 	LB_JBD2_JOURNAL_GET_MAX_TXN_BUFS
