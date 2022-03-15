@@ -955,7 +955,7 @@ static int osd_stripe_dir_filldir(void *buf,
 
 	iput(inode);
 	osd_add_oi_cache(oti, dev, id, fid);
-	osd_oii_insert(dev, fid, id, true);
+	osd_scrub_oi_insert(dev, fid, id, true);
 	oclb->oclb_found = true;
 
 	return 1;
@@ -1075,6 +1075,33 @@ out:
 	RETURN(rc);
 }
 
+/**
+ * Is object in scrub inconsistent/stale list.
+ *
+ * \a scrub has two lists, os_inconsistent_items contains mappings to fix, while
+ * os_stale_items contains mappings failed to fix.
+ */
+static bool fid_in_scrub_list(struct lustre_scrub *scrub,
+			      const struct list_head *list,
+			      const struct lu_fid *fid)
+{
+	struct osd_inconsistent_item *oii;
+
+	if (list_empty(list))
+		return false;
+
+	spin_lock(&scrub->os_lock);
+	list_for_each_entry(oii, list, oii_list) {
+		if (lu_fid_eq(fid, &oii->oii_cache.oic_fid)) {
+			spin_unlock(&scrub->os_lock);
+			return true;
+		}
+	}
+	spin_unlock(&scrub->os_lock);
+
+	return false;
+}
+
 static int osd_fid_lookup(const struct lu_env *env, struct osd_object *obj,
 			  const struct lu_fid *fid,
 			  const struct lu_object_conf *conf)
@@ -1096,6 +1123,7 @@ static int osd_fid_lookup(const struct lu_env *env, struct osd_object *obj,
 	bool trusted = true;
 	bool updated = false;
 	bool checked = false;
+	bool stale = false;
 
 	ENTRY;
 
@@ -1127,7 +1155,7 @@ static int osd_fid_lookup(const struct lu_env *env, struct osd_object *obj,
 	 * do_create->osd_oi_insert().
 	 */
 	if (conf && conf->loc_flags & LOC_F_NEW)
-		GOTO(out, result = 0);
+		RETURN(0);
 
 	/* Search order: 1. per-thread cache. */
 	if (lu_fid_eq(fid, &oic->oic_fid) && likely(oic->oic_dev == dev)) {
@@ -1135,14 +1163,15 @@ static int osd_fid_lookup(const struct lu_env *env, struct osd_object *obj,
 		goto iget;
 	}
 
+	/* Search order: 2. OI scrub pending list. */
 	id = &info->oti_id;
 	memset(id, 0, sizeof(struct osd_inode_id));
-	if (!list_empty(&scrub->os_inconsistent_items)) {
-		/* Search order: 2. OI scrub pending list. */
-		result = osd_oii_lookup(dev, fid, id);
-		if (!result)
-			goto iget;
-	}
+	if (fid_in_scrub_list(scrub, &scrub->os_inconsistent_items, fid))
+		RETURN(-EINPROGRESS);
+
+	stale = fid_in_scrub_list(scrub, &scrub->os_stale_items, fid);
+	if (stale && OBD_FAIL_CHECK(OBD_FAIL_OSD_SCRUB_STALE))
+		RETURN(-ESTALE);
 
 	/*
 	 * The OI mapping in the OI file can be updated by the OI scrub
@@ -1187,6 +1216,9 @@ iget:
 		goto check_lma;
 	}
 
+	if (OBD_FAIL_CHECK(OBD_FAIL_OSD_SCRUB_STALE))
+		goto trigger;
+
 	result = PTR_ERR(inode);
 	if (result == -ENOENT || result == -ESTALE)
 		GOTO(out, result = 0);
@@ -1195,6 +1227,10 @@ iget:
 		GOTO(out, result);
 
 trigger:
+	/* don't trigger repeatedly for stale mapping */
+	if (stale)
+		GOTO(out, result = -ESTALE);
+
 	/*
 	 * We still have chance to get the valid inode: for the
 	 * object which is referenced by remote name entry, the
@@ -1228,14 +1264,14 @@ trigger:
 			goto join;
 
 		if (IS_ERR_OR_NULL(inode) || result) {
-			osd_oii_insert(dev, fid, id, result == -ENOENT);
+			osd_scrub_oi_insert(dev, fid, id, result == -ENOENT);
 			GOTO(out, result = -EINPROGRESS);
 		}
 
 		LASSERT(remote);
 		LASSERT(obj->oo_inode == inode);
 
-		osd_oii_insert(dev, fid, id, true);
+		osd_scrub_oi_insert(dev, fid, id, true);
 		goto found;
 	}
 
@@ -1251,6 +1287,9 @@ trigger:
 	}
 
 join:
+	if (IS_ERR_OR_NULL(inode) || result)
+		osd_scrub_oi_insert(dev, fid, id, result == -ENOENT);
+
 	rc1 = osd_scrub_start(env, dev, flags);
 	CDEBUG_LIMIT(D_LFSCK | D_CONSOLE | D_WARNING,
 		     "%s: trigger OI scrub by RPC for "DFID"/%u with flags %#x: rc = %d\n",
@@ -1258,15 +1297,11 @@ join:
 	if (rc1 && rc1 != -EALREADY)
 		GOTO(out, result = -EREMCHG);
 
-	if (IS_ERR_OR_NULL(inode) || result) {
-		osd_oii_insert(dev, fid, id, result == -ENOENT);
+	if (IS_ERR_OR_NULL(inode) || result)
 		GOTO(out, result = -EINPROGRESS);
-	}
 
 	LASSERT(remote);
 	LASSERT(obj->oo_inode == inode);
-
-	osd_oii_insert(dev, fid, id, true);
 	goto found;
 
 check_lma:
@@ -1414,6 +1449,9 @@ found:
 	GOTO(out, result = (!obj->oo_hl_head ? -ENOMEM : 0));
 
 out:
+	if (!result && stale)
+		osd_scrub_oi_resurrect(scrub, fid);
+
 	if (result || !obj->oo_inode) {
 		if (!IS_ERR_OR_NULL(inode))
 			iput(inode);
@@ -5952,7 +5990,7 @@ trigger:
 			}
 		}
 
-		rc = osd_oii_insert(dev, fid, id, insert);
+		rc = osd_scrub_oi_insert(dev, fid, id, insert);
 		/*
 		 * There is race condition between osd_oi_lookup and OI scrub.
 		 * The OI scrub finished just after osd_oi_lookup() failure.
