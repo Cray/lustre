@@ -709,6 +709,8 @@ int osd_oi_insert(struct osd_thread_info *info, struct osd_device *osd,
 	struct osd_inode_id *oi_id  = &info->oti_id2;
 	int		     rc     = 0;
 
+	CDEBUG(D_INODE, "insert OI for "DFID"\n", PFID(fid));
+
 	if (unlikely(fid_is_last_id(fid)))
 		return osd_obj_spec_insert(info, osd, fid, id, th);
 
@@ -811,6 +813,8 @@ int osd_oi_delete(struct osd_thread_info *info,
 {
 	struct lu_fid *oi_fid = &info->oti_fid2;
 
+	CDEBUG(D_INODE, "delete OI for "DFID"\n", PFID(fid));
+
 	/* clear idmap cache */
 	if (lu_fid_eq(fid, &info->oti_cache.oic_fid))
 		fid_zero(&info->oti_cache.oic_fid);
@@ -833,6 +837,8 @@ int osd_oi_update(struct osd_thread_info *info, struct osd_device *osd,
 	struct lu_fid	    *oi_fid = &info->oti_fid2;
 	struct osd_inode_id *oi_id  = &info->oti_id2;
 	int		     rc     = 0;
+
+	CDEBUG(D_INODE, "update OI for "DFID"\n", PFID(fid));
 
 	if (unlikely(fid_is_last_id(fid)))
 		return osd_obj_spec_update(info, osd, fid, id, th);
