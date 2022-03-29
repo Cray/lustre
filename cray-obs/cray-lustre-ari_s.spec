@@ -207,7 +207,9 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %files
 %defattr(-,root,root)
 /sbin/mount.lustre
+%if %{with server}
 /sbin/mount.lustre_tgt
+%endif
 /etc/udev
 /lib/modules/%{kversion}
 %{_sbindir}/*

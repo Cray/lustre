@@ -19,6 +19,8 @@ BuildRequires: module-init-tools
 BuildRequires: libtool
 BuildRequires: libyaml-devel
 BuildRequires: zlib-devel
+BuildRequires: libnl3-devel
+BuildRequires: keyutils-devel
 %if "%{?sle_version}" == "120000"
 # Only SLES 12 SP0 builds require this. Was needed for EDR IB support in eLogin
 # for 6.0UP02. Future versions will use in-kernel drivers.
@@ -124,6 +126,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %exclude /etc/lnet_routes.conf
 %exclude /etc/lustre/perm.conf
 %exclude %{_pkgconfigdir}/cray-lnet.pc
+%{_libdir}/pkgconfig/lustre.pc
 
 %post
 DEPMOD_OPTS=""

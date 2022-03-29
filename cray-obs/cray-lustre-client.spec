@@ -22,6 +22,8 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 BuildRequires: %kernel_module_package_buildreqs
 BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
+BuildRequires: libnl3-devel
+BuildRequires: keyutils-devel
 BuildRequires: mlnx-ofa_kernel-devel
 
 # Vendor specific requires/defines/etc.
@@ -141,28 +143,39 @@ fi
 %install
 make DESTDIR=${RPM_BUILD_ROOT} install
 
-for header in api.h lib-lnet.h lib-types.h
+for header in api.h lib-lnet.h lib-types.h lnet_rdma.h socklnd.h udsp.h
 do
 	%{__install} -D -m 0644 lnet/include/lnet/${header} %{buildroot}/%{_includedir}/lnet/${header}
 done
 
-for header in libcfs_debug.h lnetctl.h lnetst.h libcfs_ioctl.h lnet-dlc.h \
-	      lnet-types.h nidstr.h
+for header in libcfs_debug.h libcfs_ioctl.h lnetctl.h lnet-dlc.h lnet-idl.h \
+	      lnet-nl.h lnetst.h lnet-types.h nidstr.h socklnd.h
 do
 	%{__install} -D -m 0644 lnet/include/uapi/linux/lnet/${header} %{buildroot}/%{_includedir}/uapi/linux/lnet/${header}
 done
 
-for header in libcfs.h util/list.h curproc.h bitmap.h libcfs_private.h libcfs_cpu.h \
-	      libcfs_prim.h libcfs_string.h libcfs_workitem.h \
-	      libcfs_hash.h libcfs_heap.h libcfs_fail.h libcfs_debug.h range_lock.h
+for header in bitmap.h libcfs_cpu.h libcfs_crypto.h libcfs_debug.h \
+	      libcfs_fail.h libcfs.h libcfs_hash.h libcfs_private.h \
+	      libcfs_string.h libcfs_workitem.h
 do
 	%{__install} -D -m 0644 libcfs/include/libcfs/${header} %{buildroot}/%{_includedir}/libcfs/${header}
 done
 
-for header in linux-cpu.h linux-crypto.h linux-fs.h linux-hash.h linux-list.h \
-	      linux-mem.h linux-misc.h linux-time.h linux-wait.h linux-percpu-refcount.h
+for header in linux-cpu.h linux-fs.h linux-hash.h linux-list.h \
+	      linux-mem.h linux-misc.h linux-net.h linux-time.h linux-uuid.h \
+	      linux-wait.h processor.h refcount.h xarray.h linux-percpu-refcount.h
 do
 	%{__install} -D -m 0644 libcfs/include/libcfs/linux/${header} %{buildroot}/%{_includedir}/libcfs/linux/${header}
+done
+
+for header in hash.h ioctl.h list.h param.h parser.h string.h
+do
+	%{__install} -D -m 0644 libcfs/include/libcfs/util/${header} %{buildroot}/%{_includedir}/libcfs/util/${header}
+done
+
+for header in llcrypt.h
+do
+	%{__install} -D -m 0644 libcfs/include/libcfs/crypto/${header} %{buildroot}/%{_includedir}/libcfs/crypto/${header}
 done
 
 %{__install} -D -m 0644 lustre/include/interval_tree.h %{buildroot}/%{_includedir}/interval_tree.h
