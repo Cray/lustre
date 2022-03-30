@@ -1912,6 +1912,7 @@ out:
  */
 int
 lnet_add_peer_ni(lnet_nid_t prim_nid, lnet_nid_t nid, bool mr, bool temp)
+__must_hold(&the_lnet.ln_api_mutex)
 {
 	struct lnet_peer *lp = NULL;
 	struct lnet_peer_ni *lpni;
@@ -1961,6 +1962,13 @@ lnet_add_peer_ni(lnet_nid_t prim_nid, lnet_nid_t nid, bool mr, bool temp)
 		CDEBUG(D_NET, "multi-rail state mismatch for peer %s\n",
 		       libcfs_nid2str(prim_nid));
 		return -EPERM;
+	}
+
+	if (temp && lnet_peer_is_uptodate(lp)) {
+		CDEBUG(D_NET,
+		       "Don't add temporary peer NI for uptodate peer %s\n",
+		       libcfs_nidstr(&lp->lp_primary_nid));
+		return -EINVAL;
 	}
 
 	return lnet_peer_add_nid(lp, nid, flags);
