@@ -134,7 +134,6 @@ void lu_object_put(const struct lu_env *env, struct lu_object *o)
 	struct lu_object *orig = o;
 	struct cfs_hash_bd bd;
 	const struct lu_fid *fid = lu_object_fid(o);
-	bool is_dying;
 
 	/*
 	 * till we have full fids-on-OST implemented anonymous objects
@@ -158,20 +157,17 @@ void lu_object_put(const struct lu_env *env, struct lu_object *o)
 	cfs_hash_bd_get(site->ls_obj_hash, &top->loh_fid, &bd);
 	bkt = cfs_hash_bd_extra_get(site->ls_obj_hash, &bd);
 
-	is_dying = lu_object_is_dying(top);
 	if (!cfs_hash_bd_dec_and_lock(site->ls_obj_hash, &bd, &top->loh_ref)) {
 		/* at this point the object reference is dropped and lock is
 		 * not taken, so lu_object should not be touched because it
 		 * can be freed by concurrent thread. Use local variable for
 		 * check.
 		 */
-		if (is_dying) {
-			/*
-			 * somebody may be waiting for this, currently only
-			 * used for cl_object, see cl_object_put_last().
-			 */
-			wake_up_all(&bkt->lsb_waitq);
-		}
+		/*
+		 * somebody may be waiting for this, currently only
+		 * used for cl_object, see cl_object_put_last().
+		 */
+		wake_up(&bkt->lsb_waitq);
 		return;
 	}
 
