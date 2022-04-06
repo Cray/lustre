@@ -3048,41 +3048,6 @@ test_139() {
 }
 run_test 139 "corrupted catid won't cause crash"
 
-test_143() {
-	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.11.56) ] &&
-		skip "Need MDS version at least 2.11.56"
-
-	#define OBD_FAIL_MDS_ORPHAN_DELETE	0x165
-	do_facet mds1 $LCTL set_param fail_loc=0x165
-	$MULTIOP $DIR/$tfile Ouc || error "multiop failed"
-
-	stop mds1
-	start mds1 $(mdsdevname 1) $MDS_MOUNT_OPTS
-
-	sleep 5
-	[[ $(do_facet mds1 pgrep orph_.*-MDD | wc -l) -eq 0 ]] ||
-		error "MDD orphan cleanup thread not quit"
-}
-run_test 143 "orphan name stub can be cleaned up in startup"
-
-test_144() {
-	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.12.00) ] &&
-		skip "Need MDS version at least 2.12.00"
-	[ $PARALLEL == "yes" ] && skip "skip parallel run"
-
-	local mntpt=$(facet_mntpt $SINGLEMDS)
-	stop mds1
-	mount_fstype $SINGLEMDS || error "mount as fstype $SINGLEMDS failed"
-	do_facet $SINGLEMDS touch $mntpt/PENDING/$tfile
-	unmount_fstype $SINGLEMDS
-	start mds1 $(mdsdevname 1) $MDS_MOUNT_OPTS || error "mds1 start fail"
-
-	wait_recovery_complete $SINGLEMDS || error "MDS recovery not done"
-	wait_update_facet mds1 "pgrep orph_.*-MDD | wc -l" "0" ||
-		error "MDD orphan cleanup thread not quit"
-}
-run_test 144 "orphan cleanup thread shouldn't be blocked even delete failed"
-
 test_141() {
 	local oldc
 	local newc
@@ -3105,6 +3070,86 @@ test_141() {
 	return 0
 }
 run_test 141 "do not lose locks on MGS restart"
+
+test_142() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.11.56) ] &&
+		skip "Need MDS version at least 2.11.56"
+
+	#define OBD_FAIL_MDS_ORPHAN_DELETE	0x165
+	do_facet mds1 $LCTL set_param fail_loc=0x165
+	$MULTIOP $DIR/$tfile Ouc || error "multiop failed"
+
+	stop mds1
+	start mds1 $(mdsdevname 1) $MDS_MOUNT_OPTS
+
+	sleep 5
+	[[ $(do_facet mds1 pgrep orph_.*-MDD | wc -l) -eq 0 ]] ||
+		error "MDD orphan cleanup thread not quit"
+}
+run_test 142 "orphan name stub can be cleaned up in startup"
+
+test_143() {
+	[ $(lustre_version_code $SINGLEMDS) -lt $(version_code 2.12.00) ] &&
+		skip "Need MDS version at least 2.12.00"
+	[ $PARALLEL == "yes" ] && skip "skip parallel run"
+
+	local mntpt=$(facet_mntpt $SINGLEMDS)
+	stop mds1
+	mount_fstype $SINGLEMDS || error "mount as fstype $SINGLEMDS failed"
+	do_facet $SINGLEMDS touch $mntpt/PENDING/$tfile
+	unmount_fstype $SINGLEMDS
+	start mds1 $(mdsdevname 1) $MDS_MOUNT_OPTS || error "mds1 start fail"
+
+	wait_recovery_complete $SINGLEMDS || error "MDS recovery not done"
+	wait_update_facet mds1 "pgrep orph_.*-MDD | wc -l" "0" ||
+		error "MDD orphan cleanup thread not quit"
+}
+run_test 143 "orphan cleanup thread shouldn't be blocked even delete failed"
+
+test_144a() {
+	[[ $($LCTL get_param mdc.*.import) =~ connect_flags.*overstriping ]] ||
+		skip "server does not support overstriping"
+
+	local pids=""
+	local setcount=1000
+	local mds_timeout
+	local before
+	local after
+	local diff
+
+	large_xattr_enabled || skip_env "ea_inode feature disabled"
+	test_mkdir -i 0 -c 1 -p $DIR/$tdir
+	stack_trap "rm -rf $DIR/$tdir" EXIT
+
+	mds_timeout=$(do_facet mds1 $LCTL get_param -n timeout)
+	do_nodes $(comma_list $(mdts_nodes)) $LCTL set_param timeout=300
+	stack_trap "do_nodes $(comma_list $(mdts_nodes)) $LCTL set_param timeout=$mds_timeout" EXIT
+
+	$LFS setstripe -i 0 -C $setcount $DIR/$tdir || error "setstripe failed"
+
+	for (( i = 0; i < 50; i++)); do
+		touch $DIR/$tdir/$tfile_$i &
+		pids="$pids $!"
+	done
+
+	fail ost1
+	sleep 60
+
+	for pid in $pids; do
+		kill -9 $pid >/dev/null 2>&1
+	done
+
+	before=$(date +%s)
+	fail mds1
+	after=$(date +%s)
+	# here we measure MDT stop + MDT start time. For error case MDT stop takes
+	# about obd_timeout-60 (240) seconds. Without error - less than 30s.
+	# MDT start takes different time depends on a configuration, let's check
+	# the worst.
+	diff=$((after - before))
+	(( $diff < 240 )) || error "MDT failover took $diff seconds"
+}
+run_test 144a "MDT failover should stop precreation threads"
 
 test_145() {
 	remount_client $MOUNT
