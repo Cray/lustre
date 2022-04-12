@@ -709,7 +709,7 @@ extern char obd_jobid_var[];
 #define OBD_FAIL_MIGRATE_BAD_HASH		0x1802
 
 /* LMV */
-#define OBD_FAIL_UNKNOWN_LMV_STRIPE		0x1901
+#define OBD_FAIL_LMV_UNKNOWN_STRIPE		0x1901
 
 /* FLR */
 #define OBD_FAIL_FLR_GLIMPSE_IMMUTABLE		0x1A00

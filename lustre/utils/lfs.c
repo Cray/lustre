@@ -598,11 +598,10 @@ static int check_hashtype(const char *hashtype)
 	int i;
 
 	/* numeric hash type */
-	if (hashtype && strlen(hashtype) == 1 &&
-	    (type_num > 0 && type_num < LMV_HASH_TYPE_MAX))
+	if (hashtype && lmv_is_known_hash_type(type_num))
 		return type_num;
 	/* string hash type */
-	for (i = LMV_HASH_TYPE_ALL_CHARS; i < LMV_HASH_TYPE_MAX; i++)
+	for (i = LMV_HASH_TYPE_ALL_CHARS; i < ARRAY_SIZE(mdt_hash_name); i++)
 		if (strcmp(hashtype, mdt_hash_name[i]) == 0)
 			return i;
 
@@ -1504,7 +1503,9 @@ static int mdthash_input(char *string, __u32 *inflags,
 		__u32 flag;
 	} mhflist[] = {
 		{"migrating", LMV_HASH_FLAG_MIGRATION},
+		{"bad_type", LMV_HASH_FLAG_BAD_TYPE},
 		{"badtype", LMV_HASH_FLAG_BAD_TYPE},
+		{"lost_lmv", LMV_HASH_FLAG_LOST_LMV},
 		{"lostlmv", LMV_HASH_FLAG_LOST_LMV},
 	};
 
@@ -6917,7 +6918,7 @@ static int lfs_setdirstripe(int argc, char **argv)
 			lsa.lsa_pattern = check_hashtype(optarg);
 			if (lsa.lsa_pattern == 0) {
 				fprintf(stderr,
-					"%s %s: bad stripe hash type '%s'\n",
+					"%s %s: bad directory hash type '%s'\n",
 					progname, argv[0], optarg);
 				return CMD_HELP;
 			}
