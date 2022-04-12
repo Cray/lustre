@@ -4714,6 +4714,8 @@ facet_active() {
 	local facet=$1
 	local activevar=${facet}active
 
+	[ "$facet" == client ] && echo -n client && return
+
 	# file is missing (nothing to store) if fail() is not
 	# executed during this test session yet;
 	# file content:
