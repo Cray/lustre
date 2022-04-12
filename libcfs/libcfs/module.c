@@ -691,7 +691,7 @@ static struct ctl_table lnet_table[] = {
 		.data		= &libcfs_experimental_flag,
 		.maxlen		= sizeof(libcfs_experimental_flag),
 		.mode		= 0644,
-		.proc_handler	= &proc_dointvec,
+		.proc_handler	= &debugfs_doint,
 	},
 	{
 	}
