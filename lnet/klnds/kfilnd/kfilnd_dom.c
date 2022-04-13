@@ -278,8 +278,11 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni, const char *node,
 	int rc;
 	struct kfi_info *hints;
 	struct kfi_info *info;
+	struct kfi_info *hints_tmp;
+	struct kfi_info *info_tmp;
 	struct kfilnd_fab *fab;
 	struct kfilnd_dom *dom;
+	struct kfi_cxi_fabric_ops *fab_ops;
 	char *service;
 
 	if (!ni || !dev_info) {
@@ -320,6 +323,36 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni, const char *node,
 	hints->ep_attr->auth_key_size =
 		sizeof(ni->ni_lnd_tunables.lnd_tun_u.lnd_kfi.lnd_auth_key);
 
+	/* Check if dynamic resource allocation is supported.
+	 * Set dynamic resource alloc hints if it is.
+	 *
+	 * Need to check if op is supported since due to a bug can't
+	 * simply set ctx_cnts greater than 1 (default value) if it isn't.
+	 */
+	hints_tmp = kfi_dupinfo(hints);
+	if (hints_tmp) {
+		rc = kfi_getinfo(0, node, service, KFI_SOURCE, hints_tmp, &info_tmp);
+		if (!rc) {
+			fab = kfilnd_fab_alloc(info_tmp->fabric_attr);
+			if (!IS_ERR(fab)) {
+				rc = kfi_open_ops(&fab->fabric->fid, KFI_CXI_FAB_OPS_1,
+					0, (void**)&fab_ops, NULL);
+				if (!rc) {
+					/* Set dynamic resource alloc hints */
+					hints->domain_attr->cq_cnt = ni->ni_ncpts * 2;
+					hints->domain_attr->tx_ctx_cnt = ni->ni_ncpts;
+					hints->domain_attr->rx_ctx_cnt = ni->ni_ncpts;
+					hints->rx_attr->size =
+						ni->ni_net->net_tunables.lct_max_tx_credits +
+						immediate_rx_buf_count;
+				}
+				kref_put(&fab->cnt, kfilnd_fab_free);
+			}
+			kfi_freeinfo(info_tmp);
+		}
+		kfi_freeinfo(hints_tmp);
+	}
+
 	/* Check to see if any KFI LND fabrics/domains can be reused. */
 	fab = kfilnd_fab_reuse(node, service, hints);
 	dom = kfilnd_dom_reuse(node, service, hints, fab);
@@ -350,7 +383,7 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni, const char *node,
 	if (rc)
 		goto err_free_service;
 
-	/* Allocate a new KFI LND fabric and domain is necessary. */
+	/* Allocate a new KFI LND fabric and domain if necessary. */
 	if (!fab) {
 		fab = kfilnd_fab_alloc(info->fabric_attr);
 		if (IS_ERR(fab)) {
@@ -360,6 +393,13 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni, const char *node,
 	}
 
 	if (!dom) {
+		/* Enable dynamic resource allocation if operation supported */
+		rc = kfi_open_ops(&fab->fabric->fid, KFI_CXI_FAB_OPS_1, 0, (void**)&fab_ops, NULL);
+		if (!rc) {
+			rc = fab_ops->enable_dynamic_rsrc_alloc(&fab->fabric->fid, true);
+			if (!rc)
+				CDEBUG(D_NET, "Enabled dynamic resource allocation for KFI domain\n");
+		}
 		dom = kfilnd_dom_alloc(info, fab);
 		if (IS_ERR(dom)) {
 			rc = PTR_ERR(dom);
