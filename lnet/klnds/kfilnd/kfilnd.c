@@ -72,10 +72,6 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	bool tn_key = false;
 	lnet_nid_t tgt_nid4;
 
-	/* NB 'private' is different depending on what we're sending.... */
-	if (msg->msg_niov > LNET_MAX_IOV)
-		return -EINVAL;
-
 	switch (type) {
 	default:
 		return -EIO;
@@ -133,16 +129,26 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 
 	switch (lnd_msg_type) {
 	case KFILND_MSG_IMMEDIATE:
-		kfilnd_tn_set_kiov_buf(tn, msg->msg_kiov, msg->msg_niov,
-				       msg->msg_offset, msg->msg_len);
+		rc = kfilnd_tn_set_kiov_buf(tn, msg->msg_kiov, msg->msg_niov,
+					    msg->msg_offset, msg->msg_len);
+		if (rc) {
+			CERROR("Failed to setup immediate buffer rc %d\n", rc);
+			kfilnd_tn_free(tn);
+			return rc;
+		}
 
 		event = TN_EVENT_INIT_IMMEDIATE;
 		break;
 
 	case KFILND_MSG_BULK_PUT_REQ:
 		tn->sink_buffer = false;
-		kfilnd_tn_set_kiov_buf(tn, msg->msg_kiov, msg->msg_niov,
-				       msg->msg_offset, msg->msg_len);
+		rc = kfilnd_tn_set_kiov_buf(tn, msg->msg_kiov, msg->msg_niov,
+					    msg->msg_offset, msg->msg_len);
+		if (rc) {
+			CERROR("Failed to setup PUT source buffer rc %d\n", rc);
+			kfilnd_tn_free(tn);
+			return rc;
+		}
 
 		event = TN_EVENT_INIT_BULK;
 		break;
@@ -160,10 +166,15 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 		}
 
 		tn->sink_buffer = true;
-		kfilnd_tn_set_kiov_buf(tn, msg->msg_md->md_kiov,
-				       msg->msg_md->md_niov,
-				       msg->msg_md->md_offset,
-				       msg->msg_md->md_length);
+		rc = kfilnd_tn_set_kiov_buf(tn, msg->msg_md->md_kiov,
+					    msg->msg_md->md_niov,
+					    msg->msg_md->md_offset,
+					    msg->msg_md->md_length);
+		if (rc) {
+			CERROR("Failed to setup GET sink buffer rc %d\n", rc);
+			kfilnd_tn_free(tn);
+			return rc;
+		}
 		event = TN_EVENT_INIT_BULK;
 		break;
 
@@ -235,7 +246,13 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		} else {
 			/* Post the buffer given us as a sink  */
 			tn->sink_buffer = true;
-			kfilnd_tn_set_kiov_buf(tn, kiov, niov, offset, mlen);
+			rc = kfilnd_tn_set_kiov_buf(tn, kiov, niov, offset,
+						    mlen);
+			if (rc) {
+				CERROR("Failed to setup PUT sink buffer rc %d\n", rc);
+				kfilnd_tn_free(tn);
+				return rc;
+			}
 			event = TN_EVENT_INIT_TAG_RMA;
 		}
 		break;
@@ -247,8 +264,15 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		} else {
 			/* Post the buffer given to us as a source  */
 			tn->sink_buffer = false;
-			kfilnd_tn_set_kiov_buf(tn, msg->msg_kiov, msg->msg_niov,
-					       msg->msg_offset, msg->msg_len);
+			rc = kfilnd_tn_set_kiov_buf(tn, msg->msg_kiov,
+						    msg->msg_niov,
+						    msg->msg_offset,
+						    msg->msg_len);
+			if (rc) {
+				CERROR("Failed to setup GET source buffer rc %d\n", rc);
+				kfilnd_tn_free(tn);
+				return rc;
+			}
 			event = TN_EVENT_INIT_TAG_RMA;
 		}
 		break;
