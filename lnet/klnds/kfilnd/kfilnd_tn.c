@@ -1537,9 +1537,9 @@ err:
  * when the transaction buffer is configured (i.e. the transaction buffer
  * offset is zero).
  */
-void kfilnd_tn_set_kiov_buf(struct kfilnd_transaction *tn,
-			    struct bio_vec *kiov, size_t num_iov,
-			    size_t offset, size_t len)
+int kfilnd_tn_set_kiov_buf(struct kfilnd_transaction *tn,
+			   struct bio_vec *kiov, size_t num_iov,
+			   size_t offset, size_t len)
 {
 	size_t i;
 	size_t cur_len = 0;
@@ -1563,6 +1563,10 @@ void kfilnd_tn_set_kiov_buf(struct kfilnd_transaction *tn,
 		if (tmp_len + cur_len > len)
 			tmp_len = len - cur_len;
 
+		/* tn_kiov is an array of size LNET_MAX_IOV */
+		if (cur_iov >= LNET_MAX_IOV)
+			return -EINVAL;
+
 		tn->tn_kiov[cur_iov].bv_page = kiov[i].bv_page;
 		tn->tn_kiov[cur_iov].bv_len = tmp_len;
 		tn->tn_kiov[cur_iov].bv_offset = tmp_offset;
@@ -1572,6 +1576,8 @@ void kfilnd_tn_set_kiov_buf(struct kfilnd_transaction *tn,
 		cur_offset = 0;
 	}
 
-	tn->tn_num_iovec = i;
+	tn->tn_num_iovec = cur_iov;
 	tn->tn_nob = cur_len;
+
+	return 0;
 }
