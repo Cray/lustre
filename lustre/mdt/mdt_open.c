@@ -1280,6 +1280,7 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 	int result, rc;
 	int created = 0;
 	int object_locked = 0;
+	enum ldlm_mode lock_mode = LCK_PR;
 	u32 msg_flags;
 	ktime_t kstart = ktime_get();
 
@@ -1368,6 +1369,8 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 		GOTO(out, result);
 	}
 
+	OBD_RACE(OBD_FAIL_MDS_REINT_OPEN);
+again_pw:
 	fid_zero(child_fid);
 
 	if (open_flags & MDS_OPEN_VOLATILE) {
@@ -1375,8 +1378,7 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 		result = -ENOENT;
 	} else {
 		lh = &info->mti_lh[MDT_LH_PARENT];
-		mdt_lock_pdo_init(lh, (open_flags & MDS_OPEN_CREAT) ?
-				  LCK_PW : LCK_PR, &rr->rr_name);
+		mdt_lock_pdo_init(lh, lock_mode, &rr->rr_name);
 		result = mdt_object_lock(info, parent, lh, MDS_INODELOCK_UPDATE);
 		if (result != 0) {
 			mdt_object_put(info->mti_env, parent);
@@ -1395,6 +1397,8 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 	if (result != 0 && result != -ENOENT)
 		GOTO(out_parent, result);
 
+	OBD_RACE(OBD_FAIL_MDS_REINT_OPEN2);
+
 	if (result == -ENOENT) {
 		mdt_set_disposition(info, ldlm_rep, DISP_LOOKUP_NEG);
 		if (!(open_flags & MDS_OPEN_CREAT))
@@ -1403,6 +1407,15 @@ int mdt_reint_open(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 			GOTO(out_parent, result = -EROFS);
 
 		LASSERT(equi(lh == NULL, open_flags & MDS_OPEN_VOLATILE));
+
+		if (lh != NULL && lock_mode == LCK_PR) {
+			/* first pass: get write lock and restart */
+			mdt_object_unlock(info, parent, lh, 1);
+			mdt_clear_disposition(info, ldlm_rep, DISP_LOOKUP_NEG);
+			mdt_lock_handle_init(lh);
+			lock_mode = LCK_PW;
+			goto again_pw;
+		}
 
 		*child_fid = *info->mti_rr.rr_fid2;
 		LASSERTF(fid_is_sane(child_fid), "fid="DFID"\n",
