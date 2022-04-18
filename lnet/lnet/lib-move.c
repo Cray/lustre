@@ -4515,7 +4515,6 @@ lnet_parse(struct lnet_ni *ni, struct lnet_hdr *hdr,
 	__u32 type;
 	int rc = 0;
 	int cpt;
-	time64_t now = ktime_get_seconds();
 
 	LASSERT (!in_interrupt ());
 
@@ -4569,18 +4568,11 @@ lnet_parse(struct lnet_ni *ni, struct lnet_hdr *hdr,
 		return -EPROTO;
 	}
 
-	/* Only update net_last_alive for incoming GETs on the reserved portal
-	 * (i.e. incoming lnet/discovery pings).
-	 * This avoids situations where the router's own traffic results in NI
-	 * status changes
-	 */
-	if (the_lnet.ln_routing && type == LNET_MSG_GET &&
-	    hdr->msg.get.ptl_index == LNET_RESERVED_PORTAL &&
-	    !lnet_islocalnid(&src_nid) &&
-	    ni->ni_net->net_last_alive != now) {
+	if (the_lnet.ln_routing &&
+	    ni->ni_net->net_last_alive != ktime_get_real_seconds()) {
 		lnet_ni_lock(ni);
 		spin_lock(&ni->ni_net->net_lock);
-		ni->ni_net->net_last_alive = now;
+		ni->ni_net->net_last_alive = ktime_get_real_seconds();
 		spin_unlock(&ni->ni_net->net_lock);
 		push = lnet_ni_set_status_locked(ni, LNET_NI_STATUS_UP);
 		lnet_ni_unlock(ni);
@@ -4756,7 +4748,7 @@ lnet_parse(struct lnet_ni *ni, struct lnet_hdr *hdr,
 		}
 	}
 
-	lpni->lpni_last_alive = now;
+	lpni->lpni_last_alive = ktime_get_seconds();
 
 	msg->msg_rxpeer = lpni;
 	msg->msg_rxni = ni;
