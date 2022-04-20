@@ -103,7 +103,7 @@ static void kfilnd_tn_pack_bulk_req(struct kfilnd_transaction *tn)
 	struct kfilnd_msg *msg = tn->tn_tx_msg.msg;
 
 	/* Pack the protocol header and payload. */
-	msg->proto.bulk_req.hdr = tn->tn_lntmsg->msg_hdr;
+	lnet_hdr_to_nid4(&tn->tn_lntmsg->msg_hdr, &msg->proto.bulk_req.hdr);
 	msg->proto.bulk_req.key = tn->tn_mr_key;
 	msg->proto.bulk_req.response_rx = tn->tn_response_rx;
 
@@ -128,7 +128,7 @@ static void kfilnd_tn_pack_immed_msg(struct kfilnd_transaction *tn)
 	struct kfilnd_msg *msg = tn->tn_tx_msg.msg;
 
 	/* Pack the protocol header and payload. */
-	msg->proto.immed.hdr = tn->tn_lntmsg->msg_hdr;
+	lnet_hdr_to_nid4(&tn->tn_lntmsg->msg_hdr, &msg->proto.immed.hdr);
 
 	lnet_copy_kiov2flat(KFILND_IMMEDIATE_MSG_SIZE,
 			    msg,
@@ -592,6 +592,7 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 	int rc;
 	bool finalize = false;
 	ktime_t remaining_time;
+	struct lnet_hdr hdr;
 	struct lnet_nid srcnid;
 
 	KFILND_TN_DEBUG(tn, "%s event status %d", tn_event_to_str(event),
@@ -739,14 +740,15 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 		mutex_unlock(&tn->tn_lock);
 		*tn_released = true;
 		lnet_nid4_to_nid(msg->srcnid, &srcnid);
-		if (msg->type == KFILND_MSG_IMMEDIATE)
+		if (msg->type == KFILND_MSG_IMMEDIATE) {
+			lnet_hdr_from_nid4(&hdr, &msg->proto.immed.hdr);
 			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
-					&msg->proto.immed.hdr, &srcnid,
-					tn, 0);
-		else
+					&hdr, &srcnid, tn, 0);
+		} else {
+			lnet_hdr_from_nid4(&hdr, &msg->proto.bulk_req.hdr);
 			rc = lnet_parse(tn->tn_ep->end_dev->kfd_ni,
-					&msg->proto.bulk_req.hdr,
-					&srcnid, tn, 1);
+					&hdr, &srcnid, tn, 1);
+		}
 
 		/* If successful, transaction has been accepted by LNet and we
 		 * cannot process the transaction anymore within this context.
