@@ -214,7 +214,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 		nob = offsetof(struct kfilnd_msg, proto.immed.payload[rlen]);
 		if (nob > tn->tn_rx_msg.length) {
 			CERROR("Immediate message from %s too big: %d(%lu)\n",
-			       libcfs_nidstr(&rxmsg->proto.immed.hdr.src_nid),
+			       libcfs_nidstr(&msg->msg_hdr.src_nid),
 			       nob, tn->tn_rx_msg.length);
 			return -EPROTO;
 		}
