@@ -364,7 +364,7 @@ struct kfilnd_immed_msg {
 	/* Entire LNet header needed by the destination to match incoming
 	 * message.
 	 */
-	struct lnet_hdr	hdr;
+	struct lnet_hdr_nid4	hdr;
 
 	/* Entire LNet message payload. */
 	char payload[0];
@@ -375,7 +375,7 @@ struct kfilnd_bulk_req_msg {
 	/* Entire LNet header needed by the destination to match incoming
 	 * message.
 	 */
-	struct lnet_hdr	hdr;
+	struct lnet_hdr_nid4	hdr;
 
 	/* Specific RX context the target must target to push/pull LNet
 	 * payload.
