@@ -2972,6 +2972,47 @@ test_24() {
 }
 run_test 24 "lfs draws an asterix when limit is reached (b16646)"
 
+test_25()
+{
+	local limit=10  # 10M
+	local testfile="$DIR/$tdir/$tfile-0"
+	local qpool="qpool1"
+
+	mds_supports_qp
+	setup_quota_test || error "setup quota failed with $?"
+
+	# enable ost quota
+	set_ost_qtype $QTYPE || error "enable ost quota failed"
+
+	$LFS setquota -u $TSTUSR -b 0 -B 50T -i 0 -I 0 $DIR ||
+		error "set user quota failed"
+
+	pool_add $qpool || error "pool_add failed"
+	pool_add_targets $qpool 0 $((OSTCOUNT - 1)) ||
+		error "pool_add_targets failed"
+
+	# increase ost index version to +200
+	for i in {1..200}; do
+		$LFS setquota -u $TSTUSR -B ${i}G --pool $qpool $DIR ||
+			error "set user quota failed"
+	done
+	$LFS setquota -u $TSTUSR -b 0 -B 0 --pool $qpool $DIR ||
+		error "set user quota failed"
+
+	$LFS setquota -u $TSTUSR -B ${limit}M $DIR ||
+		error "set user quota failed"
+
+	local used=$(getquota -u $TSTUSR global curspace)
+	(( used == 0)) || error "Used space($used) for user $TSTUSR isn't 0."
+
+	$LFS setstripe $testfile -c 1 || error "setstripe $testfile failed"
+	chown $TSTUSR.$TSTUSR $testfile || error "chown $testfile failed"
+
+	test_1_check_write $testfile "user" $limit
+	return 0
+}
+run_test 25 "check indexes versions"
+
 test_27a() { # b19612
 	$LFS quota $TSTUSR $DIR &&
 		error "lfs succeeded with no type, but should have failed"

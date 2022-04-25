@@ -960,7 +960,7 @@ int qti_lqes_add(const struct lu_env *env, struct lquota_entry *lqe)
 	 * extra reference that is put in qti_lqes_fini */
 	qpi_getref(lqe2qpi(lqe));
 
-	CDEBUG(D_QUOTA, "LQE %p %lu is added, lqe_cnt %d lqes_num %d\n",
+	CDEBUG(D_QUOTA, "LQE %px %lu is added, lqe_cnt %d lqes_num %d\n",
 			 lqe, (long unsigned)lqe->lqe_id.qid_uid,
 			 qti->qti_lqes_cnt, qti->qti_lqes_num);
 	LASSERT(qti->qti_lqes_num != 0);
