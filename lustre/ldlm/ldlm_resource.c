@@ -1433,6 +1433,17 @@ static bool ldlm_resource_inodebits_new(struct ldlm_resource *res)
 	return true;
 }
 
+static bool ldlm_resource_flock_new(struct ldlm_resource *res)
+{
+	OBD_ALLOC_PTR(res->lr_flock_node);
+	if (!res->lr_flock_node)
+		return false;
+	res->lr_flock_node->lfn_needs_reprocess = false;
+	atomic_set(&res->lr_flock_node->lfn_unlock_pending, 0);
+
+	return true;
+}
+
 /** Create and initialize new resource. */
 static struct ldlm_resource *ldlm_resource_new(enum ldlm_type ldlm_type)
 {
@@ -1451,8 +1462,7 @@ static struct ldlm_resource *ldlm_resource_new(enum ldlm_type ldlm_type)
 		rc = ldlm_resource_inodebits_new(res);
 		break;
 	case LDLM_FLOCK:
-		atomic_set(&res->lr_flock_unlock_pending, 0);
-		rc = true;
+		rc = ldlm_resource_flock_new(res);
 		break;
 	default:
 		rc = true;
@@ -1495,6 +1505,9 @@ static void ldlm_resource_free(struct ldlm_resource *res)
 	} else if (res->lr_type == LDLM_IBITS) {
 		if (res->lr_ibits_queues != NULL)
 			OBD_FREE_PTR(res->lr_ibits_queues);
+	} else if (res->lr_type == LDLM_FLOCK) {
+		if (res->lr_flock_node != NULL)
+			OBD_FREE_PTR(res->lr_flock_node);
 	}
 
 	call_rcu(&res->lr_rcu, __ldlm_resource_free);

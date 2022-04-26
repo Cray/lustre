@@ -1841,15 +1841,16 @@ enum ldlm_error ldlm_lock_enqueue(const struct lu_env *env,
 	}
 
 	if (!local && lock->l_resource->lr_type == LDLM_FLOCK) {
+		struct ldlm_flock_node *fn = lock->l_resource->lr_flock_node;
 		res = lock->l_resource;
 		if (lock->l_req_mode == LCK_NL) {
-			atomic_inc(&res->lr_flock_unlock_pending);
+			atomic_inc(&fn->lfn_unlock_pending);
 			lock_res_and_lock(lock);
-			atomic_dec(&res->lr_flock_unlock_pending);
+			atomic_dec(&fn->lfn_unlock_pending);
 		} else {
 			lock_res_and_lock(lock);
 
-			while (atomic_read(&res->lr_flock_unlock_pending)) {
+			while (atomic_read(&fn->lfn_unlock_pending)) {
 				unlock_res_and_lock(lock);
 				cond_resched();
 				lock_res_and_lock(lock);
