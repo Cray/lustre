@@ -714,6 +714,11 @@ struct ldlm_ibits_node {
 	struct ldlm_lock	*lock;
 };
 
+struct ldlm_flock_node {
+	atomic_t		lfn_unlock_pending;
+	bool			lfn_needs_reprocess;
+};
+
 /** Whether to track references to exports by LDLM locks. */
 #define LUSTRE_TRACKS_LOCK_EXP_REFS (0)
 
@@ -1090,8 +1095,7 @@ struct ldlm_resource {
 		 */
 		struct ldlm_interval_tree *lr_itree;
 		struct ldlm_ibits_queues *lr_ibits_queues;
-		atomic_t	lr_flock_unlock_pending;
-
+		struct ldlm_flock_node	*lr_flock_node;
 	};
 
 	union {
