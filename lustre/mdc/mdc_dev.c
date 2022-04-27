@@ -339,6 +339,7 @@ static int mdc_dlm_canceling(const struct lu_env *env,
 	 * the object has been destroyed. */
 	if (obj != NULL) {
 		struct cl_attr *attr = &osc_env_info(env)->oti_attr;
+		void *data;
 
 		/* Destroy pages covered by the extent of the DLM lock */
 		result = mdc_lock_flush(env, cl2osc(obj), cl_index(obj, 0),
@@ -348,6 +349,7 @@ static int mdc_dlm_canceling(const struct lu_env *env,
 		 */
 		/* losing a lock, update kms */
 		lock_res_and_lock(dlmlock);
+		data = dlmlock->l_ast_data;
 		dlmlock->l_ast_data = NULL;
 		cl_object_attr_lock(obj);
 		attr->cat_kms = 0;
@@ -355,7 +357,8 @@ static int mdc_dlm_canceling(const struct lu_env *env,
 		cl_object_attr_unlock(obj);
 		unlock_res_and_lock(dlmlock);
 
-		if (dlmlock->l_req_mode == LCK_GROUP)
+		/* Skip dec in case mdc_object_ast_clear() did it */
+		if (data && dlmlock->l_req_mode == LCK_GROUP)
 			osc_grouplock_dec(cl2osc(obj), dlmlock);
 		cl_object_put(env, obj);
 	}

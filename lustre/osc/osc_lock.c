@@ -256,8 +256,6 @@ static void osc_lock_granted(const struct lu_env *env, struct osc_lock *oscl,
 	LASSERT(oscl->ols_state != OLS_GRANTED);
 	oscl->ols_state = OLS_GRANTED;
 
-	/* XXX: what if ldlm lock is already not granted as checked above?
-	 * it seems grouplock_dec may assert on 0 users. */
 	if (errcode != ELDLM_LOCK_MATCHED && dlmlock->l_req_mode == LCK_GROUP)
 		osc_grouplock_inc_locked(osc, dlmlock);
 }
@@ -548,6 +546,7 @@ static int osc_dlm_blocking_ast0(const struct lu_env *env,
 		struct ldlm_extent *extent = &dlmlock->l_policy_data.l_extent;
 		struct cl_attr *attr = &osc_env_info(env)->oti_attr;
 		__u64 old_kms;
+		void *data;
 
 		/* Destroy pages covered by the extent of the DLM lock */
 		result = osc_lock_flush(cl2osc(obj),
@@ -559,6 +558,7 @@ static int osc_dlm_blocking_ast0(const struct lu_env *env,
 		lock_res_and_lock(dlmlock);
 		/* clearing l_ast_data after flushing data,
 		 * to let glimpse ast find the lock and the object */
+		data = dlmlock->l_ast_data;
 		dlmlock->l_ast_data = NULL;
 		cl_object_attr_lock(obj);
 		/* Must get the value under the lock to avoid race. */
@@ -571,7 +571,8 @@ static int osc_dlm_blocking_ast0(const struct lu_env *env,
 		cl_object_attr_unlock(obj);
 		unlock_res_and_lock(dlmlock);
 
-		if (dlmlock->l_req_mode == LCK_GROUP)
+		/* Skip dec in case osc_object_ast_clear() did it */
+		if (data && dlmlock->l_req_mode == LCK_GROUP)
 			osc_grouplock_dec(cl2osc(obj), dlmlock);
 		cl_object_put(env, obj);
 	}
