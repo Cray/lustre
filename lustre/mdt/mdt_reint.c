@@ -571,6 +571,10 @@ static int mdt_create(struct mdt_thread_info *info)
 	if (!mdt_object_exists(parent))
 		GOTO(put_parent, rc = -ENOENT);
 
+	rc = mdt_check_enc(info, parent);
+	if (rc)
+		GOTO(put_parent, rc);
+
 	/*
 	 * LU-10235: check if name exists locklessly first to avoid massive
 	 * lock recalls on existing directories.
@@ -1397,6 +1401,10 @@ static int mdt_reint_link(struct mdt_thread_info *info,
 	mp = mdt_object_find(info->mti_env, info->mti_mdt, rr->rr_fid2);
 	if (IS_ERR(mp))
 		RETURN(PTR_ERR(mp));
+
+	rc = mdt_check_enc(info, mp);
+	if (rc)
+		GOTO(put_parent, rc);
 
 	/* step 2: find source */
 	ms = mdt_object_find(info->mti_env, info->mti_mdt, rr->rr_fid1);
@@ -2301,6 +2309,10 @@ int mdt_reint_migrate(struct mdt_thread_info *info,
 	if (!S_ISDIR(lu_object_attr(&pobj->mot_obj)))
 		GOTO(put_parent, rc = -ENOTDIR);
 
+	rc = mdt_check_enc(info, pobj);
+	if (rc)
+		GOTO(put_parent, rc);
+
 	rc = mdt_stripe_get(info, pobj, ma, XATTR_NAME_LMV);
 	if (rc)
 		GOTO(put_parent, rc);
@@ -2707,6 +2719,10 @@ static int mdt_reint_rename(struct mdt_thread_info *info,
 	if (IS_ERR(msrcdir))
 		RETURN(PTR_ERR(msrcdir));
 
+	rc = mdt_check_enc(info, msrcdir);
+	if (rc)
+		GOTO(out_put_srcdir, rc);
+
 	OBD_FAIL_TIMEOUT(OBD_FAIL_MDS_RENAME3, 5);
 
 	if (lu_fid_eq(rr->rr_fid1, rr->rr_fid2)) {
@@ -2717,6 +2733,10 @@ static int mdt_reint_rename(struct mdt_thread_info *info,
 		if (IS_ERR(mtgtdir))
 			GOTO(out_put_srcdir, rc = PTR_ERR(mtgtdir));
 	}
+
+	rc = mdt_check_enc(info, mtgtdir);
+	if (rc)
+		GOTO(out_put_tgtdir, rc);
 
 	/*
 	 * Note: do not enqueue rename lock for replay request, because
