@@ -138,7 +138,7 @@ static struct ll_sb_info *ll_init_sbi(void)
 	atomic_set(&sbi->ll_sa_running, 0);
 	atomic_set(&sbi->ll_agl_total, 0);
 	sbi->ll_flags |= LL_SBI_AGL_ENABLED;
-	sbi->ll_flags |= LL_SBI_FAST_READ;
+	/* Disable LL_SBI_FAST_READ by default, see LU-15815. */
 	sbi->ll_flags |= LL_SBI_TINY_WRITE;
 
 	/* root squash */

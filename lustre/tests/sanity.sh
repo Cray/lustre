@@ -40,6 +40,8 @@ init_logging
 ALWAYS_EXCEPT="$SANITY_EXCEPT "
 # bug number for skipped test: LU-9693 LU-6493 LU-9693 LU-11058
 ALWAYS_EXCEPT+="                42a     42b     42c     77k"
+# bug number:    LU-15815 LU-15815
+ALWAYS_EXCEPT+=" 101j     271a"
 # UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 
 # skipped tests: LU-9054 ..
