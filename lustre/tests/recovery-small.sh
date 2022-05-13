@@ -3282,7 +3282,7 @@ test_149() {
 }
 run_test 149 "skip orphan removal at umount"
 
-test_150() {
+test_150a() {
 	remount_client $MOUNT
 
 	replay_barrier_nosync mds1
@@ -3291,7 +3291,26 @@ test_150() {
 
 	ls $MOUNT || error "ls failed"
 }
-run_test 150 "failover after client remount"
+run_test 150a "failover after client remount"
+
+test_150b() {
+	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs"
+	local lazystatfs
+
+	lazystatfs=$($LCTL get_param -n llite.$FSNAME-*.lazystatfs | head -1)
+
+	$LCTL set_param llite.$FSNAME-*.lazystatfs=1
+	stack_trap "$LCTL set_param llite.$FSNAME-*.lazystatfs=$lazystatfs" EXIT
+	# stop a slave MDT where one stripe is located
+	stop mds1 -f
+
+	stack_trap "start mds1 $(mdsdevname 1) $MDS_MOUNT_OPTS && \
+		clients_up && true" EXIT
+
+	df $DIR || error "statfs failed"
+	return 0
+}
+run_test 150b "statfs when MDT0 offline with lazystatfs option"
 
 complete $SECONDS
 check_and_cleanup_lustre
