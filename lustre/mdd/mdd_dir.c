@@ -1002,14 +1002,17 @@ int mdd_changelog_ns_pfid_set(const struct lu_env *env, struct mdd_device *mdd,
 {
 	int rc = 0;
 
-	/* Reading the linkEA from a remote object is an expensive operation, so
-	 * only proceed if explicitly enabled; if not, the parent FID for
-	 * changelogs for striped directories will be that of the stripe, which
-	 * is probably not useful to changelog consumers instead of the real
-	 * parent FID
+	/* Certain userspace tools might rely on the previous behavior of
+	 * displaying the shard's parent FID, on some changelog records related
+	 * to striped directories, so use that for compatibility if needed
 	 */
-	if (!mdd->mdd_cl.mc_striped_pfid) {
+	if (mdd->mdd_cl.mc_enable_shard_pfid) {
 		*pfid = *mdd_object_fid(parent);
+		return 0;
+	}
+
+	if (!fid_is_zero(&parent->mod_striped_pfid)) {
+		*pfid = parent->mod_striped_pfid;
 		return 0;
 	}
 
@@ -1017,16 +1020,20 @@ int mdd_changelog_ns_pfid_set(const struct lu_env *env, struct mdd_device *mdd,
 	rc = mdo_xattr_get(env, parent, &LU_BUF_NULL, XATTR_NAME_LMV);
 	if (rc == -ENODATA) {
 		*pfid = *mdd_object_fid(parent);
+		parent->mod_striped_pfid = *pfid;
 		return 0;
-	} else if (rc < 0) {
-		RETURN(rc);
-	} else {
-		LASSERT(!mdd_is_root(mdo2mdd(&parent->mod_obj),
-				     mdd_object_fid(parent)));
-
-		/* hide shard FID */
-		rc = mdd_parent_fid(env, parent, pattr, pfid);
 	}
+
+	if (rc < 0)
+		return rc;
+
+	LASSERT(!mdd_is_root(mdo2mdd(&parent->mod_obj),
+			     mdd_object_fid(parent)));
+
+	/* hide shard FID */
+	rc = mdd_parent_fid(env, parent, pattr, pfid);
+	if (!rc)
+		parent->mod_striped_pfid = *pfid;
 
 	return rc;
 }
@@ -3407,7 +3414,8 @@ cleanup:
 	if (rc == 0)
 		rc = mdd_changelog_ns_store(env, mdd, CL_RENAME, cl_flags,
 					    mdd_tobj, mdd_tpobj, tpattr, lf,
-					    mdd_spobj, pattr, ltname, lsname, handle);
+					    mdd_spobj, pattr, ltname, lsname,
+					    handle);
 
 stop:
 	rc = mdd_trans_stop(env, mdd, rc, handle);
