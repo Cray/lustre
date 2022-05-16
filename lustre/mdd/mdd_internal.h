@@ -107,8 +107,9 @@ struct mdd_changelog {
 	struct task_struct	*mc_gc_task;
 	time64_t		mc_gc_time;    /* last GC check or run time */
 	unsigned int		mc_deniednext; /* interval for recording denied
-						* accesses
-						*/
+						* accesses */
+	unsigned char		mc_striped_pfid; /* real/stripe parent FID for
+						  * striped directories */
 };
 
 static inline __u64 cl_time(void)
@@ -361,9 +362,11 @@ int mdd_changelog_ns_store(const struct lu_env *env, struct mdd_device *mdd,
 			   enum changelog_rec_type type,
 			   enum changelog_rec_flags clf_flags,
 			   struct mdd_object *target,
-			   const struct lu_fid *tpfid,
+			   struct mdd_object *parent,
+			   const struct lu_attr *pattr,
 			   const struct lu_fid *sfid,
-			   const struct lu_fid *spfid,
+			   struct mdd_object *src_parent,
+			   const struct lu_attr *src_pattr,
 			   const struct lu_name *tname,
 			   const struct lu_name *sname,
 			   struct thandle *handle);
