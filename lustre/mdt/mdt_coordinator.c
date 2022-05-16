@@ -1444,17 +1444,12 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 			break;
 		}
 
-		if (pgs->hpk_errval > CLF_HSM_MAXERROR) {
-			CERROR("%s: Request %#llx on "DFID
-			       " failed, error code %d too large\n",
-			       mdt_obd_name(mdt),
-			       pgs->hpk_cookie, PFID(&pgs->hpk_fid),
-			       pgs->hpk_errval);
-			hsm_set_cl_error(&clf_flags, CLF_HSM_ERROVERFLOW);
-			rc = -EINVAL;
-		} else {
-			hsm_set_cl_error(&clf_flags, pgs->hpk_errval);
-		}
+		rc = hsm_set_cl_error(&clf_flags, pgs->hpk_errval);
+		if (rc < 0)
+			CERROR("%s: Request %#llx on "DFID" failed, error code %d %s\n",
+			       mdt_obd_name(mdt), pgs->hpk_cookie,
+			       PFID(&pgs->hpk_fid), pgs->hpk_errval,
+			       rc == -EOVERFLOW ? "too large" : "invalid");
 
 		switch (car->car_hai->hai_action) {
 		case HSMA_ARCHIVE:
@@ -1562,9 +1557,21 @@ static int hsm_cdt_request_completed(struct mdt_thread_info *mti,
 			rc = hsm_swap_layouts(mti, obj, &car->car_hai->hai_dfid,
 					      &mh);
 			if (rc) {
+				int rc2;
+
 				if (cdt->cdt_policy & CDT_NORETRY_ACTION)
 					*status = ARS_FAILED;
 				pgs->hpk_errval = -rc;
+				rc2 = hsm_set_cl_error(&clf_flags,
+						       pgs->hpk_errval);
+				if (rc2 < 0)
+					CERROR("%s: Layout swap for request %#llx on "DFID" failed, error code %d %s\n",
+					       mdt_obd_name(mdt),
+					       pgs->hpk_cookie,
+					       PFID(&pgs->hpk_fid),
+					       pgs->hpk_errval,
+					       rc == -EOVERFLOW ? "too large" :
+					       "invalid");
 			}
 		}
 		/* we have to retry, so keep layout lock */
