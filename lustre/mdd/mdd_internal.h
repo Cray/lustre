@@ -108,8 +108,9 @@ struct mdd_changelog {
 	time64_t		mc_gc_time;    /* last GC check or run time */
 	unsigned int		mc_deniednext; /* interval for recording denied
 						* accesses */
-	unsigned char		mc_striped_pfid; /* real/stripe parent FID for
-						  * striped directories */
+	unsigned char		mc_enable_shard_pfid; /* master or shard pFID
+						       * for striped dirs
+						       */
 };
 
 static inline __u64 cl_time(void)
@@ -172,6 +173,9 @@ enum mod_flags {
 
 struct mdd_object {
 	struct md_object	mod_obj;
+	struct lu_fid		mod_striped_pfid; /* master dir parent FID, in
+						   * case this is a striped dir
+						   */
 	/* open count */
 	u32			mod_count;
 	u32			mod_valid;
