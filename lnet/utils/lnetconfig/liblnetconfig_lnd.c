@@ -95,6 +95,7 @@ lustre_kfilnd_show_tun(struct cYAML *lndparams,
 
 	if (cYAML_create_number(lndparams, "prov_minor_version",
 				lnd_cfg->lnd_prov_minor_version) == NULL)
+		return LUSTRE_CFG_RC_OUT_OF_MEM;
 
 	if (cYAML_create_number(lndparams, "auth_key",
 				lnd_cfg->lnd_auth_key) == NULL)
