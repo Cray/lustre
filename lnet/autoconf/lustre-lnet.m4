@@ -1173,14 +1173,14 @@ AC_MSG_NOTICE([LNet core checks
 ==============================================================================])
 
 AC_ARG_WITH([cuda],
-	AC_HELP_STRING([--with-cuda=path],
+	AS_HELP_STRING([--with-cuda=path],
 			[Use a CUDA sources.]),
 	[LB_ARG_CANON_PATH([cuda], [CUDA_PATH])],
 	[CUDA_PATH=`ls -d1 /usr/src/nvidia-*/nvidia/ | tail -1`]
 )
 
 AC_ARG_WITH([gds],
-	AC_HELP_STRING([--with-gds=path],
+	AS_HELP_STRING([--with-gds=path],
 			[Use a gds sources.]),
 	[LB_ARG_CANON_PATH([gds], [GDS_PATH])],
 	[GDS_PATH=`ls -d1 /usr/src/nvidia-fs* | tail -1`]
