@@ -1648,7 +1648,10 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 				      "The difference between precreate FID "DOSTID" and LAST_ID "DOSTID" is %lld\n",
 				      ofd_name(ofd), POSTID(&oa->o_oi),
 				      POSTID(&oseq->os_oi), diff);
-			diff = OST_MAX_PRECREATE / 2;
+			/* OST_MAX_PRECREATE for a last batch and half for a
+			 * previous.
+			 */
+			diff = OST_MAX_PRECREATE * 3 / 2;
 			CDEBUG(D_HA, "%s: precreate FID "DOSTID" is over "
 			       "%u larger than the LAST_ID "DOSTID", only "
 			       "precreating the last %lld objects.\n",

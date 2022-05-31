@@ -23586,35 +23586,6 @@ test_821() {
 }
 run_test 821 "FLD_QUERY timeout on unlink"
 
-test_822() {
-	local p="$TMP/$TESTSUITE-$TESTNAME.parameters"
-
-	save_lustre_params mds1 \
-		"osp.$FSNAME-OST*-osc-MDT0000.max_create_count" > $p
-	do_facet $SINGLEMDS "$LCTL set_param -n \
-			osp.$FSNAME-OST*MDT0000.max_create_count=0"
-	do_facet $SINGLEMDS "$LCTL set_param -n \
-			osp.$FSNAME-OST0000*MDT0000.max_create_count=20000"
-
-	# wait for statfs update to clear OS_STATE_NOPRECREATE
-	local maxage=$(do_facet mds1 $LCTL get_param -n \
-	    osp.$FSNAME-OST0000*MDT0000.maxage)
-	sleep $((maxage + 1))
-
-	#define OBD_FAIL_NET_ERROR_RPC          0x532
-	do_facet mds1 "$LCTL set_param fail_loc=0x80000532 fail_val=5"
-
-	local count=$(do_facet $SINGLEMDS "lctl get_param -n \
-			osp.$FSNAME-OST0000*MDT0000.create_count")
-	for i in $(seq 1 $count)
-	do
-	    touch $DIR/$tfile.${i} || error "touch failed"
-	done
-	restore_lustre_params < $p
-}
-run_test 822 "test precreate failure"
-
-
 test_830() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 	[ $OST1_VERSION -lt $(version_code 2.12.4) ] &&
