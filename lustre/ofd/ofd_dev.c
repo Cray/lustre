@@ -1692,8 +1692,11 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 			LCONSOLE_WARN("%s: precreate FID "DOSTID" is over %lld higher than LAST_ID "DOSTID", only precreating the last %u objects. OST replaced or reformatted?\n",
 				      ofd_name(ofd), POSTID(&oa->o_oi), diff,
 				      POSTID(&oseq->os_oi),
-				      OST_MAX_PRECREATE / 2);
-			diff = OST_MAX_PRECREATE / 2;
+				      OST_MAX_PRECREATE * 3 / 2);
+			/* OST_MAX_PRECREATE for a last batch and half for a
+			 * previous.
+			 */
+			diff = OST_MAX_PRECREATE * 3 / 2;
 			ofd_seq_last_oid_set(oseq, ostid_id(&oa->o_oi) - diff);
 		}
 
