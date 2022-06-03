@@ -1375,7 +1375,7 @@ static inline void osc_release_bounce_pages(struct brw_page **pga,
 #ifdef HAVE_LUSTRE_CRYPTO
 	int i;
 
-	for (i = 0; i < page_count; i++) {
+	for (i = 0; i < page_count && pga[i]; i++) {
 		/* Bounce pages allocated by a call to
 		 * llcrypt_encrypt_pagecache_blocks() in osc_brw_prep_request()
 		 * are identified thanks to the PageChecked flag.
