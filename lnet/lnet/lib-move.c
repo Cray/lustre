@@ -1637,7 +1637,7 @@ lnet_get_best_ni(struct lnet_net *local_net, struct lnet_ni *best_ni,
 	unsigned int best_dev_prio;
 	int best_ni_fatal;
 	unsigned int dev_idx = UINT_MAX;
-	bool gpu = md->md_flags & LNET_MD_FLAG_GPU;
+	bool gpu = md ? (md->md_flags & LNET_MD_FLAG_GPU) : false;
 
 	if (gpu) {
 		struct page *page = lnet_get_first_page(md, offset);
