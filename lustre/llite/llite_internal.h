@@ -268,6 +268,8 @@ struct ll_inode_info {
 			struct list_head	lli_agl_list;
 			__u64			lli_agl_index;
 
+			atomic_t		lli_write_cnt;
+			unsigned int		lli_set_nosec:1;
 			/* for writepage() only to communicate to fsync */
 			int			lli_async_rc;
 
@@ -357,6 +359,7 @@ struct ll_inode_info {
 	seqlock_t			lli_page_inv_lock;
 
 	struct task_struct		*lli_inode_lock_owner;
+	struct rw_semaphore             lli_write_setattr;
 };
 
 static inline void lli_jobinfo_cpy(const struct ll_inode_info *lli,

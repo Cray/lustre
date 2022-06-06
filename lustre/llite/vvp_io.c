@@ -1305,7 +1305,6 @@ static int vvp_io_write_start(const struct lu_env *env,
 	ssize_t result = 0;
 	loff_t pos = io->u.ci_wr.wr.crw_pos;
 	size_t crw_bytes = io->u.ci_wr.wr.crw_bytes;
-	bool lock_inode = !IS_NOSEC(inode);
 	size_t ci_bytes = io->ci_bytes;
 	struct iov_iter iter;
 	size_t written = 0;
@@ -1350,13 +1349,6 @@ static int vvp_io_write_start(const struct lu_env *env,
 		RETURN(-EFBIG);
 	}
 
-	/* Tests to verify we take the i_mutex correctly */
-	if (CFS_FAIL_CHECK(OBD_FAIL_LLITE_IMUTEX_SEC) && !lock_inode)
-		RETURN(-EINVAL);
-
-	if (CFS_FAIL_CHECK(OBD_FAIL_LLITE_IMUTEX_NOSEC) && lock_inode)
-		RETURN(-EINVAL);
-
 	flags = iocb_ki_flags_get(file, vio->vui_iocb);
 	if (!iocb_ki_flags_check(flags, DIRECT)) {
 		result = cl_io_lru_reserve(env, io, pos, crw_bytes);
@@ -1368,22 +1360,11 @@ static int vvp_io_write_start(const struct lu_env *env,
 		/* from a temp io in ll_cl_init(). */
 		result = 0;
 	} else {
-		/*
-		 * When using the locked AIO function (generic_file_aio_write())
-		 * testing has shown the inode mutex to be a limiting factor
-		 * with multi-threaded single shared file performance. To get
-		 * around this, we now use the lockless version. To maintain
-		 * consistency, proper locking to protect against writes,
-		 * trucates, etc. is handled in the higher layers of lustre.
-		 */
-		lock_inode = !IS_NOSEC(inode);
 		iter = *vio->vui_iter;
 
-		if (unlikely(lock_inode))
-			ll_inode_lock(inode);
+		set_IS_NOSEC(inode);
 		result = __generic_file_write_iter(vio->vui_iocb, &iter);
-		if (unlikely(lock_inode))
-			ll_inode_unlock(inode);
+		restore_IS_NOSEC(inode);
 
 		written = result;
 		if (result > 0)
