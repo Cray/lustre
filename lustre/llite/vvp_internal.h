@@ -308,4 +308,44 @@ extern unsigned int (*vvp_account_page_dirtied)(struct page *page,
 
 extern const struct file_operations vvp_dump_pgcache_file_ops;
 
+/*
+ * set_IS_NOSEC() is to turn file_remove_privs() into no-op by setting
+ * inode's S_NOSEC flag.  restore_IS_NOSEC() is to restore state of
+ * S_NOSEC flag an inode had before set_IS_NOSEC().
+ * __generic_file_write_iter() should be called between set_IS_NOSEC()
+ * and restore_IS_NOSEC().
+ */
+#define set_IS_NOSEC(inode)						\
+	do {								\
+		struct ll_inode_info *lli = ll_i2info(inode);		\
+									\
+		down_read(&lli->lli_write_setattr);			\
+		write_lock(&lli->lli_lock);				\
+		if (atomic_add_return(1, &lli->lli_write_cnt) == 1) {	\
+			if (!IS_NOSEC(inode)) {				\
+				/* turm file_remove_privs into noop */	\
+				inode->i_flags |= S_NOSEC;		\
+				lli->lli_set_nosec = 1;			\
+			} else {					\
+				lli->lli_set_nosec = 0;			\
+			}						\
+		}							\
+		write_unlock(&lli->lli_lock);				\
+	} while (0)
+
+#define restore_IS_NOSEC(inode)					\
+	do {							\
+		struct ll_inode_info *lli = ll_i2info(inode);	\
+								\
+		write_lock(&lli->lli_lock);			\
+		if (!atomic_dec_return(&lli->lli_write_cnt)) {	\
+			if (lli->lli_set_nosec) {		\
+				inode->i_flags &= ~S_NOSEC;	\
+				lli->lli_set_nosec = 0;		\
+			}					\
+		}						\
+		write_unlock(&lli->lli_lock);			\
+		up_read(&lli->lli_write_setattr);		\
+	} while (0)
+
 #endif /* VVP_INTERNAL_H */
