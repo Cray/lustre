@@ -1342,6 +1342,32 @@ test_33() { # LU-15935
 }
 run_test 33 "Check for OBD_INCOMPAT_MULTI_RPCS in last_rcvd after abort_recovery"
 
+test_34()
+{
+	# disable AT so that blocking timeout gets set to obd_timeout/2
+	local amo=$(at_max_get ost1)
+	at_max_set 0 ost1
+	stack_trap "at_max_set $amo ost1"
+	local timeout=$(do_facet ost1 $LCTL get_param -n timeout)
+
+	$LFS setstripe -i 0 -c 1 $DIR/$tfile
+
+	#define OBD_FAIL_LLITE_XATTR_PAUSE                 0x1420
+	$LCTL set_param fail_loc=0x80001420
+	$MULTIOP $DIR/$tfile Osw4096c &
+	local multiop1pid=$!
+	sleep 0.5
+	$MULTIOP $MOUNT2/$tfile oO_WRONLY:_w4096c &
+	local multiop2pid=$!
+	sleep 0.5
+	fail mds1 $((timeout / 2 + 5)) &
+	sleep 0.5
+	kill -USR1 $multiop2pid
+
+	wait $multiop1pid && wait $multiop2pid|| error "multiop failed"
+}
+run_test 34 "eviction on file_remove_privs's enqueue delay"
+
 complete_test $SECONDS
 SLEEP=$((SECONDS - $NOW))
 [ $SLEEP -lt $TIMEOUT ] && sleep $SLEEP
