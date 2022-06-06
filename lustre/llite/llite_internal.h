@@ -205,6 +205,8 @@ struct ll_inode_info {
 			struct list_head	lli_agl_list;
 			__u64			lli_agl_index;
 
+			atomic_t		lli_write_cnt;
+			unsigned int		lli_set_nosec:1;
 			/* for writepage() only to communicate to fsync */
 			int			lli_async_rc;
 
@@ -276,6 +278,7 @@ struct ll_inode_info {
 	struct mutex			lli_xattrs_enq_lock;
 	struct list_head		lli_xattrs; /* ll_xattr_entry->xe_list */
 	struct list_head		lli_lccs; /* list of ll_cl_context */
+	struct rw_semaphore             lli_write_setattr;
 	seqlock_t			lli_page_inv_lock;
 };
 
