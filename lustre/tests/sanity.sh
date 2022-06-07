@@ -28391,6 +28391,22 @@ test_904() {
 }
 run_test 904 "virtual project ID xattr"
 
+test_905() {
+	local ppr=$($LCTL get_param -n osc.*-OST0000-*.max_pages_per_rpc | head -n1)
+
+	# set stripe size to max rpc size
+	$LFS setstripe -i 0 -c 2 -S $((ppr * PAGE_SIZE)) $DIR/$tfile
+	$LFS getstripe $DIR/$tfile
+#define OBD_FAIL_OST_EROFS               0x216
+	do_facet ost1 "$LCTL set_param fail_val=3 fail_loc=0x80000216"
+
+	# write full one stripe and one block
+	local bs=$((ppr * PAGE_SIZE / 16))
+	dd if=/dev/zero of=$DIR/$tfile bs=$bs count=17
+	rm $DIR/$tfile
+}
+run_test 905 "write rpc error during unlink"
+
 complete $SECONDS
 [ -f $EXT2_DEV ] && rm $EXT2_DEV || true
 check_and_cleanup_lustre

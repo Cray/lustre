@@ -2641,7 +2641,7 @@ int tgt_brw_write(struct tgt_session_info *tsi)
 	if (OBD_FAIL_CHECK(OBD_FAIL_OST_ENOSPC))
 		RETURN(err_serious(-ENOSPC));
 	if (OBD_FAIL_TIMEOUT(OBD_FAIL_OST_EROFS, 1))
-		RETURN(err_serious(-EROFS));
+		RETURN(err_serious(cfs_fail_val ? -cfs_fail_val : -EROFS));
 
 	req->rq_bulk_write = 1;
 
