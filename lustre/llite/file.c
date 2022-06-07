@@ -1928,9 +1928,11 @@ restart:
 			 * __generic_file_aio_write is turned into
 			 * no-op. See vvp_io_write_start().
 			 */
+			trunc_sem_down_read(&lli->lli_trunc_sem);
 			ll_inode_lock(inode);
 			rc = file_remove_privs(file);
 			ll_inode_unlock(inode);
+			trunc_sem_up_read(&lli->lli_trunc_sem);
 			if (rc) {
 				if (range_locked)
 					range_unlock(&lli->lli_write_tree,
