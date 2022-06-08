@@ -18,6 +18,9 @@ init_test_env $@
 init_logging
 
 ALWAYS_EXCEPT="$SANITYN_EXCEPT "
+# bug number for skipped test:  LU-7607
+ALWAYS_EXCEPT+="                80b"
+# UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
 [[ $(uname -r) = *"debug" ]] &&
 	always_except LU-10870	40a
 
