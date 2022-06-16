@@ -639,7 +639,7 @@ static int ptlrpc_first_transno(struct obd_import *imp, __u64 *transno)
 		return 1;
 	}
 	if (!list_empty(&imp->imp_replay_list)) {
-		req = list_first_entry(&imp->imp_committed_list,
+		req = list_first_entry(&imp->imp_replay_list,
 				       struct ptlrpc_request, rq_replay_list);
 		*transno = req->rq_transno;
 		if (req->rq_transno == 0) {
@@ -714,6 +714,7 @@ int ptlrpc_connect_import_locked(struct obd_import *imp)
 
 	set_transno = ptlrpc_first_transno(imp,
 					   &imp->imp_connect_data.ocd_transno);
+	imp->imp_modified = set_transno;
 	spin_unlock(&imp->imp_lock);
 
 	rc = import_select_connection(imp);
@@ -802,8 +803,8 @@ int ptlrpc_connect_import_locked(struct obd_import *imp)
 		lustre_msg_add_op_flags(request->rq_reqmsg,
 					MSG_CONNECT_TRANSNO);
 
-	DEBUG_REQ(D_RPCTRACE, request, "(re)connect request (timeout %d)",
-		  request->rq_timeout);
+	DEBUG_REQ(D_RPCTRACE, request, "(re)connect request (timeout %d imp transno %llu)",
+		  request->rq_timeout, imp->imp_connect_data.ocd_transno);
 	ptlrpcd_add_req(request);
 	rc = 0;
 out:
@@ -1280,9 +1281,12 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 			*lustre_msg_get_handle(request->rq_repmsg);
 		import_set_state(imp, LUSTRE_IMP_RECOVER);
 	} else {
+		struct ldlm_namespace *ns = imp->imp_obd->obd_namespace;
+
 		imp->imp_remote_handle =
 			*lustre_msg_get_handle(request->rq_repmsg);
-		if (imp->imp_modified) {
+		if (imp->imp_modified ||
+		    atomic_read(&ns->ns_pool.pl_granted) != 0) {
 			DEBUG_REQ(D_HA, request, "%s: evicting (reconnect/recover flags"
 				  " not set: %x)", imp->imp_obd->obd_name, msg_flags);
 			import_set_state(imp, LUSTRE_IMP_EVICTED);
