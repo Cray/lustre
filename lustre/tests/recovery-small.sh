@@ -3394,6 +3394,26 @@ test_150b() {
 }
 run_test 150b "statfs when MDT0 offline with lazystatfs option"
 
+test_150c() {
+	$LFS setstripe -i 0 -c 1 $DIR/$tfile
+	echo "123" >> $DIR/$tfile
+	sync
+	remount_client $MOUNT
+
+	remount_client $MOUNT
+	cat $DIR/$tfile
+	cancel_lru_locks osc
+
+	replay_barrier_nosync ost1
+
+	fail_nodf ost1
+
+	ls -la $DIR/$tfile || error "ls failed"
+	cat $DIR/$tfile  || error "cat failed"
+	rm -rf $DIR/$tfile
+}
+run_test 150c "OST failover after client remount"
+
 test_152() {
 	[[ $($LCTL get_param mdc.*.import) =~ connect_flags.*overstriping ]] ||
 		skip "server does not support overstriping"
