@@ -772,14 +772,9 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 
 	opc = lustre_msg_get_opc(request->rq_reqmsg);
 	if (opc != OST_CONNECT && opc != MDS_CONNECT &&
-	    opc != MGS_CONNECT && OCD_HAS_FLAG(&imp->imp_connect_data, FLAGS2)) {
+	    opc != MGS_CONNECT && OCD_HAS_FLAG(&imp->imp_connect_data, FLAGS2))
 		rep_mbits = imp->imp_connect_data.ocd_connect_flags2 &
 			OBD_CONNECT2_REP_MBITS;
-		/* something but connect was sent */
-		if (opc != OBD_PING && opc != FLD_QUERY && opc != MDS_STATFS &&
-		    opc != MDS_GETATTR && opc != MDS_GET_ROOT)
-			imp->imp_modified = 1;
-	}
 
 	if ((request->rq_bulk != NULL) || rep_mbits) {
 		ptlrpc_set_mbits(request);
