@@ -624,7 +624,7 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 
 		rc = 0;
 		kfilnd_tn_status_update(tn, -ETIMEDOUT,
-					LNET_MSG_STATUS_REMOTE_TIMEOUT);
+					LNET_MSG_STATUS_NETWORK_TIMEOUT);
 		goto out;
 	}
 
@@ -862,7 +862,7 @@ static int kfilnd_tn_state_imm_send(struct kfilnd_transaction *tn,
 
 	switch (event) {
 	case TN_EVENT_TX_FAIL:
-		if (status == -ETIMEDOUT)
+		if (status == -ETIMEDOUT || status == -EIO)
 			hstatus = LNET_MSG_STATUS_NETWORK_TIMEOUT;
 		else
 			hstatus = LNET_MSG_STATUS_REMOTE_ERROR;
