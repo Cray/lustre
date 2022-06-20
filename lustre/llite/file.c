@@ -5596,6 +5596,7 @@ static const struct file_operations ll_file_operations = {
 #endif
 	.fsync		= ll_fsync,
 	.flush		= ll_flush,
+	.fallocate	= ll_fallocate,
 };
 
 static const struct file_operations ll_file_operations_flock = {
@@ -5626,6 +5627,7 @@ static const struct file_operations ll_file_operations_flock = {
 	.flush		= ll_flush,
 	.flock		= ll_file_flock,
 	.lock		= ll_file_flock,
+	.fallocate	= ll_fallocate,
 };
 
 /* These are for -o noflock - to return ENOSYS on flock calls */
@@ -5657,6 +5659,7 @@ static const struct file_operations ll_file_operations_noflock = {
 	.flush		= ll_flush,
 	.flock		= ll_file_noflock,
 	.lock		= ll_file_noflock,
+	.fallocate	= ll_fallocate,
 };
 
 const struct inode_operations ll_file_inode_operations = {

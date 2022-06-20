@@ -1955,7 +1955,6 @@ put:
 	return rc;
 }
 
-#if 0
 /**
  * OFD request handler for OST_FALLOCATE RPC.
  *
@@ -2093,7 +2092,6 @@ out:
 
 	RETURN(rc);
 }
-#endif
 
 /**
  * OFD request handler for OST_PUNCH RPC.
@@ -2878,6 +2876,7 @@ TGT_OST_HDL_HP(HAS_BODY | HAS_REPLY | IS_MUTABLE,
 TGT_OST_HDL(HAS_BODY | HAS_REPLY,	OST_SYNC,	ofd_sync_hdl),
 TGT_OST_HDL(HAS_REPLY,	OST_QUOTACTL,	ofd_quotactl),
 TGT_OST_HDL(HAS_BODY | HAS_REPLY, OST_LADVISE,	ofd_ladvise_hdl),
+TGT_OST_HDL(HAS_BODY | HAS_REPLY | IS_MUTABLE, OST_FALLOCATE, ofd_fallocate_hdl),
 TGT_OST_HDL(HAS_BODY | HAS_REPLY, OST_SEEK, tgt_lseek),
 };
 
