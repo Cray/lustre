@@ -799,6 +799,7 @@ static int migrate_copy_data(int fd_src, int fd_dst, int (*check_file)(int))
 	off_t data_end = 0;
 	size_t page_size = sysconf(_SC_PAGESIZE);
 	bool sparse;
+	int fopt;
 	int rc;
 
 	layout = llapi_layout_get_by_fd(fd_src, 0);
@@ -825,6 +826,10 @@ static int migrate_copy_data(int fd_src, int fd_dst, int (*check_file)(int))
 			return rc;
 		}
 	}
+
+	fopt = fcntl(fd_dst, F_GETFL);
+	if (fopt < 0)
+		fopt = 0;
 
 	while (1) {
 		off_t data_off;
@@ -873,7 +878,11 @@ static int migrate_copy_data(int fd_src, int fd_dst, int (*check_file)(int))
 		while (to_write > 0) {
 			ssize_t written;
 
+			if ((to_write & (page_size - 1)) && (fopt & O_DIRECT))
+				fcntl(fd_dst, F_SETFL, fopt & ~O_DIRECT);
 			written = pwrite(fd_dst, buf, to_write, pos);
+			if ((to_write & (page_size - 1)) && (fopt & O_DIRECT))
+				fcntl(fd_dst, F_SETFL, fopt);
 			if (written < 0) {
 				rc = -errno;
 				goto out;
