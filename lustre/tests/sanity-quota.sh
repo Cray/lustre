@@ -5437,6 +5437,39 @@ test_83()
 }
 run_test 83 "check indexes versions"
 
+test_84()
+{
+	local qpool="qpool1"
+	local tfile1="$DIR/$tdir/$tfile-0"
+
+	mds_supports_qp
+	setup_quota_test || error "setup quota failed with $?"
+	# enable ost quota
+	set_ost_qtype $QTYPE || error "enable ost quota failed"
+
+	$LFS setquota -u $TSTUSR -b 0 -B 100M -i 0 -I 0 $DIR ||
+		error "set user quota failed"
+	pool_add $qpool || error "pool_add failed"
+	pool_add_targets $qpool 0 ||
+		error "pool_add_targets failed"
+	$LFS setstripe -p $qpool $DIR/$tdir || error "cannot set stripe"
+	$LFS setquota -u $TSTUSR -B 30M --pool $qpool $DIR ||
+		error "set user quota failed"
+
+	# don't care about returned value
+	$RUNAS $DD of=$tfile1 count=10 oflag=direct
+
+	echo "Stop ost1..."
+	stop ost1
+	$LFS setquota -u $TSTUSR -b 0 -B 0 -i 0 -I 0 $DIR ||
+		error "set user quota failed"
+
+	# no panic after removing OST0000 from the pool
+	pool_remove_target $qpool 0
+	start ost1 $(ostdevname 1) $OST_MOUNT_OPTS || error "start ost1 failed"
+}
+run_test 84 "check panic in qmt_site_recalc_cb"
+
 quota_fini()
 {
 	do_nodes $(comma_list $(nodes_list)) \
