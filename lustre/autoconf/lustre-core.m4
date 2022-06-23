@@ -2697,6 +2697,29 @@ EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_TASK_STRUCT_HAS_NEW_STATE
 
 #
+# LC_HAVE_GET_ACL_RCU_ARG
+#
+# kernel 5.15 commit 0cad6246621b5887d5b33fea84219d2a71f2f99a
+# vfs: add rcu argument to ->get_acl() callback
+# Add a rcu argument to the ->get_acl() callback to allow
+# get_cached_acl_rcu() to call the ->get_acl() method.
+#
+AC_DEFUN([LC_HAVE_GET_ACL_RCU_ARG], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'get_acl' has a rcu argument],
+get_acl_rcu_argument, [
+	#include <linux/fs.h>
+],[
+	((struct inode_operations *)1)->get_acl((struct inode *)NULL, 0, false);
+],[
+	AC_DEFINE(HAVE_GET_ACL_RCU_ARG, 1,
+		['get_acl' has a rcu argument])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_HAVE_GET_ACL_RCU_ARG
+
+#
 # LC_HAVE_SECURITY_DENTRY_INIT_WITH_XATTR_NAME_ARG
 #
 # Linux v5.15-rc1-20-g15bf32398ad4
@@ -2948,6 +2971,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 5.13
 	LC_TASK_STRUCT_HAS_NEW_STATE
+
+	# 5.15
+	LC_HAVE_GET_ACL_RCU_ARG
 
 	# 5.16
 	LC_HAVE_SECURITY_DENTRY_INIT_WITH_XATTR_NAME_ARG
