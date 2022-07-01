@@ -2493,11 +2493,17 @@ ptlrpc_rs_decref(struct ptlrpc_reply_state *rs)
 /* Should only be called once per req */
 static inline void ptlrpc_req_drop_rs(struct ptlrpc_request *req)
 {
-        if (req->rq_reply_state == NULL)
-                return; /* shouldn't occur */
-        ptlrpc_rs_decref(req->rq_reply_state);
-        req->rq_reply_state = NULL;
-        req->rq_repmsg = NULL;
+	if (req->rq_reply_state == NULL)
+		return; /* shouldn't occur */
+
+	/* protect _debug_req() against async repmsg zeroing */
+	spin_lock(&req->rq_early_free_lock);
+	req->rq_repmsg = NULL;
+	spin_unlock(&req->rq_early_free_lock);
+
+	ptlrpc_rs_decref(req->rq_reply_state);
+	req->rq_reply_state = NULL;
+
 }
 
 static inline __u32 lustre_request_magic(struct ptlrpc_request *req)
