@@ -318,12 +318,10 @@ void kfilnd_tn_process_rx_event(struct kfilnd_immediate_buffer *bufdesc,
 	case KFILND_MSG_BULK_PUT_REQ:
 	case KFILND_MSG_BULK_GET_REQ:
 		event = TN_EVENT_RX_OK;
-
-		/* fall through */
+		fallthrough;
 	case KFILND_MSG_HELLO_RSP:
 		alloc_msg = false;
-
-		/* fall through */
+		fallthrough;
 	case KFILND_MSG_HELLO_REQ:
 		/* Context points to a received buffer and status is the length.
 		 * Allocate a Tn structure, set its values, then launch the
