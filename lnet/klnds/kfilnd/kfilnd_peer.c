@@ -9,7 +9,7 @@
 static const struct rhashtable_params peer_cache_params = {
 	.head_offset = offsetof(struct kfilnd_peer, node),
 	.key_offset = offsetof(struct kfilnd_peer, nid),
-	.key_len = FIELD_SIZEOF(struct kfilnd_peer, nid),
+	.key_len = sizeof_field(struct kfilnd_peer, nid),
 	.automatic_shrinking = true,
 };
 
