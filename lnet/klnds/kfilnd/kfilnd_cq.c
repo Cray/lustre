@@ -27,8 +27,7 @@ void kfilnd_cq_process_error(struct kfilnd_ep *ep,
 					-error->err);
 			return;
 		}
-
-		/* Fall through. */
+		fallthrough;
 	case KFI_MSG | KFI_RECV | KFI_MULTI_RECV:
 		buf = error->op_context;
 		kfilnd_ep_imm_buffer_put(buf);
@@ -94,8 +93,7 @@ static void kfilnd_cq_process_event(struct kfi_cq_data_entry *event)
 
 	case KFI_TAGGED | KFI_RECV | KFI_REMOTE_CQ_DATA:
 		status = -1 * (int64_t)be64_to_cpu(event->data);
-
-		/* Fall through. */
+		fallthrough;
 	case KFI_TAGGED | KFI_RMA | KFI_READ | KFI_RECV:
 	case KFI_TAGGED | KFI_RMA | KFI_WRITE | KFI_RECV:
 		tn_event = TN_EVENT_TAG_RX_OK;
