@@ -2482,6 +2482,13 @@ test_25() {
 }
 run_test 25 "Verify old lov stripe API with PFL files"
 
+test_26() {
+	$LFS setstripe -E 1m -S 1M -c 1 $DIR/$tfile
+	dd if=/dev/urandom bs=1M count=10 >> $DIR/$tfile
+	[ $? != 0 ] || error "append must return an error"
+}
+run_test 26 "Append to not-existend component"
+
 complete $SECONDS
 check_and_cleanup_lustre
 exit_status
