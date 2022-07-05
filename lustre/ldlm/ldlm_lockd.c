@@ -1505,7 +1505,7 @@ existing_lock:
 				ldlm_lock_cancel(lock);
 				lock_res_and_lock(lock);
 			} else {
-				time64_t timeout =  ldlm_bl_timeout_by_rpc(req);
+				time64_t timeout = ldlm_bl_timeout(lock);
 				ldlm_add_waiting_lock(lock, timeout);
 			}
 		}
