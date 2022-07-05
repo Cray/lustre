@@ -941,9 +941,6 @@ static int lov_io_rw_iter_init(const struct lu_env *env,
 	LASSERT(io->ci_type == CIT_READ || io->ci_type == CIT_WRITE);
 	ENTRY;
 
-	if (cl_io_is_append(io))
-		RETURN(lov_io_iter_init(env, ios));
-
 	index = lov_io_layout_at(lio, io->u.ci_rw.crw_pos);
 	if (index < 0) { /* non-existing layout component */
 		if (io->ci_type == CIT_READ) {
@@ -958,6 +955,9 @@ static int lov_io_rw_iter_init(const struct lu_env *env,
 
 		RETURN(-ENODATA);
 	}
+
+	if (cl_io_is_append(io))
+		RETURN(lov_io_iter_init(env, ios));
 
 	if (!lov_entry(lio->lis_object, index)->lle_valid &&
 	    !io->ci_designated_mirror)
