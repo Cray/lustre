@@ -731,10 +731,8 @@ static int mdt_reint_setattr(struct mdt_thread_info *info,
 				       req->rq_xid);
 
 			if (ma->ma_attr.la_valid & LA_MTIME) {
-				ma->ma_need = MA_PFID;
-
 				rc = mdt_attr_get_pfid(info, mo, &ma->ma_pfid);
-				if (rc == 0)
+				if (!rc)
 					ma->ma_valid |= MA_PFID;
 			}
 		}

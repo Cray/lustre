@@ -936,7 +936,7 @@ static int mdd_changelog_data_store_by_fid(const struct lu_env *env,
  * want the change to commit without the log entry.
  * \param mdd_obj - mdd_object of change
  * \param handle - transaction handle
- * \param pfid - parent FID, if set
+ * \param pfid - parent FID for CL_MTIME changelogs
  */
 int mdd_changelog_data_store(const struct lu_env *env, struct mdd_device *mdd,
 			     enum changelog_rec_type type,
