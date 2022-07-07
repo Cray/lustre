@@ -1,0 +1,152 @@
+Index: linux-stage/fs/ext4/ext4.h
+===================================================================
+--- linux-stage.orig/fs/ext4/ext4.h
++++ linux-stage/fs/ext4/ext4.h
+@@ -1425,6 +1425,10 @@ struct ext4_sb_info {
+ 	unsigned int s_mb_prefetch;
+ 	unsigned int s_mb_prefetch_limit;
+ 
++	/* keep low tracks allocated */
++	unsigned int s_mb_klta_rate;
++	unsigned int s_mb_klta_start;
++
+ 	/* stats for buddy allocator */
+ 	atomic_t s_bal_reqs;	/* number of reqs with len > 1 */
+ 	atomic_t s_bal_success;	/* we found long enough chunks */
+Index: linux-stage/fs/ext4/mballoc.c
+===================================================================
+--- linux-stage.orig/fs/ext4/mballoc.c
++++ linux-stage/fs/ext4/mballoc.c
+@@ -2205,7 +2205,7 @@ ext4_mb_prefetch_fini(struct ext4_alloca
+ static noinline_for_stack int
+ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
+ {
+-	ext4_group_t ngroups, group, i;
++	ext4_group_t ngroups, group, i, group_limit = 0;
+ 	int cr;
+ 	int err = 0;
+ 	struct ext4_sb_info *sbi;
+@@ -2276,6 +2276,25 @@ ext4_mb_regular_allocator(struct ext4_al
+ 		atomic64_inc(&sbi->s_bal_cX_skipped[0]);
+ 	}
+ 
++	if (!cr && (ac->ac_flags & EXT4_MB_STREAM_ALLOC)) {
++		unsigned int rate = sbi->s_mb_klta_rate;
++		__u64 val;
++
++		if (rate != 0) {
++			val = ext4_blocks_count(sbi->s_es) - avail_blocks;
++			val = val * 100 / sbi->s_blocks_per_group / rate + 1;
++			if (val < sbi->s_groups_count) {
++				group_limit = val;
++				if (group_limit <= sbi->s_mb_klta_start)
++					group_limit = sbi->s_mb_klta_start;
++				if (ac->ac_g_ex.fe_group > group_limit) {
++					ac->ac_g_ex.fe_group = 0;
++					ac->ac_g_ex.fe_start = 0;
++				}
++			}
++		}
++	}
++
+ 	/*
+ 	 * cr == 0 try to get exact allocation,
+ 	 * cr == 3  try to get anything
+@@ -3027,6 +3048,13 @@ int ext4_mb_init(struct super_block *sb)
+ 	if (!sbi->s_mb_c3_blocks)
+ 		sbi->s_mb_c3_blocks =
+ 			THRESHOLD_BLOCKS(sbi, MB_DEFAULT_C3_THRESHOLD);
++
++	sbi->s_mb_klta_start = sbi->s_groups_count / 10;
++	if (blk_queue_nonrot(bdev_get_queue(sb->s_bdev)))
++		sbi->s_mb_klta_rate = 0;
++	else
++		sbi->s_mb_klta_rate = MB_KLTA_RATE_DEFAULT;
++
+ 	/*
+ 	 * The default group preallocation is 512, which for 4k block
+ 	 * sizes translates to 2 megabytes.  However for bigalloc file
+Index: linux-stage/fs/ext4/mballoc.h
+===================================================================
+--- linux-stage.orig/fs/ext4/mballoc.h
++++ linux-stage/fs/ext4/mballoc.h
+@@ -94,6 +94,11 @@ extern ushort ext4_mballoc_debug;
+ #define MB_DEFAULT_GROUP_PREALLOC	512
+ 
+ 
++/*
++ * Keep low tracks allocated (KLTA)
++ */
++#define MB_KLTA_RATE_DEFAULT		25
++
+ struct ext4_free_data {
+ 	/* MUST be the first member */
+ 	struct ext4_journal_cb_entry	efd_jce;
+Index: linux-stage/fs/ext4/super.c
+===================================================================
+--- linux-stage.orig/fs/ext4/super.c
++++ linux-stage/fs/ext4/super.c
+@@ -2813,6 +2813,45 @@ static ssize_t mb_c3_threshold_show(stru
+ 				THRESHOLD_PERCENT(sbi, sbi->s_mb_c3_blocks));
+ }
+ 
++static ssize_t mb_klta_rate_store(struct ext4_attr *a,
++		struct ext4_sb_info *sbi,
++		const char *buf, size_t count)
++{
++	unsigned long long val;
++
++	if (!parse_strtoull(buf, 100, &val)) {
++		sbi->s_mb_klta_rate = (unsigned int)val;
++		return count;
++	}
++
++	return -EINVAL;
++}
++
++static ssize_t mb_klta_rate_show(struct ext4_attr *a,
++		struct ext4_sb_info *sbi, char *buf)
++{
++	return snprintf(buf, PAGE_SIZE, "%u\n", sbi->s_mb_klta_rate);
++}
++
++static ssize_t mb_klta_start_store(struct ext4_attr *a,
++		struct ext4_sb_info *sbi,
++		const char *buf, size_t count)
++{
++	unsigned long long val;
++
++	if (!parse_strtoull(buf, sbi->s_groups_count, &val)) {
++		sbi->s_mb_klta_start = (ext4_group_t)val;
++		return count;
++	}
++
++	return -EINVAL;
++}
++
++static ssize_t mb_klta_start_show(struct ext4_attr *a,
++		struct ext4_sb_info *sbi, char *buf)
++{
++	return snprintf(buf, PAGE_SIZE, "%u\n", sbi->s_mb_klta_start);
++}
+ 
+ #define EXT4_ATTR_OFFSET(_name,_mode,_show,_store,_elname) \
+ static struct ext4_attr ext4_attr_##_name = {			\
+@@ -2873,6 +2912,8 @@ EXT4_RW_ATTR_SBI_UI(mb_order2_req, s_mb_
+ EXT4_RW_ATTR(mb_c1_threshold);
+ EXT4_RW_ATTR(mb_c2_threshold);
+ EXT4_RW_ATTR(mb_c3_threshold);
++EXT4_RW_ATTR(mb_klta_rate);
++EXT4_RW_ATTR(mb_klta_start);
+ EXT4_RW_ATTR_SBI_UI(mb_small_req, s_mb_small_req);
+ EXT4_RW_ATTR_SBI_UI(mb_large_req, s_mb_large_req);
+ EXT4_RW_ATTR_SBI_UI(mb_group_prealloc, s_mb_group_prealloc);
+@@ -2908,6 +2949,8 @@ static struct attribute *ext4_attrs[] =
+ 	ATTR_LIST(mb_c1_threshold),
+ 	ATTR_LIST(mb_c2_threshold),
+ 	ATTR_LIST(mb_c3_threshold),
++	ATTR_LIST(mb_klta_rate),
++	ATTR_LIST(mb_klta_start),
+ 	ATTR_LIST(mb_small_req),
+ 	ATTR_LIST(mb_large_req),
+ 	ATTR_LIST(mb_group_prealloc),
