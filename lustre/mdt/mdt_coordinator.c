@@ -453,6 +453,47 @@ static int mdt_coordinator_cb(const struct lu_env *env,
 	}
 }
 
+static void cdt_crh_free(struct rcu_head *head)
+{
+	struct cdt_restore_handle *crh;
+	crh = container_of(head, struct cdt_restore_handle, crh_rcu);
+
+	OBD_SLAB_FREE_PTR(crh, mdt_hsm_cdt_kmem);
+}
+
+static void cdt_crh_get(struct cdt_restore_handle *crh)
+{
+	atomic_inc(&crh->crh_refc);
+}
+
+static void
+cdt_crh_put(struct cdt_restore_handle *crh, struct mdt_thread_info *cdt_mti)
+{
+	if (atomic_dec_and_test(&crh->crh_refc)) {
+		/* XXX We pass a NULL object since the restore handle does not
+		 * keep a reference on the object being restored. */
+		mdt_object_unlock(cdt_mti, NULL, &crh->crh_lh, 1);
+		call_rcu(&crh->crh_rcu, cdt_crh_free);
+	}
+}
+
+static void crh_free_hash(void *vcrh, void *vcdt_mti)
+{
+	struct cdt_restore_handle *crh = vcrh;
+	struct mdt_thread_info *cdt_mti = vcdt_mti;
+
+	/* put last reference */
+	cdt_crh_put(crh, cdt_mti);
+}
+
+static const struct rhashtable_params crh_hash_params = {
+	.key_len	= sizeof(struct lu_fid),
+	.key_offset	= offsetof(struct cdt_restore_handle, crh_fid),
+	.head_offset	= offsetof(struct cdt_restore_handle, crh_hash),
+	.hashfn		= lu_fid_hash,
+	.automatic_shrinking = true,
+};
+
 /* Release the ressource used by the coordinator. Called when the
  * coordinator is stopping. */
 static void mdt_hsm_cdt_cleanup(struct mdt_device *mdt)
@@ -460,7 +501,6 @@ static void mdt_hsm_cdt_cleanup(struct mdt_device *mdt)
 	struct coordinator		*cdt = &mdt->mdt_coordinator;
 	struct cdt_agent_req		*car, *tmp1;
 	struct hsm_agent		*ha, *tmp2;
-	struct cdt_restore_handle	*crh, *tmp3;
 	struct mdt_thread_info		*cdt_mti;
 
 	/* start cleaning */
@@ -486,15 +526,9 @@ static void mdt_hsm_cdt_cleanup(struct mdt_device *mdt)
 	up_write(&cdt->cdt_agent_lock);
 
 	cdt_mti = lu_context_key_get(&cdt->cdt_env.le_ctx, &mdt_thread_key);
-	mutex_lock(&cdt->cdt_restore_lock);
-	list_for_each_entry_safe(crh, tmp3, &cdt->cdt_restore_handle_list,
-				 crh_list) {
-		list_del(&crh->crh_list);
-		/* give back layout lock */
-		mdt_object_unlock(cdt_mti, NULL, &crh->crh_lh, 1);
-		OBD_SLAB_FREE_PTR(crh, mdt_hsm_cdt_kmem);
-	}
-	mutex_unlock(&cdt->cdt_restore_lock);
+	rhashtable_free_and_destroy(&cdt->cdt_restore_hash, crh_free_hash,
+				    cdt_mti);
+	rcu_barrier();
 }
 
 /*
@@ -808,6 +842,10 @@ int cdt_restore_handle_add(struct mdt_thread_info *mti, struct coordinator *cdt,
 	int rc;
 	ENTRY;
 
+	if (unlikely(cdt->cdt_state == CDT_STOPPED ||
+		     cdt->cdt_state == CDT_STOPPING))
+		RETURN(-EAGAIN);
+
 	OBD_SLAB_ALLOC_PTR(crh, mdt_hsm_cdt_kmem);
 	if (crh == NULL)
 		RETURN(-ENOMEM);
@@ -819,56 +857,53 @@ int cdt_restore_handle_add(struct mdt_thread_info *mti, struct coordinator *cdt,
 	 */
 	crh->crh_extent.start = 0;
 	crh->crh_extent.end = he->length;
+	atomic_set(&crh->crh_refc, 1);
+	cdt_crh_get(crh);
+
+	rc = rhashtable_lookup_insert_fast(&cdt->cdt_restore_hash,
+					   &crh->crh_hash, crh_hash_params);
+	if (rc) {
+		OBD_SLAB_FREE_PTR(crh, mdt_hsm_cdt_kmem);
+		RETURN(rc);
+	}
+
 	/* get the layout lock */
 	mdt_lock_reg_init(&crh->crh_lh, LCK_EX);
 	obj = mdt_object_find_lock(mti, &crh->crh_fid, &crh->crh_lh,
 				   MDS_INODELOCK_LAYOUT);
-	if (IS_ERR(obj))
-		GOTO(out_crh, rc = PTR_ERR(obj));
+	if (IS_ERR(obj)) {
+		rc = rhashtable_remove_fast(&cdt->cdt_restore_hash,
+					    &crh->crh_hash, crh_hash_params);
+		/* Do not care about the result, just free crh as at this point
+		 * it can not be used anywhere:
+		 * rc < 0 - has been removed in a parallel thread, refc == 1
+		 * rc == 0 - successfully removed from rhtable, refc == 2
+		 */
+		LASSERT((rc < 0 && atomic_read(&crh->crh_refc) == 1) ||
+			(rc == 0 && atomic_read(&crh->crh_refc) == 2));
+
+		call_rcu(&crh->crh_rcu, cdt_crh_free);
+		RETURN(PTR_ERR(obj));
+	}
 
 	/* We do not keep a reference on the object during the restore
 	 * which can be very long. */
 	mdt_object_put(mti->mti_env, obj);
-
-	mutex_lock(&cdt->cdt_restore_lock);
-	if (unlikely(cdt->cdt_state == CDT_STOPPED ||
-		     cdt->cdt_state == CDT_STOPPING)) {
-		mutex_unlock(&cdt->cdt_restore_lock);
-		GOTO(out_lh, rc = -EAGAIN);
-	}
-
-	list_add_tail(&crh->crh_list, &cdt->cdt_restore_handle_list);
-	mutex_unlock(&cdt->cdt_restore_lock);
-
-	RETURN(0);
-out_lh:
-	mdt_object_unlock(mti, NULL, &crh->crh_lh, 1);
-out_crh:
-	OBD_SLAB_FREE_PTR(crh, mdt_hsm_cdt_kmem);
-
-	return rc;
+	cdt_crh_put(crh, mti);
+	RETURN(rc);
 }
 
 /**
  * lookup a restore handle by FID
- * caller needs to hold cdt_restore_lock
  * \param cdt [IN] coordinator
  * \param fid [IN] FID
- * \retval cdt_restore_handle found
- * \retval NULL not found
+ * \retval true cdt_restore_handle found
+ * \retval false not found
  */
-struct cdt_restore_handle *cdt_restore_handle_find(struct coordinator *cdt,
-						   const struct lu_fid *fid)
+bool cdt_restore_handle_exists(struct coordinator *cdt, const struct lu_fid *fid)
 {
-	struct cdt_restore_handle *crh;
-	ENTRY;
-
-	list_for_each_entry(crh, &cdt->cdt_restore_handle_list, crh_list) {
-		if (lu_fid_eq(&crh->crh_fid, fid))
-			RETURN(crh);
-	}
-
-	RETURN(NULL);
+	return rhashtable_lookup_fast(&cdt->cdt_restore_hash, fid,
+				      crh_hash_params);
 }
 
 void cdt_restore_handle_del(struct mdt_thread_info *mti,
@@ -877,19 +912,19 @@ void cdt_restore_handle_del(struct mdt_thread_info *mti,
 	struct cdt_restore_handle *crh;
 
 	/* give back layout lock */
-	mutex_lock(&cdt->cdt_restore_lock);
-	crh = cdt_restore_handle_find(cdt, fid);
-	if (crh != NULL)
-		list_del(&crh->crh_list);
-	mutex_unlock(&cdt->cdt_restore_lock);
+	rcu_read_lock();
+	crh = rhashtable_lookup(&cdt->cdt_restore_hash, fid, crh_hash_params);
+	if (crh &&
+	    rhashtable_remove_fast(&cdt->cdt_restore_hash, &crh->crh_hash,
+				   crh_hash_params))
+		crh = NULL;
+	rcu_read_unlock();
 
+	/* crh has been removed in a parallel thread */
 	if (crh == NULL)
 		return;
 
-	/* XXX We pass a NULL object since the restore handle does not
-	 * keep a reference on the object being restored. */
-	mdt_object_unlock(mti, NULL, &crh->crh_lh, 1);
-	OBD_SLAB_FREE_PTR(crh, mdt_hsm_cdt_kmem);
+	cdt_crh_put(crh, mti);
 }
 
 /**
@@ -951,6 +986,10 @@ static int hsm_restore_cb(const struct lu_env *env,
 	}
 
 	rc = cdt_restore_handle_add(mti, cdt, &hai->hai_fid, &hai->hai_extent);
+	if (rc == -EEXIST) {
+		CWARN("restore already exists in llog\n");
+		rc = 0;
+	}
 out:
 	RETURN(rc);
 }
@@ -1015,12 +1054,10 @@ int mdt_hsm_cdt_init(struct mdt_device *mdt)
 	init_rwsem(&cdt->cdt_lock);
 	init_rwsem(&cdt->cdt_agent_lock);
 	init_rwsem(&cdt->cdt_request_lock);
-	mutex_init(&cdt->cdt_restore_lock);
 	set_cdt_state(cdt, CDT_STOPPED);
 
 	INIT_LIST_HEAD(&cdt->cdt_request_list);
 	INIT_LIST_HEAD(&cdt->cdt_agents);
-	INIT_LIST_HEAD(&cdt->cdt_restore_handle_list);
 
 	cdt->cdt_request_cookie_hash = cfs_hash_create("REQUEST_COOKIE_HASH",
 						       CFS_HASH_BITS_MIN,
@@ -1155,6 +1192,13 @@ static int mdt_hsm_cdt_start(struct mdt_device *mdt)
 	cdt->cdt_user_request_mask = (1UL << HSMA_RESTORE);
 	cdt->cdt_group_request_mask = (1UL << HSMA_RESTORE);
 	cdt->cdt_other_request_mask = (1UL << HSMA_RESTORE);
+	rc = rhashtable_init(&cdt->cdt_restore_hash, &crh_hash_params);
+	if (rc) {
+		CERROR("%s: failed to create cdt_restore hash: rc = %d\n",
+		       mdt_obd_name(mdt), rc);
+		set_cdt_state(cdt, CDT_STOPPED);
+		RETURN(rc);
+	}
 
 	/* to avoid deadlock when start is made through sysfs
 	 * sysfs entries are created by the coordinator thread
