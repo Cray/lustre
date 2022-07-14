@@ -821,6 +821,8 @@ static inline __u32 fid_hash(const struct lu_fid *f, int bits)
 	return hash_long(fid_flatten(f), bits);
 }
 
+u32 lu_fid_hash(const void *data, u32 len, u32 seed);
+
 /**
  * map fid to 32 bit value for ino on 32bit systems. */
 static inline __u32 fid_flatten32(const struct lu_fid *fid)
