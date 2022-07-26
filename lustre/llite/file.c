@@ -6220,11 +6220,30 @@ out:
 		conf.coc_inode = inode;
 		rc = ll_layout_conf(inode, &conf);
 		if (rc == 0)
-			rc = -EAGAIN;
+			rc = -ERESTARTSYS;
 
 		CDEBUG(D_INODE, "%s file="DFID" waiting layout return: %d\n",
 		       sbi->ll_fsname, PFID(&lli->lli_fid), rc);
 	}
+
+	if (rc == -ERESTARTSYS) {
+		__u16 refcheck;
+		struct lu_env *env;
+		struct cl_object * obj = lli->lli_clob;
+
+		env = cl_env_get(&refcheck);
+		if (IS_ERR(env))
+			RETURN(PTR_ERR(env));
+
+		CDEBUG(D_INODE, "prune without lock "DFID"\n",
+				PFID(lu_object_fid(&obj->co_lu)));
+
+		cl_object_prune(env, obj);
+		cl_env_put(env, &refcheck);
+
+		rc = -EAGAIN;
+	}
+
 	RETURN(rc);
 }
 
