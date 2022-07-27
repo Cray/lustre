@@ -115,7 +115,6 @@ AC_CHECK_HEADER([libmount/libmount.h], [
 	AC_CHECK_LIB([mount], [mnt_update_set_fs], [
 		LDLIBMOUNT="-lmount"
 		AC_SUBST(LDLIBMOUNT)
-		AC_DEFINE(HAVE_LIBMOUNT, 1, [build with libmount])
 		with_libmount="yes"
 	],[with_libmount="no"])
 ], [with_libmount="no"])
@@ -124,6 +123,7 @@ AS_IF([test "x$with_libmount" = xyes], [
 	AC_MSG_RESULT([yes])
 ], [
 	AC_MSG_RESULT([no])
+	AC_MSG_ERROR([libmount development package is required])
 ])
 ]) # LB_LIBMOUNT
 
@@ -697,7 +697,7 @@ AS_IF([test "x$enable_tests" = xyes], [
 LIBCFS_CONFIG_CDEBUG
 LC_QUOTA
 
-LB_LIBMOUNT
+AS_IF([test "x$enable_dist" != xno], [],[LB_LIBMOUNT])
 LB_PATH_SNMP
 LB_PATH_LUSTREIOKIT
 
