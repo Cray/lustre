@@ -123,7 +123,6 @@ int cfs_gettok(struct cfs_lstr *next, char delim, struct cfs_lstr *res);
 int cfs_str2num_check(char *str, int nob, unsigned *num,
 		      unsigned min, unsigned max);
 int cfs_expr2str(struct list_head *list, char *str, size_t size);
-int cfs_expr_list_match(__u32 value, struct cfs_expr_list *expr_list);
 int cfs_expr_list_print(char *buffer, int count,
 			struct cfs_expr_list *expr_list);
 int cfs_expr_list_parse(char *str, int len, unsigned min, unsigned max,
