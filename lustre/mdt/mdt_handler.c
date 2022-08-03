@@ -1777,6 +1777,7 @@ static int mdt_swap_layouts(struct tgt_session_info *tsi)
 	struct mdt_object	*o1, *o2, *o;
 	struct mdt_lock_handle	*lh1, *lh2;
 	struct mdc_swap_layouts *msl;
+	struct md_attr		*ma;
 	int			 rc;
 	ENTRY;
 
@@ -1805,6 +1806,14 @@ static int mdt_swap_layouts(struct tgt_session_info *tsi)
 
 	if (mdt_object_remote(o) || !mdt_object_exists(o)) /* remote object */
 		GOTO(put, rc = -ENOENT);
+
+	ma = &info->mti_attr;
+	rc = mdt_attr_get_pfid(info, o, &ma->ma_pfid);
+	if (!rc)
+		ma->ma_valid |= MA_PFID;
+	else
+		CDEBUG(D_INODE, "%s: cannot get parent FID for "DFID"\n",
+		       mdt_obd_name(info->mti_mdt), PFID(mdt_object_fid(o)));
 
 	rc = lu_fid_cmp(&info->mti_body->mbo_fid1, &info->mti_body->mbo_fid2);
 	if (unlikely(rc == 0)) /* same file, you kidding me? no-op. */
@@ -1845,7 +1854,7 @@ static int mdt_swap_layouts(struct tgt_session_info *tsi)
 		GOTO(unlock1, rc);
 
 	rc = mo_swap_layouts(info->mti_env, mdt_object_child(o1),
-			     mdt_object_child(o2), msl->msl_flags);
+			     mdt_object_child(o2), ma, msl->msl_flags);
 	if (rc < 0)
 		GOTO(unlock2, rc);
 
