@@ -504,7 +504,7 @@ int mdt_dir_layout_update(struct mdt_thread_info *info)
 		buf->lb_buf = lmv;
 		buf->lb_len = sizeof(*lmv);
 		rc = mo_xattr_set(env, mdt_object_child(obj), buf,
-				  XATTR_NAME_LMV, LU_XATTR_REPLACE);
+				  XATTR_NAME_LMV, NULL, LU_XATTR_REPLACE);
 	}
 	GOTO(unlock_obj, rc);
 
@@ -666,7 +666,7 @@ int mdt_reint_setxattr(struct mdt_thread_info *info,
 
 		buf->lb_buf = rr->rr_eadata;
 		buf->lb_len = xattr_len;
-		rc = mo_xattr_set(env, child, buf, xattr_name, flags);
+		rc = mo_xattr_set(env, child, buf, xattr_name, NULL, flags);
 		/* update ctime after xattr changed */
 		if (rc == 0) {
 			ma->ma_attr_flags |= MDS_PERM_BYPASS;
