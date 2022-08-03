@@ -1008,7 +1008,7 @@ static int mdt_reint_setattr(struct mdt_thread_info *info,
 			GOTO(out_put, rc);
 
 		rc = mo_xattr_set(info->mti_env, mdt_object_child(mo), buf,
-				  name, 0);
+				  name, NULL, 0);
 
 		mdt_object_unlock(info, mo, lh, rc);
 		if (rc)

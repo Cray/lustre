@@ -74,7 +74,7 @@ int mdt_hsm_attr_set(struct mdt_thread_info *info, struct mdt_object *obj,
 	/* update HSM attributes */
 	buf->lb_buf = attrs;
 	buf->lb_len = sizeof(*attrs);
-	rc = mo_xattr_set(info->mti_env, next, buf, XATTR_NAME_HSM, 0);
+	rc = mo_xattr_set(info->mti_env, next, buf, XATTR_NAME_HSM, NULL, 0);
 
 	RETURN(rc);
 }

@@ -1320,6 +1320,7 @@ static int hsm_swap_layouts(struct mdt_thread_info *mti,
 {
 	struct mdt_object	*dobj;
 	struct mdt_lock_handle	*dlh;
+	struct md_attr		*ma;
 	int			 rc;
 	ENTRY;
 
@@ -1352,11 +1353,21 @@ static int hsm_swap_layouts(struct mdt_thread_info *mti,
 	 */
 	mh_common->mh_flags &= ~(HS_RELEASED | HS_DIRTY);
 	rc = mdt_hsm_attr_set(mti, dobj, mh_common);
-	if (rc == 0)
-		rc = mo_swap_layouts(mti->mti_env,
-				     mdt_object_child(obj),
-				     mdt_object_child(dobj),
+	if (rc == 0) {
+		ma = &mti->mti_attr;
+		rc = mdt_attr_get_pfid(mti, obj, &ma->ma_pfid);
+		if (!rc)
+			ma->ma_valid |= MA_PFID;
+		else
+			CDEBUG(D_INODE, "%s: cannot get parent FID for "DFID"\n",
+			       mdt_obd_name(mti->mti_mdt),
+			       PFID(mdt_object_fid(obj)));
+
+		rc = mo_swap_layouts(mti->mti_env, mdt_object_child(obj),
+				     mdt_object_child(dobj), ma,
 				     SWAP_LAYOUTS_MDS_HSM);
+	}
+
 	if (rc == 0) {
 		rc = mdt_lsom_downgrade(mti, obj);
 		if (rc)
