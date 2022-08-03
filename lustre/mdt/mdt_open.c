@@ -1975,7 +1975,7 @@ static int mdt_hsm_release(struct mdt_thread_info *info, struct mdt_object *o,
 			lustre_hsm2buf(buf->lb_buf, &ma->ma_hsm);
 
 			rc = mo_xattr_set(info->mti_env, mdt_object_child(o),
-					  buf, XATTR_NAME_HSM, 0);
+					  buf, XATTR_NAME_HSM, NULL, 0);
 			if (rc)
 				GOTO(out_unlock, rc);
 		}
@@ -2083,14 +2083,14 @@ static int mdt_hsm_release(struct mdt_thread_info *info, struct mdt_object *o,
 	cap = uc->uc_cap;
 	cap_raise(uc->uc_cap, CAP_FOWNER);
 	rc = mo_xattr_set(info->mti_env, mdt_object_child(orphan), buf,
-			  XATTR_NAME_HSM, 0);
+			  XATTR_NAME_HSM, NULL, 0);
 	uc->uc_cap = cap;
 	if (rc != 0)
 		GOTO(out_layout_lock, rc);
 
 	/* Swap layout with orphan objects. */
 	rc = mo_swap_layouts(info->mti_env, mdt_object_child(o),
-			     mdt_object_child(orphan), 0, 0,
+			     mdt_object_child(orphan), ma, 0, 0,
 			     SWAP_LAYOUTS_MDS_RELEASE);
 
 	if (!rc && ma->ma_attr_flags & MDS_PCC_ATTACH) {
@@ -2209,6 +2209,13 @@ static int mdt_close_handle_layouts(struct mdt_thread_info *info,
 			swap(o1, o2);
 	}
 
+	rc = mdt_attr_get_pfid(info, o, &ma->ma_pfid);
+	if (!rc)
+		ma->ma_valid |= MA_PFID;
+	else
+		CDEBUG(D_INODE, "%s: cannot get parent FID for "DFID"\n",
+		       mdt_obd_name(info->mti_mdt), PFID(mdt_object_fid(o)));
+
 	rc = mo_permission(info->mti_env, NULL, mdt_object_child(o1), NULL,
 			   MAY_WRITE);
 	if (rc < 0)
@@ -2272,7 +2279,7 @@ static int mdt_close_handle_layouts(struct mdt_thread_info *info,
 			swap(dv1, dv2);
 
 		rc = mo_swap_layouts(info->mti_env, mdt_object_child(o1),
-				     mdt_object_child(o2), dv1, dv2, 0);
+				     mdt_object_child(o2), ma, dv1, dv2, 0);
 	} else if (ma->ma_attr_flags & MDS_CLOSE_LAYOUT_MERGE ||
 		   ma->ma_attr_flags & MDS_CLOSE_LAYOUT_SPLIT) {
 		struct lu_buf *buf = &info->mti_buf;
@@ -2302,7 +2309,7 @@ static int mdt_close_handle_layouts(struct mdt_thread_info *info,
 		buf->lb_len = sizeof(mrd);
 		buf->lb_buf = &mrd;
 		rc = mo_xattr_set(info->mti_env, mdt_object_child(o), buf,
-				  XATTR_LUSTRE_LOV,
+				  XATTR_LUSTRE_LOV, ma,
 				  ma->ma_attr_flags & MDS_CLOSE_LAYOUT_SPLIT ?
 				  LU_XATTR_SPLIT : LU_XATTR_MERGE);
 		if (rc == 0 && ma->ma_attr.la_valid & (LA_SIZE | LA_BLOCKS |

@@ -1629,7 +1629,7 @@ static int mdd_xattr_del(const struct lu_env *env, struct md_object *obj,
 			 const char *name);
 
 static int mdd_xattr_merge(const struct lu_env *env, struct md_object *md_obj,
-			   struct md_object *md_vic)
+			   struct md_object *md_vic, struct md_attr *ma)
 {
 	struct mdd_device *mdd = mdo2mdd(md_obj);
 	struct mdd_object *obj = md2mdd_obj(md_obj);
@@ -1727,7 +1727,8 @@ retry:
 		GOTO(out_restore, rc);
 
 	(void)mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, obj, handle,
-				       NULL);
+				       ma && (ma->ma_valid & MA_PFID) ?
+				       &ma->ma_pfid : NULL);
 	(void)mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, vic, handle,
 				       NULL);
 
@@ -1887,7 +1888,7 @@ static int mdd_split_ea(struct lov_comp_md_v1 *comp_v1, __u16 mirror_id,
 }
 
 static int mdd_xattr_split(const struct lu_env *env, struct md_object *md_obj,
-			   struct md_rejig_data *mrd)
+			   struct md_rejig_data *mrd, struct md_attr *ma)
 {
 	struct mdd_device *mdd = mdo2mdd(md_obj);
 	struct mdd_object *obj = md2mdd_obj(md_obj);
@@ -2011,7 +2012,8 @@ retry:
 	}
 
 	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, obj, handle,
-				      NULL);
+				      ma && (ma->ma_valid & MA_PFID) ?
+				      &ma->ma_pfid : NULL);
 	if (rc)
 		GOTO(out_restore, rc);
 
@@ -2082,7 +2084,7 @@ static int mdd_layout_merge_allowed(const struct lu_env *env,
  */
 static int mdd_xattr_set(const struct lu_env *env, struct md_object *obj,
 			 const struct lu_buf *buf, const char *name,
-			 int fl)
+			 struct md_attr *ma, int fl)
 {
 	struct mdd_object *mdd_obj = md2mdd_obj(obj);
 	struct lu_attr *attr = MDD_ENV_VAR(env, cattr);
@@ -2118,9 +2120,9 @@ retry:
 			if (rc)
 				RETURN(rc);
 			/* merge layout of victim as a mirror of obj's. */
-			rc = mdd_xattr_merge(env, obj, victim);
+			rc = mdd_xattr_merge(env, obj, victim, ma);
 		} else {
-			rc = mdd_xattr_split(env, obj, mrd);
+			rc = mdd_xattr_split(env, obj, mrd, ma);
 		}
 		RETURN(rc);
 	}
@@ -2312,7 +2314,8 @@ repeat:
 static int emit_changelog_after_swap_layout(const struct lu_env *env,
 					    struct thandle *handle,
 					    struct mdd_object *o,
-					    struct lu_buf *hsm_buf)
+					    struct lu_buf *hsm_buf,
+					    const struct lu_fid* pfid)
 {
 	enum changelog_rec_flags flags = 0;
 	enum changelog_rec_type type;
@@ -2331,7 +2334,7 @@ static int emit_changelog_after_swap_layout(const struct lu_env *env,
 	}
 
 	return mdd_changelog_data_store(env, mdo2mdd(&o->mod_obj), type,
-					flags, o, handle, NULL);
+					flags, o, handle, pfid);
 }
 
 /*
@@ -2730,7 +2733,8 @@ static int swap_layouts_prepare_hsm_attr(const struct lu_env *env,
 /* swap layouts between 2 lustre objects */
 static int mdd_swap_layouts(const struct lu_env *env,
 			    struct md_object *obj1, struct md_object *obj2,
-			    __u64 dv1, __u64 dv2, __u64 flags)
+			    struct md_attr *ma, __u64 dv1, __u64 dv2,
+			    __u64 flags)
 {
 	struct mdd_thread_info *info = mdd_env_info(env);
 	struct mdd_object *fst_o = md2mdd_obj(obj1);
@@ -2995,11 +2999,15 @@ retry:
 		GOTO(out_restore, rc);
 
 	/* Issue one changelog record per file */
-	rc = emit_changelog_after_swap_layout(env, handle, fst_o, fst_hsm_buf);
+	rc = emit_changelog_after_swap_layout(env, handle, fst_o, fst_hsm_buf,
+					      ma && (ma->ma_valid & MA_PFID) ?
+					      &ma->ma_pfid : NULL);
 	if (rc)
 		GOTO(unlock, rc);
 
-	rc = emit_changelog_after_swap_layout(env, handle, snd_o, snd_hsm_buf);
+	rc = emit_changelog_after_swap_layout(env, handle, snd_o, snd_hsm_buf,
+					      ma && (ma->ma_valid & MA_PFID) ?
+					      &ma->ma_pfid : NULL);
 	if (rc)
 		GOTO(unlock, rc);
 	EXIT;

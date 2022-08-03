@@ -1111,7 +1111,7 @@ static int mdt_reint_setattr(struct mdt_thread_info *info,
 			GOTO(out_put, rc);
 
 		rc = mo_xattr_set(info->mti_env, mdt_object_child(mo), buf,
-				  name, 0);
+				  name, NULL, 0);
 
 		mdt_object_unlock(info, mo, lh, rc);
 		if (rc)
@@ -2314,7 +2314,7 @@ int mdt_reint_migrate(struct mdt_thread_info *info,
 		buf->lb_buf = lmv;
 		buf->lb_len = sizeof(*lmv);
 		rc = mo_xattr_set(env, mdt_object_child(pobj), buf,
-				  XATTR_NAME_LMV, LU_XATTR_REPLACE);
+				  XATTR_NAME_LMV, NULL, LU_XATTR_REPLACE);
 		mo_invalidate(env, mdt_object_child(pobj));
 		GOTO(put_parent, rc);
 	}
@@ -2435,7 +2435,8 @@ lock_parent:
 			buf->lb_buf = lmv;
 			buf->lb_len = sizeof(*lmv);
 			rc = mo_xattr_set(env, mdt_object_child(sobj), buf,
-					  XATTR_NAME_LMV, LU_XATTR_REPLACE);
+					  XATTR_NAME_LMV, NULL,
+					  LU_XATTR_REPLACE);
 			mo_invalidate(env, mdt_object_child(sobj));
 			GOTO(unlock_source, rc = -EALREADY);
 		}

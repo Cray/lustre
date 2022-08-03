@@ -1405,6 +1405,7 @@ static int hsm_swap_layouts(struct mdt_thread_info *mti,
 {
 	struct mdt_object	*dobj;
 	struct mdt_lock_handle	*dlh;
+	struct md_attr		*ma;
 	int			 rc;
 	ENTRY;
 
@@ -1440,8 +1441,17 @@ static int hsm_swap_layouts(struct mdt_thread_info *mti,
 	if (rc)
 		GOTO(out_dobj, rc);
 
+	ma = &mti->mti_attr;
+	rc = mdt_attr_get_pfid(mti, obj, &ma->ma_pfid);
+	if (!rc)
+		ma->ma_valid |= MA_PFID;
+	else
+		CDEBUG(D_INODE, "%s: cannot get parent FID for "DFID"\n",
+		       mdt_obd_name(mti->mti_mdt),
+		       PFID(mdt_object_fid(obj)));
+
 	rc = mo_swap_layouts(mti->mti_env, mdt_object_child(obj),
-			     mdt_object_child(dobj), 0, 0, 0);
+			     mdt_object_child(dobj), ma, 0, 0, 0);
 	if (rc)
 		GOTO(out_dobj, rc);
 
