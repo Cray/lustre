@@ -1915,7 +1915,7 @@ static int echo_setattr_object(const struct lu_env *env,
 		buf->lb_len = sizeof(info->eti_xattr_buf);
 
 		sprintf(name, "%s.test1", XATTR_USER_PREFIX);
-		rc = mo_xattr_set(env, lu2md(child), buf, name,
+		rc = mo_xattr_set(env, lu2md(child), buf, name, NULL,
 				  LU_XATTR_CREATE);
 		if (rc < 0) {
 			CERROR("Can not setattr child "DFID": rc = %d\n",
