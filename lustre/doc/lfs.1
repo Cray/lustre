@@ -7,7 +7,7 @@ lfs \- client utility for Lustre-specific file layout and other attributes
 .br
 .B lfs changelog_clear <\fImdtname\fR> <\fIid\fR> <\fIendrec\fR>
 .br
-.B lfs check \fR<\fBmgts\fR|\fBmdts\fR|\fBosts\fR|\fBall\fR>
+.B lfs check \fR<\fBmgts\fR|\fBmdts\fR|\fBosts\fR|\fBall\fR> [\fIpath\fR]
 .br
 .B lfs data_version \fR[\fB-nrws\fR] \fB<\fIfilename\fR>
 .br
@@ -151,9 +151,10 @@ as listed in the
 .B SEE ALSO
 section at the end.
 .TP
-.B check <mgts|mdts|osts|all>
+.B check <mgts|mdts|osts|all> [path]
 Display the status of the MGTs, MDTs or OSTs (as specified in the command) or
-all the servers (MGTs, MDTs and OSTs).
+all the servers (MGTs, MDTs and OSTs). If \fBpath\fR is provided, display
+the status of the lustre file system mounted at specified \fBpath\fR only.
 .TP
 .B data_version [-nrws] <filename>
 Display the current version of file data and optionally set the data version
