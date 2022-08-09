@@ -3881,58 +3881,19 @@ test_300() {
 }
 run_test 300 "packaged LNet UAPI headers can be compiled"
 
+# LU-16081 lnet: Memory leak on adding existing interface
+
 test_301() {
-	[[ $NETTYPE == kfi* ]] ||
-		skip "Need kfi network type"
-
-	setupall || error "setupall failed"
-
-	mkdir -p $DIR/$tdir || error "mkdir failed"
-	dd if=/dev/zero of=$DIR/$tdir/$tfile bs=1M count=1 oflag=direct ||
-		error "dd write failed"
-
-	local list=$(comma_list $(osts_nodes))
-
-#define CFS_KFI_FAIL_WAIT_SEND_COMP1 0xF115
-	do_nodes $list $LCTL set_param fail_loc=0x8000F115
-	dd if=$DIR/$tdir/$tfile of=/dev/null bs=1M count=1 ||
-		error "dd read failed"
-
-	rm -f $DIR/$tdir/$tfile
-	rmdir $DIR/$tdir
-
-	cleanupall || error "Failed cleanup"
+	reinit_dlc || return $?
+	do_lnetctl net add --net tcp --if ${INTERFACES[0]} ||
+		error "Failed to add net"
+	do_lnetctl net add --net tcp --if ${INTERFACES[0]} &&
+		error "add net should have failed"
+	do_lnetctl net del --net tcp --if ${INTERFACES[0]} ||
+		error "Failed to del net"
+	unload_modules
 }
-run_test 301 "Fail bulk put in send wait completion"
-
-test_302() {
-	[[ $NETTYPE == kfi* ]] ||
-		skip "Need kfi network type"
-
-	setupall || error "setupall failed"
-
-	mkdir -p $DIR/$tdir || error "mkdir failed"
-
-	local list=$(comma_list $(osts_nodes))
-
-#define CFS_KFI_FAIL_WAIT_SEND_COMP3 0xF117
-	do_nodes $list $LCTL set_param fail_loc=0x8000F117
-	dd if=/dev/zero of=$DIR/$tdir/$tfile bs=1M count=1 oflag=direct ||
-		error "dd write failed"
-
-	local tfile2="$DIR/$tdir/testfile2"
-
-	do_nodes $list $LCTL set_param fail_loc=0x8000F117
-	dd if=$DIR/$tdir/$tfile of=$tfile2 bs=1M count=1 oflag=direct ||
-		error "dd read failed"
-
-	rm -f $DIR/$tdir/$tfile
-	rm -f $tfile2
-	rmdir $DIR/$tdir
-
-	cleanupall || error "Failed cleanup"
-}
-run_test 302 "TAG_RX_OK is possible after TX_FAIL"
+run_test 301 "Check for dynamic adds of same/wrong interface (memory leak)"
 
 test_304() {
 	[[ ${NETTYPE} == tcp* ]] || skip "Need tcp NETTYPE"
@@ -4002,17 +3963,6 @@ EOF
 }
 run_test 304 "Check locked primary peer nid consolidation"
 
-test_400() {
-	reinit_dlc || return $?
-
-	do_lnetctl udsp add --src tcp --priority 0 ||
-		error "Failed to add udsp rule"
-	do_lnetctl udsp del --idx 0 ||
-		error "Failed to del udsp rule"
-	unload_modules
-}
-run_test 400 "Check for udsp add/delete net rule without net num"
-
 static_config() {
 	local module=$1
 	local setting=$2
@@ -4055,6 +4005,59 @@ test_310() {
 	return $?
 }
 run_test 310 "Set timeout and verify"
+
+test_311() {
+	[[ $NETTYPE == kfi* ]] ||
+		skip "Need kfi network type"
+
+	setupall || error "setupall failed"
+
+	mkdir -p $DIR/$tdir || error "mkdir failed"
+	dd if=/dev/zero of=$DIR/$tdir/$tfile bs=1M count=1 oflag=direct ||
+		error "dd write failed"
+
+	local list=$(comma_list $(osts_nodes))
+
+#define CFS_KFI_FAIL_WAIT_SEND_COMP1 0xF115
+	do_nodes $list $LCTL set_param fail_loc=0x8000F115
+	dd if=$DIR/$tdir/$tfile of=/dev/null bs=1M count=1 ||
+		error "dd read failed"
+
+	rm -f $DIR/$tdir/$tfile
+	rmdir $DIR/$tdir
+
+	cleanupall || error "Failed cleanup"
+}
+run_test 311 "Fail bulk put in send wait completion"
+
+test_312() {
+	[[ $NETTYPE == kfi* ]] ||
+		skip "Need kfi network type"
+
+	setupall || error "setupall failed"
+
+	mkdir -p $DIR/$tdir || error "mkdir failed"
+
+	local list=$(comma_list $(osts_nodes))
+
+#define CFS_KFI_FAIL_WAIT_SEND_COMP3 0xF117
+	do_nodes $list $LCTL set_param fail_loc=0x8000F117
+	dd if=/dev/zero of=$DIR/$tdir/$tfile bs=1M count=1 oflag=direct ||
+		error "dd write failed"
+
+	local tfile2="$DIR/$tdir/testfile2"
+
+	do_nodes $list $LCTL set_param fail_loc=0x8000F117
+	dd if=$DIR/$tdir/$tfile of=$tfile2 bs=1M count=1 oflag=direct ||
+		error "dd read failed"
+
+	rm -f $DIR/$tdir/$tfile
+	rm -f $tfile2
+	rmdir $DIR/$tdir
+
+	cleanupall || error "Failed cleanup"
+}
+run_test 312 "TAG_RX_OK is possible after TX_FAIL"
 
 test_350() {
 	reinit_dlc || return $?
@@ -4145,6 +4148,17 @@ check_peer_udsp_prio() {
 check_net_udsp_prio() {
 	check_udsp_prio "${1}" "${2}" "${3}" "${4}" "net"
 }
+
+test_400() {
+	reinit_dlc || return $?
+
+	do_lnetctl udsp add --src tcp --priority 0 ||
+		error "Failed to add udsp rule"
+	do_lnetctl udsp del --idx 0 ||
+		error "Failed to del udsp rule"
+	unload_modules
+}
+run_test 400 "Check for udsp add/delete net rule without net num"
 
 test_401() {
 	reinit_dlc || return $?
