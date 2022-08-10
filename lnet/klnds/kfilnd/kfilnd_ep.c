@@ -862,8 +862,7 @@ struct kfilnd_ep *kfilnd_ep_alloc(struct kfilnd_dev *dev,
 		goto err_free_tx_context;
 	}
 
-	/*
-	 * The nrx value is the max number of immediate messages any one peer
+	/* The nrx value is the max number of immediate messages any one peer
 	 * can send us.  Given that compute nodes are RPC-based, we should not
 	 * see any more incoming messages than we are able to send.  A such, nrx
 	 * is a good size for each multi-receive buffer.  However, if we are

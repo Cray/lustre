@@ -747,8 +747,7 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 		/* Update the NID address with the new preferred RX context. */
 		kfilnd_peer_alive(tn->tn_kp);
 
-		/*
-		 * Pass message up to LNet
+		/* Pass message up to LNet
 		 * The TN will be reused in this call chain so we need to
 		 * release the lock on the TN before proceeding.
 		 */
