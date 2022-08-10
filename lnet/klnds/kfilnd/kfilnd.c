@@ -324,7 +324,7 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 
 static int kfilnd_startup(struct lnet_ni *ni);
 
-static struct lnet_lnd lnd = {
+static const struct lnet_lnd the_kfilnd = {
 	.lnd_type	= KFILND,
 	.lnd_startup	= kfilnd_startup,
 	.lnd_shutdown	= kfilnd_shutdown,
@@ -341,8 +341,8 @@ static int kfilnd_startup(struct lnet_ni *ni)
 	if (!ni)
 		return -EINVAL;
 
-	if (ni->ni_net->net_lnd != &lnd) {
-		CERROR("kfilnd_startup passed wrong lnd type\n");
+	if (ni->ni_net->net_lnd != &the_kfilnd) {
+		CERROR("Wrong lnd type\n");
 		return -EINVAL;
 	}
 
@@ -379,7 +379,7 @@ static int kfilnd_startup(struct lnet_ni *ni)
 		goto err_free_dev;
 	}
 
-        return 0;
+	return 0;
 
 err_free_dev:
 	kfilnd_dev_free(kfdev);
@@ -393,7 +393,7 @@ static void __exit kfilnd_exit(void)
 
 	kfilnd_tn_cleanup();
 
-	lnet_unregister_lnd(&lnd);
+	lnet_unregister_lnd(&the_kfilnd);
 
 	debugfs_remove_recursive(kfilnd_debug_dir);
 }
@@ -423,7 +423,7 @@ static int __init kfilnd_init(void)
 		goto err_tn_cleanup;
 	}
 
-	lnet_register_lnd(&lnd);
+	lnet_register_lnd(&the_kfilnd);
 
 	return 0;
 
