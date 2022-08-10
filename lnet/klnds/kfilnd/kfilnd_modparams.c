@@ -52,7 +52,8 @@ MODULE_PARM_DESC(peer_credits, "Number of concurrent sends to 1 peer");
 
 static int peer_buffer_credits = -1;
 module_param(peer_buffer_credits, int, 0444);
-MODULE_PARM_DESC(peer_buffer_credits, "Number of per-peer router buffer credits");
+MODULE_PARM_DESC(peer_buffer_credits,
+		 "Number of per-peer router buffer credits");
 
 static int peer_timeout = -1;
 module_param(peer_timeout, int, 0444);
