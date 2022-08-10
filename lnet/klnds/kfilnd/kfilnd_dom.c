@@ -331,12 +331,14 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni, const char *node,
 	 */
 	hints_tmp = kfi_dupinfo(hints);
 	if (hints_tmp) {
-		rc = kfi_getinfo(0, node, service, KFI_SOURCE, hints_tmp, &info_tmp);
+		rc = kfi_getinfo(0, node, service, KFI_SOURCE, hints_tmp,
+				 &info_tmp);
 		if (!rc) {
 			fab = kfilnd_fab_alloc(info_tmp->fabric_attr);
 			if (!IS_ERR(fab)) {
-				rc = kfi_open_ops(&fab->fabric->fid, KFI_CXI_FAB_OPS_1,
-					0, (void**)&fab_ops, NULL);
+				rc = kfi_open_ops(&fab->fabric->fid,
+					KFI_CXI_FAB_OPS_1, 0, (void **)&fab_ops,
+					NULL);
 				if (!rc) {
 					/* Set dynamic resource alloc hints */
 					hints->domain_attr->cq_cnt = ni->ni_ncpts * 2;
@@ -394,7 +396,8 @@ struct kfilnd_dom *kfilnd_dom_get(struct lnet_ni *ni, const char *node,
 
 	if (!dom) {
 		/* Enable dynamic resource allocation if operation supported */
-		rc = kfi_open_ops(&fab->fabric->fid, KFI_CXI_FAB_OPS_1, 0, (void**)&fab_ops, NULL);
+		rc = kfi_open_ops(&fab->fabric->fid, KFI_CXI_FAB_OPS_1, 0,
+				  (void **)&fab_ops, NULL);
 		if (!rc) {
 			rc = fab_ops->enable_dynamic_rsrc_alloc(&fab->fabric->fid, true);
 			if (!rc)
