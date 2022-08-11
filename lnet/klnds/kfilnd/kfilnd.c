@@ -126,7 +126,7 @@ static int kfilnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *msg)
 	}
 
 	/* Need to fire off special transaction if this is a new peer. */
-	if (kfilnd_peer_is_new_peer(tn->peer)) {
+	if (kfilnd_peer_is_new_peer(tn->tn_kp)) {
 		rc = kfilnd_send_hello_request(dev, cpt, target.nid);
 		if (rc) {
 			kfilnd_tn_free(tn);
