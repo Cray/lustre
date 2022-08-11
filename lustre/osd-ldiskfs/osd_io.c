@@ -57,7 +57,6 @@
 
 /* ext_depth() */
 #include <ldiskfs/ldiskfs_extents.h>
-#include <ldiskfs/ldiskfs.h>
 
 static inline bool osd_use_page_cache(struct osd_device *d)
 {
@@ -1311,7 +1310,6 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
 struct osd_fextent {
 	sector_t	start;
 	sector_t	end;
-	__u32		flags;
 	unsigned int	mapped:1;
 };
 
@@ -1343,7 +1341,6 @@ static int osd_is_mapped(struct dt_object *dt, __u64 offset,
 		return 0;
 
 	start = fe.fe_logical >> inode->i_blkbits;
-	cached_extent->flags = fe.fe_flags;
 	if (fei.fi_extents_mapped == 0) {
 		/* a special case - no extent found at this offset and forward.
 		 * we can consider this as a hole to EOF. it's safe to cache
@@ -1378,8 +1375,8 @@ static int osd_declare_write_commit(const struct lu_env *env,
 	const struct osd_device	*osd = osd_obj2dev(osd_dt_obj(dt));
 	struct inode		*inode = osd_dt_obj(dt)->oo_inode;
 	struct osd_thandle	*oh;
-	int			extents = 0, new_meta = 0;
-	int			depth, new_blocks = 0;
+	int			extents = 0;
+	int			depth;
 	int			i;
 	int			dirty_groups = 0;
 	int			rc = 0;
@@ -1416,12 +1413,7 @@ static int osd_declare_write_commit(const struct lu_env *env,
 		    !(lnb[i].lnb_flags & OBD_BRW_SYNC))
 			declare_flags |= OSD_QID_FORCE;
 
-		/*
-		 * Convert unwritten extent might need split extents, could
-		 * not skip it.
-		 */
-		if (osd_is_mapped(dt, lnb[i].lnb_file_offset, &mapped) &&
-		    !(mapped.flags & FIEMAP_EXTENT_UNWRITTEN)) {
+		if (osd_is_mapped(dt, lnb[i].lnb_file_offset, &mapped)) {
 			lnb[i].lnb_flags |= OBD_BRW_MAPPED;
 			continue;
 		}
@@ -1432,7 +1424,6 @@ static int osd_declare_write_commit(const struct lu_env *env,
 		}
 
 		/* count only unmapped changes */
-		new_blocks++;
 		if (lnb[i].lnb_file_offset != extent.end || extent.end == 0) {
 			if (extent.end != 0)
 				extents += (extent.end - extent.start +
@@ -1468,38 +1459,31 @@ static int osd_declare_write_commit(const struct lu_env *env,
 	if (extents > MAX_EXTENTS_PER_WRITE)
 		extents = MAX_EXTENTS_PER_WRITE;
 
-	/**
-	 * If we add a single extent, then in the worse case, each tree
-	 * level index/leaf need to be changed in case of the tree split.
-	 * If more extents are inserted, they could cause the whole tree
-	 * split more than once, but this is really rare.
+	dirty_groups = extents;
+	/*
+	 * each extent can go into new leaf causing a split
+	 * 5 is max tree depth: inode + 4 index blocks
+	 * with blockmaps, depth is 3 at most
 	 */
 	if (LDISKFS_I(inode)->i_flags & LDISKFS_EXTENTS_FL) {
-		depth = ext_depth(inode);
-		if (extents <= 1) {
-			credits += depth * 2 * extents;
-			new_meta = depth;
-		} else {
-			credits += depth * 3 * extents;
-			new_meta = depth * 2 * extents;
-		}
-	} else {
 		/*
-		 * With N contiguous data blocks, we need at most
-		 * N/EXT4_ADDR_PER_BLOCK(inode->i_sb) + 1 indirect blocks,
-		 * 2 dindirect blocks, and 1 tindirect block
+		 * many concurrent threads may grow tree by the time
+		 * our transaction starts. so, consider 2 is a min depth
 		 */
-		new_meta = DIV_ROUND_UP(new_blocks,
-				LDISKFS_ADDR_PER_BLOCK(inode->i_sb)) + 4;
-		credits += new_meta;
+		depth = ext_depth(inode);
+		depth = max(depth, 1) + 1;
+		dirty_groups += depth;
+		credits += depth * 2 * extents;
+	} else {
 		depth = 3;
+		dirty_groups += depth;
+		credits += depth * extents;
 	}
-	dirty_groups += (extents + new_meta);
 
 	oh->oh_declared_ext = extents;
 
 	/* quota space for metadata blocks */
-	quota_space += new_meta * LDISKFS_BLOCK_SIZE(osd_sb(osd));
+	quota_space += depth * extents * LDISKFS_BLOCK_SIZE(osd_sb(osd));
 
 	/* quota space should be reported in 1K blocks */
 	quota_space = toqb(quota_space);
