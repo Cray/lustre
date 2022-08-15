@@ -26041,7 +26041,7 @@ test_413f() {
 	local inherit
 	local inherit_rr
 
-	for i in $(seq 3); do
+	for i in $(seq 2); do
 		mkdir $testdir || error "mkdir $testdir failed"
 		count=$($LFS getdirstripe -D -c $testdir)
 		(( count == 1 )) ||
