@@ -1665,7 +1665,8 @@ static void ll_update_default_lsm_md(struct inode *inode, struct lustre_md *md)
 	ENTRY;
 
 	/* clear default lsm */
-	if (!lsm_obj) {
+	if (!lsm_obj ||
+	    lsm_obj->lso_lsm.lsm_md_max_inherit == LMV_INHERIT_NONE) {
 		/* clear default lsm */
 		if (lli->lli_def_lsm_obj) {
 			down_write(&lli->lli_lsm_sem);
