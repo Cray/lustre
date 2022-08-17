@@ -1702,6 +1702,14 @@ static int lod_verify_md_striping(struct lod_device *lod,
 		       le32_to_cpu(lum->lum_stripe_count), -EINVAL);
 		return -EINVAL;
 	}
+	if (unlikely(lum->lum_max_inherit == LMV_INHERIT_NONE)) {
+		CDEBUG(D_INODE, "%s: invalid lmv_user_md: magic = %u, "
+		       "stripe_offset = %d, stripe_count = %u: rc = %d\n",
+		       lod2obd(lod)->obd_name, lum->lum_max_inherit,
+		       (int)le32_to_cpu(lum->lum_stripe_offset),
+		       le32_to_cpu(lum->lum_stripe_count), -EINVAL);
+		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -5453,6 +5461,7 @@ static int lod_get_default_lmv_striping(const struct lu_env *env,
 					struct lod_object *lo,
 					struct lod_default_striping *lds)
 {
+	struct lod_thread_info *info = lod_env_info(env);
 	struct lmv_user_md *lmu;
 	int rc;
 
@@ -5462,11 +5471,10 @@ static int lod_get_default_lmv_striping(const struct lu_env *env,
 	if (rc < 0)
 		return rc;
 
-	if (rc >= (int)sizeof(*lmu)) {
-		struct lod_thread_info *info = lod_env_info(env);
+	lmu = info->lti_ea_store;
 
-		lmu = info->lti_ea_store;
-
+	if (rc >= (int)sizeof(*lmu) &&
+	    lmu->lum_max_inherit != LMV_INHERIT_NONE) {
 		lds->lds_dir_def_stripe_count =
 				le32_to_cpu(lmu->lum_stripe_count);
 		lds->lds_dir_def_stripe_offset =
