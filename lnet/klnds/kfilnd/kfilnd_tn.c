@@ -769,6 +769,8 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 	case TN_EVENT_RX_HELLO:
 		msg = tn->tn_rx_msg.msg;
 
+		kfilnd_peer_alive(tn->tn_kp);
+
 		switch (msg->type) {
 		case KFILND_MSG_HELLO_REQ:
 			kfilnd_peer_process_hello(tn->tn_kp, msg);
@@ -847,7 +849,7 @@ static int kfilnd_tn_state_imm_send(struct kfilnd_transaction *tn,
 			hstatus = LNET_MSG_STATUS_REMOTE_ERROR;
 
 		kfilnd_tn_status_update(tn, status, hstatus);
-		kfilnd_peer_down(tn->tn_kp);
+		kfilnd_peer_stale(tn->tn_kp);
 		if (tn->msg_type == KFILND_MSG_HELLO_REQ)
 			kfilnd_peer_clear_hello_pending(tn->tn_kp);
 		break;
@@ -1029,7 +1031,7 @@ static int kfilnd_tn_state_wait_comp(struct kfilnd_transaction *tn,
 			hstatus = LNET_MSG_STATUS_REMOTE_ERROR;
 
 		kfilnd_tn_status_update(tn, status, hstatus);
-		kfilnd_peer_down(tn->tn_kp);
+		kfilnd_peer_stale(tn->tn_kp);
 
 		/* Need to cancel the tagged receive to prevent resources from
 		 * being leaked.
@@ -1113,7 +1115,7 @@ static int kfilnd_tn_state_wait_tag_rma_comp(struct kfilnd_transaction *tn,
 			hstatus = LNET_MSG_STATUS_REMOTE_ERROR;
 
 		kfilnd_tn_status_update(tn, status, hstatus);
-		kfilnd_peer_down(tn->tn_kp);
+		kfilnd_peer_stale(tn->tn_kp);
 		break;
 
 	default:
@@ -1194,7 +1196,7 @@ static int kfilnd_tn_state_wait_tag_comp(struct kfilnd_transaction *tn,
 			hstatus = LNET_MSG_STATUS_REMOTE_ERROR;
 
 		kfilnd_tn_status_update(tn, status, hstatus);
-		kfilnd_peer_down(tn->tn_kp);
+		kfilnd_peer_stale(tn->tn_kp);
 		break;
 
 	case TN_EVENT_TAG_TX_OK:
@@ -1220,7 +1222,7 @@ static int kfilnd_tn_state_fail(struct kfilnd_transaction *tn,
 
 	switch (event) {
 	case TN_EVENT_TX_FAIL:
-		kfilnd_peer_down(tn->tn_kp);
+		kfilnd_peer_stale(tn->tn_kp);
 		break;
 
 	case TN_EVENT_TX_OK:
@@ -1252,7 +1254,7 @@ static int kfilnd_tn_state_wait_timeout_tag_comp(struct kfilnd_transaction *tn,
 	case TN_EVENT_TAG_RX_CANCEL:
 		kfilnd_tn_status_update(tn, -ETIMEDOUT,
 					LNET_MSG_STATUS_REMOTE_TIMEOUT);
-		kfilnd_peer_down(tn->tn_kp);
+		kfilnd_peer_stale(tn->tn_kp);
 		break;
 
 	case TN_EVENT_TAG_RX_FAIL:
