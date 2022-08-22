@@ -1576,7 +1576,7 @@ test_33d() {
 	op_trigger_cos "remote directory create" "$LFS mkdir -i 0 $DIR/$tdir" \
 		"$LFS mkdir -i 1 $DIR2/$tdir/subdir"
 	op_trigger_cos "cross-MDT rename" \
-		"mkdir $DIR/$tdir; \
+		"$LFS mkdir -c 2 $DIR/$tdir; \
 		$LFS mkdir -i 0 $DIR/$tdir/d1; \
 		$LFS mkdir -i 1 $DIR/$tdir/d2; \
 		touch $DIR/$tdir/d1/src" \
