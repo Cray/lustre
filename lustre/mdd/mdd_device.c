@@ -79,15 +79,15 @@ static struct lu_kmem_descr mdd_caches[] = {
  * stripe_offset, max_inherit, max_inherit_rr, see lfs setdirstripe for more
  * details.
  */
-static unsigned int root_stripe_offset = LMV_OFFSET_DEFAULT;
+static unsigned int root_stripe_offset = 0;
 module_param(root_stripe_offset, uint, 0444);
 MODULE_PARM_DESC(root_stripe_offset, "fs-wide default LMV stripe offset");
 
-static unsigned int root_max_inherit = LMV_INHERIT_UNLIMITED;
+static unsigned int root_max_inherit = LMV_INHERIT_END;
 module_param(root_max_inherit, uint, 0444);
 MODULE_PARM_DESC(root_max_inherit, "fs-wide default LMV max_inherit");
 
-static unsigned int root_max_inherit_rr = LMV_INHERIT_RR_ROOT;
+static unsigned int root_max_inherit_rr = LMV_INHERIT_RR_NONE;
 module_param(root_max_inherit_rr, uint, 0444);
 MODULE_PARM_DESC(root_max_inherit_rr, "fs-wide default LMV max_inherit_rr");
 
