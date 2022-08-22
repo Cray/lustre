@@ -267,11 +267,11 @@ test_0e() { # LU-13417
 	local default_lmv_count=$($LFS getdirstripe -D -c $MOUNT)
 	local default_lmv_index=$($LFS getdirstripe -D -i $MOUNT)
 
+	[ $default_lmv_index -eq -1 ] ||
+		skip "default layout must be space balanced"
+
 	[ $default_lmv_count -eq 1 ] ||
 		error "$MOUNT default stripe count $default_lmv_count"
-
-	[ $default_lmv_index -eq -1 ] ||
-		error "$MOUNT default stripe index $default_lmv_index"
 
 	mkdir $MOUNT/$tdir.1 || error "mkdir $MOUNT/$tdir.1 failed"
 	mkdir $MOUNT/$tdir.2 || error "mkdir $MOUNT/$tdir.2 failed"
@@ -25711,6 +25711,10 @@ test_413b() {
 
 	local testdir
 	local stripe_count
+	local offset
+
+	offset=$($LFS getdirstripe -D -i $DIR)
+	(( offset == -1 )) || skip "default layout must be space balanced"
 
 	generate_uneven_mdts 100
 	for stripe_count in $(seq 1 $((MDSCOUNT - 1))); do
@@ -25775,6 +25779,10 @@ test_413d() {
 		skip "Need server version at least 2.14.51"
 
 	local lmv_qos_threshold_rr
+	local offset
+
+	offset=$($LFS getdirstripe -D -i $DIR)
+	(( offset == -1 )) || skip "default layout must be space balanced"
 
 	lmv_qos_threshold_rr=$($LCTL get_param -n lmv.*.qos_threshold_rr |
 		head -n1)
