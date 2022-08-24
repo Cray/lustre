@@ -27,6 +27,17 @@ cp -f "$7/$1/$2/build/config.h" \
     "$7/$1/$2/$3/$5/" 2> /dev/null
 
 case $1 in
+    lustre-zfs|lustre-all)
+	# To satisfy the content of lustre-osd-zfs-mount install these scripts:
+	for script in statechange-lustre.sh \
+		      vdev_attach-lustre.sh \
+		      vdev_clear-lustre.sh \
+		      vdev_remove-lustre.sh
+	do
+		install -D -m 0755 lustre/scripts/${script} /etc/zfs/zed.d/${script}
+	done
+	;;
+
     cray-lustre-client)
 	flavor=$(echo $3 | tr '-' '\n' | tail -1)
 
