@@ -8,6 +8,13 @@
 # $7 : $dkms_tree
 
 case $1 in
+    cray-lustre-client)
+	SERVER="--disable-server --enable-client"
+	ksrc="$(dirname $4)/source"
+	KERNEL_STUFF="--with-linux=$(realpath $ksrc) --with-linux-obj=$(realpath $4)"
+	sh ./autogen.sh
+	;;
+
     lustre-client)
 	SERVER="--disable-server"
 	KERNEL_STUFF=""

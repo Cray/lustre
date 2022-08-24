@@ -74,6 +74,11 @@
             </file>
             <file>
                 <name>
+                    cray-obs/cray-lustre-client-dkms.spec
+                </name>
+            </file>
+            <file>
+                <name>
                     cray-obs/cray-lustre-client-ofed.spec
                 </name>
             </file>

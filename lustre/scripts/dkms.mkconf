@@ -103,7 +103,12 @@ BUILT_MODULE_LOCATION[\${#BUILT_MODULE_LOCATION[@]}]="lustre/ptlrpc/gss/"
 DEST_MODULE_LOCATION[\${#DEST_MODULE_LOCATION[@]}]="/${kmoddir}/lustre/"
 fi
 EOF
-if [ $pkgname != "lustre-client" ] ; then
+
+if [ $pkgname = "lustre-client" -o $pkgname = "cray-lustre-client" ] ; then
+	cat >>${filename} <<EOF
+# No Server Modules
+EOF
+else
 	cat >>${filename} <<EOF
 # Server Modules
 BUILT_MODULE_NAME[\${#BUILT_MODULE_NAME[@]}]="ofd"
