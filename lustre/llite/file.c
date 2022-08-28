@@ -5982,11 +5982,10 @@ int ll_inode_permission(struct mnt_idmap *idmap, struct inode *inode, int mask)
 
 	/*
 	 * as root inode are NOT getting validated in lookup operation,
-	 * need to do it before permission check.
+	 * need to revalidate PERM before permission check.
 	 */
-
 	if (is_root_inode(inode)) {
-		rc = ll_inode_revalidate(inode->i_sb->s_root, IT_LOOKUP);
+		rc = ll_inode_revalidate(inode->i_sb->s_root, IT_GETATTR);
 		if (rc)
 			RETURN(rc);
 	}
