@@ -457,8 +457,8 @@ static int lprocfs_jobstats_seq_show(struct seq_file *p, void *v)
 	}
 	seq_putc(p, '\n');
 
-	lprocfs_stats_header(p, job->js_time_latest, job->js_time_init, 16,
-			     ":", true);
+	lprocfs_stats_header_ind(p, job->js_time_latest, job->js_time_init,
+				 "  ", 16, ":", true);
 
 	s = job->js_stats;
 	for (i = 0; i < s->ls_num; i++) {
