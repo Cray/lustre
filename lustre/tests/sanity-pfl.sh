@@ -2482,12 +2482,27 @@ test_25() {
 }
 run_test 25 "Verify old lov stripe API with PFL files"
 
-test_26() {
+test_26a() {
 	$LFS setstripe -E 1m -S 1M -c 1 $DIR/$tfile
 	dd if=/dev/urandom bs=1M count=10 >> $DIR/$tfile
 	[ $? != 0 ] || error "append must return an error"
 }
-run_test 26 "Append to not-existend component"
+run_test 26a "Append to not-existent component"
+
+test_26b() {
+	$LFS setstripe -E 1m -S 1M -c 1 $DIR/$tfile
+	dd if=/dev/urandom bs=1M count=1 > $DIR/$tfile
+	dd if=/dev/urandom bs=1M count=1 >> $DIR/$tfile
+	[ $? != 0 ] || error "append must return an error"
+}
+run_test 26b "Append to not-existend component, file size is unknown"
+
+test_26c() {
+	$LFS setstripe -E 1m -S 1M -c 1 $DIR/$tfile
+	dd if=/dev/urandom bs=2M count=1 >> $DIR/$tfile
+	[ $? != 0 ] || error "append must return an error"
+}
+run_test 26c "Append to not-existend component, crossing the component border"
 
 complete $SECONDS
 check_and_cleanup_lustre
