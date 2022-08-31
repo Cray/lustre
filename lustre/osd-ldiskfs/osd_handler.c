@@ -3012,7 +3012,9 @@ static int osd_transfer_project(struct inode *inode, __u32 projid,
 	dquot_initialize(inode);
 	transfer_to[PRJQUOTA] = dqget(sb, make_kqid_projid(kprojid));
 	if (transfer_to[PRJQUOTA]) {
+		lock_dquot_transfer(inode);
 		err = __dquot_transfer(inode, transfer_to);
+		unlock_dquot_transfer(inode);
 		dqput(transfer_to[PRJQUOTA]);
 		if (err)
 			return err;
@@ -3043,7 +3045,9 @@ static int osd_quota_transfer(struct inode *inode, const struct lu_attr *attr,
 		iattr.ia_uid = make_kuid(&init_user_ns, attr->la_uid);
 		iattr.ia_gid = make_kgid(&init_user_ns, attr->la_gid);
 
+		lock_dquot_transfer(inode);
 		rc = ll_vfs_dq_transfer(inode, &iattr);
+		unlock_dquot_transfer(inode);
 		if (rc) {
 			CERROR("%s: quota transfer failed: rc = %d. Is quota "
 			       "enforcement enabled on the ldiskfs "
