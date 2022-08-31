@@ -454,6 +454,21 @@ fs_disk_quota, [
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_DQUOT_FS_DISK_QUOTA
 
+AC_DEFUN([LC_HAVE_GET_INODE_USAGE], [
+LB_CHECK_COMPILE([if get_inode_usage exists],
+get_inode_usage, [
+	struct inode;
+	#include <linux/quota.h>
+],[
+	struct dquot_operations ops = { };
+
+	ops.get_inode_usage(NULL, NULL);
+],[
+	AC_DEFINE(HAVE_GET_INODE_USAGE, 1,
+		[get_inode_usage function exists])
+])
+]) # LC_HAVE_GET_INODE_USAGE
+
 #
 # LC_HAVE_DQUOT_SUSPEND
 #
@@ -3593,6 +3608,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 4.13
 	LC_BIO_INTEGRITY_ENABLED
 	LC_BIO_INTEGRITY_PREP_FN_RETURNS_BOOL
+	LC_HAVE_GET_INODE_USAGE
 
 	# 4.14
 	LC_PAGEVEC_INIT_ONE_PARAM
