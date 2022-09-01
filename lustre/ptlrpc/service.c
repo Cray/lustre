@@ -31,6 +31,7 @@
 
 #define DEBUG_SUBSYSTEM S_RPC
 
+#include <linux/fs_struct.h>
 #include <linux/kthread.h>
 #include <linux/ratelimit.h>
 
@@ -2772,6 +2773,7 @@ static int ptlrpc_main(void *arg)
 	int counter = 0, rc = 0;
 
 	ENTRY;
+	unshare_fs_struct();
 
 	thread->t_task = current;
 	thread->t_pid = current->pid;
@@ -2978,6 +2980,7 @@ static int ptlrpc_hr_main(void *arg)
 	struct lu_env *env;
 	int rc;
 
+	unshare_fs_struct();
 	OBD_ALLOC_PTR(env);
 	if (env == NULL)
 		RETURN(-ENOMEM);
