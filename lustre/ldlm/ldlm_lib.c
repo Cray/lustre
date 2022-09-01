@@ -39,6 +39,7 @@
 #define DEBUG_SUBSYSTEM S_LDLM
 
 #include <cl_object.h>
+#include <linux/fs_struct.h>
 #include <linux/jiffies.h>
 #include <linux/kernel.h>
 #include <linux/kthread.h>
@@ -2730,6 +2731,7 @@ static int target_recovery_thread(void *arg)
 	int rc = 0;
 
 	ENTRY;
+	unshare_fs_struct();
 	OBD_ALLOC_PTR(thread);
 	if (thread == NULL)
 		RETURN(-ENOMEM);
