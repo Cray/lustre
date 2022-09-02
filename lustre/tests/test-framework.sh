@@ -11160,3 +11160,11 @@ init_stripe_dir_params() {
 	eval $varremote=${!varremote:-false}
 	eval $varstriped=${!varstriped:-false}
 }
+
+verify_yaml_available() {
+	python3 -c "import yaml; yaml.safe_load_all('''a: b''')"
+}
+
+verify_yaml() {
+	python3 -c "import yaml; yaml.safe_load_all('''$1''')"
+}
