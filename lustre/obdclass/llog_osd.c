@@ -516,7 +516,7 @@ static int llog_osd_write_rec(const struct lu_env *env,
 			lgi->lgi_off = reccookie->lgc_offset;
 			CDEBUG(D_OTHER, "modify record "DFID": idx:%u, "
 			       "len:%u offset %llu\n",
-			       PFID(&loghandle->lgh_id.lgl_oi.oi_fid), idx,
+			       PLOGID(&loghandle->lgh_id), idx,
 			       rec->lrh_len, (long long)lgi->lgi_off);
 		} else {
 			/* This can be result of lgh_cur_idx is not set during
@@ -569,7 +569,7 @@ static int llog_osd_write_rec(const struct lu_env *env,
 		CDEBUG(D_OTHER, "llog is getting too large (%u > %u) at %u "
 		       DFID"\n", (unsigned)lgi->lgi_off,
 		       loghandle->lgh_max_size, (int)loghandle->lgh_last_idx,
-		       PFID(&loghandle->lgh_id.lgl_oi.oi_fid));
+		       PLOGID(&loghandle->lgh_id));
 		/* this is to signal that this llog is full */
 		loghandle->lgh_last_idx = LLOG_HDR_BITMAP_SIZE(llh) - 1;
 		RETURN(-ENOSPC);
@@ -995,11 +995,9 @@ static int llog_osd_next_block(const struct lu_env *env,
 			if (!force_mini_rec)
 				goto retry;
 
-			CERROR("%s: invalid llog block at log id "DFID":%x "
-			       "offset %llu\n",
+			CERROR("%s: invalid llog block at log id "DFID" offset %llu\n",
 			       o->do_lu.lo_dev->ld_obd->obd_name,
-			       PFID(&loghandle->lgh_id.lgl_oi.oi_fid),
-			       loghandle->lgh_id.lgl_ogen, *cur_offset);
+			       PLOGID(&loghandle->lgh_id), *cur_offset);
 			GOTO(out, rc = -EINVAL);
 		}
 
@@ -1033,10 +1031,9 @@ static int llog_osd_next_block(const struct lu_env *env,
 			lustre_swab_llog_rec(last_rec);
 
 		if (last_rec->lrh_index != tail->lrt_index) {
-			CERROR("%s: invalid llog tail at log id "DFID":%x offset %llu last_rec idx %u tail idx %u lrt len %u read_size %d\n",
+			CERROR("%s: invalid llog tail at log id "DFID" offset %llu last_rec idx %u tail idx %u lrt len %u read_size %d\n",
 			       o->do_lu.lo_dev->ld_obd->obd_name,
-			       PFID(&loghandle->lgh_id.lgl_oi.oi_fid),
-			       loghandle->lgh_id.lgl_ogen, *cur_offset,
+			       PLOGID(&loghandle->lgh_id), *cur_offset,
 			       last_rec->lrh_index, tail->lrt_index,
 			       tail->lrt_len, rc);
 			GOTO(out, rc = -EINVAL);
@@ -1046,11 +1043,9 @@ static int llog_osd_next_block(const struct lu_env *env,
 
 		/* this shouldn't happen */
 		if (tail->lrt_index == 0) {
-			CERROR("%s: invalid llog tail at log id "DFID":%x "
-			       "offset %llu bytes %d\n",
+			CERROR("%s: invalid llog tail at log id "DFID"offset %llu bytes %d\n",
 			       o->do_lu.lo_dev->ld_obd->obd_name,
-			       PFID(&loghandle->lgh_id.lgl_oi.oi_fid),
-			       loghandle->lgh_id.lgl_ogen, *cur_offset, rc);
+			       PLOGID(&loghandle->lgh_id), *cur_offset, rc);
 			GOTO(out, rc = -EINVAL);
 		}
 		if (tail->lrt_index < next_idx) {
@@ -1167,11 +1162,9 @@ static int llog_osd_prev_block(const struct lu_env *env,
 			GOTO(out, rc);
 
 		if (rc < sizeof(*tail)) {
-			CERROR("%s: invalid llog block at log id "DFID":%x "
-			       "offset %llu\n",
+			CERROR("%s: invalid llog block at log id "DFID" offset %llu\n",
 			       o->do_lu.lo_dev->ld_obd->obd_name,
-			       PFID(&loghandle->lgh_id.lgl_oi.oi_fid),
-			       loghandle->lgh_id.lgl_ogen, cur_offset);
+			       PLOGID(&loghandle->lgh_id), cur_offset);
 			GOTO(out, rc = -EINVAL);
 		}
 
@@ -1191,11 +1184,9 @@ static int llog_osd_prev_block(const struct lu_env *env,
 
 		/* this shouldn't happen */
 		if (tail->lrt_index == 0) {
-			CERROR("%s: invalid llog tail at log id "DFID":%x "
-			       "offset %llu\n",
+			CERROR("%s: invalid llog tail at log id "DFID" offset %llu\n",
 			       o->do_lu.lo_dev->ld_obd->obd_name,
-			       PFID(&loghandle->lgh_id.lgl_oi.oi_fid),
-			       loghandle->lgh_id.lgl_ogen, cur_offset);
+			       PLOGID(&loghandle->lgh_id), cur_offset);
 			GOTO(out, rc = -EINVAL);
 		}
 		if (tail->lrt_index < prev_idx)
