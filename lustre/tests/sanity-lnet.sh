@@ -186,7 +186,7 @@ validate_nid() {
 	local num_re='[0-9]\+'
 	local ip_re="[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}"
 
-	if [[ $net =~ gni[0-9]* ]] || [[ $net =~ kfi[0-9]* ]]; then
+	if [[ $net =~ gni[0-9]* ]]; then
 		[[ $addr =~ ${num_re} ]] && return 0
 	else
 		[[ $addr =~ ${ip_re} ]] && return 0
@@ -373,17 +373,10 @@ peer:
         - nid: 6.6.3.6@o2ib
         - nid: 6@gni
         - nid: 10@gni
-        - nid: 6@kfi
-        - nid: 10@kfi
 EOF
 	append_global_yaml
-
-	local nid_expr="6.6.[6-7].[0-4/2]@tcp"
-	nid_expr+=",6.6.[1-4/2].[0-6/3]@o2ib"
-	nid_expr+=",[6-12/4]@gni"
-	nid_expr+=",[6-12/4]@kfi"
-
-	compare_peer_add "6.6.6.6@tcp" "${nid_expr}"
+	compare_peer_add "6.6.6.6@tcp" \
+		"6.6.[6-7].[0-4/2]@tcp,6.6.[1-4/2].[0-6/3]@o2ib,[6-12/4]@gni"
 }
 run_test 6 "Add peer with multiple nidranges"
 
@@ -436,18 +429,9 @@ test_7() {
 		error "Peer add failed $?"
 	compare_peer_del "7@gni"
 
-	echo "Delete peer with single nid (kfi)"
-	do_lnetctl peer add --prim_nid 7@kfi || error "Peer add failed $?"
-	compare_peer_del "7@kfi"
-
-	echo "Delete peer that has multiple nids (kfi)"
-	do_lnetctl peer add --prim_nid 7@kfi --nid [8-12]@kfi ||
-		error "Peer add failed $?"
-	compare_peer_del "7@kfi"
-
-	echo "Delete peer that has tcp, o2ib, gni and kfi nids"
+	echo "Delete peer that has tcp, o2ib and gni nids"
 	do_lnetctl peer add --prim_nid 7@gni \
-		--nid [8-12]@gni,7.7.7.[1-4]@tcp,7.7.7.[5-9]@o2ib,[1-5]@kfi ||
+		--nid [8-12]@gni,7.7.7.[9-12]@tcp,7.7.7.[13-15]@o2ib ||
 		error "Peer add failed $?"
 	compare_peer_del "7@gni"
 }
@@ -579,7 +563,7 @@ create_nid() {
 	local num="$1"
 	local net="$2"
 
-	if [[ $net =~ gni* ]] || [[ $net =~ kfi* ]]; then
+	if [[ $net =~ gni* ]]; then
 		echo "${num}@${net}"
 	else
 		echo "${num}.${num}.${num}.${num}@${net}"
