@@ -23,7 +23,6 @@ BuildRequires: %kernel_module_package_buildreqs
 BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
 BuildRequires: cray-kfabric-devel
-Requires: cray-kfabric-kmp
 
 # Vendor specific requires/defines/etc.
 %if %{_vendor}=="redhat"
@@ -31,6 +30,7 @@ Requires: cray-kfabric-kmp
 %global _with_linux --with-linux=/usr/src/kernels/%{kversion}
 %global requires_kmod_name kmod-%{lustre_name}
 %global requires_kmod_version %{version}
+Requires: kmod-cray-kfabric
 BuildRequires: redhat-rpm-config
 %else
 %global kversion %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease)
@@ -39,6 +39,7 @@ BuildRequires: redhat-rpm-config
 %global requires_kmod_name %{lustre_name}-kmp
 %global krequires %(echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/\.aarch64$//' -e 's/-default$//' -e 's/-%{flavor}//')
 %global requires_kmod_version %{version}_k%(echo %{krequires} | sed -r 'y/-/_/; s/^(2\.6\.[0-9]+)_/\\1.0_/;')
+Requires: cray-kfabric-kmp
 %endif
 
 Requires: %{requires_kmod_name} = %{requires_kmod_version}
