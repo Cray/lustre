@@ -430,6 +430,7 @@ init_test_env() {
 	[ "$TESTSUITELOG" ] && rm -f $TESTSUITELOG || true
 	if ! $RPC_MODE; then
 		rm -f $TMP/*active
+		rm -f $TMP/*device
 	fi
 
 	export TF_FAIL=${TF_FAIL:-$TMP/tf.fail}
@@ -442,7 +443,9 @@ init_test_env() {
 	export BLOCKSIZE=${BLOCKSIZE:-4096}
 	export MACHINEFILE=${MACHINEFILE:-$TMP/$(basename $0 .sh).machines}
 	. ${CONFIG:=$LUSTRE/tests/cfg/$NAME.sh}
-	get_lustre_env
+	if ! $RPC_MODE; then
+		get_lustre_env
+	fi
 
 	# use localrecov to enable recovery for local clients, LU-12722
 	[[ $MDS1_VERSION -lt $(version_code 2.13.52) ]] || {
@@ -2017,6 +2020,7 @@ dm_create_dev() {
 		{ rc=${PIPESTATUS[0]}; dm_dev=; }
 	do_facet $facet "$DMSETUP mknodes >/dev/null 2>&1"
 
+	export_dm_dev $facet $dm_dev
 	echo -n $dm_dev
 	return $rc
 }
@@ -2067,6 +2071,8 @@ export_dm_dev() {
 
 	eval export ${dev_name}_saved=$dev
 	eval export ${dev_name}=$dm_dev
+	echo ${dev_name}_saved=$dev > $TMP/${facet}.device_saved
+	echo ${dev_name}=$dm_dev > $TMP/${facet}.device
 }
 
 #
@@ -2078,8 +2084,15 @@ unexport_dm_dev() {
 	local dev_alias=$(facet_device_alias $facet)
 
 	local saved_dev=${dev_alias}_dev_saved
-	[[ -z ${!saved_dev} ]] ||
+	[ -f $TMP/${facet}.device_saved ] &&
+		source $TMP/${facet}.device_saved
+	[ -f $TMP/${facet}.device ] &&
+		source $TMP/${facet}.device
+
+	if [[ -n ${!saved_dev} ]]; then
 		eval export ${dev_alias}_dev=${!saved_dev}
+		echo ${dev_alias}_dev=${!saved_dev} > $TMP/${facet}.device
+	fi
 
 	saved_dev=${dev_alias}failover_dev_saved
 	[[ -z ${!saved_dev} ]] ||
@@ -2158,6 +2171,7 @@ mount_facet() {
 
 	echo "Starting ${facet}: $opts $dm_dev $mntpt"
 	# for testing LU-482 error handling in mount_facets() and test_0a()
+	local RC=0
 	if [ -f $TMP/test-lu482-trigger ]; then
 		RC=2
 	else
@@ -2171,7 +2185,7 @@ mount_facet() {
 		return $RC
 	fi
 
-	health=$(do_facet ${facet} "$LCTL get_param -n health_check")
+	local health=$(do_facet ${facet} "$LCTL get_param -n health_check")
 	if [[ "$health" != "healthy" ]]; then
 		error "$facet is in a unhealthy state"
 	fi
@@ -2205,13 +2219,11 @@ mount_facet() {
 		do_facet $facet "sync; sleep 1; sync"
 	fi
 
-
-	label=$(devicelabel ${facet} $dm_dev)
+	# Can we remove this check?
+	local label=$(devicelabel ${facet} $dm_dev)
 	[ -z "$label" ] && echo no label for $dm_dev && exit 1
 	eval export ${facet}_svc=${label}
 	echo Started ${label}
-
-	export_dm_dev $facet $dm_dev
 
 	return $RC
 }
@@ -2244,7 +2256,7 @@ start() {
 	do_facet ${facet} mkdir -p $mntpt
 	eval export ${facet}_MOUNT=$mntpt
 	mount_facet ${facet}
-	RC=$?
+	local RC=$?
 
 	return $RC
 }
@@ -2263,6 +2275,13 @@ stop() {
 		do_facet ${facet} $UMOUNT $@ $mntpt
 	fi
 
+	# stop () is used everywhere: on main shell, on subshell where test_N() run,
+	# tests run on subshell stop lustre, run stop() ->  unexport_dm_dev ()
+	# -> eval export ${dev_alias}_dev=${!saved_dev} not inherit by parent shell...
+	# let's get the not inherit device from $TMP/${facet}.device
+	if [[ -f $TMP/${facet}.device ]]; then
+		source $TMP/${facet}.device
+	fi
 	# umount should block, but we should wait for unrelated obd's
 	# like the MGS or MGC to also stop.
 	wait_exit_ST ${facet} || return ${PIPESTATUS[0]}
@@ -4181,12 +4200,7 @@ detect_active() {
 	# have a failover.
 	[[ -z "$failover" ]] && echo $facet && return
 
-	local host=$(facet_host $facet)
 	local dev=$(facet_device $facet)
-
-	# ${facet}_svc can not be used here because of
-	# facet_active() is called before this var initialized
-	local svc=$(do_node $host $E2LABEL ${dev})
 
 	# active facet is ${facet}failover if device is mounted on failover
 	# on other cases active facet is $facet
@@ -4508,6 +4522,9 @@ ostdevname() {
 	case $fstype in
 		ldiskfs )
 			local dev=ost${num}_dev
+			if [[ -f $TMP/ost${num}.device ]]; then
+				source $TMP/ost${num}.device
+			fi
 			[[ -n ${!dev} ]] && eval DEVPTR=${!dev} ||
 			#if $OSTDEVn isn't defined, default is $OSTDEVBASE + num
 			eval DEVPTR=${!DEVNAME:=${OSTDEVBASE}${num}};;
@@ -4556,6 +4573,9 @@ mdsdevname() {
 	case $fstype in
 		ldiskfs )
 			local dev=mds${num}_dev
+			if [[ -f $TMP/mds${num}.device ]]; then
+				source $TMP/mds${num}.device
+			fi
 			[[ -n ${!dev} ]] && eval DEVPTR=${!dev} ||
 			#if $MDSDEVn isn't defined, default is $MDSDEVBASE{n}
 			eval DEVPTR=${!DEVNAME:=${MDSDEVBASE}${num}};;
@@ -4598,6 +4618,9 @@ mgsdevname() {
 
 	case $fstype in
 	ldiskfs )
+		if [[ -f $TMP/mgs.device ]]; then
+			source $TMP/mgs.device
+		fi
 		if [[ -n $mgs_dev ]]; then
 			DEVPTR=$mgs_dev
 		elif [ $(facet_host mgs) = $(facet_host mds1) ] &&
@@ -4667,7 +4690,6 @@ mount_ldiskfs() {
 		[[ -n "$dm_dev" ]] || dm_dev=$dev
 	fi
 	is_blkdev $facet $dm_dev || opts=$(csa_add "$opts" -o loop)
-	export_dm_dev $facet $dm_dev
 
 	do_facet $facet mount -t ldiskfs $opts $dm_dev $mnt
 }
