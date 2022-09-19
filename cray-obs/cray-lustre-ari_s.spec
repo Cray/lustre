@@ -140,41 +140,16 @@ export SVN_CODE_REV=%{lustre_version}
 
 make DESTDIR=${RPM_BUILD_ROOT} install
 
-for header in api.h lib-lnet.h lib-types.h lnet_rdma.h socklnd.h udsp.h
+for fname in $(find lnet/include -type f -name \*.h)
 do
-	%{__install} -D -m 0644 lnet/include/lnet/${header} \
-	         %{buildroot}/%{_includedir}/lnet/${header}
+	target=$(echo ${fname} | sed 's:^lnet/include/::g')
+	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_includedir}/${target}
 done
 
-for header in libcfs_debug.h libcfs_ioctl.h lnetctl.h lnet-dlc.h lnet-idl.h \
-	      lnet-nl.h lnetst.h lnet-types.h nidstr.h socklnd.h
+for fname in $(find libcfs/include/libcfs -type f -name \*.h)
 do
-	%{__install} -D -m 0644 lnet/include/uapi/linux/lnet/${header} \
-		 %{buildroot}/%{_includedir}/uapi/linux/lnet/${header}
-done
-
-for header in bitmap.h libcfs_cpu.h libcfs_crypto.h libcfs_debug.h \
-	      libcfs_fail.h libcfs.h libcfs_hash.h libcfs_private.h \
-	      libcfs_string.h libcfs_workitem.h
-do
-	%{__install} -D -m 0644 libcfs/include/libcfs/${header} %{buildroot}/%{_includedir}/libcfs/${header}
-done
-
-for header in linux-cpu.h linux-fs.h linux-hash.h linux-list.h \
-	      linux-mem.h linux-misc.h linux-net.h linux-time.h linux-uuid.h \
-	      linux-wait.h processor.h refcount.h xarray.h linux-percpu-refcount.h
-do
-	%{__install} -D -m 0644 libcfs/include/libcfs/linux/${header} %{buildroot}/%{_includedir}/libcfs/linux/${header}
-done
-
-for header in hash.h ioctl.h list.h param.h parser.h string.h 
-do
-	%{__install} -D -m 0644 libcfs/include/libcfs/util/${header} %{buildroot}/%{_includedir}/libcfs/util/${header}
-done
-
-for header in llcrypt.h
-do
-	%{__install} -D -m 0644 libcfs/include/libcfs/crypto/${header} %{buildroot}/%{_includedir}/libcfs/crypto/${header}
+	target=$(echo ${fname} | sed -e 's:^libcfs/include/::g')
+	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_includedir}/${target}
 done
 
 %{__install} -D -m 0644 lustre/include/interval_tree.h %{buildroot}/%{_includedir}/interval_tree.h
