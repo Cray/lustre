@@ -89,28 +89,16 @@ fi
 %install
 make DESTDIR=${RPM_BUILD_ROOT} install
 
-for header in api.h lib-lnet.h lib-types.h
+for fname in $(find lnet/include -type f -name \*.h)
 do
-	%{__install} -D -m 0644 lnet/include/lnet/${header} %{buildroot}/%{_includedir}/lnet/${header}
+	target=$(echo ${fname} | sed 's:^lnet/include/::g')
+	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_includedir}/${target}
 done
 
-for header in libcfs_debug.h lnetctl.h lnetst.h libcfs_ioctl.h lnet-dlc.h \
-	      lnet-types.h nidstr.h
+for fname in $(find libcfs/include/libcfs -type f -name \*.h)
 do
-	%{__install} -D -m 0644 lnet/include/uapi/linux/lnet/${header} %{buildroot}/%{_includedir}/uapi/linux/lnet/${header}
-done
-
-for header in libcfs.h util/list.h curproc.h bitmap.h libcfs_private.h libcfs_cpu.h \
-	      libcfs_prim.h libcfs_string.h libcfs_workitem.h \
-	      libcfs_hash.h libcfs_heap.h libcfs_fail.h libcfs_debug.h range_lock.h
-do
-	%{__install} -D -m 0644 libcfs/include/libcfs/${header} %{buildroot}/%{_includedir}/libcfs/${header}
-done
-
-for header in linux-cpu.h linux-crypto.h linux-fs.h linux-hash.h linux-list.h \
-	      linux-mem.h linux-misc.h linux-time.h linux-wait.h linux-percpu-refcount.h
-do
-	%{__install} -D -m 0644 libcfs/include/libcfs/linux/${header} %{buildroot}/%{_includedir}/libcfs/linux/${header}
+	target=$(echo ${fname} | sed -e 's:^libcfs/include/::g')
+	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_includedir}/${target}
 done
 
 %{__install} -D -m 0644 lustre/include/interval_tree.h %{buildroot}/%{_includedir}/interval_tree.h
