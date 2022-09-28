@@ -23,6 +23,7 @@ BuildRequires: sles-release
 #!BuildIgnore: post-build-checks
 BuildRequires: libtool
 BuildRequires: libyaml-devel
+BuildRequires: libmount-devel
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}
