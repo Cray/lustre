@@ -26,6 +26,7 @@ BuildRequires: binutils-devel
 BuildRequires: libext2fs-devel
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
+BuildRequires: libmount-devel
 #!BuildIgnore: post-build-checks
 Group: System/Filesystems
 License: GPL
