@@ -24,6 +24,7 @@ BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
+BuildRequires: libmount-devel
 BuildRequires: cray-kfabric-devel
 Requires: cray-kfabric-udev
 
