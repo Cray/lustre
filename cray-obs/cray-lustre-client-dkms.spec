@@ -79,6 +79,7 @@ Requires: pkg-config
 Requires: kernel-devel
 Requires: autoconf
 Requires: bash-completion bash-completion-devel
+Requires: libmount-devel
 
 BuildRequires: %kernel_module_package_buildreqs
 BuildRequires: libtool libyaml-devel zlib-devel
