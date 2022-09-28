@@ -30,6 +30,7 @@ BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
+BuildRequires: libmount-devel
 %ifarch x86_64
 BuildRequires: mlnx-ofa_kernel-devel
 %endif
