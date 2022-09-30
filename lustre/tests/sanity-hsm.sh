@@ -1016,6 +1016,37 @@ test_11c() {
 }
 run_test 11c "Import a file to a directory with a pool"
 
+test_11d() {
+	# test needs a running copytool
+	copytool setup
+
+	mkdir_on_mdt0 $DIR/$tdir
+	$LFS setstripe -E 1M -L mdt -E -1 -L raid0 -c 2 $DIR/$tdir ||
+		error "Cannot set striping"
+	local f=$DIR/$tdir/$tfile
+	local fid=$(copy_file /etc/hosts $f)
+
+	$LFS hsm_archive -a $HSM_ARCHIVE_NUMBER $f ||
+		error "hsm_archive failed"
+	wait_request_state $fid ARCHIVE SUCCEED
+	$LFS getstripe $f || error "getstripe error"
+
+	local FILE_HASH=$(md5sum $f)
+	rm -f $f
+
+	copytool import $fid $f
+
+	echo "$FILE_HASH" | md5sum -c
+	[[ $? -eq 0 ]] || error "Restored file differs"
+
+	lfs getstripe $f || "getstripe error"
+	$LFS getstripe -I1 -L $f | grep -q mdt || echo "wrong layout"
+	$LFS getstripe -I2 -L $f | grep -q raid0 || echo "wrong layout"
+        local count=$($LFS getstripe -I2 -c $f)
+        [[ $count -eq 2 ]] || error "wrong stripe count $count"
+}
+run_test 11d "Import deleted DOM + RAID0 file using its FID"
+
 test_12a() {
 	# test needs a running copytool
 	copytool setup
