@@ -2413,6 +2413,23 @@ out:
 	return rc;
 }
 
+static struct dt_object *mdd_obj_osd(struct mdd_object *obj)
+{
+	struct lu_object *lu_obj;
+
+	lu_obj = lu_object_next(mdd2lu_obj(obj));
+	lu_obj = lu_object_next(lu_obj);
+
+	return lu2dt(lu_obj);
+}
+
+static inline struct thandle *mdd_th_sub(struct thandle *th)
+{
+	struct top_thandle *top_th = (void *)th;
+
+	return top_th->tt_master_sub_thandle;
+}
+
 /**
  * swap layouts between 2 lustre objects
  */
@@ -2431,26 +2448,27 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 	struct lu_buf *snd_buf = &info->mdi_buf[1];
 	struct lu_buf *fst_hsm_buf = &info->mdi_buf[2];
 	struct lu_buf *snd_hsm_buf = &info->mdi_buf[3];
+	struct lu_buf dom_buf = LU_BUF_NULL;
 	struct ost_id *saved_oi = NULL;
 	struct thandle *handle;
 	struct mdd_object *dom_o = NULL;
+	struct niobuf_local *lnb = NULL;
 	__u64 domsize_dom, domsize_vlt;
 	__u32 fst_gen, snd_gen, saved_gen;
-	int fst_fl;
+	int fst_fl, dom_len = 0;
 	int rc, rc2;
+	int lnbs = 0;
 
 	ENTRY;
 
 	BUILD_BUG_ON(ARRAY_SIZE(info->mdi_buf) < 4);
 	memset(info->mdi_buf, 0, sizeof(info->mdi_buf));
 
-	/* we have to sort the 2 obj, so locking will always
-	 * be in the same order, even in case of 2 concurrent swaps */
 	rc = lu_fid_cmp(mdd_object_fid(fst_o), mdd_object_fid(snd_o));
 	if (rc == 0) /* same fid ? */
 		RETURN(-EPERM);
 
-	if (rc < 0)
+	if (fst_o->mod_flags & (ORPHAN_OBJ | VOLATILE_OBJ))
 		swap(fst_o, snd_o);
 
 	rc = mdd_la_get(env, fst_o, fst_la);
@@ -2482,40 +2500,99 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 	if (rc < 0 && rc != -ENODATA)
 		GOTO(stop, rc);
 
-	/* check if file has DoM. DoM file can be migrated only to another
+	/* Check if file has DoM. DoM file can be migrated only to another
 	 * DoM layout with the same DoM component size or to an non-DOM
 	 * layout. After migration to OSTs layout, local MDT inode data
 	 * should be truncated.
-	 * Objects are sorted by FIDs, considering that original file's FID
-	 * is always smaller the snd_o is always original file we are migrating
-	 * from.
 	 */
-	domsize_dom = mdd_lmm_dom_size(snd_buf->lb_buf);
-	domsize_vlt = mdd_lmm_dom_size(fst_buf->lb_buf);
+	domsize_vlt = mdd_lmm_dom_size(snd_buf->lb_buf);
+	domsize_dom = mdd_lmm_dom_size(fst_buf->lb_buf);
 
 	/* Only migration is supported for DoM files, not 'swap_layouts' so
 	 * target file must be volatile and orphan.
 	 */
-	if (fst_o->mod_flags & (ORPHAN_OBJ | VOLATILE_OBJ)) {
-		dom_o = domsize_dom ? snd_o : NULL;
-	} else if (snd_o->mod_flags & (ORPHAN_OBJ | VOLATILE_OBJ)) {
-		swap(domsize_dom, domsize_vlt);
-		dom_o = domsize_dom ? fst_o : NULL;
-	} else if (domsize_dom > 0 || domsize_vlt > 0) {
+	CDEBUG(D_LAYOUT, "DOM swap layout size dom %llu size vlt %llu\n",
+	       domsize_dom, domsize_vlt);
+
+	if ((!(fst_o->mod_flags & (ORPHAN_OBJ | VOLATILE_OBJ)) &&
+	    !(snd_o->mod_flags & (ORPHAN_OBJ | VOLATILE_OBJ))) &&
+	    (domsize_vlt || domsize_dom)) {
 		/* 'lfs swap_layouts' case, neither file should have DoM */
 		rc = -EOPNOTSUPP;
-		CDEBUG(D_LAYOUT, "cannot swap layouts with DOM component, "
-		       "use migration instead: rc = %d\n", rc);
+		CDEBUG(D_LAYOUT, "cannot swap layouts with DOM component, use migration instead: rc = %d\n",
+		       rc);
 		GOTO(stop, rc);
 	}
+	dom_o = domsize_dom ? fst_o : NULL;
 
+	/* Import file to directory with DOM striping */
 	if (domsize_vlt > 0 && domsize_dom == 0) {
-		rc = -EOPNOTSUPP;
-		CDEBUG(D_LAYOUT,
-		       "%s: cannot swap "DFID" layout: OST to DOM migration not supported: rc = %d\n",
-		       mdd_obj_dev_name(snd_o),
-		       PFID(mdd_object_fid(snd_o)), rc);
-		GOTO(stop, rc);
+		struct niobuf_remote rnb;
+		struct thandle *thandle_sub = mdd_th_sub(handle);
+		loff_t pos = 0;
+		int i;
+
+		lu_buf_alloc(&dom_buf, domsize_vlt);
+		if (dom_buf.lb_buf == NULL) {
+			CERROR("%s: cannot allocate %llu, rc = %d\n",
+			       mdd_obj_dev_name(snd_o), domsize_vlt, -ENOMEM);
+			GOTO(stop, rc = -ENOMEM);
+		}
+		dom_len = dt_read(env, mdd_object_child(snd_o), &dom_buf, &pos);
+		if (dom_len <= 0) {
+			CERROR("%s: read volatile file "DFID" error, vltl_size %llu, rc = %d\n",
+			       mdd_obj_dev_name(snd_o),
+			       PFID(mdd_object_fid(snd_o)),
+			       domsize_vlt, dom_len);
+			rc = dom_len ? dom_len : -EINVAL;
+			GOTO(stop, rc);
+		}
+
+		rnb.rnb_offset = 0;
+		rnb.rnb_len = dom_len;
+		rnb.rnb_flags = 0;
+		lnbs = (dom_len >> PAGE_SHIFT) + (dom_len % PAGE_SIZE ? 1: 0);
+
+		OBD_ALLOC_PTR_ARRAY(lnb, lnbs);
+		if (lnb == NULL)
+			GOTO(stop, rc = -ENOMEM);
+
+		rc = dt_bufs_get(env, mdd_obj_osd(fst_o), &rnb, lnb,
+				 lnbs, DT_BUFS_TYPE_WRITE);
+		if (rc < 0) {
+			OBD_FREE_PTR_ARRAY(lnb, lnbs);
+			GOTO(stop, rc);
+		}
+
+		rc = dt_write_prep(env, mdd_obj_osd(fst_o), lnb, lnbs);
+		if (unlikely(rc)) {
+			CERROR("%s: write_prep to "DFID" failed, rc = %d\n",
+			       mdd_obj_dev_name(fst_o),
+			       PFID(mdd_object_fid(fst_o)), rc);
+			GOTO(stop, rc);
+		}
+
+		for (i = 0; i < lnbs; i++) {
+			char *p = kmap(lnb[i].lnb_page);
+			char *buf = dom_buf.lb_buf;
+			long size, off;
+
+			off = i * PAGE_SIZE;
+			/* take the rest for the last one */
+			size = (i + 1) == lnbs ? dom_len - off : PAGE_SIZE;
+			memcpy(p, buf + off, size);
+			kunmap(lnb[i].lnb_page);
+		}
+
+		thandle_sub->th_sync = 1;
+		rc = dt_declare_write_commit(env, mdd_obj_osd(fst_o), lnb,
+					     lnbs, mdd_th_sub(handle));
+		if (rc) {
+			CERROR("%s: declare write commit to "DFID" err, rc = %d\n",
+			       mdd_obj_dev_name(snd_o),
+			       PFID(mdd_object_fid(snd_o)), rc);
+			GOTO(stop, rc);
+		}
 	} else if (domsize_vlt > 0 && domsize_dom != domsize_vlt) {
 		rc = -EOPNOTSUPP;
 		CDEBUG(D_LAYOUT,
@@ -2523,7 +2600,7 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 		       mdd_obj_dev_name(fst_o),
 		       PFID(mdd_object_fid(fst_o)), rc);
 		GOTO(stop, rc);
-	} else if (domsize_vlt > 0) {
+	} else if (domsize_vlt == domsize_dom) {
 		/* Migration with the same DOM component size, no need to
 		 * truncate local data, it is still being used */
 		dom_o = NULL;
@@ -2647,6 +2724,18 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 	if (rc != 0)
 		GOTO(stop, rc);
 
+	if (domsize_vlt > 0 && domsize_dom == 0) {
+		rc = dt_write_commit(env, mdd_obj_osd(fst_o), lnb, lnbs,
+				     mdd_th_sub(handle), dom_len);
+		if (rc) {
+			CERROR("%s: HSM error restoring of DOM "DFID": rc = %d\n",
+			       mdd_obj_dev_name(fst_o),
+			       PFID(mdd_object_fid(fst_o)), rc);
+			/* add retry as in mdt_write ? */
+			GOTO(stop, rc);
+		}
+	}
+
 	if (flags & SWAP_LAYOUTS_MDS_HSM) {
 		rc = mdd_xattr_hsm_replace(env, fst_o, snd_hsm_buf, handle);
 		if (rc < 0)
@@ -2748,10 +2837,16 @@ stop:
 	mdd_write_unlock(env, snd_o);
 	mdd_write_unlock(env, fst_o);
 
+	lu_buf_free(&dom_buf);
 	lu_buf_free(fst_buf);
 	lu_buf_free(snd_buf);
 	lu_buf_free(fst_hsm_buf);
 	lu_buf_free(snd_hsm_buf);
+
+	if (lnb) {
+		dt_bufs_put(env, mdd_obj_osd(snd_o), lnb, lnbs);
+		OBD_FREE_PTR_ARRAY(lnb, lnbs);
+	}
 
 	if (!rc) {
 		(void) mdd_object_pfid_replace(env, fst_o);
