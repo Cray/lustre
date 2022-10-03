@@ -112,7 +112,7 @@ cleanup_netns() {
 
 configure_dlc() {
 	echo "Loading LNet and configuring DLC"
-	load_lnet
+	load_lnet || return $?
 	do_lnetctl lnet configure
 }
 
@@ -164,7 +164,7 @@ validate_nid() {
 	local net="${nid//*@/}"
 	local addr="${nid//@*/}"
 
-	local num_re='[0-9]\+'
+	local num_re='[0-9]+'
 	local ip_re="[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}"
 
 	if [[ $net =~ gni[0-9]* ]] || [[ $net =~ kfi[0-9]* ]]; then
@@ -233,8 +233,7 @@ cleanup_lnet || error "Failed to cleanup LNet"
 stack_trap 'cleanup_testsuite' EXIT
 
 test_0() {
-	load_module ../lnet/lnet/lnet || error "Failed to load module rc = $?"
-	do_lnetctl lnet configure || error "lnet configure failed rc = $?"
+	configure_dlc || error "Failed to configure DLC rc = $?"
 	define_global_yaml
 	reinit_dlc || return $?
 	do_lnetctl import <  ${GLOBAL_YAML_FILE} || error "Import failed $?"
@@ -1029,11 +1028,6 @@ add_net() {
 	local net="$1"
 	local if="$2"
 
-	if ! lsmod | grep -q ksocklnd ; then
-		load_module ../lnet/klnds/socklnd/ksocklnd ||
-			error "Can't load ksocklnd.ko"
-	fi
-
 	do_lnetctl net add --net ${net} --if ${if} ||
 		error "Failed to add net ${net} on if ${if}"
 }
@@ -1046,16 +1040,22 @@ compare_route_add() {
 
 	do_lnetctl route add --net ${rnet} --gateway ${gw} ||
 		error "route add failed $?"
-	# CPT configuration is pruned from the exported yaml, since the default
-	# can vary across test systems (unlike default values for things like
-	# peer_credits, peer_timeout, etc.)
-	$LNETCTL export --backup | grep -v CPT > $actual ||
+	$LNETCTL export --backup > $actual ||
 		error "export failed $?"
 	validate_gateway_nids
 	return $?
 }
 
+append_net_tunables() {
+	local net=${1:-tcp}
+
+	$LNETCTL net show -v --net ${net} | grep -v 'dev cpt' |
+		awk '/^\s+tunables:$/,/^\s+CPT:/' >> $TMP/sanity-lnet-$testnum-expected.yaml
+}
+
 test_100() {
+	[[ ${NETTYPE} == tcp* ]] ||
+		skip "Need tcp NETTYPE"
 	reinit_dlc || return $?
 	add_net "tcp" "${INTERFACES[0]}"
 	cat <<EOF > $TMP/sanity-lnet-$testnum-expected.yaml
@@ -1064,13 +1064,9 @@ net:
       local NI(s):
         - interfaces:
               0: ${INTERFACES[0]}
-          tunables:
-              peer_timeout: 180
-              peer_credits: 8
-              peer_buffer_credits: 0
-              credits: 256
-          lnd tunables:
-              conns_per_peer: 1
+EOF
+	append_net_tunables tcp
+	cat <<EOF >> $TMP/sanity-lnet-$testnum-expected.yaml
 route:
     - net: tcp7
       gateway: 7.7.7.7@tcp
@@ -1090,6 +1086,8 @@ EOF
 run_test 100 "Add route with single gw (tcp)"
 
 test_101() {
+	[[ ${NETTYPE} == tcp* ]] ||
+		skip "Need tcp NETTYPE"
 	reinit_dlc || return $?
 	add_net "tcp" "${INTERFACES[0]}"
 	cat <<EOF > $TMP/sanity-lnet-$testnum-expected.yaml
@@ -1098,13 +1096,9 @@ net:
       local NI(s):
         - interfaces:
               0: ${INTERFACES[0]}
-          tunables:
-              peer_timeout: 180
-              peer_credits: 8
-              peer_buffer_credits: 0
-              credits: 256
-          lnd tunables:
-              conns_per_peer: 1
+EOF
+	append_net_tunables tcp
+	cat <<EOF > $TMP/sanity-lnet-$testnum-expected.yaml
 route:
     - net: tcp8
       gateway: 8.8.8.10@tcp
@@ -1153,26 +1147,51 @@ compare_route_del() {
 	validate_gateway_nids
 }
 
+generate_nid() {
+	local net=${1}
+	local nid=$((${testnum} % 255))
+
+	if [[ ${net} =~ (tcp|o2ib)[0-9]* ]]; then
+		echo "${nid}.${nid}.${nid}.${nid}@${net}"
+	else
+		echo "${nid}@${net}"
+	fi
+}
+
 test_102() {
 	reinit_dlc || return $?
-	add_net "tcp" "${INTERFACES[0]}"
+	add_net "${NETTYPE}" "${INTERFACES[0]}"
 	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
-	do_lnetctl route add --net tcp102 --gateway 102.102.102.102@tcp ||
-		error "route add failed $?"
-	compare_route_del "tcp102" "102.102.102.102@tcp"
-}
-run_test 102 "Delete route with single gw (tcp)"
 
+	local gwnid=$(generate_nid ${NETTYPE})
+
+	do_lnetctl route add --net ${NETTYPE}2 --gateway ${gwnid} ||
+		error "route add failed $?"
+	compare_route_del "${NETTYPE}2" "${gwnid}"
+}
+run_test 102 "Delete route with single gw"
+
+IP_NID_EXPR='103.103.103.[103-120/4]'
+NUM_NID_EXPR='[103-120/4]'
 test_103() {
 	reinit_dlc || return $?
-	add_net "tcp" "${INTERFACES[0]}"
+	add_net "${NETTYPE}" "${INTERFACES[0]}"
 	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
-	do_lnetctl route add --net tcp103 \
-		--gateway 103.103.103.[103-120/4]@tcp ||
+
+	local nid_expr
+
+	if [[ $NETTYPE =~ (tcp|o2ib)[0-9]* ]]; then
+		nid_expr="${IP_NID_EXPR}"
+	else
+		nid_expr="${NUM_NID_EXPR}"
+	fi
+
+	do_lnetctl route add --net ${NETTYPE}103 \
+		--gateway ${nid_expr}@${NETTYPE} ||
 		error "route add failed $?"
-	compare_route_del "tcp103" "103.103.103.[103-120/4]@tcp"
+	compare_route_del "${NETTYPE}103" "${nid_expr}@${NETTYPE}"
 }
-run_test 103 "Delete route with multiple gw (tcp)"
+run_test 103 "Delete route with multiple gw"
 
 test_104() {
 	local tyaml="$TMP/sanity-lnet-$testnum-expected.yaml"
@@ -1233,10 +1252,13 @@ run_test 104 "Set/check response_tracking param"
 
 test_105() {
 	reinit_dlc || return $?
-	add_net "tcp" "${INTERFACES[0]}"
-	do_lnetctl route add --net tcp105 --gateway 105.105.105.105@tcp ||
+	add_net "${NETTYPE}" "${INTERFACES[0]}"
+
+	local gwnid=$(generate_nid ${NETTYPE})
+
+	do_lnetctl route add --net ${NETTYPE}105 --gateway ${gwnid} ||
 		error "route add failed $?"
-	do_lnetctl peer add --prim 105.105.105.105@tcp &&
+	do_lnetctl peer add --prim ${gwnid} &&
 		error "peer add should fail"
 
 	return 0
@@ -1245,10 +1267,13 @@ run_test 105 "Adding duplicate GW peer should fail"
 
 test_106() {
 	reinit_dlc || return $?
-	add_net "tcp" "${INTERFACES[0]}"
-	do_lnetctl route add --net tcp106 --gateway 106.106.106.106@tcp ||
+	add_net "${NETTYPE}" "${INTERFACES[0]}"
+
+	local gwnid=$(generate_nid ${NETTYPE})
+
+	do_lnetctl route add --net ${NETTYPE}106 --gateway ${gwnid} ||
 		error "route add failed $?"
-	do_lnetctl peer del --prim 106.106.106.106@tcp &&
+	do_lnetctl peer del --prim ${gwnid} &&
 		error "peer del should fail"
 
 	return 0
@@ -1256,6 +1281,8 @@ test_106() {
 run_test 106 "Deleting GW peer should fail"
 
 test_200() {
+	[[ ${NETTYPE} == tcp* ]] ||
+		skip "Need tcp NETTYPE"
 	cleanup_lnet || exit 1
 	load_lnet "networks=\"\""
 	do_ns $LNETCTL lnet configure --all || exit 1
@@ -1264,6 +1291,8 @@ test_200() {
 run_test 200 "load lnet w/o module option, configure in a non-default namespace"
 
 test_201() {
+	[[ ${NETTYPE} == tcp* ]] ||
+		skip "Need tcp NETTYPE"
 	cleanup_lnet || exit 1
 	load_lnet "networks=tcp($FAKE_IF)"
 	do_ns $LNETCTL lnet configure --all || exit 1
@@ -1272,6 +1301,8 @@ test_201() {
 run_test 201 "load lnet using networks module options in a non-default namespace"
 
 test_202() {
+	[[ ${NETTYPE} == tcp* ]] ||
+		skip "Need tcp NETTYPE"
 	cleanup_lnet || exit 1
 	load_lnet "networks=\"\" ip2nets=\"tcp0($FAKE_IF) ${FAKE_IP}\""
 	do_ns $LNETCTL lnet configure --all || exit 1
@@ -1283,6 +1314,8 @@ run_test 202 "load lnet using ip2nets in a non-default namespace"
 ### Add the interfaces in the target namespace
 
 test_203() {
+	[[ ${NETTYPE} == tcp* ]] ||
+		skip "Need tcp NETTYPE"
 	cleanup_lnet || exit 1
 	load_lnet
 	do_lnetctl lnet configure || exit 1
@@ -1417,6 +1450,8 @@ LNIDS=( )
 setup_health_test() {
 	local need_mr=$1
 	local rc=0
+
+	[[ ${NETTYPE} == kfi* ]] && skip "kfi doesn't support drop rules"
 
 	local rnodes=$(remote_nodes_list)
 	[[ -z $rnodes ]] && skip "Need at least 1 remote node"
@@ -1720,6 +1755,9 @@ test_208_load_and_check_lnet() {
 }
 
 test_208() {
+	[[ ${NETTYPE} == tcp* ]] ||
+		skip "Need tcp NETTYPE"
+
 	cleanup_netns || error "Failed to cleanup netns before test execution"
 	cleanup_lnet || error "Failed to unload modules before test execution"
 	setup_fakeif || error "Failed to add fake IF"
@@ -1894,9 +1932,11 @@ check_ping_count() {
 }
 
 test_210() {
+	[[ ${NETTYPE} == kfi* ]] && skip "kfi doesn't support drop rules"
+
 	reinit_dlc || return $?
-	add_net "tcp" "${INTERFACES[0]}" || return $?
-	add_net "tcp1" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}1" "${INTERFACES[0]}" || return $?
 
 	local prim_nid=$($LCTL list_nids | head -n 1)
 
@@ -1909,8 +1949,8 @@ test_210() {
 
 	$LCTL set_param debug=+net
 	# Use local_error so LNet doesn't attempt to resend the discovery ping
-	$LCTL net_drop_add -s *@tcp -d *@tcp -m GET -r 1 -e local_error
-	$LCTL net_drop_add -s *@tcp1 -d *@tcp1 -m GET -r 1 -e local_error
+	$LCTL net_drop_add -s *@${NETTYPE} -d *@${NETTYPE} -m GET -r 1 -e local_error
+	$LCTL net_drop_add -s *@${NETTYPE}1 -d *@${NETTYPE}1 -m GET -r 1 -e local_error
 	do_lnetctl discover $($LCTL list_nids | head -n 1) &&
 		error "Expected discovery to fail"
 
@@ -1930,9 +1970,11 @@ test_210() {
 run_test 210 "Local NI recovery checks"
 
 test_211() {
+	[[ ${NETTYPE} == kfi* ]] && skip "kfi doesn't support drop rules"
+
 	reinit_dlc || return $?
-	add_net "tcp" "${INTERFACES[0]}" || return $?
-	add_net "tcp1" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}1" "${INTERFACES[0]}" || return $?
 
 	local prim_nid=$($LCTL list_nids | head -n 1)
 
@@ -1943,8 +1985,8 @@ test_211() {
 	do_lnetctl set recovery_limit 10 ||
 		error "failed to set recovery_limit"
 
-	$LCTL net_drop_add -s *@tcp -d *@tcp -m GET -r 1 -e remote_error
-	$LCTL net_drop_add -s *@tcp1 -d *@tcp1 -m GET -r 1 -e remote_error
+	$LCTL net_drop_add -s *@${NETTYPE} -d *@${NETTYPE} -m GET -r 1 -e remote_error
+	$LCTL net_drop_add -s *@${NETTYPE}1 -d *@${NETTYPE}1 -m GET -r 1 -e remote_error
 
 	# Set health to 0 on one interface. This forces it onto the recovery
 	# queue.
@@ -1988,6 +2030,8 @@ test_211() {
 run_test 211 "Remote NI recovery checks"
 
 test_212() {
+	[[ ${NETTYPE} == kfi* ]] && skip "kfi doesn't support drop rules"
+
 	local rnodes=$(remote_nodes_list)
 	[[ -z $rnodes ]] && skip "Need at least 1 remote node"
 
@@ -2088,6 +2132,8 @@ test_212() {
 run_test 212 "Check discovery refcount loss bug (LU-14627)"
 
 test_213() {
+	[[ ${NETTYPE} == tcp* ]] || skip "Need tcp NETTYPE"
+
 	cleanup_netns || error "Failed to cleanup netns before test execution"
 	cleanup_lnet || error "Failed to unload modules before test execution"
 
@@ -2130,6 +2176,8 @@ function check_ni_status() {
 }
 
 test_214() {
+	[[ ${NETTYPE} == tcp* ]] || skip "Need tcp NETTYPE"
+
 	cleanup_netns || error "Failed to cleanup netns before test execution"
 	cleanup_lnet || error "Failed to unload modules before test execution"
 
@@ -2207,8 +2255,8 @@ test_215() {
 
 	reinit_dlc || return $?
 
-	add_net "tcp1" "${INTERFACES[0]}" || return $?
-	add_net "tcp2" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}1" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}2" "${INTERFACES[0]}" || return $?
 
 	local nid1=$($LCTL list_nids | head -n 1)
 	local nid2=$($LCTL list_nids | tail --lines 1)
@@ -2285,12 +2333,14 @@ test_215() {
 run_test 215 "Test lnetctl ping --source option"
 
 test_216() {
+	[[ ${NETTYPE} == kfi* ]] && skip "kfi doesn't support drop rules"
+
 	local rc=0
 
 	reinit_dlc || return $?
 
-	add_net "tcp" "${INTERFACES[0]}" || return $?
-	add_net "tcp1" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}1" "${INTERFACES[0]}" || return $?
 
 	local nids=( $($LCTL list_nids | xargs echo) )
 
@@ -2338,19 +2388,21 @@ test_217() {
 run_test 217 "Don't leak memory when discovering peer with nnis <= 1"
 
 test_218() {
+	[[ ${NETTYPE} == kfi* ]] && skip "kfi doesn't support drop rules"
+
 	reinit_dlc || return $?
 
 	[[ ${#INTERFACES[@]} -lt 2 ]] &&
 		skip "Need two LNet interfaces"
 
-	add_net "tcp" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
 
 	local nid1=$($LCTL list_nids | head -n 1)
 
 	do_lnetctl ping $nid1 ||
 		error "ping failed"
 
-	add_net "tcp" "${INTERFACES[1]}" || return $?
+	add_net "${NETTYPE}" "${INTERFACES[1]}" || return $?
 
 	local nid2=$($LCTL list_nids | tail --lines 1)
 
@@ -2392,8 +2444,8 @@ run_test 218 "Local recovery pings should exercise all available paths"
 
 test_219() {
 	reinit_dlc || return $?
-	add_net "tcp" "${INTERFACES[0]}" || return $?
-	add_net "tcp1" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}1" "${INTERFACES[0]}" || return $?
 
 	local nid1=$(lctl list_nids | head -n 1)
 	local nid2=$(lctl list_nids | tail --lines 1)
@@ -2905,6 +2957,8 @@ test_227() {
 run_test 227 "Check router peer health disabled"
 
 test_230() {
+	[[ ${NETTYPE} == tcp* ]] ||
+		skip "Need tcp NETTYPE"
 	# LU-12815
 	echo "Check valid values; Should succeed"
 	local i
@@ -2946,10 +3000,14 @@ test_230() {
 
 	reinit_dlc || return $?
 	add_net "tcp" "${INTERFACES[0]}" || return $?
+
+	local default=$($LNETCTL net show -v 1 |
+			awk '/conns_per_peer/{print $NF}')
+
 	echo "Set < 0; Should be ignored"
 	do_lnetctl net set --all --conns-per-peer -1 ||
 		error "should have succeeded $?"
-	$LNETCTL net show -v 1 | grep -q "conns_per_peer: 1" ||
+	$LNETCTL net show -v 1 | grep -q "conns_per_peer: ${default}" ||
 		error "Did not stay at default"
 }
 run_test 230 "Test setting conns-per-peer"
@@ -2957,7 +3015,7 @@ run_test 230 "Test setting conns-per-peer"
 test_231() {
 	reinit_dlc || return $?
 
-	do_lnetctl net add --net tcp --if ${INTERFACES[0]} ||
+	do_lnetctl net add --net ${NETTYPE} --if ${INTERFACES[0]} ||
 		error "Failed to add net"
 
 	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
@@ -2973,10 +3031,10 @@ test_231() {
 
 	compare_yaml_files || error "Wrong config after import"
 
-	do_lnetctl net del --net tcp --if ${INTERFACES[0]} ||
-		error "Failed to delete net tcp"
+	do_lnetctl net del --net ${NETTYPE} --if ${INTERFACES[0]} ||
+		error "Failed to delete net ${NETTYPE}"
 
-	do_lnetctl net add --net tcp --if ${INTERFACES[0]} --peer-timeout=0 ||
+	do_lnetctl net add --net ${NETTYPE} --if ${INTERFACES[0]} --peer-timeout=0 ||
 		error "Failed to add net with peer-timeout=0"
 
 	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-actual.yaml
@@ -3002,8 +3060,19 @@ run_test 231 "Check DLC handling of peer_timeout parameter"
 
 ### Test that linux route is added for each ni
 test_250() {
+	local skip_param
+
+	[[ ${NETTYPE} == tcp* ]] ||
+		skip "Need tcp NETTYPE"
+
 	reinit_dlc || return $?
+
+	skip_param=$(cat /sys/module/ksocklnd/parameters/skip_mr_route_setup)
+	[[ ${skip_param:-0} -ne 0 ]] &&
+		skip "Need skip_mr_route_setup=0 found $skip_param"
+
 	add_net "tcp" "${INTERFACES[0]}" || return $?
+
 	ip route show table ${INTERFACES[0]} | grep -q "${INTERFACES[0]}"
 }
 run_test 250 "test that linux routes are added"
