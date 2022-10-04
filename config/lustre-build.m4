@@ -481,6 +481,7 @@ AC_DEFUN([LB_CONFIG_FILES], [
 		lustre-iokit/mds-survey/Makefile
 		lustre-iokit/ior-survey/Makefile
 		lustre-iokit/stats-collect/Makefile
+		lustre-iokit/lst-survey/Makefile
 	)
 ])
 
