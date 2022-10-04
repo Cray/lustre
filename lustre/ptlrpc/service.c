@@ -874,8 +874,11 @@ EXPORT_SYMBOL(ptlrpc_register_service);
  * to actually free the request, must be called without holding svc_lock.
  * note it's caller's responsibility to unlink req->rq_list.
  */
-static void ptlrpc_server_free_request(struct ptlrpc_request *req)
+void ptlrpc_server_free_request(struct ptlrpc_request *req)
 {
+	if (!atomic_dec_and_test(&req->rq_pincount))
+		return;
+
 	LASSERT(atomic_read(&req->rq_refcount) == 0);
 	LASSERT(list_empty(&req->rq_timed_list));
 
@@ -887,7 +890,10 @@ static void ptlrpc_server_free_request(struct ptlrpc_request *req)
 
 	sptlrpc_svc_ctx_decref(req);
 
-	if (req != &req->rq_rqbd->rqbd_req) {
+	if (req->rq_rqbd == NULL || req != &req->rq_rqbd->rqbd_req) {
+		if (req->rq_copy)
+			OBD_FREE_LARGE(req->rq_reqmsg, req->rq_reqlen);
+
 		/*
 		 * NB request buffers use an embedded
 		 * req if the incoming req unlinked the
@@ -896,6 +902,56 @@ static void ptlrpc_server_free_request(struct ptlrpc_request *req)
 		ptlrpc_request_cache_free(req);
 	}
 }
+EXPORT_SYMBOL(ptlrpc_server_free_request);
+
+#ifdef HAVE_SERVER_SUPPORT
+static int ptlrpc_replace_trd_req(struct ptlrpc_request *req,
+				  struct ptlrpc_request *copy)
+{
+	struct tg_export_data *ted = &req->rq_export->exp_target_data;
+	struct tg_reply_data *trd, *tmp;
+
+	mutex_lock(&ted->ted_lcd_lock);
+
+	LASSERT(atomic_read(&req->rq_pincount) >= 1);
+	if (atomic_read(&req->rq_pincount) == 1) {
+		/* trd is already unpinned */
+		mutex_unlock(&ted->ted_lcd_lock);
+		return -1;
+	}
+
+	list_for_each_entry_safe(trd, tmp, &ted->ted_reply_list, trd_list) {
+		if (trd->trd_req == req)
+			break;
+	}
+	if (ted->ted_reply_last && ted->ted_reply_last->trd_req == req)
+		trd = ted->ted_reply_last;
+
+	if (trd->trd_req != req) {
+		mutex_unlock(&ted->ted_lcd_lock);
+		CDEBUG(D_ERROR, "failed to find trd for a pinned rpc, exp %p "
+		       "xid %llu pinned %d\n", req->rq_export, req->rq_xid,
+		       atomic_read(&req->rq_pincount));
+
+		return -1;
+	}
+
+	if (copy == NULL) {
+		/* If we failed to alloc, we have to unlink req from reply data,
+		 * as we cannot pin the req embedded to rqbd */
+		ptlrpc_request_unlink_reply_data(ted, trd);
+	} else {
+		trd->trd_req = copy;
+		atomic_dec(&copy->rq_pincount);
+		LASSERT(atomic_read(&copy->rq_pincount) > 0);
+		/* Leave @req with rq_pincount > 1 here */
+		LASSERT(atomic_read(&req->rq_pincount) > 1);
+	}
+
+	mutex_unlock(&ted->ted_lcd_lock);
+	return 0;
+}
+#endif
 
 /**
  * drop a reference count of the request. if it reaches 0, we either
@@ -928,6 +984,50 @@ void ptlrpc_server_drop_request(struct ptlrpc_request *req)
 	}
 
 	LASSERT(list_empty(&req->rq_timed_list));
+
+#ifdef HAVE_SERVER_SUPPORT
+	/* If the embedded req and still pinned by reply data, the req
+	 * must be  */
+	if (req == &req->rq_rqbd->rqbd_req &&
+	    atomic_read(&req->rq_pincount) > 1) {
+		struct ptlrpc_request *copy;
+		struct lustre_msg *copymsg = NULL;
+		int rc;
+
+		LASSERT(req->rq_export != NULL);
+		copy = ptlrpc_request_cache_alloc(GFP_NOFS);
+		if (copy) {
+			OBD_ALLOC_LARGE(copymsg, req->rq_reqlen);
+			if (!copymsg) {
+				ptlrpc_request_cache_free(copy);
+				copy = NULL;
+			}
+		}
+
+		if (copy) {
+			memcpy(copy, req, sizeof(*req));
+			memcpy(copymsg, req->rq_reqmsg, req->rq_reqlen);
+
+			copy->rq_reqmsg = copymsg;
+			copy->rq_export = NULL;
+			/* XXX to be added to the history ? */
+			INIT_LIST_HEAD(&copy->rq_history_list);
+			INIT_LIST_HEAD(&copy->rq_list);
+			INIT_LIST_HEAD(&copy->rq_timed_list);
+			INIT_LIST_HEAD(&copy->rq_replay_list);
+			INIT_LIST_HEAD(&copy->rq_exp_list);
+			copy->rq_rqbd = NULL;
+			copy->rq_copy = 1;
+		}
+
+		rc = ptlrpc_replace_trd_req(req, copy);
+		if (rc && copy) {
+			OBD_FREE_LARGE(copy->rq_reqmsg, copy->rq_reqlen);
+			ptlrpc_request_cache_free(copy);
+		}
+	}
+#endif
+
 
 	/* finalize request */
 	if (req->rq_export) {
@@ -977,7 +1077,14 @@ void ptlrpc_server_drop_request(struct ptlrpc_request *req)
 					&rqbd->rqbd_reqs,
 					struct ptlrpc_request, rq_list))) {
 				list_del(&req->rq_list);
-				ptlrpc_server_free_request(req);
+
+#ifdef HAVE_SERVER_SUPPORT
+				/* If >1, a copy was made, the finalization
+				 * will be done on the copy, nothing here */
+				if (req != &req->rq_rqbd->rqbd_req ||
+				    atomic_read(&req->rq_pincount) <= 1)
+#endif
+					ptlrpc_server_free_request(req);
 			}
 
 			spin_lock(&svcpt->scp_lock);
@@ -1015,6 +1122,13 @@ void ptlrpc_server_drop_request(struct ptlrpc_request *req)
 
 		spin_unlock(&svcpt->scp_lock);
 
+#ifdef HAVE_SERVER_SUPPORT
+		/* If >1, a copy was made, the finalization
+		 * will be done on the copy, nothing here */
+		LASSERT(req->rq_rqbd != NULL);
+		if (req != &req->rq_rqbd->rqbd_req ||
+		    atomic_read(&req->rq_pincount) <= 1)
+#endif
 		ptlrpc_server_free_request(req);
 	} else {
 		spin_unlock(&svcpt->scp_lock);
@@ -1340,6 +1454,7 @@ static void ptlrpc_at_remove_timed(struct ptlrpc_request *req)
 {
 	struct ptlrpc_at_array *array;
 
+	LASSERT(req->rq_rqbd);
 	array = &req->rq_rqbd->rqbd_svcpt->scp_at_array;
 
 	/* NB: must call with hold svcpt::scp_at_lock */

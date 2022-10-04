@@ -1379,6 +1379,48 @@ static ssize_t enable_remote_subdir_mount_store(struct kobject *kobj,
 LUSTRE_RW_ATTR(enable_remote_subdir_mount);
 
 /**
+ * Show if req is pinned in reply_daya
+ *
+ * \retval             0 on success
+ * \retval             negative value on error
+ */
+static ssize_t reply_data_req_show(struct kobject *kobj,
+                                  struct attribute *attr,
+                                  char *buf)
+{
+       struct obd_device *obd = container_of(kobj, struct obd_device,
+                                             obd_kset.kobj);
+       return scnprintf(buf, PAGE_SIZE, "%u\n", obd->obd_reply_data_req);
+}
+
+/**
+ * Enable the code which pins req in reply_data
+ *
+ * \retval             \a count on success
+ * \retval             negative number on error
+ */
+static ssize_t reply_data_req_store(struct kobject *kobj,
+				    struct attribute *attr,
+				    const char *buffer, size_t count)
+{
+	struct obd_device *obd = container_of(kobj, struct obd_device,
+					      obd_kset.kobj);
+	bool val;
+	int rc;
+
+	rc = kstrtobool(buffer, &val);
+	if (rc)
+		return rc;
+
+	spin_lock(&obd->obd_dev_lock);
+	obd->obd_reply_data_req = val;
+	spin_unlock(&obd->obd_dev_lock);
+	return count;
+}
+
+LUSTRE_RW_ATTR(reply_data_req);
+
+/**
  * Show if the OFD enforces T10PI checksum.
  *
  * \param[in] m		seq_file handle
@@ -1541,6 +1583,7 @@ static struct attribute *mdt_attrs[] = {
 	&lustre_attr_dir_restripe_nsonly.attr,
 	&lustre_attr_checksum_t10pi_enforce.attr,
 	&lustre_attr_enable_remote_subdir_mount.attr,
+	&lustre_attr_reply_data_req.attr,
 	NULL,
 };
 

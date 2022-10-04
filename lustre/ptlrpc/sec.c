@@ -978,6 +978,7 @@ int sptlrpc_import_check_ctx(struct obd_import *imp)
 
 	ptlrpc_cli_req_init(req);
 	atomic_set(&req->rq_refcount, 10000);
+	atomic_set(&req->rq_pincount, 0);
 
 	req->rq_import = imp;
 	req->rq_flvr = sec->ps_flvr;

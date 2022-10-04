@@ -311,6 +311,22 @@ static int tgt_reply_data_read(const struct lu_env *env, struct lu_target *tgt,
 	return 0;
 }
 
+void ptlrpc_request_unlink_reply_data(struct tg_export_data *ted,
+				      struct tg_reply_data *trd)
+{
+	LASSERT(mutex_is_locked(&ted->ted_lcd_lock));
+
+	if (trd && trd->trd_req) {
+		atomic_dec(&ted->ted_req_pinned);
+		CDEBUG(D_TRACE, "exp %p xid %llu tag %d pinned %d\n",
+		       trd->trd_req->rq_export, trd->trd_req->rq_xid,
+		       trd->trd_tag, atomic_read(&ted->ted_req_pinned));
+
+		ptlrpc_server_free_request(trd->trd_req);
+		trd->trd_req = NULL;
+	}
+}
+EXPORT_SYMBOL(ptlrpc_request_unlink_reply_data);
 
 /* Free the in-memory reply data structure @trd and release
  * the corresponding slot in the reply_data file of target @lut
@@ -326,12 +342,12 @@ static void tgt_free_reply_data(struct lu_target *lut,
 	       trd->trd_reply.lrd_transno, trd->trd_reply.lrd_client_gen,
 	       trd->trd_index);
 
-	LASSERT(mutex_is_locked(&ted->ted_lcd_lock));
-
 	list_del(&trd->trd_list);
 	ted->ted_reply_cnt--;
 	if (lut != NULL && trd->trd_index != TRD_INDEX_MEMORY)
 		tgt_clear_reply_slot(lut, trd->trd_index);
+
+	ptlrpc_request_unlink_reply_data(ted, trd);
 	OBD_FREE_PTR(trd);
 }
 
@@ -411,9 +427,30 @@ int tgt_client_alloc(struct obd_export *exp)
 	exp->exp_target_data.ted_lr_idx = -1;
 	INIT_LIST_HEAD(&exp->exp_target_data.ted_reply_list);
 	mutex_init(&exp->exp_target_data.ted_lcd_lock);
+	atomic_set(&exp->exp_target_data.ted_req_pinned, 0);
 	RETURN(0);
 }
 EXPORT_SYMBOL(tgt_client_alloc);
+
+void tgt_client_unlink_reply_data(struct obd_export *exp)
+{
+	struct tg_export_data	*ted = &exp->exp_target_data;
+	struct tg_reply_data	*trd, *tmp;
+
+	CDEBUG(D_TRACE, "exp %p pinned %d\n",
+	       exp, atomic_read(&ted->ted_req_pinned));
+
+	/* free reply data */
+	mutex_lock(&ted->ted_lcd_lock);
+	list_for_each_entry_safe(trd, tmp, &ted->ted_reply_list, trd_list) {
+		ptlrpc_request_unlink_reply_data(ted, trd);
+	}
+	if (ted->ted_reply_last != NULL) {
+		ptlrpc_request_unlink_reply_data(ted, ted->ted_reply_last);
+	}
+	mutex_unlock(&ted->ted_lcd_lock);
+}
+EXPORT_SYMBOL(tgt_client_unlink_reply_data);
 
 /**
  * Free in-memory data for client slot related to export.
@@ -1333,6 +1370,14 @@ int tgt_mk_reply_data(const struct lu_env *env,
 			pre_versions = lustre_msg_get_versions(req->rq_repmsg);
 			lrd->lrd_result = th->th_result;
 		}
+		if (req->rq_export->exp_obd->obd_reply_data_req) {
+			atomic_inc(&req->rq_pincount);
+			trd->trd_req = req;
+			atomic_inc(&ted->ted_req_pinned);
+			CDEBUG(D_TRACE, "exp %p xid %llu tag %d pinned %d\n",
+			       req->rq_export, req->rq_xid, trd->trd_tag,
+			       atomic_read(&ted->ted_req_pinned));
+		}
 	} else {
 		LASSERT(env != NULL);
 		LASSERT(tsi->tsi_xid != 0);
@@ -1356,6 +1401,10 @@ int tgt_mk_reply_data(const struct lu_env *env,
 	rc = tgt_add_reply_data(env, tgt, ted, trd, req,
 				th, write_update);
 	if (rc < 0) {
+		mutex_lock(&ted->ted_lcd_lock);
+		ptlrpc_request_unlink_reply_data(ted, trd);
+		mutex_unlock(&ted->ted_lcd_lock);
+
 		OBD_FREE_PTR(trd);
 		if (rc == -EBADR)
 			rc = 0;
