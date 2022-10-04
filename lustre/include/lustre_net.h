@@ -1011,7 +1011,8 @@ struct ptlrpc_request {
 		rq_hp:1,		/**< high priority RPC */
 		rq_at_linked:1,		/**< link into service's srv_at_array */
 		rq_packed_final:1,	/**< packed final reply */
-		rq_obsolete:1;		/* aborted by a signal on a client */
+		rq_obsolete:1,		/**< aborted by a signal on a client */
+		rq_copy:1;		/**< copy for trd debugging  */
 	/** @} */
 
 	/** one of RQ_PHASE_* */
@@ -1023,6 +1024,7 @@ struct ptlrpc_request {
 	 * for multiple replies
 	 */
 	atomic_t			 rq_refcount;
+	atomic_t			 rq_pincount;
 	/**
 	 * client-side:
 	 * !rq_truncate : # reply bytes actually received,
@@ -2221,6 +2223,7 @@ struct ptlrpc_service *ptlrpc_register_service(
 				struct ptlrpc_service_conf *conf,
 				struct kset *parent,
 				struct dentry *debugfs_entry);
+void ptlrpc_server_free_request(struct ptlrpc_request *req);
 
 int ptlrpc_unregister_service(struct ptlrpc_service *service);
 int ptlrpc_service_health_check(struct ptlrpc_service *service);
