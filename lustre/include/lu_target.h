@@ -244,6 +244,8 @@ struct tg_reply_data {
 	__u16			trd_tag;
 	/** child fid to reconstruct open */
 	struct lu_fid		trd_object;
+	/** debug: pinned RPC if exists */
+	struct ptlrpc_request  *trd_req;
 };
 
 extern struct lu_context_key tgt_session_key;
@@ -518,6 +520,7 @@ int tgt_init(const struct lu_env *env, struct lu_target *lut,
 void tgt_fini(const struct lu_env *env, struct lu_target *lut);
 int tgt_client_alloc(struct obd_export *exp);
 void tgt_client_free(struct obd_export *exp);
+void tgt_client_unlink_reply_data(struct obd_export *exp);
 int tgt_client_del(const struct lu_env *env, struct obd_export *exp);
 int tgt_client_add(const struct lu_env *env, struct obd_export *exp, int);
 int tgt_client_new(const struct lu_env *env, struct obd_export *exp);
@@ -529,6 +532,9 @@ int tgt_mk_reply_data(const struct lu_env *env, struct lu_target *tgt,
 		      struct tg_export_data *ted, struct ptlrpc_request *req,
 		      __u64 opdata, struct thandle *th, bool write_update,
 		      __u64 transno);
+void ptlrpc_request_unlink_reply_data(struct tg_export_data *ted,
+				      struct tg_reply_data *trd);
+
 struct tg_reply_data *tgt_lookup_reply_by_xid(struct tg_export_data *ted,
 					       __u64 xid);
 int tgt_tunables_init(struct lu_target *lut);

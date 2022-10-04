@@ -92,6 +92,7 @@ struct tg_export_data {
 	int			ted_reply_cnt;
 	/** Reply data with highest transno is retained */
 	struct tg_reply_data	*ted_reply_last;
+	atomic_t		ted_req_pinned;
 	/* Statistics */
 	int			ted_reply_max; /* high water mark */
 	int			ted_release_xid;
