@@ -7428,6 +7428,7 @@ static int mdt_export_cleanup(struct obd_export *exp)
 	/* Do not erase record for recoverable client. */
 	if (!(exp->exp_flags & OBD_OPT_FAILOVER) || exp->exp_failed)
 		tgt_client_del(env, exp);
+	tgt_client_unlink_reply_data(exp);
 
 	RETURN(rc);
 }
