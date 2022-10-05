@@ -44,6 +44,7 @@
 # define __USE_ISOC99	1
 # include <stdbool.h>
 # include <stdio.h> /* snprintf() */
+# include <stdlib.h> /* abs() */
 # include <errno.h>
 # include <sys/stat.h>
 
@@ -1701,8 +1702,8 @@ static inline int hsm_get_cl_error(enum changelog_rec_flags clf_flags)
 static inline int hsm_set_cl_error(enum changelog_rec_flags *clf_flags,
 				   int error)
 {
-	if (error < 0)
-		return -EINVAL;
+	/* In case a negative error is given */
+	error = abs(error);
 
 	if (error > CLF_HSM_MAXERROR)
 		error = CLF_HSM_ERROVERFLOW;
