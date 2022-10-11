@@ -2018,8 +2018,8 @@ static int ll_rw_extents_stats_pp_seq_show(struct seq_file *seq, void *v)
 	}
 
 	spin_lock(&sbi->ll_pp_extent_lock);
-	lprocfs_stats_header(seq, ktime_get(), rw_extents->pp_init, 25, ":",
-			     true, "");
+	lprocfs_stats_header(seq, ktime_get_real(), rw_extents->pp_init, 25,
+			     ":", true, "");
 	seq_printf(seq, "%15s %19s       | %20s\n", " ", "read", "write");
 	seq_printf(seq, "%13s   %14s %4s %4s  | %14s %4s %4s\n",
 		   "extents", "calls", "%", "cum%", "calls", "%", "cum%");
@@ -2050,6 +2050,7 @@ static int alloc_rw_stats_info(struct ll_sb_info *sbi)
 		spin_lock_init(&rw_extents->pp_extents[i].pp_r_hist.oh_lock);
 		spin_lock_init(&rw_extents->pp_extents[i].pp_w_hist.oh_lock);
 	}
+	rw_extents->pp_init = ktime_get_real();
 
 	spin_lock(&sbi->ll_pp_extent_lock);
 	if (!sbi->ll_rw_extents_info)
@@ -2072,6 +2073,7 @@ static int alloc_rw_stats_info(struct ll_sb_info *sbi)
 	if (!sbi->ll_rw_offset_info)
 		sbi->ll_rw_offset_info = offset;
 	spin_unlock(&sbi->ll_process_lock);
+	sbi->ll_process_stats_init = ktime_get_real();
 
 	/* another writer allocated the structs before we got the lock */
 	if (sbi->ll_rw_offset_info != offset)
@@ -2135,7 +2137,7 @@ static ssize_t ll_rw_extents_stats_pp_seq_write(struct file *file,
 	spin_lock(&sbi->ll_pp_extent_lock);
 	rw_extents = sbi->ll_rw_extents_info;
 	if (rw_extents) {
-		rw_extents->pp_init = ktime_get();
+		rw_extents->pp_init = ktime_get_real();
 		for (i = 0; i < LL_PROCESS_HIST_MAX; i++) {
 			rw_extents->pp_extents[i].pid = 0;
 			lprocfs_oh_clear(&rw_extents->pp_extents[i].pp_r_hist);
@@ -2160,8 +2162,8 @@ static int ll_rw_extents_stats_seq_show(struct seq_file *seq, void *v)
 	}
 
 	spin_lock(&sbi->ll_lock);
-	lprocfs_stats_header(seq, ktime_get(), rw_extents->pp_init, 25, ":",
-			     true, "");
+	lprocfs_stats_header(seq, ktime_get_real(), rw_extents->pp_init, 25,
+			     ":", true, "");
 
 	seq_printf(seq, "%15s %19s       | %20s\n", " ", "read", "write");
 	seq_printf(seq, "%13s   %14s %4s %4s  | %14s %4s %4s\n",
@@ -2204,7 +2206,7 @@ static ssize_t ll_rw_extents_stats_seq_write(struct file *file,
 	spin_lock(&sbi->ll_pp_extent_lock);
 	rw_extents = sbi->ll_rw_extents_info;
 	if (rw_extents) {
-		rw_extents->pp_init = ktime_get();
+		rw_extents->pp_init = ktime_get_real();
 		for (i = 0; i <= LL_PROCESS_HIST_MAX; i++) {
 			rw_extents->pp_extents[i].pid = 0;
 			lprocfs_oh_clear(&rw_extents->pp_extents[i].pp_r_hist);
@@ -2343,8 +2345,8 @@ static int ll_rw_offset_stats_seq_show(struct seq_file *seq, void *v)
 	}
 
 	spin_lock(&sbi->ll_process_lock);
-	lprocfs_stats_header(seq, ktime_get(), sbi->ll_process_stats_init, 25,
-			     ":", true, "");
+	lprocfs_stats_header(seq, ktime_get_real(), sbi->ll_process_stats_init,
+			     25, ":", true, "");
 	seq_printf(seq, "%3s %10s %14s %14s %17s %17s %14s\n",
 		   "R/W", "PID", "RANGE START", "RANGE END",
 		   "SMALLEST EXTENT", "LARGEST EXTENT", "OFFSET");
@@ -2411,7 +2413,7 @@ static ssize_t ll_rw_offset_stats_seq_write(struct file *file,
 	spin_lock(&sbi->ll_process_lock);
 	sbi->ll_offset_process_count = 0;
 	sbi->ll_rw_offset_entry_count = 0;
-	sbi->ll_process_stats_init = ktime_get();
+	sbi->ll_process_stats_init = ktime_get_real();
 	if (sbi->ll_rw_process_info)
 		memset(sbi->ll_rw_process_info, 0,
 		       sizeof(struct ll_rw_process_info) * LL_PROCESS_HIST_MAX);
