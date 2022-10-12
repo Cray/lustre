@@ -33,6 +33,8 @@ else # PATCHLEVEL
 # case #3
 ifneq ($(LUSTRE_KERNEL_TEST),)
 extra-y = $(LUSTRE_KERNEL_TEST)
+# always works for SUSE SP3 LTSS kernel
+always = $(LUSTRE_KERNEL_TEST)
 endif
 
 obj-m := conftest.o
