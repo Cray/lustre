@@ -1032,16 +1032,6 @@ void vvp_set_pagevec_dirty(struct pagevec *pvec)
 	for (i = 0; i < count; i++)
 		__set_page_dirty_nobuffers(pvec->pages[i]);
 #else
-	/*
-	 * In kernel 5.14.21, kallsyms_lookup_name is defined but
-	 * account_page_dirtied is not exported.
-	 */
-	if (!vvp_account_page_dirtied) {
-		for (i = 0; i < count; i++)
-			__set_page_dirty_nobuffers(pvec->pages[i]);
-		goto end;
-	}
-
 	for (i = 0; i < count; i++) {
 		page = pvec->pages[i];
 
@@ -1091,7 +1081,6 @@ void vvp_set_pagevec_dirty(struct pagevec *pvec)
 		/* !PageAnon && !swapper_space */
 		__mark_inode_dirty(mapping->host, I_DIRTY_PAGES);
 	}
-end:
 #endif
 	EXIT;
 }
