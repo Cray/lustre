@@ -284,12 +284,14 @@ int vvp_global_init(void)
 	if (rc != 0)
 		goto out_kmem;
 
+#ifndef HAVE_ACCOUNT_PAGE_DIRTIED_EXPORT
 #ifdef HAVE_KALLSYMS_LOOKUP_NAME
 	/*
 	 * Kernel v5.2-5678-gac1c3e4 no longer exports account_page_dirtied
 	 */
 	vvp_account_page_dirtied = (void *)
 		cfs_kallsyms_lookup_name("account_page_dirtied");
+#endif
 #endif
 
 	return 0;
