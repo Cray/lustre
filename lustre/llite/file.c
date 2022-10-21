@@ -5620,6 +5620,9 @@ static const struct file_operations ll_file_operations = {
 #else
 	.splice_read	= pcc_file_splice_read,
 #endif
+#ifdef HAVE_ITER_FILE_SPLICE_WRITE
+	.splice_write	= iter_file_splice_write,
+#endif
 	.fsync		= ll_fsync,
 	.flush		= ll_flush,
 };
@@ -5647,6 +5650,9 @@ static const struct file_operations ll_file_operations_flock = {
 	.splice_read	= generic_file_splice_read,
 #else
 	.splice_read	= pcc_file_splice_read,
+#endif
+#ifdef HAVE_ITER_FILE_SPLICE_WRITE
+	.splice_write	= iter_file_splice_write,
 #endif
 	.fsync		= ll_fsync,
 	.flush		= ll_flush,
@@ -5678,6 +5684,9 @@ static const struct file_operations ll_file_operations_noflock = {
 	.splice_read	= generic_file_splice_read,
 #else
 	.splice_read	= pcc_file_splice_read,
+#endif
+#ifdef HAVE_ITER_FILE_SPLICE_WRITE
+	.splice_write	= iter_file_splice_write,
 #endif
 	.fsync		= ll_fsync,
 	.flush		= ll_flush,
