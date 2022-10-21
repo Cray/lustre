@@ -90,7 +90,7 @@ AC_COMPILE_IFELSE([AC_LANG_SOURCE([
 # LC_IOC_REMOVE_ENTRY
 #
 AC_DEFUN([LC_IOC_REMOVE_ENTRY], [
-AC_MSG_CHECKING([if ioctl IOC_REMOVE_ENTRY' is supported])
+AC_MSG_CHECKING([if ioctl 'IOC_REMOVE_ENTRY' is supported])
 AC_COMPILE_IFELSE([AC_LANG_SOURCE([
 	#include <sys/ioctl.h>
 	#include <linux/lustre/lustre_ioctl.h>
@@ -1873,7 +1873,7 @@ vfs_setxattr, [
 	__vfs_setxattr(NULL, NULL, NULL, NULL, 0, 0);
 ],[
 	AC_DEFINE(HAVE_VFS_SETXATTR, 1,
-		['__vfs_setxattr is available])
+		['__vfs_setxattr' is available])
 ])
 ]) # LC_VFS_SETXATTR
 
@@ -2525,6 +2525,27 @@ fscrypt_support, [
 ]) # LC_FSCRYPT_SUPPORT
 
 #
+# LC_HAVE_ITER_FILE_SPLICE_WRITE
+#
+# Linux commit v5.9-rc1-6-g36e2c7421f02
+#  fs: don't allow splice read/write without explicit ops
+#
+AC_DEFUN([LC_HAVE_ITER_FILE_SPLICE_WRITE], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if 'iter_file_splice_write' exists],
+iter_file_splice_write, [
+	#include <linux/fs.h>
+],[
+	(void)iter_file_splice_write(NULL, NULL, NULL, 1, 0);
+],[
+	AC_DEFINE(HAVE_ITER_FILE_SPLICE_WRITE, 1,
+		['iter_file_splice_write' exists])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_HAVE_ITER_FILE_SPLICE_WRITE
+
+#
 # LC_HAVE_USER_NAMESPACE_ARG
 #
 # kernel 5.12 commit 549c7297717c32ee53f156cd949e055e601f67bb
@@ -2734,6 +2755,9 @@ AC_DEFUN([LC_PROG_LINUX], [
 	# 5.3
 	LC_BIO_BI_PHYS_SEGMENTS
 	LC_LM_COMPARE_OWNER_EXISTS
+
+	# 5.9
+	LC_HAVE_ITER_FILE_SPLICE_WRITE
 
 	# 5.12
 	LC_HAVE_USER_NAMESPACE_ARG
