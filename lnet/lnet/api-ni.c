@@ -4757,6 +4757,7 @@ EXPORT_SYMBOL(LNetGetId);
 struct ping_data {
 	int rc;
 	int replied;
+	int pd_unlinked;
 	struct lnet_handle_md mdh;
 	struct completion completion;
 };
@@ -4777,7 +4778,12 @@ lnet_ping_event_handler(struct lnet_event *event)
 		pd->replied = 1;
 		pd->rc = event->mlength;
 	}
+
 	if (event->unlinked)
+		pd->pd_unlinked = 1;
+
+	if (event->unlinked ||
+	    (event->type == LNET_EVENT_SEND && event->status))
 		complete(&pd->completion);
 }
 
@@ -4841,13 +4847,14 @@ static int lnet_ping(struct lnet_process_id id, struct lnet_nid *src_nid,
 		/* NB must wait for the UNLINK event below... */
 	}
 
-	if (wait_for_completion_timeout(&pd.completion, timeout) == 0) {
-		/* Ensure completion in finite time... */
+	/* Ensure completion in finite time... */
+	wait_for_completion_timeout(&pd.completion, timeout);
+	if (!pd.pd_unlinked) {
 		LNetMDUnlink(pd.mdh);
 		wait_for_completion(&pd.completion);
 	}
 	if (!pd.replied) {
-		rc = -EIO;
+		rc = pd.rc ?: -EIO;
 		goto fail_ping_buffer_decref;
 	}
 
