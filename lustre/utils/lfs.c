@@ -365,6 +365,7 @@ command_t cmdlist[] = {
 	 "		   [--component-end[=[+-]COMP_END]|-E[[+-]comp_end]]\n"
 	 "		   [[!] --mirror-index=[+-]INDEX |\n"
 	 "		   [!] --mirror-id=[+-]MIRROR_ID] [--mirror-count|-N]\n"
+	 "		   [--no-follow]\n"
 	 "		   <directory|filename> ..."},
 	{"setdirstripe", lfs_setdirstripe, 0,
 	 "Create striped directory on specified MDT, same as mkdir.\n"
@@ -3470,6 +3471,7 @@ enum {
 	LFS_INHERIT_RR_OPT,
 	LFS_FIND_PERM,
 	LFS_PRINTF_OPT,
+	LFS_NO_FOLLOW_OPT,
 	LFS_HSM_MIGRATE_OPT,
 };
 
@@ -5915,6 +5917,8 @@ static int lfs_getstripe_internal(int argc, char **argv,
 		.name = "mirror-index",		.has_arg = required_argument },
 	{ .val = LFS_MIRROR_ID_OPT,
 		.name = "mirror-id",		.has_arg = required_argument },
+	{ .val = LFS_NO_FOLLOW_OPT,
+		.name = "no-follow",		.has_arg = no_argument },
 	{ .val = 'c',	.name = "stripe-count",	.has_arg = no_argument },
 	{ .val = 'c',	.name = "stripe_count",	.has_arg = no_argument },
 /* find	{ .val = 'C',	.name = "ctime",	.has_arg = required_argument }*/
@@ -6109,6 +6113,9 @@ static int lfs_getstripe_internal(int argc, char **argv,
 			param->fp_exclude_mirror_id = !!neg_opt;
 			break;
 		}
+		case LFS_NO_FOLLOW_OPT:
+			param->fp_no_follow = true;
+			break;
 		case 'd':
 			param->fp_max_depth = 0;
 			break;
