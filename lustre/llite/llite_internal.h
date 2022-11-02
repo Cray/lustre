@@ -44,6 +44,7 @@
 #include <lustre_intent.h>
 #include <linux/compat.h>
 #include <linux/aio.h>
+#include <linux/seqlock.h>
 #include <lustre_compat.h>
 
 #include "vvp_internal.h"
@@ -240,6 +241,7 @@ struct ll_inode_info {
 	struct mutex			lli_xattrs_enq_lock;
 	struct list_head		lli_xattrs; /* ll_xattr_entry->xe_list */
 	struct rw_semaphore             lli_write_setattr;
+	seqlock_t			lli_page_inv_lock;
 };
 
 static inline __u32 ll_layout_version_get(struct ll_inode_info *lli)
@@ -1503,5 +1505,7 @@ void cl_inode_fini(struct inode *inode);
 
 u64 cl_fid_build_ino(const struct lu_fid *fid, int api32);
 u32 cl_fid_build_gen(const struct lu_fid *fid);
+
+int ll_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
 
 #endif /* LLITE_INTERNAL_H */
