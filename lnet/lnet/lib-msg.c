@@ -802,7 +802,7 @@ lnet_health_check(struct lnet_msg *msg)
 		LASSERT(ni);
 
 	now = ktime_get();
-	if (ktime_compare(now, msg->msg_deadline) >= 0) {
+	if (ktime_after(now, msg->msg_deadline)) {
 		s64 time = ktime_to_ns(ktime_sub(now, msg->msg_deadline));
 
 		atomic64_add(time, &the_lnet.ln_late_msg_nsecs);
