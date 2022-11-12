@@ -783,7 +783,7 @@ static int name##_single_open(struct inode *inode, struct file *file)	\
 {									\
 	return single_open(file, name##_seq_show,			\
 			   inode->i_private ? inode->i_private :	\
-					      PDE_DATA(inode));		\
+					      pde_data(inode));		\
 }									\
 static const struct proc_ops name##_fops = {				\
 	PROC_OWNER(THIS_MODULE)						\
@@ -830,7 +830,7 @@ static const struct proc_ops name##_fops = {				\
 	{								\
 		return single_open(file, NULL,				\
 				   inode->i_private ? inode->i_private : \
-				   PDE_DATA(inode));			\
+				   pde_data(inode));			\
 	}								\
 	static const struct proc_ops name##_##type##_fops = {		\
 		.proc_open	= name##_##type##_open,			\
