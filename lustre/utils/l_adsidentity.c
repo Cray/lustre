@@ -446,7 +446,7 @@ int get_params(FILE *fp, char params[][STRING_MAX_SIZE])
         return CONF_MAX;
 }
 
-int ldap_connect(LDAP **ld, char params[][STRING_MAX_SIZE])
+static int ads_ldap_connect_params(LDAP **ld, char params[][STRING_MAX_SIZE])
 {
         /* Read from the config file. */
         struct berval credentials;
@@ -635,7 +635,7 @@ int get_groups_ads(struct identity_downcall_data *data)
                 errlog("close failed %s: %s\n",
                        ADSCONF_PATHNAME, strerror(errno));
 
-        if (ldap_connect(&ld, params) != 0) {
+        if (ads_ldap_connect_params(&ld, params) != 0) {
                 errlog("ldap setup failed\n");
                 data->idd_err = EPROTO;
                 return -1;
