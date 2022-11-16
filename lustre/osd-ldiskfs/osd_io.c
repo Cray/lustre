@@ -970,7 +970,9 @@ static int osd_extend_restart_trans(handle_t *handle, int needed,
 #endif /* HAVE_LDISKFS_JOURNAL_ENSURE_CREDITS */
 
 
-static int osd_ldiskfs_map_inode_pages(struct inode *inode, struct page **page,
+static int osd_ldiskfs_map_inode_pages(struct inode *inode,
+				       struct osd_device *osd,
+				       struct page **page,
 				       int pages, sector_t *blocks,
 				       int create)
 {
@@ -1000,6 +1002,7 @@ static int osd_ldiskfs_map_inode_pages(struct inode *inode, struct page **page,
 	while (i < pages) {
 		long blen, total = 0;
 		struct ldiskfs_map_blocks map = { 0 };
+		ktime_t time;
 
 		if (fp == NULL) { /* start new extent */
 			fp = *page++;
@@ -1019,9 +1022,17 @@ static int osd_ldiskfs_map_inode_pages(struct inode *inode, struct page **page,
 		map.m_lblk = fp->index * blocks_per_page;
 		map.m_len = blen = clen * blocks_per_page;
 cont_map:
+		time = ktime_get();
 		rc = ldiskfs_map_blocks(handle, inode, &map, create);
+		time = ktime_sub(ktime_get(), time);
 		if (rc >= 0) {
-			int c = 0;
+			struct brw_stats *h = &osd->od_brw_stats;
+			int idx, c = 0;
+
+			idx = map.m_flags & LDISKFS_MAP_NEW ?
+				BRW_ALLOC_TIME : BRW_MAP_TIME;
+			lprocfs_oh_tally_log2_pcpu(&h->bs_hist[idx],
+						   ktime_to_ms(time));
 
 			for (; total < blen && c < map.m_len; c++, total++) {
 				if (rc == 0) {
@@ -1121,7 +1132,7 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
 	lprocfs_counter_add(osd->od_stats, LPROC_OSD_GET_PAGE, timediff);
 
 	if (iobuf->dr_npages) {
-		rc = osd_ldiskfs_map_inode_pages(inode, iobuf->dr_pages,
+		rc = osd_ldiskfs_map_inode_pages(inode, osd, iobuf->dr_pages,
 						 iobuf->dr_npages,
 						 iobuf->dr_blocks, 0);
 		if (likely(rc == 0)) {
@@ -1387,7 +1398,7 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
 	if (OBD_FAIL_CHECK(OBD_FAIL_OST_MAPBLK_ENOSPC)) {
 		rc = -ENOSPC;
 	} else if (iobuf->dr_npages > 0) {
-		rc = osd_ldiskfs_map_inode_pages(inode, iobuf->dr_pages,
+		rc = osd_ldiskfs_map_inode_pages(inode, osd, iobuf->dr_pages,
 						 iobuf->dr_npages,
 						 iobuf->dr_blocks, 1);
 	} else {
@@ -1500,7 +1511,7 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
 				    cache_hits + cache_misses);
 
 	if (iobuf->dr_npages) {
-		rc = osd_ldiskfs_map_inode_pages(inode, iobuf->dr_pages,
+		rc = osd_ldiskfs_map_inode_pages(inode, osd, iobuf->dr_pages,
 						 iobuf->dr_npages,
 						 iobuf->dr_blocks, 0);
 		rc = osd_do_bio(osd, inode, iobuf);
