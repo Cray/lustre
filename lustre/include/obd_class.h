@@ -1609,7 +1609,7 @@ static inline int md_get_lustre_md(struct obd_export *exp,
 	return MDP(exp->exp_obd, get_lustre_md)(exp, pill, dt_exp, md_exp, md);
 }
 
-static inline int md_free_lustre_md(struct obd_export *exp,
+static inline int md_put_lustre_md(struct obd_export *exp,
                                     struct lustre_md *md)
 {
 	int rc;
@@ -1618,11 +1618,11 @@ static inline int md_free_lustre_md(struct obd_export *exp,
 	if (rc)
 		return rc;
 
-	return MDP(exp->exp_obd, free_lustre_md)(exp, md);
+	return MDP(exp->exp_obd, put_lustre_md)(exp, md);
 }
 
 static inline int md_merge_attr(struct obd_export *exp,
-				const struct lmv_stripe_md *lsm,
+				const struct lmv_stripe_object *lso,
 				struct cl_attr *attr,
 				ldlm_blocking_callback cb)
 {
@@ -1632,7 +1632,7 @@ static inline int md_merge_attr(struct obd_export *exp,
 	if (rc)
 		return rc;
 
-	return MDP(exp->exp_obd, merge_attr)(exp, lsm, attr, cb);
+	return MDP(exp->exp_obd, merge_attr)(exp, lso, attr, cb);
 }
 
 static inline int md_setxattr(struct obd_export *exp, const struct lu_fid *fid,
@@ -1786,7 +1786,7 @@ static inline int md_revalidate_lock(struct obd_export *exp,
 }
 
 static inline int md_get_fid_from_lsm(struct obd_export *exp,
-				      const struct lmv_stripe_md *lsm,
+				      const struct lmv_stripe_object *lso,
 				      const char *name, int namelen,
 				      struct lu_fid *fid)
 {
@@ -1796,7 +1796,7 @@ static inline int md_get_fid_from_lsm(struct obd_export *exp,
 	if (rc)
 		return rc;
 
-	return MDP(exp->exp_obd, get_fid_from_lsm)(exp, lsm, name, namelen,
+	return MDP(exp->exp_obd, get_fid_from_lsm)(exp, lso, name, namelen,
 						   fid);
 }
 
@@ -1806,9 +1806,10 @@ static inline int md_get_fid_from_lsm(struct obd_export *exp,
  * If *plsm != NULL and lmm == NULL then *lsm will be freed.
  * If *plsm == NULL then it will be allocated.
  */
-static inline int md_unpackmd(struct obd_export *exp,
-			      struct lmv_stripe_md **plsm,
-			      const union lmv_mds_md *lmm, size_t lmm_size)
+static inline int md_stripe_object_alloc(struct obd_export *exp,
+					 struct lmv_stripe_object **lsop,
+					 const union lmv_mds_md *lmm,
+					 size_t lmm_size)
 {
 	int rc;
 
@@ -1816,7 +1817,7 @@ static inline int md_unpackmd(struct obd_export *exp,
 	if (rc)
 		return rc;
 
-	return MDP(exp->exp_obd, unpackmd)(exp, plsm, lmm, lmm_size);
+	return MDP(exp->exp_obd, stripe_object_alloc)(exp, lsop, lmm, lmm_size);
 }
 
 static inline int md_rmfid(struct obd_export *exp, struct fid_array *fa,
