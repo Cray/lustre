@@ -790,6 +790,7 @@ lnet_health_check(struct lnet_msg *msg)
 	bool attempt_remote_resend;
 	bool handle_local_health;
 	bool handle_remote_health;
+	ktime_t now;
 
 	/* if we're shutting down no point in handling health. */
 	if (the_lnet.ln_mt_state != LNET_MT_STATE_RUNNING)
@@ -807,10 +808,6 @@ lnet_health_check(struct lnet_msg *msg)
 	else if (msg->msg_tx_committed &&
 		 nid_is_lo0(&msg->msg_txni->ni_nid))
 		lo = true;
-
-	if (hstatus != LNET_MSG_STATUS_OK &&
-	    ktime_compare(ktime_get(), msg->msg_deadline) >= 0)
-		return -1;
 
 	/*
 	 * always prefer txni/txpeer if they message is committed for both
@@ -830,6 +827,17 @@ lnet_health_check(struct lnet_msg *msg)
 		LASSERT(ni && lpni);
 	else
 		LASSERT(ni);
+
+	now = ktime_get();
+	if (ktime_compare(now, msg->msg_deadline) >= 0) {
+		s64 time = ktime_to_ns(ktime_sub(now, msg->msg_deadline));
+
+		atomic64_add(time, &the_lnet.ln_late_msg_nsecs);
+		atomic_inc(&the_lnet.ln_late_msg_count);
+
+		if (hstatus != LNET_MSG_STATUS_OK)
+			return -1;
+	}
 
 	CDEBUG(D_NET, "health check: %s->%s: %s: %s\n",
 	       libcfs_nidstr(&ni->ni_nid),
