@@ -2665,6 +2665,7 @@ int osc_build_rpc(const struct lu_env *env, struct client_obd *cli,
 	int				page_count = 0;
 	bool				soft_sync = false;
 	bool				ndelay = false;
+	bool				ra;
 	int				i;
 	int				grant = 0;
 	int				rc;
@@ -2683,6 +2684,8 @@ int osc_build_rpc(const struct lu_env *env, struct client_obd *cli,
 		layout_version = max(layout_version, ext->oe_layout_version);
 		if (obj == NULL)
 			obj = ext->oe_obj;
+		if (ext->oe_reada)
+			ra = true;
 	}
 
 	soft_sync = osc_over_unstable_soft_limit(cli);
@@ -2735,6 +2738,16 @@ int osc_build_rpc(const struct lu_env *env, struct client_obd *cli,
 	crattr->cra_page = oap2cl_page(oap);
 	crattr->cra_oa = oa;
 	cl_req_attr_set(env, osc2cl(obj), crattr);
+
+	if (!oap2osc_page(oap)->ops_srvlock &&
+	    !(oa->o_valid & OBD_MD_FLHANDLE)) {
+		/* readahead might send after lock cancel, lets skip */
+		if (ra)
+			GOTO(out, rc = -EINVAL);
+		CL_PAGE_DEBUG(D_ERROR, env, oap2cl_page(oap),
+				"uncovered page! e_l %px\n", ext_list);
+		LBUG();
+	}
 
 	if (cmd == OBD_BRW_WRITE) {
 		oa->o_grant_used = grant;
@@ -2824,6 +2837,8 @@ out:
 		/* this should happen rarely and is pretty bad, it makes the
 		 * pending list not follow the dirty order
 		 */
+		if (ra)
+			rc = 0;
 		while ((ext = list_first_entry_or_null(ext_list,
 						       struct osc_extent,
 						       oe_link)) != NULL) {

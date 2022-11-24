@@ -1401,6 +1401,7 @@ struct hsm_state_set {
 				      * space for unstable pages; asking
 				      * it to sync quickly */
 #define OBD_BRW_OVER_PRJQUOTA 0x8000 /* Running out of project quota */
+#define OBD_BRW_READA	     0x10000 /* BRW is part of readahead */
 #define OBD_BRW_RDMA_ONLY    0x20000 /* RPC contains RDMA-only pages*/
 #define OBD_BRW_SYS_RESOURCE 0x40000 /* page has CAP_SYS_RESOURCE */
 
