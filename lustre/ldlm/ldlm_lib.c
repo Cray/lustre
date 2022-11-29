@@ -2804,6 +2804,16 @@ static int target_recovery_thread(void *arg)
 	CDEBUG(D_INFO, "3: final stage - process recovery completion pings\n");
 	/** Update server last boot epoch */
 	tgt_boot_epoch_update(lut);
+
+	list_for_each_entry(req, &obd->obd_final_req_queue, rq_list) {
+		/*
+		 * Because the waiting client can not send ping to server,
+		 * so we need refresh the last_request_time, to avoid the
+		 * export is being evicted
+		 */
+		ptlrpc_update_export_timer(req->rq_export, 0);
+	}
+
 	/*
 	 * We drop recoverying flag to forward all new requests
 	 * to regular mds_handle() since now
@@ -2821,12 +2831,6 @@ static int target_recovery_thread(void *arg)
 			  libcfs_nid2str(req->rq_peer.nid));
 		handle_recovery_req(thread, req,
 				    trd->trd_recovery_handler);
-		/*
-		 * Because the waiting client can not send ping to server,
-		 * so we need refresh the last_request_time, to avoid the
-		 * export is being evicted
-		 */
-		ptlrpc_update_export_timer(req->rq_export, 0);
 		target_request_copy_put(req);
 	}
 
