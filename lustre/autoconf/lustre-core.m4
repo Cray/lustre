@@ -2743,6 +2743,35 @@ security_dentry_init_security_xattr_name_arg, [
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_SECURITY_DENTRY_INIT_WITH_XATTR_NAME_ARG
 
+#
+# LC_HAVE_KIOCB_COMPLETE_2ARGS
+#
+# kernel v5.15-rc6-145-g6b19b766e8f0
+# fs: get rid of the res2 iocb->ki_complete argument
+#
+AC_DEFUN([LC_HAVE_KIOCB_COMPLETE_2ARGS], [
+tmp_flags="$EXTRA_KCFLAGS"
+EXTRA_KCFLAGS="-Werror"
+LB_CHECK_COMPILE([if kiocb->ki_complete() has 2 arguments],
+kiocb_ki_complete_2args, [
+	#include <linux/fs.h>
+
+	static void complete_fn(struct kiocb *iocb, long ret)
+	{
+		(void)iocb;
+		(void)ret;
+	}
+],[
+	struct kiocb *kio = NULL;
+
+	kio->ki_complete = complete_fn;
+],[
+	AC_DEFINE(HAVE_KIOCB_COMPLETE_2ARGS, 1,
+		[kiocb->ki_complete() has 2 arguments])
+])
+EXTRA_KCFLAGS="$tmp_flags"
+]) # LC_HAVE_KIOCB_COMPLETE_2ARGS
+
 AC_DEFUN([LC_PROG_LINUX_SRC], [])
 AC_DEFUN([LC_PROG_LINUX_RESULTS], [])
 
@@ -2955,6 +2984,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 5.16
 	LC_HAVE_SECURITY_DENTRY_INIT_WITH_XATTR_NAME_ARG
+	LC_HAVE_KIOCB_COMPLETE_2ARGS
 
 	# kernel patch to extend integrity interface
 	LC_BIO_INTEGRITY_PREP_FN
