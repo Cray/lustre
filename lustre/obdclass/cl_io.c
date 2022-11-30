@@ -1216,13 +1216,19 @@ int cl_sync_io_wait(const struct lu_env *env, struct cl_sync_io *anchor,
 }
 EXPORT_SYMBOL(cl_sync_io_wait);
 
-#ifndef HAVE_AIO_COMPLETE
-static inline void aio_complete(struct kiocb *iocb, ssize_t res, ssize_t res2)
+static inline void dio_aio_complete(struct kiocb *iocb, ssize_t res)
 {
+#ifdef HAVE_AIO_COMPLETE
+	aio_complete(iocb, res, 0);
+#else
 	if (iocb->ki_complete)
-		iocb->ki_complete(iocb, res, res2);
-}
+# ifdef HAVE_KIOCB_COMPLETE_2ARGS
+		iocb->ki_complete(iocb, res);
+# else
+		iocb->ki_complete(iocb, res, 0);
+# endif
 #endif
+}
 
 static void cl_aio_end(const struct lu_env *env, struct cl_sync_io *anchor)
 {
@@ -1240,7 +1246,7 @@ static void cl_aio_end(const struct lu_env *env, struct cl_sync_io *anchor)
 	}
 
 	if (!aio->cda_no_aio_complete)
-		aio_complete(aio->cda_iocb, ret ?: aio->cda_bytes, 0);
+		dio_aio_complete(aio->cda_iocb, ret ?: aio->cda_bytes);
 
 	if (aio->cda_ll_aio) {
 		ll_release_user_pages(aio->cda_dio_pages.ldp_pages,
