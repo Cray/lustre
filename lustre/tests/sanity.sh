@@ -24960,6 +24960,16 @@ test_398n() { #  LU-13798
 }
 run_test 398n "test append with parallel DIO"
 
+test_398o() {
+	$MULTIOP $DIR/$tfile oO_CREAT:O_DIRECT:O_RDWR:w4096z0r1c
+	local rc=$?
+	echo "rc $rc"
+	# 61 ENODATA -- aka zero bytes read if kms don't updated
+	# 22 EINVAL - aka bad aligment with right kms
+	[[ $rc == 22 ]] || error "bad kms"
+}
+run_test 398o "right kms with DIO"
+
 test_fake_rw() {
 	local read_write=$1
 	if [ "$read_write" = "write" ]; then
