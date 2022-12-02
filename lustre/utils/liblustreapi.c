@@ -3117,9 +3117,10 @@ void lov_dump_user_lmm_v1v3(struct lov_user_md *lum, char *pool_name,
 	lov_dump_user_lmm_header(lum, path, objects, verbose, depth, pool_name,
 				 flags);
 
-	if (!is_dir && !skip_objs && (verbose & VERBOSE_OBJID) &&
-	    !(lum->lmm_pattern & LOV_PATTERN_F_RELEASED ||
-	      lov_pattern(lum->lmm_pattern) == LOV_PATTERN_MDT)) {
+	if (!skip_objs && (verbose & VERBOSE_OBJID) &&
+	    ((!is_dir && !(lum->lmm_pattern & LOV_PATTERN_F_RELEASED ||
+			   lov_pattern(lum->lmm_pattern) == LOV_PATTERN_MDT)) ||
+	     (is_dir && (lum->lmm_magic == LOV_USER_MAGIC_SPECIFIC)))) {
 		char *space = "      - ";
 
 		if (indent)
@@ -3155,6 +3156,10 @@ void lov_dump_user_lmm_v1v3(struct lov_user_md *lum, char *pool_name,
 				llapi_printf(LLAPI_MSG_NORMAL,
 				    "%s%d: { l_ost_idx: %d, l_fid: "DFID" }\n",
 				    space, i, idx, PFID(&fid));
+			} else if (is_dir) {
+				llapi_printf(LLAPI_MSG_NORMAL,
+					     "\t%6u\t%14s\t%13s\t%14s\n", idx, "N/A",
+					     "N/A", "N/A");
 			} else {
 				char fmt[48];
 
