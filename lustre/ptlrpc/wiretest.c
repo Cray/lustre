@@ -44,6 +44,9 @@
 #include <uapi/linux/lustre/lustre_lfsck_user.h>
 #include <uapi/linux/lustre/lustre_cfg.h>
 
+#ifndef BUILD_BUG_ON
+#define BUILD_BUG_ON(cond) ((void)sizeof(char[1 - 2*!!(cond)]))
+#endif
 
 void lustre_assert_wire_constants(void)
 {
@@ -4596,11 +4599,10 @@ void lustre_assert_wire_constants(void)
 		 (long long)(int)sizeof(((struct fiemap *)0)->fm_reserved));
 	LASSERTF((int)offsetof(struct fiemap, fm_extents) == 32, "found %lld\n",
 		 (long long)(int)offsetof(struct fiemap, fm_extents));
-	LASSERTF((int)sizeof(((struct fiemap *)0)->fm_extents) == 0, "found %lld\n",
-		 (long long)(int)sizeof(((struct fiemap *)0)->fm_extents));
-	CLASSERT(FIEMAP_FLAG_SYNC == 0x00000001);
-	CLASSERT(FIEMAP_FLAG_XATTR == 0x00000002);
-	CLASSERT(FIEMAP_FLAG_DEVICE_ORDER == 0x40000000);
+	BUILD_BUG_ON(offsetof(struct fiemap, fm_extents) != sizeof(struct fiemap));
+	BUILD_BUG_ON(FIEMAP_FLAG_SYNC != 0x00000001);
+	BUILD_BUG_ON(FIEMAP_FLAG_XATTR != 0x00000002);
+	BUILD_BUG_ON(FIEMAP_FLAG_DEVICE_ORDER != 0x40000000);
 
 	/* Checks for struct fiemap_extent */
 	LASSERTF((int)sizeof(struct fiemap_extent) == 56, "found %lld\n",
