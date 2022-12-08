@@ -494,6 +494,39 @@ static const struct rhashtable_params crh_hash_params = {
 	.automatic_shrinking = true,
 };
 
+static void cdt_cleanup_restore_hash(struct coordinator *cdt)
+{
+	struct cdt_restore_handle *crh;
+	struct mdt_thread_info *cdt_mti;
+	struct rhashtable_iter iter;
+
+	cdt_mti = lu_context_key_get(&cdt->cdt_env.le_ctx, &mdt_thread_key);
+	LASSERT(cdt_mti != NULL);
+
+	rhashtable_walk_enter(&cdt->cdt_restore_hash, &iter);
+	rhashtable_walk_start(&iter);
+
+	while ((crh = rhashtable_walk_next(&iter)) != NULL) {
+		if (IS_ERR(crh)) {
+			if (PTR_ERR(crh) == -EAGAIN) {
+				continue;
+			} else {
+				CERROR("%s: failed to cleanup cdt_restore_hash %ld\n",
+				       mdt_obd_name(cdt_mti->mti_mdt),
+				       PTR_ERR(crh));
+				LBUG();
+			}
+		}
+
+		if (!rhashtable_remove_fast(&cdt->cdt_restore_hash,
+					    &crh->crh_hash, crh_hash_params))
+			cdt_crh_put(crh, cdt_mti);
+	}
+
+	rhashtable_walk_stop(&iter);
+	rhashtable_walk_exit(&iter);
+}
+
 /* Release the ressource used by the coordinator. Called when the
  * coordinator is stopping. */
 static void mdt_hsm_cdt_cleanup(struct mdt_device *mdt)
@@ -526,9 +559,8 @@ static void mdt_hsm_cdt_cleanup(struct mdt_device *mdt)
 	up_write(&cdt->cdt_agent_lock);
 
 	cdt_mti = lu_context_key_get(&cdt->cdt_env.le_ctx, &mdt_thread_key);
-	rhashtable_free_and_destroy(&cdt->cdt_restore_hash, crh_free_hash,
-				    cdt_mti);
-	rcu_barrier();
+
+	cdt_cleanup_restore_hash(cdt);
 }
 
 /*
@@ -890,6 +922,7 @@ int cdt_restore_handle_add(struct mdt_thread_info *mti, struct coordinator *cdt,
 	 * which can be very long. */
 	mdt_object_put(mti->mti_env, obj);
 	cdt_crh_put(crh, mti);
+
 	RETURN(rc);
 }
 
@@ -1083,9 +1116,13 @@ int mdt_hsm_cdt_init(struct mdt_device *mdt)
 	if (cdt->cdt_agent_record_hash == NULL)
 		GOTO(out_request_cookie_hash, rc = -ENOMEM);
 
+	rc = rhashtable_init(&cdt->cdt_restore_hash, &crh_hash_params);
+	if (rc)
+		GOTO(out_agent_record_hash, rc);
+
 	rc = lu_env_init(&cdt->cdt_env, LCT_MD_THREAD);
 	if (rc < 0)
-		GOTO(out_agent_record_hash, rc);
+		GOTO(out_restore_hash, rc);
 
 	/* for mdt_ucred(), lu_ucred stored in lu_ucred_key */
 	rc = lu_context_init(&cdt->cdt_session, LCT_SERVER_SESSION);
@@ -1119,6 +1156,8 @@ int mdt_hsm_cdt_init(struct mdt_device *mdt)
 
 out_env:
 	lu_env_fini(&cdt->cdt_env);
+out_restore_hash:
+	rhashtable_destroy(&cdt->cdt_restore_hash);
 out_agent_record_hash:
 	cfs_hash_putref(cdt->cdt_agent_record_hash);
 	cdt->cdt_agent_record_hash = NULL;
@@ -1136,7 +1175,15 @@ out_request_cookie_hash:
 int  mdt_hsm_cdt_fini(struct mdt_device *mdt)
 {
 	struct coordinator *cdt = &mdt->mdt_coordinator;
+	struct mdt_thread_info *cdt_mti;
 	ENTRY;
+
+	cdt_mti = lu_context_key_get(&cdt->cdt_env.le_ctx, &mdt_thread_key);
+	LASSERT(cdt_mti != NULL);
+
+	rhashtable_free_and_destroy(&cdt->cdt_restore_hash, crh_free_hash,
+				    cdt_mti);
+	rcu_barrier();
 
 	lu_context_exit(cdt->cdt_env.le_ses);
 	lu_context_fini(cdt->cdt_env.le_ses);
@@ -1192,13 +1239,6 @@ static int mdt_hsm_cdt_start(struct mdt_device *mdt)
 	cdt->cdt_user_request_mask = (1UL << HSMA_RESTORE);
 	cdt->cdt_group_request_mask = (1UL << HSMA_RESTORE);
 	cdt->cdt_other_request_mask = (1UL << HSMA_RESTORE);
-	rc = rhashtable_init(&cdt->cdt_restore_hash, &crh_hash_params);
-	if (rc) {
-		CERROR("%s: failed to create cdt_restore hash: rc = %d\n",
-		       mdt_obd_name(mdt), rc);
-		set_cdt_state(cdt, CDT_STOPPED);
-		RETURN(rc);
-	}
 
 	/* to avoid deadlock when start is made through sysfs
 	 * sysfs entries are created by the coordinator thread
