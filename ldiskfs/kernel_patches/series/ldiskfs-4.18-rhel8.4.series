@@ -36,3 +36,4 @@ rhel8/ext4-old_ea_inodes_handling_fix.patch
 rhel8.4/ext4-optimize-ext4_find_delalloc_range-in-nodelalloc.patch
 rhel8.5/ext4-filename-encode.patch
 rhel8.4/ext4-mballoc-reset-allocator-on-delete.patch
+rhel8/ext4-encdata.patch
