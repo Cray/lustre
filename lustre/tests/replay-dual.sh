@@ -4,6 +4,7 @@ set -e
 
 PTLDEBUG=${PTLDEBUG:--1}
 MOUNT_2=${MOUNT_2:-"yes"}
+LR_READER=${LR_READER:-"$LUSTRE/utils/lr_reader"}
 
 LUSTRE=${LUSTRE:-$(cd $(dirname $0)/..; echo $PWD)}
 . $LUSTRE/tests/test-framework.sh
@@ -1179,7 +1180,50 @@ test_32() {
 }
 run_test 32 "gap in update llog shouldn't break recovery"
 
-test_33()
+last_rcvd_check_incompat_flag() {
+	local facet="$1"
+	local flag2check="$2"
+	local dev=$(facet_device $facet)
+	local incompat
+
+	incompat=$(do_facet $facet $LR_READER $dev |
+			awk '/feature_incompat:/ {print $2}')
+	echo "last_rcvd in $dev: incompat = $incompat"
+
+	return $(( (incompat & flag2check) != flag2check ))
+}
+
+
+test_33() { # LU-15935
+	[[ "$mds1_FSTYPE" == "ldiskfs" ]] || skip "ldiskfs only test"
+
+	clients_up
+	stop mds1
+
+	# check for OBD_INCOMPAT_MULTI_RPCS (0x400) in last_rcvd
+	last_rcvd_check_incompat_flag mds1 0x400 ||
+		error "1st failover: OBD_INCOMPAT_MULTI_RPCS is not set on MDT0000 last_rcvd"
+
+	# lose 1 client while the MDT failover
+	umount -f $MOUNT2
+
+	mount_facet mds1
+	wait_clients_import_state "$HOSTNAME" mds1 "\(REPLAY_WAIT\|REPLAY_LOCKS\)"
+
+	do_facet mds1 $LCTL --device $(convert_facet2label mds1) abort_recovery
+	wait_clients_import_state "$HOSTNAME" mds1 "FULL"
+	stop mds1
+
+	last_rcvd_check_incompat_flag mds1 0x400 ||
+		error "2sd failover: OBD_INCOMPAT_MULTI_RPCS is not set on MDT0000 last_rcvd"
+
+	mount_facet mds1
+	zconf_mount $HOSTNAME $MOUNT2
+	wait_clients_import_state "$HOSTNAME" mds1 "FULL"
+}
+run_test 33 "Check for OBD_INCOMPAT_MULTI_RPCS in last_rcvd after abort_recovery"
+
+test_34()
 {
 	# disable AT so that blocking timeout gets set to obd_timeout/2
 	local amo=$(at_max_get ost1)
@@ -1203,7 +1247,7 @@ test_33()
 
 	wait $multiop1pid && wait $multiop2pid|| error "multiop failed"
 }
-run_test 33 "eviction on file_remove_privs's enqueue delay"
+run_test 34 "eviction on file_remove_privs's enqueue delay"
 
 complete $SECONDS
 SLEEP=$((SECONDS - $NOW))
