@@ -1097,6 +1097,30 @@ AC_DEFUN([LC_HAVE_LM_GRANT_2ARGS], [
 ]) # LC_HAVE_LM_GRANT_2ARGS
 
 #
+# LC_HAVE_BLK_INTEGRITY_ITER
+#
+# Linux commit v3.17-rc5-69-g1859308853b1 replaces
+# struct blk_integrity_exchg with struct blk_integrity_iter
+#
+AC_DEFUN([LC_HAVE_BLK_INTEGRITY_ITER], [
+LB_CHECK_COMPILE([if struct blk_integrity_iter exist],
+blk_integrity_iter, [
+	#ifdef HAVE_LINUX_BLK_INTEGRITY_HEADER
+	# include <linux/blk-integrity.h>
+	#else
+	# include <linux/blkdev.h>
+	#endif
+],[
+	struct blk_integrity_iter iter;
+
+	iter.prot_buf = NULL;
+],[
+	AC_DEFINE(HAVE_BLK_INTEGRITY_ITER, 1,
+		[kernel has struct blk_integrity_iter])
+])
+]) # LC_HAVE_BLK_INTEGRITY_ITER
+
+#
 # LC_NFS_FILLDIR_USE_CTX
 #
 # 3.18 kernel moved from void cookie to struct dir_context
@@ -3774,6 +3798,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_HAVE_INTERVAL_BLK_INTEGRITY
 	LC_KEY_MATCH_DATA
 	LC_HAVE_LM_GRANT_2ARGS
+	LC_HAVE_BLK_INTEGRITY_ITER
 
 	# 3.18
 	LC_PERCPU_COUNTER_INIT
