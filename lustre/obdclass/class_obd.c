@@ -891,6 +891,8 @@ static void __exit obdclass_exit(void)
 	CDEBUG((memory_leaked) ? D_ERROR : D_INFO,
 	       "obd_memory max: %llu, leaked: %llu\n",
 	       memory_max, memory_leaked);
+	if (memory_leaked)
+		libcfs_debug_dumplog();
 
 	unregister_oom_notifier(&obdclass_oom);
 

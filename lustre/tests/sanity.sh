@@ -22293,6 +22293,11 @@ test_209() {
 	done
 
 	echo 3 > /proc/sys/vm/drop_caches
+
+	local mdts=$(comma_list $(mdts_nodes))
+	do_nodes $mdts sync
+	df $DIR
+
 	[ -f /sys/kernel/slab/ptlrpc_cache/shrink ] &&
 		echo 1 > /sys/kernel/slab/ptlrpc_cache/shrink
 	req_after=$(awk '/ptlrpc_cache / { print $2 }' /proc/slabinfo)

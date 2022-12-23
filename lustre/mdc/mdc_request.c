@@ -819,38 +819,69 @@ static void mdc_free_open(struct md_open_data *mod)
 		  mod->mod_open_req->rq_replay);
 
 	ptlrpc_request_committed(mod->mod_open_req, committed);
-	if (mod->mod_close_req)
-		ptlrpc_request_committed(mod->mod_close_req, committed);
+}
+
+static void mdc_clear_open_replay_data_locked(struct md_open_data *mod)
+{
+	ENTRY;
+
+	LASSERT(mod != LP_POISON);
+	LASSERT(mod->mod_open_req != NULL);
+
+	if (!mod->mod_open_req->rq_committed)
+		mdc_commit_open(mod->mod_open_req);
+
+	spin_lock(&mod->mod_open_req->rq_lock);
+	mod->mod_open_req->rq_replay = 0;
+	mod->mod_och->och_open_handle.cookie = 0;
+	mod->mod_open_req->rq_early_free_repbuf = 0;
+	spin_unlock(&mod->mod_open_req->rq_lock);
+	mdc_free_open(mod);
+
+	ptlrpc_req_put_with_imp_lock(mod->mod_open_req);
+
+	mod->mod_open_req = NULL;
+	mod->mod_och->och_mod = NULL;
+	mod->mod_och = NULL;
+	obd_mod_put(mod);
 }
 
 static int mdc_clear_open_replay_data(struct obd_export *exp,
 				      struct obd_client_handle *och)
 {
+	struct obd_import *imp;
 	struct md_open_data *mod = och->och_mod;
-	ENTRY;
 
-	/**
+	ENTRY;
+	/*
 	 * It is possible to not have \var mod in a case of eviction between
 	 * lookup and ll_file_open().
-	 **/
+	 */
 	if (mod == NULL)
 		RETURN(0);
 
-	LASSERT(mod != LP_POISON);
-	LASSERT(mod->mod_open_req != NULL);
-
-	spin_lock(&mod->mod_open_req->rq_lock);
-	if (mod->mod_och)
-		mod->mod_och->och_open_handle.cookie = 0;
-	mod->mod_open_req->rq_early_free_repbuf = 0;
-	spin_unlock(&mod->mod_open_req->rq_lock);
-	mdc_free_open(mod);
-
-	mod->mod_och = NULL;
-	och->och_mod = NULL;
-	obd_mod_put(mod);
+	imp = mod->mod_open_req->rq_import;
+	spin_lock(&imp->imp_lock);
+	mdc_clear_open_replay_data_locked(mod);
+	spin_unlock(&imp->imp_lock);
 
 	RETURN(0);
+}
+
+static void mdc_commit_close(struct ptlrpc_request *req)
+{
+	struct obd_client_handle *och;
+	struct md_open_data *mod = req->rq_cb_data;
+
+	if (mod == NULL)
+		return;
+
+	req->rq_cb_data = NULL;
+	och = mod->mod_och;
+
+	mdc_clear_open_replay_data_locked(mod);
+	och->och_open_handle.cookie = DEAD_HANDLE_MAGIC;
+	OBD_FREE_PTR(och);
 }
 
 static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
@@ -904,14 +935,12 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 			 mod->mod_open_req->rq_type != LI_POISON,
 			 "POISONED open %px!\n", mod->mod_open_req);
 
-		mod->mod_close_req = req;
-
 		DEBUG_REQ(D_RPCTRACE, mod->mod_open_req, "matched open");
-		/* We no longer want to preserve this open for replay even
-		 * though the open was committed. b=3632, b=3633 */
-		spin_lock(&mod->mod_open_req->rq_lock);
-		mod->mod_open_req->rq_replay = 0;
-		spin_unlock(&mod->mod_open_req->rq_lock);
+
+		if (req) {
+			req->rq_cb_data = mod;
+			req->rq_commit_cb = mdc_commit_close;
+		}
 	} else {
 		CDEBUG(D_HA, "couldn't find open req; expecting close error\n");
 	}
@@ -946,8 +975,12 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 	    !(exp_connect_flags2(exp) & OBD_CONNECT2_LSOM))
 		op_data->op_xvalid &= ~(OP_XVALID_LAZYSIZE |
 					OP_XVALID_LAZYBLOCKS);
-
+	if (mod)
+		op_data->op_open_handle = mod->mod_och->och_open_handle;
 	mdc_close_pack(&req->rq_pill, op_data);
+
+	if (mod)
+		mod->mod_close_req = req;
 
 	req_capsule_set_size(&req->rq_pill, &RMF_MDT_MD, RCL_SERVER,
 			     obd->u.cli.cl_default_mds_easize);
@@ -984,8 +1017,7 @@ static int mdc_close(struct obd_export *exp, struct md_op_data *op_data,
 		 */
 		if (mod) {
 			DEBUG_REQ(D_HA, req, "Reset ESTALE = %d", rc);
-			LASSERT(mod->mod_open_req != NULL);
-			if (mod->mod_open_req->rq_committed)
+			if (atomic_read(&mod->mod_refcount) == 1)
 				rc = 0;
 		}
 	}
@@ -994,8 +1026,6 @@ out:
 	if (mod) {
 		if (rc != 0)
 			mod->mod_close_req = NULL;
-		if (mod->mod_close_req)
-			ptlrpc_request_addref(mod->mod_close_req);
 		/* Since now, mod is accessed through open_req only,
 		 * thus close req does not keep a reference on mod anymore. */
 		obd_mod_put(mod);

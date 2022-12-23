@@ -157,6 +157,7 @@ static int ll_close_inode_openhandle(struct inode *inode,
 	const struct ll_inode_info *lli = ll_i2info(inode);
 	struct md_op_data *op_data;
 	struct ptlrpc_request *req = NULL;
+	struct md_open_data *mod = och->och_mod;
 	int rc;
 
 	ENTRY;
@@ -256,7 +257,7 @@ static int ll_close_inode_openhandle(struct inode *inode,
 	if (!(op_data->op_xvalid & OP_XVALID_BLOCKS))
 		op_data->op_xvalid |= OP_XVALID_LAZYBLOCKS;
 
-	rc = md_close(md_exp, op_data, och->och_mod, &req);
+	rc = md_close(md_exp, op_data, mod, &req);
 	if (rc != 0 && rc != -EINTR)
 		CERROR("%s: inode "DFID" mdc close failed: rc = %d\n",
 		       md_exp->exp_obd->obd_name, PFID(&lli->lli_fid), rc);
@@ -278,12 +279,14 @@ static int ll_close_inode_openhandle(struct inode *inode,
 	ll_finish_md_op_data(op_data);
 	EXIT;
 out:
-
-	md_clear_open_replay_data(md_exp, och);
-	och->och_open_handle.cookie = DEAD_HANDLE_MAGIC;
-	OBD_FREE_PTR(och);
-
+	if (mod == NULL || req == NULL || req->rq_repmsg == NULL) {
+		/* Request isn't sent or open wasn't found */
+		md_clear_open_replay_data(md_exp, och);
+		och->och_open_handle.cookie = DEAD_HANDLE_MAGIC;
+		OBD_FREE_PTR(och);
+	}
 	ptlrpc_req_put(req);	/* This is close request */
+
 	return rc;
 }
 

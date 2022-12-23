@@ -2652,20 +2652,11 @@ static void replay_request_or_update(struct lu_env *env,
 				  lustre_msg_get_transno(req->rq_reqmsg),
 				  libcfs_nidstr(&req->rq_peer.nid));
 
-			if (transno > obd->obd_last_committed ||
-			    lustre_msg_get_opc(req->rq_reqmsg) == LDLM_ENQUEUE) {
-				ptlrpc_watchdog_init(&thread->t_watchdog,
-						     WATCHDOG_TIMEOUT);
-				handle_recovery_req(thread, req,
-						    trd->trd_recovery_handler);
-				ptlrpc_watchdog_disable(&thread->t_watchdog);
-			} else {
-				DEBUG_REQ(D_ERROR, req,
-					"skipping  already committed request 0x%llu t%lld from %s",
-					req->rq_xid,
-					lustre_msg_get_transno(req->rq_reqmsg),
-					libcfs_nidstr(&req->rq_peer.nid));
-			}
+			ptlrpc_watchdog_init(&thread->t_watchdog,
+					     WATCHDOG_TIMEOUT);
+			handle_recovery_req(thread, req,
+					    trd->trd_recovery_handler);
+			ptlrpc_watchdog_disable(&thread->t_watchdog);
 
 			/**
 			 * bz18031: increase next_recovery_transno before
@@ -3150,6 +3141,11 @@ int target_queue_recovery_request(struct ptlrpc_request *req,
 	    !is_req_replayed_by_update(req)) {
 		/* Processing the queue right now, don't re-add. */
 		LASSERT(list_empty(&req->rq_list));
+		spin_unlock(&obd->obd_recovery_task_lock);
+		RETURN(1);
+	} else if (transno < obd->obd_last_committed &&
+		   lustre_msg_get_opc(req->rq_reqmsg) == LDLM_ENQUEUE) {
+		/* Processing open request */
 		spin_unlock(&obd->obd_recovery_task_lock);
 		RETURN(1);
 	}
