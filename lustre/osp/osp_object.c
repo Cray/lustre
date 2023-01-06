@@ -344,9 +344,9 @@ osp_oac_xattr_find_or_add(struct osp_object *obj, const char *name, size_t len)
 static inline bool oxe_can_hold(struct osp_xattr_entry *oxe, size_t len)
 {
 	if (unlikely(oxe->oxe_largebuf))
-		return oxe->oxe_buflen > len;
+		return oxe->oxe_buflen >= len;
 
-	return oxe->oxe_buflen - oxe->oxe_namelen - 1 - sizeof(*oxe) > len;
+	return oxe->oxe_buflen - oxe->oxe_namelen - 1 - sizeof(*oxe) >= len;
 }
 
 /**
