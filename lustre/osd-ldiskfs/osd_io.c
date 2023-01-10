@@ -452,6 +452,14 @@ static int osd_bio_init(struct bio *bio, struct osd_iobuf *iobuf,
 	RETURN(0);
 }
 
+/*
+ * Linux v5.12-rc1-20-ga8affc03a9b3
+ *  block: rename BIO_MAX_PAGES to BIO_MAX_VECS
+ */
+#ifndef BIO_MAX_VECS
+#define BIO_MAX_VECS	BIO_MAX_PAGES
+#endif
+
 static int osd_do_bio(struct osd_device *osd, struct inode *inode,
 		      struct osd_iobuf *iobuf)
 {
@@ -549,9 +557,9 @@ static int osd_do_bio(struct osd_device *osd, struct inode *inode,
 
 			bio_start_page_idx = page_idx;
 			/* allocate new bio */
-			bio = bio_alloc(GFP_NOIO, min(BIO_MAX_PAGES,
-						      (npages - page_idx) *
-						      blocks_per_page));
+			bio = bio_alloc(GFP_NOIO, min_t(unsigned short,
+					BIO_MAX_VECS, (npages - page_idx) *
+					blocks_per_page));
 			if (bio == NULL) {
 				CERROR("Can't allocate bio %u*%u = %u pages\n",
 				       (npages - page_idx), blocks_per_page,
