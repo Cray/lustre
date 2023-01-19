@@ -2634,6 +2634,20 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [])
 AC_DEFUN([LC_PROG_LINUX_RESULTS], [])
 
 #
+# LC_EXPORTS_DELETE_FROM_PAGE_CACHE
+#
+# Linux commit v5.16-rc4-44-g452e9e6992fe
+# filemap: Add filemap_remove_folio and __filemap_remove_folio
+#
+# Also removes the export of delete_from_page_cache
+#
+AC_DEFUN([LC_EXPORTS_DELETE_FROM_PAGE_CACHE], [
+LB_CHECK_EXPORT([delete_from_page_cache], [mm/filemap.c],
+	[AC_DEFINE(HAVE_DELETE_FROM_PAGE_CACHE, 1,
+			[delete_from_page_cache is exported])])
+]) # LC_EXPORTS_DELETE_FROM_PAGE_CACHE
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -2829,6 +2843,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 
 	# 5.16
 	LC_HAVE_SECURITY_DENTRY_INIT_WITH_XATTR_NAME_ARG
+	LC_EXPORTS_DELETE_FROM_PAGE_CACHE
 
 	# kernel patch to extend integrity interface
 	LC_BIO_INTEGRITY_PREP_FN
