@@ -472,8 +472,9 @@ run_mdtest() {
 
 	print_opts MDTEST mdtest_iteration mdtest_THREADS mdtest_nFiles
 
-	local testdir=$DIR/d0.mdtest
-	test_mkdir $testdir
+	local dir=${2:-$DIR}
+	local testdir=$dir/d0.mdtest
+	client_load_mkdir $testdir
 	setstripe_getstripe $testdir $mdtest_STRIPEPARAMS
 	chmod 0777 $testdir
 
