@@ -2924,6 +2924,7 @@ start_client_load() {
 			LFS=$LFS \
 			LCTL=$LCTL \
 			FSNAME=$FSNAME \
+			MPIUSER=$MPIUSER \
 			MPIRUN=$MPIRUN \
 			MPIRUN_OPTIONS=\\\"$MPIRUN_OPTIONS\\\" \
 			MACHINEFILE_OPTION=\\\"$MACHINEFILE_OPTION\\\" \
@@ -2938,6 +2939,11 @@ start_client_load() {
 			ior_stripe_params=\\\"$ior_stripe_params\\\" \
 			ior_custom_params=\\\"$ior_custom_param\\\" \
 			mpi_ior_custom_threads=$mpi_ior_custom_threads \
+			mdtest_THREADS=$mdtest_THREADS \
+			mdtest_nFiles=$mdtest_nFiles \
+			mdtest_iteration=$mdtest_iteration \
+			mdtest_custom_params=\\\"$mdtest_custom_params\\\" \
+			mdtest_SETSTRIPEPARAMS=\\\"$mdtest_SETSTRIPEPARAMS\\\" \
 			client_load_SETSTRIPEPARAMS=\\\"$client_load_SETSTRIPEPARAMS\\\" \
 			run_${load}.sh" &
 	local ppid=$!
