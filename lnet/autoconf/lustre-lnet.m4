@@ -447,7 +447,7 @@ AS_IF([test $ENABLEO2IB != "no"], [
 			#endif
 			#include <rdma/ib_verbs.h>
 		],[
-			struct ib_rdma_wr *wr __attribute__ ((unused));
+			const struct ib_rdma_wr *wr __attribute__ ((unused));
 
 			wr = rdma_wr(NULL);
 		],[],[$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE])
