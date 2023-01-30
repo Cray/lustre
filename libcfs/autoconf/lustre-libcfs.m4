@@ -1953,6 +1953,26 @@ AC_DEFUN([LIBCFS_NLA_STRSCPY], [
 ]) # LIBCFS_NLA_STRSCPY
 
 #
+# LIBCFS_LINUX_FORTIFY_STRING_HEADER
+#
+# Linux v5.11-11104-ga28a6e860c6c
+#  string.h: move fortified functions definitions in a dedicated header.
+#
+AC_DEFUN([LIBCFS_SRC_LINUX_FORTIFY_STRING_HEADER],[
+	LB2_LINUX_TEST_SRC([linux_fortify_string_header], [
+		#include <linux/fortify-string.h>
+	],[
+	],[])
+])
+AC_DEFUN([LIBCFS_LINUX_FORTIFY_STRING_HEADER],[
+	AC_MSG_CHECKING([Is linux/fortify-string.h header available])
+	LB2_LINUX_TEST_RESULT([linux_fortify_string_header], [
+		AC_DEFINE(HAVE_LINUX_FORTIFY_STRING_HEADER, 1,
+			[linux/fortify-string.h header available])
+	])
+]) # LIBCFS_LINUX_FORTIFY_STRING_HEADER
+
+#
 # LIBCFS_HAVE_CIPHER_HEADER
 #
 # Kernel 5.12 commit 0eb76ba29d16df2951d37c54ca279c4e5630b071
@@ -2044,6 +2064,8 @@ AC_DEFUN([LIBCFS_PROG_LINUX_SRC], [
 	LIBCFS_SRC_HAVE_PROC_OPS
 	# 5.10
 	LIBCFS_SRC_NLA_STRSCPY
+	# 5.12
+	LIBCFS_SRC_LINUX_FORTIFY_STRING_HEADER
 
 	AC_MSG_CHECKING([for available kernel interfaces to libcfs])
 	LB2_LINUX_TEST_COMPILE_ALL([libcfs])
@@ -2054,6 +2076,8 @@ AC_DEFUN([LIBCFS_PROG_LINUX_RESULTS], [
 	LIBCFS_HAVE_PROC_OPS
 	# 5.10
 	LIBCFS_NLA_STRSCPY
+	# 5.12
+	LIBCFS_LINUX_FORTIFY_STRING_HEADER
 ])
 
 #
