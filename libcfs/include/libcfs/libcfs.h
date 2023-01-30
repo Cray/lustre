@@ -45,6 +45,7 @@
 #include <libcfs/linux/linux-time.h>
 #include <libcfs/linux/linux-wait.h>
 #include <libcfs/linux/linux-percpu-refcount.h>
+#include <libcfs/linux/linux-fortify-string.h>
 
 #include <uapi/linux/lnet/libcfs_ioctl.h>
 #include <libcfs/libcfs_debug.h>
