@@ -732,6 +732,9 @@ static int lod_gen_component_ea(const struct lu_env *env,
 		lod_comp = &lo->ldo_comp_entries[comp_idx];
 
 	magic = lod_comp->llc_pool != NULL ? LOV_MAGIC_V3 : LOV_MAGIC_V1;
+	if (is_dir && lod_comp->llc_ostlist.op_count)
+		magic = LOV_MAGIC_SPECIFIC;
+
 	if (lod_comp->llc_pattern == 0) /* default striping */
 		lod_comp->llc_pattern = LOV_PATTERN_RAID0;
 
@@ -758,7 +761,7 @@ static int lod_gen_component_ea(const struct lu_env *env,
 	} else {
 		struct lov_mds_md_v3 *v3 = (struct lov_mds_md_v3 *)lmm;
 		size_t cplen = strlcpy(v3->lmm_pool_name,
-				       lod_comp->llc_pool,
+				       lod_comp->llc_pool ? : "\0",
 				       sizeof(v3->lmm_pool_name));
 		if (cplen >= sizeof(v3->lmm_pool_name))
 			RETURN(-E2BIG);
@@ -780,7 +783,8 @@ static int lod_gen_component_ea(const struct lu_env *env,
 	if (!is_dir && lo->ldo_is_composite)
 		lod_comp_shrink_stripe_count(lod_comp, &stripe_count);
 
-	if (is_dir || lod_comp->llc_pattern & LOV_PATTERN_F_RELEASED)
+	if ((is_dir && magic != LOV_MAGIC_SPECIFIC) ||
+	    lod_comp->llc_pattern & LOV_PATTERN_F_RELEASED)
 		GOTO(done, rc = 0);
 
 	/* generate ost_idx of this component stripe */
