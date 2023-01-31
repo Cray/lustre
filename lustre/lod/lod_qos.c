@@ -2140,8 +2140,7 @@ unlock:
 	RETURN(rc);
 }
 
-static void lod_qos_set_pool(struct lod_object *lo, int pos, char *pool_name,
-			     struct lov_user_md_v1 *v1)
+void lod_qos_set_pool(struct lod_object *lo, int pos, char *pool_name)
 {
 	struct lod_device *d = lu2lod_dev(lod2lu_obj(lo)->lo_dev);
 	struct lod_layout_component *lod_comp;
@@ -2157,11 +2156,8 @@ static void lod_qos_set_pool(struct lod_object *lo, int pos, char *pool_name,
 	if (pool) {
 		lod_comp = &lo->ldo_comp_entries[pos];
 		if (lod_comp->llc_stripe_offset != LOV_OFFSET_DEFAULT) {
-			if (v1->lmm_magic == LOV_USER_MAGIC_SPECIFIC) {
-				struct lov_user_md_v3 *v3;
-
-				v3 = (struct lov_user_md_v3 *)v1;
-				for (j = 0; j < v3->lmm_stripe_count; j++) {
+			if (lod_comp->llc_ostlist.op_count) {
+				for (j = 0; j < lod_comp->llc_ostlist.op_count; j++) {
 					__u32 num;
 
 					num = lod_comp->llc_ostlist.op_array[j];
@@ -2183,7 +2179,8 @@ static void lod_qos_set_pool(struct lod_object *lo, int pos, char *pool_name,
 			}
 		}
 
-		if (lod_comp->llc_stripe_count > pool_tgt_count(pool) &&
+		if (pool_name &&
+		    lod_comp->llc_stripe_count > pool_tgt_count(pool) &&
 		    !(lod_comp->llc_pattern & LOV_PATTERN_OVERSTRIPING))
 			lod_comp->llc_stripe_count = pool_tgt_count(pool);
 
@@ -2391,7 +2388,7 @@ int lod_qos_parse_config(const struct lu_env *env, struct lod_object *lo,
 		}
 
 		lod_comp->llc_stripe_offset = v1->lmm_stripe_offset;
-		lod_qos_set_pool(lo, i, pool_name, v1);
+		lod_qos_set_pool(lo, i, pool_name);
 	}
 
 	RETURN(0);
