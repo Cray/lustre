@@ -5456,6 +5456,16 @@ test_44a() {
 }
 run_test 44a "test sparse pwrite ==============================="
 
+test_44b() {
+	[ "$FSTYPE" == "ldiskfs" -a $BLOCKSIZE = 4096 ] || skip_env "4k ldiskfs only test"
+
+	$LFS setstripe -c 1 $DIR/$tfile
+	ll_sparseness_write $DIR/$tfile $((2**32*4096-8192))
+	remount_client $MOUNT || error "failed to remount client"
+	$CHECKSTAT -s $((2**32*4096-8192+1)) $DIR/$tfile || error "wrong size"
+}
+run_test 44b "write big sparse write"
+
 dirty_osc_total() {
 	tot=0
 	for d in `lctl get_param -n ${OSC}.*.cur_dirty_bytes`; do
