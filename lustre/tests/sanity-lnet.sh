@@ -3260,6 +3260,17 @@ test_301() {
 }
 run_test 301 "Fail bulk put in send wait completion"
 
+test_400() {
+	reinit_dlc || return $?
+
+	do_lnetctl udsp add --src tcp --priority 0 ||
+		error "Failed to add udsp rule"
+	do_lnetctl udsp del --idx 0 ||
+		error "Failed to del udsp rule"
+	unload_modules
+}
+run_test 400 "Check for udsp add/delete net rule without net num"
+
 complete $SECONDS
 
 cleanup_testsuite
