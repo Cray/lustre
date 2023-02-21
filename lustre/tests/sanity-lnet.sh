@@ -2554,6 +2554,17 @@ test_302() {
 }
 run_test 302 "TAG_RX_OK is possible after TX_FAIL"
 
+test_400() {
+	reinit_dlc || return $?
+
+	do_lnetctl udsp add --src tcp --priority 0 ||
+		error "Failed to add udsp rule"
+	do_lnetctl udsp del --idx 0 ||
+		error "Failed to del udsp rule"
+	unload_modules
+}
+run_test 400 "Check for udsp add/delete net rule without net num"
+
 complete $SECONDS
 
 cleanup_testsuite
