@@ -1890,6 +1890,8 @@ no_bulk:
 			niobuf->rnb_flags  = pg->flag;
 		}
 		pg_prev = pg;
+		if (CFS_FAIL_CHECK(OBD_FAIL_OSC_MARK_COMPRESSED))
+			niobuf->rnb_flags |= OBD_BRW_COMPRESSED;
 	}
 
 	LASSERTF((void *)(niobuf - niocount) ==
