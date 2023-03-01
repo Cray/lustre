@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-Copyright 2015-2019 Cray Inc.  All Rights Reserved
 Utility to dump the Lustre dk logs.
 Based on dump_cfs_trace_data.py
+Copyright 2015-2019,2023 Hewlett Packard Enterprise Development LP
 """
 
 import sys
@@ -32,9 +32,9 @@ def dump_dk_line(tmpfd, options, pfn, used):
         laddr = vaddr + hdr_size
         try:
             line = readmem(laddr, hdr.ph_len - hdr_size)
-	except:
-            print "Skipping pfn: %x, physaddr: %x, vaddr: %x, laddr: %x" % \
-                (pfn, physaddr, vaddr, laddr)
+        except:
+            print("Skipping pfn: %x, physaddr: %x, vaddr: %x, laddr: %x" % \
+                (pfn, physaddr, vaddr, laddr))
             return
 
         (filename,function,text) = line.split('\0')
@@ -79,20 +79,20 @@ def walk_array(options):
             cfs_trace_data = readSymbol('trace_data')
             trace_page_struct = 'struct trace_page'
         except:
-            print "Ensure you have loaded the Lustre modules"
+            print("Ensure you have loaded the Lustre modules")
             return 1
 
     for cfstd_array in cfs_trace_data:
         if not cfstd_array: continue
 
-        for i in xrange(sys_info.CPUS):
+        for i in range(sys_info.CPUS):
             u = cfstd_array[i]
             walk_pages(tmpfd, options, u.tcd.tcd_pages, trace_page_struct)
             walk_pages(tmpfd, options, u.tcd.tcd_stock_pages, trace_page_struct)
 
     tmpfd.close()
-    print do_shell_cmd('sort -n -s -t: -k4,4 ' + fname)
-    print do_shell_cmd('rm ' + fname)
+    print(do_shell_cmd('sort -n -s -t: -k4,4 ' + fname))
+    print(do_shell_cmd('rm ' + fname))
 
 # ---------------------------------------------------------------------------
 def dump_dk_log():

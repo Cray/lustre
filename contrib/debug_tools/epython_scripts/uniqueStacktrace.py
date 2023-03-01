@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 """
-Copyright (c) 2015-2019 Cray Inc. All Rights Reserved.
 Utility to print unique stack traces
+Copyright 2015-2019,2023 Hewlett Packard Enterprise Development LP
 """
 
 import re
 import sys
-import StringIO
+import io
 import argparse
 from pykdump.API import exec_crash_command
 
@@ -63,7 +63,7 @@ def sortInput(swapper, input):
             if not swapper and swap.match(line):
                 line = input.readline()
 
-    sort = sorted(info.items(), key=lambda info: len(info[1]))
+    sort = sorted(list(info.items()), key=lambda info: len(info[1]))
     return sort
 
 def printRes(sort, printpid, printptr):
@@ -72,13 +72,13 @@ def printRes(sort, printpid, printptr):
     """
     for stack_trace, ptask_list in sort:
         if printpid and not printptr:
-            print "PID: %s" % (', '.join(p[0] for p in ptask_list))
+            print("PID: %s" % (', '.join(p[0] for p in ptask_list)))
         elif printpid and printptr:
-            print "PID, TSK: %s" % (', '.join(p[0] + ': ' + p[1] for p in ptask_list))
+            print("PID, TSK: %s" % (', '.join(p[0] + ': ' + p[1] for p in ptask_list)))
         elif not printpid and printptr:
-            print "TSK: %s" % (', '.join(p[1] for p in ptask_list))
-        print "TASKS: %d" %(len(ptask_list))
-        print "\t%s" %(stack_trace)
+            print("TSK: %s" % (', '.join(p[1] for p in ptask_list)))
+        print("TASKS: %d" %(len(ptask_list)))
+        print("\t%s" %(stack_trace))
 
 
 def main():
@@ -101,7 +101,7 @@ def main():
     com = "foreach {ts:s} bt".format(ts=" ".join(args.task_select))
 
     result = exec_crash_command(com)
-    input = StringIO.StringIO(result)
+    input = io.StringIO(result)
     printRes(sortInput(args.swapper, input), args.printpid, args.printptr)
 
 if __name__ == '__main__':

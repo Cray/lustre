@@ -1,8 +1,8 @@
 #!usr/bin/env python
 from pykdump.API import *
 """
-Copyright (c) 2019 Cray Inc. All Rights Reserved.
 Utility to print jiffies as date and time
+Copyright 2019,2023 Hewlett Packard Enterprise Development LP
 """
 
 import argparse
@@ -25,7 +25,7 @@ def jiffies2date(jts):
 
     stime = scur - soffset
     date = time.asctime(time.localtime(stime))
-    print '%s (epoch: %d)' % (date, stime)
+    print('%s (epoch: %d)' % (date, stime))
 
 if __name__ == "__main__":
     description = "Print the date and time of a given jiffies timestamp. " + \
