@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Copyright 2019 Cray Inc.  All Rights Reserved
 Utility to maps numeric opcode to string identifier
+Copyright 2019,2023 Hewlett Packard Enterprise Development LP
 """
 
 from pykdump.API import *
@@ -114,9 +114,9 @@ opcodes = {
 def translate_opcodes(opc_list):
     for opc in opc_list:
         try:
-            print "o%d \t= %s" % (opc, opcodes[opc])
+            print("o%d \t= %s" % (opc, opcodes[opc]))
         except:
-            print "o%d \t= unknown" % opc
+            print("o%d \t= unknown" % opc)
 
 
 if __name__ == "__main__":
