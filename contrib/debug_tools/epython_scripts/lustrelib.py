@@ -2,8 +2,8 @@
 from pykdump.API import *
 
 """
-Copyright (c) 2015-2019 Cray Inc. All Rights Reserved.
 Library of helper functions for Lustre scripts
+Copyright 2015-2019,2023 Hewlett Packard Enterprise Development LP
 """
 # hide this file from the output of 'epython scripts'.
 interactive = False
@@ -228,7 +228,7 @@ tmpsiz = 256
 LNET_CPT_BITS = the_lnet.ln_cpt_bits
 LNET_PROC_CPT_BITS = LNET_CPT_BITS + 1
 LNET_LOFFT_BITS = getSizeOf('loff_t') * 8
-LNET_PROC_VER_BITS = max((min(LNET_LOFFT_BITS, 64) / 4), 8)
+LNET_PROC_VER_BITS = max((min(LNET_LOFFT_BITS, 64) // 4), 8)
 LNET_PROC_HASH_BITS = 9
 LNET_PROC_HOFF_BITS = LNET_LOFFT_BITS - LNET_PROC_CPT_BITS - LNET_PROC_VER_BITS - LNET_PROC_HASH_BITS -1
 LNET_PROC_HPOS_BITS = LNET_PROC_HASH_BITS + LNET_PROC_HOFF_BITS
