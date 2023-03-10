@@ -587,11 +587,6 @@ extern void lprocfs_stats_header(struct seq_file *seq, ktime_t now,
 				 ktime_t ts_init, int width, const char *colon,
 				 bool show_units);
 
-extern void lprocfs_stats_header_ind(struct seq_file *seq, ktime_t now,
-				     ktime_t ts_init, const char *indentation,
-				     int width, const char *colon,
-				     bool show_units);
-
 /* Generic callbacks */
 extern int lprocfs_uuid_seq_show(struct seq_file *m, void *data);
 extern int lprocfs_server_uuid_seq_show(struct seq_file *m, void *data);
