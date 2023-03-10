@@ -1367,30 +1367,21 @@ static void *lprocfs_stats_seq_next(struct seq_file *p, void *v, loff_t *pos)
 	return lprocfs_stats_seq_start(p, pos);
 }
 
-void lprocfs_stats_header_ind(struct seq_file *seq, ktime_t now,
-			      ktime_t ts_init, const char *indentation,
-			      int width, const char *colon, bool show_units)
+void lprocfs_stats_header(struct seq_file *seq, ktime_t now, ktime_t ts_init,
+			  int width, const char *colon, bool show_units)
 {
 	const char *units = show_units ? " secs.nsecs" : "";
 	struct timespec64 ts;
 
 	ts = ktime_to_timespec64(now);
-	seq_printf(seq, "%s%-*s%s %llu.%09lu%s\n", indentation, width,
+	seq_printf(seq, "%-*s%s %llu.%09lu%s\n", width,
 		   "snapshot_time", colon, (s64)ts.tv_sec, ts.tv_nsec, units);
 	ts = ktime_to_timespec64(ts_init);
-	seq_printf(seq, "%s%-*s%s %llu.%09lu%s\n", indentation, width,
+	seq_printf(seq, "%-*s%s %llu.%09lu%s\n", width,
 		   "start_time", colon, (s64)ts.tv_sec, ts.tv_nsec, units);
 	ts = ktime_to_timespec64(ktime_sub(now, ts_init));
-	seq_printf(seq, "%s%-*s%s %llu.%09lu%s\n", indentation, width,
+	seq_printf(seq, "%-*s%s %llu.%09lu%s\n", width,
 		   "elapsed_time", colon, (s64)ts.tv_sec, ts.tv_nsec, units);
-}
-EXPORT_SYMBOL(lprocfs_stats_header_ind);
-
-void lprocfs_stats_header(struct seq_file *seq, ktime_t now, ktime_t ts_init,
-			  int width, const char *colon, bool show_units)
-{
-	lprocfs_stats_header_ind(seq, now, ts_init, "", width, colon,
-				 show_units);
 }
 EXPORT_SYMBOL(lprocfs_stats_header);
 
