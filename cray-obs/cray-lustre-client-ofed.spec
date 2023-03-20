@@ -1,3 +1,5 @@
+%global kfabric_version %(rpm -q --qf '%{VERSION}-%{RELEASE}' cray-kfabric-devel)
+
 %define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define _lnet_version %(echo "%{_version}" | awk -F . '{printf("%s.%s", $1, $2)}')
 
@@ -55,6 +57,8 @@ Requires: %{requires_kmod_name} = %{requires_kmod_version}
 %description
 Userspace tools and files for the Lustre filesystem.
 Compiled for kernel: %{kversion}
+ko2iblnd compiled against: In-kernel drivers
+kkfilnd compiled against: cray-kfabric-devel-%{kfabric_version}
 
 %package devel
 Group: Development/Libraries
@@ -67,6 +71,8 @@ Summary: Cray Lustre Header files
 Development files for building against Lustre library.
 Includes headers, dynamic, and static libraries.
 Compiled for kernel: %{kversion}
+ko2iblnd compiled against: In-kernel drivers
+kkfilnd compiled against: cray-kfabric-devel-%{kfabric_version}
 
 %package lnet-headers
 Group: Development/Libraries
@@ -76,6 +82,8 @@ Summary: Cray Lustre Network Header files
 %description lnet-headers
 Cray Lustre Network Header files
 Compiled for kernel: %{kversion}
+ko2iblnd compiled against: In-kernel drivers
+kkfilnd compiled against: cray-kfabric-devel-%{kfabric_version}
 
 %package %{flavor}-lnet-devel
 Group: Development/Libraries
@@ -86,6 +94,8 @@ Summary: Cray Lustre Network kernel flavor specific devel files
 Kernel flavor specific development files for building against Lustre
 Network (LNet)
 Compiled for kernel: %{kversion}
+ko2iblnd compiled against: In-kernel drivers
+kkfilnd compiled against: cray-kfabric-devel-%{kfabric_version}
 
 %if %{undefined kmoddir}
 	%if %{defined kernel_module_package_moddir}
