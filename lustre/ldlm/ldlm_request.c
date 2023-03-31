@@ -655,6 +655,12 @@ int ldlm_cli_enqueue_fini(struct obd_export *exp, struct ptlrpc_request *req,
 	if (reply == NULL)
 		GOTO(cleanup, rc = -EPROTO);
 
+	if (reply->lock_flags & ~LDLM_FL_WIRE_REP_FLAGS_MASK) {
+		DEBUG_REQ(D_ERROR, req, "invalid lock reply flags %llx",
+			  reply->lock_flags & ~LDLM_FL_WIRE_REP_FLAGS_MASK);
+		GOTO(cleanup, rc = -EFAULT);
+	}
+
 	if (lvb_len > 0) {
 		int size = 0;
 
@@ -2462,6 +2468,12 @@ static int replay_lock_interpret(const struct lu_env *env,
 	reply = req_capsule_server_get(&req->rq_pill, &RMF_DLM_REP);
 	if (reply == NULL)
 		GOTO(out, rc = -EPROTO);
+
+	if (reply->lock_flags & ~LDLM_FL_WIRE_REP_FLAGS_MASK) {
+		DEBUG_REQ(D_ERROR, req, "invalid lock reply flags %llx",
+			  reply->lock_flags & ~LDLM_FL_WIRE_REP_FLAGS_MASK);
+		GOTO(out, rc = -EFAULT);
+	}
 
 	lock = ldlm_handle2lock(&aa->lock_handle);
 	if (!lock) {
