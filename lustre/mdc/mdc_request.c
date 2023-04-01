@@ -646,8 +646,10 @@ out_acl:
 
 	EXIT;
 out:
-	if (rc)
+	if (rc) {
 		lmd_clear_acl(md);
+		md_put_lustre_md(md_exp, md);
+	}
 
 	return rc;
 }
