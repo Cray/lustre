@@ -599,6 +599,10 @@ test_6() {
 	$LFS setstripe -c 2 -p $INVALID_POOL $POOL_DIR 2>/dev/null
 	[[ $? -ne 0 ]] || error "setstripe to invalid pool did not fail."
 
+	# If the pool name does not exist, the command should fail
+	$LFS setstripe -c 2 -p $NON_EXISTANT_POOL $POOL_DIR 2>/dev/null
+	[[ $? -ne 0 ]] || error "setstripe to non-existant pool did not fail."
+
 	# lfs setstripe should work as before if a pool name is not specified.
 	$LFS setstripe -c -1 $POOL_DIR
 	[[ $? -eq 0 ]] || error "$LFS setstripe -c -1 $POOL_DIR failed."
@@ -693,7 +697,11 @@ test_7c()
 
 	# setstripe with the same pool name plus 1 letter
 	$LFS setstripe -c 1 $DIR/$tdir/testfile1 --pool "${pool}X" &&
-		error "setstripe succedeed"
+		error "setstripe succeeded"
+
+	# setstripe with the same pool name minus 1 letter
+	$LFS setstripe -c 1 $DIR/$tdir/testfile1 --pool "${pool%?}" &&
+		error "setstripe succeeded"
 
 	rm -f $DIR/$tdir/testfile1
 
