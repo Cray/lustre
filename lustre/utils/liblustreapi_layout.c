@@ -1578,6 +1578,7 @@ int llapi_layout_file_open(const char *path, int open_flags, mode_t mode,
 	int tmp;
 	struct lov_user_md *lum;
 	size_t lum_size;
+	char fsname[MAX_OBD_NAME + 1] = { 0 };
 
 	if (path == NULL ||
 	    (layout != NULL && layout->llot_magic != LLAPI_LAYOUT_MAGIC)) {
@@ -1586,8 +1587,15 @@ int llapi_layout_file_open(const char *path, int open_flags, mode_t mode,
 	}
 
 	if (layout) {
+		/* Make sure we are on a Lustre file system */
+		rc = llapi_search_fsname(path, fsname);
+		if (rc) {
+			errno = ENOTTY;
+			return -1;
+		}
 		rc = llapi_layout_sanity((struct llapi_layout *)layout, false,
-				!!(layout->llot_mirror_count > 1));
+					!!(layout->llot_mirror_count > 1),
+					fsname);
 		if (rc) {
 			llapi_layout_sanity_perror(rc);
 			return -1;
@@ -2189,6 +2197,7 @@ int llapi_layout_file_comp_add(const char *path,
 	int rc, fd = -1, lum_size, tmp_errno = 0;
 	struct llapi_layout *existing_layout = NULL;
 	struct lov_user_md *lum = NULL;
+	char fsname[MAX_OBD_NAME + 1] = { 0 };
 
 	if (path == NULL || layout == NULL ||
 	    layout->llot_magic != LLAPI_LAYOUT_MAGIC) {
@@ -2217,7 +2226,14 @@ int llapi_layout_file_comp_add(const char *path,
 		goto out;
 	}
 
-	rc = llapi_layout_sanity(existing_layout, false, false);
+	rc = llapi_search_fsname(path, fsname);
+	if (rc) {
+		tmp_errno = -rc;
+		rc = -1;
+		goto out;
+	}
+
+	rc = llapi_layout_sanity(existing_layout, false, false, fsname);
 	if (rc) {
 		tmp_errno = errno;
 		llapi_layout_sanity_perror(rc);
@@ -2352,7 +2368,7 @@ int llapi_layout_file_comp_del(const char *path, uint32_t id, uint32_t flags)
 		goto out;
 	}
 
-	rc = llapi_layout_sanity(existing_layout, false, false);
+	rc = llapi_layout_sanity(existing_layout, false, false, NULL);
 	if (rc) {
 		tmp_errno = errno;
 		llapi_layout_sanity_perror(rc);
@@ -2465,6 +2481,7 @@ int llapi_layout_file_comp_set(const char *path, uint32_t *ids, uint32_t *flags,
 	struct llapi_layout *layout = NULL;
 	struct llapi_layout_comp *comp;
 	struct lov_user_md *lum = NULL;
+	char fsname[MAX_OBD_NAME + 1] = { 0 };
 
 	if (path == NULL) {
 		errno = EINVAL;
@@ -2512,7 +2529,14 @@ int llapi_layout_file_comp_set(const char *path, uint32_t *ids, uint32_t *flags,
 		goto out;
 	}
 
-	rc = llapi_layout_sanity(existing_layout, false, false);
+	rc = llapi_search_fsname(path, fsname);
+	if (rc) {
+		tmp_errno = -rc;
+		rc = -1;
+		goto out;
+	}
+
+	rc = llapi_layout_sanity(existing_layout, false, false, fsname);
 	if (rc) {
 		tmp_errno = errno;
 		llapi_layout_sanity_perror(rc);
@@ -3197,11 +3221,31 @@ struct llapi_layout_sanity_args {
 	bool lsa_flr;
 	bool lsa_ondisk;
 	int lsa_rc;
+	char *fsname;
 };
 
 /* The component flags can be set by users at creation/modification time. */
 #define LCME_USER_COMP_FLAGS	(LCME_FL_PREF_RW | LCME_FL_NOSYNC | \
 				 LCME_FL_EXTENSION)
+
+/* Inline function to verify the pool name */
+static inline int verify_pool_name(char *fsname, struct llapi_layout *layout)
+{
+	struct llapi_layout_comp *comp;
+
+	if (!fsname || fsname[0] == '\0')
+		return 0;
+
+	comp = __llapi_layout_cur_comp(layout);
+	if (!comp)
+		return 0;
+	if (comp->llc_pool_name[0] == '\0')
+		return 0;
+	/* check if the pool name exist */
+	if (llapi_search_ost(fsname, comp->llc_pool_name, NULL) < 0)
+		return -1;
+	return 0;
+}
 
 /**
  * When modified, adjust llapi_stripe_param_verify() if needed as well.
@@ -3215,6 +3259,11 @@ static int llapi_layout_sanity_cb(struct llapi_layout *layout,
 
 	comp = __llapi_layout_cur_comp(layout);
 	if (comp == NULL) {
+		args->lsa_rc = -1;
+		goto out_err;
+	}
+
+	if (verify_pool_name(args->fsname, layout) != 0) {
 		args->lsa_rc = -1;
 		goto out_err;
 	}
@@ -3410,13 +3459,14 @@ void llapi_layout_sanity_perror(int error)
  * \param[in] incomplete        if layout is complete or not - some checks can
  *                              only be done on complete layouts.
  * \param[in] flr		set when this is called from FLR mirror create
+ * \param[in] fsname		filesystem name is used to check pool name, if
+ *				NULL no pool name check is performed
  *
  * \retval                      0, success, positive: various errors, see
  *                              llapi_layout_sanity_perror, -1, failure
  */
 int llapi_layout_sanity(struct llapi_layout *layout,
-			bool incomplete,
-			bool flr)
+			bool incomplete, bool flr, char *fsname)
 {
 	struct llapi_layout_sanity_args args = { 0 };
 	struct llapi_layout_comp *curr;
@@ -3433,6 +3483,7 @@ int llapi_layout_sanity(struct llapi_layout *layout,
 	args.lsa_rc = 0;
 	args.lsa_flr = flr;
 	args.lsa_incomplete = incomplete;
+	args.fsname = fsname;
 
 	/* When we modify an existing layout, this tells us if it's FLR */
 	if (mirror_id_of(curr->llc_id) > 0)

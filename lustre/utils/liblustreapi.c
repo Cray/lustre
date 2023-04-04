@@ -413,7 +413,7 @@ int llapi_ioctl_unpack(struct obd_ioctl_data *data, char *pbuf, int max_len)
  *				< 0, error code on failre
  */
 static int llapi_stripe_param_verify(const struct llapi_stripe_param *param,
-				     const char **pool_name)
+				     const char **pool_name, char *fsname)
 {
 	int count;
 	static int page_size;
@@ -476,6 +476,15 @@ static int llapi_stripe_param_verify(const struct llapi_stripe_param *param,
 			rc = -EINVAL;
 			llapi_error(LLAPI_MSG_ERROR, rc,
 				    "Invalid Poolname '%s'", *pool_name);
+			goto out;
+		}
+
+		/* Make sure the pool exists */
+		if ((llapi_search_ost(fsname, *pool_name, NULL)) < 0) {
+			llapi_err_noerrno(LLAPI_MSG_ERROR,
+					  "pool '%s fsname %s' does not exist",
+					  *pool_name, fsname);
+			rc = -EINVAL;
 			goto out;
 		}
 	}
@@ -602,13 +611,22 @@ int llapi_get_agent_uuid(char *path, char *buf, size_t bufsize)
 int llapi_file_open_param(const char *name, int flags, mode_t mode,
 			  const struct llapi_stripe_param *param)
 {
+	char fsname[MAX_OBD_NAME + 1] = { 0 };
 	struct lov_user_md *lum = NULL;
 	const char *pool_name = param->lsp_pool;
 	size_t lum_size;
 	int fd, rc;
 
+	/* Make sure we are on a Lustre file system */
+	rc = llapi_search_fsname(name, fsname);
+	if (rc) {
+		llapi_error(LLAPI_MSG_ERROR, rc,
+			    "'%s' is not on a Lustre filesystem", name);
+		return rc;
+	}
+
 	/* Check if the stripe pattern is sane. */
-	rc = llapi_stripe_param_verify(param, &pool_name);
+	rc = llapi_stripe_param_verify(param, &pool_name, fsname);
 	if (rc != 0)
 		return rc;
 
