@@ -760,6 +760,9 @@ struct lnet_peer {
 	 * nets/NIs
 	 */
 	__u32                   lp_send_seq;
+
+	/* timestamp of primary nid lock */
+	__u64			lp_prim_lock_ts;
 };
 
 /*
