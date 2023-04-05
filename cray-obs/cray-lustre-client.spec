@@ -30,6 +30,8 @@ BuildRequires: keyutils-devel
 BuildRequires: libmount-devel
 BuildRequires: mlnx-ofa_kernel-devel
 BuildRequires: cray-kfabric-devel
+BuildRequires: flex
+BuildRequires: bison
 Requires: cray-kfabric-udev
 
 # Vendor specific requires/defines/etc.

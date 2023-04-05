@@ -86,6 +86,8 @@ BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
+BuildRequires: flex
+BuildRequires: bison
 
 Provides: %{lustre_name} = %{version}
 Provides: %{requires_kmod_name} = %{requires_kmod_version}
