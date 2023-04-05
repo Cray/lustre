@@ -28,6 +28,8 @@ BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
 BuildRequires: libmount-devel
 BuildRequires: cray-kfabric-devel
+BuildRequires: flex
+BuildRequires: bison
 Requires: (cray-kfabric-udev or cray-kfabric-dkms)
 
 # Vendor specific requires/defines/etc.

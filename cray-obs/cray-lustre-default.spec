@@ -24,6 +24,8 @@ BuildRequires: sles-release
 BuildRequires: libtool
 BuildRequires: libyaml-devel
 BuildRequires: libmount-devel
+BuildRequires: flex
+BuildRequires: bison
 Group: System/Filesystems
 License: GPL
 Name: %{namespace}-%{intranamespace_name}

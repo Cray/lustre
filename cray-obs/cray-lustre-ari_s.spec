@@ -37,6 +37,8 @@ BuildRequires: libext2fs-devel
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
 BuildRequires: libmount-devel
+BuildRequires: flex
+BuildRequires: bison
 %if 0%{?sle_version} <= 120000
 BuildRequires: ofed-devel
 %endif

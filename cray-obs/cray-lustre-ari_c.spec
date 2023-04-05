@@ -27,6 +27,8 @@ BuildRequires: libext2fs-devel
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
 BuildRequires: libmount-devel
+BuildRequires: flex
+BuildRequires: bison
 #!BuildIgnore: post-build-checks
 Group: System/Filesystems
 License: GPL

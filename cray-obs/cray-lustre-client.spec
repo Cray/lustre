@@ -34,6 +34,8 @@ BuildRequires: libmount-devel
 %ifarch x86_64
 BuildRequires: mlnx-ofa_kernel-devel
 %endif
+BuildRequires: flex
+BuildRequires: bison
 
 # Vendor specific requires/defines/etc.
 %if %{_vendor}=="redhat"
