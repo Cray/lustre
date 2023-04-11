@@ -92,6 +92,12 @@ struct mdt_file_data {
  */
 #define CDT_DEFAULT_POLICY		CDT_NORETRY_ACTION
 
+/* The maximum number of requests the coordinator can handle or update at a
+ * time; the value is based on field reports and experimentation, but may not
+ * be optimal
+ */
+#define CDT_BATCH_SIZE	10000
+
 /* Coordinator states. Keep the cdt_transition table in sync. */
 enum cdt_states { CDT_STOPPED = 0,
 		  CDT_INIT,
