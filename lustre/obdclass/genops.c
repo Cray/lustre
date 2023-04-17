@@ -2313,13 +2313,9 @@ __u16 obd_get_mod_rpc_slot(struct client_obd *cli, __u32 opc)
 		       "opc %u, max %hu\n",
 		       cli->cl_import->imp_obd->obd_name, opc, max);
 
-		if (close_req) {
-			wait_event_idle(cli->cl_mod_rpcs_waitq,
-				     obd_mod_rpc_slot_avail(cli, close_req));
-		} else {
-			wait_event_idle_exclusive(cli->cl_mod_rpcs_waitq,
-					obd_mod_rpc_slot_avail(cli, close_req));
-		}
+		wait_event_idle_exclusive(cli->cl_mod_rpcs_waitq,
+					  obd_mod_rpc_slot_avail(cli,
+								 close_req));
 	} while (true);
 }
 EXPORT_SYMBOL(obd_get_mod_rpc_slot);
