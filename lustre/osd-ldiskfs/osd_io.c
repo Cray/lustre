@@ -2437,6 +2437,12 @@ static int osd_ladvise(const struct lu_env *env, struct dt_object *dt,
 	RETURN(rc);
 }
 
+static int osd_ladvise_skip(const struct lu_env *env, struct dt_object *dt,
+		__u64 start, __u64 end, enum lu_ladvise_type advice)
+{
+	return 0;
+}
+
 static loff_t osd_lseek(const struct lu_env *env, struct dt_object *dt,
 			loff_t offset, int whence)
 {
@@ -2480,6 +2486,7 @@ static loff_t osd_lseek(const struct lu_env *env, struct dt_object *dt,
  */
 const struct dt_body_operations osd_body_ops_new = {
 	.dbo_declare_write = osd_declare_write,
+	.dbo_ladvise = osd_ladvise_skip,
 };
 
 const struct dt_body_operations osd_body_ops = {
