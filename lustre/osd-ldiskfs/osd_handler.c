@@ -1227,8 +1227,10 @@ trigger:
 		if (scrub->os_partial_scan && !scrub->os_in_join)
 			goto join;
 
-		if (IS_ERR_OR_NULL(inode) || result)
+		if (IS_ERR_OR_NULL(inode) || result) {
+			osd_oii_insert(dev, fid, id, result == -ENOENT);
 			GOTO(out, result = -EINPROGRESS);
+		}
 
 		LASSERT(remote);
 		LASSERT(obj->oo_inode == inode);
@@ -1256,8 +1258,10 @@ join:
 	if (rc1 && rc1 != -EALREADY)
 		GOTO(out, result = -EREMCHG);
 
-	if (IS_ERR_OR_NULL(inode) || result)
+	if (IS_ERR_OR_NULL(inode) || result) {
+		osd_oii_insert(dev, fid, id, result == -ENOENT);
 		GOTO(out, result = -EINPROGRESS);
+	}
 
 	LASSERT(remote);
 	LASSERT(obj->oo_inode == inode);
