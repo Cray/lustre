@@ -2837,9 +2837,6 @@ kiocb_ki_complete_2args, [
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_KIOCB_COMPLETE_2ARGS
 
-AC_DEFUN([LC_PROG_LINUX_SRC], [])
-AC_DEFUN([LC_PROG_LINUX_RESULTS], [])
-
 #
 # LC_EXPORTS_DELETE_FROM_PAGE_CACHE
 #
@@ -2902,6 +2899,39 @@ address_spaace_operaions_dirty_folio, [
 	])
 EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_DIRTY_FOLIO
+
+#
+# LC_HAVE_ALLOC_INODE_SB
+#
+# linux commit v5.17-49-g8b9f3ac5b01d
+#   fs: introduce alloc_inode_sb() to allocate filesystems specific inode
+#
+AC_DEFUN([LC_SRC_HAVE_ALLOC_INODE_SB], [
+	LB2_LINUX_TEST_SRC([alloc_inode_sb], [
+		#include <linux/fs.h>
+	],[
+		struct super_block *sb = NULL;
+		struct kmem_cache *cache = NULL;
+
+		(void)alloc_inode_sb(sb, cache, GFP_NOFS);
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_ALLOC_INODE_SB], [
+	AC_MSG_CHECKING([if alloc_inode_sb() exists])
+	LB2_LINUX_TEST_RESULT([alloc_inode_sb], [
+		AC_DEFINE(HAVE_ALLOC_INODE_SB, 1,
+			[alloc_inode_sb() exists])
+	])
+]) # LC_HAVE_ALLOC_INODE_SB
+
+AC_DEFUN([LC_PROG_LINUX_SRC], [
+	# 5.18
+	LC_SRC_HAVE_ALLOC_INODE_SB
+])
+AC_DEFUN([LC_PROG_LINUX_RESULTS], [
+	# 5.18
+	LC_HAVE_ALLOC_INODE_SB
+])
 
 #
 # LC_PROG_LINUX
@@ -3115,7 +3145,7 @@ AC_DEFUN([LC_PROG_LINUX], [
 	LC_HAVE_KIOCB_COMPLETE_2ARGS
 	LC_EXPORTS_DELETE_FROM_PAGE_CACHE
 
-	# 5.18
+	# 5.17
 	LC_HAVE_INVALIDATE_FOLIO
 	LC_HAVE_DIRTY_FOLIO
 
