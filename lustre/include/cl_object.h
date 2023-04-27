@@ -264,7 +264,6 @@ struct cl_object_conf {
 	 * Layout lock handle.
 	 */
 	struct ldlm_lock	 *coc_lock;
-	bool			 coc_try;
 	/**
 	 * Operation to handle layout, OBJECT_CONF_XYZ.
 	 */
