@@ -1664,24 +1664,39 @@ out:
 static void ll_update_default_lsm_md(struct inode *inode, struct lustre_md *md)
 {
 	struct ll_inode_info *lli = ll_i2info(inode);
+	struct lmv_stripe_object *lsm_obj = md->def_lsm_obj;
 	ENTRY;
 
 	/* clear default lsm */
-	if (md->def_lsm_obj == NULL ||
-	    md->def_lsm_obj->lso_lsm.lsm_md_max_inherit == LMV_INHERIT_NONE) {
-		lmv_stripe_object_put(&lli->lli_def_lsm_obj);
+	if (!lsm_obj ||
+	    lsm_obj->lso_lsm.lsm_md_max_inherit == LMV_INHERIT_NONE) {
+		/* clear default lsm */
+		if (lli->lli_def_lsm_obj) {
+			down_write(&lli->lli_lsm_sem);
+			lmv_stripe_object_put(&lli->lli_def_lsm_obj);
+			up_write(&lli->lli_lsm_sem);
+		}
 		RETURN_EXIT;
 	}
 
-	/* update default lsm */
-	if (lli->lli_def_lsm_obj == NULL ||
-	    !lsm_md_eq(lli->lli_def_lsm_obj, md->def_lsm_obj))
-	{
-		lmv_stripe_object_put(&lli->lli_def_lsm_obj);
-		lli->lli_def_lsm_obj = md->def_lsm_obj;
-		lmv_stripe_object_dump(D_INODE, md->def_lsm_obj);
-		md->def_lsm_obj = NULL;
+	if (lli->lli_def_lsm_obj) {
+		/* do nonthing if default lsm isn't changed */
+		down_read(&lli->lli_lsm_sem);
+		if (lli->lli_def_lsm_obj &&
+		    lsm_md_eq(lli->lli_def_lsm_obj, lsm_obj)) {
+			up_read(&lli->lli_lsm_sem);
+			RETURN_EXIT;
+		}
+		up_read(&lli->lli_lsm_sem);
 	}
+	down_write(&lli->lli_lsm_sem);
+
+	/* update default lsm. */
+	lmv_stripe_object_put(&lli->lli_def_lsm_obj);
+	lli->lli_def_lsm_obj = lsm_obj;
+	lmv_stripe_object_dump(D_INODE, lsm_obj);
+	md->def_lsm_obj = NULL;
+	up_write(&lli->lli_lsm_sem);
 	RETURN_EXIT;
 }
 
@@ -1697,7 +1712,6 @@ static int ll_update_lsm_md(struct inode *inode, struct lustre_md *md)
 	CDEBUG(D_INODE, "update lsm_obj %p of "DFID"\n", lli->lli_lsm_obj,
 	       PFID(ll_inode2fid(inode)));
 
-	down_write(&lli->lli_lsm_sem);
 	/* update default LMV */
 	if (md->def_lsm_obj)
 		ll_update_default_lsm_md(inode, md);
@@ -1713,9 +1727,24 @@ static int ll_update_lsm_md(struct inode *inode, struct lustre_md *md)
 	 * include stripeEA, see ll_md_setattr()
 	 */
 	if (!lsm_obj)
-		GOTO(unlock, rc = 0);
+		RETURN(0);
+
+	/*
+	 * normally dir layout doesn't change, only take read lock to check
+	 * that to avoid blocking other MD operations.
+	 */
+	down_read(&lli->lli_lsm_sem);
 
 	/* some current lookup initialized lsm, and unchanged */
+	if (lli->lli_lsm_obj && lsm_md_eq(lli->lli_lsm_obj, lsm_obj)) {
+		up_read(&lli->lli_lsm_sem);
+		RETURN(0);
+	}
+
+	up_read(&lli->lli_lsm_sem);
+	down_write(&lli->lli_lsm_sem);
+
+	/* check again in case of a race */
 	if (lli->lli_lsm_obj && lsm_md_eq(lli->lli_lsm_obj, lsm_obj))
 		GOTO(unlock, rc = 0);
 
@@ -3175,11 +3204,9 @@ int ll_prep_inode(struct inode **inode, struct req_capsule *pill,
 		LDLM_LOCK_PUT(lock);
 	}
 
-	if (default_lmv_deleted) {
-		down_write(&ll_i2info(*inode)->lli_lsm_sem);
+	if (default_lmv_deleted)
 		ll_update_default_lsm_md(*inode, &md);
-		up_write(&ll_i2info(*inode)->lli_lsm_sem);
-	}
+
 	/* we may want to apply some policy for foreign file/dir */
 	if (ll_sbi_has_foreign_symlink(sbi)) {
 		rc = ll_manage_foreign(*inode, &md);
