@@ -1946,5 +1946,14 @@ int ll_readpage(struct file *file, struct page *vmpage)
 		unlock_page(vmpage);
 		result = PTR_ERR(page);
         }
+
+	/* this delay gives time for the actual read of the page to finish and
+	 * unlock the page in vvp_page_completion_read before we return to our
+	 * caller and the caller tries to use the page, allowing us to test
+	 * races with the page being unlocked after readpage() but before it's
+	 * used by the caller
+	 */
+	OBD_FAIL_TIMEOUT(OBD_FAIL_LLITE_READPAGE_PAUSE2, cfs_fail_val);
+
 	RETURN(result);
 }
