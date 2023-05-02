@@ -1755,6 +1755,24 @@ static inline bool bdev_integrity_enabled(struct block_device *bdev, int rw)
 	return false;
 }
 
+#ifdef HAVE_FILLDIR_USE_CTX_RETURN_BOOL
+#define WRAP_FILLDIR_FN(prefix, fill_fn) \
+static bool fill_fn(struct dir_context *buf, const char *name, int namelen, \
+		    loff_t offset, __u64 ino, unsigned int d_type)	    \
+{									    \
+	return !prefix##fill_fn(buf, name, namelen, offset, ino, d_type);   \
+}
+#elif defined(HAVE_FILLDIR_USE_CTX)
+#define WRAP_FILLDIR_FN(prefix, fill_fn) \
+static int fill_fn(struct dir_context *buf, const char *name, int namelen,  \
+		   loff_t offset, __u64 ino, unsigned int d_type)	    \
+{									    \
+	return prefix##fill_fn(buf, name, namelen, offset, ino, d_type);    \
+}
+#else
+#define WRAP_FILLDIR_FN(prefix, fill_fn)
+#endif
+
 bool osd_tx_was_declared(const struct lu_env *env, struct osd_thandle *oth,
 			 struct dt_object *dt, enum dt_txn_op op, loff_t p);
 
