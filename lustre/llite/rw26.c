@@ -118,21 +118,23 @@ static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
 	struct address_space	*mapping;
 	int result = 0;
 
+	ENTRY;
+
 	LASSERT(PageLocked(vmpage));
 	if (PageWriteback(vmpage) || PageDirty(vmpage))
-		return 0;
+		RETURN(0);
 
 	mapping = vmpage->mapping;
 	if (mapping == NULL)
-		return 1;
+		RETURN(1);
 
 	obj = ll_i2info(mapping->host)->lli_clob;
 	if (obj == NULL)
-		return 1;
+		RETURN(1);
 
 	clpage = cl_vmpage_page(vmpage, obj);
 	if (clpage == NULL)
-		return 1;
+		RETURN(1);
 
 	env = cl_env_percpu_get();
 	LASSERT(!IS_ERR(env));
@@ -166,7 +168,7 @@ static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
 	cl_page_put(env, clpage);
 
 	cl_env_percpu_put(env);
-	return result;
+	RETURN(result);
 }
 
 static ssize_t ll_get_user_pages(int rw, struct iov_iter *iter,
