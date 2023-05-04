@@ -5462,6 +5462,8 @@ int lfsck_namespace_repair_dangling(const struct lu_env *env,
 		if (rc)
 			GOTO(stop, rc);
 
+		rec->rec_fid = cfid;
+		rec->rec_type = type;
 		rc = dt_declare_insert(env, parent, (const struct dt_rec *)rec,
 				       (const struct dt_key *)lnr->lnr_name,
 				       th);
