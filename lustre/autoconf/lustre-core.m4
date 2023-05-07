@@ -3634,6 +3634,29 @@ AC_DEFUN([LC_HAVE_GET_EXPIRY_TIME64_T], [
 ]) # LC_HAVE_GET_EXPIRY_TIME64_T
 
 #
+# LC_HAVE_U64_CAPABILITY
+#
+# linux kernel v6.2-13111-gf122a08b197d
+#   capability: just use a 'u64' instead of a 'u32[2]' array
+#
+AC_DEFUN([LC_SRC_HAVE_U64_CAPABILITY], [
+	LB2_LINUX_TEST_SRC([kernel_cap_t_has_u64_value], [
+		#include <linux/cred.h>
+		#include <linux/capability.h>
+	],[
+		kernel_cap_t cap __attribute__ ((unused));
+		cap.val = 0xffffffffffffffffull;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_U64_CAPABILITY], [
+	AC_MSG_CHECKING([if 'kernel_cap_t' has u64 val])
+	LB2_LINUX_TEST_RESULT([kernel_cap_t_has_u64_value], [
+		AC_DEFINE(HAVE_U64_CAPABILITY, 1,
+			['kernel_cap_t' has u64 val])
+	])
+]) # LC_HAVE_U64_CAPABILITY
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -3869,6 +3892,10 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	# 6.2
 	LC_SRC_HAVE_GET_RANDOM_U32_BELOW
 	LC_SRC_HAVE_ACL_WITH_DENTRY
+
+
+	# 6.3
+	LC_SRC_HAVE_U64_CAPABILITY
 
 	# 6.4
 	LC_SRC_HAVE_GET_EXPIRY_TIME64_T
@@ -4126,6 +4153,9 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	# 6.2
 	LC_HAVE_GET_RANDOM_U32_BELOW
 	LC_HAVE_ACL_WITH_DENTRY
+
+	# 6.3
+	LC_HAVE_U64_CAPABILITY
 
 	# 6.4
 	LC_HAVE_GET_EXPIRY_TIME64_T
