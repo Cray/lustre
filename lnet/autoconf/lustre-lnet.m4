@@ -100,8 +100,10 @@ case $with_o2ib in
 				       grep -v /ofed_scripts/ | head -n1)
 
 			if test -n "$O2IBDIR_PATH"; then
+				if test -d $O2IBDIR_PATH/${LINUXRELEASE}; then
+					O2IBDIR_PATH=$O2IBDIR_PATH/${LINUXRELEASE}
+				fi
 				EXT_O2IBPATHS=$(find $O2IBDIR_PATH -name rdma_cm.h |
-					grep -F -e "$(uname -r)" -e default |
 					sed -e 's/\/include\/rdma\/rdma_cm.h//')
 			fi
 
