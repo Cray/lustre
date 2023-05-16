@@ -2761,6 +2761,8 @@ static int lod_comp_md_size(struct lod_object *lo, bool is_dir)
 		if (!is_dir && is_composite)
 			lod_comp_shrink_stripe_count(&comp_entries[i],
 						     &stripe_count);
+		if (is_dir && comp_entries[i].llc_ostlist.op_count)
+			magic = LOV_MAGIC_SPECIFIC;
 
 		size += lov_user_md_size(stripe_count, magic);
 		LASSERT(size % sizeof(__u64) == 0);
