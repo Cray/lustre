@@ -2788,6 +2788,12 @@ test_27Ia() {
 	test_mkdir $DIR/$tdir/d1
 	$MULTIOP $DIR/$tdir/d1/$tfile.3 Oc || error_noexit "multiop failed"
 	$LFS getstripe $DIR/$tdir/d1/$tfile.3
+
+	$LFS setstripe -d $DIR/$tdir
+	$LFS setstripe -E 128G -o 0,1 -E-1 $DIR/$tdir
+	test_mkdir $DIR/$tdir/d2
+	$MULTIOP $DIR/$tdir/d2/$tfile.4 Oc || error_noexit "multiop failed"
+	$LFS getstripe $DIR/$tdir/d2/$tfile.4
 }
 run_test 27Ia "check that root dir pool is dropped with conflict parent dir settings"
 
