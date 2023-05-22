@@ -159,17 +159,12 @@ static void ll_invalidatepage(struct page *vmpage,
 }
 #endif
 
-#ifdef HAVE_RELEASEPAGE_WITH_INT
-#define RELEASEPAGE_ARG_TYPE int
-#else
-#define RELEASEPAGE_ARG_TYPE gfp_t
-#endif
-static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
+static bool do_release_page(struct page *vmpage, gfp_t wait)
 {
-	struct lu_env		*env;
-	struct cl_object	*obj;
-	struct cl_page		*page;
-	struct address_space	*mapping;
+	struct lu_env *env;
+	struct cl_object *obj;
+	struct cl_page *clpage;
+	struct address_space *mapping;
 	int result = 0;
 
 	ENTRY;
@@ -186,16 +181,16 @@ static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
 	if (obj == NULL)
 		RETURN(1);
 
-	page = cl_vmpage_page(vmpage, obj);
-	if (page == NULL)
+	clpage = cl_vmpage_page(vmpage, obj);
+	if (clpage == NULL)
 		RETURN(1);
 
 	env = cl_env_percpu_get();
 	LASSERT(!IS_ERR(env));
 
-	if (!cl_page_in_use(page)) {
+	if (!cl_page_in_use(clpage)) {
 		result = 1;
-		cl_page_delete(env, page);
+		cl_page_delete(env, clpage);
 	}
 
 	/* To use percpu env array, the call path can not be rescheduled;
@@ -212,11 +207,33 @@ static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
 	 * that we won't get into object delete path.
 	 */
 	LASSERT(cl_object_refc(obj) > 1);
-	cl_page_put(env, page);
+	cl_page_put(env, clpage);
 
 	cl_env_percpu_put(env);
 	RETURN(result);
 }
+
+#ifdef HAVE_AOPS_RELEASE_FOLIO
+static bool ll_release_folio(struct folio *folio, gfp_t wait)
+{
+	struct page *vmpage = folio_page(folio, 0);
+
+	/* folio_nr_pages(folio) == 1 is fixed with grab_cache_page* */
+	BUG_ON(folio_nr_pages(folio) != 1);
+
+	return do_release_page(vmpage, wait);
+}
+#else /* !HAVE_AOPS_RELEASE_FOLIO */
+#ifdef HAVE_RELEASEPAGE_WITH_INT
+#define RELEASEPAGE_ARG_TYPE int
+#else
+#define RELEASEPAGE_ARG_TYPE gfp_t
+#endif
+static int ll_releasepage(struct page *vmpage, RELEASEPAGE_ARG_TYPE gfp_mask)
+{
+	return do_release_page(vmpage, gfp_mask);
+}
+#endif /* HAVE_AOPS_RELEASE_FOLIO */
 
 static ssize_t ll_get_user_pages(int rw, struct iov_iter *iter,
 				struct page ***pages, ssize_t *npages,
@@ -696,7 +713,10 @@ static int ll_tiny_write_begin(struct page *vmpage, struct address_space *mappin
 }
 
 static int ll_write_begin(struct file *file, struct address_space *mapping,
-			  loff_t pos, unsigned len, unsigned flags,
+			  loff_t pos, unsigned int len,
+#ifdef HAVE_GRAB_CACHE_PAGE_WRITE_BEGIN_WITH_FLAGS
+			  unsigned int flags,
+#endif
 			  struct page **pagep, void **fsdata)
 {
 	struct ll_cl_context *lcc = NULL;
@@ -769,8 +789,11 @@ again:
 			GOTO(out, result);
 
 		if (vmpage == NULL) {
-			vmpage = grab_cache_page_write_begin(mapping, index,
-							     flags);
+			vmpage = grab_cache_page_write_begin(mapping, index
+#ifdef HAVE_GRAB_CACHE_PAGE_WRITE_BEGIN_WITH_FLAGS
+							     , flags
+#endif
+							     );
 			if (vmpage == NULL)
 				GOTO(out, result = -ENOMEM);
 		}
@@ -976,8 +999,16 @@ const struct address_space_operations ll_aops = {
 #else
 	.invalidatepage		= ll_invalidatepage,
 #endif
+#ifdef HAVE_AOPS_READ_FOLIO
+	.read_folio		= ll_read_folio,
+#else
 	.readpage		= ll_readpage,
+#endif
+#ifdef HAVE_AOPS_RELEASE_FOLIO
+	.release_folio		= ll_release_folio,
+#else
 	.releasepage		= (void *)ll_releasepage,
+#endif
 	.direct_IO		= ll_direct_IO,
 	.writepage		= ll_writepage,
 	.writepages		= ll_writepages,
