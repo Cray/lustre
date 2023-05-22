@@ -1945,7 +1945,7 @@ int ll_readpage(struct file *file, struct page *vmpage)
 	} else {
 		unlock_page(vmpage);
 		result = PTR_ERR(page);
-        }
+	}
 
 	/* this delay gives time for the actual read of the page to finish and
 	 * unlock the page in vvp_page_completion_read before we return to our
@@ -1957,3 +1957,10 @@ int ll_readpage(struct file *file, struct page *vmpage)
 
 	RETURN(result);
 }
+
+#ifdef HAVE_AOPS_READ_FOLIO
+int ll_read_folio(struct file *file, struct folio *folio)
+{
+	return ll_readpage(file, folio_page(folio, 0));
+}
+#endif
