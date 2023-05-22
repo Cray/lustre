@@ -1204,14 +1204,14 @@ static int ll_atomic_open(struct inode *dir, struct dentry *dentry,
 	/* Only negative dentries enter here */
 	LASSERT(dentry->d_inode == NULL);
 
-	if (!d_unhashed(dentry)) {
+	if (!d_in_lookup(dentry)) {
 		/* A valid negative dentry that just passed revalidation,
 		 * there's little point to try and open it server-side,
 		 * even though there's a minuscule chance it might succeed.
 		 * Either way it's a valid race to just return -ENOENT here.
 		 */
 		if (!(open_flags & O_CREAT))
-			return -ENOENT;
+			RETURN(-ENOENT);
 
 		/* Otherwise we just unhash it to be rehashed afresh via
 		 * lookup if necessary
