@@ -1905,6 +1905,7 @@ ksocknal_connect(struct ksock_conn_cb *conn_cb)
 	time64_t deadline;
 	bool retry_later = false;
 	int rc = 0;
+	struct ksock_net *net;
 
 	deadline = ktime_get_seconds() + ksocknal_timeout();
 
@@ -1961,8 +1962,9 @@ ksocknal_connect(struct ksock_conn_cb *conn_cb)
 			goto failed;
 		}
 
+		net = (struct ksock_net *)(peer_ni->ksnp_ni->ni_data);
 		sock = lnet_connect(&peer_ni->ksnp_id.nid,
-				    conn_cb->ksnr_myiface,
+				    net->ksnn_interface.ksni_index,
 				    (struct sockaddr *)&conn_cb->ksnr_addr,
 				    peer_ni->ksnp_ni->ni_net_ns);
 		if (IS_ERR(sock)) {
