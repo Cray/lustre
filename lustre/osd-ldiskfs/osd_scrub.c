@@ -398,7 +398,9 @@ osd_scrub_check_update(struct osd_thread_info *info, struct osd_device *dev,
 	}
 
 	if (lid->oii_ino < sf->sf_pos_latest_start && oii == NULL)
-		GOTO(out, rc = 0);
+		GOTO(skip, rc = 0);
+	if (lid->oii_ino < LDISKFS_FIRST_INO(osd_sb(dev)))
+		GOTO(out, rc = -ENOENT);
 
 	if (fid_is_igif(fid))
 		sf->sf_items_igif++;
@@ -409,7 +411,7 @@ osd_scrub_check_update(struct osd_thread_info *info, struct osd_device *dev,
 			rc = PTR_ERR(inode);
 			/* Someone removed the inode. */
 			if (rc == -ENOENT || rc == -ESTALE)
-				rc = 0;
+				GOTO(skip, rc = 0);
 			GOTO(out, rc);
 		}
 
@@ -425,7 +427,7 @@ osd_scrub_check_update(struct osd_thread_info *info, struct osd_device *dev,
 
 	if ((val == SCRUB_NEXT_NOLMA) &&
 	    (!scrub->os_convert_igif || OBD_FAIL_CHECK(OBD_FAIL_FID_NOLMA)))
-		GOTO(out, rc = 0);
+		GOTO(skip, rc = 0);
 
 	if ((oii != NULL && oii->oii_insert) || (val == SCRUB_NEXT_NOLMA)) {
 		ops = DTO_INDEX_INSERT;
@@ -449,7 +451,7 @@ iget:
 				rc = PTR_ERR(inode);
 				/* Someone removed the inode. */
 				if (rc == -ENOENT || rc == -ESTALE)
-					rc = 0;
+					GOTO(skip, rc = 0);
 				GOTO(out, rc);
 			}
 		}
@@ -535,16 +537,10 @@ iget:
 out:
 	if (rc < 0) {
 		sf->sf_items_failed++;
-		if (sf->sf_pos_first_inconsistent == 0 ||
-		    sf->sf_pos_first_inconsistent > lid->oii_ino)
+		if (lid->oii_ino >= LDISKFS_FIRST_INO(osd_sb(dev)) &&
+		    (sf->sf_pos_first_inconsistent == 0 ||
+		    sf->sf_pos_first_inconsistent > lid->oii_ino))
 			sf->sf_pos_first_inconsistent = lid->oii_ino;
-		if (oii) {
-			osd_scrub_oi_mark_stale(scrub, oii);
-			CDEBUG(D_LFSCK,
-			       "%s: fix inconsistent OI "DFID" -> %u/%u failed: %d\n",
-			       osd_dev2name(dev), PFID(fid), lid->oii_ino,
-			       lid->oii_gen, rc);
-		}
 	} else {
 		if (!oii && !OBD_FAIL_CHECK(OBD_FAIL_OSD_SCRUB_STALE)) {
 			osd_scrub_oi_resurrect(scrub, fid);
@@ -564,6 +560,7 @@ out:
 			spin_unlock(&scrub->os_lock);
 
 			OBD_FREE_PTR(oii);
+			oii = NULL;
 		}
 		rc = 0;
 	}
@@ -578,7 +575,15 @@ out:
 				(val == SCRUB_NEXT_OSTOBJ ||
 				 val == SCRUB_NEXT_OSTOBJ_OLD) ?
 				OI_KNOWN_ON_OST : 0, NULL);
-
+skip:
+	if (oii) {
+		/* something strange with item, moving to stale */
+		osd_scrub_oi_mark_stale(scrub, oii);
+		CDEBUG(D_LFSCK,
+		       "%s: fix inconsistent OI "DFID" -> %u/%u failed: %d\n",
+		       osd_dev2name(dev), PFID(fid), lid->oii_ino,
+		       lid->oii_gen, rc);
+	}
 	up_write(&scrub->os_rwsem);
 
 	if (!IS_ERR_OR_NULL(inode))
