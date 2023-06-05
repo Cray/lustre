@@ -3484,6 +3484,75 @@ test_153() {
 }
 run_test 153 "evict vs reconnect race"
 
+set_eviction_params()
+{
+	local timeout=$1
+	local ping_evict_timeout=$2
+	local saved_timeout=$(do_facet ost1 $LCTL get_param -n timeout)
+	local saved_evict_multiplier=$(do_facet ost1
+	    $LCTL get_param -n evict_multiplier)
+	local evict_multiplier
+	local ping_interval
+
+	# set_param -P is needed so that recovery timeouts are
+	# calculated based on the specified timeout
+	do_facet mgs $LCTL set_param -P timeout=$timeout ||
+		error "failed to set obd_timeout"
+	stack_trap "do_facet mgs $LCTL set_param -P timeout=$saved_timeout" \
+	    EXIT
+
+	# obd_timeout change affects ping_interval, timeout_store(), for ref.
+	ping_interval=$((timeout/4 > 0 ? timeout/4 : 1))
+	evict_multiplier=$((ping_evict_timeout / ping_interval + 1))
+	[[ $ping_evict_timeout < $((evict_multiplier * ping_interval)) ]] ||
+		error "too small ping evict timeout"
+	do_facet ost1 $LCTL set_param evict_multiplier=$evict_multiplier ||
+		error "failed to set evict_multiplier"
+	stack_trap "do_facet ost1 $LCTL set_param \
+evict_multiplier=$saved_evict_multiplier" EXIT
+}
+
+test_154()
+{
+	local saved_at_max=$(at_max_get mds1)
+
+	do_facet mgs $LCTL set_param -P at_max=0 ||
+		error "failed to set at_max to 0"
+	stack_trap "do_facet mgs $LCTL set_param -P at_max=$saved_at_max" EXIT
+
+	$LFS setstripe -c 1 -i 0 $DIR/$tfile || error "setstripe failed"
+	stack_trap "rm -f $DIR/$tfile"
+
+	local pagesz=$(getconf PAGESIZE)
+	local pagenr=$($LCTL get_param -n osc.*-OST0000-*.max_pages_per_rpc)
+	local mbnr=$((pagesz * pagenr / 1048576))
+
+	replay_barrier ost1
+	dd if=/dev/zero of=$DIR/$tfile bs=1M count=$mbnr conv=notrunc ||
+		error "dd failed"
+
+	# with obd_timeout == 5 recovery expires in 36 sec.
+	# set obd_timeout to 5 for faster failover and
+	# PING_EVICT_TIMEOUT to 45 to eliminate ping driven evictions
+	set_eviction_params 5 45
+
+	# delay write replay to get the client evicted as not sending replays
+#define OBD_FAIL_PTLRPC_REPLAY_PAUSE     0x536
+	$LCTL set_param fail_loc=0x80000536 fail_val=40
+
+	fail ost1
+
+	local testid=$(echo $TESTNAME | tr '_' ' ')
+
+	dmesg | tac | sed "/$testid/,$ d" |
+		grep -q "was evicted" && true || error "client not evicted"
+
+	do_facet ost1 dmesg | tac | sed "/$testid/,$ d" |
+		grep "ofd_obd_disconnect: tot_granted" &&
+		error "grant miscount" || true
+}
+run_test 154 "tot_granted miscount after client eviction"
+
 complete $SECONDS
 check_and_cleanup_lustre
 exit_status
