@@ -6789,9 +6789,6 @@ static int mdt_obd_disconnect(struct obd_export *exp)
 	LASSERT(exp);
 	class_export_get(exp);
 
-	if (!(exp->exp_flags & OBD_OPT_FORCE))
-		tgt_grant_sanity_check(exp->exp_obd, __func__);
-
 	if ((exp_connect_flags(exp) & OBD_CONNECT_MDS_MDS) &&
 	    !(exp_connect_flags(exp) & OBD_CONNECT_LIGHTWEIGHT)) {
 		struct mdt_device *mdt = mdt_dev(exp->exp_obd->obd_lu_dev);
@@ -6805,6 +6802,9 @@ static int mdt_obd_disconnect(struct obd_export *exp)
 		CDEBUG(D_IOCTL, "server disconnect error: rc = %d\n", rc);
 
 	tgt_grant_discard(exp);
+
+	if (!(exp->exp_flags & OBD_OPT_FORCE))
+		tgt_grant_sanity_check(exp->exp_obd, __func__);
 
 	rc = mdt_export_cleanup(exp);
 	nodemap_del_member(exp);
