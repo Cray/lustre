@@ -6,12 +6,28 @@
 # $5 : $arch
 # $6 : $source_tree
 # $7 : $dkms_tree
+# $8 : $kmoddir [cray-lustre-client either 'extra|updates']
 
 case $1 in
     cray-lustre-client)
 	SERVER="--disable-server --enable-client"
 	ksrc="$(dirname $4)/source"
 	KERNEL_STUFF="--with-linux=$(realpath $ksrc) --with-linux-obj=$(realpath $4)"
+	name=$1
+	kmoddir=$8
+	flavor=$(echo $3 | tr '-' '\n' | tail -1)
+	if [ -L /usr/src/kfabric ]; then
+		KERNEL_STUFF="${KERNEL_STUFF} --with-kfi=/usr/src/kfabric/${flavor}"
+	fi
+	if [ -d /usr/src/ofa_kernel/${flavor} ]; then
+		O2IBPATH=/usr/src/ofa_kernel/${flavor}
+	elif [ -d /usr/src/ofa_kernel/default ]; then
+		O2IBPATH=/usr/src/ofa_kernel/default
+	else
+		O2IBPATH=yes
+	fi
+	KERNEL_STUFF="${KERNEL_STUFF} --with-o2ib=${O2IBPATH}"
+	KERNEL_STUFF="${KERNEL_STUFF} --with-kmp-moddir=${kmoddir}/${name}"
 	sh ./autogen.sh
 	;;
 

@@ -6,6 +6,7 @@
 # $5 : $arch
 # $6 : $source_tree
 # $7 : $dkms_tree
+# $8 : $kmoddir
 #
 # This script ensure that ALL Lustre kernel modules that have been built
 # during DKMS build step of lustre[-client]-dkms module will be moved in
@@ -34,7 +35,8 @@ case $1 in
 		      vdev_clear-lustre.sh \
 		      vdev_remove-lustre.sh
 	do
-		install -D -m 0755 lustre/scripts/${script} /etc/zfs/zed.d/${script}
+	    install -D -m 0755 lustre/scripts/${script} /etc/zfs/zed.d/${script}
+	    >&2 echo "installing lustre/scripts/${script} => /etc/zfs/zed.d/${script}"
 	done
 	;;
 
@@ -52,11 +54,14 @@ case $1 in
 	do
 	    target=$(echo ${fname} | sed -e 's:^lnet/include/::g')
 	    if [[ ${target} == uapi/* ]]; then
-	        header=$(echo ${fname} | sed -e 's:^uapi/linux/lnet/::g')
+	        header=$(echo ${target} | sed -e 's:^uapi/linux/lnet/::g')
 	        install -D -m 0644 ${fname} /usr/include/uapi/linux/lnet/${header}
 	        install -D -m 0644 ${fname} /usr/include/linux/lnet/${header}
+	        >&2 echo "installing ${fname} => /usr/include/uapi/linux/lnet/${header}"
+	        >&2 echo "installing ${fname} => /usr/include/linux/lnet/${header}"
 	    else
-	        install -D -m 0644 $fname} /usr/include/${target}
+	        install -D -m 0644 ${fname} /usr/include/${target}
+	        >&2 echo "installing ${fname} => /usr/include/${target}"
 	    fi
 	done
 
@@ -65,9 +70,11 @@ case $1 in
 	do
 	    target=$(echo ${fname} | sed -e 's:^libcfs/:/usr/:g')
 	    install -D -m 0644 ${fname} ${target}
+	    >&2 echo "installing ${fname} => ${target}"
 	done
 
 	install -D -m 0644 lustre/include/interval_tree.h /usr/include/interval_tree.h
+	>&2 echo "installing lustre/include/interval_tree.h => /usr/include/interval_tree.h"
 
 	cfgdir=/usr/include/lustre/${flavor}
 	_version=$2
@@ -83,6 +90,7 @@ case $1 in
 	    eval "sed -i 's,@PACKAGE_VERSION@,${_version},' cray-obs/${f}"
 	    eval "sed -i 's,@cfgdir@,${cfgdir},' cray-obs/${f}"
 	    install -D -m 0644 cray-obs/${f} /usr/lib64/pkgconfig/${f}
+	    >&2 echo "installing cray-obs/${f} => /usr/lib64/pkgconfig/${f}"
 	done
 	;;
 esac

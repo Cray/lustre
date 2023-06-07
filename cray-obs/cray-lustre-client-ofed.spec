@@ -27,7 +27,7 @@ BuildRequires: systemd
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
 BuildRequires: cray-kfabric-devel
-Requires: cray-kfabric-udev
+Requires: (cray-kfabric-udev or cray-kfabric-dkms)
 
 # Vendor specific requires/defines/etc.
 %if %{_vendor}=="redhat"
@@ -35,7 +35,7 @@ Requires: cray-kfabric-udev
 %global _with_linux --with-linux=/usr/src/kernels/%{kversion}
 %global requires_kmod_name kmod-%{lustre_name}
 %global requires_kmod_version %{version}
-Requires: kmod-cray-kfabric
+Requires: (kmod-cray-kfabric or cray-kfabric-dkms)
 BuildRequires: redhat-rpm-config
 %else
 %global kversion %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease)
@@ -44,7 +44,7 @@ BuildRequires: redhat-rpm-config
 %global requires_kmod_name %{lustre_name}-kmp
 %global krequires %(echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/\.aarch64$//' -e 's/-default$//' -e 's/-%{flavor}//')
 %global requires_kmod_version %{version}_k%(echo %{krequires} | sed -r 'y/-/_/; s/^(2\.6\.[0-9]+)_/\\1.0_/;')
-Requires: cray-kfabric-kmp
+Requires: (cray-kfabric-kmp or cray-kfabric-dkms)
 %endif
 
 Requires: %{requires_kmod_name} = %{requires_kmod_version}
@@ -58,7 +58,7 @@ Requires: %{requires_kmod_name} = %{requires_kmod_version}
 Userspace tools and files for the Lustre filesystem.
 Compiled for kernel: %{kversion}
 ko2iblnd compiled against: In-kernel drivers
-kkfilnd compiled against: cray-kfabric-devel-%{kfabric_version}
+kkfilnd compiled against: cray-kfabric-devel-%{kfabric_version} or cray-kfabric-dkms
 
 %package devel
 Group: Development/Libraries
