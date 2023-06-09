@@ -1831,8 +1831,7 @@ out:
 		cl_sync_io_note(env, &io->ci_dio_aio->cda_sync,
 				rc == -EIOCBQUEUED ? 0 : rc);
 		if (!is_aio) {
-			LASSERT(io->ci_dio_aio->cda_creator_free);
-			cl_dio_aio_free(env, io->ci_dio_aio);
+			cl_dio_aio_free(env, io->ci_dio_aio, true);
 			io->ci_dio_aio = NULL;
 		}
 	}
