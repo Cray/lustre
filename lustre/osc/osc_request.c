@@ -2858,8 +2858,7 @@ int osc_enqueue_base(struct obd_export *exp, struct ldlm_res_id *res_id,
 	struct lustre_handle lockh = { 0 };
 	struct ptlrpc_request *req = NULL;
 	int intent = *flags & LDLM_FL_HAS_INTENT;
-	__u64 search_flags = *flags;
-	__u64 match_flags = 0;
+	__u64 match_flags = *flags;
 	enum ldlm_mode mode;
 	int rc;
 	ENTRY;
@@ -2888,14 +2887,11 @@ int osc_enqueue_base(struct obd_export *exp, struct ldlm_res_id *res_id,
 	 * matching a lock; speculative lock requests do not need to,
 	 * because they will not actually use the lock. */
 	if (!speculative)
-		search_flags |= LDLM_FL_LVB_READY;
+		match_flags |= LDLM_FL_LVB_READY;
 	if (intent != 0)
-		search_flags |= LDLM_FL_BLOCK_GRANTED;
-	if (mode == LCK_GROUP)
-		match_flags = LDLM_MATCH_GROUP;
-	mode = ldlm_lock_match_with_skip(obd->obd_namespace, search_flags, 0,
-					 res_id, einfo->ei_type, policy, mode,
-					 &lockh, match_flags);
+		match_flags |= LDLM_FL_BLOCK_GRANTED;
+	mode = ldlm_lock_match(obd->obd_namespace, match_flags, res_id,
+			       einfo->ei_type, policy, mode, &lockh);
 	if (mode) {
 		struct ldlm_lock *matched;
 
