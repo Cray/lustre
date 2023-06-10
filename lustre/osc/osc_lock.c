@@ -668,6 +668,7 @@ static unsigned long osc_lock_weight(const struct lu_env *env,
 
 	io->ci_obj = obj;
 	io->ci_ignore_layout = 1;
+	io->ci_skip_layout_lock = 1;
 	result = cl_io_init(env, io, CIT_MISC, io->ci_obj);
 	if (result != 0)
 		RETURN(1);

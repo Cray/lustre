@@ -1481,8 +1481,7 @@ static int lov_io_init(const struct lu_env *env, struct cl_object *obj,
 	 * because as long as the OSC object exists, the layout can't be
 	 * reconfigured. */
 	return LOV_2DISPATCH_MAYLOCK(cl2lov(obj), llo_io_init,
-			!(io->ci_ignore_layout && io->ci_type == CIT_MISC),
-			env, obj, io);
+			!io->ci_skip_layout_lock, env, obj, io);
 }
 
 /**

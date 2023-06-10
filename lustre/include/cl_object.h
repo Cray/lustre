@@ -2004,7 +2004,13 @@ struct cl_io {
 	 * to userspace, only the RPCs are submitted async, then waited for at
 	 * the llite layer before returning.
 	 */
-			     ci_parallel_dio:1;
+			     ci_parallel_dio:1,
+	/**
+	 * Skip layout locking, we assume the thread only deals with cached locks &
+	 * pages and cannot add more items to the cache so it is safe to rely on
+	 * cache invalidation routines in the layout refresh path.
+	 */
+			     ci_skip_layout_lock:1;
 	/**
 	 * Bypass quota check
 	 */

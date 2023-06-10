@@ -624,6 +624,7 @@ long osc_lru_shrink(const struct lu_env *env, struct client_obd *cli,
 			clobj = tmp;
 			io->ci_obj = clobj;
 			io->ci_ignore_layout = 1;
+			io->ci_skip_layout_lock = 1;
 			rc = cl_io_init(env, io, CIT_MISC, clobj);
 
 			spin_lock(&cli->cl_lru_list_lock);
