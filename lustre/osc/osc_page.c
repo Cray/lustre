@@ -894,17 +894,8 @@ void osc_lru_unreserve(struct client_obd *cli, unsigned long npages)
 	wake_up(&osc_lru_waitq);
 }
 
-/**
- * Atomic operations are expensive. We accumulate the accounting for the
- * same page zone to get better performance.
- * In practice this can work pretty good because the pages in the same RPC
- * are likely from the same page zone.
- */
-#ifdef HAVE_NR_UNSTABLE_NFS
-/* Old kernels use a separate counter for unstable pages,
- * newer kernels treat them like any other writeback.
- */
-#define NR_WRITEBACK NR_UNSTABLE_NFS
+#ifndef HAVE_NR_ZONE_WRITE_PENDING
+#define NR_ZONE_WRITE_PENDING NR_WRITEBACK
 #endif
 
 static inline void unstable_page_accounting(struct ptlrpc_bulk_desc *desc,
@@ -935,7 +926,7 @@ static inline void unstable_page_accounting(struct ptlrpc_bulk_desc *desc,
 		}
 
 		if (count > 0) {
-			mod_zone_page_state(zone, NR_WRITEBACK,
+			mod_zone_page_state(zone, NR_ZONE_WRITE_PENDING,
 					    factor * count);
 			count = 0;
 		}
@@ -943,7 +934,7 @@ static inline void unstable_page_accounting(struct ptlrpc_bulk_desc *desc,
 		++count;
 	}
 	if (count > 0)
-		mod_zone_page_state(zone, NR_WRITEBACK, factor * count);
+		mod_zone_page_state(zone, NR_ZONE_WRITE_PENDING, factor * count);
 }
 
 static inline void add_unstable_page_accounting(struct ptlrpc_bulk_desc *desc,
