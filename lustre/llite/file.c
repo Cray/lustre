@@ -6235,7 +6235,9 @@ out:
 		CDEBUG(D_INODE, "prune without lock "DFID"\n",
 				PFID(lu_object_fid(&obj->co_lu)));
 
+		trunc_sem_down_write(&lli->lli_trunc_sem);
 		cl_object_prune(env, obj);
+		trunc_sem_up_write(&lli->lli_trunc_sem);
 		cl_env_put(env, &refcheck);
 
 		rc = -EAGAIN;
