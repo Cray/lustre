@@ -10,7 +10,7 @@ pipeline {
     environment {
         JP_NEO_RELEASE = 'TST6.5'
         JP_VERSION = '2.15'
-        JP_VERS_TAG = 'x6.5.000'
+        JP_VERS_TAG = 'x6.5t.000'
         JP_REPO = 'lustre'
         JP_SPECIAL_BUILD = ''
         JP_IEM_BRANCH = 'cs_6.x-int'
@@ -43,8 +43,7 @@ pipeline {
 
         stage('Scan/Sign RPMs') {
             steps {
-                // signArtifacts([artifacts: 'rpmbuild/'])
-                println "DRY-RUN: Scan/Sign RPMs"
+                signArtifacts([artifacts: 'rpmbuild/'])
             }
         }
 
@@ -61,6 +60,22 @@ pipeline {
                     archiveArtifacts artifacts: 'packages.txt, rpmbuild/*.log, LUSTRE-VERSION-FILE', fingerprint: false
                 } else {
                     println "packages.txt not found"
+                }
+            }
+        }
+        failure {
+            emailext body: "See ${env.BUILD_URL}",
+                     to: "${env.RE_Alert}",
+                     from: "${env.GP_MAILTARGET}",
+                     subject: "Build failed in CI: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+        }
+        changed {
+            script {
+                if (currentBuild.currentResult == 'SUCCESS') {
+                    emailext body: "See ${env.BUILD_URL}",
+                             to: "${env.RE_Alert}",
+                             from: "${env.GP_MAILTARGET}",
+                             subject: "Jenkins build is back to normal : ${env.JOB_NAME} #${env.BUILD_NUMBER}"
                 }
             }
         }
