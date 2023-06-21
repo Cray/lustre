@@ -14,6 +14,7 @@ JP_CLIENT_KERNEL=${JP_CLIENT_KERNEL}
 JP_BUILD_OPTIONS=${JP_BUILD_OPTIONS}
 JP_TARGET_ARCH=${JP_TARGET_ARCH:-x86_64}
 JP_INKERNEL_MOFED=${JP_INKERNEL_MOFED:-no}
+JP_CLIENT_DKMS=${JP_INKERNEL_MOFED:-no}
 
 JP_KFI=${JP_KFI}
 JP_TARGET_KERNEL=${JP_TARGET_KERNEL}
@@ -196,7 +197,8 @@ fi
 
 if [ -z $JP_CLIENT_TARGET ]
 then
-    DISTRO=$(echo ${JP_CLIENT_KERNEL} | sed 's/.*el\(.\).*/\1/')    #' mcedit highlight workaround
+    # DISTRO=$(echo ${JP_CLIENT_KERNEL} | sed 's/.*el\(.\).*/\1/')    #' mcedit highlight workaround
+    DISTRO=$(echo ${JP_CLIENT_KERNEL} | sed 's/.*el//' | tr '_' '.')
 else
     DISTRO=${JP_CLIENT_TARGET#el}
 fi
@@ -235,7 +237,8 @@ case $JP_BUILD_MODE in
         [ -z ${JP_CLIENT_KERNEL} ] || JP_CLIENT_KERNEL="-${JP_CLIENT_KERNEL}"
     ;;
     patchless)
-        MOCK_CONFIG="epel-${DISTRO}-${JP_TARGET_ARCH}"
+        DEFAULT_MOCK="epel-${DISTRO}-${JP_TARGET_ARCH}"
+        MOCK_CONFIG=${JP_MOCK_CFG:-DEFAULT_MOCK}
         [ -z ${JP_CLIENT_KERNEL} ] || JP_CLIENT_KERNEL="-${JP_CLIENT_KERNEL}"
     ;;
 esac
@@ -278,7 +281,7 @@ fi
 [ "$JP_BUILD_MODE" != "full" ] && [ -z $JP_CLIENT_KERNEL ] && \
     JP_CLIENT_KERNEL=-$(${MOCK_CMD}  --chroot "rpm -q --qf '%{VERSION}-%{RELEASE}' kernel${BUILD_TYPE}-devel 2>/dev/null")
 
-if [[ $JP_BUILD_MODE == patchless ]] || ([[ $JP_BUILD_MODE == full ]] && [[ $JP_NEO_RELEASE =~ ORNL.*|CSL6.*|NEO6.* ]])
+if [[ $JP_BUILD_MODE == patchless ]] || ([[ $JP_BUILD_MODE == full ]] && [[ $JP_NEO_RELEASE =~ ORNL.*|CSL6.*|NEO6.*|TST6.* ]])
 then
     LUSTRE_DEVEL+=" kernel-debuginfo${JP_CLIENT_KERNEL} kernel-debuginfo-common-${JP_TARGET_ARCH}${JP_CLIENT_KERNEL}"
 fi
