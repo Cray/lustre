@@ -3557,6 +3557,23 @@ test_154()
 }
 run_test 154 "tot_granted miscount after client eviction"
 
+test_155()
+{
+	$LFS setstripe -i 0 -c 1 $DIR/$tfile || error "setstripe failed"
+	dd if=/dev/zero of=$DIR/$tfile bs=4096 count=1
+	cancel_lru_locks osc
+
+#define OBD_FAIL_LLITE_FAULT_PAUSE                 0x1425
+	$LCTL set_param fail_loc=0x80001425 fail_val=3
+	$MULTIOP $DIR/$tfile soO_RDWR:MRUc &
+	MULTIPID=$!
+	sleep 1
+	ost_evict_client
+	wait $MULTIPID
+	[[ $? == 135 ]] || error "multiop failed with not SIGBUS"
+}
+run_test 155 "eviction during mmaped i/o"
+
 complete $SECONDS
 check_and_cleanup_lustre
 exit_status
