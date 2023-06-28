@@ -1391,7 +1391,6 @@ static int osd_is_mapped(struct dt_object *dt, __u64 offset,
 	return cached_extent->mapped;
 }
 
-#define MAX_EXTENTS_PER_WRITE 100
 static int osd_declare_write_commit(const struct lu_env *env,
 				    struct dt_object *dt,
 				    struct niobuf_local *lnb, int npages,
@@ -1478,17 +1477,6 @@ static int osd_declare_write_commit(const struct lu_env *env,
 
 	extents += (extent.end - extent.start +
 		    extent_bytes - 1) / extent_bytes;
-	/**
-	 * with system space usage growing up, mballoc codes won't
-	 * try best to scan block group to align best free extent as
-	 * we can. So extent bytes per extent could be decayed to a
-	 * very small value, this could make us reserve too many credits.
-	 * We could be more optimistic in the credit reservations, even
-	 * in a case where the filesystem is nearly full, it is extremely
-	 * unlikely that the worst case would ever be hit.
-	 */
-	if (extents > MAX_EXTENTS_PER_WRITE)
-		extents = MAX_EXTENTS_PER_WRITE;
 
 	/**
 	 * If we add a single extent, then in the worse case, each tree
@@ -1502,7 +1490,7 @@ static int osd_declare_write_commit(const struct lu_env *env,
 		 * our transaction starts. so, consider 2 is a min depth.
 		 */
 		depth = ext_depth(inode);
-		depth = min(max(depth, 1) + 1, LDISKFS_MAX_EXTENT_DEPTH);
+		depth = min(max(depth, 1) + 3, LDISKFS_MAX_EXTENT_DEPTH);
 		if (extents <= 1) {
 			credits += depth * 2 * extents;
 			new_meta = depth;
