@@ -1,4 +1,9 @@
+%if %{_arch} == "x86_64"
+%global arch_has_mofed 1
 %global mofed_version %(rpm -q --qf '%{VERSION}-%{RELEASE}' mlnx-ofa_kernel-devel)
+%else
+%global arch_has_mofed 0
+%endif
 
 %define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
 %define _lnet_version %(echo "%{_version}" | awk -F . '{printf("%s.%s", $1, $2)}')
@@ -28,7 +33,9 @@ BuildRequires: libtool libyaml-devel zlib-devel
 BuildRequires: systemd
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
+%if %{arch_has_mofed} > 0
 BuildRequires: mlnx-ofa_kernel-devel
+%endif
 
 # Vendor specific requires/defines/etc.
 %if %{_vendor}=="redhat"
@@ -60,7 +67,9 @@ Requires: %{requires_kmod_name} = %{requires_kmod_version}
 %description
 Userspace tools and files for the Lustre filesystem.
 Compiled for kernel: %{kversion}
+%if %{arch_has_mofed} > 0
 ko2iblnd compiled against: mlnx-ofa_kernel-devel-%{mofed_version}
+%endif
 
 %package devel
 Group: Development/Libraries
@@ -73,7 +82,9 @@ Summary: Cray Lustre Header files
 Development files for building against Lustre library.
 Includes headers, dynamic, and static libraries.
 Compiled for kernel: %{kversion}
+%if %{arch_has_mofed} > 0
 ko2iblnd compiled against: mlnx-ofa_kernel-devel-%{mofed_version}
+%endif
 
 %package lnet-headers
 Group: Development/Libraries
@@ -83,7 +94,9 @@ Summary: Cray Lustre Network Header files
 %description lnet-headers
 Cray Lustre Network Header files
 Compiled for kernel: %{kversion}
+%if %{arch_has_mofed} > 0
 ko2iblnd compiled against: mlnx-ofa_kernel-devel-%{mofed_version}
+%endif
 
 %package %{flavor}-lnet-devel
 Group: Development/Libraries
@@ -94,7 +107,9 @@ Summary: Cray Lustre Network kernel flavor specific devel files
 Kernel flavor specific development files for building against Lustre
 Network (LNet)
 Compiled for kernel: %{kversion}
+%if %{arch_has_mofed} > 0
 ko2iblnd compiled against: mlnx-ofa_kernel-devel-%{mofed_version}
+%endif
 
 %package dkms
 Group: System/Filesystems
