@@ -257,7 +257,7 @@ quota_set:
 				qmt_restore(lqe, &qti_lqes_rstr(env)[0]);
 				GOTO(out, rc);
 			}
-		} else if (lqe->lqe_is_global) {
+		} else {
 			ver = dt_version_get(env, LQE_GLB_OBJ(lqe));
 		}
 
@@ -278,8 +278,7 @@ out_nolock:
 	}
 
 	if (rc == 0 && dirtied) {
-		if (lqe->lqe_is_global)
-			qmt_glb_lock_notify(env, lqe, ver);
+		qmt_glb_lock_notify(env, lqe, ver);
 		if (lqe->lqe_id.qid_uid == 0) {
 			struct qmt_entry_iter_data iter_data;
 
