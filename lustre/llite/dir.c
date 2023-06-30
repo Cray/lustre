@@ -1241,7 +1241,7 @@ int quotactl_ioctl(struct super_block *sb, struct if_quotactl *qctl)
 		break;
 	default:
 		CERROR("unsupported quotactl op: %#x\n", cmd);
-		RETURN(-ENOTSUPP);
+		RETURN(-EOPNOTSUPP);
 	}
 
 	if (valid != QC_GENERAL) {
@@ -1609,7 +1609,7 @@ lmv_out_free:
 		case LOV_USER_MAGIC_V1:
 			break;
 		default:
-			GOTO(out, rc = -ENOTSUPP);
+			GOTO(out, rc = -EOPNOTSUPP);
 		}
 
 		/* in v1 and v3 cases lumv1 points to data */
@@ -1797,7 +1797,7 @@ finish_req:
 		 * on 2.4, we use OBD_CONNECT_LVB_TYPE to detect whether the
 		 * server will support REINT_RMENTRY XXX*/
 		if (!(exp_connect_flags(sbi->ll_md_exp) & OBD_CONNECT_LVB_TYPE))
-			RETURN(-ENOTSUPP);
+			RETURN(-EOPNOTSUPP);
 
 		filename = ll_getname((const char __user *)arg);
 		if (IS_ERR(filename))
