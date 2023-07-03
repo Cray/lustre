@@ -8016,6 +8016,8 @@ static void osd_umount(const struct lu_env *env, struct osd_device *o)
 			  !atomic_read(&o->od_commit_cb_in_flight));
 
 		mntput(o->od_mnt);
+		/* to be sure all delayed fput are finished */
+		flush_scheduled_work();
 		o->od_mnt = NULL;
 	}
 
@@ -8150,6 +8152,7 @@ static int osd_mount(const struct lu_env *env,
 		GOTO(out, rc = -ENODEV);
 	}
 
+	s_flags |= SB_KERNMOUNT;
 	o->od_mnt = vfs_kern_mount(type, s_flags, dev, options);
 	module_put(type->owner);
 
