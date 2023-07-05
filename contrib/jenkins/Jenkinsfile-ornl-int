@@ -1,4 +1,5 @@
 // Copyright 2023 Hewlett Packard Enterprise Development LP
+// This is for the ORNL6.X_Lustre pipeline job on CloudBees
 
 @Library('dst-shared@master') _
 
@@ -8,9 +9,9 @@ pipeline {
     }
 
     environment {
-        JP_NEO_RELEASE = 'TST6.5'
+        JP_NEO_RELEASE = 'ORNL6.X'
         JP_VERSION = '2.15'
-        JP_VERS_TAG = 'x6.5t.000'
+        JP_VERS_TAG = 'x6.3r'
         JP_REPO = 'lustre'
         JP_SPECIAL_BUILD = ''
         JP_IEM_BRANCH = 'cs_6.x-int'
@@ -29,8 +30,7 @@ pipeline {
     stages {
         stage('Changes Notes') {
            steps {
-                //sh "/build/bin/build_changesnotesv5.sh ${JOB_NAME} ${WORKSPACE} ${BUILD_NUMBER} ${JP_NEO_RELEASE} git"
-                println "DRY-RUN: Create Changelog"
+                sh "/bin/bash -x /build/bin/build_changesnotesv5_cloudbees.sh"
             }
         }
 

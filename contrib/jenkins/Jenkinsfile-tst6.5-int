@@ -1,0 +1,83 @@
+// Copyright 2023 Hewlett Packard Enterprise Development LP
+// This is for the TST6.5_Lustre pipeline job on CloudBees
+
+@Library('dst-shared@master') _
+
+pipeline {
+    agent {
+        node { label 'Rocky8_nodes' }
+    }
+
+    environment {
+        JP_NEO_RELEASE = 'TST6.5'
+        JP_VERSION = '2.15'
+        JP_VERS_TAG = 'x6.5t.000'
+        JP_REPO = 'lustre'
+        JP_SPECIAL_BUILD = ''
+        JP_IEM_BRANCH = 'cs_6.x-int'
+        JP_PACKAGE_NAME = 'lustre_ib'
+        JP_OBSOLETES = '2.7.19.8.x8-248_3.10'
+        JP_INTEGRATION_BUILD = 'TRUE'
+        JP_FS_BACKEND = 'both'
+        JP_KFI = '/usr/src/kfabric-0.1.0/default'
+    }
+
+    options {
+        // Don't fill up the build server with unnecessary cruft
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+    }
+
+    stages {
+        stage('Changes Notes') {
+           steps {
+                sh "/bin/bash -x /build/bin/build_changesnotesv5_cloudbees.sh"
+            }
+        }
+
+        stage('Build RPMs') {
+            steps {
+                sh "umask 022"
+                sh "/bin/bash -x contrib/jenkins/build_phase2.sh"
+            }
+        }
+
+        stage('Scan/Sign RPMs') {
+            steps {
+                signArtifacts([artifacts: 'rpmbuild/'])
+            }
+        }
+
+        stage('Store RPMs') {
+            steps {
+                sh "contrib/jenkins/store-RPMs.sh"
+            }
+        }
+    }
+    post {
+        success {
+            script {
+                if ( checkFileExists(filePath: 'packages.txt') ) {
+                    archiveArtifacts artifacts: 'packages.txt, rpmbuild/*.log, LUSTRE-VERSION-FILE', fingerprint: false
+                } else {
+                    println "packages.txt not found"
+                }
+            }
+        }
+        failure {
+            emailext body: "See ${env.BUILD_URL}",
+                     to: "${env.RE_Alert}",
+                     from: "${env.GP_MAILTARGET}",
+                     subject: "Build failed in CI: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+        }
+        changed {
+            script {
+                if (currentBuild.currentResult == 'SUCCESS') {
+                    emailext body: "See ${env.BUILD_URL}",
+                             to: "${env.RE_Alert}",
+                             from: "${env.GP_MAILTARGET}",
+                             subject: "Jenkins build is back to normal : ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+                }
+            }
+        }
+    }
+}
