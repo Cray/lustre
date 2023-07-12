@@ -680,7 +680,7 @@ migrate_open_files(const char *name, __u64 migration_flags,
 	 * layout swap on fd
 	 */
 	/* Allow migrating even without the key on encrypted files */
-	rflags = O_RDWR | O_NOATIME | O_FILE_ENC;
+	rflags = O_RDWR | O_NOATIME | O_CIPHERTEXT;
 	if (!(migration_flags & LLAPI_MIGRATION_NONDIRECT))
 		rflags |= O_DIRECT;
 source_open:
@@ -708,7 +708,7 @@ source_open:
 	do {
 		int open_flags = O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
 			/* Allow migrating without the key on encrypted files */
-			O_FILE_ENC;
+			O_CIPHERTEXT;
 		mode_t open_mode = S_IRUSR | S_IWUSR;
 
 		if (rflags & O_DIRECT)
@@ -2286,7 +2286,7 @@ static int mirror_split(const char *fname, __u32 id, const char *pool,
 		 * and in this case of a 'split -d', open file with O_DIRECT
 		 * (no IOs will be done).
 		 */
-		fd = open(fname, O_RDWR | O_DIRECT | O_FILE_ENC);
+		fd = open(fname, O_RDWR | O_DIRECT | O_CIPHERTEXT);
 	else
 		fd = open(fname, O_RDWR);
 
@@ -2377,7 +2377,7 @@ again:
 					     /* O_DIRECT for mirror split -d */
 					     O_DIRECT |
 					     /* Allow split without the key */
-					     O_FILE_ENC;
+					     O_CIPHERTEXT;
 					fdv = open(file_path, open_flags,
 						   S_IRUSR | S_IWUSR);
 					if (fdv < 0)
@@ -11005,7 +11005,7 @@ int lfs_mirror_resync_file(const char *fname, struct ll_ioc_lease *ioc,
 	}
 
 	/* Allow mirror resync even without the key on encrypted files */
-	fd = open(fname, O_DIRECT | O_RDWR | O_FILE_ENC);
+	fd = open(fname, O_DIRECT | O_RDWR | O_CIPHERTEXT);
 	if (fd < 0) {
 		fprintf(stderr, "%s: cannot open '%s': %s.\n",
 			progname, fname, strerror(errno));
@@ -12304,7 +12304,7 @@ int lfs_mirror_verify_file(const char *fname, __u16 *mirror_ids, int ids_nr,
 	}
 
 	/* Allow mirror verify even without the key on encrypted files */
-	fd = open(fname, O_DIRECT | O_RDONLY | O_FILE_ENC);
+	fd = open(fname, O_DIRECT | O_RDONLY | O_CIPHERTEXT);
 	if (fd < 0) {
 		fprintf(stderr, "%s: cannot open '%s': %s.\n",
 			progname, fname, strerror(errno));
