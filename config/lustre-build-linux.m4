@@ -164,6 +164,9 @@ AC_DEFUN([LB_LINUX_RELEASE], [
 			AS_IF([fgrep -q '.el8.' $LINUX_OBJ/include/generated/utsrelease.h], [
 				lb_cv_mainline_kernel_sig="yes"
 			])
+			AS_IF([fgrep -q '.el9.' $LINUX_OBJ/include/generated/utsrelease.h], [
+				lb_cv_mainline_kernel_sig="yes"
+			])
 		])
 		AS_IF([test "x$lb_cv_mainline_kernel_sig" = "xyes"], [
 			RHEL_KERNEL="yes"
@@ -718,9 +721,9 @@ AC_DEFUN([LB_CHECK_LINUX_HEADER], [
 
 AC_DEFUN([LB2_LINUX_CONFTEST_C], [
 TEST_DIR=${TEST_DIR:-${ac_pwd}/_lpb}
-test -d ${TEST_DIR}/$2 || mkdir -p ${TEST_DIR}/$2
-cat confdefs.h - <<_EOF >${TEST_DIR}/$2/$2.c
-$1
+test -d ${TEST_DIR}/$1_pc || mkdir -p ${TEST_DIR}/$1_pc
+cat confdefs.h - <<_EOF >${TEST_DIR}/$1_pc/$1_pc.c
+$2
 _EOF
 ])
 
@@ -735,14 +738,14 @@ _EOF
 AC_DEFUN([LB2_LINUX_CONFTEST_MAKEFILE], [
 	TEST_DIR=${TEST_DIR:-${ac_pwd}/_lpb}
 	test -d ${TEST_DIR} || mkdir -p ${TEST_DIR}
-	test -d ${TEST_DIR}/$1 || mkdir -p ${TEST_DIR}/$1
+	test -d ${TEST_DIR}/$1_pc || mkdir -p ${TEST_DIR}/$1_pc
 
-	file=${TEST_DIR}/$1/Makefile
+	file=${TEST_DIR}/$1_pc/Makefile
 	EXT_INCLUDE="$3"
 	EXT_SYMBOL="$4"
 	PSYM_FILE=""
 	if test "${EXT_SYMBOL}x" != "x" ; then
-		PSYM_FILE=${TEST_DIR}/$1/Psuedo.symvers
+		PSYM_FILE=${TEST_DIR}/$1_pc/Psuedo.symvers
 		echo -e "0x12345678\t${EXT_SYMBOL}\tvmlinux\tEXPORT_SYMBOL\t" > ${PSYM_FILE}
 	fi
 	XTRA_SYM=
@@ -754,7 +757,7 @@ AC_DEFUN([LB2_LINUX_CONFTEST_MAKEFILE], [
 
 	cat - <<_EOF >$file
 # Example command line to manually build source
-# make modules -C $LINUX_OBJ $ARCH_UM M=${TEST_DIR}/$1 $MAKE_KMOD_ENV
+# make modules -C $LINUX_OBJ $ARCH_UM M=${TEST_DIR}/$1_pc $MAKE_KMOD_ENV
 
 ${LD:+LD="$LD"}
 CC=$CC
@@ -805,8 +808,15 @@ _EOF
 	m4_ifval($2, [echo "ccflags-y += $2" >>$file], [])
 
 	# Test case source
-	echo "obj-m := $1.o" >>$file
-	echo "obj-m += $1/" >>${TEST_DIR}/Makefile
+	echo "obj-m := $1_pc.o" >>$file
+
+	# Include the test case in the build, only if the result is not cached
+	AS_VAR_PUSHDEF([lb2_cache_name], [lb_cv_test_$1])
+	AS_IF(AS_VAR_TEST_SET(lb2_cache_name), [], [
+		echo "obj-m += $1_pc/" >>${TEST_DIR}/Makefile
+		LB2_MODULES_COUNT=$((LB2_MODULES_COUNT + 1))
+	])
+	AS_VAR_POPDEF([lb2_cache_name])
 ])
 
 #
@@ -821,7 +831,6 @@ AC_DEFUN([LB2_LINUX_TEST_COMPILE], [
 	L="$D/build.log.$1"
 	J=${TEST_JOBS:-$(nproc)}
 
-	AC_MSG_NOTICE([Making $1 in $D])
 	AC_MSG_NOTICE([KBUILD_MODPOST_NOFINAL="yes" make modules -k -j${J} -C $LINUX_OBJ $ARCH_UM M=${D} $MAKE_KMOD_ENV])
 
 	AC_TRY_COMMAND([KBUILD_MODPOST_NOFINAL="yes"
@@ -851,12 +860,18 @@ AC_DEFUN([LB2_LINUX_TEST_COMPILE], [
 AC_DEFUN([LB2_LINUX_TEST_COMPILE_ALL], [
 	TEST_DIR=${TEST_DIR:-${ac_pwd}/_lpb}
 	# Phase 1 - Compilation only, final linking is skipped.
-	LB2_LINUX_TEST_COMPILE([$1], [${TEST_DIR}], [$2])
-	for dir in $(awk '/^obj-m/ { print [$]3 }' \
-	    ${TEST_DIR}/Makefile.compile.$1); do
-		name=${dir%/}
-		touch ${TEST_DIR}/$name/$name.tested
-	done
+	AS_IF([test $((LB2_MODULES_COUNT + 0)) -gt 0], [
+		AC_MSG_NOTICE([building ${LB2_MODULES_COUNT} linux kernel compile tests for '$1'])
+		LB2_LINUX_TEST_COMPILE([$1], [${TEST_DIR}], [$2])
+		for dir in $(awk '/^obj-m/ { print [$]3 }' \
+		    ${TEST_DIR}/Makefile.compile.$1); do
+			name=${dir%/}
+			touch ${TEST_DIR}/$name/$name.tested
+		done
+		LB2_MODULES_COUNT=0
+	], [
+		AC_MSG_NOTICE([all linux kernel compile test results for '$1' are in-cache])
+	])
 ])
 
 #
@@ -878,8 +893,8 @@ AC_DEFUN([LB2_LINUX_TEST_SRC], [
 	TEST_DIR=${TEST_DIR:-${ac_pwd}/_lpb}
 	AS_VAR_PUSHDEF([lb_test], [lb_cv_test_$1])
 	# Skip test write and build steps if the result is already known.
-	LB2_LINUX_CONFTEST_C([LB_LANG_PROGRAM([[$2]], [[$3]])], [$1_pc])
-	LB2_LINUX_CONFTEST_MAKEFILE([$1_pc], [$4], [$5], [$6])
+	LB2_LINUX_CONFTEST_C([$1], [LB_LANG_PROGRAM([[$2]], [[$3]])])
+	LB2_LINUX_CONFTEST_MAKEFILE([$1], [$4], [$5], [$6])
 	AS_VAR_POPDEF([lb_test])
 ])
 
@@ -899,6 +914,7 @@ AC_DEFUN([LB2_LINUX_TEST_RESULT],[
 	O=${T}/$1_pc
 	AS_IF([test -d ${T}], [
 		# test source exists, was the compile test run?
+		AS_IF(AS_VAR_TEST_SET(lb_test), [], [
 		AS_IF([test -f ${O}.tested],[
 			# compile test was run.
 		],[
@@ -909,8 +925,7 @@ AC_DEFUN([LB2_LINUX_TEST_RESULT],[
 			for mf in $(ls -1 ${TEST_DIR}/Makefile.compile.*); do
 				ln -sf $mf ${D}/Makefile
 				KBUILD_MODPOST_NOFINAL="yes"
-				make modules -k -j${J} -C $LINUX_OBJ $ARCH_UM M=${D} >> rebuild.log 2>&1
-
+				make modules -k -j${J} -C $LINUX_OBJ $ARCH_UM M=${D} $MAKE_KMOD_ENV >> rebuild.log 2>&1
 				for dir in $(awk '/^obj-m/ { print [$]3 }' ${D}/$mf); do
 					name=${dir%/}
 					AC_MSG_NOTICE([touch ${D}/$name/$name.tested])
@@ -919,7 +934,7 @@ AC_DEFUN([LB2_LINUX_TEST_RESULT],[
 				rm ${D}/Makefile
 			done
 			# compile test was NOT run. Re-compile everything.
-		])
+		])])
 	],[
 		# test source does not exist:
 		AC_MSG_ERROR([
@@ -927,16 +942,19 @@ AC_DEFUN([LB2_LINUX_TEST_RESULT],[
 *** both the test source and result macros refer to the same name.
 		])
 	])
-	# Abort if key does not exist
-	AS_IF([test -f ${O}.tested], [],
-		[AC_MSG_ERROR([*** Compile test for $1 was not run.])])
-	# Default is to expect only the <module>.o be generated.
-	NEED_KO=0
-	# Require the <module>.ko file when "module" is passed
-	AS_IF([test "X'$4'" == "X'module'"], [NEED_KO=1])
-	# If test was compiled and if we got an object ...
-	AS_IF([test ${NEED_KO} -eq 0], [AS_IF([test ! -f ${O}.ko], [AS_IF(
-		[test -f ${O}.o], [touch ${O}.ko])])])
+	# If result is not yet cached examine the build output
+	AS_IF(AS_VAR_TEST_SET(lb_test), [], [
+		# Fail if the compile was not done.
+		AS_IF([test -f ${O}.tested], [],
+			[AC_MSG_ERROR([*** Compile test for $1 was not run.])])
+		# Default is to expect only the <module>.o be generated.
+		NEED_KO=0
+		# Require the <module>.ko file when "module" is passed
+		AS_IF([test "X'$4'" == "X'module'"], [NEED_KO=1])
+		# If test was compiled and if we got an object ...
+		AS_IF([test ${NEED_KO} -eq 0], [AS_IF([test ! -f ${O}.ko], [
+			AS_IF([test -f ${O}.o], [touch ${O}.ko])])])
+	])
 	# key is valid. Cache should be valid, set the variable
 	AC_CACHE_CHECK([for $1], lb_test,
 		AS_IF([test -f ${O}.ko],
