@@ -1598,6 +1598,9 @@ static int lfsck_layout_ins_dangling_rec(const struct lu_env *env,
 	int rc = 0;
 	ENTRY;
 
+	if (com->lc_lfsck->li_bookmark_ram.lb_param & LPF_DRYRUN)
+		GOTO(log, rc = 0);
+
 	idx = lfsck_sub_trace_file_fid2idx(pfid);
 	obj = com->lc_sub_trace_objs[idx].lsto_obj;
 	dev = lfsck_obj2dev(obj);
@@ -1636,6 +1639,7 @@ unlock:
 
 	mutex_unlock(&com->lc_sub_trace_objs[idx].lsto_mutex);
 
+log:
 	CDEBUG(D_LFSCK, "%s: insert the paris "DFID" => "DFID", comp_id = %u, "
 	       "ea_off = %u, ost_idx = %u, into the trace file for further "
 	       "dangling check: rc = %d\n", lfsck_lfsck2name(com->lc_lfsck),
@@ -1656,6 +1660,9 @@ static int lfsck_layout_del_dangling_rec(const struct lu_env *env,
 	int idx;
 	int rc = 0;
 	ENTRY;
+
+	if (com->lc_lfsck->li_bookmark_ram.lb_param & LPF_DRYRUN)
+		GOTO(log, rc = 0);
 
 	idx = lfsck_sub_trace_file_fid2idx(fid);
 	obj = com->lc_sub_trace_objs[idx].lsto_obj;
@@ -1689,6 +1696,7 @@ unlock:
 
 	mutex_unlock(&com->lc_sub_trace_objs[idx].lsto_mutex);
 
+log:
 	CDEBUG(D_LFSCK, "%s: delete the dangling record for "DFID
 	       ", comp_id = %u, ea_off = %u from the trace file: rc = %d\n",
 	       lfsck_lfsck2name(com->lc_lfsck), PFID(fid), comp_id, ea_off, rc);
@@ -2215,6 +2223,9 @@ static int __lfsck_layout_update_pfid(const struct lu_env *env,
 	struct lu_buf		 buf	= { NULL };
 	int			 rc;
 
+	if (com->lc_lfsck->li_bookmark_ram.lb_param & LPF_DRYRUN)
+		RETURN(0);
+
 	ff->ff_parent.f_seq = cpu_to_le64(pfid->f_seq);
 	ff->ff_parent.f_oid = cpu_to_le32(pfid->f_oid);
 	/* Currently, the filter_fid::ff_parent::f_ver is not the real parent
@@ -2620,6 +2631,9 @@ static int lfsck_layout_slave_conditional_destroy(const struct lu_env *env,
 	__u64				 flags	= 0;
 	int				 rc	= 0;
 	ENTRY;
+
+	if (lfsck->li_bookmark_ram.lb_param & LPF_DRYRUN)
+		RETURN(0);
 
 	obj = lfsck_object_find_by_dev(env, dev, fid);
 	if (IS_ERR(obj))
@@ -3494,6 +3508,9 @@ static int __lfsck_layout_repair_dangling(const struct lu_env *env,
 	if (!(lfsck->li_bookmark_ram.lb_param & LPF_CREATE_OSTOBJ))
 		GOTO(log, rc = 1);
 
+	if (lfsck->li_bookmark_ram.lb_param & LPF_DRYRUN)
+		GOTO(log, rc = 1);
+
 	rc = lfsck_ibits_lock(env, lfsck, parent, &lh,
 			      MDS_INODELOCK_LAYOUT | MDS_INODELOCK_XATTR,
 			      LCK_EX);
@@ -3743,6 +3760,9 @@ static int lfsck_layout_repair_unmatched_pair(const struct lu_env *env,
 	int				 rc;
 	ENTRY;
 
+	if (com->lc_lfsck->li_bookmark_ram.lb_param & LPF_DRYRUN)
+		GOTO(log, rc = 0);
+
 	rc = lfsck_ibits_lock(env, com->lc_lfsck, parent, &lh,
 			      MDS_INODELOCK_LAYOUT | MDS_INODELOCK_XATTR,
 			      LCK_EX);
@@ -3862,6 +3882,9 @@ static int lfsck_layout_repair_multiple_references(const struct lu_env *env,
 	__u32				 index;
 	int				 rc;
 	ENTRY;
+
+	if (lfsck->li_bookmark_ram.lb_param & LPF_DRYRUN)
+		RETURN(0);
 
 	/* We use two separated transactions to repair the inconsistency.
 	 *
@@ -4055,6 +4078,9 @@ static int lfsck_layout_repair_owner(const struct lu_env *env,
 	int				 rc;
 	dt_obj_version_t		 version;
 	ENTRY;
+
+	if (com->lc_lfsck->li_bookmark_ram.lb_param & LPF_DRYRUN)
+		RETURN(0);
 
 	tla->la_uid = pla->la_uid;
 	tla->la_gid = pla->la_gid;
@@ -7118,6 +7144,9 @@ static void lfsck_layout_destroy_orphan(const struct lu_env *env,
 	int			 rc;
 	ENTRY;
 
+	if (lfsck->li_bookmark_ram.lb_param & LPF_DRYRUN)
+		GOTO(log, rc = 0);
+
 	handle = lfsck_trans_create(env, dev, lfsck);
 	if (IS_ERR(handle))
 		RETURN_EXIT;
@@ -7145,6 +7174,7 @@ static void lfsck_layout_destroy_orphan(const struct lu_env *env,
 stop:
 	dt_trans_stop(env, dev, handle);
 
+log:
 	CDEBUG(D_LFSCK, "destroy orphan OST-object "DFID": rc = %d\n",
 	       PFID(lfsck_dto2fid(obj)), rc);
 
