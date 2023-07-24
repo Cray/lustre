@@ -27242,10 +27242,10 @@ test_434() {
 	[[ $(getenforce) == "Disabled" ]] ||
 		skip "lsm selinux module have to be disabled for this test"
 
-	test_mkdir -i 0 -c1 $DIR/$tdir/ ||
-		error "fail to create $DIR/$tdir/ on MDT0000"
+	test_mkdir -i 0 -c 1 $DIR/$tdir.0/ ||
+		error "fail to create $DIR/$tdir.0/ on MDT0000"
 
-	touch $DIR/$tdir/$tfile-{001..100}
+	touch $DIR/$tdir.0/$tfile-{001..100}
 
 	# disable the xattr cache
 	save_lustre_params client "llite.*.xattr_cache" > $p
@@ -27256,7 +27256,7 @@ test_434() {
 	clear_stats $mdc_stat_param ||
 		error "fail to clear stats on mdc MDT0000"
 
-	for file in $DIR/$tdir/$tfile-{001..100}; do
+	for file in $DIR/$tdir.0/$tfile-{001..100}; do
 		getfattr -n security.selinux $file |&
 			grep -q "Operation not supported" ||
 			error "getxattr on security.selinux should return EOPNOTSUPP"
