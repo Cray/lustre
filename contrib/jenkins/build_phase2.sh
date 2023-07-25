@@ -195,23 +195,23 @@ fi
 
 [[ "${JP_BUILD_TYPE}" == "debug" ]] && DOTDEBUG="*debug"
 
+
 if [ -z $JP_CLIENT_TARGET ]
 then
-    # DISTRO=$(echo ${JP_CLIENT_KERNEL} | sed 's/.*el\(.\).*/\1/')    #' mcedit highlight workaround
     DISTRO=$(echo ${JP_CLIENT_KERNEL} | sed 's/.*el//' | tr '_' '.')
 else
     DISTRO=${JP_CLIENT_TARGET#el}
 fi
 
-DISTRO=${DISTRO:-7}
+DISTRO=${DISTRO:-8}
 [[ $JP_NEO_RELEASE =~ ORNL.* ]] && ORNL=${$JP_NEO_RELEASE#ORNL}
 
 
 case $JP_BUILD_MODE in
     full)
         MOCK_CONFIG=${JP_MOCK_CFG:-mock_${JP_NEO_RELEASE}}
-        DISTRO=7
-        [[ $JP_NEO_RELEASE =~ NEO5.*|ORNL5.*|ORNL6.*|NEO6.*|CSL6.*|TST6.* ]] && DISTRO=8
+        DISTRO=8
+        [[ $JP_NEO_RELEASE =~ CSL3.*|NEO3.*|NEO4.*|CSL4.* ]] && DISTRO=7
         REPO_OPTS="--enablerepo=kernel_${JP_NEO_LABEL} --enablerepo=drivers_${JP_NEO_LABEL} --enablerepo=devvm_${JP_NEO_LABEL}"
         if [ ! -z ${JP_TARGET_KERNEL} ] && [[ $JP_NEO_RELEASE =~ ORNL.* ]]
         then
@@ -238,7 +238,7 @@ case $JP_BUILD_MODE in
     ;;
     patchless)
         DEFAULT_MOCK="epel-${DISTRO}-${JP_TARGET_ARCH}"
-        MOCK_CONFIG=${JP_MOCK_CFG:-DEFAULT_MOCK}
+        MOCK_CONFIG=${JP_MOCK_CFG:-$DEFAULT_MOCK}
         [ -z ${JP_CLIENT_KERNEL} ] || JP_CLIENT_KERNEL="-${JP_CLIENT_KERNEL}"
     ;;
 esac
@@ -384,6 +384,9 @@ ${MOCK_CMD}  --no-clean --rebuild ${srpm} --define "myrelease ${release}${GITHAS
 
 rval=$?
 if [ "$rval" != "0" ] ; then
+  rejects=$(find $ROOT -name *.rej)
+  echo $rejects
+  [ ! -z $rejects ] && cp $rejects ${RPMDIR}
   touch build_failed
 fi
 
