@@ -1724,6 +1724,8 @@ int ll_io_read_page(const struct lu_env *env, struct cl_io *io,
 			 * TODO: this is not needed after page reinit
 			 * route is implemented */
 			cl_page_discard(env, io, page);
+			if (rc != EAGAIN)
+				io->ci_dont_repeat = 1;
 		}
 		if (unlockpage)
 			cl_page_disown(env, io, page);
