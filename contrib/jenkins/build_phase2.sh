@@ -211,7 +211,13 @@ case $JP_BUILD_MODE in
     full)
         MOCK_CONFIG=${JP_MOCK_CFG:-mock_${JP_NEO_RELEASE}}
         DISTRO=8
-        [[ $JP_NEO_RELEASE =~ CSL3.*|NEO3.*|NEO4.*|CSL4.* ]] && DISTRO=7
+
+        if [[ $JP_NEO_RELEASE =~ CSL3.*|NEO3.*|NEO4.*|CSL4.* ]]
+        then
+            DISTRO=7
+        else
+            LUSTRE_DEVEL+=" kernel-debuginfo${JP_CLIENT_KERNEL} kernel-debuginfo-common-${JP_TARGET_ARCH}${JP_CLIENT_KERNEL}"
+        fi
         REPO_OPTS="--enablerepo=kernel_${JP_NEO_LABEL} --enablerepo=drivers_${JP_NEO_LABEL} --enablerepo=devvm_${JP_NEO_LABEL}"
         if [ ! -z ${JP_TARGET_KERNEL} ] && [[ $JP_NEO_RELEASE =~ ORNL.* ]]
         then
@@ -238,6 +244,7 @@ case $JP_BUILD_MODE in
     ;;
     patchless)
         DEFAULT_MOCK="epel-${DISTRO}-${JP_TARGET_ARCH}"
+        LUSTRE_DEVEL+=" kernel-debuginfo${JP_CLIENT_KERNEL} kernel-debuginfo-common-${JP_TARGET_ARCH}${JP_CLIENT_KERNEL}"
         MOCK_CONFIG=${JP_MOCK_CFG:-$DEFAULT_MOCK}
         [ -z ${JP_CLIENT_KERNEL} ] || JP_CLIENT_KERNEL="-${JP_CLIENT_KERNEL}"
     ;;
@@ -281,10 +288,6 @@ fi
 [ "$JP_BUILD_MODE" != "full" ] && [ -z $JP_CLIENT_KERNEL ] && \
     JP_CLIENT_KERNEL=-$(${MOCK_CMD}  --chroot "rpm -q --qf '%{VERSION}-%{RELEASE}' kernel${BUILD_TYPE}-devel 2>/dev/null")
 
-if [[ $JP_BUILD_MODE == patchless ]] || ([[ $JP_BUILD_MODE == full ]] && [[ $JP_NEO_RELEASE =~ ORNL.*|CSL6.*|NEO6.*|TST6.* ]])
-then
-    LUSTRE_DEVEL+=" kernel-debuginfo${JP_CLIENT_KERNEL} kernel-debuginfo-common-${JP_TARGET_ARCH}${JP_CLIENT_KERNEL}"
-fi
 
 ADD_PKG=EL${DISTRO/.*/}_DEVEL
 ${MOCK_CMD} --install ${LUSTRE_DEVEL} ${!ADD_PKG}
@@ -385,7 +388,6 @@ ${MOCK_CMD}  --no-clean --rebuild ${srpm} --define "myrelease ${release}${GITHAS
 rval=$?
 if [ "$rval" != "0" ] ; then
   rejects=$(find $ROOT -name *.rej)
-  echo $rejects
   [ ! -z $rejects ] && cp $rejects ${RPMDIR}
   touch build_failed
 fi
