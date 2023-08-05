@@ -133,10 +133,16 @@ if [ "%reconfigure" == "1" -o ! -x %_builddir/%{name}-%{version}/configure ];the
 	./autogen.sh
 fi
 
+O2IBPATH=yes
 if [ -d /usr/src/ofa_kernel/%{flavor} ]; then
 	O2IBPATH=/usr/src/ofa_kernel/%{flavor}
-else
-	O2IBPATH=yes
+elif [ -d /usr/src/ofa_kernel/default ]; then
+	O2IBPATH=/usr/src/ofa_kernel/default
+fi
+
+WITH_KFI=""
+if [ -d /usr/src/kfabric/%{flavor} ]; then
+	WITH_KFI="--with-kfi=/usr/src/kfabric/%{flavor}"
 fi
 
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{name}-%{version}/Makefile ];then
@@ -144,8 +150,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{name}-%{version}/Makefile ];then
 		--disable-server \
 		--enable-client \
 		--with-kmp-moddir=%{kmoddir}/%{name} \
-		--with-o2ib=${O2IBPATH} \
-		--with-kfi=/usr/src/kfabric/%{flavor} \
+		--with-o2ib=${O2IBPATH} ${WITH_KFI} \
 		%{_with_linux} %{?_with_linux_obj}
 fi
 %{__make} %_smp_mflags
