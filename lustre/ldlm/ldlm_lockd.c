@@ -1299,12 +1299,6 @@ int ldlm_handle_enqueue0(struct ldlm_namespace *ns,
 	ldlm_request_cancel(req, dlm_req, LDLM_ENQUEUE_CANCEL_OFF, LATF_SKIP);
 	flags = ldlm_flags_from_wire(dlm_req->lock_flags);
 
-	if (flags & ~LDLM_FL_WIRE_REQ_FLAGS_MASK) {
-		DEBUG_REQ(D_ERROR, req, "invalid lock request flags %llx",
-			  flags & ~LDLM_FL_WIRE_REQ_FLAGS_MASK);
-		GOTO(out, rc = -EFAULT);
-	}
-
 	LASSERT(req->rq_export);
 
 	/* for intent enqueue the stat will be updated inside intent policy */
@@ -2446,14 +2440,6 @@ static int ldlm_callback_handler(struct ptlrpc_request *req)
 		rc = ldlm_callback_reply(req, -EPROTO);
 		ldlm_callback_errmsg(req, "Operate without parameter", rc,
 				     NULL);
-		RETURN(0);
-	}
-
-	if (dlm_req->lock_flags & ~LDLM_FL_WIRE_AST_FLAGS_MASK) {
-		rc = ldlm_callback_reply(req, -EFAULT);
-		ldlm_callback_errmsg(req, "invalid lock request flags %llx",
-				     dlm_req->lock_flags &
-				     ~LDLM_FL_WIRE_AST_FLAGS_MASK, NULL);
 		RETURN(0);
 	}
 
