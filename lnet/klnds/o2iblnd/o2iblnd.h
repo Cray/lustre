@@ -36,7 +36,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 
-#if defined(MLNX_OFED_BUILD) && !defined(HAVE_SANE_IB_DMA_MAP_SG)
+#if defined(MLNX_OFED_BUILD) && !defined(HAVE_OFED_IB_DMA_MAP_SG_SANE)
 #undef CONFIG_INFINIBAND_VIRT_DMA
 #endif
 
@@ -48,7 +48,7 @@
 		lock_is_held((struct lockdep_map *)&(lock)->dep_map)
 #endif
 
-#ifdef HAVE_COMPAT_RDMA
+#ifdef HAVE_OFED_COMPAT_RDMA
 #include <linux/compat-2.6.h>
 
 #ifdef LINUX_3_17_COMPAT_H
@@ -91,7 +91,7 @@
 #include <rdma/rdma_cm.h>
 #include <rdma/ib_cm.h>
 #include <rdma/ib_verbs.h>
-#ifdef HAVE_FMR_POOL_API
+#ifdef HAVE_OFED_FMR_POOL_API
 #include <rdma/ib_fmr_pool.h>
 #endif
 
@@ -136,11 +136,11 @@ extern struct kib_tunables  kiblnd_tunables;
 					IBLND_CREDIT_HIGHWATER_V1 : \
 			min(t->lnd_peercredits_hiw, (__u32)conn->ibc_queue_depth - 1))
 
-#ifdef HAVE_RDMA_CREATE_ID_5ARG
+#ifdef HAVE_OFED_RDMA_CREATE_ID_5ARG
 # define kiblnd_rdma_create_id(ns, cb, dev, ps, qpt) \
 	 rdma_create_id((ns) ? (ns) : &init_net, cb, dev, ps, qpt)
 #else
-# ifdef HAVE_RDMA_CREATE_ID_4ARG
+# ifdef HAVE_OFED_RDMA_CREATE_ID_4ARG
 #  define kiblnd_rdma_create_id(ns, cb, dev, ps, qpt) \
 	  rdma_create_id(cb, dev, ps, qpt)
 # else
@@ -191,7 +191,7 @@ struct kib_hca_dev;
 enum kib_dev_caps {
 	IBLND_DEV_CAPS_FASTREG_ENABLED		= BIT(0),
 	IBLND_DEV_CAPS_FASTREG_GAPS_SUPPORT	= BIT(1),
-#ifdef HAVE_FMR_POOL_API
+#ifdef HAVE_OFED_FMR_POOL_API
 	IBLND_DEV_CAPS_FMR_ENABLED		= BIT(2),
 #endif
 };
@@ -224,7 +224,7 @@ struct kib_hca_dev {
 	__u64                ibh_page_mask;     /* page mask of current HCA */
 	__u64                ibh_mr_size;       /* size of MR */
 	int		     ibh_max_qp_wr;     /* maximum work requests size */
-#ifdef HAVE_IB_GET_DMA_MR
+#ifdef HAVE_OFED_IB_GET_DMA_MR
 	struct ib_mr        *ibh_mrs;           /* global MR */
 #endif
 	struct ib_pd        *ibh_pd;            /* PD */
@@ -337,7 +337,7 @@ struct kib_fmr_poolset {
 	time64_t		fps_next_retry;
 };
 
-#ifndef HAVE_IB_RDMA_WR
+#ifndef HAVE_OFED_IB_RDMA_WR
 struct ib_rdma_wr {
 	struct ib_send_wr wr;
 };
@@ -346,7 +346,7 @@ struct ib_rdma_wr {
 struct kib_fast_reg_descriptor { /* For fast registration */
 	struct list_head		 frd_list;
 	struct ib_rdma_wr		 frd_inv_wr;
-#ifdef HAVE_IB_MAP_MR_SG
+#ifdef HAVE_OFED_IB_MAP_MR_SG
 	struct ib_reg_wr		 frd_fastreg_wr;
 #else
 	struct ib_rdma_wr		 frd_fastreg_wr;
@@ -361,7 +361,7 @@ struct kib_fmr_pool {
 	struct list_head	fpo_list;	/* chain on pool list */
 	struct kib_hca_dev     *fpo_hdev;	/* device for this pool */
 	struct kib_fmr_poolset      *fpo_owner;	/* owner of this pool */
-#ifdef HAVE_FMR_POOL_API
+#ifdef HAVE_OFED_FMR_POOL_API
 	union {
 		struct {
 			struct ib_fmr_pool *fpo_fmr_pool; /* IB FMR pool */
@@ -371,7 +371,7 @@ struct kib_fmr_pool {
 			struct list_head  fpo_pool_list;
 			int		  fpo_pool_size;
 		} fast_reg;
-#ifdef HAVE_FMR_POOL_API
+#ifdef HAVE_OFED_FMR_POOL_API
 	};
 	bool			fpo_is_fmr; /* True if FMR pools allocated */
 #endif
@@ -382,14 +382,14 @@ struct kib_fmr_pool {
 
 struct kib_fmr {
 	struct kib_fmr_pool		*fmr_pool;	/* pool of FMR */
-#ifdef HAVE_FMR_POOL_API
+#ifdef HAVE_OFED_FMR_POOL_API
 	struct ib_pool_fmr		*fmr_pfmr;	/* IB pool fmr */
-#endif /* HAVE_FMR_POOL_API */
+#endif /* HAVE_OFED_FMR_POOL_API */
 	struct kib_fast_reg_descriptor	*fmr_frd;
 	u32				 fmr_key;
 };
 
-#ifdef HAVE_FMR_POOL_API
+#ifdef HAVE_OFED_FMR_POOL_API
 
 #ifdef HAVE_ORACLE_OFED_EXTENSIONS
 #define kib_fmr_pool_map(pool, pgs, n, iov) \
@@ -399,7 +399,7 @@ struct kib_fmr {
 	ib_fmr_pool_map_phys((pool), (pgs), (n), (iov))
 #endif
 
-#endif /* HAVE_FMR_POOL_API */
+#endif /* HAVE_OFED_FMR_POOL_API */
 
 struct kib_net {
 	/* chain on struct kib_dev::ibd_nets */
@@ -688,7 +688,7 @@ struct kib_peer_ni {
 	atomic_t		ibp_nconns;
 };
 
-#ifndef HAVE_IB_INC_RKEY
+#ifndef HAVE_OFED_IB_INC_RKEY
 /**
  * ib_inc_rkey - increments the key portion of the given rkey. Can be used
  * for calculating a new rkey for type 2 memory windows.
@@ -1066,7 +1066,7 @@ void kiblnd_dma_unmap_sg(struct kib_hca_dev *hdev, struct kib_tx *tx)
 		ib_dma_unmap_sg(hdev->ibh_ibdev, sg, nents, direction);
 }
 
-#ifndef HAVE_IB_SG_DMA_ADDRESS
+#ifndef HAVE_OFED_IB_SG_DMA_ADDRESS
 #include <linux/scatterlist.h>
 #define ib_sg_dma_address(dev, sg)	sg_dma_address(sg)
 #define ib_sg_dma_len(dev, sg)		sg_dma_len(sg)
@@ -1084,7 +1084,7 @@ static inline unsigned int kiblnd_sg_dma_len(struct ib_device *dev,
         return ib_sg_dma_len(dev, sg);
 }
 
-#ifndef HAVE_RDMA_CONNECT_LOCKED
+#ifndef HAVE_OFED_RDMA_CONNECT_LOCKED
 #define rdma_connect_locked(cmid, cpp)	rdma_connect(cmid, cpp)
 #endif
 
