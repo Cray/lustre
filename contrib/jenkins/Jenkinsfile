@@ -1,25 +1,18 @@
 // Copyright 2023 Hewlett Packard Enterprise Development LP
-// This is for the CSL6.X_Lustre pipeline job on CloudBees
 
 @Library('dst-shared@master') _
 
 pipeline {
     agent {
-        node { label 'Rocky8_nodes' }
+        node { label 'Centos8_nodes' }
     }
 
     environment {
-        JP_NEO_RELEASE = 'CSL6.X'
-        JP_VERSION = '2.15'
-        JP_VERS_TAG = 'x6.6.010'
-        JP_REPO = 'lustre'
-        JP_SPECIAL_BUILD = ''
-        JP_IEM_BRANCH = 'csl_6.x'
-        JP_PACKAGE_NAME = 'lustre_ib'
-        JP_OBSOLETES = '2.7.19.8.x8-248_3.10'
-        JP_INTEGRATION_BUILD = 'TRUE'
-        JP_FS_BACKEND = 'both'
-        JP_KFI = '/usr/src/kfabric-0.1.0/default'
+        // Needed by signArtifacts for correct location of buildlog.logs in Artifactory:
+        PRODUCT = "neo"
+        BRANCH_NAME = "release"
+        TARGET_OS = "hpc-lus-filesystem"
+        TARGET_ARCH = "noarch"
     }
 
     options {
@@ -43,7 +36,7 @@ pipeline {
 
         stage('Scan/Sign RPMs') {
             steps {
-                signArtifacts([artifacts: 'rpmbuild/'])
+                println "SKIP code-signing for Integration RPMs"
             }
         }
 
