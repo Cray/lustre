@@ -473,8 +473,16 @@ int main(int argc, char **argv)
 			rc = fd;
 			break;
 		case 'j':
-			if (flock(fd, LOCK_EX) == -1)
+			if (flock(fd, LOCK_EX) == -1) {
+				perror("flock");
 				errx(-1, "flock()");
+			}
+			break;
+		case 'J':
+			if (flock(fd, LOCK_SH) == -1) {
+				perror("flock");
+				errx(-1, "flock()");
+			}
 			break;
 		case 'K':
 			oldpath = POP_ARG();
