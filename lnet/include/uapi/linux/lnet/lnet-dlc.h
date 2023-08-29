@@ -55,10 +55,13 @@
 /* enum lnet_commands	      - Supported core LNet Netlink commands
  *
  * @LNET_CMD_UNSPEC:		unspecified command to catch errors
+ * @LNET_CMD_CPT_OF_NID:	command to calculate the CPT of specified NIDs
  *
  */
 enum lnet_commands {
 	LNET_CMD_UNSPEC		= 0,
+
+	LNET_CMD_CPT_OF_NID     = 7,
 
 	__LNET_CMD_MAX_PLUS_ONE
 };
