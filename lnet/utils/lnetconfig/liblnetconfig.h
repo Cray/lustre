@@ -62,6 +62,8 @@
 #define MANAGE_CMD		"manage"
 
 #define MAX_NUM_IPS		128
+#define INT_STRING_LEN		23
+#define LNET_DEFAULT_INDENT	6
 
 #define modparam_path "/sys/module/lnet/parameters/"
 #define o2ib_modparam_path "/sys/module/ko2iblnd/parameters/"
@@ -537,12 +539,6 @@ int lustre_lnet_calc_service_id(__u64 *service_id);
  *   caller
  */
 int lustre_lnet_setup_mrrouting(struct cYAML **err_rc);
-
-/*
- * lustre_lnet_calc_cpt_of_nid
- *	Return the cpt number of the NID provided
- */
-int lustre_lnet_calc_cpt_of_nid(char *nidc, long int ncpts);
 
 /*
  * lustre_lnet_config_discovery

@@ -459,6 +459,29 @@ struct lnet_net {
 	struct list_head	net_rtr_pref_nids;
 };
 
+/** enum lnet_cpt_of_nid_attr			- Attributes to support
+ * 						  lnetctl cpt-of-nid command
+ *
+ * @LNET_CPT_OF_NID_ATTR_UNSPEC			  unspecified attribute to catch
+ * 						  errors
+ * @LNET_CPT_OF_NID_ATTR_HDR			  Grouping for cpt-of-nid
+ * 						  (NLA_NUL_STRING)
+ * @LNET_CPT_OF_NID_ATTR_NID			  The NID whose CPT we want to
+ * 						  calculate (NLA_STRING)
+ * LNET_CPT_OF_NID_ATTR_CPT			  The CPT for the specified NID
+ * 						  (NLA_U32)
+ */
+enum lnet_cpt_of_nid_attr {
+	LNET_CPT_OF_NID_ATTR_UNSPEC = 0,
+
+	LNET_CPT_OF_NID_ATTR_HDR,
+	LNET_CPT_OF_NID_ATTR_NID,
+	LNET_CPT_OF_NID_ATTR_CPT,
+	__LNET_CPT_OF_NID_ATTR_MAX_PLUS_ONE,
+};
+
+#define LNET_CPT_OF_NID_ATTR_MAX (__LNET_CPT_OF_NID_ATTR_MAX_PLUS_ONE - 1)
+
 struct lnet_ni {
 	/* chain on the lnet_net structure */
 	struct list_head	ni_netlist;
