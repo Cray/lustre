@@ -2920,6 +2920,8 @@ canceled:
 }
 EXPORT_SYMBOL(lnet_genl_send_scalar_list);
 
+static struct genl_family lnet_family;
+
 /**
  * Initialize LNet library.
  *
@@ -2955,6 +2957,13 @@ int lnet_lib_init(void)
 	rc = lnet_create_locks();
 	if (rc != 0) {
 		CERROR("Can't create LNet global locks: %d\n", rc);
+		return rc;
+	}
+
+	rc = genl_register_family(&lnet_family);
+	if (rc != 0) {
+		lnet_destroy_locks();
+		CERROR("Can't register LNet netlink family: %d\n", rc);
 		return rc;
 	}
 
@@ -2997,6 +3006,7 @@ void lnet_lib_exit(void)
 	for (i = 0; i < NUM_LNDS; i++)
 		LASSERT(!the_lnet.ln_lnds[i]);
 	lnet_destroy_locks();
+	genl_unregister_family(&lnet_family);
 }
 
 /**
@@ -4677,6 +4687,26 @@ LNetCtl(unsigned int cmd, void *arg)
 	/* not reached */
 }
 EXPORT_SYMBOL(LNetCtl);
+
+static const struct genl_multicast_group lnet_mcast_grps[] = {
+};
+
+static const struct genl_ops lnet_genl_ops[] = {
+};
+
+static struct genl_family lnet_family = {
+	.name		= LNET_GENL_NAME,
+	.version	= LNET_GENL_VERSION,
+	.module		= THIS_MODULE,
+	.netnsok	= true,
+	.ops		= lnet_genl_ops,
+	.n_ops		= ARRAY_SIZE(lnet_genl_ops),
+	.mcgrps		= lnet_mcast_grps,
+	.n_mcgrps	= ARRAY_SIZE(lnet_mcast_grps),
+#ifdef GENL_FAMILY_HAS_RESV_START_OP
+	.resv_start_op	= __LNET_CMD_MAX_PLUS_ONE,
+#endif
+};
 
 void LNetDebugPeer(struct lnet_processid *id)
 {
