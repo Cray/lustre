@@ -308,8 +308,8 @@ if [ ! -f %{_pkgconfigdir}/cray-lnet.pc ] ; then
 fi
 
 COMMON_POSTINT=/usr/libexec/dkms/common.postinst
-if ! -f ${COMMON_POSTINT} ; then
-    if -f /usr/lib/dkms/common.postinst; then
+if [ ! -f ${COMMON_POSTINT} ] ; then
+    if [ -f /usr/lib/dkms/common.postinst ] ; then
         COMMON_POSTINT=/usr/lib/dkms/common.postinst
     fi
 fi
