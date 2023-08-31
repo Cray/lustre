@@ -460,6 +460,29 @@ static int osd_bio_init(struct bio *bio, struct osd_iobuf *iobuf,
 #define BIO_MAX_VECS	BIO_MAX_PAGES
 #endif
 
+static void osd_mark_page_io_done(struct osd_iobuf *iobuf,
+				  struct inode *inode,
+				  sector_t start_blocks,
+				  sector_t count)
+{
+	struct niobuf_local *lnb;
+	int blocks_per_page = PAGE_SIZE >> inode->i_blkbits;
+	pgoff_t pg_start, pg_end;
+
+	pg_start = start_blocks / blocks_per_page;
+	if (start_blocks % blocks_per_page)
+		pg_start++;
+	if (count >= blocks_per_page)
+		pg_end = (start_blocks + count -
+			  blocks_per_page) / blocks_per_page;
+	else
+		return; /* nothing to mark */
+	for ( ; pg_start <= pg_end; pg_start++) {
+		lnb = iobuf->dr_lnbs[pg_start];
+		lnb->lnb_flags |= OBD_BRW_DONE;
+	}
+}
+
 static int osd_do_bio(struct osd_device *osd, struct inode *inode,
 		      struct osd_iobuf *iobuf, sector_t start_blocks,
 		      sector_t count)
@@ -632,6 +655,11 @@ out:
 		if (bio_private)
 			OBD_FREE_PTR(bio_private);
 	}
+
+	/* Write only now */
+	if (rc == 0 && iobuf->dr_rw)
+		osd_mark_page_io_done(iobuf, inode,
+				      start_blocks, count);
 
 	RETURN(rc);
 }
@@ -951,13 +979,6 @@ static int osd_chunk_trans_blocks(struct inode *inode, int nrblocks)
 }
 
 #ifdef HAVE_LDISKFS_JOURNAL_ENSURE_CREDITS
-static int osd_extend_trans(handle_t *handle, int needed,
-			    struct inode *inode)
-{
-	return  __ldiskfs_journal_ensure_credits(handle, needed, needed,
-		ldiskfs_trans_default_revoke_credits(inode->i_sb));
-}
-
 static int osd_extend_restart_trans(handle_t *handle, int needed,
 				    struct inode *inode)
 {
@@ -972,22 +993,15 @@ static int osd_extend_restart_trans(handle_t *handle, int needed,
 	return rc;
 }
 #else
-static int osd_extend_trans(handle_t *handle, int needed,
-			    struct inode *inode)
-{
-	if (ldiskfs_handle_has_enough_credits(handle, needed))
-		return 0;
-
-	return ldiskfs_journal_extend(handle,
-				      needed - handle->h_buffer_credits);
-}
-
 static int osd_extend_restart_trans(handle_t *handle, int needed,
 				    struct inode *inode)
 {
+	int rc;
 
-	int rc = osd_extend_trans(handle, needed, inode);
-
+	if (ldiskfs_handle_has_enough_credits(handle, needed))
+		return 0;
+	rc = ldiskfs_journal_extend(handle,
+				needed - handle->h_buffer_credits);
 	if (rc <= 0)
 		return rc;
 
@@ -1021,11 +1035,45 @@ static int osd_ldiskfs_map_write(struct inode *inode, struct osd_iobuf *iobuf,
 	return osd_do_bio(osd, inode, iobuf, start_blocks, count);
 }
 
+static unsigned int osd_extent_bytes(const struct osd_device *o)
+{
+	unsigned int *extent_bytes_ptr =
+			raw_cpu_ptr(o->od_extent_bytes_percpu);
+
+	if (likely(*extent_bytes_ptr))
+		return *extent_bytes_ptr;
+
+	/* initialize on first access or CPU hotplug */
+	if (!ldiskfs_has_feature_extents(osd_sb(o)))
+		*extent_bytes_ptr = 1 << osd_sb(o)->s_blocksize_bits;
+	else
+		*extent_bytes_ptr = OSD_DEFAULT_EXTENT_BYTES;
+
+	return *extent_bytes_ptr;
+}
+
+#define EXTENT_BYTES_DECAY 64
+static void osd_decay_extent_bytes(struct osd_device *osd,
+				   unsigned int new_bytes)
+{
+	unsigned int old_bytes;
+
+	if (!ldiskfs_has_feature_extents(osd_sb(osd)))
+		return;
+
+	old_bytes = osd_extent_bytes(osd);
+	*raw_cpu_ptr(osd->od_extent_bytes_percpu) =
+		(old_bytes * (EXTENT_BYTES_DECAY - 1) +
+		 min(new_bytes, OSD_DEFAULT_EXTENT_BYTES) +
+		 EXTENT_BYTES_DECAY - 1) / EXTENT_BYTES_DECAY;
+}
+
 static int osd_ldiskfs_map_inode_pages(struct inode *inode,
 				       struct osd_iobuf *iobuf,
 				       struct osd_device *osd,
 				       int create, __u64 user_size,
-				       int check_credits)
+				       int check_credits,
+				       struct thandle *thandle)
 {
 	int blocks_per_page = PAGE_SIZE >> inode->i_blkbits;
 	int rc = 0, i = 0, mapped_index = 0;
@@ -1033,7 +1081,6 @@ static int osd_ldiskfs_map_inode_pages(struct inode *inode,
 	int clen = 0;
 	pgoff_t max_page_index;
 	handle_t *handle = NULL;
-	int credits;
 	sector_t start_blocks = 0, count = 0;
 	loff_t disk_size = 0;
 	struct page **page = iobuf->dr_pages;
@@ -1094,37 +1141,30 @@ cont_map:
 		 * transaction to make sure consistency.
 		 */
 		if (handle && check_credits) {
-			/*
-			 * credits to insert 1 extent into extent tree.
-			 */
-			credits = osd_chunk_trans_blocks(inode, blen);
-			rc = osd_extend_trans(handle, credits, inode);
-			if (rc < 0)
-				GOTO(cleanup, rc);
+			struct osd_thandle *oh;
+
+			LASSERT(thandle != NULL);
+			oh = container_of(thandle, struct osd_thandle,
+					  ot_super);
 			/*
 			 * only issue IO if restart transaction needed,
 			 * as update disk size need hold inode lock, we
 			 * want to avoid that as much as possible.
 			 */
-			if (rc > 0) {
-				WARN_ON_ONCE(start_blocks == 0);
+			if (oh->oh_declared_ext <= 0) {
 				rc = osd_ldiskfs_map_write(inode,
 					iobuf, osd, start_blocks,
 					count, &disk_size, user_size);
 				if (rc)
 					GOTO(cleanup, rc);
-#ifdef HAVE_LDISKFS_JOURNAL_ENSURE_CREDITS
-				rc = ldiskfs_journal_restart(handle, credits,
-					ldiskfs_trans_default_revoke_credits(inode->i_sb));
-#else
-				rc = ldiskfs_journal_restart(handle, credits);
-#endif
-				if (rc)
-					GOTO(cleanup, rc);
-				start_blocks += count;
-				/* reset IO block count */
-				count = 0;
+				thandle->th_restart_tran = 1;
+				GOTO(cleanup, rc = -EAGAIN);
 			}
+
+			if (OBD_FAIL_CHECK(OBD_FAIL_OST_RESTART_IO))
+				oh->oh_declared_ext = 0;
+			else
+				oh->oh_declared_ext--;
 		}
 		time = ktime_get();
 		rc = ldiskfs_map_blocks(handle, inode, &map, create);
@@ -1183,6 +1223,12 @@ cont_map:
 		}
 
 		if (rc == 0 && total < blen) {
+			/*
+			 * decay extent blocks if we could not
+			 * allocate extent once.
+			 */
+			osd_decay_extent_bytes(osd,
+				(total - previous_total) << inode->i_blkbits);
 			map.m_lblk = fp->index * blocks_per_page + total;
 			map.m_len = blen - total;
 			previous_total = total;
@@ -1190,7 +1236,14 @@ cont_map:
 		}
 		if (rc != 0)
 			GOTO(cleanup, rc);
-
+		/*
+		 * decay extent blocks if we could allocate
+		 * good large(1M) extent.
+		 */
+		if (previous_total == 0 &&
+		    total >= OSD_DEFAULT_EXTENT_BYTES >> inode->i_blkbits)
+			osd_decay_extent_bytes(osd,
+					       total << inode->i_blkbits);
 		/* look for next extent */
 		fp = NULL;
 		blocks += blocks_per_page * clen;
@@ -1262,7 +1315,7 @@ static int osd_write_prep(const struct lu_env *env, struct dt_object *dt,
 
 	if (iobuf->dr_npages) {
 		rc = osd_ldiskfs_map_inode_pages(inode, iobuf, osd, 0,
-						 0, 0);
+						 0, 0, NULL);
 		if (likely(rc == 0)) {
 			rc = osd_do_bio(osd, inode, iobuf, 0, 0);
 			/* do IO stats for preparation reads */
@@ -1349,11 +1402,20 @@ static int osd_declare_write_commit(const struct lu_env *env,
 	struct osd_fextent	mapped = { 0 }, extent = { 0 };
 	enum osd_quota_local_flags local_flags = 0;
 	enum osd_qid_declare_flags declare_flags = OSD_QID_BLK;
+	unsigned int		extent_bytes;
 	ENTRY;
 
 	LASSERT(handle != NULL);
 	oh = container_of(handle, struct osd_thandle, ot_super);
 	LASSERT(oh->ot_handle == NULL);
+
+	/*
+	 * We track a decaying average extent blocks per filesystem,
+	 * for most of time, it will be 1M, with filesystem becoming
+	 * heavily-fragmented, it will be reduced to 4K at the worst.
+	 */
+	extent_bytes = osd_extent_bytes(osd);
+	LASSERT(extent_bytes >= (1 << osd_sb(osd)->s_blocksize));
 
 	/* calculate number of extents (probably better to pass nb) */
 	for (i = 0; i < npages; i++) {
@@ -1373,9 +1435,17 @@ static int osd_declare_write_commit(const struct lu_env *env,
 			continue;
 		}
 
+		if (lnb[i].lnb_flags & OBD_BRW_DONE) {
+			lnb[i].lnb_flags |= OBD_BRW_MAPPED;
+			continue;
+		}
+
 		/* count only unmapped changes */
 		if (lnb[i].lnb_file_offset != extent.end || extent.end == 0) {
-			extents++;
+			if (extent.end != 0)
+				extents += (extent.end - extent.start +
+					extent_bytes - 1) / extent_bytes;
+			extent.start = lnb[i].lnb_file_offset;
 			extent.end = lnb[i].lnb_file_offset + lnb[i].lnb_len;
 		} else {
 			extent.end += lnb[i].lnb_len;
@@ -1391,6 +1461,9 @@ static int osd_declare_write_commit(const struct lu_env *env,
 	 */
 	if (!extent.end)
 		goto out_declare;
+
+	extents += (extent.end - extent.start +
+		    extent_bytes - 1) / extent_bytes;
 
 	dirty_groups = extents;
 	/*
@@ -1413,12 +1486,7 @@ static int osd_declare_write_commit(const struct lu_env *env,
 		credits += depth * extents;
 	}
 
-	/*
-	 * try a bit more extents to avoid restart
-	 * as much as possible in normal case.
-	 */
-	if (npages > 1 && extents)
-		extents <<= 1;
+	oh->oh_declared_ext = extents;
 
 	/* quota space for metadata blocks */
 	quota_space += depth * extents * LDISKFS_BLOCK_SIZE(osd_sb(osd));
@@ -1477,9 +1545,6 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
 	struct inode *inode = osd_dt_obj(dt)->oo_inode;
 	struct osd_device  *osd = osd_obj2dev(osd_dt_obj(dt));
 	int rc = 0, i, check_credits = 0;
-	struct osd_thandle *oh = container_of(thandle,
-					      struct osd_thandle, ot_super);
-	unsigned int save_credits = oh->ot_credits;
 
 	LASSERT(inode);
 
@@ -1507,6 +1572,9 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
 			continue;
 		}
 
+		if (lnb[i].lnb_flags & OBD_BRW_DONE)
+			continue;
+
 		if (!(lnb[i].lnb_flags & OBD_BRW_MAPPED))
 			check_credits = 1;
 
@@ -1532,29 +1600,19 @@ static int osd_write_commit(const struct lu_env *env, struct dt_object *dt,
 	} else if (iobuf->dr_npages > 0) {
 		rc = osd_ldiskfs_map_inode_pages(inode, iobuf, osd,
 						 1, user_size,
-						 check_credits);
-		/*
-		 * Write might restart transaction, extend credits
-		 * if needed for operations such as attribute set.
-		 */
-		if (rc == 0) {
-			handle_t *handle = ldiskfs_journal_current_handle();
-
-			LASSERT(handle != NULL);
-			rc = osd_extend_restart_trans(handle, save_credits,
-						      inode);
-		}
+						 check_credits,
+						 thandle);
 	} else {
 		/* no pages to write, no transno is needed */
 		thandle->th_local = 1;
 	}
 
-	if (rc != 0)
+	if (rc != 0 && !thandle->th_restart_tran)
 		osd_fini_iobuf(osd, iobuf);
 
 	osd_trans_exec_check(env, thandle, OSD_OT_WRITE);
 
-	if (unlikely(rc != 0)) {
+	if (unlikely(rc != 0 && !thandle->th_restart_tran)) {
 		/* if write fails, we should drop pages from the cache */
 		for (i = 0; i < npages; i++) {
 			if (lnb[i].lnb_page == NULL)
@@ -1639,7 +1697,7 @@ static int osd_read_prep(const struct lu_env *env, struct dt_object *dt,
 
 	if (iobuf->dr_npages) {
 		rc = osd_ldiskfs_map_inode_pages(inode, iobuf, osd, 0,
-						 0, 0);
+						 0, 0, NULL);
 		if (!rc)
 			rc = osd_do_bio(osd, inode, iobuf, 0, 0);
 

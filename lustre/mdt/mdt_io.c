@@ -599,7 +599,7 @@ static int mdt_commitrw_write(const struct lu_env *env, struct obd_export *exp,
 	struct thandle *th;
 	int rc = 0;
 	int retries = 0;
-	int i;
+	int i, restart = 0;
 	struct mdt_thread_info *info = mdt_th_info(env);
 	struct range_lock *range = &info->mti_write_range;
 
@@ -663,8 +663,10 @@ retry:
 		GOTO(unlock, rc = 0);
 	}
 	rc = dt_write_commit(env, dob, lnb, niocount, th, oa->o_size);
-	if (rc)
+	if (rc) {
+		restart = th->th_restart_tran;
 		GOTO(unlock, rc);
+	}
 
 	if (la->la_valid) {
 		rc = dt_attr_set(env, dob, la, th);
@@ -688,10 +690,20 @@ out_stop:
 			granted = 0;
 	}
 
-	th->th_result = rc;
+	th->th_result = restart ? 0 : rc;
 	dt_trans_stop(env, dt, th);
 	if (rc == -ENOSPC && retries++ < 3) {
 		CDEBUG(D_INODE, "retry after force commit, retries:%d\n",
+		       retries);
+		goto retry;
+	}
+	if (restart) {
+		retries++;
+		restart = 0;
+		if (retries % 10000 == 0)
+			CERROR("%s: restart IO write too many times: %d\n",
+			       exp->exp_obd->obd_name, retries);
+		CDEBUG(D_INODE, "retry transaction, retries:%d\n",
 		       retries);
 		goto retry;
 	}

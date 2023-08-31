@@ -549,6 +549,10 @@ static inline int ll_vfs_removexattr(struct dentry *dentry, struct inode *inode,
 #define FALLOC_FL_INSERT_RANGE 0x20 /* insert space within file */
 #endif
 
+#ifndef raw_cpu_ptr
+#define raw_cpu_ptr(p) __this_cpu_ptr(p)
+#endif
+
 #ifndef HAVE_IS_ROOT_INODE
 static inline bool is_root_inode(struct inode *inode)
 {
