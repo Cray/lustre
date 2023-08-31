@@ -25,6 +25,9 @@
 
 #include <net/netlink.h>
 #include <net/genetlink.h>
+#if defined(HAVE_SOCKET_SK_SK_REUSEPORT) || defined(HAVE_KERNEL_SETSOCKOPT)
+#include <net/sock.h>
+#endif
 
 #ifndef HAVE_NLA_STRDUP
 char *nla_strdup(const struct nlattr *nla, gfp_t flags);
@@ -116,7 +119,6 @@ static inline void libcfs_set_so_reuseport(struct socket *sock, int option)
 #ifdef HAVE_KERNEL_SETSOCKOPT
 
 #include <net/tcp.h>
-#include <net/sock.h>
 
 #if !defined(HAVE_TCP_SOCK_SET_QUICKACK)
 static inline void tcp_sock_set_quickack(struct sock *sk, int opt)
