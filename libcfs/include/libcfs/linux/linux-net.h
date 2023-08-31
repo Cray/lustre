@@ -26,6 +26,9 @@
 #include <linux/netdevice.h>
 #include <net/netlink.h>
 #include <net/genetlink.h>
+#if defined(HAVE_SOCKET_SK_SK_REUSEPORT) || defined(HAVE_KERNEL_SETSOCKOPT)
+#include <net/sock.h>
+#endif
 
 #ifndef HAVE_NETDEV_CMD_TO_NAME
 static inline const char *netdev_cmd_to_name(unsigned long cmd)
