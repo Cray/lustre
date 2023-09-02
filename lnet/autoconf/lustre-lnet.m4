@@ -584,29 +584,6 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		])
 	])
 
-	# MOFED 5.5 fails with:
-	#   ERROR: "ib_dma_virt_map_sg" [.../ko2iblnd.ko] undefined!
-	# See if we have a broken ib_dma_map_sg()
-	LB_CHECK_COMPILE([if ib_dma_map_sg() is sane],
-	sane_ib_dma_map_sg, [
-		#ifdef HAVE_COMPAT_RDMA
-		#undef PACKAGE_NAME
-		#undef PACKAGE_TARNAME
-		#undef PACKAGE_VERSION
-		#undef PACKAGE_STRING
-		#undef PACKAGE_BUGREPORT
-		#undef PACKAGE_URL
-		#include <linux/compat-2.6.h>
-		#endif
-		#include <rdma/ib_verbs.h>
-	],[
-		ib_dma_map_sg((struct ib_device *)NULL,
-			      (struct scatterlist *)NULL, 1, 0);
-	],[
-		AC_DEFINE(HAVE_SANE_IB_DMA_MAP_SG, 1,
-			[ib_dma_map_sg is sane])
-	])
-
 	# In MOFED 4.6, the second and third parameters for
 	# ib_post_send() and ib_post_recv() are declared with
 	# 'const'.
@@ -633,6 +610,34 @@ AS_IF([test $ENABLEO2IB != "no"], [
 			AC_DEFINE(HAVE_IB_POST_SEND_RECV_CONST, 1,
 				[ib_post_send and ib_post_recv have const parameters])
 		])
+	])
+
+	# MOFED 5.5 fails with:
+	#   ERROR: "ib_dma_virt_map_sg" [.../ko2iblnd.ko] undefined!
+	# See if we have a broken ib_dma_map_sg()
+	AC_DEFUN([LN_SRC_SANE_IB_DMA_MAP_SG], [
+		LB2_LINUX_TEST_SRC([sane_ib_dma_map_sg], [
+			#ifdef HAVE_COMPAT_RDMA
+			#undef PACKAGE_NAME
+			#undef PACKAGE_TARNAME
+			#undef PACKAGE_VERSION
+			#undef PACKAGE_STRING
+			#undef PACKAGE_BUGREPORT
+			#undef PACKAGE_URL
+			#include <linux/compat-2.6.h>
+			#endif
+			#include <rdma/ib_verbs.h>
+		],[
+			ib_dma_map_sg((struct ib_device *)NULL,
+				      (struct scatterlist *)NULL, 1, 0);
+		],[-Werror],[$EXTRA_OFED_CONFIG $EXTRA_OFED_INCLUDE])
+	])
+	AC_DEFUN([LN_SANE_IB_DMA_MAP_SG], [
+		AC_MSG_CHECKING([if ib_dma_map_sg() is sane])
+		LB2_LINUX_TEST_RESULT([sane_ib_dma_map_sg], [
+			AC_DEFINE(HAVE_SANE_IB_DMA_MAP_SG, 1,
+				[ib_dma_map_sg is sane])
+		],[],[module])
 	])
 
 	#
@@ -793,6 +798,7 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		LN_SRC_O2IB_IB_ALLOC_PD
 		LN_SRC_O2IB_IB_INC_RKEY
 		LN_SRC_O2IB_IB_POST_SEND_CONST
+		LN_SRC_SANE_IB_DMA_MAP_SG
 		LN_SRC_O2IB_IB_DEVICE_OPS_EXISTS
 		LN_SRC_O2IB_IB_SG_DMA_ADDRESS_EXISTS
 		LN_SRC_O2IB_RDMA_REJECT
@@ -813,6 +819,7 @@ AS_IF([test $ENABLEO2IB != "no"], [
 		LN_O2IB_IB_ALLOC_PD
 		LN_O2IB_IB_INC_RKEY
 		LN_O2IB_IB_POST_SEND_CONST
+		LN_SANE_IB_DMA_MAP_SG
 		LN_O2IB_IB_DEVICE_OPS_EXISTS
 		LN_O2IB_IB_SG_DMA_ADDRESS_EXISTS
 		LN_O2IB_RDMA_REJECT
