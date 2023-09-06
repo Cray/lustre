@@ -26956,6 +26956,25 @@ test_430c() {
 }
 run_test 430c "lseek: external tools check"
 
+test_431() { # LU-14187
+	local file=$DIR/$tdir/$tfile
+
+	mkdir -p $DIR/$tdir
+	$LFS setstripe -c 1 -i 0 $file || error "lfs setstripe failed"
+	dd if=/dev/urandom of=$file bs=4k count=1
+	dd if=/dev/urandom of=$file bs=4k count=1 seek=10 conv=notrunc
+	dd if=/dev/urandom of=$file bs=4k count=1 seek=12 conv=notrunc
+	#define OBD_FAIL_OST_RESTART_IO	0x251
+	do_facet ost1 "$LCTL set_param fail_loc=0x251"
+	$LFS setstripe -c 1 -i 0 $file.0 || error "lfs setstripe failed"
+	cp $file $file.0
+	cancel_lru_locks
+	sync_all_data
+	echo 3 > /proc/sys/vm/drop_caches
+	diff  $file $file.0 || error "data diff"
+}
+run_test 431 "Restart transaction for IO"
+
 cleanup_test_432() {
 	do_facet mgs $LCTL nodemap_activate 0
 	wait_nm_sync active
