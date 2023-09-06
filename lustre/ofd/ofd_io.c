@@ -1324,14 +1324,6 @@ retry:
 	if (!ofd_object_exists(fo))
 		GOTO(out_unlock, rc = -ENOENT);
 
-	if (likely(!fake_write)) {
-		OBD_FAIL_TIMEOUT_ORSET(OBD_FAIL_OST_WR_ATTR_DELAY,
-				       OBD_FAIL_ONCE, cfs_fail_val);
-		rc = dt_write_commit(env, o, lnb, niocount, th, oa->o_size);
-		if (rc)
-			GOTO(out_unlock, rc);
-	}
-
 	/* Don't update timestamps if this write is older than a
 	 * setattr which modifies the timestamps. b=10150 */
 	if (la->la_valid && tgt_fmd_check(exp, fid, info->fti_xid)) {
@@ -1340,6 +1332,14 @@ retry:
 			GOTO(out_unlock, rc);
 		if (la->la_valid & LA_ATIME)
 			fo->ofo_atime_ondisk = la->la_atime;
+	}
+
+	if (likely(!fake_write)) {
+		OBD_FAIL_TIMEOUT_ORSET(OBD_FAIL_OST_WR_ATTR_DELAY,
+				       OBD_FAIL_ONCE, cfs_fail_val);
+		rc = dt_write_commit(env, o, lnb, niocount, th, oa->o_size);
+		if (rc)
+			GOTO(out_unlock, rc);
 	}
 
 	/* get attr to return */
