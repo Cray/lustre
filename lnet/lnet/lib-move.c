@@ -2189,7 +2189,7 @@ lnet_handle_find_routed_path(struct lnet_send_data *sd,
 			     struct lnet_peer_ni **gw_lpni,
 			     struct lnet_peer **gw_peer)
 {
-	int rc;
+	int rc = 0;
 	struct lnet_peer *gw;
 	struct lnet_peer *lp;
 	struct lnet_peer_net *lpn;
@@ -2200,6 +2200,7 @@ lnet_handle_find_routed_path(struct lnet_send_data *sd,
 	struct lnet_peer_ni *lpni = NULL;
 	struct lnet_peer_ni *gwni = NULL;
 	bool route_found = false;
+	bool gwni_decref = false;
 	struct lnet_nid *src_nid =
 		!LNET_NID_IS_ANY(&sd->sd_src_nid) || !sd->sd_best_ni
 		? &sd->sd_src_nid
@@ -2219,8 +2220,8 @@ lnet_handle_find_routed_path(struct lnet_send_data *sd,
 	if (!LNET_NID_IS_ANY(&sd->sd_rtr_nid)) {
 		gwni = lnet_peer_ni_find_locked(&sd->sd_rtr_nid);
 		if (gwni) {
+			gwni_decref = true;
 			gw = gwni->lpni_peer_net->lpn_peer;
-			lnet_peer_ni_decref_locked(gwni);
 			if (gw->lp_rtr_refcount)
 				route_found = true;
 		} else {
@@ -2244,7 +2245,8 @@ lnet_handle_find_routed_path(struct lnet_send_data *sd,
 						"any local NI" :
 						libcfs_nidstr(src_nid),
 				       libcfs_nidstr(&sd->sd_dst_nid));
-				return -EHOSTUNREACH;
+				rc = -EHOSTUNREACH;
+				goto out;
 			}
 			CDEBUG(D_NET, "best_rnet %s\n",
 			       libcfs_net2str(best_rnet->lrn_net));
@@ -2300,7 +2302,8 @@ use_lpn:
 			if (!best_lpn) {
 				CERROR("peer %s has no available nets\n",
 				       libcfs_nidstr(&sd->sd_dst_nid));
-				return -EHOSTUNREACH;
+				rc =  -EHOSTUNREACH;
+				goto out;
 			}
 
 			CDEBUG(D_NET, "selected best_lpn %s\n",
@@ -2313,7 +2316,8 @@ use_lpn:
 			if (!sd->sd_best_lpni) {
 				CERROR("peer %s is unreachable\n",
 				       libcfs_nidstr(&sd->sd_dst_nid));
-				return -EHOSTUNREACH;
+				rc = -EHOSTUNREACH;
+				goto out;
 			}
 
 			/* We're attempting to round robin over the remote peer
@@ -2339,14 +2343,16 @@ use_lpn:
 			CERROR("no route to %s from %s\n",
 			       libcfs_nidstr(dst_nid),
 			       libcfs_nidstr(src_nid));
-			return -EHOSTUNREACH;
+			rc = -EHOSTUNREACH;
+			goto out;
 		}
 
 		if (!gwni) {
 			CERROR("Internal Error. Route expected to %s from %s\n",
 			       libcfs_nidstr(dst_nid),
 			       libcfs_nidstr(src_nid));
-			return -EFAULT;
+			rc = -EFAULT;
+			goto out;
 		}
 
 		gw = best_route->lr_gateway;
@@ -2369,7 +2375,7 @@ use_lpn:
 	if (alive_router_check_interval <= 0) {
 		rc = lnet_initiate_peer_discovery(gwni, sd->sd_msg, sd->sd_cpt);
 		if (rc)
-			return rc;
+			goto out;
 	}
 
 	if (!sd->sd_best_ni) {
@@ -2381,7 +2387,8 @@ use_lpn:
 			CERROR("Internal Error. Expected local ni on %s but non found: %s\n",
 			       libcfs_net2str(lpn->lpn_net_id),
 			       libcfs_nidstr(&sd->sd_src_nid));
-			return -EFAULT;
+			rc = -EFAULT;
+			goto out;
 		}
 	}
 
@@ -2397,7 +2404,11 @@ use_lpn:
 		best_route->lr_seq = last_route->lr_seq + 1;
 	}
 
-	return 0;
+out:
+	if (gwni_decref && gwni)
+		lnet_peer_ni_decref_locked(gwni);
+
+	return rc;
 }
 
 /*
@@ -3058,7 +3069,6 @@ again:
 		lnet_net_unlock(cpt);
 		return rc;
 	}
-	lnet_peer_ni_decref_locked(lpni);
 
 	peer = lpni->lpni_peer_net->lpn_peer;
 
@@ -3158,6 +3168,7 @@ again:
 	 * updated as a result of calling lnet_handle_send_case_locked().
 	 */
 	cpt = send_data.sd_cpt;
+	lnet_peer_ni_decref_locked(lpni);
 
 	if (rc == REPEAT_SEND)
 		goto again;
