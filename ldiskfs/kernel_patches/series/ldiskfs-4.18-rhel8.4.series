@@ -31,6 +31,7 @@ base/ext4-projid-xattrs.patch
 rhel8.4/ext4-enc-flag.patch
 base/ext4-delayed-iput.patch
 rhel8.4/ext4-mballoc-prefer_fast_tracks.patch
+rhel8/ext4-add-periodic-superblock-update.patch
 rhel8/ext4-old_ea_inodes_handling_fix.patch
 rhel8.4/ext4-optimize-ext4_find_delalloc_range-in-nodelalloc.patch
 rhel8.5/ext4-filename-encode.patch
