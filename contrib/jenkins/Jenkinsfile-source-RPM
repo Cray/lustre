@@ -1,0 +1,71 @@
+// Copyright 2023 Hewlett Packard Enterprise Development LP
+
+@Library('dst-shared@master') _
+
+pipeline {
+    agent {
+        node { label 'Lustre_Client_nodes' }
+    }
+
+    environment {
+        // Needed by signArtifacts for correct location of buildlog.logs in Artifactory:
+        PRODUCT = "neo"
+        BRANCH_NAME = "release"
+        TARGET_OS = "hpc-lus-filesystem"
+        TARGET_ARCH = "noarch"
+    }
+
+    options {
+        // Don't fill up the build server with unnecessary cruft
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+    }
+
+    stages {
+        stage('Build RPMs') {
+            steps {
+                sh "umask 022"
+                sh "/bin/bash -x contrib/jenkins/build-source-RPM.sh"
+            }
+        }
+
+        stage('Scan/Sign RPMs') {
+            steps {
+                signArtifacts([artifacts: 'rpmbuild/'])
+            }
+        }
+
+        stage('Store Zip') {
+            steps {
+                sh "umask 022"
+                sh "contrib/jenkins/zip-source-RPM.sh"
+            }
+        }
+    }
+    post {
+        success {
+            script {
+                if ( checkFileExists(filePath: 'lustre*.zip') ) {
+                    archiveArtifacts artifacts: 'lustre*.zip', fingerprint: false
+                } else {
+                    println "lustre source zip not found"
+                }
+            }
+        }
+        failure {
+            emailext body: "See ${env.BUILD_URL}",
+                     to: "${env.RE_Alert}",
+                     from: "${env.GP_MAILTARGET}",
+                     subject: "Build failed in CI: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+        }
+        changed {
+            script {
+                if (currentBuild.currentResult == 'SUCCESS') {
+                    emailext body: "See ${env.BUILD_URL}",
+                             to: "${env.RE_Alert}",
+                             from: "${env.GP_MAILTARGET}",
+                             subject: "Jenkins build is back to normal : ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+                }
+            }
+        }
+    }
+}
