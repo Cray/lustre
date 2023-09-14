@@ -1644,7 +1644,7 @@ static u64 fiemap_calc_fm_end_offset(struct fiemap *fiemap,
 				     int *start_stripe)
 {
 	struct lov_stripe_md_entry *lsme = lsm->lsm_entries[index];
-	u64 local_end = fiemap->fm_extents[0].fe_logical;
+	u64 local_end;
 	u64 lun_end;
 	u64 fm_end_offset;
 	int stripe_no = -1;
@@ -1652,6 +1652,8 @@ static u64 fiemap_calc_fm_end_offset(struct fiemap *fiemap,
 	if (fiemap->fm_extent_count == 0 ||
 	    fiemap->fm_extents[0].fe_logical == 0)
 		return 0;
+
+	local_end = fiemap->fm_extents[0].fe_logical;
 
 	stripe_no = *start_stripe;
 
@@ -2129,7 +2131,7 @@ finish:
 		cur_ext = 0;
 
 	/* done all the processing */
-	if (entry > end_entry)
+	if (fiemap->fm_extent_count && entry > end_entry)
 		fiemap->fm_extents[cur_ext].fe_flags |= FIEMAP_EXTENT_LAST;
 
 	/* Indicate that we are returning device offsets unless file just has
