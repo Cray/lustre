@@ -16,8 +16,10 @@ case $1 in
 	name=$1
 	kmoddir=$8
 	flavor=$(echo $3 | tr '-' '\n' | tail -1)
-	if [ -L /usr/src/kfabric ]; then
+	if [ -d /usr/src/kfabric/${flavor} ]; then
 		KERNEL_STUFF="${KERNEL_STUFF} --with-kfi=/usr/src/kfabric/${flavor}"
+	elif [ -d /usr/src/kfabric/default ]; then
+		KERNEL_STUFF="${KERNEL_STUFF} --with-kfi=/usr/src/kfabric/default"
 	fi
 	if [ -d /usr/src/ofa_kernel/${flavor} ]; then
 		O2IBPATH=/usr/src/ofa_kernel/${flavor}
