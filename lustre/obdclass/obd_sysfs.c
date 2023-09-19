@@ -410,20 +410,6 @@ EXPORT_SYMBOL_GPL(debugfs_lustre_root);
 /* Root for /proc/fs/lustre */
 struct proc_dir_entry *proc_lustre_root;
 EXPORT_SYMBOL(proc_lustre_root);
-
-/* /proc/fs/lustre/version */
-static int obd_proc_version_seq_show(struct seq_file *m, void *v)
-{
-	seq_printf(m, "lustre: %s\n", LUSTRE_VERSION_STRING);
-	return 0;
-}
-LPROC_SEQ_FOPS_RO(obd_proc_version);
-
-static struct lprocfs_vars lprocfs_base[] = {
-	{ .name =	"version",
-	  .fops	=	&obd_proc_version_fops	},
-	{ NULL }
-};
 #else
 #define lprocfs_base NULL
 #endif /* CONFIG_PROC_FS */
@@ -695,7 +681,7 @@ int class_procfs_init(void)
 	file = debugfs_create_file("checksum_speed", 0444, debugfs_lustre_root,
 				   NULL, &checksum_speed_fops);
 
-	entry = lprocfs_register("fs/lustre", NULL, lprocfs_base, NULL);
+	entry = lprocfs_register("fs/lustre", NULL, NULL, NULL);
 	if (IS_ERR(entry)) {
 		rc = PTR_ERR(entry);
 		CERROR("cannot create '/proc/fs/lustre': rc = %d\n", rc);
