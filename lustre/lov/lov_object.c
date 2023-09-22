@@ -2115,7 +2115,8 @@ finish:
 		cur_ext = 0;
 
 	/* done all the processing */
-	if (fiemap->fm_extent_count && entry > end_entry)
+	if (fiemap->fm_extent_count && (entry > end_entry ||
+	   (fs.fs_enough && fs.fs_finish_stripe && entry == end_entry)))
 		fiemap->fm_extents[cur_ext].fe_flags |= FIEMAP_EXTENT_LAST;
 
 	/* Indicate that we are returning device offsets unless file just has
