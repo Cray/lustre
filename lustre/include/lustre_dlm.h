@@ -50,6 +50,10 @@
 #include <interval_tree.h> /* for interval_node{}, ldlm_extent */
 #include <lu_ref.h>
 
+#ifdef HAVE_LINUX_FILELOCK_HEADER
+#include <linux/filelock.h>
+#endif
+
 #include "lustre_dlm_flags.h"
 
 struct obd_ops;
