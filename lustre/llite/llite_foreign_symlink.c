@@ -801,9 +801,10 @@ failed:
 
 /* foreign fake-symlink version of ll_getattr() */
 #if defined(HAVE_USER_NAMESPACE_ARG)
-int ll_foreign_symlink_getattr(struct user_namespace *mnt_userns,
-			       const struct path *path, struct kstat *stat,
-			       u32 request_mask, unsigned int flags)
+static int ll_foreign_symlink_getattr(struct mnt_idmap *map,
+				      const struct path *path,
+				      struct kstat *stat, u32 request_mask,
+				      unsigned int flags)
 {
 	return ll_getattr_dentry(path->dentry, stat, request_mask, flags,
 				 true);
