@@ -48,7 +48,7 @@ BuildRequires: redhat-rpm-config
 Requires: (cray-kfabric-kmp or cray-kfabric-dkms)
 %endif
 
-Requires: %{requires_kmod_name} = %{requires_kmod_version}
+Requires: (%{requires_kmod_name} = %{requires_kmod_version} or cray-lustre-client-dkms)
 
 # Disable post-build-checks; See LUS-1345
 # Note: build checks can be run manually by first doing an incremental build
@@ -64,7 +64,7 @@ kkfilnd compiled against: cray-kfabric-devel-%{kfabric_version} or cray-kfabric-
 %package devel
 Group: Development/Libraries
 Requires: %{lustre_name} = %{version}
-Requires: %{requires_kmod_name} = %{requires_kmod_version}
+Requires: (%{requires_kmod_name} = %{requires_kmod_version} or cray-lustre-client-dkms)
 License: GPL
 Summary: Cray Lustre Header files
 
