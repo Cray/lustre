@@ -36,7 +36,7 @@ pipeline {
 
         stage('Scan/Sign RPMs') {
             steps {
-                signArtifacts([artifacts: 'rpmbuild/'])
+                println "SKIP code-signing for Integration RPMs"
             }
         }
 
