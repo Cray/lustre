@@ -184,8 +184,8 @@ struct ll_inode_info {
 			unsigned short			lli_sa_enabled:1;
 			/* generation for statahead */
 			unsigned int			lli_sa_generation;
-			/* rw lock protects lli_lsm_md */
-			struct rw_semaphore		lli_lsm_sem;
+			/* mutex to protect pointers to lsm objects */
+			struct rw_semaphore             lli_lsm_sem;
 			/* directory stripe information */
 			struct lmv_stripe_object	*lli_lsm_obj;
 			/* directory default LMV */
