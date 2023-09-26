@@ -1,0 +1,62 @@
+Index: linux-stage/fs/ext4/ext4.h
+===================================================================
+--- linux-stage.orig/fs/ext4/ext4.h
++++ linux-stage/fs/ext4/ext4.h
+@@ -1496,6 +1496,9 @@ struct ext4_sb_info {
+ 	unsigned int s_mb_klta_rate;
+ 	unsigned int s_mb_klta_start;
+ 
++	/* reset mb_last_group on block range freeing */
++       	unsigned int s_mb_reset_last_group;
++
+ 	/* stats for buddy allocator */
+ 	atomic_t s_bal_reqs;	/* number of reqs with len > 1 */
+ 	atomic_t s_bal_success;	/* we found long enough chunks */
+Index: linux-stage/fs/ext4/mballoc.c
+===================================================================
+--- linux-stage.orig/fs/ext4/mballoc.c
++++ linux-stage/fs/ext4/mballoc.c
+@@ -1427,6 +1427,7 @@ static void mb_free_blocks(struct inode
+ 	int block;
+ 	int last = first + count - 1;
+ 	struct super_block *sb = e4b->bd_sb;
++	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 
+ 	if (WARN_ON(count == 0))
+ 		return;
+@@ -1436,6 +1437,15 @@ static void mb_free_blocks(struct inode
+ 	if (unlikely(EXT4_MB_GRP_BBITMAP_CORRUPT(e4b->bd_info)))
+ 		return;
+ 
++	if (sbi->s_mb_reset_last_group && count >= sbi->s_mb_reset_last_group) {
++		spin_lock(&sbi->s_md_lock);
++		if (e4b->bd_group < sbi->s_mb_last_group) {
++			sbi->s_mb_last_group = e4b->bd_group;
++			sbi->s_mb_last_start = 0;
++		}
++                spin_unlock(&sbi->s_md_lock);
++	}
++
+ 	mb_check_buddy(e4b);
+ 	mb_free_blocks_double(inode, e4b, first, count);
+ 
+Index: linux-stage/fs/ext4/sysfs.c
+===================================================================
+--- linux-stage.orig/fs/ext4/sysfs.c
++++ linux-stage/fs/ext4/sysfs.c
+@@ -267,6 +267,7 @@ EXT4_ATTR(last_error_time, 0444, last_er
+ EXT4_ATTR(journal_task, 0444, journal_task);
+ EXT4_RW_ATTR_SBI_UI(mb_prefetch, s_mb_prefetch);
+ EXT4_RW_ATTR_SBI_UI(mb_prefetch_limit, s_mb_prefetch_limit);
++EXT4_RW_ATTR_SBI_UI(mb_reset_last_group, s_mb_reset_last_group);
+ 
+ static unsigned int old_bump_val = 128;
+ EXT4_ATTR_PTR(max_writeback_mb_bump, 0444, pointer_ui, &old_bump_val);
+@@ -308,6 +309,7 @@ static struct attribute *ext4_attrs[] =
+ 	ATTR_LIST(journal_task),
+ 	ATTR_LIST(mb_prefetch),
+ 	ATTR_LIST(mb_prefetch_limit),
++	ATTR_LIST(mb_reset_last_group),
+ 	NULL,
+ };
+ 
