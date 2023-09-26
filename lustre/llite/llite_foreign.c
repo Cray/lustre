@@ -115,16 +115,17 @@ int ll_manage_foreign(struct inode *inode, struct lustre_md *lmd)
 			cl_env_put(env, &refcheck);
 		}
 	} else if (S_ISDIR((inode)->i_mode)) {
-		if (lmv_dir_foreign(lmd->lsm_obj)) {
-			ll_manage_foreign_dir(inode, &lmd->lsm_obj->lso_lfm);
+		if (lmd->lfm != NULL &&
+		    lmd->lfm->lfm_magic == LMV_MAGIC_FOREIGN) {
+			ll_manage_foreign_dir(inode, lmd->lfm);
 		} else {
 			struct ll_inode_info *lli = ll_i2info(inode);
-			struct lmv_stripe_object *lsm_obj;
+			struct lmv_foreign_md *lfm;
 
 			down_read(&lli->lli_lsm_sem);
-			lsm_obj = lli->lli_lsm_obj;
-			if (lmv_dir_foreign(lsm_obj))
-				ll_manage_foreign_dir(inode, &lsm_obj->lso_lfm);
+			lfm = (struct lmv_foreign_md *)(lli->lli_lsm_md);
+			if (lfm &&  lfm->lfm_magic == LMV_MAGIC_FOREIGN)
+				ll_manage_foreign_dir(inode, lfm);
 			up_read(&lli->lli_lsm_sem);
 		}
 	}
@@ -252,19 +253,18 @@ bool ll_foreign_is_removable(struct dentry *dentry, bool unset)
 		}
 	} else if (S_ISDIR(inode->i_mode)) {
 		struct ll_inode_info *lli = ll_i2info(inode);
-		struct lmv_stripe_object *lsm_obj;
+		struct lmv_foreign_md *lfm;
 
 		down_read(&lli->lli_lsm_sem);
-		lsm_obj = lli->lli_lsm_obj;
-		if (!lsm_obj)
+		lfm = (struct lmv_foreign_md *)(lli->lli_lsm_md);
+		if (!lfm)
 			CDEBUG(D_INFO,
 			       "unable to check if dir (%.*s, "DFID") is foreign...\n",
 			       name->len, name->name,
 			       PFID(ll_inode2fid(inode)));
-		else if (lmv_dir_foreign(lsm_obj))
-			preserve_foreign =
-				should_preserve_foreign_dir(&lsm_obj->lso_lfm,
-							    lli, unset);
+		else if (lfm->lfm_magic == LMV_MAGIC_FOREIGN)
+			preserve_foreign = should_preserve_foreign_dir(lfm, lli,
+								       unset);
 		up_read(&lli->lli_lsm_sem);
 		if (preserve_foreign) {
 			CDEBUG(D_INFO,
