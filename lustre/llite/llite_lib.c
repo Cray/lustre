@@ -1855,7 +1855,6 @@ static int ll_md_setattr(struct dentry *dentry, struct md_op_data *op_data)
 
 	rc = ll_update_inode(inode, &md);
 	ptlrpc_req_finished(request);
-	md_put_lustre_md(sbi->ll_md_exp, &md);
 
 	RETURN(rc);
 }
