@@ -57,6 +57,20 @@ DEST_MODULE_LOCATION[\${#DEST_MODULE_LOCATION[@]}]="/${kmoddir}/lnet/"
 BUILT_MODULE_NAME[\${#BUILT_MODULE_NAME[@]}]="ksocklnd"
 BUILT_MODULE_LOCATION[\${#BUILT_MODULE_LOCATION[@]}]="lnet/klnds/socklnd/"
 DEST_MODULE_LOCATION[\${#DEST_MODULE_LOCATION[@]}]="/${kmoddir}/lnet/"
+# Duplicate logic from PRE_BUILD script for kfi driver
+flavor=\$(echo \$kernelver | tr '-' '\n' | tail -1)
+if [ -d /usr/src/kfabric/\${flavor} -o /usr/src/kfabric/default ] ; then
+	BUILT_MODULE_NAME[\${#BUILT_MODULE_NAME[@]}]="kkfilnd"
+	BUILT_MODULE_LOCATION[\${#BUILT_MODULE_LOCATION[@]}]="lnet/klnds/kfilnd/"
+	DEST_MODULE_LOCATION[\${#DEST_MODULE_LOCATION[@]}]="/${kmoddir}/lnet/"
+fi
+# Guessing if gni packages are installed
+pkg-config --cflags cray-gni cray-gni-headers cray-krca lsb-cray-hss > /dev/null 2>&1
+if [ \$? -eq 0 ] ; then
+	BUILT_MODULE_NAME[\${#BUILT_MODULE_NAME[@]}]="kgnilnd"
+	BUILT_MODULE_LOCATION[\${#BUILT_MODULE_LOCATION[@]}]="lnet/klnds/gnilnd/"
+	DEST_MODULE_LOCATION[\${#DEST_MODULE_LOCATION[@]}]="/${kmoddir}/lnet/"
+fi
 BUILT_MODULE_NAME[\${#BUILT_MODULE_NAME[@]}]="ko2iblnd"
 BUILT_MODULE_LOCATION[\${#BUILT_MODULE_LOCATION[@]}]="lnet/klnds/o2iblnd/"
 DEST_MODULE_LOCATION[\${#DEST_MODULE_LOCATION[@]}]="/${kmoddir}/lnet/"
