@@ -1482,6 +1482,19 @@ test_21() {
 }
 run_test 21 "don't hang MDS recovery when failed to get update log"
 
+test_22() {
+	#define OBD_FAIL_OSD_SCRUB_DELAY	 0x190
+	do_nodes $(comma_list $(mdts_nodes)) \
+		$LCTL set_param fail_val=10 fail_loc=0x190
+
+	do_facet mds1 $LCTL lfsck_start -M $(facet_svc mds1) &
+	local pid=$!
+	sleep 1
+	echo "lfsck_start pid: $pid ... running stop:"
+	do_facet mds1 $LCTL lfsck_stop -M $(facet_svc mds1)
+	wait $pid
+}
+run_test 22 "lfsck stop does not hit deadlock"
 
 # restore MDS/OST size
 MDSSIZE=${SAVED_MDSSIZE}
