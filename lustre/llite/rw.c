@@ -685,6 +685,10 @@ static void ll_readahead_handle_work(struct work_struct *wq)
 	vvp_env_io(env)->vui_fd = lfd;
 	io->ci_state = CIS_LOCKED;
 	io->ci_async_readahead = true;
+
+	/* need to do this as cl_io_lock()->vvp_io_rw_lock() is missing */
+	trunc_sem_down_read(&lli->lli_trunc_sem);
+
 	rc = cl_io_start(env, io);
 	if (rc)
 		GOTO(out_io_fini, rc);
@@ -718,6 +722,7 @@ static void ll_readahead_handle_work(struct work_struct *wq)
 	cl_2queue_fini(env, queue);
 out_io_fini:
 	cl_io_end(env, io);
+	trunc_sem_up_read(&lli->lli_trunc_sem);
 	cl_io_fini(env, io);
 out_put_env:
 	cl_env_put(env, &refcheck);
