@@ -59,7 +59,7 @@ BUILT_MODULE_LOCATION[\${#BUILT_MODULE_LOCATION[@]}]="lnet/klnds/socklnd/"
 DEST_MODULE_LOCATION[\${#DEST_MODULE_LOCATION[@]}]="/${kmoddir}/lnet/"
 # Duplicate logic from PRE_BUILD script for kfi driver
 flavor=\$(echo \$kernelver | tr '-' '\n' | tail -1)
-if [ -d /usr/src/kfabric/\${flavor} -o /usr/src/kfabric/default ] ; then
+if [ -f /usr/src/kfabric/\${flavor}/Module.symvers -o -f /usr/src/kfabric/default/Module.symvers ] ; then
 	BUILT_MODULE_NAME[\${#BUILT_MODULE_NAME[@]}]="kkfilnd"
 	BUILT_MODULE_LOCATION[\${#BUILT_MODULE_LOCATION[@]}]="lnet/klnds/kfilnd/"
 	DEST_MODULE_LOCATION[\${#DEST_MODULE_LOCATION[@]}]="/${kmoddir}/lnet/"
