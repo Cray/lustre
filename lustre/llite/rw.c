@@ -582,6 +582,7 @@ static void ll_readahead_handle_work(struct work_struct *wq)
 	int rc;
 	pgoff_t eof_index;
 	struct ll_sb_info *sbi;
+	struct ll_inode_info *lli;
 
 	work = container_of(wq, struct ll_readahead_work,
 			    lrw_readahead_work);
@@ -649,14 +650,18 @@ static void ll_readahead_handle_work(struct work_struct *wq)
 		GOTO(out_put_env, rc);
 
 	/* overwrite jobid inited in vvp_io_init() */
-	if (strncmp(ll_i2info(inode)->lli_jobid, work->lrw_jobid,
-		    sizeof(work->lrw_jobid)))
-		memcpy(ll_i2info(inode)->lli_jobid, work->lrw_jobid,
+	lli = ll_i2info(inode);
+	if (strncmp(lli->lli_jobid, work->lrw_jobid, sizeof(work->lrw_jobid)))
+		memcpy(lli->lli_jobid, work->lrw_jobid,
 		       sizeof(work->lrw_jobid));
 
 	vvp_env_io(env)->vui_fd = fd;
 	io->ci_state = CIS_LOCKED;
 	io->ci_async_readahead = true;
+
+	/* need to do this as cl_io_lock()->vvp_io_rw_lock() is missing */
+	trunc_sem_down_read(&lli->lli_trunc_sem);
+
 	rc = cl_io_start(env, io);
 	if (rc)
 		GOTO(out_io_fini, rc);
@@ -690,6 +695,7 @@ static void ll_readahead_handle_work(struct work_struct *wq)
 	cl_2queue_fini(env, queue);
 out_io_fini:
 	cl_io_end(env, io);
+	trunc_sem_up_read(&lli->lli_trunc_sem);
 	cl_io_fini(env, io);
 out_put_env:
 	cl_env_put(env, &refcheck);
