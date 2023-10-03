@@ -16,9 +16,9 @@ case $1 in
 	name=$1
 	kmoddir=$8
 	flavor=$(echo $3 | tr '-' '\n' | tail -1)
-	if [ -d /usr/src/kfabric/${flavor} ]; then
+	if [ -f /usr/src/kfabric/${flavor}/Module.symvers ]; then
 		KERNEL_STUFF="${KERNEL_STUFF} --with-kfi=/usr/src/kfabric/${flavor}"
-	elif [ -d /usr/src/kfabric/default ]; then
+	elif [ -f /usr/src/kfabric/default/Module.symvers ]; then
 		KERNEL_STUFF="${KERNEL_STUFF} --with-kfi=/usr/src/kfabric/default"
 	fi
 	if [ -d /usr/src/ofa_kernel/${flavor} ]; then

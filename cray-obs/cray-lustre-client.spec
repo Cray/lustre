@@ -61,7 +61,7 @@ Requires: (mlnx-ofa_kernel-kmp or mlnx-ofa_kernel-dkms)
 %define mkconf_options -k updates
 %endif
 
-Requires: %{requires_kmod_name} = %{requires_kmod_version}
+Requires: (%{requires_kmod_name} = %{requires_kmod_version} or cray-lustre-client-dkms)
 
 # Disable post-build-checks; See LUS-1345
 # Note: build checks can be run manually by first doing an incremental build
@@ -78,7 +78,7 @@ ko2iblnd compiled against: mlnx-ofa_kernel-devel-%{mofed_version}
 %package devel
 Group: Development/Libraries
 Requires: %{lustre_name} = %{version}
-Requires: %{requires_kmod_name} = %{requires_kmod_version}
+Requires: (%{requires_kmod_name} = %{requires_kmod_version} or cray-lustre-client-dkms)
 License: GPL
 Summary: Cray Lustre Header files
 
