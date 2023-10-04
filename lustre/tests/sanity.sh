@@ -10141,6 +10141,11 @@ test_77l() {
 	set_checksums 1
 	stack_trap "set_checksums $ORIG_CSUM" EXIT
 	stack_trap "set_checksum_type $ORIG_CSUM_TYPE" EXIT
+	local old
+
+	old=$($LCTL get_param -n osc.*.idle_timeout | head -n 1)
+	$LCTL set_param osc.*.idle_timeout=10
+	stack_trap "$LCTL set_param osc.*.idle_timeout=$old" EXIT
 
 	set_checksum_type invalid && error "unexpected success of invalid checksum type"
 
