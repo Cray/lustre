@@ -2823,10 +2823,36 @@ void ll_truncate_inode_pages_final(struct inode *inode)
 		ll_xa_unlock_irqrestore(&mapping->i_pages, flags);
 	} /* Workaround end */
 
-	LASSERTF(nrpages == 0, "%s: inode="DFID"(%p) nrpages=%lu, "
-		 "see https://jira.whamcloud.com/browse/LU-118\n",
-		 ll_i2sbi(inode)->ll_fsname,
-		 PFID(ll_inode2fid(inode)), inode, nrpages);
+	if (nrpages) {
+#ifdef HAVE_XARRAY_SUPPORT
+		XA_STATE(xas, &mapping->i_pages, 0);
+		struct page *page;
+#endif
+		CWARN("%s: inode="DFID"(%p) nrpages=%lu, "
+		      "see https://jira.whamcloud.com/browse/LU-118\n",
+		      ll_i2sbi(inode)->ll_fsname,
+		      PFID(ll_inode2fid(inode)), inode, nrpages);
+#ifdef HAVE_XARRAY_SUPPORT
+		rcu_read_lock();
+		xas_for_each(&xas, page, ULONG_MAX) {
+			if (xas_retry(&xas, page))
+				continue;
+
+			if (xa_is_value(page))
+				continue;
+
+			/*
+			 * We can only have non-uptodate pages
+			 * without internal state at this point
+			 */
+			LASSERTF(!PageUptodate(page) &&
+				 !PageDirty(page) &&
+				 !PagePrivate(page),
+				 "%p", page);
+		}
+		rcu_read_unlock();
+#endif
+	}
 }
 
 int ll_read_inode2(struct inode *inode, void *opaque)
