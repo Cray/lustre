@@ -95,7 +95,7 @@ if (( $(egrep -cw "^bin|^daemon" /etc/passwd) < 2 )); then
 fi
 
 #                                  5              12     8   12  15   (min)"
-[ "$SLOW" = "no" ] && EXCEPT_SLOW="27m 60i 64b 68 71 115 135 136 230d 300o"
+[ "$SLOW" = "no" ] && EXCEPT_SLOW="27m 60i 64b 68 71 115 135 136 230d 300o 411c"
 
 if [ "$mds1_FSTYPE" = "zfs" ]; then
 	# bug number for skipped test:
@@ -25999,6 +25999,75 @@ test_411b() {
 	return 0
 }
 run_test 411b "confirm Lustre can avoid OOM with reasonable cgroups limits"
+
+test_cleanup_remove_memcg()
+{
+	CG=$1
+	if [[ -d /sys/fs/cgroup/memory/$CG ]] ; then
+		cgdelete -g memory:$CG
+		[[ -d /sys/fs/cgroup/memory/$CG ]] &&
+			error "CGroup-v1 cleanup failed: $CG"
+		echo "Removed memory control group V1: $CG"
+	fi
+	if [[ -d /sys/fs/cgroup/$CG ]] ; then
+		cgdelete -g memory:$CG
+		[[ -d /sys/fs/cgroup/$CG ]] &&
+			error "CGroup-v2 cleanup failed: $CG"
+		echo "Removed memory control group V2: $CG"
+	fi
+}
+
+test_411c() {
+	CGEXEC=$(which cgexec) ||
+		skip_env "no cgexec, libcgroup-tools package is missing."
+	local CG=test_411c
+	local MEMSZ=150M
+	if [[ -d /sys/fs/cgroup/memory/ ]] ; then
+		mkdir /sys/fs/cgroup/memory/$CG ||
+			skip "CGroup v1 setup failed for $CG."
+		stack_trap "test_cleanup_remove_memcg $CG" EXIT
+		echo "cgroup-v1 memory limit $MEMSZ"
+		echo $MEMSZ | sudo tee /sys/fs/cgroup/memory/$CG/memory.limit_in_bytes
+	else
+		sudo cgcreate -a $USER -t $USER -g memory:$CG ||
+			skip "CGroup v2 setup failed."
+		stack_trap "test_cleanup_remove_memcg $CG" EXIT
+		echo "cgroup-v2 memory limit $MEMSZ"
+		echo $MEMSZ | sudo tee /sys/fs/cgroup/$CG/memory.max
+	fi
+	for nn in $(seq 4)
+	do
+		local progress=""
+
+		$VERBOSE && progress="status=progress"
+		echo "$LFS setstripe -S 1M -c 4 $DIR/$tfile.$nn"
+		$LFS setstripe -S 1M -c 4 $DIR/$tfile.$nn || error "unable to setstripe"
+		echo -n "cgexec -g memory:$CG dd if=/dev/zero " &&
+		    echo "of=$DIR/$tfile.$nn bs=1M count=1000 $progress &"
+		cgexec -g memory:$CG dd if=/dev/zero of=$DIR/$tfile.$nn bs=1M count=1000 $progress &
+		pid[$nn]=$!
+		echo pid: ${pid[$nn]}
+	done
+	for nn in $(seq 4)
+	do
+		echo "wait ${pid[$nn]}"
+		wait ${pid[$nn]}
+		result[$nn]=$?
+		echo "${pid[$nn]} existed with ${result[$nn]}"
+		if (( ${result[$nn]} != 0)); then
+			error "error ${result[$nn]} writing to file $nn from ${pid[$nn]}"
+		fi
+	done
+	sync
+	cancel_lru_locks osc
+
+	# These files can be large-ish (~1 GiB total), so delete them rather
+	# than leave for later cleanup
+	rm -f $DIR/$tfile.*
+
+	test_cleanup_remove_memcg $CG
+}
+run_test 411c "CGroup v1/v2 avoids OOM, libcgroup-tools"
 
 test_412() {
 	(( $MDSCOUNT > 1 )) || skip_env "needs >= 2 MDTs"
