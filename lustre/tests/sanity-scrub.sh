@@ -1483,6 +1483,8 @@ test_21() {
 run_test 21 "don't hang MDS recovery when failed to get update log"
 
 test_22() {
+	[[ "$MDS1_VERSION" -gt $(version_code 2.15.1) ]] ||
+		skip "Need MDS version > 2.15.1"
 	#define OBD_FAIL_OSD_SCRUB_DELAY	 0x190
 	do_nodes $(comma_list $(mdts_nodes)) \
 		$LCTL set_param fail_val=10 fail_loc=0x190
