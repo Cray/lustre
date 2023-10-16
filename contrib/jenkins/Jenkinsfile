@@ -4,10 +4,11 @@
 
 pipeline {
     agent {
-        node { label 'Centos8_nodes' }
+        node { label "$JP_POOL" }
     }
 
     environment {
+        SLACK_TOKEN = credentials('dst-slack-bot-token')
         // Needed by signArtifacts for correct location of buildlog.logs in Artifactory:
         PRODUCT = "neo"
         BRANCH_NAME = "release"
@@ -36,7 +37,13 @@ pipeline {
 
         stage('Scan/Sign RPMs') {
             steps {
-                signArtifacts([artifacts: 'rpmbuild/'])
+               script {
+                   if (env.JP_SIGN_RPMS == "true") {
+                       signArtifacts([artifacts: 'rpmbuild/'])
+                   } else {
+                       println "Skip code-signing for non-release RPMs"
+                   }
+               }
             }
         }
 
@@ -57,18 +64,16 @@ pipeline {
             }
         }
         failure {
-            emailext body: "See ${env.BUILD_URL}",
-                     to: "${env.RE_Alert}",
-                     from: "${env.GP_MAILTARGET}",
-                     subject: "Build failed in CI: ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+            script {
+                sh "dst-slack send --token \"$SLACK_TOKEN\" --channel cs-neo-builds  \
+                    --message \"${JOB_NAME} #${BUILD_NUMBER}: Build failure\" --type error"
+            }
         }
         changed {
             script {
                 if (currentBuild.currentResult == 'SUCCESS') {
-                    emailext body: "See ${env.BUILD_URL}",
-                             to: "${env.RE_Alert}",
-                             from: "${env.GP_MAILTARGET}",
-                             subject: "Jenkins build is back to normal : ${env.JOB_NAME} #${env.BUILD_NUMBER}"
+                    sh "dst-slack send --token \"$SLACK_TOKEN\" --channel cs-neo-builds \
+                        --message \"${JOB_NAME} #${BUILD_NUMBER}: Back to normal\" --type success"
                 }
             }
         }
