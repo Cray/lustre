@@ -136,25 +136,29 @@ static inline void osd_scrub_oi_mark_stale(struct lustre_scrub *scrub,
 }
 
 /* OI of \a fid may be marked stale, and if its mapping is scrubbed, remove it
- * from os_stale_items list.
+ * from os_stale_items list and return true.
  */
-void osd_scrub_oi_resurrect(struct lustre_scrub *scrub,
+bool osd_scrub_oi_resurrect(struct lustre_scrub *scrub,
 			    const struct lu_fid *fid)
 {
 	struct osd_inconsistent_item *oii;
+	bool rc = false;
 
 	if (list_empty(&scrub->os_stale_items))
-		return;
+		return false;
 
 	spin_lock(&scrub->os_lock);
 	list_for_each_entry(oii, &scrub->os_stale_items, oii_list) {
 		if (lu_fid_eq(fid, &oii->oii_cache.oic_fid)) {
 			list_del(&oii->oii_list);
 			OBD_FREE_PTR(oii);
+			rc = true;
 			break;
 		}
 	}
 	spin_unlock(&scrub->os_lock);
+
+	return rc;
 }
 
 static void osd_scrub_ois_fini(struct lustre_scrub *scrub,
@@ -204,10 +208,10 @@ int osd_scrub_refresh_mapping(struct osd_thread_info *info,
 				osd_dto_credits_noquota[DTO_INDEX_INSERT]);
 	if (IS_ERR(th)) {
 		rc = PTR_ERR(th);
-		CDEBUG(D_LFSCK, "%s: fail to start trans for scrub op %d "
-		       DFID" => %u/%u: rc = %d\n", osd_name(dev), ops,
-		       PFID(fid), id ? id->oii_ino : -1, id ? id->oii_gen : -1,
-		       rc);
+		CWARN("%s: fail to start trans for scrub op %d "
+		      DFID" => %u/%u: rc = %d\n", osd_name(dev), ops,
+		      PFID(fid), id ? id->oii_ino : -1, id ? id->oii_gen : -1,
+		      rc);
 		RETURN(rc);
 	}
 
@@ -458,8 +462,8 @@ out:
 		    sf->sf_pos_first_inconsistent > lid->oii_ino))
 			sf->sf_pos_first_inconsistent = lid->oii_ino;
 	} else {
-		if (!oii && !OBD_FAIL_CHECK(OBD_FAIL_OSD_SCRUB_STALE)) {
-			osd_scrub_oi_resurrect(scrub, fid);
+		if (!oii && !OBD_FAIL_CHECK(OBD_FAIL_OSD_SCRUB_STALE) &&
+		    osd_scrub_oi_resurrect(scrub, fid)) {
 			CDEBUG(D_LFSCK,
 			       "%s: resurrect OI "DFID" -> %u/%u\n",
 			       osd_dev2name(dev), PFID(fid), lid->oii_ino,
@@ -469,8 +473,7 @@ out:
 			CDEBUG(D_LFSCK,
 			       "%s: inconsistent OI "DFID" -> %u/%u %s\n",
 			       osd_dev2name(dev), PFID(fid), lid->oii_ino,
-			       lid->oii_gen, ops == DTO_INDEX_DELETE ?
-			       "deleted" : "fixed");
+			       lid->oii_gen, bad_inode ? "deleted" : "fixed");
 			spin_lock(&scrub->os_lock);
 			list_del_init(&oii->oii_list);
 			spin_unlock(&scrub->os_lock);
@@ -1232,9 +1235,10 @@ static int osd_scrub_main(void *args)
 		scrub->os_pos_current = ooc->ooc_pos_preload;
 	}
 
-	CDEBUG(D_LFSCK, "%s: OI scrub start, flags = 0x%x, pos = %llu\n",
+	CDEBUG(D_LFSCK, "%s: OI scrub start, flags = 0x%x, pos = %llu%s\n",
 	       osd_scrub2name(scrub), scrub->os_start_flags,
-	       scrub->os_pos_current);
+	       scrub->os_pos_current,
+	       scrub->os_file.sf_param & SP_DRYRUN ? " dryrun mode" : "");
 
 	rc = osd_inode_iteration(osd_oti_get(&env), dev, ~0U, false);
 	if (unlikely(rc == SCRUB_IT_CRASH)) {
@@ -1258,8 +1262,10 @@ post:
 		dev->od_check_ff = 0;
 	}
 	rc = scrub_thread_post(&env, &dev->od_scrub.os_scrub, rc);
-	CDEBUG(D_LFSCK, "%s: OI scrub: stop, pos = %llu: rc = %d\n",
-	       osd_scrub2name(scrub), scrub->os_pos_current, rc);
+	CDEBUG(D_LFSCK, "%s: OI scrub: stop, pos = %llu: rc = %d%s\n",
+	       osd_scrub2name(scrub), scrub->os_pos_current, rc,
+	       scrub->os_file.sf_param & SP_DRYRUN ? " dryrun mode" : "");
+
 
 out:
 	osd_scrub_ois_fini(scrub, &scrub->os_inconsistent_items);
