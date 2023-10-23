@@ -1562,6 +1562,7 @@ static int ofd_create_hdl(struct tgt_session_info *tsi)
 	    (oa->o_flags & OBD_FL_DELORPHAN)) {
 		exp->exp_filter_data.fed_lastid_gen = ofd->ofd_lastid_gen;
 
+		OBD_FAIL_TIMEOUT(OBD_FAIL_OST_DELORPHAN_DELAY, cfs_fail_val);
 		/* destroy orphans */
 		if (lustre_msg_get_conn_cnt(tgt_ses_req(tsi)->rq_reqmsg) <
 		    exp->exp_conn_cnt) {
