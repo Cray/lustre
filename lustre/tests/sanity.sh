@@ -5556,6 +5556,19 @@ test_44b() {
 }
 run_test 44b "write big sparse write"
 
+test_44c() {
+	local i
+	# required space: NUM_files_t44c * 20Mb
+	local NUMFILES_44c=${NUMFILES_44c:-50}
+
+	for (( i=0; i<NUMFILES_44c; i++ )); do
+		multiop $DIR/$tfile-$i \
+			Ow10485760Z10485760w10485760Ic ||
+			error "multiop failed"
+	done
+}
+run_test 44c "Check fiemap for sparse files"
+
 dirty_osc_total() {
 	tot=0
 	for d in `lctl get_param -n ${OSC}.*.cur_dirty_bytes`; do
