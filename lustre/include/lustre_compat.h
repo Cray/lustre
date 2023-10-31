@@ -613,6 +613,12 @@ static inline bool is_root_inode(struct inode *inode)
 # endif
 #endif
 
+#ifdef VERIFY_WRITE /* removed in kernel commit v4.20-10979-g96d4f267e40f */
+#define ll_access_ok(ptr, len) access_ok(VERIFY_WRITE, ptr, len)
+#else
+#define ll_access_ok(ptr, len) access_ok(ptr, len)
+#endif
+
 #ifdef HAVE_SEC_RELEASE_SECCTX_1ARG
 #ifndef HAVE_LSMCONTEXT_INIT
 /* Ubuntu 5.19 */
