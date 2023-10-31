@@ -2240,10 +2240,12 @@ migrate_free:
 
 		RETURN(rc);
 	}
+#ifndef HAVE_FILEATTR_GET
 	case FS_IOC_FSGETXATTR:
 		RETURN(ll_ioctl_fsgetxattr(inode, cmd, arg));
 	case FS_IOC_FSSETXATTR:
 		RETURN(ll_ioctl_fssetxattr(inode, cmd, arg));
+#endif
 	case LL_IOC_PROJECT:
 		RETURN(ll_ioctl_project(file, cmd, arg));
 	case LL_IOC_PCC_DETACH_BY_FID: {
