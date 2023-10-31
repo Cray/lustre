@@ -1222,13 +1222,14 @@ int ll_get_fid_by_name(struct inode *parent, const char *name,
 		       int namelen, struct lu_fid *fid, struct inode **inode);
 int ll_inode_permission(struct mnt_idmap *, struct inode *inode, int mask);
 int ll_ioctl_check_project(struct inode *inode, __u32 xflags, __u32 projid);
+int ll_set_project(struct inode *inode, __u32 xflags, __u32 projid);
+#ifndef HAVE_FILEATTR_GET
 int ll_ioctl_fsgetxattr(struct inode *inode, unsigned int cmd,
 			unsigned long arg);
 int ll_ioctl_fssetxattr(struct inode *inode, unsigned int cmd,
 			unsigned long arg);
-int ll_ioctl_project(struct file *file, unsigned int cmd,
-		     unsigned long arg);
-
+#endif
+int ll_ioctl_project(struct file *file, unsigned int cmd, unsigned long arg);
 int ll_lov_setstripe_ea_info(struct inode *inode, struct dentry *dentry,
 			     __u64 flags, struct lov_user_md *lum,
 			     int lum_size);
@@ -1296,6 +1297,11 @@ void ll_update_dir_depth(struct inode *dir, struct inode *inode);
 int ll_read_inode2(struct inode *inode, void *opaque);
 void ll_truncate_inode_pages_final(struct inode *inode);
 void ll_delete_inode(struct inode *inode);
+#ifdef HAVE_FILEATTR_GET
+int ll_fileattr_get(struct dentry *dentry, struct fileattr *fa);
+int ll_fileattr_set(struct mnt_idmap *mnt_userns,
+		    struct dentry *dentry, struct fileattr *fa);
+#endif
 int ll_iocontrol(struct inode *inode, struct file *file,
                  unsigned int cmd, unsigned long arg);
 int ll_flush_ctx(struct inode *inode);
