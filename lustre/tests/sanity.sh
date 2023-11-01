@@ -32001,6 +32001,18 @@ test_440() {
 }
 run_test 440 "bash completion for lfs, lctl"
 
+test_441() {
+	local file=$DIR/$tdir/$tfile
+
+	checkfiemap --test ||
+		skip_env "checkfiemap not runnable: $?"
+
+	mkdir -p $DIR/$tdir
+	echo > $file
+	checkfiemap --pasteof $file 4096 || error "wrong return value"
+}
+run_test 441 "fiemap past EOF should not return error"
+
 test_442() {
 	local pid1
 	local pid2

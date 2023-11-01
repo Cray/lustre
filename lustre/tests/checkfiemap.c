@@ -173,16 +173,34 @@ static void *corruption_th(void *args)
 	return NULL;
 }
 
+int past_eof_test(int fd, long long size)
+{
+	union { struct fiemap f; char c[4096]; } fiemap_buf = { 0 };
+	struct fiemap *fiemap = &fiemap_buf.f;
+
+	fiemap->fm_start = size * 2;
+	fiemap->fm_flags = (FIEMAP_FLAG_SYNC | FIEMAP_FLAG_DEVICE_ORDER);
+	fiemap->fm_extent_count = 1;
+	fiemap->fm_length = FIEMAP_MAX_OFFSET - size * 2;
+
+	if (ioctl(fd, FS_IOC_FIEMAP, fiemap) < 0) {
+		fprintf(stderr, "error while ioctl %i\n",  errno);
+		return -1;
+	}
+
+	return fiemap->fm_mapped_extents == 0 ? 0 : -2;
+}
+
 int main(int argc, char **argv)
 {
 	int c;
 	struct option long_opts[] = {
 		{ .name = "test", .has_arg = no_argument, .val = 't' },
 		{ .name = "corruption_test", .has_arg = no_argument, .val = 'c' },
+		{ .name = "pasteof", .has_arg = no_argument, .val = 'p' },
 		{ .name = NULL }
 	};
-	int fd;
-	int rc;
+	int fd, rc, pasteof = 0;
 	unsigned int mapped_extents = 0;
 	bool corruption_test = false;
 
@@ -193,6 +211,9 @@ int main(int argc, char **argv)
 			return 0;
 		case 'c':
 			corruption_test = true;
+			break;
+		case 'p':
+			pasteof = 1;
 			break;
 		default:
 			fprintf(stderr, "error: %s: option '%s' unrecognized\n",
@@ -213,7 +234,11 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	rc = check_fiemap(fd, atoll(argv[optind + 1]), &mapped_extents);
+	if (pasteof)
+		rc = past_eof_test(fd, atoll(argv[optind + 1]));
+	else
+		rc = check_fiemap(fd, atoll(argv[optind + 1]), &mapped_extents);
+
 	if (rc)
 		goto close;
 
