@@ -1980,9 +1980,9 @@ static int lov_object_fiemap(const struct lu_env *env, struct cl_object *obj,
 	fs.fs_cnt_need = fiemap_size_to_count(buffer_size);
 
 	whole_start = fiemap->fm_start;
-	/* whole_start is beyond the end of the file */
+	/* whole_start is beyond the end of the file, return mapped = 0 */
 	if (whole_start > fmkey->lfik_oa.o_size)
-		GOTO(out_fm_local, rc = -EINVAL);
+		GOTO(skip_last_device_calc, rc = 0);
 	whole_end = (fiemap->fm_length == OBD_OBJECT_EOF) ?
 					fmkey->lfik_oa.o_size + 1 :
 					whole_start + fiemap->fm_length;
