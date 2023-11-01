@@ -27443,6 +27443,18 @@ test_434() {
 }
 run_test 434 "Client should not send RPCs for security.selinux with SElinux disabled"
 
+test_440() {
+	local file=$DIR/$tdir/$tfile
+
+	checkfiemap --test ||
+		skip_env "checkfiemap not runnable: $?"
+
+	mkdir -p $DIR/$tdir
+	echo > $file
+	checkfiemap --pasteof $file 4096 || error "wrong return value"
+}
+run_test 440 "fiemap past EOF should not return error"
+
 prep_801() {
 	[[ $MDS1_VERSION -lt $(version_code 2.9.55) ]] ||
 	[[ $OST1_VERSION -lt $(version_code 2.9.55) ]] &&
