@@ -484,6 +484,7 @@ extern bool obd_enable_health_write;
 #define OBD_FAIL_OBD_STOP_MDS_RACE	 0x60c
 #define OBD_FAIL_OBD_SETUP		 0x60d
 #define OBD_FAIL_OBD_CLEANUP		 0x60e
+#define OBD_FAIL_OBD_PAUSE_EVICTOR	 0x60f
 
 #define OBD_FAIL_TGT_REPLY_NET           0x700
 #define OBD_FAIL_TGT_CONN_RACE           0x701
