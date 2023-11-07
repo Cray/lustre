@@ -27833,6 +27833,24 @@ test_803b() {
 }
 run_test 803b "remote object can getattr from cache"
 
+test_803c() {
+	[[ $MDSCOUNT -lt 2 ]] && skip_env "needs >= 2 MDTs"
+	local ping_interval=$($LCTL get_param -n ping_interval)
+	local evict_multiplier=$($LCTL get_param -n evict_multiplier)
+	local pause=$((ping_interval * (evict_multiplier + 2)))
+
+	#define OBD_FAIL_OBD_PAUSE_EVICTOR	    0x60e
+	do_facet mds1 $LCTL set_param fail_loc=0x8000060e
+
+	$LFS mkdir -i 1 $DIR/$tdir || error "mkdir $tdir"
+	$LFS mkdir -i 0 $DIR/$tdir/remote || error "mkdir $tdir/remote"
+
+	echo sleep $pause seconds
+	sleep $pause
+	rmdir $DIR/$tdir/remote || error "rmdir $tdir/remote"
+}
+run_test 803c "evict osp"
+
 test_804() {
 	[[ $MDSCOUNT -lt 2 ]] && skip_env "needs >= 2 MDTs"
 	[ $MDS1_VERSION -lt $(version_code 2.10.54) ] &&
