@@ -286,24 +286,6 @@ int mdt_agent_record_add(const struct lu_env *env, struct mdt_device *mdt,
 
 	down_write(&cdt->cdt_lock);
 
-	/* This prevents new HSM requests from being added when the CDT is
-	 * shutdown (so is unavailable) or being initialized (as doing so opens
-	 * up the possiblity of HSM cookies being reused during startup and
-	 * triggering some of the assertions in cdt_agent_record_hash_add(), as
-	 * seen in LU-11675). Requests needed to implement the Remove Archive on
-	 * Last Unlink (RAoLU) policy are allowed when the CDT is shutdown, as
-	 * they are safe operations. They are also allowed during CDT
-	 * initialization, even though this can lead to the issues seen in
-	 * LU-11675, as doing so maintains administrator expectations regarding
-	 * file archives always being removed when the RAoLU policy is enabled.
-	 * This could probably be improved by e.g. failing when
-	 * mdt_handle_last_unlink() is not able to add an HSM remove request, or
-	 * saving the requests in an llog so they can be sent later.
-	 */
-	if ((cdt->cdt_state == CDT_STOPPED || cdt->cdt_state == CDT_INIT) &&
-	    !(flags & HAL_CDT_FORCE))
-		GOTO(unavail, rc = -EAGAIN);
-
 	/* in case of cancel request, the cookie is already set to the
 	 * value of the request cookie to be cancelled
 	 * so we do not change it */
@@ -316,7 +298,6 @@ int mdt_agent_record_add(const struct lu_env *env, struct mdt_device *mdt,
 	if (rc > 0)
 		rc = 0;
 
-unavail:
 	up_write(&cdt->cdt_lock);
 	llog_ctxt_put(lctxt);
 

@@ -429,15 +429,12 @@ int mdt_hsm_add_actions(struct mdt_thread_info *mti,
 	int			 rc;
 	ENTRY;
 
-	/* no coordinator started, so we cannot serve requests; check cdt_state
-	 * here without a lock and check it again while holding cdt_lock before
-	 * adding the request in mdt_agent_record_add()
-	 */
-	if (cdt->cdt_state == CDT_STOPPED || cdt->cdt_state == CDT_INIT)
+	/* no coordinator started, so we cannot serve requests */
+	if (cdt->cdt_state == CDT_STOPPING || !cdt_getref_try(cdt))
 		RETURN(-EAGAIN);
 
 	if (!hal_is_sane(hal))
-		RETURN(-EINVAL);
+		GOTO(out, rc = -EINVAL);
 
 	/* search for compatible request, if found hai_cookie is set
 	 * to the request cookie
@@ -455,6 +452,7 @@ out:
 	if (rc == 0 || rc == -ENODATA)
 		mdt_hsm_cdt_event(cdt);
 
+	cdt_putref(cdt);
 	return rc;
 }
 
@@ -474,7 +472,13 @@ bool mdt_hsm_restore_is_running(struct mdt_thread_info *mti,
 	bool is_running;
 	ENTRY;
 
+	/* the coordinator is not started */
+	if (!cdt_getref_try(cdt))
+		return false;
+
 	is_running = cdt_restore_handle_exists(cdt, fid);
+
+	cdt_putref(cdt);
 
 	RETURN(is_running);
 }
