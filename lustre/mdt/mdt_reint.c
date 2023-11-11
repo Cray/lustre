@@ -2306,6 +2306,14 @@ lock_parent:
 	if (rc)
 		GOTO(unlock_links, rc);
 
+	if (mdt_object_remote(sobj)) {
+		struct md_attr *ma2 = &info->mti_attr2;
+		ma2->ma_need = MA_INODE;
+		rc = mo_attr_get(env, mdt_object_child(sobj), ma2);
+		if (rc)
+			GOTO(unlock_source, rc);
+	}
+
 	if (S_ISREG(lu_object_attr(&sobj->mot_obj))) {
 		/* TODO: DoM migration is not supported, migrate dirent only */
 		rc = mdt_stripe_get(info, sobj, ma, XATTR_NAME_LOV);
@@ -2344,7 +2352,7 @@ lock_parent:
 					  XATTR_NAME_LMV, NULL,
 					  LU_XATTR_REPLACE);
 			mo_invalidate(env, mdt_object_child(sobj));
-			GOTO(unlock_links, rc = -EALREADY);
+			GOTO(unlock_source, rc = -EALREADY);
 		}
 	}
 
