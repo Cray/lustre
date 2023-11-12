@@ -633,7 +633,6 @@ int class_attach(struct lustre_cfg *lcfg)
 	}
 
 	obd->obd_self_export = exp;
-	exp->exp_not_timed = 1;
 	class_export_put(exp);
 
 	rc = class_register_device(obd);

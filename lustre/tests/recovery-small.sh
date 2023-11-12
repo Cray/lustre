@@ -1106,23 +1106,26 @@ test_26b() {      # bug 10140 - evict dead exports by pinger
 
 	local MDS_NEXP=$(do_facet $SINGLEMDS lctl get_param -n mdt.${mds1_svc}.num_exports | cut -d' ' -f2)
 	local OST_NEXP=$(do_facet ost1 lctl get_param -n obdfilter.${ost1_svc}.num_exports | cut -d' ' -f2)
+	# must be equal on all the nodes
+	local INTERVAL=$(do_facet $SINGLEMDS lctl get_param -n ping_interval)
+	local AT_MAX_SAVED=$(at_max_get mds1)
+
+	at_max_set $TIMEOUT mds1
+	at_max_set $TIMEOUT ost1
+	stack_trap "at_max_set $AT_MAX_SAVED mds1" EXIT
+	stack_trap "at_max_set $AT_MAX_SAVED ost1" EXIT
 
 	echo starting with $OST_NEXP OST and $MDS_NEXP MDS exports
 
 	zconf_umount `hostname` $MOUNT2 -f
 
-	# PING_INTERVAL max(obd_timeout / 4, 1U)
-	# PING_EVICT_TIMEOUT (PING_INTERVAL * 6)
-
-	# evictor takes PING_EVICT_TIMEOUT to evict.
-	# But if there's a race to start the evictor from various obds,
-	# the loser might have to wait for the next ping.
-	# = 6 * PING_INTERVAL + PING_INTERVAL
-	# = 7 PING_INTERVAL = 7 obd_timeout / 4 =  (1+3/4)obd_timeout
-	# let's wait $((TIMEOUT * 2)) # bug 19887
-	wait_client_evicted ost1 $OST_NEXP $((TIMEOUT * 2)) ||
+	# see ptlrpc_export_timeout() for the pinger case; take a bit more the test sake
+	local TOUT=$((INTERVAL * 2 + (TIMEOUT / 20 + 5 + TIMEOUT) * 3))
+	TOUT=$((TOUT + (TOUT >> 3)))
+	echo i $INTERVAL m $AT_MAX_SAVED t $TIMEOUT $TOUT
+	wait_client_evicted ost1 $OST_NEXP $TOUT ||
 		error "Client was not evicted by ost"
-	wait_client_evicted $SINGLEMDS $MDS_NEXP $((TIMEOUT * 2)) ||
+	wait_client_evicted $SINGLEMDS $MDS_NEXP $TOUT ||
 		error "Client was not evicted by mds"
 }
 run_test 26b "evict dead exports"
