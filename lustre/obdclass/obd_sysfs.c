@@ -122,7 +122,6 @@ LUSTRE_STATIC_UINT_ATTR(at_early_margin, &at_early_margin);
 LUSTRE_STATIC_UINT_ATTR(at_history, &at_history);
 LUSTRE_STATIC_UINT_ATTR(lbug_on_eviction, &obd_lbug_on_eviction);
 LUSTRE_STATIC_UINT_ATTR(ping_interval, &ping_interval);
-LUSTRE_STATIC_UINT_ATTR(evict_multiplier, &ping_evict_timeout_multiplier);
 
 #ifdef HAVE_SERVER_SUPPORT
 LUSTRE_STATIC_UINT_ATTR(ldlm_timeout, &ldlm_timeout);
@@ -485,7 +484,6 @@ static struct attribute *lustre_attrs[] = {
 #endif
 	&lustre_sattr_lbug_on_eviction.u.attr,
 	&lustre_sattr_ping_interval.u.attr,
-	&lustre_sattr_evict_multiplier.u.attr,
 	NULL,
 };
 

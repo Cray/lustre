@@ -219,7 +219,7 @@ struct obd_export {
          * order
          * protected by obd_dev_lock
          */
-	struct list_head	exp_obd_chain_timed;
+	struct list_head	exp_timed_chain;
 	/** Obd device of this export */
 	struct obd_device      *exp_obd;
 	/**
@@ -246,6 +246,7 @@ struct obd_export {
 	__u64			exp_last_committed;
 	/** When was last request received */
 	time64_t		exp_last_request_time;
+	time64_t		exp_deadline;
 	/** On replay all requests waiting for replay are linked here */
 	struct list_head	exp_req_replay_queue;
 	/**
@@ -279,7 +280,7 @@ struct obd_export {
 				/* local client with recovery disabled */
 				exp_no_recovery:1,
 				exp_hashed:1,
-				exp_not_timed:1;
+				exp_timed:1;
 	/* also protected by exp_lock */
 	enum lustre_sec_part	exp_sp_peer;
 	struct sptlrpc_flavor	exp_flvr;		/* current */
