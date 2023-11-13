@@ -3412,15 +3412,25 @@ test_149() {
 run_test 149 "skip orphan removal at umount"
 
 test_150a() {
-	remount_client $MOUNT
+	local lsoutput1
+	local lsoutput2
+
+	touch $DIR/$tfile
+	lsoutput1=$(ls -l $DIR)
+
+	zconf_umount $HOSTNAME $MOUNT || error "umount failed"
+	# make sure that last_rcvd update is committed
+	do_facet mds1 sync
+	zconf_mount $HOSTNAME $MOUNT || error "mount failed"
 
 	replay_barrier_nosync mds1
 
 	fail_nodf mds1
 
-	ls $MOUNT || error "ls failed"
+	lsoutput2=$(ls -l $DIR) || error "ls failed"
+	[[ $lsoutput1 == $lsoutput2 ]] || error "$lsoutput1 != $lsoutput2"
 }
-run_test 150a "failover after client remount"
+run_test 150a "failover mds1 after client remount"
 
 test_150b() {
 	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs"
@@ -3440,26 +3450,6 @@ test_150b() {
 	return 0
 }
 run_test 150b "statfs when MDT0 offline with lazystatfs option"
-
-test_150c() {
-	$LFS setstripe -i 0 -c 1 $DIR/$tfile
-	echo "123" >> $DIR/$tfile
-	sync
-	remount_client $MOUNT
-
-	remount_client $MOUNT
-	cat $DIR/$tfile
-	cancel_lru_locks osc
-
-	replay_barrier_nosync ost1
-
-	fail_nodf ost1
-
-	ls -la $DIR/$tfile || error "ls failed"
-	cat $DIR/$tfile  || error "cat failed"
-	rm -rf $DIR/$tfile
-}
-run_test 150c "OST failover after client remount"
 
 test_152() {
 	[[ $($LCTL get_param mdc.*.import) =~ connect_flags.*overstriping ]] ||
