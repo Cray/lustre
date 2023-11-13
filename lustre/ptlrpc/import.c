@@ -695,7 +695,6 @@ int ptlrpc_connect_import_locked(struct obd_import *imp)
 
 	set_transno = ptlrpc_first_transno(imp,
 					   &imp->imp_connect_data.ocd_transno);
-	imp->imp_modified = set_transno;
 	spin_unlock(&imp->imp_lock);
 
 	rc = import_select_connection(imp);
@@ -1148,6 +1147,8 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 		imp->imp_remote_handle =
 			*lustre_msg_get_handle(request->rq_repmsg);
 
+		imp->imp_no_cached_data = 1;
+
 		/* Initial connects are allowed for clients with non-random
 		 * uuids when servers are in recovery.  Simply signal the
 		 * servers replay is complete and wait in REPLAY_WAIT.
@@ -1262,19 +1263,17 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 			*lustre_msg_get_handle(request->rq_repmsg);
 		import_set_state(imp, LUSTRE_IMP_RECOVER);
 	} else {
-		struct ldlm_namespace *ns = imp->imp_obd->obd_namespace;
-
 		imp->imp_remote_handle =
 			*lustre_msg_get_handle(request->rq_repmsg);
-		if (imp->imp_modified ||
-		    atomic_read(&ns->ns_pool.pl_granted) != 0) {
-			DEBUG_REQ(D_HA, request, "%s: evicting (reconnect/recover flags"
-				  " not set: %x)", imp->imp_obd->obd_name, msg_flags);
+		if (!imp->imp_no_cached_data) {
+			DEBUG_REQ(D_HA, request,
+				  "%s: evicting (reconnect/recover flags not set: %x)",
+				  imp->imp_obd->obd_name, msg_flags);
 			import_set_state(imp, LUSTRE_IMP_EVICTED);
 		} else {
 			ptlrpc_activate_import(imp, true);
 		}
-        }
+	}
 
 	/* Sanity checks for a reconnected import. */
 	if (!(imp->imp_replayable) != !(msg_flags & MSG_CONNECT_REPLAYABLE))
