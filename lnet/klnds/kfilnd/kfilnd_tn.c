@@ -718,6 +718,9 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 		goto out;
 	}
 
+	if (CFS_FAIL_CHECK_VALUE(CFS_KFI_REPLAY_IDLE_EVENT, event))
+		return -EAGAIN;
+
 	switch (event) {
 	case TN_EVENT_INIT_IMMEDIATE:
 	case TN_EVENT_TX_HELLO:
