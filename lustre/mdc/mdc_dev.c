@@ -1412,16 +1412,20 @@ static void mdc_req_attr_set(const struct lu_env *env, struct cl_object *obj,
 		attr->cra_oa->o_valid |= OBD_MD_FLID;
 
 	if (flags & OBD_MD_FLHANDLE) {
-		struct osc_object *osc = cl2osc(obj);
-		struct osc_page *apage = osc_cl_page_osc(attr->cra_page, osc);
+		struct osc_page *opg;
 
-		if (!apage->ops_srvlock) {
+		opg = osc_cl_page_osc(attr->cra_page, cl2osc(obj));
+		if (!opg->ops_srvlock) {
 			int rc;
 
 			rc = mdc_get_lock_handle(env, cl2osc(obj),
-						 osc_index(apage),
+						 osc_index(opg),
 						 &attr->cra_oa->o_handle);
-			if (!rc) {
+			if (rc) {
+				CL_PAGE_DEBUG(D_ERROR, env, attr->cra_page,
+					      "uncovered page!\n");
+				LBUG();
+			} else {
 				attr->cra_oa->o_valid |= OBD_MD_FLHANDLE;
 			}
 		}

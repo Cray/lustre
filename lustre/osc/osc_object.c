@@ -383,20 +383,38 @@ static void osc_req_attr_set(const struct lu_env *env, struct cl_object *obj,
 		oa->o_valid |= OBD_MD_FLID;
 	}
 	if (flags & OBD_MD_FLHANDLE) {
-		struct osc_object *osc = cl2osc(obj);
-		struct osc_page *apage = osc_cl_page_osc(attr->cra_page, osc);
 		struct ldlm_lock *lock;
+		struct osc_page *opg;
+
+		opg = osc_cl_page_osc(attr->cra_page, cl2osc(obj));
+		lock = osc_dlmlock_at_pgoff(env, cl2osc(obj), osc_index(opg),
+				OSC_DAP_FL_TEST_LOCK | OSC_DAP_FL_CANCELING);
+		if (lock == NULL && !opg->ops_srvlock) {
+			struct ldlm_resource *res;
+			struct ldlm_res_id *resname;
+
+			CL_PAGE_DEBUG(D_ERROR, env, attr->cra_page,
+				      "uncovered page!\n");
+
+			resname = &osc_env_info(env)->oti_resname;
+			ostid_build_res_name(&oinfo->loi_oi, resname);
+			res = ldlm_resource_get(
+				osc_export(cl2osc(obj))->exp_obd->obd_namespace,
+				NULL, resname, LDLM_EXTENT, 0);
+			if (IS_ERR(res))
+				CERROR("No lock resource\n");
+			else
+				ldlm_resource_dump(D_ERROR, res);
+
+			libcfs_debug_dumpstack(NULL);
+			LBUG();
+		}
 
 		/* check for lockless io. */
-		if (!apage->ops_srvlock) {
-			lock = osc_dlmlock_at_pgoff(env, cl2osc(obj),
-						    osc_index(apage),
-				OSC_DAP_FL_TEST_LOCK | OSC_DAP_FL_CANCELING);
-			if (lock != NULL) {
-				oa->o_handle = lock->l_remote_handle;
-				oa->o_valid |= OBD_MD_FLHANDLE;
-				LDLM_LOCK_PUT(lock);
-			}
+		if (lock != NULL) {
+			oa->o_handle = lock->l_remote_handle;
+			oa->o_valid |= OBD_MD_FLHANDLE;
+			LDLM_LOCK_PUT(lock);
 		}
 	}
 }
