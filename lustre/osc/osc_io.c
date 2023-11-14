@@ -151,9 +151,6 @@ int osc_io_submit(const struct lu_env *env, const struct cl_io_slice *ios,
 	if (crt == CRT_READ && ios->cis_io->ci_ndelay)
 		brw_flags |= OBD_BRW_NDELAY;
 
-	if(crt == CRT_READ && ios->cis_io->ci_async_readahead)
-		brw_flags |= OBD_BRW_READA;
-
 	page = cl_page_list_first(qin);
 	if (page->cp_type == CPT_TRANSIENT)
 		brw_flags |= OBD_BRW_NOCACHE;

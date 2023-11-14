@@ -2647,7 +2647,6 @@ int osc_queue_sync_pages(const struct lu_env *env, struct cl_io *io,
 	ext->oe_srvlock = !!(brw_flags & OBD_BRW_SRVLOCK);
 	ext->oe_ndelay = !!(brw_flags & OBD_BRW_NDELAY);
 	ext->oe_dio = !!(brw_flags & OBD_BRW_NOCACHE);
-	ext->oe_reada = !!(brw_flags & OBD_BRW_READA);
 	if (ext->oe_dio && !ext->oe_rw) { /* direct io write */
 		int grants;
 		int ppc;

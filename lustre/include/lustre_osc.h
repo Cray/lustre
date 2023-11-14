@@ -946,9 +946,7 @@ struct osc_extent {
 				oe_dio:1,
 	/** this extent consists of pages that are not directly accessible
 	 *  from the CPU */
-				oe_is_rdma_only:1,
-	/** this extent is readahead, may skip from io */
-				oe_reada;
+				oe_is_rdma_only:1;
 	/** how many grants allocated for this extent.
 	 *  Grant allocated for this extent. There is no grant allocated
 	 *  for reading extents and sync write extents. */
