@@ -181,7 +181,7 @@ EL9_DEVEL=
 
 ZFS7_DEVEL="zfs libzfs2-devel libzpool2 libzfs2 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python-docutils"
 ZFS8_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python2-docutils"
-ZFS9_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python2-docutils"
+ZFS9_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel"
 
 if [ ! -z "$JP_KFI" ]
 then
@@ -212,11 +212,16 @@ case $JP_BUILD_MODE in
         MOCK_CONFIG=${JP_MOCK_CFG:-mock_${JP_NEO_RELEASE}}
         DISTRO=8
 
+        if [[ $JP_NEO_RELEASE =~ CSL7.*|NEO7.*|ORNL7.* ]]
+        then
+            DISTRO=9
+        fi
+
         if [[ $JP_NEO_RELEASE =~ CSL3.*|NEO3.*|NEO4.*|CSL4.* ]]
         then
             DISTRO=7
         else
-            LUSTRE_DEVEL+=" kernel-debuginfo${JP_CLIENT_KERNEL} kernel-debuginfo-common-${JP_TARGET_ARCH}${JP_CLIENT_KERNEL}"
+            LUSTRE_DEVEL+=" kernel-debuginfo kernel-debuginfo-common-${JP_TARGET_ARCH}"
         fi
         REPO_OPTS="--enablerepo=kernel_${JP_NEO_LABEL} --enablerepo=drivers_${JP_NEO_LABEL} --enablerepo=devvm_${JP_NEO_LABEL}"
         if [ ! -z ${JP_TARGET_KERNEL} ] && [[ $JP_NEO_RELEASE =~ ORNL.* ]]
@@ -244,9 +249,9 @@ case $JP_BUILD_MODE in
     ;;
     patchless)
         DEFAULT_MOCK="epel-${DISTRO}-${JP_TARGET_ARCH}"
+        [ -z ${JP_CLIENT_KERNEL} ] || JP_CLIENT_KERNEL="-${JP_CLIENT_KERNEL}"
         LUSTRE_DEVEL+=" kernel-debuginfo${JP_CLIENT_KERNEL} kernel-debuginfo-common-${JP_TARGET_ARCH}${JP_CLIENT_KERNEL}"
         MOCK_CONFIG=${JP_MOCK_CFG:-$DEFAULT_MOCK}
-        [ -z ${JP_CLIENT_KERNEL} ] || JP_CLIENT_KERNEL="-${JP_CLIENT_KERNEL}"
     ;;
 esac
 
@@ -387,7 +392,7 @@ ${MOCK_CMD}  --no-clean --rebuild ${srpm} --define "myrelease ${release}${GITHAS
 
 rval=$?
 if [ "$rval" != "0" ] ; then
-  rejects=$(find $ROOT -name *.rej)
+  rejects=$(find $ROOT/builddir -name *.rej)
   [ ! -z $rejects ] && cp $rejects ${RPMDIR}
   touch build_failed
 fi
