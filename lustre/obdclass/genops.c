@@ -1080,14 +1080,12 @@ struct obd_export *__class_new_export(struct obd_device *obd,
                 }
         }
 
+	INIT_LIST_HEAD(&export->exp_obd_chain_timed);
 	if (!is_self) {
 		class_incref(obd, "export", export);
-		list_add_tail(&export->exp_obd_chain_timed,
-			      &obd->obd_exports_timed);
 		list_add(&export->exp_obd_chain, &obd->obd_exports);
 		obd->obd_num_exports++;
 	} else {
-		INIT_LIST_HEAD(&export->exp_obd_chain_timed);
 		INIT_LIST_HEAD(&export->exp_obd_chain);
 	}
 	spin_unlock(&obd->obd_dev_lock);
