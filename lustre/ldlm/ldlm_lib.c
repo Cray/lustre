@@ -1028,6 +1028,10 @@ int rev_import_init(struct obd_export *export)
 	spin_unlock(&export->exp_lock);
 	class_import_put(revimp);
 
+	spin_lock(&obd->obd_dev_lock);
+	list_add_tail(&export->exp_obd_chain_timed,
+		      &obd->obd_exports_timed);
+	spin_unlock(&obd->obd_dev_lock);
 	return 0;
 }
 EXPORT_SYMBOL(rev_import_init);
