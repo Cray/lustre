@@ -867,6 +867,11 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 
 		switch (msg->type) {
 		case KFILND_MSG_HELLO_REQ:
+			if (CFS_FAIL_CHECK(CFS_KFI_REPLAY_RX_HELLO_REQ)) {
+				CDEBUG(D_NET, "Replay RX HELLO_REQ\n");
+				return -EAGAIN;
+			}
+
 			kfilnd_peer_process_hello(tn->tn_kp, msg);
 			tn->tn_target_addr = kfilnd_peer_get_kfi_addr(tn->tn_kp);
 			KFILND_TN_DEBUG(tn, "Using peer %s(%#llx)",
