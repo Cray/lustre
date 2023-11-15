@@ -104,6 +104,8 @@
 #define CFS_KFI_FAIL_WAIT_SEND_COMP2 0xF116
 #define CFS_KFI_FAIL_WAIT_SEND_COMP3 0xF117
 #define CFS_KFI_REPLAY_IDLE_EVENT 0xF118
+#define CFS_KFI_REPLAY_RX_HELLO_REQ 0xF119
+#define CFS_KFI_FAIL_MSG_TYPE_EAGAIN 0xF11A
 
 /* Maximum number of transaction keys supported. */
 #define KFILND_EP_KEY_BITS 16U
