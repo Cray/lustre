@@ -65,6 +65,11 @@ pipeline {
         }
         failure {
             script {
+                if ( checkFileExists(filePath: 'rpmbuild/build.log') ) {
+                    archiveArtifacts artifacts: 'rpmbuild/*.log', fingerprint: false
+                } else {
+                    println "rpmbuild/build.log not found"
+                }
                 sh "dst-slack send --token \"$SLACK_TOKEN\" --channel cs-neo-builds  \
                     --message \"${JOB_NAME} #${BUILD_NUMBER}: Build failure\" --type error"
             }
