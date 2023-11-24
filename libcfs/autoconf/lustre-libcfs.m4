@@ -89,8 +89,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_SOCKET_SK_SK_REUSEPORT], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_SOCKET_SK_SK_REUSEPORT], [
-	AC_MSG_CHECKING([if 'struct socket' has 'sk->sk_reuseport' member])
-	LB2_LINUX_TEST_RESULT([socket_sk_sk_reuseport], [
+	LB2_MSG_LINUX_TEST_RESULT(['struct socket' has 'sk->sk_reuseport' member],
+	[socket_sk_sk_reuseport], [
 		AC_DEFINE(HAVE_SOCKET_SK_SK_REUSEPORT, 1,
 			['struct socket' member 'sk->sk_reuseport' is available])
 	])
@@ -108,8 +108,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_IDR_ALLOC], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_IDR_ALLOC], [
-	AC_MSG_CHECKING([if 'idr_alloc()' is present])
-	LB2_LINUX_TEST_RESULT([idr_alloc_fn], [
+	LB2_MSG_LINUX_TEST_RESULT(['idr_alloc()' is present],
+	[idr_alloc_fn], [
 		AC_DEFINE(HAVE_IDR_ALLOC, 1,
 			['idr_alloc()' is present])
 	])
@@ -129,8 +129,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_PERCPU_REFCOUNT], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_PERCPU_REFCOUNT], [
-	AC_MSG_CHECKING([if percpu_refcount is available])
-	LB2_LINUX_TEST_RESULT([percpu_refcount], [
+	LB2_MSG_LINUX_TEST_RESULT([percpu_refcount is available],
+	[percpu_refcount], [
 		AC_DEFINE(HAVE_PERCPU_REFCOUNT, 1,
 			[if percpu_refcount is available])
 	])
@@ -150,8 +150,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_SMP_STORE_LOAD], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_SMP_STORE_LOAD], [
-	AC_MSG_CHECKING([if 'smp_load_acquire()' is present])
-	LB2_LINUX_TEST_RESULT([smp_load_acquire], [
+	LB2_MSG_LINUX_TEST_RESULT(['smp_load_acquire()' is present],
+	[smp_load_acquire], [
 		AC_DEFINE(HAVE_SMP_STORE_LOAD, 1,
 			['smp_load_acquire()' is present])
 	])
@@ -171,8 +171,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_GET_TS64], [
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_GET_TS64], [
-	AC_MSG_CHECKING([does function 'ktime_get_ts64' exist])
-	LB2_LINUX_TEST_RESULT([ktime_get_ts64], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_get_ts64' exist],
+	[ktime_get_ts64], [
 		AC_DEFINE(HAVE_KTIME_GET_TS64, 1,
 			['ktime_get_ts64' is available])
 	])
@@ -189,8 +189,8 @@ AC_DEFUN([LIBCFS_SRC_PREPARE_TO_WAIT_EVENT],[
 	])
 ])
 AC_DEFUN([LIBCFS_PREPARE_TO_WAIT_EVENT],[
-	AC_MSG_CHECKING([does function 'prepare_to_wait_event' exist])
-	LB2_LINUX_TEST_RESULT([prepare_to_wait_event], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'prepare_to_wait_event' exist],
+	[prepare_to_wait_event], [
 		AC_DEFINE(HAVE_PREPARE_TO_WAIT_EVENT, 1,
 			['prepare_to_wait_event' is available])
 	])
@@ -211,8 +211,8 @@ AC_DEFUN([LIBCFS_SRC_KERNEL_PARAM_OPS],[
 	])
 ])
 AC_DEFUN([LIBCFS_KERNEL_PARAM_OPS],[
-	AC_MSG_CHECKING([does 'struct kernel_param_ops' exist])
-	LB2_LINUX_TEST_RESULT([kernel_param_ops], [
+	LB2_MSG_LINUX_TEST_RESULT([does 'struct kernel_param_ops' exist],
+	[kernel_param_ops], [
 		AC_DEFINE(HAVE_KERNEL_PARAM_OPS, 1,
 			['struct kernel_param_ops' is available])
 	])
@@ -234,8 +234,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_ADD],[
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_ADD],[
-	AC_MSG_CHECKING([does function 'ktime_add' exist])
-	LB2_LINUX_TEST_RESULT([ktime_add], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_add' exist],
+	[ktime_add], [
 		AC_DEFINE(HAVE_KTIME_ADD, 1, [ktime_add is available])
 	])
 ]) # LIBCFS_KTIME_ADD
@@ -255,8 +255,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_AFTER],[
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_AFTER],[
-	AC_MSG_CHECKING([does function 'ktime_after' exist])
-	LB2_LINUX_TEST_RESULT([ktime_after], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_after' exist],
+	[ktime_after], [
 		AC_DEFINE(HAVE_KTIME_AFTER, 1, [ktime_after is available])
 	])
 ]) # LIBCFS_KTIME_AFTER
@@ -277,8 +277,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_BEFORE],[
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_BEFORE],[
-	AC_MSG_CHECKING([does function 'ktime_before' exist])
-	LB2_LINUX_TEST_RESULT([ktime_before], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_before' exist],
+	[ktime_before], [
 		AC_DEFINE(HAVE_KTIME_BEFORE, 1, [ktime_before is available])
 	])
 ]) # LIBCFS_KTIME_BEFORE
@@ -298,8 +298,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_COMPARE],[
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_COMPARE],[
-	AC_MSG_CHECKING([does function 'ktime_compare' exist])
-	LB2_LINUX_TEST_RESULT([ktime_compare], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_compare' exist],
+	[ktime_compare], [
 		AC_DEFINE(HAVE_KTIME_COMPARE, 1,
 			[ktime_compare is available])
 	])
@@ -319,8 +319,8 @@ AC_DEFUN([LIBCFS_SRC_SHRINKER_COUNT],[
 	])
 ])
 AC_DEFUN([LIBCFS_SHRINKER_COUNT],[
-	AC_MSG_CHECKING([shrinker has 'count_objects'])
-	LB2_LINUX_TEST_RESULT([shrinker_count_objects], [
+	LB2_MSG_LINUX_TEST_RESULT([shrinker has 'count_objects'],
+	[shrinker_count_objects], [
 		AC_DEFINE(HAVE_SHRINKER_COUNT, 1,
 			[shrinker has count_objects member])
 	])
@@ -340,8 +340,8 @@ AC_DEFUN([LIBCFS_SRC_MATCH_WILDCARD],[
 	])
 ])
 AC_DEFUN([LIBCFS_MATCH_WILDCARD],[
-	AC_MSG_CHECKING([does function 'match_wildcard' exist])
-	LB2_LINUX_TEST_RESULT([match_wildcard], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'match_wildcard' exist],
+	[match_wildcard], [
 		AC_DEFINE(HAVE_MATCH_WILDCARD, 1,
 			[match_wildcard() is available])
 	])
@@ -363,8 +363,8 @@ m4_pattern_allow([AS_EXITING])
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_MAPPING_AS_EXITING_FLAG], [
-	AC_MSG_CHECKING([if enum mapping_flags has AS_EXITING flag])
-	LB2_LINUX_TEST_RESULT([mapping_exiting_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([if enum mapping_flags has AS_EXITING flag],
+	[mapping_exiting_exists], [
 		AC_DEFINE(HAVE_MAPPING_AS_EXITING_FLAG, 1,
 			[enum mapping_flags has AS_EXITING flag])
 	])
@@ -385,8 +385,8 @@ AC_DEFUN([LIBCFS_SRC_IOV_ITER_HAS_TYPE], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_IOV_ITER_HAS_TYPE], [
-	AC_MSG_CHECKING([if iov_iter has member type])
-	LB2_LINUX_TEST_RESULT([iov_iter_has_type_member], [
+	LB2_MSG_LINUX_TEST_RESULT([if iov_iter has member type],
+	[iov_iter_has_type_member], [
 		AC_DEFINE(HAVE_IOV_ITER_HAS_TYPE_MEMBER, 1,
 			[if iov_iter has member type])
 	])
@@ -408,8 +408,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_NS_TO_TIMESPEC64],[
 	])
 ])
 AC_DEFUN([LIBCFS_HAVE_NS_TO_TIMESPEC64],[
-	AC_MSG_CHECKING([does 'ns_to_timespec64()' exist])
-	LB2_LINUX_TEST_RESULT([kernel_old_timeval], [
+	LB2_MSG_LINUX_TEST_RESULT([does 'ns_to_timespec64()' exist],
+	[kernel_old_timeval], [
 		AC_DEFINE(HAVE_NS_TO_TIMESPEC64, 1,
 			[ns_to_timespec64() is available])
 	])
@@ -429,8 +429,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_GLOB],[
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_GLOB],[
-	AC_MSG_CHECKING([does 'glob_match()' exist])
-	LB2_LINUX_TEST_RESULT([glob_match], [
+	LB2_MSG_LINUX_TEST_RESULT([does 'glob_match()' exist],
+	[glob_match], [
 		AC_DEFINE(HAVE_GLOB, 1,
 			[glob_match() is available])
 	])
@@ -448,8 +448,8 @@ AC_DEFUN([LIBCFS_SRC_HLIST_ADD_AFTER],[
 	])
 ])
 AC_DEFUN([LIBCFS_HLIST_ADD_AFTER],[
-	AC_MSG_CHECKING([does function 'hlist_add_after' exist])
-	LB2_LINUX_TEST_RESULT([hlist_add_after], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'hlist_add_after' exist],
+	[hlist_add_after], [
 		AC_DEFINE(HAVE_HLIST_ADD_AFTER, 1,
 			[hlist_add_after is available])
 	])
@@ -469,8 +469,8 @@ AC_DEFUN([LIBCFS_SRC_TIMESPEC64],[
 	])
 ])
 AC_DEFUN([LIBCFS_TIMESPEC64],[
-	AC_MSG_CHECKING([does 'struct timespec64' exist])
-	LB2_LINUX_TEST_RESULT([timespec64], [
+	LB2_MSG_LINUX_TEST_RESULT([does 'struct timespec64' exist],
+	[timespec64], [
 		AC_DEFINE(HAVE_TIMESPEC64, 1,
 			['struct timespec64' is available])
 	])
@@ -490,8 +490,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_GET_NS],[
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_GET_NS],[
-	AC_MSG_CHECKING([does function 'ktime_get_ns' exist])
-	LB2_LINUX_TEST_RESULT([ktime_get_ns], [],[
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_get_ns' exist],
+	[ktime_get_ns], [], [
 		AC_DEFINE(NEED_KTIME_GET_NS, 1,
 			['ktime_get_ns' is not available])
 	])
@@ -510,8 +510,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_GET_REAL_TS64],[
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_GET_REAL_TS64],[
-	AC_MSG_CHECKING([does function 'ktime_get_real_ts64' exist])
-	LB2_LINUX_TEST_RESULT([ktime_get_real_ts64], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_get_real_ts64' exist],
+	[ktime_get_real_ts64], [
 		AC_DEFINE(HAVE_KTIME_GET_REAL_TS64, 1,
 			['ktime_get_real_ts64' is available])
 	])
@@ -531,8 +531,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_GET_REAL_SECONDS],[
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_GET_REAL_SECONDS],[
-	AC_MSG_CHECKING([does function 'ktime_get_real_ts64' exist])
-	LB2_LINUX_TEST_RESULT([ktime_get_real_seconds], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_get_real_ts64' exist],
+	[ktime_get_real_seconds], [
 		AC_DEFINE(HAVE_KTIME_GET_REAL_SECONDS, 1,
 			['ktime_get_real_seconds' is available])
 	])
@@ -552,8 +552,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_GET_REAL_NS],[
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_GET_REAL_NS],[
-	AC_MSG_CHECKING([does function 'ktime_get_real_ns' exist])
-	LB2_LINUX_TEST_RESULT([ktime_get_real_ns], [],[
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_get_real_ns' exist],
+	[ktime_get_real_ns], [],[
 		AC_DEFINE(NEED_KTIME_GET_REAL_NS, 1,
 			['ktime_get_real_ns' is not available])
 	])
@@ -574,8 +574,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_TO_TIMESPEC64],[
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_TO_TIMESPEC64],[
-	AC_MSG_CHECKING([does function 'ktime_to_timespec64' exist])
-	LB2_LINUX_TEST_RESULT([ktime_to_timespec64], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_to_timespec64' exist],
+	[ktime_to_timespec64], [
 		AC_DEFINE(HAVE_KTIME_TO_TIMESPEC64, 1,
 			['ktime_to_timespec64' is available])
 	])
@@ -594,8 +594,8 @@ AC_DEFUN([LIBCFS_SRC_TIMESPEC64_SUB],[
 	])
 ])
 AC_DEFUN([LIBCFS_TIMESPEC64_SUB],[
-	AC_MSG_CHECKING([does function 'timespec64_sub' exist])
-	LB2_LINUX_TEST_RESULT([timespec64_sub], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'timespec64_sub' exist],
+	[timespec64_sub], [
 		AC_DEFINE(HAVE_TIMESPEC64_SUB, 1,
 			['timespec64_sub' is available])
 	])
@@ -615,8 +615,8 @@ AC_DEFUN([LIBCFS_SRC_TIMESPEC64_TO_KTIME],[
 	])
 ])
 AC_DEFUN([LIBCFS_TIMESPEC64_TO_KTIME],[
-	AC_MSG_CHECKING([does function 'timespec64_to_ktime' exist])
-	LB2_LINUX_TEST_RESULT([timespec64_to_ktime], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'timespec64_to_ktime' exist],
+	[timespec64_to_ktime], [
 		AC_DEFINE(HAVE_TIMESPEC64_TO_KTIME, 1,
 			['timespec64_to_ktime' is available])
 	])
@@ -635,8 +635,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_GET_SECONDS],[
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_GET_SECONDS],[
-	AC_MSG_CHECKING([does function 'ktime_get_seconds' exist])
-	LB2_LINUX_TEST_RESULT([ktime_get_seconds], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_get_seconds' exist],
+	[ktime_get_seconds], [
 		AC_DEFINE(HAVE_KTIME_GET_SECONDS, 1,
 			['ktime_get_seconds' is available])
 	])
@@ -654,8 +654,8 @@ AC_DEFUN([LIBCFS_SRC_WAIT_WOKEN],[
 	])
 ])
 AC_DEFUN([LIBCFS_WAIT_WOKEN],[
-	AC_MSG_CHECKING([does function 'wait_woken' exist])
-	LB2_LINUX_TEST_RESULT([wait_woken], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'wait_woken' exist],
+	[wait_woken], [
 		AC_DEFINE(HAVE_WAIT_WOKEN, 1,
 			['wait_woken, is available'])
 	])
@@ -676,8 +676,8 @@ AC_DEFUN([LIBCFS_SRC_KTIME_MS_DELTA],[
 	])
 ])
 AC_DEFUN([LIBCFS_KTIME_MS_DELTA],[
-	AC_MSG_CHECKING([does function 'ktime_ms_delta' exist])
-	LB2_LINUX_TEST_RESULT([ktime_ms_delta], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'ktime_ms_delta' exist],
+	[ktime_ms_delta], [
 		AC_DEFINE(HAVE_KTIME_MS_DELTA, 1,
 			['ktime_ms_delta' is available])
 	])
@@ -698,8 +698,8 @@ AC_DEFUN([LIBCFS_SRC_KERNEL_PARAM_LOCK],[
 	])
 ])
 AC_DEFUN([LIBCFS_KERNEL_PARAM_LOCK],[
-	AC_MSG_CHECKING([does function 'kernel_param_[un]lock' exist])
-	LB2_LINUX_TEST_RESULT([kernel_param_lock], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'kernel_param_[un]lock' exist],
+	[kernel_param_lock], [
 		AC_DEFINE(HAVE_KERNEL_PARAM_LOCK, 1,
 			['kernel_param_[un]lock' is available])
 	])
@@ -719,8 +719,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_TOPOLOGY_SIBLING_CPUMASK],[
 	])
 ])
 AC_DEFUN([LIBCFS_HAVE_TOPOLOGY_SIBLING_CPUMASK],[
-	AC_MSG_CHECKING([does function 'topology_sibling_cpumask' exist])
-	LB2_LINUX_TEST_RESULT([topology_sibling_cpumask], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'topology_sibling_cpumask' exist],
+	[topology_sibling_cpumask], [
 		AC_DEFINE(HAVE_TOPOLOGY_SIBLING_CPUMASK, 1,
 			[topology_sibling_cpumask is available])
 	])
@@ -739,8 +739,8 @@ AC_DEFUN([LIBCFS_SRC_KSTRTOBOOL_FROM_USER], [
 	])
 ])
 AC_DEFUN([LIBCFS_KSTRTOBOOL_FROM_USER], [
-	AC_MSG_CHECKING([if Linux kernel has 'kstrtobool_from_user'])
-	LB2_LINUX_TEST_RESULT([kstrtobool_from_user], [
+	LB2_MSG_LINUX_TEST_RESULT([if Linux kernel has 'kstrtobool_from_user'],
+	[kstrtobool_from_user], [
 		AC_DEFINE(HAVE_KSTRTOBOOL_FROM_USER, 1,
 			[kernel has kstrtobool_from_user])
 	])
@@ -762,8 +762,8 @@ AC_DEFUN([LIBCFS_SRC_NETLINK_CALLBACK_START], [
 	],[])
 ])
 AC_DEFUN([LIBCFS_NETLINK_CALLBACK_START], [
-	AC_MSG_CHECKING([if struct genl_ops has start callback])
-	LB2_LINUX_TEST_RESULT([cb_start], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct genl_ops has start callback],
+	[cb_start], [
 		AC_DEFINE(HAVE_NETLINK_CALLBACK_START, 1,
 			[struct genl_ops has 'start' callback])
 	])
@@ -782,8 +782,8 @@ AC_DEFUN([LIBCFS_SRC_CRYPTO_HASH_HELPERS], [
 	])
 ])
 AC_DEFUN([LIBCFS_CRYPTO_HASH_HELPERS], [
-	AC_MSG_CHECKING([does crypto hash helper functions exist])
-	LB2_LINUX_TEST_RESULT([crypto_hash_helpers], [
+	LB2_MSG_LINUX_TEST_RESULT([does crypto hash helper functions exist],
+	[crypto_hash_helpers], [
 		AC_DEFINE(HAVE_CRYPTO_HASH_HELPERS, 1,
 			[crypto hash helper functions are available])
 	])
@@ -803,8 +803,8 @@ AC_DEFUN([LIBCFS_SRC_RHASHTABLE_REPLACE], [
 	])
 ])
 AC_DEFUN([LIBCFS_RHASHTABLE_REPLACE], [
-	AC_MSG_CHECKING([if 'rhashtable_replace_fast' exists])
-	LB2_LINUX_TEST_RESULT([rhashtable_replace_fast], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'rhashtable_replace_fast' exists],
+	[rhashtable_replace_fast], [
 		AC_DEFINE(HAVE_RHASHTABLE_REPLACE, 1,
 			[rhashtable_replace_fast() is available])
 	])
@@ -833,8 +833,8 @@ AC_DEFUN([LIBCFS_SRC_BROKEN_HASH_64], [
 	])
 ])
 AC_DEFUN([LIBCFS_BROKEN_HASH_64], [
-	AC_MSG_CHECKING([kernel has fixed hash_64()])
-	LB2_LINUX_TEST_RESULT([broken_hash_64], [
+	LB2_MSG_LINUX_TEST_RESULT([kernel has fixed hash_64()],
+	[broken_hash_64], [
 		AC_DEFINE(HAVE_BROKEN_HASH_64, 1, [kernel hash_64() is broken])
 	])
 ]) # LIBCFS_BROKEN_HASH_64
@@ -854,8 +854,8 @@ AC_DEFUN([LIBCFS_SRC_STACKTRACE_OPS_ADDRESS_RETURN_INT], [
 	])
 ])
 AC_DEFUN([LIBCFS_STACKTRACE_OPS_ADDRESS_RETURN_INT], [
-	AC_MSG_CHECKING([if 'struct stacktrace_ops' address function returns an int])
-	LB2_LINUX_TEST_RESULT([stacktrace_ops_address_return_int], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct stacktrace_ops' address function returns an int],
+	[stacktrace_ops_address_return_int], [
 		AC_DEFINE(STACKTRACE_OPS_ADDRESS_RETURN_INT, 1,
 			['struct stacktrace_ops' address function returns an int])
 	])
@@ -875,8 +875,8 @@ AC_DEFUN([LIBCFS_SRC_GET_USER_PAGES_6ARG], [
 	])
 ])
 AC_DEFUN([LIBCFS_GET_USER_PAGES_6ARG], [
-	AC_MSG_CHECKING([if 'get_user_pages()' takes 6 arguments])
-	LB2_LINUX_TEST_RESULT([get_user_pages_6arg], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'get_user_pages()' takes 6 arguments],
+	[get_user_pages_6arg], [
 		AC_DEFINE(HAVE_GET_USER_PAGES_6ARG, 1,
 			[get_user_pages takes 6 arguments])
 	])
@@ -914,8 +914,8 @@ AC_DEFUN([LIBCFS_SRC_TIME64_TO_TM],[
 	])
 ])
 AC_DEFUN([LIBCFS_TIME64_TO_TM],[
-	AC_MSG_CHECKING([does function 'time64_to_tm' exist])
-	LB2_LINUX_TEST_RESULT([fn_time64_to_tm_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'time64_to_tm' exist],
+	[fn_time64_to_tm_exists], [
 		AC_DEFINE(HAVE_TIME64_TO_TM, 1,
 			['time64_to_tm' is available])
 	])
@@ -940,8 +940,8 @@ AC_DEFUN([LIBCFS_SRC_RHASHTABLE_INSERT_FAST], [
 	[-Werror])
 ])
 AC_DEFUN([LIBCFS_RHASHTABLE_INSERT_FAST], [
-	AC_MSG_CHECKING([if internal '__rhashtable_insert_fast()' returns int])
-	LB2_LINUX_TEST_RESULT([rhashtable_insert_fast], [
+	LB2_MSG_LINUX_TEST_RESULT([if internal '__rhashtable_insert_fast()' returns int],
+	[rhashtable_insert_fast], [
 		AC_DEFINE(HAVE_HASHTABLE_INSERT_FAST_RETURN_INT, 1,
 			  ['__rhashtable_insert_fast()' returns int])
 	])
@@ -962,8 +962,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_NR_ZONE_WRITE_PENDING], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_NR_ZONE_WRITE_PENDING], [
-	AC_MSG_CHECKING([if NR_ZONE_WRITE_PENDING is available])
-	LB2_LINUX_TEST_RESULT([nr_zone_write_pending_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([NR_ZONE_WRITE_PENDING is available],
+	[nr_zone_write_pending_exists], [
 		AC_DEFINE(HAVE_NR_ZONE_WRITE_PENDING, 1,
 			[NR_ZONE_WRITE_PENDING is still in use.])
 	])
@@ -982,8 +982,8 @@ AC_DEFUN([LIBCFS_SRC_RHASHTABLE_WALK_INIT_3ARG], [
 	])
 ])
 AC_DEFUN([LIBCFS_RHASHTABLE_WALK_INIT_3ARG], [
-	AC_MSG_CHECKING([if 'rhashtable_walk_init' has 3 args])
-	LB2_LINUX_TEST_RESULT([rhashtable_walk_init], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'rhashtable_walk_init' has 3 args],
+	[rhashtable_walk_init], [
 		AC_DEFINE(HAVE_3ARG_RHASHTABLE_WALK_INIT, 1,
 			[rhashtable_walk_init() has 3 args])
 	])
@@ -1004,8 +1004,8 @@ AC_DEFUN([LIBCFS_SRC_RHASHTABLE_LOOKUP], [
 	])
 ])
 AC_DEFUN([LIBCFS_RHASHTABLE_LOOKUP], [
-	AC_MSG_CHECKING([if 'rhashtable_lookup' exist])
-	LB2_LINUX_TEST_RESULT([rhashtable_lookup], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'rhashtable_lookup' exist],
+	[rhashtable_lookup], [
 		AC_DEFINE(HAVE_RHASHTABLE_LOOKUP, 1,
 			[rhashtable_lookup() is available])
 	])
@@ -1027,8 +1027,8 @@ AC_DEFUN([LIBCFS_SRC_RHLTABLE], [
 	])
 ])
 AC_DEFUN([LIBCFS_RHLTABLE], [
-	AC_MSG_CHECKING([does 'struct rhltable' exist])
-	LB2_LINUX_TEST_RESULT([rhtable], [
+	LB2_MSG_LINUX_TEST_RESULT([does 'struct rhltable' exist],
+	[rhtable], [
 		AC_DEFINE(HAVE_RHLTABLE, 1, [struct rhltable exist])
 	])
 ]) # LIBCFS_RHLTABLE
@@ -1050,8 +1050,8 @@ AC_DEFUN([LIBCFS_SRC_STACKTRACE_OPS], [
 	])
 ])
 AC_DEFUN([LIBCFS_STACKTRACE_OPS], [
-AC_MSG_CHECKING([if 'struct stacktrace_ops' exists])
-	LB2_LINUX_TEST_RESULT([stacktrace_ops], [
+LB2_MSG_LINUX_TEST_RESULT([if 'struct stacktrace_ops' exists],
+	[stacktrace_ops], [
 		AC_DEFINE(HAVE_STACKTRACE_OPS, 1,
 			[struct stacktrace_ops exists])
 	])
@@ -1071,8 +1071,8 @@ AC_DEFUN([LIBCFS_SRC_RHASHTABLE_WALK_ENTER], [
 	])
 ])
 AC_DEFUN([LIBCFS_RHASHTABLE_WALK_ENTER], [
-	AC_MSG_CHECKING([if 'rhashtable_walk_enter' exists])
-	LB2_LINUX_TEST_RESULT([rhashtable_walk_enter], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'rhashtable_walk_enter' exists],
+	[rhashtable_walk_enter], [
 		AC_DEFINE(HAVE_RHASHTABLE_WALK_ENTER, 1,
 			[rhashtable_walk_enter() is available])
 	])
@@ -1091,8 +1091,8 @@ AC_DEFUN([LIBCFS_SRC_GET_USER_PAGES_GUP_FLAGS], [
 	])
 ])
 AC_DEFUN([LIBCFS_GET_USER_PAGES_GUP_FLAGS], [
-	AC_MSG_CHECKING([if 'get_user_pages()' takes gup_flags in arguments])
-	LB2_LINUX_TEST_RESULT([get_user_pages_gup_flags], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'get_user_pages()' takes gup_flags in arguments],
+	[get_user_pages_gup_flags], [
 		AC_DEFINE(HAVE_GET_USER_PAGES_GUP_FLAGS, 1,
 			[get_user_pages takes gup_flags in arguments])
 		])
@@ -1110,8 +1110,8 @@ AC_DEFUN([LIBCFS_SRC_HOTPLUG_STATE_MACHINE], [
 	])
 ])
 AC_DEFUN([LIBCFS_HOTPLUG_STATE_MACHINE], [
-	AC_MSG_CHECKING([if libcfs supports CPU hotplug state machine])
-	LB2_LINUX_TEST_RESULT([cpu_hotplug_state_machine], [
+	LB2_MSG_LINUX_TEST_RESULT([if libcfs supports CPU hotplug state machine],
+	[cpu_hotplug_state_machine], [
 		AC_DEFINE(HAVE_HOTPLUG_STATE_MACHINE, 1,
 			[hotplug state machine is supported])
 	])
@@ -1146,8 +1146,8 @@ AC_DEFUN([LIBCFS_SRC_MEMALLOC_NORECLAIM], [
 	])
 ])
 AC_DEFUN([LIBCFS_MEMALLOC_NORECLAIM], [
-	AC_MSG_CHECKING([if memalloc_noreclaim_{save,restore} exist])
-	LB2_LINUX_TEST_RESULT([memalloc_noreclaim], [
+	LB2_MSG_LINUX_TEST_RESULT([if memalloc_noreclaim_{save,restore} exist],
+	[memalloc_noreclaim], [
 		AC_DEFINE(HAVE_MEMALLOC_RECLAIM, 1,
 			[memalloc_noreclaim_{save,restore}() is supported])
 	])
@@ -1180,8 +1180,8 @@ AC_DEFUN([LIBCFS_SRC_KREF_READ], [
 	])
 ])
 AC_DEFUN([LIBCFS_KREF_READ], [
-	AC_MSG_CHECKING([if 'kref_read' exists])
-	LB2_LINUX_TEST_RESULT([kref_read], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'kref_read' exists],
+	[kref_read], [
 		AC_DEFINE(HAVE_KREF_READ, 1, [kref_read() is available])
 	])
 ]) # LIBCFS_KREF_READ
@@ -1198,8 +1198,8 @@ AC_DEFUN([LIBCFS_SRC_RHT_BUCKET_VAR], [
 	])
 ])
 AC_DEFUN([LIBCFS_RHT_BUCKET_VAR], [
-	AC_MSG_CHECKING([if 'rht_bucket_var' exists])
-	LB2_LINUX_TEST_RESULT([rht_bucket_var], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'rht_bucket_var' exists],
+	[rht_bucket_var], [
 		AC_DEFINE(HAVE_RHT_BUCKET_VAR, 1,
 			[rht_bucket_var() is available])
 	])
@@ -1221,8 +1221,8 @@ AC_DEFUN([LIBCFS_SRC_NL_EXT_ACK], [
 	])
 ])
 AC_DEFUN([LIBCFS_NL_EXT_ACK], [
-	AC_MSG_CHECKING([if Netlink supports netlink_ext_ack])
-	LB2_LINUX_TEST_RESULT([netlink_ext_ack], [
+	LB2_MSG_LINUX_TEST_RESULT([if Netlink supports netlink_ext_ack],
+	[netlink_ext_ack], [
 		AC_DEFINE(HAVE_NL_PARSE_WITH_EXT_ACK, 1,
 			[netlink_ext_ack is an argument to nla_parse type function])
 	])
@@ -1243,8 +1243,8 @@ AC_DEFUN([LIBCFS_SRC_RHASHTABLE_LOOKUP_GET_INSERT_FAST], [
 	])
 ])
 AC_DEFUN([LIBCFS_RHASHTABLE_LOOKUP_GET_INSERT_FAST], [
-	AC_MSG_CHECKING([if 'rhashtable_lookup_get_insert_fast' exist])
-	LB2_LINUX_TEST_RESULT([rhashtable_lookup_get_insert_fast], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'rhashtable_lookup_get_insert_fast' exist],
+	[rhashtable_lookup_get_insert_fast], [
 		AC_DEFINE(HAVE_RHASHTABLE_LOOKUP_GET_INSERT_FAST, 1,
 			[rhashtable_lookup_get_insert_fast() is available])
 	])
@@ -1263,8 +1263,8 @@ AC_DEFUN([LIBCFS_SRC_CPUS_READ_LOCK], [
 	])
 ])
 AC_DEFUN([LIBCFS_CPUS_READ_LOCK], [
-	AC_MSG_CHECKING([if 'cpus_read_[un]lock' exist])
-	LB2_LINUX_TEST_RESULT([cpu_read_lock], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'cpus_read_[un]lock' exist],
+	[cpu_read_lock], [
 		AC_DEFINE(HAVE_CPUS_READ_LOCK, 1, ['cpus_read_lock' exist])
 	])
 ]) # LIBCFS_CPUS_READ_LOCK
@@ -1283,8 +1283,8 @@ AC_DEFUN([LIBCFS_SRC_UUID_T], [
 	])
 ])
 AC_DEFUN([LIBCFS_UUID_T], [
-	AC_MSG_CHECKING([if 'uuid_t' exist])
-	LB2_LINUX_TEST_RESULT([uuid_t], [
+	LB2_MSG_LINUX_TEST_RESULT(['uuid_t' exist],
+	[uuid_t], [
 		AC_DEFINE(HAVE_UUID_T, 1, ['uuid_t' exist])
 	])
 ]) # LIBCFS_UUID_T
@@ -1336,8 +1336,8 @@ AC_DEFUN([LIBCFS_SRC_WAIT_QUEUE_TASK_LIST_RENAME], [
 	])
 ])
 AC_DEFUN([LIBCFS_WAIT_QUEUE_TASK_LIST_RENAME], [
-	AC_MSG_CHECKING([if linux wait_queue_head list_head is named head])
-	LB2_LINUX_TEST_RESULT([wait_queue_task_list], [
+	LB2_MSG_LINUX_TEST_RESULT([if linux wait_queue_head list_head is named head],
+	[wait_queue_task_list], [
 		AC_DEFINE(HAVE_WAIT_QUEUE_ENTRY_LIST, 1,
 			[linux wait_queue_head_t list_head is name head])
 	])
@@ -1359,8 +1359,8 @@ AC_DEFUN([LIBCFS_SRC_NLA_STRDUP], [
 	],[])
 ])
 AC_DEFUN([LIBCFS_NLA_STRDUP], [
-	AC_MSG_CHECKING([if 'nla_strdup()' exists])
-	LB2_LINUX_TEST_RESULT([nla_strdup], [
+	LB2_MSG_LINUX_TEST_RESULT(['nla_strdup()' exists],
+	[nla_strdup], [
 		AC_DEFINE(HAVE_NLA_STRDUP, 1,
 			['nla_strdup' is available])
 	])
@@ -1386,8 +1386,8 @@ AC_DEFUN([LIBCFS_SRC_WAIT_BIT_QUEUE_ENTRY_EXISTS], [
 	])
 ])
 AC_DEFUN([LIBCFS_WAIT_BIT_QUEUE_ENTRY_EXISTS], [
-	AC_MSG_CHECKING([if struct wait_bit_queue_entry exists])
-	LB2_LINUX_TEST_RESULT([struct_wait_bit_queue_entry_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct wait_bit_queue_entry exists],
+	[struct_wait_bit_queue_entry_exists], [
 		AC_DEFINE(HAVE_WAIT_BIT_QUEUE_ENTRY, 1,
 			[if struct wait_bit_queue_entry exists])
 	])
@@ -1409,8 +1409,8 @@ AC_DEFUN([LIBCFS_SRC_WAIT_QUEUE_ENTRY], [
 	])
 ])
 AC_DEFUN([LIBCFS_WAIT_QUEUE_ENTRY], [
-	AC_MSG_CHECKING([if 'wait_queue_entry_t' exists])
-	LB2_LINUX_TEST_RESULT([wait_queue_entry], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'wait_queue_entry_t' exists],
+	[wait_queue_entry], [
 		AC_DEFINE(HAVE_WAIT_QUEUE_ENTRY, 1,
 			['wait_queue_entry_t' is available])
 	])
@@ -1433,8 +1433,8 @@ AC_DEFUN([LIBCFS_SRC_NEW_KERNEL_WRITE], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_NEW_KERNEL_WRITE], [
-	AC_MSG_CHECKING([if 'kernel_write' matches other read/write helpers])
-	LB2_LINUX_TEST_RESULT([kernel_write_match], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'kernel_write' matches other read/write helpers],
+	[kernel_write_match], [
 		AC_DEFINE(HAVE_NEW_KERNEL_WRITE, 1,
 			['kernel_write' aligns with read/write helpers])
 	])
@@ -1454,8 +1454,8 @@ AC_DEFUN([LIBCFS_SRC_MM_TOTALRAM_PAGES_FUNC], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_MM_TOTALRAM_PAGES_FUNC], [
-	AC_MSG_CHECKING([if totalram_pages is a function])
-	LB2_LINUX_TEST_RESULT([totalram_pages], [
+	LB2_MSG_LINUX_TEST_RESULT([if totalram_pages is a function],
+	[totalram_pages], [
 		AC_DEFINE(HAVE_TOTALRAM_PAGES_AS_FUNC, 1,
 			[if totalram_pages is a function])
 	])
@@ -1477,8 +1477,8 @@ AC_DEFUN([LIBCFS_SRC_NEW_KERNEL_READ], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_NEW_KERNEL_READ], [
-	AC_MSG_CHECKING([if 'kernel_read()' has loff_t *pos as last parameter])
-	LB2_LINUX_TEST_RESULT([kernel_read], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'kernel_read()' has loff_t *pos as last parameter],
+	[kernel_read], [
 		AC_DEFINE(HAVE_KERNEL_READ_LAST_POSP, 1,
 			[kernel_read() signature ends with loff_t *pos])
 	])
@@ -1499,8 +1499,8 @@ AC_DEFUN([LIBCFS_SRC_DEFINE_TIMER], [
 	])
 ])
 AC_DEFUN([LIBCFS_DEFINE_TIMER], [
-	AC_MSG_CHECKING([if DEFINE_TIMER takes only 2 arguments])
-	LB2_LINUX_TEST_RESULT([define_timer], [
+	LB2_MSG_LINUX_TEST_RESULT([if DEFINE_TIMER takes only 2 arguments],
+	[define_timer], [
 		AC_DEFINE(HAVE_NEW_DEFINE_TIMER, 1,
 			[DEFINE_TIMER uses only 2 arguements])
 	])
@@ -1542,8 +1542,9 @@ AC_DEFUN([LIBCFS_SRC_LOCKDEP_IS_HELD], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_LOCKDEP_IS_HELD], [
-	AC_MSG_CHECKING([if 'lockdep_is_held()' uses const argument])
-	LB2_LINUX_TEST_RESULT([lockdep_is_held], [],[
+	LB2_MSG_LINUX_TEST_RESULT([if 'lockdep_is_held()' uses const argument],
+	[lockdep_is_held], [
+	],[
 		AC_DEFINE(NEED_LOCKDEP_IS_HELD_DISCARD_CONST, 1,
 			[lockdep_is_held() argument is const])
 	])
@@ -1564,8 +1565,8 @@ AC_DEFUN([LIBCFS_SRC_TIMER_SETUP], [
 	])
 ])
 AC_DEFUN([LIBCFS_TIMER_SETUP], [
-	AC_MSG_CHECKING([if setup_timer has been replaced with timer_setup])
-	LB2_LINUX_TEST_RESULT([timer_setup], [
+	LB2_MSG_LINUX_TEST_RESULT([if setup_timer has been replaced with timer_setup],
+	[timer_setup], [
 		AC_DEFINE(HAVE_TIMER_SETUP, 1,
 			[timer_setup has replaced setup_timer])
 	])
@@ -1593,8 +1594,8 @@ AC_DEFUN([LIBCFS_SRC_WAIT_VAR_EVENT], [
 	],[${WAIT_BIT_H}])
 ])
 AC_DEFUN([LIBCFS_WAIT_VAR_EVENT], [
-	AC_MSG_CHECKING([if 'wait_var_event' exist])
-	LB2_LINUX_TEST_RESULT([wait_var_event], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'wait_var_event' exist],
+	[wait_var_event], [
 		AC_DEFINE(HAVE_WAIT_VAR_EVENT, 1,
 			['wait_var_event' is available])
 	])
@@ -1615,8 +1616,8 @@ AC_DEFUN([LIBCFS_SRC_BITMAP_ALLOC], [
 	])
 ])
 AC_DEFUN([LIBCFS_BITMAP_ALLOC], [
-	AC_MSG_CHECKING([if Linux bitmap memory management exist])
-	LB2_LINUX_TEST_RESULT([bitmap_alloc], [
+	LB2_MSG_LINUX_TEST_RESULT([if Linux bitmap memory management exist],
+	[bitmap_alloc], [
 		AC_DEFINE(HAVE_BITMAP_ALLOC, 1,
 			[Linux bitmap can be allocated])
 	])
@@ -1644,8 +1645,8 @@ AC_DEFUN([LIBCFS_SRC_CLEAR_AND_WAKE_UP_BIT], [
 	],[${WAIT_BIT_H}])
 ])
 AC_DEFUN([LIBCFS_CLEAR_AND_WAKE_UP_BIT], [
-	AC_MSG_CHECKING([if 'clear_and_wake_up_bit' exist])
-	LB2_LINUX_TEST_RESULT([clear_and_wake_up_bit], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'clear_and_wake_up_bit' exist],
+	[clear_and_wake_up_bit], [
 		AC_DEFINE(HAVE_CLEAR_AND_WAKE_UP_BIT, 1,
 			['clear_and_wake_up_bit' is available])
 	])
@@ -1664,8 +1665,8 @@ AC_DEFUN([LIBCFS_SRC_TCP_SOCK_SET_NODELAY], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_TCP_SOCK_SET_NODELAY], [
-	AC_MSG_CHECKING([if 'tcp_sock_set_nodelay()' exists])
-	LB2_LINUX_TEST_RESULT([tcp_sock_set_nodelay_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'tcp_sock_set_nodelay()' exists],
+	[tcp_sock_set_nodelay_exists], [
 		AC_DEFINE(HAVE_TCP_SOCK_SET_NODELAY, 1,
 			['tcp_sock_set_nodelay()' exists])
 	])
@@ -1685,8 +1686,8 @@ AC_DEFUN([LIBCFS_SRC_TCP_SOCK_SET_KEEPIDLE], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_TCP_SOCK_SET_KEEPIDLE], [
-	AC_MSG_CHECKING([if 'tcp_sock_set_keepidle()' exists])
-	LB2_LINUX_TEST_RESULT([tcp_sock_set_keepidle_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'tcp_sock_set_keepidle()' exists],
+	[tcp_sock_set_keepidle_exists], [
 		AC_DEFINE(HAVE_TCP_SOCK_SET_KEEPIDLE, 1,
 			['tcp_sock_set_keepidle()' exists])
 	])
@@ -1705,8 +1706,8 @@ AC_DEFUN([LIBCFS_SRC_TCP_SOCK_SET_QUICKACK], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_TCP_SOCK_SET_QUICKACK], [
-	AC_MSG_CHECKING([if 'tcp_sock_set_quickack()' exists])
-	LB2_LINUX_TEST_RESULT([tcp_sock_set_quickack_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'tcp_sock_set_quickack()' exists],
+	[tcp_sock_set_quickack_exists], [
 		AC_DEFINE(HAVE_TCP_SOCK_SET_QUICKACK, 1,
 			['tcp_sock_set_quickack()' exists])
 	])
@@ -1725,8 +1726,8 @@ AC_DEFUN([LIBCFS_SRC_TCP_SOCK_SET_KEEPINTVL], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_TCP_SOCK_SET_KEEPINTVL], [
-	AC_MSG_CHECKING([if 'tcp_sock_set_keepintvl()' exists])
-	LB2_LINUX_TEST_RESULT([tcp_sock_set_keepintvl_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'tcp_sock_set_keepintvl()' exists],
+	[tcp_sock_set_keepintvl_exists], [
 		AC_DEFINE(HAVE_TCP_SOCK_SET_KEEPINTVL, 1,
 			['tcp_sock_set_keepintvl()' exists])
 	])
@@ -1745,8 +1746,8 @@ AC_DEFUN([LIBCFS_SRC_TCP_SOCK_SET_KEEPCNT], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_TCP_SOCK_SET_KEEPCNT], [
-	AC_MSG_CHECKING([if 'tcp_sock_set_keepcnt()' exists])
-	LB2_LINUX_TEST_RESULT([tcp_sock_set_keepcnt_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'tcp_sock_set_keepcnt()' exists],
+	[tcp_sock_set_keepcnt_exists], [
 		AC_DEFINE(HAVE_TCP_SOCK_SET_KEEPCNT, 1,
 			['tcp_sock_set_keepcnt()' exists])
 	])
@@ -1767,8 +1768,8 @@ AC_DEFUN([LIBCFS_SRC_XARRAY_SUPPORT], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_XARRAY_SUPPORT], [
-	AC_MSG_CHECKING([if page cache uses Xarray])
-	LB2_LINUX_TEST_RESULT([xarray_support], [
+	LB2_MSG_LINUX_TEST_RESULT([if page cache uses Xarray],
+	[xarray_support], [
 		AC_DEFINE(HAVE_XARRAY_SUPPORT, 1,
 			[kernel Xarray implementation lacks 'xa_is_value'])
 	])
@@ -1789,8 +1790,8 @@ AC_DEFUN([LIBCFS_SRC_NL_DUMP_EXT_ACK], [
 	],[])
 ])
 AC_DEFUN([LIBCFS_NL_DUMP_EXT_ACK], [
-	AC_MSG_CHECKING([if Netlink dump handlers support ext_ack])
-	LB2_LINUX_TEST_RESULT([netlink_dump_ext_ack], [
+	LB2_MSG_LINUX_TEST_RESULT([if Netlink dump handlers support ext_ack],
+	[netlink_dump_ext_ack], [
 		AC_DEFINE(HAVE_NL_DUMP_WITH_EXT_ACK, 1,
 			[netlink_ext_ack is handled for Netlink dump handlers])
 	])
@@ -1812,8 +1813,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_IOV_ITER_TYPE], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_IOV_ITER_TYPE], [
-	AC_MSG_CHECKING([if iov_iter_type exists])
-	LB2_LINUX_TEST_RESULT([macro_iov_iter_type_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([if iov_iter_type exists],
+	[macro_iov_iter_type_exists], [
 		AC_DEFINE(HAVE_IOV_ITER_TYPE, 1,
 			[if iov_iter_type exists])
 	])
@@ -1856,8 +1857,8 @@ AC_DEFUN([LIBCFS_SRC_GET_REQUEST_KEY_AUTH], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_GET_REQUEST_KEY_AUTH], [
-	AC_MSG_CHECKING([if get_request_key_auth() is available])
-	LB2_LINUX_TEST_RESULT([get_request_key_auth_exported], [
+	LB2_MSG_LINUX_TEST_RESULT([if get_request_key_auth() is available],
+	[get_request_key_auth_exported], [
 		AC_DEFINE(HAVE_GET_REQUEST_KEY_AUTH, 1,
 			[get_request_key_auth() is available])
 	])
@@ -1881,8 +1882,8 @@ AC_DEFUN([LIBCFS_SRC_KOBJ_TYPE_DEFAULT_GROUPS],[
 	])
 ])
 AC_DEFUN([LIBCFS_KOBJ_TYPE_DEFAULT_GROUPS],[
-	AC_MSG_CHECKING([does struct kobj_type have 'default_groups' member])
-	LB2_LINUX_TEST_RESULT([kobj_type_default_groups], [
+	LB2_MSG_LINUX_TEST_RESULT([does struct kobj_type have 'default_groups' member],
+	[kobj_type_default_groups], [
 		AC_DEFINE(HAVE_KOBJ_TYPE_DEFAULT_GROUPS, 1,
 			[struct kobj_type has 'default_groups' member])
 	])
@@ -1903,8 +1904,8 @@ AC_DEFUN([LIBCFS_SRC_LOOKUP_USER_KEY], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_LOOKUP_USER_KEY], [
-	AC_MSG_CHECKING([if lookup_user_key() is available])
-	LB2_LINUX_TEST_RESULT([lookup_user_key_exported], [
+	LB2_MSG_LINUX_TEST_RESULT([if lookup_user_key() is available],
+	[lookup_user_key_exported], [
 		AC_DEFINE(HAVE_LOOKUP_USER_KEY, 1,
 			[lookup_user_key() is available])
 	])
@@ -1947,8 +1948,8 @@ AC_DEFUN([LIBCFS_SRC_CACHE_DETAIL_WRITERS], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_CACHE_DETAIL_WRITERS], [
-	AC_MSG_CHECKING([if struct cache_detail has writers])
-	LB2_LINUX_TEST_RESULT([cache_detail_writers_atomic], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct cache_detail has writers],
+	[cache_detail_writers_atomic], [
 		AC_DEFINE(HAVE_CACHE_DETAIL_WRITERS, 1,
 			[struct cache_detail has writers])
 	])
@@ -1970,8 +1971,8 @@ AC_DEFUN([LIBCFS_SRC_GENL_DUMPIT_INFO], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_GENL_DUMPIT_INFO], [
-	AC_MSG_CHECKING([if struct genl_dumpit_info has family field])
-	LB2_LINUX_TEST_RESULT([genl_dumpit_info], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct genl_dumpit_info has family field],
+	[genl_dumpit_info], [
 		AC_DEFINE(HAVE_GENL_DUMPIT_INFO, 1,
 			[struct genl_dumpit_info has family field])
 	])
@@ -2002,8 +2003,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_PROC_OPS], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_PROC_OPS], [
-	AC_MSG_CHECKING([if struct proc_ops exists])
-	LB2_LINUX_TEST_RESULT([proc_ops], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct proc_ops exists],
+	[proc_ops], [
 		AC_DEFINE(HAVE_PROC_OPS, 1,
 			[struct proc_ops exists])
 	])
@@ -2022,8 +2023,8 @@ AC_DEFUN([LIBCFS_SRC_VMALLOC_2ARGS], [
 	],[])
 ])
 AC_DEFUN([LIBCFS_VMALLOC_2ARGS], [
-	AC_MSG_CHECKING([if __vmalloc has 2 args])
-	LB2_LINUX_TEST_RESULT([vmalloc_2args], [
+	LB2_MSG_LINUX_TEST_RESULT([if __vmalloc has 2 args],
+	[vmalloc_2args], [
 		AC_DEFINE(HAVE_VMALLOC_2ARGS, 1,
 			[__vmalloc only takes 2 args.])
 	])
@@ -2043,8 +2044,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_MMAP_LOCK], [
 	],[])
 ])
 AC_DEFUN([LIBCFS_HAVE_MMAP_LOCK], [
-	AC_MSG_CHECKING([if mmap_lock API is available])
-	LB2_LINUX_TEST_RESULT([mmap_write_lock], [
+	LB2_MSG_LINUX_TEST_RESULT([if mmap_lock API is available],
+	[mmap_write_lock], [
 		AC_DEFINE(HAVE_MMAP_LOCK, 1,
 			[mmap_lock API is available.])
 	])
@@ -2063,8 +2064,8 @@ AC_DEFUN([LIBCFS_SRC_KERNEL_SETSOCKOPT], [
 	],[-Werror])
 ])
 AC_DEFUN([LIBCFS_KERNEL_SETSOCKOPT], [
-	AC_MSG_CHECKING([if kernel_setsockopt still in use])
-	LB2_LINUX_TEST_RESULT([kernel_setsockopt_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([if kernel_setsockopt still in use],
+	[kernel_setsockopt_exists], [
 	AC_DEFINE(HAVE_KERNEL_SETSOCKOPT, 1,
 		[kernel_setsockopt still in use])
 	])
@@ -2083,8 +2084,8 @@ AC_DEFUN([LIBCFS_SRC_SEC_RELEASE_SECCTX], [
 	],[])
 ])
 AC_DEFUN([LIBCFS_SEC_RELEASE_SECCTX], [
-	AC_MSG_CHECKING([if security_release_secctx has 1 arg])
-	LB2_LINUX_TEST_RESULT([security_release_secctx_1arg], [
+	LB2_MSG_LINUX_TEST_RESULT([if security_release_secctx has 1 arg],
+	[security_release_secctx_1arg], [
 		AC_DEFINE(HAVE_SEC_RELEASE_SECCTX_1ARG, 1,
 			[security_release_secctx has 1 arg.])
 	])
@@ -2104,8 +2105,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_KFREE_SENSITIVE], [
 	], [-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_KFREE_SENSITIVE], [
-	AC_MSG_CHECKING([if kfree_sensitive() is available])
-	LB2_LINUX_TEST_RESULT([kfree_sensitive_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([if kfree_sensitive() is available],
+	[kfree_sensitive_exists], [
 		AC_DEFINE(HAVE_KFREE_SENSITIVE, 1,
 			[kfree_sensitive() is available.])
 	])
@@ -2141,8 +2142,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_LIST_CMP_FUNC_T], [
 	], [-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_LIST_CMP_FUNC_T], [
-	AC_MSG_CHECKING([if list_cmp_func_t type is defined])
-	LB2_LINUX_TEST_RESULT([list_cmp_func_t_exists], [
+	LB2_MSG_LINUX_TEST_RESULT([if list_cmp_func_t type is defined],
+	[list_cmp_func_t_exists], [
 		AC_DEFINE(HAVE_LIST_CMP_FUNC_T, 1,
 			[list_cmp_func_t type is defined])
 	])
@@ -2163,8 +2164,8 @@ AC_DEFUN([LIBCFS_SRC_NLA_STRLCPY], [
 	])
 ])
 AC_DEFUN([LIBCFS_NLA_STRLCPY], [
-	AC_MSG_CHECKING([if 'nla_strlcpy()' still exists])
-	LB2_LINUX_TEST_RESULT([nla_strlcpy], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'nla_strlcpy()' still exists],
+	[nla_strlcpy], [
 		AC_DEFINE(HAVE_NLA_STRLCPY, 1,
 			['nla_strlcpy' is available])
 	])
@@ -2183,8 +2184,8 @@ AC_DEFUN([LIBCFS_SRC_LINUX_FORTIFY_STRING_HEADER],[
 	],[])
 ])
 AC_DEFUN([LIBCFS_LINUX_FORTIFY_STRING_HEADER],[
-	AC_MSG_CHECKING([Is linux/fortify-string.h header available])
-	LB2_LINUX_TEST_RESULT([linux_fortify_string_header], [
+	LB2_MSG_LINUX_TEST_RESULT([Is linux/fortify-string.h header available],
+	[linux_fortify_string_header], [
 		AC_DEFINE(HAVE_LINUX_FORTIFY_STRING_HEADER, 1,
 			[linux/fortify-string.h header available])
 	])
@@ -2221,8 +2222,8 @@ AC_DEFUN([LIBCFS_SRC_HAVE_TASK_IS_RUNNING], [
 	], [-Werror])
 ])
 AC_DEFUN([LIBCFS_HAVE_TASK_IS_RUNNING], [
-	AC_MSG_CHECKING([if task_is_running() is defined])
-	LB2_LINUX_TEST_RESULT([task_is_running], [
+	LB2_MSG_LINUX_TEST_RESULT([if task_is_running() is defined],
+	[task_is_running], [
 		AC_DEFINE(HAVE_TASK_IS_RUNNING, 1,
 			[task_is_running() is defined])
 	])
@@ -2244,8 +2245,8 @@ AC_DEFUN([LIBCFS_SRC_IOV_ITER_HAS_ITER_TYPE], [
 	[-Werror])
 ])
 AC_DEFUN([LIBCFS_IOV_ITER_HAS_ITER_TYPE], [
-	AC_MSG_CHECKING([if iov_iter has member type])
-	LB2_LINUX_TEST_RESULT([iov_iter_has_iter_type_member], [
+	LB2_MSG_LINUX_TEST_RESULT([iov_iter has member type],
+	[iov_iter_has_iter_type_member], [
 		AC_DEFINE(HAVE_IOV_ITER_HAS_ITER_TYPE_MEMBER, 1,
 			[if iov_iter has member iter_type])
 	])
@@ -2297,8 +2298,8 @@ AC_DEFUN([LIBCFS_SRC_PARAM_SET_UINT_MINMAX],[
 	], [])
 ])
 AC_DEFUN([LIBCFS_PARAM_SET_UINT_MINMAX],[
-	AC_MSG_CHECKING([does function 'param_set_uint_minmax' exist])
-	LB2_LINUX_TEST_RESULT([param_set_uint_minmax], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'param_set_uint_minmax' exist],
+	[param_set_uint_minmax], [
 		AC_DEFINE(HAVE_PARAM_SET_UINT_MINMAX, 1,
 			['param_set_uint_minmax' is available])
 	])
@@ -2338,8 +2339,8 @@ AC_DEFUN([LIBCFS_SRC_PDE_DATA_EXISTS],[
 	],[])
 ])
 AC_DEFUN([LIBCFS_PDE_DATA_EXISTS],[
-	AC_MSG_CHECKING([does function 'pde_data' exist])
-	LB2_LINUX_TEST_RESULT([pde_data], [
+	LB2_MSG_LINUX_TEST_RESULT([does function 'pde_data' exist],
+	[pde_data], [
 		AC_DEFINE(HAVE_pde_data, 1, [function pde_data() available])
 	],[
 		AC_DEFINE(pde_data(inode), PDE_DATA(inode),
@@ -2365,8 +2366,8 @@ AC_DEFUN([LIBCFS_SRC_BIO_ALLOC_WITH_BDEV],[
 	],[])
 ])
 AC_DEFUN([LIBCFS_BIO_ALLOC_WITH_BDEV],[
-	AC_MSG_CHECKING([does bio_alloc() takes a struct block_device])
-	LB2_LINUX_TEST_RESULT([bio_alloc_with_bdev], [
+	LB2_MSG_LINUX_TEST_RESULT([does bio_alloc() takes a struct block_device],
+	[bio_alloc_with_bdev], [
 		AC_DEFINE(HAVE_BIO_ALLOC_WITH_BDEV, 1,
 			[bio_alloc() takes a struct block_device])
 	])
@@ -2389,8 +2390,8 @@ AC_DEFUN([LIBCFS_SRC_TIMER_DELETE_SYNC],[
 	],[])
 ])
 AC_DEFUN([LIBCFS_TIMER_DELETE_SYNC],[
-	AC_MSG_CHECKING([is timer_delete_sync() available])
-	LB2_LINUX_TEST_RESULT([timer_delete_sync], [
+	LB2_MSG_LINUX_TEST_RESULT([is timer_delete_sync() available],
+	[timer_delete_sync], [
 		AC_DEFINE(HAVE_TIMER_DELETE_SYNC, 1,
 			[timer_delete_sync() is available])
 	],[
@@ -2414,8 +2415,8 @@ AC_DEFUN([LIBCFS_SRC_TIMER_DELETE],[
 	],[])
 ])
 AC_DEFUN([LIBCFS_TIMER_DELETE],[
-	AC_MSG_CHECKING([is timer_delete() available])
-	LB2_LINUX_TEST_RESULT([timer_delete], [
+	LB2_MSG_LINUX_TEST_RESULT([is timer_delete() available],
+	[timer_delete], [
 		AC_DEFINE(HAVE_TIMER_DELETE, 1,
 			[timer_delete() is available])
 	],[

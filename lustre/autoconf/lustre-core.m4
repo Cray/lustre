@@ -106,8 +106,8 @@ AC_DEFUN([LC_SRC_STACK_SIZE], [
 	])
 ])
 AC_DEFUN([LC_STACK_SIZE], [
-	AC_MSG_CHECKING([if stack size is at least 8k])
-	LB2_LINUX_TEST_RESULT([stack_size_8k], [],[
+	LB2_MSG_LINUX_TEST_RESULT([if stack size is at least 8k],
+	[stack_size_8k], [],[
 		AC_MSG_ERROR(
 		[Lustre requires that Linux is configured with at least a 8KB stack.])
 	])
@@ -254,8 +254,8 @@ AC_DEFUN([LC_SRC_LM_XXX_LOCK_MANAGER_OPS], [
 	])
 ])
 AC_DEFUN([LC_LM_XXX_LOCK_MANAGER_OPS], [
-	AC_MSG_CHECKING([if 'lock-manager' ops renamed to 'lm_xxx'])
-	LB2_LINUX_TEST_RESULT([lock_manager_ops_lm_xxx], [
+	LB2_MSG_LINUX_TEST_RESULT(['lock-manager' ops renamed to 'lm_xxx'],
+	[lock_manager_ops_lm_xxx], [
 		AC_DEFINE(HAVE_LM_XXX_LOCK_MANAGER_OPS, 1,
 			[lock-manager ops renamed to lm_xxx])
 	])
@@ -343,8 +343,8 @@ AC_DEFUN([LC_SRC_KEY_TYPE_INSTANTIATE_2ARGS], [
 	])
 ])
 AC_DEFUN([LC_KEY_TYPE_INSTANTIATE_2ARGS], [
-	AC_MSG_CHECKING([if 'key_type->instantiate' has two args])
-	LB2_LINUX_TEST_RESULT([key_type_instantiate_2args], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'key_type->instantiate' has two args],
+	[key_type_instantiate_2args], [
 		AC_DEFINE(HAVE_KEY_TYPE_INSTANTIATE_2ARGS, 1,
 			[key_type->instantiate has two args])
 	])
@@ -478,10 +478,7 @@ AC_MSG_RESULT([$has_evp_pkey])
 # Check whether to enable Lustre client crypto
 #
 AC_DEFUN([LC_OPENSSL_SSK], [
-AC_MSG_CHECKING([whether OpenSSL has functions needed for SSK])
 AS_IF([test "x$enable_ssk" != xno], [
-	AC_MSG_RESULT(
-	)
 	LC_OPENSSL_HMAC
 	LC_OPENSSL_EVP_PKEY
 ])
@@ -490,6 +487,7 @@ AS_IF([test "x$has_hmac_functions" = xyes -o "x$has_evp_pkey" = xyes], [
 ], [
 	enable_ssk="no"
 ])
+AC_MSG_CHECKING([whether OpenSSL has functions needed for SSK])
 AC_MSG_RESULT([$enable_ssk])
 ]) # LC_OPENSSL_SSK
 
@@ -542,9 +540,9 @@ AC_DEFUN([LC_SRC_INVALIDATE_RANGE], [
 	])
 ])
 AC_DEFUN([LC_INVALIDATE_RANGE], [
-	AC_MSG_CHECKING(
-		[if 'address_space_operations.invalidatepage' requires 3 arguments])
-	LB2_LINUX_TEST_RESULT([address_space_ops_invalidatepage_3args], [
+	LB2_MSG_LINUX_TEST_RESULT(
+	['address_space_operations.invalidatepage' requires 3 arguments],
+	[address_space_ops_invalidatepage_3args], [
 		AC_DEFINE(HAVE_INVALIDATE_RANGE, 1,
 			[address_space_operations.invalidatepage needs 3 arguments])
 	])
@@ -569,8 +567,8 @@ AC_DEFUN([LC_SRC_HAVE_DIR_CONTEXT], [
 	])
 ])
 AC_DEFUN([LC_HAVE_DIR_CONTEXT], [
-	AC_MSG_CHECKING([if 'dir_context' exist])
-	LB2_LINUX_TEST_RESULT([dir_context], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'dir_context' exist],
+	[dir_context], [
 		AC_DEFINE(HAVE_DIR_CONTEXT, 1, [dir_context exist])
 	])
 ]) # LC_HAVE_DIR_CONTEXT
@@ -588,8 +586,8 @@ AC_DEFUN([LC_SRC_D_COMPARE_5ARGS], [
 	])
 ])
 AC_DEFUN([LC_D_COMPARE_5ARGS], [
-	AC_MSG_CHECKING([if 'd_compare' taken 5 arguments])
-	LB2_LINUX_TEST_RESULT([d_compare_5args], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'd_compare' taken 5 arguments],
+	[d_compare_5args], [
 		AC_DEFINE(HAVE_D_COMPARE_5ARGS, 1,
 			[d_compare need 5 arguments])
 	])
@@ -611,8 +609,8 @@ AC_DEFUN([LC_SRC_HAVE_DCOUNT], [
 	])
 ])
 AC_DEFUN([LC_HAVE_DCOUNT], [
-	AC_MSG_CHECKING([if 'd_count' exists])
-	LB2_LINUX_TEST_RESULT([d_count], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'd_count' exists],
+	[d_count], [
 		AC_DEFINE(HAVE_D_COUNT, 1, [d_count exist])
 	])
 ]) # LC_HAVE_DCOUNT
@@ -631,8 +629,8 @@ AC_DEFUN([LC_SRC_PID_NS_FOR_CHILDREN], [
 	])
 ])
 AC_DEFUN([LC_PID_NS_FOR_CHILDREN], [
-	AC_MSG_CHECKING([if 'struct nsproxy' has 'pid_ns_for_children'])
-	LB2_LINUX_TEST_RESULT([pid_ns_for_children], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct nsproxy' has 'pid_ns_for_children'],
+	[pid_ns_for_children], [
 		AC_DEFINE(HAVE_PID_NS_FOR_CHILDREN, 1,
 			  ['struct nsproxy' has 'pid_ns_for_children'])
 	])
@@ -651,8 +649,8 @@ AC_DEFUN([LC_SRC_OLDSIZE_TRUNCATE_PAGECACHE], [
 	])
 ])
 AC_DEFUN([LC_OLDSIZE_TRUNCATE_PAGECACHE], [
-	AC_MSG_CHECKING([if 'truncate_pagecache' with 'old_size' parameter])
-	LB2_LINUX_TEST_RESULT([truncate_pagecache_old_size], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'truncate_pagecache' with 'old_size' parameter],
+	[truncate_pagecache_old_size], [
 		AC_DEFINE(HAVE_OLDSIZE_TRUNCATE_PAGECACHE, 1,
 			[with oldsize])
 	])
@@ -672,8 +670,8 @@ AC_DEFUN([LC_SRC_PTR_ERR_OR_ZERO_MISSING], [
 	])
 ])
 AC_DEFUN([LC_PTR_ERR_OR_ZERO_MISSING], [
-	AC_MSG_CHECKING([if 'PTR_ERR_OR_ZERO' is missing])
-	LB2_LINUX_TEST_RESULT([is_err_or_null], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'PTR_ERR_OR_ZERO' is missing],
+	[is_err_or_null], [
 		AC_DEFINE(HAVE_PTR_ERR_OR_ZERO, 1,
 			['PTR_ERR_OR_ZERO' exist])
 	])
@@ -696,8 +694,8 @@ AC_DEFUN([LC_SRC_HAVE_DENTRY_D_U_D_ALIAS_LIST], [
 	])
 ])
 AC_DEFUN([LC_HAVE_DENTRY_D_U_D_ALIAS_LIST], [
-	AC_MSG_CHECKING([if list 'dentry.d_u.d_alias' exist])
-	LB2_LINUX_TEST_RESULT([d_alias_list], [
+	LB2_MSG_LINUX_TEST_RESULT([if list 'dentry.d_u.d_alias' exist],
+	[d_alias_list], [
 		AC_DEFINE(HAVE_DENTRY_D_U_D_ALIAS, 1,
 			[list dentry.d_u.d_alias exist])
 	])
@@ -718,8 +716,8 @@ AC_DEFUN([LC_SRC_HAVE_DENTRY_D_U_D_ALIAS_HLIST], [
 	])
 ])
 AC_DEFUN([LC_HAVE_DENTRY_D_U_D_ALIAS_HLIST], [
-	AC_MSG_CHECKING([if hlist 'dentry.d_u.d_alias' exist])
-	LB2_LINUX_TEST_RESULT([d_alias_hlist], [
+	LB2_MSG_LINUX_TEST_RESULT([if hlist 'dentry.d_u.d_alias' exist],
+	[d_alias_hlist], [
 		AC_DEFINE(HAVE_DENTRY_D_U_D_ALIAS, 1,
 			[list dentry.d_u.d_alias exist])
 	])
@@ -742,8 +740,8 @@ AC_DEFUN([LC_SRC_HAVE_DENTRY_D_CHILD], [
 	])
 ])
 AC_DEFUN([LC_HAVE_DENTRY_D_CHILD], [
-	AC_MSG_CHECKING([if 'dentry.d_child' exist])
-	LB2_LINUX_TEST_RESULT([d_child], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'dentry.d_child' exist],
+	[d_child], [
 		AC_DEFINE(HAVE_DENTRY_D_CHILD, 1, [dentry.d_child exist])
 	])
 ]) # LC_HAVE_DENTRY_D_CHILD
@@ -761,8 +759,8 @@ AC_DEFUN([LC_SRC_KIOCB_KI_LEFT], [
 	])
 ])
 AC_DEFUN([LC_KIOCB_KI_LEFT], [
-	AC_MSG_CHECKING([if 'struct kiocb' with 'ki_left' member])
-	LB2_LINUX_TEST_RESULT([kiocb_ki_left], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct kiocb' with 'ki_left' member],
+	[kiocb_ki_left], [
 		AC_DEFINE(HAVE_KIOCB_KI_LEFT, 1,
 			[ki_left exist])
 	])
@@ -782,8 +780,8 @@ AC_DEFUN([LC_SRC_REGISTER_SHRINKER_RET], [
 	],[])
 ])
 AC_DEFUN([LC_REGISTER_SHRINKER_RET], [
-	AC_MSG_CHECKING([if register_shrinker() returns status])
-	LB2_LINUX_TEST_RESULT([register_shrinker_ret], [
+	LB2_MSG_LINUX_TEST_RESULT([if register_shrinker() returns status],
+	[register_shrinker_ret], [
 		AC_DEFINE(HAVE_REGISTER_SHRINKER_RET, 1,
 			[register_shrinker() returns status])
 	])
@@ -805,8 +803,8 @@ AC_DEFUN([LC_SRC_VFS_RENAME_5ARGS], [
 	])
 ])
 AC_DEFUN([LC_VFS_RENAME_5ARGS], [
-	AC_MSG_CHECKING([if Linux kernel has 'vfs_rename' with 5 args])
-	LB2_LINUX_TEST_RESULT([vfs_rename_5args], [
+	LB2_MSG_LINUX_TEST_RESULT([if Linux kernel has 'vfs_rename' with 5 args],
+	[vfs_rename_5args], [
 		AC_DEFINE(HAVE_VFS_RENAME_5ARGS, 1,
 			[kernel has vfs_rename with 5 args])
 	])
@@ -825,8 +823,8 @@ AC_DEFUN([LC_SRC_VFS_UNLINK_3ARGS], [
 	])
 ])
 AC_DEFUN([LC_VFS_UNLINK_3ARGS], [
-	AC_MSG_CHECKING([if Linux kernel has 'vfs_unlink' with 3 args])
-	LB2_LINUX_TEST_RESULT([vfs_unlink_3args], [
+	LB2_MSG_LINUX_TEST_RESULT([if Linux kernel has 'vfs_unlink' with 3 args],
+	[vfs_unlink_3args], [
 		AC_DEFINE(HAVE_VFS_UNLINK_3ARGS, 1,
 			[kernel has vfs_unlink with 3 args])
 	])
@@ -845,8 +843,8 @@ AC_DEFUN([LC_SRC_HAVE_D_IS_POSITIVE], [
 	])
 ])
 AC_DEFUN([LC_HAVE_D_IS_POSITIVE], [
-	AC_MSG_CHECKING([if 'd_is_positive' exist])
-	LB2_LINUX_TEST_RESULT([d_is_positive], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'd_is_positive' exist],
+	[d_is_positive], [
 		AC_DEFINE(HAVE_D_IS_POSITIVE, 1,
 			['d_is_positive' is available])
 	])
@@ -868,8 +866,8 @@ AC_DEFUN([LC_SRC_HAVE_BVEC_ITER], [
 	])
 ])
 AC_DEFUN([LC_HAVE_BVEC_ITER], [
-	AC_MSG_CHECKING([if Linux kernel has struct bvec_iter])
-	LB2_LINUX_TEST_RESULT([have_bvec_iter], [
+	LB2_MSG_LINUX_TEST_RESULT([if Linux kernel has struct bvec_iter],
+	[have_bvec_iter], [
 		AC_DEFINE(HAVE_BVEC_ITER, 1,
 			[kernel has struct bvec_iter])
 	])
@@ -890,8 +888,8 @@ AC_DEFUN([LC_SRC_IOP_SET_ACL], [
 	])
 ])
 AC_DEFUN([LC_IOP_SET_ACL], [
-	AC_MSG_CHECKING([if 'inode_operations' has '.set_acl' member function])
-	LB2_LINUX_TEST_RESULT([inode_ops_set_acl], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'inode_operations' has '.set_acl' member function],
+	[inode_ops_set_acl], [
 		AC_DEFINE(HAVE_IOP_SET_ACL, 1,
 			[inode_operations has .set_acl member function])
 	])
@@ -910,8 +908,8 @@ AC_DEFUN([LC_SRC_HAVE_TRUNCATE_IPAGES_FINAL], [
 	])
 ])
 AC_DEFUN([LC_HAVE_TRUNCATE_IPAGES_FINAL], [
-	AC_MSG_CHECKING([if Linux kernel has truncate_inode_pages_final])
-	LB2_LINUX_TEST_RESULT([truncate_ipages_final], [
+	LB2_MSG_LINUX_TEST_RESULT([if Linux kernel has truncate_inode_pages_final],
+	[truncate_ipages_final], [
 		AC_DEFINE(HAVE_TRUNCATE_INODE_PAGES_FINAL, 1,
 			[kernel has truncate_inode_pages_final])
 	])
@@ -934,8 +932,8 @@ AC_DEFUN([LC_SRC_IOPS_RENAME_WITH_FLAGS], [
 	])
 ]) # LC_IOPS_RENAME_WITH_FLAGS
 AC_DEFUN([LC_IOPS_RENAME_WITH_FLAGS], [
-	AC_MSG_CHECKING([if 'inode_operations->rename' taken flags as argument])
-	LB2_LINUX_TEST_RESULT([iops_rename_with_flags], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'inode_operations->rename' taken flags as argument],
+	[iops_rename_with_flags], [
 		AC_DEFINE(HAVE_IOPS_RENAME_WITH_FLAGS, 1,
 			[inode_operations->rename need flags as argument])
 	])
@@ -954,8 +952,8 @@ AC_DEFUN([LC_SRC_VFS_RENAME_6ARGS], [
 	])
 ])
 AC_DEFUN([LC_VFS_RENAME_6ARGS], [
-	AC_MSG_CHECKING([if Linux kernel has 'vfs_rename' with 6 args])
-	LB2_LINUX_TEST_RESULT([vfs_rename_6args], [
+	LB2_MSG_LINUX_TEST_RESULT([if Linux kernel has 'vfs_rename' with 6 args],
+	[vfs_rename_6args], [
 		AC_DEFINE(HAVE_VFS_RENAME_6ARGS, 1,
 			[kernel has vfs_rename with 6 args])
 	])
@@ -978,8 +976,8 @@ AC_DEFUN([LC_SRC_DIRECTIO_USE_ITER], [
 	])
 ])
 AC_DEFUN([LC_DIRECTIO_USE_ITER], [
-	AC_MSG_CHECKING([if direct IO uses iov_iter])
-	LB2_LINUX_TEST_RESULT([direct_io_iter], [
+	LB2_MSG_LINUX_TEST_RESULT([if direct IO uses iov_iter],
+	[direct_io_iter], [
 		AC_DEFINE(HAVE_DIRECTIO_ITER, 1, [direct IO uses iov_iter])
 	])
 ]) # LC_DIRECTIO_USE_ITER
@@ -1003,8 +1001,8 @@ AC_DEFUN([LC_SRC_HAVE_IOV_ITER_INIT_DIRECTION], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_IOV_ITER_INIT_DIRECTION], [
-	AC_MSG_CHECKING([if 'iov_iter_init' takes a tag])
-	LB2_LINUX_TEST_RESULT([iter_init], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'iov_iter_init' takes a tag],
+	[iter_init], [
 		AC_DEFINE(HAVE_IOV_ITER_INIT_DIRECTION, 1,
 			[iov_iter_init handles directional tag])
 	])
@@ -1027,8 +1025,8 @@ AC_DEFUN([LC_SRC_HAVE_IOV_ITER_TRUNCATE], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_IOV_ITER_TRUNCATE], [
-	AC_MSG_CHECKING([if 'iov_iter_truncate' exists])
-	LB2_LINUX_TEST_RESULT([iter_truncate], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'iov_iter_truncate' exists],
+	[iter_truncate], [
 		AC_DEFINE(HAVE_IOV_ITER_TRUNCATE, 1, [iov_iter_truncate exists])
 	])
 ]) # LC_HAVE_IOV_ITER_TRUNCATE
@@ -1047,8 +1045,8 @@ AC_DEFUN([LC_SRC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER], [
 	])
 ])
 AC_DEFUN([LC_HAVE_FILE_OPERATIONS_READ_WRITE_ITER], [
-	AC_MSG_CHECKING([if 'file_operations.[read|write]_iter' exist])
-	LB2_LINUX_TEST_RESULT([file_function_iter], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'file_operations.[read|write]_iter' exist],
+	[file_function_iter], [
 		AC_DEFINE(HAVE_FILE_OPERATIONS_READ_WRITE_ITER, 1,
 			[file_operations.[read|write]_iter functions exist])
 	])
@@ -1067,8 +1065,8 @@ AC_DEFUN([LC_SRC_HAVE_INTERVAL_BLK_INTEGRITY], [
 	])
 ])
 AC_DEFUN([LC_HAVE_INTERVAL_BLK_INTEGRITY], [
-	AC_MSG_CHECKING([if 'blk_integrity.interval' exist])
-	LB2_LINUX_TEST_RESULT([interval_blk_integrity], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'blk_integrity.interval' exist],
+	[interval_blk_integrity], [
 		AC_DEFINE(HAVE_INTERVAL_BLK_INTEGRITY, 1,
 			[blk_integrity.interval exist])
 	])
@@ -1090,8 +1088,8 @@ AC_DEFUN([LC_SRC_KEY_MATCH_DATA], [
 	])
 ])
 AC_DEFUN([LC_KEY_MATCH_DATA], [
-	AC_MSG_CHECKING([if struct key_match field exist])
-	LB2_LINUX_TEST_RESULT([key_match], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct key_match field exist],
+	[key_match], [
 		AC_DEFINE(HAVE_KEY_MATCH_DATA, 1, [struct key_match_data exist])
 	])
 ]) # LC_KEY_MATCH_DATA
@@ -1109,8 +1107,8 @@ AC_DEFUN([LC_SRC_HAVE_LM_GRANT_2ARGS], [
 	])
 ])
 AC_DEFUN([LC_HAVE_LM_GRANT_2ARGS], [
-	AC_MSG_CHECKING([if 'lock_manager_operations.lm_grant' takes two args])
-	LB2_LINUX_TEST_RESULT([lock_manager_operations_lm_grant], [
+	LB2_MSG_LINUX_TEST_RESULT(['lock_manager_operations.lm_grant' takes two args],
+	[lock_manager_operations_lm_grant], [
 		AC_DEFINE(HAVE_LM_GRANT_2ARGS, 1,
 			[lock_manager_operations.lm_grant takes two args])
 	])
@@ -1163,8 +1161,8 @@ AC_DEFUN([LC_SRC_NFS_FILLDIR_USE_CTX], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_NFS_FILLDIR_USE_CTX], [
-	AC_MSG_CHECKING([if filldir_t uses struct dir_context])
-	LB2_LINUX_TEST_RESULT([filldir_ctx], [
+	LB2_MSG_LINUX_TEST_RESULT([if filldir_t uses struct dir_context],
+	[filldir_ctx], [
 		AC_DEFINE(HAVE_FILLDIR_USE_CTX, 1,
 			[filldir_t needs struct dir_context as argument])
 	])
@@ -1185,8 +1183,8 @@ AC_DEFUN([LC_SRC_PERCPU_COUNTER_INIT], [
 	])
 ])
 AC_DEFUN([LC_PERCPU_COUNTER_INIT], [
-	AC_MSG_CHECKING([if percpu_counter_init uses GFP_* flag as argument])
-	LB2_LINUX_TEST_RESULT([percpu_counter_init], [
+	LB2_MSG_LINUX_TEST_RESULT([if percpu_counter_init uses GFP_* flag as argument],
+	[percpu_counter_init], [
 		AC_DEFINE(HAVE_PERCPU_COUNTER_INIT_GFP_FLAG, 1,
 			[percpu_counter_init uses GFP_* flag])
 	])
@@ -1207,8 +1205,8 @@ AC_DEFUN([LC_SRC_KIOCB_HAS_NBYTES], [
 	])
 ])
 AC_DEFUN([LC_KIOCB_HAS_NBYTES], [
-	AC_MSG_CHECKING([if struct kiocb has ki_nbytes field])
-	LB2_LINUX_TEST_RESULT([ki_nbytes], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct kiocb has ki_nbytes field],
+	[ki_nbytes], [
 		AC_DEFINE(HAVE_KI_NBYTES, 1, [ki_nbytes field exist])
 	])
 ]) # LC_KIOCB_HAS_NBYTES
@@ -1228,8 +1226,8 @@ AC_DEFUN([LC_SRC_HAVE_DQUOT_QC_DQBLK], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_DQUOT_QC_DQBLK], [
-	AC_MSG_CHECKING([if 'quotactl_ops.set_dqblk' takes struct qc_dqblk])
-	LB2_LINUX_TEST_RESULT([qc_dqblk], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'quotactl_ops.set_dqblk' takes struct qc_dqblk],
+	[qc_dqblk], [
 		AC_DEFINE(HAVE_DQUOT_QC_DQBLK, 1,
 			[quotactl_ops.set_dqblk takes struct qc_dqblk])
 		AC_DEFINE(HAVE_DQUOT_KQID, 1,
@@ -1250,8 +1248,8 @@ AC_DEFUN([LC_SRC_HAVE_AIO_COMPLETE], [
 	])
 ])
 AC_DEFUN([LC_HAVE_AIO_COMPLETE], [
-	AC_MSG_CHECKING([if kernel has exported aio_complete()])
-	LB2_LINUX_TEST_RESULT([aio_complete], [
+	LB2_MSG_LINUX_TEST_RESULT([if kernel has exported aio_complete()],
+	[aio_complete], [
 		AC_DEFINE(HAVE_AIO_COMPLETE, 1, [aio_complete defined])
 	])
 ]) # LC_HAVE_AIO_COMPLETE
@@ -1270,8 +1268,8 @@ AC_DEFUN([LC_SRC_HAVE_IS_ROOT_INODE], [
 	],[])
 ])
 AC_DEFUN([LC_HAVE_IS_ROOT_INODE], [
-	AC_MSG_CHECKING([if kernel has is_root_inode()])
-	LB2_LINUX_TEST_RESULT([is_root_inode], [
+	LB2_MSG_LINUX_TEST_RESULT([if kernel has is_root_inode()],
+	[is_root_inode], [
 		AC_DEFINE(HAVE_IS_ROOT_INODE, 1, [is_root_inode defined])
 	])
 ]) # LC_HAVE_IS_ROOT_INODE
@@ -1291,8 +1289,8 @@ AC_DEFUN([LC_SRC_BACKING_DEV_INFO_REMOVAL], [
 	])
 ])
 AC_DEFUN([LC_BACKING_DEV_INFO_REMOVAL], [
-	AC_MSG_CHECKING([if struct address_space has backing_dev_info])
-	LB2_LINUX_TEST_RESULT([backing_dev_info], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct address_space has backing_dev_info],
+	[backing_dev_info], [
 		AC_DEFINE(HAVE_BACKING_DEV_INFO, 1, [backing_dev_info exist])
 	])
 ]) # LC_BACKING_DEV_INFO_REMOVAL
@@ -1314,8 +1312,8 @@ AC_DEFUN([LC_SRC_HAVE_BDI_CAP_MAP_COPY], [
 	])
 ]) # LC_HAVE_BDI_CAP_MAP_COPY
 AC_DEFUN([LC_HAVE_BDI_CAP_MAP_COPY], [
-	AC_MSG_CHECKING([if have 'BDI_CAP_MAP_COPY'])
-	LB2_LINUX_TEST_RESULT([bdi_cap_map_copy], [
+	LB2_MSG_LINUX_TEST_RESULT([have 'BDI_CAP_MAP_COPY'],
+	[bdi_cap_map_copy], [
 		AC_DEFINE(HAVE_BDI_CAP_MAP_COPY, 1,
 			[BDI_CAP_MAP_COPY exist])
 	])
@@ -1337,8 +1335,8 @@ AC_DEFUN([LC_SRC_HAVE_PROJECT_QUOTA], [
 	])
 ])
 AC_DEFUN([LC_HAVE_PROJECT_QUOTA], [
-	AC_MSG_CHECKING([if get_projid exists])
-	LB2_LINUX_TEST_RESULT([get_projid], [
+	LB2_MSG_LINUX_TEST_RESULT([if get_projid exists],
+	[get_projid], [
 		AC_DEFINE(HAVE_PROJECT_QUOTA, 1,
 			[get_projid function exists])
 	])
@@ -1360,8 +1358,8 @@ AC_DEFUN([LC_SRC_IOV_ITER_RW], [
 	])
 ])
 AC_DEFUN([LC_IOV_ITER_RW], [
-	AC_MSG_CHECKING([if iov_iter_rw exist])
-	LB2_LINUX_TEST_RESULT([iov_iter_rw], [
+	LB2_MSG_LINUX_TEST_RESULT([if iov_iter_rw exist],
+	[iov_iter_rw], [
 		AC_DEFINE(HAVE_IOV_ITER_RW, 1, [iov_iter_rw exist])
 	])
 ]) # LC_IOV_ITER_RW
@@ -1394,8 +1392,8 @@ AC_DEFUN([LC_SRC_HAVE___BI_CNT], [
 	])
 ])
 AC_DEFUN([LC_HAVE___BI_CNT], [
-	AC_MSG_CHECKING([if Linux kernel has __bi_cnt in struct bio])
-	LB2_LINUX_TEST_RESULT([have___bi_cnt], [
+	LB2_MSG_LINUX_TEST_RESULT([if Linux kernel has __bi_cnt in struct bio],
+	[have___bi_cnt], [
 		AC_DEFINE(HAVE___BI_CNT, 1, [struct bio has __bi_cnt])
 	])
 ]) # LC_HAVE___BI_CNT
@@ -1418,8 +1416,8 @@ AC_DEFUN([LC_SRC_SYMLINK_OPS_USE_NAMEIDATA], [
 	])
 ])
 AC_DEFUN([LC_SYMLINK_OPS_USE_NAMEIDATA], [
-	AC_MSG_CHECKING([if symlink inode operations have struct nameidata argument])
-	LB2_LINUX_TEST_RESULT([symlink_use_nameidata], [
+	LB2_MSG_LINUX_TEST_RESULT([if symlink inode operations have struct nameidata argument],
+	[symlink_use_nameidata], [
 		AC_DEFINE(HAVE_SYMLINK_OPS_USE_NAMEIDATA, 1,
 			[symlink inode operations need struct nameidata argument])
 	])
@@ -1438,8 +1436,8 @@ AC_DEFUN([LC_SRC_BIO_ENDIO_USES_ONE_ARG], [
 	])
 ])
 AC_DEFUN([LC_BIO_ENDIO_USES_ONE_ARG], [
-	AC_MSG_CHECKING([if 'bio_endio' with one argument exist])
-	LB2_LINUX_TEST_RESULT([bio_endio], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'bio_endio' with one argument exist],
+	[bio_endio], [
 		AC_DEFINE(HAVE_BIO_ENDIO_USES_ONE_ARG, 1,
 			[bio_endio takes only one argument])
 	])
@@ -1458,8 +1456,8 @@ AC_DEFUN([LC_SRC_ACCOUNT_PAGE_DIRTIED_3ARGS], [
 	])
 ])
 AC_DEFUN([LC_ACCOUNT_PAGE_DIRTIED_3ARGS], [
-	AC_MSG_CHECKING([if 'account_page_dirtied' with 3 args exists])
-	LB2_LINUX_TEST_RESULT([account_page_dirtied_3a], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'account_page_dirtied' with 3 args exists],
+	[account_page_dirtied_3a], [
 		AC_DEFINE(HAVE_ACCOUNT_PAGE_DIRTIED_3ARGS, 1,
 			[account_page_dirtied takes three arguments])
 	])
@@ -1479,8 +1477,8 @@ AC_DEFUN([LC_SRC_HAVE_CRYPTO_ALLOC_SKCIPHER], [
 	])
 ])
 AC_DEFUN([LC_HAVE_CRYPTO_ALLOC_SKCIPHER], [
-	AC_MSG_CHECKING([if crypto_alloc_skcipher is defined])
-	LB2_LINUX_TEST_RESULT([crypto_alloc_skcipher], [
+	LB2_MSG_LINUX_TEST_RESULT([if crypto_alloc_skcipher is defined],
+	[crypto_alloc_skcipher], [
 		AC_DEFINE(HAVE_CRYPTO_ALLOC_SKCIPHER, 1,
 			[crypto_alloc_skcipher is defined])
 	])
@@ -1501,8 +1499,8 @@ AC_DEFUN([LC_SRC_HAVE_INTERVAL_EXP_BLK_INTEGRITY], [
 	])
 ])
 AC_DEFUN([LC_HAVE_INTERVAL_EXP_BLK_INTEGRITY], [
-	AC_MSG_CHECKING([if 'blk_integrity.interval_exp' exist])
-	LB2_LINUX_TEST_RESULT([blk_integrity_interval_exp], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'blk_integrity.interval_exp' exist],
+	[blk_integrity_interval_exp], [
 		AC_DEFINE(HAVE_INTERVAL_EXP_BLK_INTEGRITY, 1,
 			[blk_integrity.interval_exp exist])
 	])
@@ -1521,8 +1519,8 @@ AC_DEFUN([LC_SRC_HAVE_CACHE_HEAD_HLIST], [
 	])
 ])
 AC_DEFUN([LC_HAVE_CACHE_HEAD_HLIST], [
-	AC_MSG_CHECKING([if 'struct cache_head' has 'cache_list' field])
-	LB2_LINUX_TEST_RESULT([cache_head_has_hlist], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct cache_head' has 'cache_list' field],
+	[cache_head_has_hlist], [
 		AC_DEFINE(HAVE_CACHE_HEAD_HLIST, 1,
 			[cache_head has hlist cache_list])
 	])
@@ -1545,8 +1543,8 @@ AC_DEFUN([LC_SRC_HAVE_XATTR_HANDLER_SIMPLIFIED], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_XATTR_HANDLER_SIMPLIFIED], [
-	AC_MSG_CHECKING([if 'struct xattr_handler' functions pass in handler pointer])
-	LB2_LINUX_TEST_RESULT([xattr_handler_simplified], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct xattr_handler' functions pass in handler pointer],
+	[xattr_handler_simplified], [
 		AC_DEFINE(HAVE_XATTR_HANDLER_SIMPLIFIED, 1,
 			[handler pointer is parameter])
 	])
@@ -1565,8 +1563,8 @@ AC_DEFUN([LC_SRC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD], [
 	])
 ])
 AC_DEFUN([LC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD], [
-	AC_MSG_CHECKING([if 'bio_integrity_payload.bip_iter' exist])
-	LB2_LINUX_TEST_RESULT([bio_integrity_payload_bip_iter], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'bio_integrity_payload.bip_iter' exist],
+	[bio_integrity_payload_bip_iter], [
 		AC_DEFINE(HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD, 1,
 			[bio_integrity_payload.bip_iter exist])
 	])
@@ -1586,8 +1584,8 @@ AC_DEFUN([LC_SRC_BIO_INTEGRITY_PREP_FN], [
 	])
 ])
 AC_DEFUN([LC_BIO_INTEGRITY_PREP_FN], [
-	AC_MSG_CHECKING([if 'bio_integrity_prep_fn' exists])
-	LB2_LINUX_TEST_RESULT([bio_integrity_prep_fn], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'bio_integrity_prep_fn' exists],
+	[bio_integrity_prep_fn], [
 		AC_DEFINE(HAVE_BIO_INTEGRITY_PREP_FN, 1,
 			[kernel has bio_integrity_prep_fn])
 		AC_SUBST(PATCHED_INTEGRITY_INTF)
@@ -1614,8 +1612,8 @@ AC_DEFUN([LC_SRC_BIO_INTEGRITY_PREP_FN_RETURNS_BOOL], [
 	])
 ])
 AC_DEFUN([LC_BIO_INTEGRITY_PREP_FN_RETURNS_BOOL], [
-	AC_MSG_CHECKING([if 'bio_integrity_prep_fn' returns bool])
-	LB2_LINUX_TEST_RESULT([bio_integrity_prep_ret_bool], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'bio_integrity_prep_fn' returns bool],
+	[bio_integrity_prep_ret_bool], [
 		AC_DEFINE(HAVE_BIO_INTEGRITY_PREP_FN_RETURNS_BOOL, 1,
 			[bio_integrity_prep_fn returns bool])
 	])
@@ -1636,8 +1634,8 @@ AC_DEFUN([LC_SRC_HAVE_BI_OPF], [
 	])
 ])
 AC_DEFUN([LC_HAVE_BI_OPF], [
-	AC_MSG_CHECKING([if Linux kernel has bi_opf in struct bio])
-	LB2_LINUX_TEST_RESULT([have_bi_opf], [
+	LB2_MSG_LINUX_TEST_RESULT([if Linux kernel has bi_opf in struct bio],
+	[have_bi_opf], [
 		AC_DEFINE(HAVE_BI_OPF, 1, [struct bio has bi_opf])
 	])
 ]) # LC_HAVE_BI_OPF
@@ -1656,8 +1654,8 @@ AC_DEFUN([LC_SRC_HAVE_SUBMIT_BIO_2ARGS], [
 	])
 ])
 AC_DEFUN([LC_HAVE_SUBMIT_BIO_2ARGS], [
-	AC_MSG_CHECKING([if submit_bio takes two arguments])
-	LB2_LINUX_TEST_RESULT([have_submit_bio_2args], [
+	LB2_MSG_LINUX_TEST_RESULT([if submit_bio takes two arguments],
+	[have_submit_bio_2args], [
 		AC_DEFINE(HAVE_SUBMIT_BIO_2ARGS, 1,
 			[submit_bio takes two arguments])
 	])
@@ -1677,8 +1675,8 @@ AC_DEFUN([LC_SRC_HAVE_CLEAN_BDEV_ALIASES], [
 	])
 ])
 AC_DEFUN([LC_HAVE_CLEAN_BDEV_ALIASES], [
-	AC_MSG_CHECKING([if kernel has clean_bdev_aliases])
-	LB2_LINUX_TEST_RESULT([have_clean_bdev_aliases], [
+	LB2_MSG_LINUX_TEST_RESULT([if kernel has clean_bdev_aliases],
+	[have_clean_bdev_aliases], [
 		AC_DEFINE(HAVE_CLEAN_BDEV_ALIASES, 1,
 			[kernel has clean_bdev_aliases])
 	])
@@ -1698,8 +1696,8 @@ AC_DEFUN([LC_SRC_HAVE_LOCKS_LOCK_FILE_WAIT], [
 	])
 ])
 AC_DEFUN([LC_HAVE_LOCKS_LOCK_FILE_WAIT], [
-	AC_MSG_CHECKING([if 'locks_lock_file_wait' exists])
-	LB2_LINUX_TEST_RESULT([locks_lock_file_wait], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'locks_lock_file_wait' exists],
+	[locks_lock_file_wait], [
 		AC_DEFINE(HAVE_LOCKS_LOCK_FILE_WAIT, 1,
 			[kernel has locks_lock_file_wait])
 	])
@@ -1720,8 +1718,8 @@ AC_DEFUN([LC_SRC_HAVE_KEY_PAYLOAD_DATA_ARRAY], [
 	])
 ])
 AC_DEFUN([LC_HAVE_KEY_PAYLOAD_DATA_ARRAY], [
-	AC_MSG_CHECKING([if 'struct key' has 'payload.data' as an array])
-	LB2_LINUX_TEST_RESULT([key_payload_data_array], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct key' has 'payload.data' as an array],
+	[key_payload_data_array], [
 		AC_DEFINE(HAVE_KEY_PAYLOAD_DATA_ARRAY, 1, [payload.data is an array])
 	])
 ]) # LC_HAVE_KEY_PAYLOAD_DATA_ARRAY
@@ -1740,8 +1738,8 @@ AC_DEFUN([LC_SRC_HAVE_XATTR_HANDLER_NAME], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_XATTR_HANDLER_NAME], [
-	AC_MSG_CHECKING([if 'struct xattr_handler' has a name member])
-	LB2_LINUX_TEST_RESULT([xattr_handler_name], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct xattr_handler' has a name member],
+	[xattr_handler_name], [
 		AC_DEFINE(HAVE_XATTR_HANDLER_NAME, 1,
 			[xattr_handler has a name member])
 	])
@@ -1760,8 +1758,8 @@ AC_DEFUN([LC_SRC_HAVE_FILE_DENTRY], [
 	])
 ])
 AC_DEFUN([LC_HAVE_FILE_DENTRY], [
-	AC_MSG_CHECKING([if Linux kernel has 'file_dentry'])
-	LB2_LINUX_TEST_RESULT([file_dentry], [
+	LB2_MSG_LINUX_TEST_RESULT([if Linux kernel has 'file_dentry'],
+	[file_dentry], [
 		AC_DEFINE(HAVE_FILE_DENTRY, 1, [kernel has file_dentry])
 	])
 ]) # LC_HAVE_FILE_DENTRY
@@ -1779,8 +1777,8 @@ AC_DEFUN([LC_SRC_HAVE_INODE_LOCK], [
 	])
 ])
 AC_DEFUN([LC_HAVE_INODE_LOCK], [
-	AC_MSG_CHECKING([if 'inode_lock' is defined])
-	LB2_LINUX_TEST_RESULT([inode_lock], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'inode_lock' is defined],
+	[inode_lock], [
 		AC_DEFINE(HAVE_INODE_LOCK, 1, [inode_lock is defined])
 	])
 ]) # LC_HAVE_INODE_LOCK
@@ -1800,8 +1798,8 @@ AC_DEFUN([LC_SRC_HAVE_IOP_GET_LINK], [
 	])
 ])
 AC_DEFUN([LC_HAVE_IOP_GET_LINK], [
-	AC_MSG_CHECKING([if 'iop' has 'get_link'])
-	LB2_LINUX_TEST_RESULT([inode_ops_get_link], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'iop' has 'get_link'],
+	[inode_ops_get_link], [
 		AC_DEFINE(HAVE_IOP_GET_LINK, 1, [have iop get_link])
 	])
 ]) # LC_HAVE_IOP_GET_LINK
@@ -1819,8 +1817,8 @@ AC_DEFUN([LC_SRC_HAVE_IN_COMPAT_SYSCALL], [
 	])
 ])
 AC_DEFUN([LC_HAVE_IN_COMPAT_SYSCALL], [
-	AC_MSG_CHECKING([if 'in_compat_syscall' is defined])
-	LB2_LINUX_TEST_RESULT([in_compat_syscall], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'in_compat_syscall' is defined],
+	[in_compat_syscall], [
 		AC_DEFINE(HAVE_IN_COMPAT_SYSCALL, 1, [have in_compat_syscall])
 	])
 ]) # LC_HAVE_IN_COMPAT_SYSCALL
@@ -1843,8 +1841,8 @@ AC_DEFUN([LC_SRC_HAVE_XATTR_HANDLER_INODE_PARAM], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_XATTR_HANDLER_INODE_PARAM], [
-	AC_MSG_CHECKING([if 'struct xattr_handler' functions have inode parameter])
-	LB2_LINUX_TEST_RESULT([xattr_handler_inode_param], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct xattr_handler' functions have inode parameter],
+	[xattr_handler_inode_param], [
 		AC_DEFINE(HAVE_XATTR_HANDLER_INODE_PARAM, 1, [needs inode parameter])
 	])
 ]) # LC_HAVE_XATTR_HANDLER_INODE_PARAM
@@ -1865,8 +1863,8 @@ AC_DEFUN([LC_SRC_D_IN_LOOKUP], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_D_IN_LOOKUP], [
-	AC_MSG_CHECKING([if 'd_in_lookup' is defined])
-	LB2_LINUX_TEST_RESULT([d_in_lookup], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'd_in_lookup' is defined],
+	[d_in_lookup], [
 		AC_DEFINE(HAVE_D_IN_LOOKUP, 1, [d_in_lookup is defined])
 	])
 ]) # LC_D_IN_LOOKUP
@@ -1886,8 +1884,8 @@ AC_DEFUN([LC_SRC_LOCK_PAGE_MEMCG], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_LOCK_PAGE_MEMCG], [
-	AC_MSG_CHECKING([if 'lock_page_memcg' is defined])
-	LB2_LINUX_TEST_RESULT([lock_page_memcg], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'lock_page_memcg' is defined],
+	[lock_page_memcg], [
 		AC_DEFINE(HAVE_LOCK_PAGE_MEMCG, 1, [lock_page_memcg is defined])
 	])
 ]) # LC_LOCK_PAGE_MEMCG
@@ -1910,8 +1908,8 @@ AC_DEFUN([LC_SRC_HAVE_DOWN_WRITE_KILLABLE], [
 	])
 ])
 AC_DEFUN([LC_HAVE_DOWN_WRITE_KILLABLE], [
-	AC_MSG_CHECKING([if down_write_killable exists])
-	LB2_LINUX_TEST_RESULT([down_write_killable], [
+	LB2_MSG_LINUX_TEST_RESULT([if down_write_killable exists],
+	[down_write_killable], [
 		AC_DEFINE(HAVE_DOWN_WRITE_KILLABLE, 1,
 			[down_write_killable function exists])
 	])
@@ -1934,8 +1932,8 @@ AC_DEFUN([LC_SRC_D_INIT], [
 	])
 ])
 AC_DEFUN([LC_D_INIT], [
-	AC_MSG_CHECKING([if dentry operations supports 'd_init'])
-	LB2_LINUX_TEST_RESULT([d_init], [
+	LB2_MSG_LINUX_TEST_RESULT([if dentry operations supports 'd_init'],
+	[d_init], [
 		AC_DEFINE(HAVE_D_INIT, 1, ['d_init' exists])
 	])
 ]) # LC_D_INIT
@@ -1959,8 +1957,8 @@ AC_DEFUN([LC_SRC_DIRECTIO_2ARGS], [
 	])
 ])
 AC_DEFUN([LC_DIRECTIO_2ARGS], [
-	AC_MSG_CHECKING([if '->direct_IO()' takes 2 arguments])
-	LB2_LINUX_TEST_RESULT([direct_io_2args], [
+	LB2_MSG_LINUX_TEST_RESULT([if '->direct_IO()' takes 2 arguments],
+	[direct_io_2args], [
 		AC_DEFINE(HAVE_DIRECTIO_2ARGS, 1, [direct_IO has 2 arguments])
 	])
 ]) # LC_DIRECTIO_2ARGS
@@ -1982,8 +1980,8 @@ AC_DEFUN([LC_SRC_GENERIC_WRITE_SYNC_2ARGS], [
 	])
 ])
 AC_DEFUN([LC_GENERIC_WRITE_SYNC_2ARGS], [
-	AC_MSG_CHECKING([if 'generic_write_sync()' takes 2 arguments])
-	LB2_LINUX_TEST_RESULT([generic_write_sync_2args], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'generic_write_sync()' takes 2 arguments],
+	[generic_write_sync_2args], [
 		AC_DEFINE(HAVE_GENERIC_WRITE_SYNC_2ARGS, 1,
 			[generic_write_sync has 2 arguments])
 	])
@@ -2003,8 +2001,8 @@ AC_DEFUN([LC_SRC_FOP_ITERATE_SHARED], [
 	])
 ])
 AC_DEFUN([LC_FOP_ITERATE_SHARED], [
-	AC_MSG_CHECKING([if 'file_operations' has 'iterate_shared'])
-	LB2_LINUX_TEST_RESULT([fop_iterate_shared], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'file_operations' has 'iterate_shared'],
+	[fop_iterate_shared], [
 		AC_DEFINE(HAVE_FOP_ITERATE_SHARED, 1,
 			[file_operations has iterate_shared])
 	])
@@ -2037,8 +2035,8 @@ AC_DEFUN([LC_SRC_HAVE_POSIX_ACL_VALID_USER_NS], [
 	])
 ])
 AC_DEFUN([LC_HAVE_POSIX_ACL_VALID_USER_NS], [
-	AC_MSG_CHECKING([if 'posix_acl_valid' takes 'struct user_namespace'])
-	LB2_LINUX_TEST_RESULT([posix_acl_valid], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'posix_acl_valid' takes 'struct user_namespace'],
+	[posix_acl_valid], [
 		AC_DEFINE(HAVE_POSIX_ACL_VALID_USER_NS, 1,
 			[posix_acl_valid takes struct user_namespace])
 	])
@@ -2058,8 +2056,8 @@ AC_DEFUN([LC_SRC_D_COMPARE_4ARGS], [
 	])
 ])
 AC_DEFUN([LC_D_COMPARE_4ARGS], [
-	AC_MSG_CHECKING([if 'd_compare' taken 4 arguments])
-	LB2_LINUX_TEST_RESULT([d_compare_4args], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'd_compare' taken 4 arguments],
+	[d_compare_4args], [
 		AC_DEFINE(HAVE_D_COMPARE_4ARGS, 1,
 			[d_compare need 4 arguments])
 	])
@@ -2080,8 +2078,8 @@ AC_DEFUN([LC_SRC_FULL_NAME_HASH_3ARGS], [
 	])
 ])
 AC_DEFUN([LC_FULL_NAME_HASH_3ARGS], [
-	AC_MSG_CHECKING([if 'full_name_hash' taken 3 arguments])
-	LB2_LINUX_TEST_RESULT([full_name_hash_3args], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'full_name_hash' taken 3 arguments],
+	[full_name_hash_3args], [
 		AC_DEFINE(HAVE_FULL_NAME_HASH_3ARGS, 1,
 			[full_name_hash need 3 arguments])
 	])
@@ -2104,8 +2102,8 @@ AC_DEFUN([LC_SRC_STRUCT_POSIX_ACL_XATTR], [
 	])
 ])
 AC_DEFUN([LC_STRUCT_POSIX_ACL_XATTR], [
-	AC_MSG_CHECKING([if 'struct posix_acl_xattr_{header,entry}' defined])
-	LB2_LINUX_TEST_RESULT([struct_posix_acl_xattr], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct posix_acl_xattr_{header,entry}' defined],
+	[struct_posix_acl_xattr], [
 		AC_DEFINE(HAVE_STRUCT_POSIX_ACL_XATTR, 1,
 			[struct posix_acl_xattr_{header,entry} defined])
 	])
@@ -2128,8 +2126,8 @@ AC_DEFUN([LC_SRC_IOP_XATTR], [
 	])
 ])
 AC_DEFUN([LC_IOP_XATTR], [
-	AC_MSG_CHECKING([if 'inode_operations' has {get,set,remove}xattr members])
-	LB2_LINUX_TEST_RESULT([inode_ops_xattr], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'inode_operations' has {get,set,remove}xattr members],
+	[inode_ops_xattr], [
 		AC_DEFINE(HAVE_IOP_XATTR, 1,
 			[inode_operations has {get,set,remove}xattr members])
 	])
@@ -2150,8 +2148,8 @@ AC_DEFUN([LC_SRC_GROUP_INFO_GID], [
 	])
 ])
 AC_DEFUN([LC_GROUP_INFO_GID], [
-	AC_MSG_CHECKING([if 'struct group_info' has member 'gid'])
-	LB2_LINUX_TEST_RESULT([group_info_gid], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct group_info' has member 'gid'],
+	[group_info_gid], [
 		AC_DEFINE(HAVE_GROUP_INFO_GID, 1,
 			[struct group_info has member gid])
 	])
@@ -2171,8 +2169,8 @@ AC_DEFUN([LC_SRC_VFS_SETXATTR], [
 	])
 ])
 AC_DEFUN([LC_VFS_SETXATTR], [
-	AC_MSG_CHECKING([if '__vfs_setxattr' helper is available])
-	LB2_LINUX_TEST_RESULT([vfs_setxattr], [
+	LB2_MSG_LINUX_TEST_RESULT([if '__vfs_setxattr' helper is available],
+	[vfs_setxattr], [
 		AC_DEFINE(HAVE_VFS_SETXATTR, 1, ['__vfs_setxattr' is available])
 	])
 ]) # LC_VFS_SETXATTR
@@ -2192,8 +2190,8 @@ AC_DEFUN([LC_SRC_POSIX_ACL_UPDATE_MODE], [
 	])
 ])
 AC_DEFUN([LC_POSIX_ACL_UPDATE_MODE], [
-	AC_MSG_CHECKING([if 'posix_acl_update_mode' exists])
-	LB2_LINUX_TEST_RESULT([posix_acl_update_mode], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'posix_acl_update_mode' exists],
+	[posix_acl_update_mode], [
 		AC_DEFINE(HAVE_POSIX_ACL_UPDATE_MODE, 1,
 			['posix_acl_update_mode' is available])
 	])
@@ -2235,8 +2233,8 @@ AC_DEFUN([LC_SRC_IOP_GENERIC_READLINK], [
 	])
 ])
 AC_DEFUN([LC_IOP_GENERIC_READLINK], [
-	AC_MSG_CHECKING([if 'generic_readlink' still exist])
-	LB2_LINUX_TEST_RESULT([inode_ops_readlink], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'generic_readlink' still exist],
+	[inode_ops_readlink], [
 		AC_DEFINE(HAVE_IOP_GENERIC_READLINK, 1,
 			[generic_readlink has been removed])
 	])
@@ -2258,8 +2256,8 @@ AC_DEFUN([LC_SRC_HAVE_VM_FAULT_ADDRESS], [
 	])
 ])
 AC_DEFUN([LC_HAVE_VM_FAULT_ADDRESS], [
-	AC_MSG_CHECKING([if 'struct vm_fault' replaced virtual_address with address field])
-	LB2_LINUX_TEST_RESULT([vm_fault_address], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct vm_fault' replaced virtual_address with address field],
+	[vm_fault_address], [
 		AC_DEFINE(HAVE_VM_FAULT_ADDRESS, 1,
 			[virtual_address has been replaced by address field])
 	])
@@ -2281,8 +2279,8 @@ AC_DEFUN([LC_SRC_INODEOPS_ENHANCED_GETATTR], [
 	])
 ])
 AC_DEFUN([LC_INODEOPS_ENHANCED_GETATTR], [
-	AC_MSG_CHECKING([if 'inode_operations' getattr member can gather advance stats])
-	LB2_LINUX_TEST_RESULT([getattr_path], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'inode_operations' getattr member can gather advance stats],
+	[getattr_path], [
 		AC_DEFINE(HAVE_INODEOPS_ENHANCED_GETATTR, 1,
 			[inode_operations .getattr member function can gather advance stats])
 	])
@@ -2307,8 +2305,8 @@ AC_DEFUN([LC_SRC_VM_OPERATIONS_REMOVE_VMF_ARG], [
 	])
 ])
 AC_DEFUN([LC_VM_OPERATIONS_REMOVE_VMF_ARG], [
-	AC_MSG_CHECKING([if 'struct vm_operations' removed struct vm_area_struct])
-	LB2_LINUX_TEST_RESULT([vm_operations_no_vm_area_struct], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct vm_operations' removed struct vm_area_struct],
+	[vm_operations_no_vm_area_struct], [
 		AC_DEFINE(HAVE_VM_OPS_USE_VM_FAULT_ONLY, 1,
 			['struct vm_operations' remove struct vm_area_struct argument])
 	])
@@ -2330,8 +2328,8 @@ AC_DEFUN([LC_SRC_HAVE_KEY_USAGE_REFCOUNT], [
 	])
 ])
 AC_DEFUN([LC_HAVE_KEY_USAGE_REFCOUNT], [
-	AC_MSG_CHECKING([if 'key.usage' is refcount_t])
-	LB2_LINUX_TEST_RESULT([key_usage_refcount], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'key.usage' is refcount_t],
+	[key_usage_refcount], [
 		AC_DEFINE(HAVE_KEY_USAGE_REFCOUNT, 1,
 			[key.usage is of type refcount_t])
 	])
@@ -2353,8 +2351,8 @@ AC_DEFUN([LC_SRC_HAVE_CRYPTO_MAX_ALG_NAME_128], [
 	])
 ])
 AC_DEFUN([LC_HAVE_CRYPTO_MAX_ALG_NAME_128], [
-	AC_MSG_CHECKING([if 'CRYPTO_MAX_ALG_NAME' is 128])
-	LB2_LINUX_TEST_RESULT([crypto_max_alg_name], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'CRYPTO_MAX_ALG_NAME' is 128],
+	[crypto_max_alg_name], [
 		AC_DEFINE(HAVE_CRYPTO_MAX_ALG_NAME_128, 1,
 			['CRYPTO_MAX_ALG_NAME' is 128])
 	])
@@ -2375,8 +2373,8 @@ AC_DEFUN([LC_SRC_CURRENT_TIME], [
 	])
 ])
 AC_DEFUN([LC_CURRENT_TIME], [
-	AC_MSG_CHECKING([if CURRENT_TIME has been replaced with current_time])
-	LB2_LINUX_TEST_RESULT([current_time], [
+	LB2_MSG_LINUX_TEST_RESULT([if CURRENT_TIME has been replaced with current_time],
+	[current_time], [
 		AC_DEFINE(HAVE_CURRENT_TIME, 1,
 			[current_time() has replaced CURRENT_TIME])
 	])
@@ -2398,8 +2396,8 @@ AC_DEFUN([LC_SRC_HAVE_GET_INODE_USAGE], [
 	])
 ])
 AC_DEFUN([LC_HAVE_GET_INODE_USAGE], [
-	AC_MSG_CHECKING([if get_inode_usage exists])
-	LB2_LINUX_TEST_RESULT([get_inode_usage], [
+	LB2_MSG_LINUX_TEST_RESULT([if get_inode_usage exists],
+	[get_inode_usage], [
 		AC_DEFINE(HAVE_GET_INODE_USAGE, 1,
 			[get_inode_usage function exists])
 	])
@@ -2419,8 +2417,8 @@ AC_DEFUN([LC_SRC_SUPER_BLOCK_S_UUID], [
 	])
 ])
 AC_DEFUN([LC_SUPER_BLOCK_S_UUID], [
-	AC_MSG_CHECKING([if 'struct super_block' s_uuid is uuid_t])
-	LB2_LINUX_TEST_RESULT([super_block_s_uuid], [
+	LB2_MSG_LINUX_TEST_RESULT(['struct super_block' s_uuid is uuid_t],
+	[super_block_s_uuid], [
 		AC_DEFINE(HAVE_S_UUID_AS_UUID_T, 1, ['s_uuid' is an uuid_t])
 	])
 ]) # LC_SUPER_BLOCK_S_UUID
@@ -2439,8 +2437,8 @@ AC_DEFUN([LC_SRC_SUPER_SETUP_BDI_NAME], [
 	])
 ])
 AC_DEFUN([LC_SUPER_SETUP_BDI_NAME], [
-	AC_MSG_CHECKING([if 'super_setup_bdi_name' exist])
-	LB2_LINUX_TEST_RESULT([super_setup_bdi_name], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'super_setup_bdi_name' exist],
+	[super_setup_bdi_name], [
 		AC_DEFINE(HAVE_SUPER_SETUP_BDI_NAME, 1,
 			['super_setup_bdi_name' is available])
 	])
@@ -2459,8 +2457,8 @@ AC_DEFUN([LC_SRC_BI_STATUS], [
 	])
 ])
 AC_DEFUN([LC_BI_STATUS], [
-	AC_MSG_CHECKING([if 'bi_status' exist])
-	LB2_LINUX_TEST_RESULT([bi_status], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'bi_status' exist],
+	[bi_status], [
 		AC_DEFINE(HAVE_BI_STATUS, 1, ['bi_status' is available])
 	])
 ]) # LC_BI_STATUS
@@ -2478,8 +2476,8 @@ AC_DEFUN([LC_SRC_PAGEVEC_INIT_ONE_PARAM], [
 	])
 ])
 AC_DEFUN([LC_PAGEVEC_INIT_ONE_PARAM], [
-	AC_MSG_CHECKING([if 'pagevec_init' takes one parameter])
-	LB2_LINUX_TEST_RESULT([pagevec_init], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'pagevec_init' takes one parameter],
+	[pagevec_init], [
 		AC_DEFINE(HAVE_PAGEVEC_INIT_ONE_PARAM, 1,
 			['pagevec_init' takes one parameter])
 	])
@@ -2498,8 +2496,8 @@ AC_DEFUN([LC_SRC_BI_BDEV], [
 	])
 ])
 AC_DEFUN([LC_BI_BDEV], [
-	AC_MSG_CHECKING([if 'bi_bdev' exist])
-	LB2_LINUX_TEST_RESULT([bi_bdev], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'bi_bdev' exist],
+	[bi_bdev], [
 		AC_DEFINE(HAVE_BI_BDEV, 1, ['bi_bdev' is available])
 	])
 ]) # LC_BI_BDEV
@@ -2524,8 +2522,8 @@ AC_DEFUN([LC_SRC_INTERVAL_TREE_CACHED], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_INTERVAL_TREE_CACHED], [
-	AC_MSG_CHECKING([if interval_trees use rb_tree_cached])
-	LB2_LINUX_TEST_RESULT([itree_cached], [
+	LB2_MSG_LINUX_TEST_RESULT([if interval_trees use rb_tree_cached],
+	[itree_cached], [
 		AC_DEFINE(HAVE_INTERVAL_TREE_CACHED, 1,
 			[interval trees use rb_tree_cached])
 	])
@@ -2563,8 +2561,8 @@ AC_DEFUN([LC_SRC_I_PAGES], [
 	])
 ])
 AC_DEFUN([LC_I_PAGES], [
-	AC_MSG_CHECKING([if struct address_space has i_pages])
-	LB2_LINUX_TEST_RESULT([i_pages], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct address_space has i_pages],
+	[i_pages], [
 		AC_DEFINE(HAVE_I_PAGES, 1, [struct address_space has i_pages])
 	])
 ]) # LC_I_PAGES
@@ -2584,8 +2582,8 @@ AC_DEFUN([LC_SRC_VM_FAULT_T], [
 	])
 ])
 AC_DEFUN([LC_VM_FAULT_T], [
-	AC_MSG_CHECKING([if vm_fault_t type exists])
-	LB2_LINUX_TEST_RESULT([vm_fault_t], [
+	LB2_MSG_LINUX_TEST_RESULT([if vm_fault_t type exists],
+	[vm_fault_t], [
 		AC_DEFINE(HAVE_VM_FAULT_T, 1, [if vm_fault_t type exists])
 	])
 ]) # LC_VM_FAULT_T
@@ -2607,8 +2605,8 @@ AC_DEFUN([LC_SRC_VM_FAULT_RETRY], [
 	])
 ])
 AC_DEFUN([LC_VM_FAULT_RETRY], [
-	AC_MSG_CHECKING([if VM_FAULT_RETRY is defined])
-	LB2_LINUX_TEST_RESULT([VM_FAULT_RETRY], [
+	LB2_MSG_LINUX_TEST_RESULT([if VM_FAULT_RETRY is defined],
+	[VM_FAULT_RETRY], [
 		AC_DEFINE(HAVE_VM_FAULT_RETRY, 1,
 			[if VM_FAULT_RETRY is defined])
 	])
@@ -2630,8 +2628,8 @@ AC_DEFUN([LC_SRC_ALLOC_FILE_PSEUDO], [
 	])
 ])
 AC_DEFUN([LC_ALLOC_FILE_PSEUDO], [
-	AC_MSG_CHECKING([if 'alloc_file_pseudo' is defined])
-	LB2_LINUX_TEST_RESULT([alloc_file_pseudo], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'alloc_file_pseudo' is defined],
+	[alloc_file_pseudo], [
 		AC_DEFINE(HAVE_ALLOC_FILE_PSEUDO, 1,
 			['alloc_file_pseudo' exist])
 	])
@@ -2667,8 +2665,8 @@ AC_DEFUN([LC_SRC_INODE_TIMESPEC64], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_INODE_TIMESPEC64], [
-	AC_MSG_CHECKING([if inode timestamps are struct timespec64])
-	LB2_LINUX_TEST_RESULT([inode_timespec64], [
+	LB2_MSG_LINUX_TEST_RESULT([if inode timestamps are struct timespec64],
+	[inode_timespec64], [
 		AC_DEFINE(HAVE_INODE_TIMESPEC64, 1,
 			[inode times are using timespec64])
 	])
@@ -2689,8 +2687,8 @@ AC_DEFUN([LC_SRC_RADIX_TREE_TAG_SET], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_RADIX_TREE_TAG_SET], [
-	AC_MSG_CHECKING([if 'radix_tree_tag_set' exists])
-	LB2_LINUX_TEST_RESULT([radix_tree_tag_set], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'radix_tree_tag_set' exists],
+	[radix_tree_tag_set], [
 		AC_DEFINE(HAVE_RADIX_TREE_TAG_SET, 1,
 			[radix_tree_tag_set exists])
 	])
@@ -2711,8 +2709,8 @@ AC_DEFUN([LC_SRC_UAPI_LINUX_MOUNT_H], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_UAPI_LINUX_MOUNT_H], [
-	AC_MSG_CHECKING([if MS_RDONLY was moved to uapi/linux/mount.h])
-	LB2_LINUX_TEST_RESULT([uapi_linux_mount], [
+	LB2_MSG_LINUX_TEST_RESULT([if MS_RDONLY was moved to uapi/linux/mount.h],
+	[uapi_linux_mount], [
 		AC_DEFINE(HAVE_UAPI_LINUX_MOUNT_H, 1,
 			[if MS_RDONLY was moved to uapi/linux/mount.h])
 	])
@@ -2736,8 +2734,8 @@ AC_DEFUN([LC_SRC_HAVE_SUNRPC_CACHE_HASH_LOCK_IS_A_SPINLOCK], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_SUNRPC_CACHE_HASH_LOCK_IS_A_SPINLOCK], [
-	AC_MSG_CHECKING([if cache_detail->hash_lock is a spinlock])
-	LB2_LINUX_TEST_RESULT([hash_lock_isa_spinlock_t], [
+	LB2_MSG_LINUX_TEST_RESULT([if cache_detail->hash_lock is a spinlock],
+	[hash_lock_isa_spinlock_t], [
 		AC_DEFINE(HAVE_CACHE_HASH_SPINLOCK, 1,
 			[if cache_detail->hash_lock is a spinlock])
 	])
@@ -2760,8 +2758,8 @@ AC_DEFUN([LC_SRC_GENL_FAMILY_HAS_RESV_START_OP], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_GENL_FAMILY_HAS_RESV_START_OP], [
-	AC_MSG_CHECKING([if struct genl_family has resv_start_op member])
-	LB2_LINUX_TEST_RESULT([genl_family_has_resv_start_op], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct genl_family has resv_start_op member],
+	[genl_family_has_resv_start_op], [
 		AC_DEFINE(GENL_FAMILY_HAS_RESV_START_OP, 1,
 			[struct genl_family has resv_start_op member])
 	])
@@ -2782,8 +2780,8 @@ AC_DEFUN([LC_SRC_HAVE_BVEC_ITER_ALL], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_BVEC_ITER_ALL], [
-	AC_MSG_CHECKING([if bvec_iter_all exists for multi-page bvec iternation])
-	LB2_LINUX_TEST_RESULT([struct_bvec_iter_all], [
+	LB2_MSG_LINUX_TEST_RESULT([if bvec_iter_all exists for multi-page bvec iternation],
+	[struct_bvec_iter_all], [
 		AC_DEFINE(HAVE_BVEC_ITER_ALL, 1,
 			[if bvec_iter_all exists for multi-page bvec iternation])
 	])
@@ -2815,8 +2813,8 @@ AC_DEFUN([LC_SRC_KEYRING_SEARCH_4ARGS], [
 	])
 ])
 AC_DEFUN([LC_KEYRING_SEARCH_4ARGS], [
-	AC_MSG_CHECKING([if 'keyring_search' has 4 args])
-	LB2_LINUX_TEST_RESULT([keyring_search_4args], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'keyring_search' has 4 args],
+	[keyring_search_4args], [
 		AC_DEFINE(HAVE_KEYRING_SEARCH_4ARGS, 1,
 			[keyring_search has 4 args])
 	])
@@ -2837,8 +2835,8 @@ AC_DEFUN([LC_SRC_BIO_BI_PHYS_SEGMENTS], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_BIO_BI_PHYS_SEGMENTS], [
-	AC_MSG_CHECKING([if struct bio has bi_phys_segments member])
-	LB2_LINUX_TEST_RESULT([bye_bio_bi_phys_segments], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct bio has bi_phys_segments member],
+	[bye_bio_bi_phys_segments], [
 		AC_DEFINE(HAVE_BIO_BI_PHYS_SEGMENTS, 1,
 			[struct bio has bi_phys_segments member])
 	])
@@ -2872,8 +2870,8 @@ AC_DEFUN([LC_SRC_LM_COMPARE_OWNER_EXISTS], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_LM_COMPARE_OWNER_EXISTS], [
-	AC_MSG_CHECKING([if lock_manager_operations has lm_compare_owner])
-	LB2_LINUX_TEST_RESULT([lock_manager_ops_lm_compare_owner], [
+	LB2_MSG_LINUX_TEST_RESULT([if lock_manager_operations has lm_compare_owner],
+	[lock_manager_ops_lm_compare_owner], [
 		AC_DEFINE(HAVE_LM_COMPARE_OWNER, 1,
 			[lock_manager_operations has lm_compare_owner])
 	])
@@ -2913,8 +2911,8 @@ AC_DEFUN([LC_SRC_FSCRYPT_DIGESTED_NAME], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_FSCRYPT_DIGESTED_NAME], [
-	AC_MSG_CHECKING([if fscrypt has 'struct fscrypt_digested_name'])
-	LB2_LINUX_TEST_RESULT([fscrypt_digested_name], [
+	LB2_MSG_LINUX_TEST_RESULT([if fscrypt has 'struct fscrypt_digested_name'],
+	[fscrypt_digested_name], [
 		AC_DEFINE(HAVE_FSCRYPT_DIGESTED_NAME, 1,
 			['struct fscrypt_digested_name' exists])
 	])
@@ -2937,8 +2935,8 @@ AC_DEFUN([LC_SRC_FSCRYPT_DUMMY_CONTEXT_ENABLED], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_FSCRYPT_DUMMY_CONTEXT_ENABLED], [
-	AC_MSG_CHECKING([if fscrypt_dummy_context_enabled() exists])
-	LB2_LINUX_TEST_RESULT([fscrypt_dummy_context_enabled], [
+	LB2_MSG_LINUX_TEST_RESULT([if fscrypt_dummy_context_enabled() exists],
+	[fscrypt_dummy_context_enabled], [
 		AC_DEFINE(HAVE_FSCRYPT_DUMMY_CONTEXT_ENABLED, 1,
 			[fscrypt_dummy_context_enabled() exists])
 	])
@@ -2958,8 +2956,8 @@ AC_DEFUN([LC_SRC_HAVE_ITER_FILE_SPLICE_WRITE], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_ITER_FILE_SPLICE_WRITE], [
-	AC_MSG_CHECKING([if iter_file_splice_write() exists])
-	LB2_LINUX_TEST_RESULT([iter_file_splice_write], [
+	LB2_MSG_LINUX_TEST_RESULT([if iter_file_splice_write() exists],
+	[iter_file_splice_write], [
 		AC_DEFINE(HAVE_ITER_FILE_SPLICE_WRITE, 1,
 			['iter_file_splice_write' exists])
 	])
@@ -2983,8 +2981,8 @@ AC_DEFUN([LC_SRC_FSCRYPT_IS_NOKEY_NAME], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_FSCRYPT_IS_NOKEY_NAME], [
-	AC_MSG_CHECKING([if fscrypt_is_no_key_name() exists])
-	LB2_LINUX_TEST_RESULT([fscrypt_is_no_key_name], [
+	LB2_MSG_LINUX_TEST_RESULT([if fscrypt_is_no_key_name() exists],
+	[fscrypt_is_no_key_name], [
 		AC_DEFINE(HAVE_FSCRYPT_IS_NOKEY_NAME, 1,
 			[fscrypt_is_nokey_name() exists])
 	])
@@ -3013,8 +3011,8 @@ AC_DEFUN([LC_SRC_BIO_SET_DEV], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_BIO_SET_DEV], [
-	AC_MSG_CHECKING([if 'bio_set_dev' is available])
-	LB2_LINUX_TEST_RESULT([bio_set_dev], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'bio_set_dev' is available],
+	[bio_set_dev], [
 		AC_DEFINE(HAVE_BIO_SET_DEV, 1, ['bio_set_dev' is available])
 	])
 ]) # LC_BIO_SET_DEV
@@ -3035,8 +3033,8 @@ AC_DEFUN([LC_SRC_HAVE_USER_NAMESPACE_ARG], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_USER_NAMESPACE_ARG], [
-	AC_MSG_CHECKING([if 'inode_operations' members have user namespace argument])
-	LB2_LINUX_TEST_RESULT([inode_ops_has_user_namespace_argument], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'inode_operations' members have user namespace argument],
+	[inode_ops_has_user_namespace_argument], [
 		AC_DEFINE(HAVE_USER_NAMESPACE_ARG, 1,
 			['inode_operations' members have user namespace argument])
 	])
@@ -3052,19 +3050,21 @@ AC_DEFUN([LC_HAVE_USER_NAMESPACE_ARG], [
 # first few iterations, so don't commit to a particular signature
 # here.  Hopefully we will only want to support the final version.
 #
-AC_DEFUN([LC_HAVE_FILEATTR_GET], [
-tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-Werror"
-LB_CHECK_COMPILE([if 'inode_operations' has fileattr_get (and fileattr_set)],
-fileattr_set, [
-	#include <linux/fs.h>
-],[
-	((struct inode_operations *)1)->fileattr_get(NULL, NULL);
-],[
-	AC_DEFINE(HAVE_FILEATTR_GET, 1,
-		['inode_operations' has fileattr_get and fileattr_set])
+AC_DEFUN([LC_SRC_HAVE_FILEATTR_GET], [
+	LB2_LINUX_TEST_SRC([fileattr_set], [
+		#include <linux/fs.h>
+	],[
+		struct inode_operations *iops = NULL;
+		iops->fileattr_get(NULL, NULL);
+	],[-Werror])
 ])
-EXTRA_KCFLAGS="$tmp_flags"
+AC_DEFUN([LC_HAVE_FILEATTR_GET], [
+	LB2_MSG_LINUX_TEST_RESULT(['inode_operations' has fileattr_get (and fileattr_set)],
+	[fileattr_set], [
+		AC_DEFINE(HAVE_FILEATTR_GET, 1,
+			['inode_operations' has fileattr_get and fileattr_set])
+	])
+
 ]) # LC_HAVE_FILEATTR_GET
 
 #
@@ -3083,33 +3083,11 @@ AC_DEFUN([LC_SRC_HAVE_GET_ACL_RCU_ARG], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_GET_ACL_RCU_ARG], [
-	AC_MSG_CHECKING([if 'get_acl' has a rcu argument])
-	LB2_LINUX_TEST_RESULT([get_acl_rcu_argument], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'get_acl' has a rcu argument],
+	[get_acl_rcu_argument], [
 		AC_DEFINE(HAVE_GET_ACL_RCU_ARG, 1,
 			['get_acl' has a rcu argument])
 	])
-]) # LC_HAVE_GET_ACL_RCU_ARG
-
-# LC_HAVE_GET_ACL_RCU_ARG
-#
-# kernel 5.15 commit 0cad6246621b5887d5b33fea84219d2a71f2f99a
-# vfs: add rcu argument to ->get_acl() callback
-# Add a rcu argument to the ->get_acl() callback to allow
-# get_cached_acl_rcu() to call the ->get_acl() method.
-#
-AC_DEFUN([LC_HAVE_GET_ACL_RCU_ARG], [
-tmp_flags="$EXTRA_KCFLAGS"
-EXTRA_KCFLAGS="-Werror"
-LB_CHECK_COMPILE([if 'get_acl' has a rcu argument],
-get_acl_rcu_argument, [
-	#include <linux/fs.h>
-],[
-	((struct inode_operations *)1)->get_acl((struct inode *)NULL, 0, false);
-],[
-	AC_DEFINE(HAVE_GET_ACL_RCU_ARG, 1,
-		['get_acl' has a rcu argument])
-])
-EXTRA_KCFLAGS="$tmp_flags"
 ]) # LC_HAVE_GET_ACL_RCU_ARG
 
 #
@@ -3135,8 +3113,8 @@ AC_DEFUN([LC_SRC_HAVE_SECURITY_DENTRY_INIT_WITH_XATTR_NAME_ARG], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_SECURITY_DENTRY_INIT_WITH_XATTR_NAME_ARG], [
-	AC_MSG_CHECKING([if security_dentry_init_security() returns xattr name])
-	LB2_LINUX_TEST_RESULT([security_dentry_init_security_xattr_name_arg], [
+	LB2_MSG_LINUX_TEST_RESULT([if security_dentry_init_security() returns xattr name],
+	[security_dentry_init_security_xattr_name_arg], [
 		AC_DEFINE(HAVE_SECURITY_DENTRY_INIT_WITH_XATTR_NAME_ARG, 1,
 			[security_dentry_init_security() returns xattr name])
 	])
@@ -3164,8 +3142,8 @@ AC_DEFUN([LC_SRC_HAVE_KIOCB_COMPLETE_2ARGS], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_KIOCB_COMPLETE_2ARGS], [
-	AC_MSG_CHECKING([if kiocb->ki_complete() has 2 arguments])
-	LB2_LINUX_TEST_RESULT([kiocb_ki_complete_2args], [
+	LB2_MSG_LINUX_TEST_RESULT([if kiocb->ki_complete() has 2 arguments],
+	[kiocb_ki_complete_2args], [
 		AC_DEFINE(HAVE_KIOCB_COMPLETE_2ARGS, 1,
 			[kiocb->ki_complete() has 2 arguments])
 	])
@@ -3202,8 +3180,8 @@ AC_DEFUN([LC_SRC_HAVE_INVALIDATE_FOLIO], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_INVALIDATE_FOLIO], [
-	AC_MSG_CHECKING([if have address_spaace_operaions->invalidate_folio() member])
-	LB2_LINUX_TEST_RESULT([address_spaace_operaions_invalidate_folio], [
+	LB2_MSG_LINUX_TEST_RESULT([if have address_spaace_operaions->invalidate_folio() member],
+	[address_spaace_operaions_invalidate_folio], [
 		AC_DEFINE(HAVE_INVALIDATE_FOLIO, 1,
 			[address_spaace_operaions->invalidate_folio() member exists])
 	])
@@ -3228,8 +3206,8 @@ AC_DEFUN([LC_SRC_HAVE_DIRTY_FOLIO], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_DIRTY_FOLIO], [
-	AC_MSG_CHECKING([if have address_spaace_operaions->dirty_folio() member])
-	LB2_LINUX_TEST_RESULT([address_spaace_operaions_dirty_folio], [
+	LB2_MSG_LINUX_TEST_RESULT([if have address_spaace_operaions->dirty_folio() member],
+	[address_spaace_operaions_dirty_folio], [
 		AC_DEFINE(HAVE_DIRTY_FOLIO, 1,
 			[address_spaace_operaions->dirty_folio() member exists])
 	])
@@ -3252,8 +3230,8 @@ AC_DEFUN([LC_SRC_HAVE_ALLOC_INODE_SB], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_ALLOC_INODE_SB], [
-	AC_MSG_CHECKING([if alloc_inode_sb() exists])
-	LB2_LINUX_TEST_RESULT([alloc_inode_sb], [
+	LB2_MSG_LINUX_TEST_RESULT([if alloc_inode_sb() exists],
+	[alloc_inode_sb], [
 		AC_DEFINE(HAVE_ALLOC_INODE_SB, 1,
 			[alloc_inode_sb() exists])
 	])
@@ -3274,8 +3252,8 @@ AC_DEFUN([LC_SRC_GRAB_CACHE_PAGE_WRITE_BEGIN_WITH_FLAGS], [
 	],[-Werror])
 ]) 
 AC_DEFUN([LC_GRAB_CACHE_PAGE_WRITE_BEGIN_WITH_FLAGS], [
-	AC_MSG_CHECKING([if grab_cache_page_write_begin() has flags argument])
-	LB2_LINUX_TEST_RESULT([grab_cache_page_write_begin_with_flags], [
+	LB2_MSG_LINUX_TEST_RESULT([if grab_cache_page_write_begin() has flags argument],
+	[grab_cache_page_write_begin_with_flags], [
 		AC_DEFINE(HAVE_GRAB_CACHE_PAGE_WRITE_BEGIN_WITH_FLAGS, 1,
 			[grab_cache_page_write_begin() has flags argument])
 	])
@@ -3299,8 +3277,8 @@ AC_DEFUN([LC_SRC_HAVE_ADDRESS_SPACE_OPERATIONS_READ_FOLIO], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_ADDRESS_SPACE_OPERATIONS_READ_FOLIO], [
-	AC_MSG_CHECKING([if struct address_space_operations() has read_folio()])
-	LB2_LINUX_TEST_RESULT([address_space_operations_read_folio], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct address_space_operations() has read_folio()],
+	[address_space_operations_read_folio], [
 		AC_DEFINE(HAVE_AOPS_READ_FOLIO, 1,
 			[struct address_space_operations() has read_folio()])
 	])
@@ -3327,8 +3305,8 @@ AC_DEFUN([LC_SRC_HAVE_READ_CACHE_PAGE_FILLER_WITH_FILE], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_READ_CACHE_PAGE_FILLER_WITH_FILE], [
-	AC_MSG_CHECKING([if read_cache_page() filler_t needs struct file])
-	LB2_LINUX_TEST_RESULT([read_cache_page_filler_with_file], [
+	LB2_MSG_LINUX_TEST_RESULT([if read_cache_page() filler_t needs struct file],
+	[read_cache_page_filler_with_file], [
 		AC_DEFINE(HAVE_READ_CACHE_PAGE_WANTS_FILE, 1,
 			[read_cache_page() filler_t needs struct file])
 	])
@@ -3351,8 +3329,8 @@ AC_DEFUN([LC_SRC_HAVE_ADDRESS_SPACE_OPERATIONS_RELEASE_FOLIO], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_ADDRESS_SPACE_OPERATIONS_RELEASE_FOLIO], [
-	AC_MSG_CHECKING([if struct address_space_operations() has release_folio()])
-	LB2_LINUX_TEST_RESULT([address_space_operations_release_folio], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct address_space_operations() has release_folio()],
+	[address_space_operations_release_folio], [
 		AC_DEFINE(HAVE_AOPS_RELEASE_FOLIO, 1,
 			[struct address_space_operations() has release_folio()])
 	])
@@ -3375,8 +3353,8 @@ AC_DEFUN([LC_SRC_HAVE_LSMCONTEXT_INIT], [
 	],[])
 ])
 AC_DEFUN([LC_HAVE_LSMCONTEXT_INIT], [
-	AC_MSG_CHECKING([if lsmcontext_init is available])
-	LB2_LINUX_TEST_RESULT([lsmcontext_init], [
+	LB2_MSG_LINUX_TEST_RESULT([if lsmcontext_init is available],
+	[lsmcontext_init], [
 		AC_DEFINE(HAVE_LSMCONTEXT_INIT, 1,
 			[lsmcontext_init is available])
 	])
@@ -3403,8 +3381,8 @@ AC_DEFUN([LC_SRC_SECURITY_DENTRY_INIT_SECURTY_WITH_CTX], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_SECURITY_DENTRY_INIT_SECURTY_WITH_CTX], [
-	AC_MSG_CHECKING([if security_dentry_init_security needs lsmcontext])
-	LB2_LINUX_TEST_RESULT([security_dentry_init_security_with_ctx], [
+	LB2_MSG_LINUX_TEST_RESULT([if security_dentry_init_security needs lsmcontext],
+	[security_dentry_init_security_with_ctx], [
 		AC_DEFINE(HAVE_SECURITY_DENTRY_INIT_SECURTY_WITH_CTX, 1,
 			[security_dentry_init_security needs lsmcontext])
 	])
@@ -3429,8 +3407,8 @@ AC_DEFUN([LC_SRC_HAVE_ADDRESS_SPACE_OPERATIONS_MIGRATE_FOLIO], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_ADDRESS_SPACE_OPERATIONS_MIGRATE_FOLIO], [
-	AC_MSG_CHECKING([if struct address_space_operations() has migrate_folio()])
-	LB2_LINUX_TEST_RESULT([address_space_operations_migrate_folio], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct address_space_operations() has migrate_folio()],
+	[address_space_operations_migrate_folio], [
 		AC_DEFINE(HAVE_AOPS_MIGRATE_FOLIO, 1,
 			[struct address_space_operations() has migrate_folio()])
 	])
@@ -3451,8 +3429,8 @@ AC_DEFUN([LC_SRC_REGISTER_SHRINKER_FORMAT_NAMED], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_REGISTER_SHRINKER_FORMAT_NAMED], [
-	AC_MSG_CHECKING([if register_shrinker() returns status])
-	LB2_LINUX_TEST_RESULT([address_space_operations_migrate_folio], [
+	LB2_MSG_LINUX_TEST_RESULT([if register_shrinker() returns status],
+	[register_shrinker_format], [
 		AC_DEFINE(HAVE_REGISTER_SHRINKER_FORMAT_NAMED, 1,
 			[register_shrinker() returns status])
 	])
@@ -3478,8 +3456,8 @@ AC_DEFUN([LC_SRC_HAVE_VFS_SETXATTR_NON_CONST_VALUE], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_VFS_SETXATTR_NON_CONST_VALUE], [
-	AC_MSG_CHECKING([if vfs_setxattr() value argument is non-const])
-	LB2_LINUX_TEST_RESULT([vfs_setxattr_non_const_value_arg], [
+	LB2_MSG_LINUX_TEST_RESULT([if vfs_setxattr() value argument is non-const],
+	[vfs_setxattr_non_const_value_arg], [
 		AC_DEFINE([VFS_SETXATTR_VALUE(value)],
 			  [(value)],
 			  [vfs_setxattr() value argument is const void *])
@@ -3509,8 +3487,8 @@ AC_DEFUN([LC_SRC_HAVE_IOV_ITER_GET_PAGES_ALLOC2], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_IOV_ITER_GET_PAGES_ALLOC2], [
-	AC_MSG_CHECKING([if iov_iter_get_pages_alloc2() is available])
-	LB2_LINUX_TEST_RESULT([iov_iter_get_pages_alloc2], [
+	LB2_MSG_LINUX_TEST_RESULT([if iov_iter_get_pages_alloc2() is available],
+	[iov_iter_get_pages_alloc2], [
 		AC_DEFINE(HAVE_IOV_ITER_GET_PAGES_ALLOC2, 1,
 			[iov_iter_get_pages_alloc2() is available])
 	])
@@ -3535,8 +3513,8 @@ AC_DEFUN([LC_SRC_HAVE_GET_RANDOM_U32_AND_U64], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_GET_RANDOM_U32_AND_U64], [
-	AC_MSG_CHECKING([if get_random_u32() and get_random_u64() are available])
-	LB2_LINUX_TEST_RESULT([get_random_u32_and_u64], [
+	LB2_MSG_LINUX_TEST_RESULT([if get_random_u32() and get_random_u64() are available],
+	[get_random_u32_and_u64], [
 		AC_DEFINE(HAVE_GET_RANDOM_U32_AND_U64, 1,
 			[get_random_[u32|u64] are available])
 	],[
@@ -3569,8 +3547,8 @@ AC_DEFUN([LC_SRC_NFS_FILLDIR_USE_CTX_RETURN_BOOL], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_NFS_FILLDIR_USE_CTX_RETURN_BOOL], [
-	AC_MSG_CHECKING([if filldir_t uses struct dir_context and returns bool])
-	LB2_LINUX_TEST_RESULT([filldir_ctx_return_bool], [
+	LB2_MSG_LINUX_TEST_RESULT([if filldir_t uses struct dir_context and returns bool],
+	[filldir_ctx_return_bool], [
 		AC_DEFINE(HAVE_FILLDIR_USE_CTX_RETURN_BOOL, 1,
 			[filldir_t needs struct dir_context and returns bool])
 		AC_DEFINE(HAVE_FILLDIR_USE_CTX, 1,
@@ -3600,8 +3578,8 @@ AC_DEFUN([LC_SRC_HAVE_FILEMAP_GET_FOLIOS_CONTIG], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_FILEMAP_GET_FOLIOS_CONTIG], [
-	AC_MSG_CHECKING([if filemap_get_folios_contig() is available])
-	LB2_LINUX_TEST_RESULT([filldir_ctx_return_bool], [
+	LB2_MSG_LINUX_TEST_RESULT([if filemap_get_folios_contig() is available],
+	[filemap_get_folios_contig], [
 		AC_DEFINE(HAVE_FILEMAP_GET_FOLIOS_CONTIG, 1,
 			[filemap_get_folios_contig() is available])
 	])
@@ -3622,8 +3600,8 @@ AC_DEFUN([LC_SRC_HAVE_GET_RANDOM_U32_BELOW], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_GET_RANDOM_U32_BELOW], [
-	AC_MSG_CHECKING([if get_random_u32_below()is available])
-	LB2_LINUX_TEST_RESULT([get_random_u32_below], [
+	LB2_MSG_LINUX_TEST_RESULT([if get_random_u32_below()is available],
+	[get_random_u32_below], [
 		AC_DEFINE(HAVE_GET_RANDOM_U32_BELOW, 1,
 			[get_random_u32_below() is available])
 	],[
@@ -3651,8 +3629,8 @@ AC_DEFUN([LC_SRC_HAVE_ACL_WITH_DENTRY], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_ACL_WITH_DENTRY], [
-	AC_MSG_CHECKING([if 'get_acl' and 'set_acl' use dentry argument])
-	LB2_LINUX_TEST_RESULT([acl_with_dentry], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'get_acl' and 'set_acl' use dentry argument],
+	[acl_with_dentry], [
 		AC_DEFINE(HAVE_ACL_WITH_DENTRY, 1,
 			['get_acl' and 'set_acl' use dentry argument])
 	])
@@ -3697,8 +3675,8 @@ AC_DEFUN([LC_SRC_HAVE_U64_CAPABILITY], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_U64_CAPABILITY], [
-	AC_MSG_CHECKING([if 'kernel_cap_t' has u64 val])
-	LB2_LINUX_TEST_RESULT([kernel_cap_t_has_u64_value], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'kernel_cap_t' has u64 val],
+	[kernel_cap_t_has_u64_value], [
 		AC_DEFINE(HAVE_U64_CAPABILITY, 1,
 			['kernel_cap_t' has u64 val])
 	])
@@ -3722,8 +3700,8 @@ AC_DEFUN([LC_SRC_HAVE_MNT_IDMAP_ARG], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_MNT_IDMAP_ARG], [
-	AC_MSG_CHECKING([if 'inode_operations' members have mnt_idmap argument])
-	LB2_LINUX_TEST_RESULT([inode_ops_getattr_has_mnt_idmap_argument], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'inode_operations' members have mnt_idmap argument],
+	[inode_ops_getattr_has_mnt_idmap_argument], [
 		AC_DEFINE(HAVE_MNT_IDMAP_ARG, 1,
 			['inode_operations' members have mnt_idmap argument])
 		AC_DEFINE(HAVE_USER_NAMESPACE_ARG, 1,
@@ -3752,8 +3730,8 @@ AC_DEFUN([LC_SRC_HAVE_LMO_LM_NOTIFY], [
 	])
 ])
 AC_DEFUN([LC_HAVE_LMO_LM_NOTIFY], [
-	AC_MSG_CHECKING([if struct lock_manager_operations has lm_notify])
-	LB2_LINUX_TEST_RESULT([lock_manager_operations_lm_notify_member], [
+	LB2_MSG_LINUX_TEST_RESULT([struct lock_manager_operations has lm_notify],
+	[lock_manager_operations_lm_notify_member], [
 		AC_DEFINE(HAVE_LM_XXX_LOCK_MANAGER_OPS, 1,
 			[struct lock_manager_operations has lm_notify])
 		AC_DEFINE(HAVE_LM_GRANT_2ARGS, 1,
@@ -3775,8 +3753,8 @@ AC_DEFUN([LC_SRC_HAVE_LOCKS_LOCK_FILE_WAIT_IN_FILELOCK], [
 	])
 ])
 AC_DEFUN([LC_HAVE_LOCKS_LOCK_FILE_WAIT_IN_FILELOCK], [
-	AC_MSG_CHECKING([if 'locks_lock_file_wait' exists in filelock.h])
-	LB2_LINUX_TEST_RESULT([locks_lock_file_wait_in_filelock], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'locks_lock_file_wait' exists in filelock.h],
+	[locks_lock_file_wait_in_filelock], [
 		AC_DEFINE(HAVE_LOCKS_LOCK_FILE_WAIT, 1,
 			[kernel has locks_lock_file_wait in filelock.h])
 		AC_DEFINE(HAVE_LINUX_FILELOCK_HEADER, 1,
@@ -3986,6 +3964,9 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 
 	# 5.12
 	LC_SRC_HAVE_USER_NAMESPACE_ARG
+
+	# 5.13
+	LC_SRC_HAVE_FILEATTR_GET
 
 	# 5.15
 	LC_SRC_HAVE_GET_ACL_RCU_ARG
@@ -4252,9 +4233,6 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 
 	# 5.13
 	LC_HAVE_FILEATTR_GET
-
-	# 5.15
-	LC_HAVE_GET_ACL_RCU_ARG
 
 	# 5.15
 	LC_HAVE_GET_ACL_RCU_ARG
