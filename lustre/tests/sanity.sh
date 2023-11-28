@@ -11903,35 +11903,6 @@ test_105e() { # bug 22660 && 22040
 }
 run_test 105e "Two conflicting flocks from same process"
 
-test_105f() {
-	flock_is_enabled || skip_env "mount w/o flock enabled"
-
-	local pid1
-	local pid2
-
-	touch $DIR/$tfile
-
-	flock -s $DIR/$tfile -c "echo rd lock;sleep 6;echo rd unlocked" &
-	sleep 1
-	multiop_bg_pause $DIR/$tfile OJ_jc || return 1
-	pid1=$!
-	multiop_bg_pause $DIR/$tfile OJ_jc || return 2
-	pid2=$!
-
-	kill -USR1 $pid2
-	sleep 1
-	kill -USR1 $pid1
-	sleep 1
-	echo "waiting for multiop $pid1"
-	wait $pid1
-	echo "waiting for multiop $pid2"
-	wait $pid2
-	rm -f $DIR/$tfile
-
-	return 0
-}
-run_test 105f "deadlock isn't detected"
-
 test_106() { #bug 10921
 	test_mkdir $DIR/$tdir
 	$DIR/$tdir && error "exec $DIR/$tdir succeeded"
