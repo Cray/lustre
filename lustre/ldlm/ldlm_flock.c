@@ -119,22 +119,6 @@ static inline void ldlm_flock_blocking_link(struct ldlm_lock *req,
 		     &req->l_exp_flock_hash);
 }
 
-static inline void ldlm_flock_blocking_update(struct ldlm_lock *req,
-					      struct ldlm_lock *lock)
-{
-	/* For server only */
-	if (req->l_export == NULL)
-		return;
-
-	LASSERT(!hlist_unhashed(&req->l_exp_flock_hash));
-
-	req->l_policy_data.l_flock.blocking_owner =
-		lock->l_policy_data.l_flock.owner;
-	req->l_policy_data.l_flock.blocking_export =
-		lock->l_export;
-
-}
-
 static inline void ldlm_flock_blocking_unlink(struct ldlm_lock *req)
 {
 	/* For server only */
@@ -435,7 +419,6 @@ reprocess:
 				continue;
 
 			if (intention != LDLM_PROCESS_ENQUEUE) {
-				ldlm_flock_blocking_update(req, lock);
 				if (ldlm_flock_deadlock(req, lock)) {
 					ldlm_flock_cancel_on_deadlock(
 						req, grant_work);
