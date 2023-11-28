@@ -136,6 +136,7 @@ kiblnd_get_idle_tx(struct lnet_ni *ni, lnet_nid_t target)
         LASSERT (tx->tx_lntmsg[1] == NULL);
         LASSERT (tx->tx_nfrags == 0);
 
+	tx->tx_gpu = 0;
 	tx->tx_gaps = false;
 	tx->tx_hstatus = LNET_MSG_STATUS_OK;
 
@@ -762,7 +763,8 @@ static int kiblnd_setup_rd_kiov(struct lnet_ni *ni, struct kib_tx *tx,
 	int max_nkiov;
 	int sg_count = 0;
 
-	CDEBUG(D_NET, "niov %d offset %d nob %d\n", nkiov, offset, nob);
+	CDEBUG(D_NET, "niov %d offset %d nob %d gpu %d\n",
+	       nkiov, offset, nob, tx->tx_gpu);
 
 	LASSERT(nob > 0);
 	LASSERT(nkiov > 0);
@@ -1692,7 +1694,7 @@ kiblnd_send(struct lnet_ni *ni, void *private, struct lnet_msg *lntmsg)
 		return -ENOMEM;
 	}
 	ibmsg = tx->tx_msg;
-	gpu = msg_md ? (msg_md->md_flags & LNET_MD_FLAG_GPU) : false;
+	gpu = lnet_md_is_gpu(msg_md);
 
 	switch (type) {
 	default:
@@ -1822,8 +1824,7 @@ kiblnd_reply(struct lnet_ni *ni, struct kib_rx *rx, struct lnet_msg *lntmsg)
 		goto failed_0;
 	}
 
-
-	tx->tx_gpu = msg_md ? (msg_md->md_flags & LNET_MD_FLAG_GPU) : 0;
+	tx->tx_gpu = lnet_md_is_gpu(msg_md);
 
 	if (nob == 0)
 		rc = 0;
@@ -1941,7 +1942,7 @@ kiblnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *lntmsg,
 			break;
 		}
 
-		tx->tx_gpu = msg_md ? (msg_md->md_flags & LNET_MD_FLAG_GPU) : 0;
+		tx->tx_gpu = lnet_md_is_gpu(msg_md);
 
 		txmsg = tx->tx_msg;
 		rd = &txmsg->ibm_u.putack.ibpam_rd;
