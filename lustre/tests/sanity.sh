@@ -3480,14 +3480,25 @@ run_test 27R "test max_stripecount limitation when stripe count is set to -1"
 test_27T() {
 	[ $(facet_host client) == $(facet_host ost1) ] &&
 		skip "need ost1 and client on different nodes"
-
+	# CFS_FAIL_ONCE is needed to get cfs_fail_count reset
 #define OBD_FAIL_OSC_NO_GRANT            0x411
-	$LCTL set_param fail_loc=0x20000411 fail_val=1
-#define OBD_FAIL_OST_ENOSPC              0x215
-	do_facet ost1 "$LCTL set_param fail_loc=0x80000215"
+#define CFS_FAIL_SKIP                    0x20000000
+#define CFS_FAIL_ONCE                    0x80000000
+	$LCTL set_param fail_loc=0xa0000411 fail_val=1
+#define OBD_FAIL_OST_ENOSPC_VALID        0x254
+	do_facet ost1 "$LCTL set_param fail_loc=0x80000254"
 	$LFS setstripe -i 0 -c 1 $DIR/$tfile
-	$MULTIOP $DIR/$tfile oO_WRONLY:P$((4 * 1024 * 1024 + 10 * 4096))c ||
+
+	local pagesz=$(getconf PAGESIZE)
+	local pagenr=$($LCTL get_param -n osc.*-OST0000-*.max_pages_per_rpc)
+
+	$MULTIOP $DIR/$tfile oO_WRONLY:P$(((pagenr + 10) * pagesz))c ||
 		error "multiop failed"
+	(( $(stat -c '%s' $DIR/$tfile) == pagenr * pagesz )) ||
+		error "wrong size"
+
+	# this is to clear ar_force_sync flags
+	$MULTIOP $DIR/$tfile oO_WRONLY:O_SYNC:w${pagesz}c
 }
 run_test 27T "no eio on close on partial write due to enosp"
 
