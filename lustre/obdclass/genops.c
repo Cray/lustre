@@ -2181,15 +2181,13 @@ int obd_set_max_mod_rpcs_in_flight(struct client_obd *cli, __u16 max)
 	}
 
 	spin_lock(&cli->cl_mod_rpcs_lock);
-
 	prev = cli->cl_max_mod_rpcs_in_flight;
 	cli->cl_max_mod_rpcs_in_flight = max;
-
-	/* wakeup waiters if limit has been increased */
-	if (cli->cl_max_mod_rpcs_in_flight > prev)
-		wake_up(&cli->cl_mod_rpcs_waitq);
-
 	spin_unlock(&cli->cl_mod_rpcs_lock);
+
+	/* wake_up_all waiters if limit has been increased */
+	if (max > prev)
+		wake_up_all(&cli->cl_mod_rpcs_waitq);
 
 	return 0;
 }
@@ -2276,11 +2274,8 @@ static inline bool obd_mod_rpc_slot_avail(struct client_obd *cli,
  */
 __u16 obd_get_mod_rpc_slot(struct client_obd *cli, __u32 opc)
 {
-	bool			close_req = false;
-	__u16			i, max;
-
-	if (opc == MDS_CLOSE)
-		close_req = true;
+	bool close_req = (opc == MDS_CLOSE);
+	__u16 i, max;
 
 	do {
 		spin_lock(&cli->cl_mod_rpcs_lock);
@@ -2329,13 +2324,10 @@ EXPORT_SYMBOL(obd_get_mod_rpc_slot);
  */
 void obd_put_mod_rpc_slot(struct client_obd *cli, __u32 opc, __u16 tag)
 {
-	bool			close_req = false;
+	bool close_req = (opc == MDS_CLOSE);
 
 	if (tag == 0)
 		return;
-
-	if (opc == MDS_CLOSE)
-		close_req = true;
 
 	spin_lock(&cli->cl_mod_rpcs_lock);
 	cli->cl_mod_rpcs_in_flight--;
@@ -2345,11 +2337,7 @@ void obd_put_mod_rpc_slot(struct client_obd *cli, __u32 opc, __u16 tag)
 	LASSERT(tag - 1 < OBD_MAX_RIF_MAX);
 	LASSERT(test_and_clear_bit(tag - 1, cli->cl_mod_tag_bitmap) != 0);
 	spin_unlock(&cli->cl_mod_rpcs_lock);
-	/* LU-14741 - to prevent close RPCs stuck behind normal ones */
-	if (close_req)
-		wake_up_all(&cli->cl_mod_rpcs_waitq);
-	else
-		wake_up(&cli->cl_mod_rpcs_waitq);
+	wake_up(&cli->cl_mod_rpcs_waitq);
 }
 EXPORT_SYMBOL(obd_put_mod_rpc_slot);
 
