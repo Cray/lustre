@@ -201,10 +201,11 @@ or
 or the OSTs in
 .IR filesystem.pool .
 .TP
-.B swap_layouts <filename1> <filename2>
+.B swap_layouts [-n] <filename1> <filename2>
 Swap the data (layout and OST objects) of two regular files. The
 two files have to be in the same filesystem, owned by the same user,
-reside on the same MDT and writable by the user.
+reside on the same MDT and writable by the user. Without -n, the
+original atime and ctime are preserved.
 
 Swapping the layout of two directories is not permitted.
 .TP
