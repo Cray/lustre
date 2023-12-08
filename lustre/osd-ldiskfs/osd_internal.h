@@ -787,7 +787,15 @@ static inline int __osd_xattr_get(struct inode *inode, struct dentry *dentry,
 
 	dentry->d_inode = inode;
 	dentry->d_sb = inode->i_sb;
-	return ll_vfs_getxattr(dentry, inode, name, buf, len);
+
+#if defined(HAVE_IOP_XATTR)
+	if (unlikely(!inode->i_op->getxattr))
+		return -ENODATA;
+
+	return inode->i_op->getxattr(dentry, name, buf, len);
+#else
+	return __vfs_getxattr(dentry, inode, name, buf, len);
+#endif
 }
 
 static inline int __osd_xattr_set(struct osd_thread_info *info,
