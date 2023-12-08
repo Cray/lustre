@@ -2786,6 +2786,8 @@ void ll_truncate_inode_pages_final(struct inode *inode)
 
 	truncate_inode_pages_final(mapping);
 
+	OBD_FAIL_TIMEOUT(OBD_FAIL_LLITE_DELAY_TRUNCATE, 5);
+
 	/* Workaround for LU-118: Note nrpages may not be totally updated when
 	 * truncate_inode_pages() returns, as there can be a page in the process
 	 * of deletion (inside __delete_from_page_cache()) in the specified
