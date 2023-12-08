@@ -27332,6 +27332,24 @@ test_434() {
 }
 run_test 434 "Client should not send RPCs for security.selinux with SElinux disabled"
 
+test_435() {
+	local pid1
+	local pid2
+	mkdir -p $DIR/$tdir
+	multiop $DIR/$tdir/$tfile.1 O_w1 & pid1=$!
+	multiop $DIR/$tdir/$tfile.1 O_w1 & pid2=$!
+	sleep 1
+	touch $DIR/$tdir/$tfile.2
+	$LFS swap_layouts -n $DIR/$tdir/$tfile.1 $DIR/$tdir/$tfile.2
+	$LCTL set_param fail_loc=0x1430
+	kill -USR1 $pid1
+	sleep 1
+	cat /proc/$pid/stack
+	kill -USR1 $pid2
+	wait
+}
+run_test 435 "truncate vs read/write should not panic"
+
 prep_801() {
 	[[ $MDS1_VERSION -lt $(version_code 2.9.55) ]] ||
 	[[ $OST1_VERSION -lt $(version_code 2.9.55) ]] &&
