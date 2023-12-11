@@ -410,10 +410,27 @@ static bool ras_inside_ra_window(pgoff_t idx, struct ra_io_arg *ria)
 	return false;
 }
 
+static int ll_submit_read(const struct lu_env *env, struct cl_io *io,
+			  struct cl_2queue *queue)
+{
+	int count = queue->c2_qin.pl_nr;
+	int rc;
+
+	if (!count)
+		return 0;
+
+	rc = cl_io_submit_rw(env, io, CRT_READ, queue);
+	if (rc == 0)
+		task_io_account_read(PAGE_SIZE * count);
+
+	return rc;
+}
+
 static unsigned long
 ll_read_ahead_pages(const struct lu_env *env, struct cl_io *io,
-		    struct cl_page_list *queue, struct ll_readahead_state *ras,
-		    struct ra_io_arg *ria, pgoff_t *ra_end, pgoff_t skip_index)
+		    struct cl_2queue *queue, struct ll_readahead_state *ras,
+		    struct ra_io_arg *ria, pgoff_t *ra_end, pgoff_t skip_index,
+		    enum ll_ra_page_hint hint)
 {
 	struct cl_read_ahead ra = { 0 };
 	/* busy page count is per stride */
@@ -484,8 +501,8 @@ ll_read_ahead_pages(const struct lu_env *env, struct cl_io *io,
 				break;
 
 			/* If the page is inside the read-ahead window */
-			rc = ll_read_ahead_page(env, io, queue, page_idx,
-						MAYNEED);
+			rc = ll_read_ahead_page(env, io, &queue->c2_qin, page_idx,
+						hint);
 			if (rc < 0 && rc != -EBUSY)
 				break;
 			if (rc == -EBUSY) {
@@ -678,17 +695,10 @@ static void ll_readahead_handle_work(struct work_struct *wq)
 	queue = &io->ci_queue;
 	cl_2queue_init(queue);
 
-	rc = ll_read_ahead_pages(env, io, &queue->c2_qin, ras, ria,
-				 &ra_end_idx, 0);
+	rc = ll_read_ahead_pages(env, io, queue, ras, ria,
+				 &ra_end_idx, 0, MAYNEED);
 	if (ria->ria_reserved != 0)
 		ll_ra_count_put(ll_i2sbi(inode), ria->ria_reserved);
-	if (queue->c2_qin.pl_nr > 0) {
-		int count = queue->c2_qin.pl_nr;
-
-		rc = cl_io_submit_rw(env, io, CRT_READ, queue);
-		if (rc == 0)
-			task_io_account_read(PAGE_SIZE * count);
-	}
 	if (ria->ria_end_idx == ra_end_idx && ra_end_idx == (kms >> PAGE_SHIFT))
 		ll_ra_stats_inc(inode, RA_STAT_EOF);
 
@@ -716,7 +726,7 @@ out_free_work:
 }
 
 static int ll_readahead(const struct lu_env *env, struct cl_io *io,
-			struct cl_page_list *queue,
+			struct cl_2queue *queue,
 			struct ll_readahead_state *ras, bool hit,
 			struct file *file, pgoff_t skip_index,
 			pgoff_t *start_idx)
@@ -856,7 +866,7 @@ static int ll_readahead(const struct lu_env *env, struct cl_io *io,
 	       ll_i2sbi(inode)->ll_ra_info.ra_max_pages);
 
 	ret = ll_read_ahead_pages(env, io, queue, ras, ria, &ra_end_idx,
-				  skip_index);
+				  skip_index, MAYNEED);
 	if (ria->ria_reserved != 0)
 		ll_ra_count_put(ll_i2sbi(inode), ria->ria_reserved);
 
@@ -882,13 +892,13 @@ static int ll_readahead(const struct lu_env *env, struct cl_io *io,
 }
 
 static int ll_readpages(const struct lu_env *env, struct cl_io *io,
-			struct cl_page_list *queue,
+			struct cl_2queue *queue,
 			pgoff_t start, pgoff_t end)
 {
 	int ret = 0;
 	__u64 kms;
-	pgoff_t page_idx;
-	int count = 0;
+	struct ll_readahead_state ras = { 0 };
+	struct ra_io_arg *ria;
 
 	ENTRY;
 
@@ -907,16 +917,15 @@ static int ll_readpages(const struct lu_env *env, struct cl_io *io,
 			end = end_index;
 	}
 
-	for (page_idx = start; page_idx <= end; page_idx++) {
-		ret= ll_read_ahead_page(env, io, queue, page_idx,
-					WILLNEED);
-		if (ret < 0)
-			break;
-		else if (ret == 0) /* ret 1 is already uptodate */
-			count++;
-	}
+	ria = &ll_env_info(env)->lti_ria;
+	memset(ria, 0, sizeof(*ria));
 
-	RETURN(count > 0 ? count : ret);
+	ria->ria_start_idx = start;
+	ria->ria_end_idx = end;
+	ria->ria_length = 0;
+
+	ret = ll_read_ahead_pages(env, io, queue, &ras, ria, &end, 0, WILLNEED);
+	RETURN(ret);
 }
 
 static void ras_set_start(struct ll_readahead_state *ras, pgoff_t index)
@@ -1735,7 +1744,7 @@ int ll_io_read_page(const struct lu_env *env, struct cl_io *io,
 
 		if (ras->ras_next_readahead_idx < vvp_index(vpg))
 			skip_index = vvp_index(vpg);
-		rc2 = ll_readahead(env, io, &queue->c2_qin, ras,
+		rc2 = ll_readahead(env, io, queue, ras,
 				   uptodate, file, skip_index,
 				   &ra_start_index);
 		CDEBUG(D_READA|D_IOTRACE,
@@ -1744,19 +1753,13 @@ int ll_io_read_page(const struct lu_env *env, struct cl_io *io,
 		       vvp_index(vpg));
 	} else if (vvp_index(vpg) == io_start_index &&
 		   io_end_index - io_start_index > 0) {
-		rc2 = ll_readpages(env, io, &queue->c2_qin, io_start_index + 1,
+		rc2 = ll_readpages(env, io, queue, io_start_index + 1,
 				   io_end_index);
 		CDEBUG(D_READA, DFID " %d pages read at %lu\n",
 		       PFID(ll_inode2fid(inode)), rc2, vvp_index(vpg));
 	}
 
-	if (queue->c2_qin.pl_nr > 0) {
-		int count = queue->c2_qin.pl_nr;
-		rc = cl_io_submit_rw(env, io, CRT_READ, queue);
-		if (rc == 0)
-			task_io_account_read(PAGE_SIZE * count);
-	}
-
+	rc = ll_submit_read(env, io, queue);
 
 	if (anchor != NULL && !cl_page_is_owned(page, io)) { /* have sent */
 		rc = cl_sync_io_wait(env, anchor, 0);
