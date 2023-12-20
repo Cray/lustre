@@ -5557,6 +5557,9 @@ test_44b() {
 run_test 44b "write big sparse write"
 
 test_44c() {
+	[ "$FSTYPE" != "zfs" ] ||
+		skip "ORI-366/LU-1941: FIEMAP unimplemented on ZFS"
+
 	local i
 	# required space: NUM_files_t44c * 20Mb
 	local NUMFILES_44c=${NUMFILES_44c:-50}
