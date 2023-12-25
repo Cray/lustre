@@ -340,6 +340,7 @@ static int vvp_page_make_ready_start(const struct lu_env *env,
 	struct page *vmpage = cl2vm_page(slice);
 
 	lock_page(vmpage);
+	LASSERTF(PageUptodate(vmpage), "%p\n", vmpage);
 
 	return 0;
 }
