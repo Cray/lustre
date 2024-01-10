@@ -3158,6 +3158,11 @@ int target_queue_recovery_request(struct ptlrpc_request *req,
 		LASSERT(list_empty(&req->rq_list));
 		spin_unlock(&obd->obd_recovery_task_lock);
 		RETURN(1);
+	} else if (transno < obd->obd_last_committed &&
+		   lustre_msg_get_opc(req->rq_reqmsg) == LDLM_ENQUEUE) {
+		/* Processing open request */
+		spin_unlock(&obd->obd_recovery_task_lock);
+		RETURN(1);
 	}
 	spin_unlock(&obd->obd_recovery_task_lock);
 
