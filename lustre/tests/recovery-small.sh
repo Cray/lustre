@@ -3607,6 +3607,55 @@ test_155()
 }
 run_test 155 "eviction during mmaped i/o"
 
+test_156()
+{
+	local maxfiles=1000
+	local old_ptl="$PTLDEBUG"
+
+	mkdir_on_mdt0 $DIR/$tdir
+	mkdir_on_mdt0 $DIR/$tdir-2
+
+	mount_client $MOUNT2
+	local mds_dbg=$(do_facet mds1 $LCTL get_param -n debug)
+	do_facet mds1 "$LCTL dk > /dev/null; $LCTL set_param debug=ha"
+	stack_trap "umount_client $MOUNT2; do_facet mds1 $LCTL set_param debug=\'$mds_dbg\';
+			PTLDEBUG=\'$old_ptl\'" EXIT
+	PTLDEBUG="ha"
+
+	declare -a multiops
+
+	for (( i=0; i < $maxfiles; i++ )) ; do
+		$MULTIOP $DIR/$tdir/f.$i  OAs_uc &
+		multiops+=($!)
+		$MULTIOP $DIR2/$tdir-2/f.$i  OAs_uc &
+		multiops+=($!)
+	done
+
+	sleep $((TIMEOUT / 4))
+	replay_barrier mds1
+	for pid in ${multiops[@]}; do
+		kill -USR1 $pid
+	done
+
+	local BEFORE=$(date +%s)
+	fail mds1
+	local AFTER=$(date +%s)
+
+	local failed=0
+	failed=$(do_facet mds1 "$LCTL dk | grep -c 'waking for gap'")
+	echo Failed $failed
+	for pid in ${multiops[@]}; do
+		wait $pid
+	done
+
+	echo "transaction gap $failed, took $((	AFTER - BEFORE )) secs"
+
+	#some opens could be outside last_commited, allow 1% error rate
+	(( failed <= maxfiles / 100 )) ||
+		error "Too many transaction gap during recovery $failed," \
+		      "files $maxfiles"
+}
+run_test 156 "Check transaction gap with many open files"
 complete $SECONDS
 check_and_cleanup_lustre
 exit_status
