@@ -66,6 +66,7 @@ CLEAN="make distclean || true"
 NO_WEAK_MODULES="yes"
 AUTOINSTALL="yes"
 STRIP="no"
+NO_WEAK_MODULES="yes"
 
 # Where modules are installed
 kmoddir="updates/kernel"
