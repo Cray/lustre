@@ -43,6 +43,7 @@
 #include <lprocfs_status.h>
 #include <lustre_kernelcomm.h>
 #include "mdt_internal.h"
+#include <linux/delay.h>
 
 /*
  * Agent external API
@@ -65,6 +66,117 @@ static struct hsm_agent *mdt_hsm_agent_lookup(struct coordinator *cdt,
 			return ha;
 	}
 	return NULL;
+}
+
+struct hsm_agent_resend_state {
+	struct mdt_device *mdt;
+	struct hsm_agent *ha;
+	struct obd_uuid uuid;
+};
+
+int mdt_hsm_agent_resend(void *data)
+{
+	struct hsm_agent_resend_state *state = data;
+	struct obd_export *exp;
+	struct hsm_agent *agent;
+	struct hsm_action_list *buf = NULL;
+	struct hsm_action_list_resend *halr;
+	int len;
+	int rc = 0;
+	ENTRY;
+
+
+	CDEBUG(D_HSM, "HSM resend thread starting\n");
+	CERROR("HSM resend thread starting\n");
+
+	/* Small delay for client to call llapi_hsm_copytool_recv() */
+	msleep(5 * MSEC_PER_SEC);
+
+	CERROR("HSM resend thread 1\n");
+
+	exp = obd_uuid_lookup(mdt2obd_dev(state->mdt), &state->uuid);
+	if (exp == NULL || exp->exp_disconnected) {
+		/* TODO: do something in this case? */
+		RETURN(-ENOENT);
+	}
+
+	CERROR("HSM resend thread 2\n");
+
+	agent = mdt_hsm_agent_lookup(&state->mdt->mdt_coordinator,
+				     &state->uuid);
+	if (agent == NULL) {
+		CERROR("No HSM agent %s found\n", obd_uuid2str(&state->uuid));
+		GOTO(out, rc = -ENOENT);
+	}
+
+	CERROR("HSM resend thread 3\n");
+
+	list_for_each_entry(halr, &agent->ha_req_list, halr_list) {
+		CERROR("Found a registered HSM agent in ha_req_list\n");
+	}
+
+	/* Resend all pending HSM requests for this agent */
+	list_for_each_entry(halr, &agent->ha_req_list, halr_list) {
+		CERROR("HSM resend thread 4a\n");
+
+		len = hal_size(halr->halr_hal);
+
+		CERROR("HSM resend thread 4, len = %d\n", len);
+
+		buf = kuc_alloc(len, KUC_TRANSPORT_HSM, HMT_ACTION_LIST);
+		if (IS_ERR(buf))
+			GOTO(out, rc = PTR_ERR(buf));
+		memcpy(buf, halr->halr_hal, len);
+
+		CERROR("HSM resend thread 5\n");
+
+		/* resend request to agent */
+		rc = do_set_info_async(exp->exp_imp_reverse, LDLM_SET_INFO,
+				       LUSTRE_OBD_VERSION,
+				       sizeof(KEY_HSM_COPYTOOL_SEND),
+				       KEY_HSM_COPYTOOL_SEND,
+				       kuc_len(len), kuc_ptr(buf), NULL);
+
+		CERROR("HSM resend thread 6\n");
+
+		if (!rc)
+			CERROR("%s: HSM request resent to agent '%s' successfully\n",
+			       mdt_obd_name(state->mdt),
+			       obd_uuid2str(&state->uuid));
+		else
+			CERROR("%s: cannot send request to agent '%s': rc = %d\n",
+			       mdt_obd_name(state->mdt),
+			       obd_uuid2str(&state->uuid), rc);
+
+		CERROR("HSM resend thread 7\n");
+
+		kuc_free(buf, len);
+
+		CERROR("HSM resend thread 8\n");
+	}
+
+	CERROR("HSM resend thread 9\n");
+
+	class_export_put(exp);
+out:
+	RETURN(rc);
+}
+
+static int hsm_resend_start_thread(struct hsm_agent_resend_state *state)
+{
+	struct task_struct *task;
+	int rc = 0;
+
+	CDEBUG(D_HSM, "Starting HSM resend thread\n");
+
+	task = kthread_run(mdt_hsm_agent_resend, state, "hsm_resend_thread");
+	if (IS_ERR(task)) {
+		rc = PTR_ERR(task);
+		CERROR("Cannot start HSM resend thread: rc = %d\n", rc);
+		GOTO(out, rc);
+	}
+out:
+	RETURN(rc);
 }
 
 /**
@@ -92,6 +204,10 @@ int mdt_hsm_agent_register(struct mdt_thread_info *mti,
 		RETURN(-ENXIO);
 	}
 
+	/** If agent has already been registered or in cdt_agents_killed, resend
+	 * any pending HSM requests, possibly in a separate thread. Possibly
+	 * move previous agent instance to cdt_agents_killed?
+	 */
 	OBD_ALLOC_PTR(ha);
 	if (ha == NULL)
 		GOTO(out, rc = -ENOMEM);
@@ -111,13 +227,34 @@ int mdt_hsm_agent_register(struct mdt_thread_info *mti,
 	atomic_set(&ha->ha_success, 0);
 	atomic_set(&ha->ha_failure, 0);
 
+	INIT_LIST_HEAD(&ha->ha_req_list);
+
 	down_write(&cdt->cdt_agent_lock);
 	tmp = mdt_hsm_agent_lookup(cdt, uuid);
 	if (tmp != NULL) {
+		struct hsm_agent_resend_state *state;
+
 		LCONSOLE_WARN("HSM agent %s already registered\n",
 			      obd_uuid2str(uuid));
 		up_write(&cdt->cdt_agent_lock);
-		GOTO(out_free, rc = -EEXIST);
+
+		CERROR("HSM agent %s already registered, resending pending HSM requests\n",
+			obd_uuid2str(uuid));
+
+		OBD_ALLOC_PTR(state);
+		if (state == NULL)
+			GOTO(out, rc = -ENOMEM);
+
+		state->mdt = mti->mti_mdt;
+		state->ha = tmp;
+		state->uuid = *((struct obd_uuid *)uuid);
+
+		rc = hsm_resend_start_thread(state);
+		if (rc)
+			CERROR("Starting the HSM resend thread failed with %d\n",
+			       rc);
+		//GOTO(out_free, rc = -EEXIST);
+		GOTO(out, rc = 0);
 	}
 
 	list_add_tail(&ha->ha_list, &cdt->cdt_agents);
@@ -581,10 +718,44 @@ int mdt_hsm_agent_send(struct mdt_thread_info *mti, struct hsm_action_list *hal,
 	class_export_put(exp);
 
 	if (rc == -EPIPE) {
+		/** Instead of unregistering agent, place it in
+		 * cdt_agents_killed
+		 */
 		CDEBUG(D_HSM, "Lost connection to agent '%s', unregistering\n",
 		       obd_uuid2str(&uuid));
 		mdt_hsm_agent_unregister(mti, &uuid);
 	}
+
+	CERROR("Saving HSM request for resend 0\n");
+
+	/** Save requests on per-HSM agent data structure to resend them in case
+	 * the agent is killed and reregisters
+	 */
+	if (rc == 0) {
+		struct hsm_agent *ha;
+		struct hsm_action_list_resend *halr;
+
+		CERROR("Saving HSM request for resend 1\n");
+
+		ha = mdt_hsm_agent_lookup(cdt, &uuid);
+		if (ha == NULL)
+			GOTO(out, rc = -ENOENT);
+
+		CERROR("Saving HSM request for resend 2\n");
+
+		OBD_ALLOC_PTR(halr);
+		if (halr == NULL)
+			GOTO(out, rc = -ENOMEM);
+
+		CERROR("Saving HSM request for resend 3\n");
+
+		memcpy(halr->halr_hal, hal, len);
+
+		INIT_LIST_HEAD(&halr->halr_list);
+		list_add_tail(&halr->halr_list, &ha->ha_req_list);
+	}
+
+	CERROR("Saving HSM request for resend 4\n");
 
 out:
 	if (rc != 0 && is_registered) {

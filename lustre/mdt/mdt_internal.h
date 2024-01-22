@@ -634,6 +634,7 @@ struct hsm_agent {
 	atomic_t	 ha_success;		/**< number of successful
 						 * actions */
 	atomic_t	 ha_failure;		/**< number of failed actions */
+	struct list_head ha_req_list;		/**< pending agent requests */
 };
 
 struct cdt_restore_handle {
@@ -647,6 +648,11 @@ extern struct kmem_cache *mdt_hsm_cdt_kmem;	/** restore handle slab cache */
 struct hsm_record_update {
 	__u64 cookie;
 	enum agent_req_status status;
+};
+
+struct hsm_action_list_resend {
+	struct list_head halr_list;
+	struct hsm_action_list *halr_hal;
 };
 
 static inline const struct md_device_operations *
