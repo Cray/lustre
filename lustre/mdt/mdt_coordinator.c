@@ -430,12 +430,13 @@ static int mdt_coordinator_cb(const struct lu_env *env,
 	struct hsm_scan_data *hsd = data;
 	struct mdt_device *mdt = hsd->hsd_mti->mti_mdt;
 	struct coordinator *cdt = &mdt->mdt_coordinator;
+	u64 batch_size = cdt->cdt_batch_size;
 	ENTRY;
 
 	/* Allow other threads that need cdt_lock to make
 	 * progress, when there is a large number of updates
 	 */
-	if (++hsd->hsd_requests_handled % CDT_BATCH_SIZE == 0 &&
+	if (++hsd->hsd_requests_handled % batch_size == 0 &&
 	     rwsem_is_contended(&cdt->cdt_lock) && need_resched()) {
 		up_write(&cdt->cdt_lock);
 		cond_resched();
@@ -1188,6 +1189,7 @@ int mdt_hsm_cdt_init(struct mdt_device *mdt)
 	cdt->cdt_grace_delay = 60;
 	cdt->cdt_loop_period = 10;
 	cdt->cdt_max_requests = 3;
+	cdt->cdt_batch_size = CDT_DEFAULT_BATCH_SIZE;
 	cdt->cdt_policy = CDT_DEFAULT_POLICY;
 	cdt->cdt_active_req_timeout = 3600;
 
@@ -2371,6 +2373,33 @@ ssize_t max_requests_store(struct kobject *kobj, struct attribute *attr,
 }
 LUSTRE_RW_ATTR(max_requests);
 
+ssize_t batch_size_show(struct kobject *kobj, struct attribute *attr, char *buf)
+{
+	struct coordinator *cdt = container_of(kobj, struct coordinator,
+					       cdt_hsm_kobj);
+
+	return scnprintf(buf, PAGE_SIZE, "%llu\n", cdt->cdt_batch_size);
+}
+
+ssize_t batch_size_store(struct kobject *kobj, struct attribute *attr,
+			 const char *buffer, size_t count)
+{
+	struct coordinator *cdt = container_of(kobj, struct coordinator,
+					       cdt_hsm_kobj);
+	unsigned long long val;
+	int rc;
+
+	rc = kstrtoull(buffer, 0, &val);
+	if (rc)
+		return rc;
+
+	if (val != 0)
+		cdt->cdt_batch_size = val;
+
+	return val ? count : -EINVAL;
+}
+LUSTRE_RW_ATTR(batch_size);
+
 ssize_t default_archive_id_show(struct kobject *kobj, struct attribute *attr,
 				char *buf)
 {
@@ -2728,6 +2757,7 @@ static struct attribute *hsm_attrs[] = {
 	&lustre_attr_grace_delay.attr,
 	&lustre_attr_active_request_timeout.attr,
 	&lustre_attr_max_requests.attr,
+	&lustre_attr_batch_size.attr,
 	&lustre_attr_default_archive_id.attr,
 	&lustre_attr_remove_archive_on_last_unlink.attr,
 	&lustre_attr_archive_count.attr,
