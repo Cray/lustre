@@ -9,7 +9,7 @@
 # $8 : $kmoddir [cray-lustre-client either 'extra|updates']
 
 case $1 in
-    cray-lustre-client)
+    lustre-client|cray-lustre-client)
 	SERVER="--disable-server --enable-client"
 	ksrc="$(dirname $4)/source"
 	KERNEL_STUFF="--with-linux=$(realpath $ksrc) --with-linux-obj=$(realpath $4)"
@@ -29,13 +29,10 @@ case $1 in
 		O2IBPATH=yes
 	fi
 	KERNEL_STUFF="${KERNEL_STUFF} --with-o2ib=${O2IBPATH}"
-	KERNEL_STUFF="${KERNEL_STUFF} --with-kmp-moddir=${kmoddir}/${name}"
+	if [ -n ${kmoddir} ]; then
+		KERNEL_STUFF="${KERNEL_STUFF} --with-kmp-moddir=${kmoddir}/${name}"
+	fi
 	sh ./autogen.sh
-	;;
-
-    lustre-client)
-	SERVER="--disable-server"
-	KERNEL_STUFF=""
 	;;
 
     lustre-zfs|lustre-all)
