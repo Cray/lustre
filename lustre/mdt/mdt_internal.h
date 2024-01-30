@@ -96,7 +96,7 @@ struct mdt_file_data {
  * time; the value is based on field reports and experimentation, but may not
  * be optimal
  */
-#define CDT_BATCH_SIZE	10000
+#define CDT_DEFAULT_BATCH_SIZE	10000
 
 /* Coordinator states. Keep the cdt_transition table in sync. */
 enum cdt_states { CDT_STOPPED = 0,
@@ -163,6 +163,8 @@ struct coordinator {
 						       * specified */
 	u64			 cdt_max_requests;    /**< max count of started
 						       * requests */
+	u64			 cdt_batch_size;      /**< number of requests to
+						       * yield cdt_lock */
 	/** Current count of active requests */
 	atomic_t		 cdt_request_count;   /** total */
 	atomic_t		 cdt_archive_count;

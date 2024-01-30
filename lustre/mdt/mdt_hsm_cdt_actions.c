@@ -358,6 +358,7 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
 	struct mdt_thread_info *mti = ducb->mti;
 	struct mdt_device *mdt = ducb->mti->mti_mdt;
 	struct coordinator *cdt = &mdt->mdt_coordinator;
+	u64 batch_size = cdt->cdt_batch_size;
 	int rc, i;
 	ENTRY;
 
@@ -406,7 +407,7 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
 			/* Allow other threads that need cdt_lock to make
 			 * progress, when there is a large number of updates
 			 */
-			if (ducb->updates_done % CDT_BATCH_SIZE == 0 &&
+			if (ducb->updates_done % batch_size == 0 &&
 			    rwsem_is_contended(&cdt->cdt_lock) &&
 			    need_resched()) {
 				up_write(&cdt->cdt_lock);
