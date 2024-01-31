@@ -22,6 +22,8 @@ BuildRequires: zlib-devel
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
 BuildRequires: libmount-devel
+BuildRequires: flex
+BuildRequires: bison
 %if "%{?sle_version}" == "120000"
 # Only SLES 12 SP0 builds require this. Was needed for EDR IB support in eLogin
 # for 6.0UP02. Future versions will use in-kernel drivers.
