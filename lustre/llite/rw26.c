@@ -482,7 +482,7 @@ ll_direct_IO_impl(struct kiocb *iocb, struct iov_iter *iter, int rw)
 		return 0;
 
 	/* FIXME: io smaller than PAGE_SIZE is broken on ia64 ??? */
-	if ((file_offset & ~PAGE_MASK) || (count & ~PAGE_MASK))
+	if (file_offset & ~PAGE_MASK)
 		RETURN(-EINVAL);
 
 	CDEBUG(D_VFSTRACE, "VFS Op:inode="DFID"(%p), size=%zd (max %lu), "
