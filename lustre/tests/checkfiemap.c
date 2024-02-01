@@ -175,7 +175,7 @@ static void *corruption_th(void *args)
 
 int past_eof_test(int fd, long long size)
 {
-	union { struct fiemap f; char c[4096]; } fiemap_buf = { 0 };
+	union { struct fiemap f; char c[4096]; } fiemap_buf = {{0}};
 	struct fiemap *fiemap = &fiemap_buf.f;
 
 	fiemap->fm_start = size * 2;
