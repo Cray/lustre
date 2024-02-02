@@ -254,7 +254,7 @@ AC_DEFUN([LC_SRC_LM_XXX_LOCK_MANAGER_OPS], [
 	])
 ])
 AC_DEFUN([LC_LM_XXX_LOCK_MANAGER_OPS], [
-	LB2_MSG_LINUX_TEST_RESULT(['lock-manager' ops renamed to 'lm_xxx'],
+	LB2_MSG_LINUX_TEST_RESULT([if 'lock-manager' ops renamed to 'lm_xxx'],
 	[lock_manager_ops_lm_xxx], [
 		AC_DEFINE(HAVE_LM_XXX_LOCK_MANAGER_OPS, 1,
 			[lock-manager ops renamed to lm_xxx])
@@ -541,7 +541,7 @@ AC_DEFUN([LC_SRC_INVALIDATE_RANGE], [
 ])
 AC_DEFUN([LC_INVALIDATE_RANGE], [
 	LB2_MSG_LINUX_TEST_RESULT(
-	['address_space_operations.invalidatepage' requires 3 arguments],
+	[if 'address_space_operations.invalidatepage' requires 3 arguments],
 	[address_space_ops_invalidatepage_3args], [
 		AC_DEFINE(HAVE_INVALIDATE_RANGE, 1,
 			[address_space_operations.invalidatepage needs 3 arguments])
@@ -1128,7 +1128,7 @@ AC_DEFUN([LC_SRC_HAVE_LM_GRANT_2ARGS], [
 	])
 ])
 AC_DEFUN([LC_HAVE_LM_GRANT_2ARGS], [
-	LB2_MSG_LINUX_TEST_RESULT(['lock_manager_operations.lm_grant' takes two args],
+	LB2_MSG_LINUX_TEST_RESULT([if 'lock_manager_operations.lm_grant' takes two args],
 	[lock_manager_operations_lm_grant], [
 		AC_DEFINE(HAVE_LM_GRANT_2ARGS, 1,
 			[lock_manager_operations.lm_grant takes two args])
@@ -1333,7 +1333,7 @@ AC_DEFUN([LC_SRC_HAVE_BDI_CAP_MAP_COPY], [
 	])
 ]) # LC_HAVE_BDI_CAP_MAP_COPY
 AC_DEFUN([LC_HAVE_BDI_CAP_MAP_COPY], [
-	LB2_MSG_LINUX_TEST_RESULT([have 'BDI_CAP_MAP_COPY'],
+	LB2_MSG_LINUX_TEST_RESULT([if 'BDI_CAP_MAP_COPY' enum exists],
 	[bdi_cap_map_copy], [
 		AC_DEFINE(HAVE_BDI_CAP_MAP_COPY, 1,
 			[BDI_CAP_MAP_COPY exist])
@@ -1379,9 +1379,9 @@ AC_DEFUN([LC_SRC_IOV_ITER_RW], [
 	])
 ])
 AC_DEFUN([LC_IOV_ITER_RW], [
-	LB2_MSG_LINUX_TEST_RESULT([if iov_iter_rw exist],
+	LB2_MSG_LINUX_TEST_RESULT([if iov_iter_rw exists],
 	[iov_iter_rw], [
-		AC_DEFINE(HAVE_IOV_ITER_RW, 1, [iov_iter_rw exist])
+		AC_DEFINE(HAVE_IOV_ITER_RW, 1, [iov_iter_rw exists])
 	])
 ]) # LC_IOV_ITER_RW
 
@@ -1437,7 +1437,8 @@ AC_DEFUN([LC_SRC_SYMLINK_OPS_USE_NAMEIDATA], [
 	])
 ])
 AC_DEFUN([LC_SYMLINK_OPS_USE_NAMEIDATA], [
-	LB2_MSG_LINUX_TEST_RESULT([if symlink inode operations have struct nameidata argument],
+	LB2_MSG_LINUX_TEST_RESULT(
+	[if symlink inode operations have struct nameidata argument],
 	[symlink_use_nameidata], [
 		AC_DEFINE(HAVE_SYMLINK_OPS_USE_NAMEIDATA, 1,
 			[symlink inode operations need struct nameidata argument])
@@ -1564,7 +1565,8 @@ AC_DEFUN([LC_SRC_HAVE_XATTR_HANDLER_SIMPLIFIED], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_XATTR_HANDLER_SIMPLIFIED], [
-	LB2_MSG_LINUX_TEST_RESULT([if 'struct xattr_handler' functions pass in handler pointer],
+	LB2_MSG_LINUX_TEST_RESULT(
+	[if 'struct xattr_handler' functions pass in handler pointer],
 	[xattr_handler_simplified], [
 		AC_DEFINE(HAVE_XATTR_HANDLER_SIMPLIFIED, 1,
 			[handler pointer is parameter])
@@ -2440,7 +2442,7 @@ AC_DEFUN([LC_SRC_SUPER_BLOCK_S_UUID], [
 	])
 ])
 AC_DEFUN([LC_SUPER_BLOCK_S_UUID], [
-	LB2_MSG_LINUX_TEST_RESULT(['struct super_block' s_uuid is uuid_t],
+	LB2_MSG_LINUX_TEST_RESULT([if 'struct super_block' s_uuid is uuid_t],
 	[super_block_s_uuid], [
 		AC_DEFINE(HAVE_S_UUID_AS_UUID_T, 1, ['s_uuid' is an uuid_t])
 	])
@@ -2480,7 +2482,7 @@ AC_DEFUN([LC_SRC_BI_STATUS], [
 	])
 ])
 AC_DEFUN([LC_BI_STATUS], [
-	LB2_MSG_LINUX_TEST_RESULT([if 'bi_status' exist],
+	LB2_MSG_LINUX_TEST_RESULT([if 'bi_status' exists],
 	[bi_status], [
 		AC_DEFINE(HAVE_BI_STATUS, 1, ['bi_status' is available])
 	])
@@ -2519,7 +2521,7 @@ AC_DEFUN([LC_SRC_BI_BDEV], [
 	])
 ])
 AC_DEFUN([LC_BI_BDEV], [
-	LB2_MSG_LINUX_TEST_RESULT([if 'bi_bdev' exist],
+	LB2_MSG_LINUX_TEST_RESULT([if 'bi_bdev' exists],
 	[bi_bdev], [
 		AC_DEFINE(HAVE_BI_BDEV, 1, ['bi_bdev' is available])
 	])
@@ -2803,10 +2805,11 @@ AC_DEFUN([LC_SRC_HAVE_BVEC_ITER_ALL], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_BVEC_ITER_ALL], [
-	LB2_MSG_LINUX_TEST_RESULT([if bvec_iter_all exists for multi-page bvec iternation],
+	LB2_MSG_LINUX_TEST_RESULT(
+	[if bvec_iter_all exists for multi-page bvec iteration],
 	[struct_bvec_iter_all], [
 		AC_DEFINE(HAVE_BVEC_ITER_ALL, 1,
-			[if bvec_iter_all exists for multi-page bvec iternation])
+			[if bvec_iter_all exists for multi-page bvec iteration])
 	])
 ]) # LC_HAVE_BVEC_ITER_ALL
 
@@ -3056,7 +3059,8 @@ AC_DEFUN([LC_SRC_HAVE_USER_NAMESPACE_ARG], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_USER_NAMESPACE_ARG], [
-	LB2_MSG_LINUX_TEST_RESULT([if 'inode_operations' members have user namespace argument],
+	LB2_MSG_LINUX_TEST_RESULT(
+	[if 'inode_operations' members have user namespace argument],
 	[inode_ops_has_user_namespace_argument], [
 		AC_DEFINE(HAVE_USER_NAMESPACE_ARG, 1,
 			['inode_operations' members have user namespace argument])
@@ -3082,7 +3086,8 @@ AC_DEFUN([LC_SRC_HAVE_FILEATTR_GET], [
 	],[-Werror])
 ])
 AC_DEFUN([LC_HAVE_FILEATTR_GET], [
-	LB2_MSG_LINUX_TEST_RESULT(['inode_operations' has fileattr_get (and fileattr_set)],
+	LB2_MSG_LINUX_TEST_RESULT(
+	[if 'inode_operations' has fileattr_get (and fileattr_set)],
 	[fileattr_set], [
 		AC_DEFINE(HAVE_FILEATTR_GET, 1,
 			['inode_operations' has fileattr_get and fileattr_set])
@@ -3829,7 +3834,7 @@ AC_DEFUN([LC_SRC_HAVE_LMO_LM_NOTIFY], [
 	])
 ])
 AC_DEFUN([LC_HAVE_LMO_LM_NOTIFY], [
-	LB2_MSG_LINUX_TEST_RESULT([struct lock_manager_operations has lm_notify],
+	LB2_MSG_LINUX_TEST_RESULT([if struct lock_manager_operations has lm_notify],
 	[lock_manager_operations_lm_notify_member], [
 		AC_DEFINE(HAVE_LM_XXX_LOCK_MANAGER_OPS, 1,
 			[struct lock_manager_operations has lm_notify])
