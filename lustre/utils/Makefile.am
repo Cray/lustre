@@ -81,8 +81,9 @@ lctl_SOURCES = portals.c debug.c obd.c lustre_cfg.c lctl.c obdctl.h
 if SERVER
 lctl_SOURCES += lustre_lfsck.c lsnapshot.c
 endif
-lctl_LDADD :=  liblustreapi.la $(PTHREAD_LIBS) -lyaml
-lctl_DEPENDENCIES := liblustreapi.la
+lctl_CFLAGS := $(AM_CFLAGS) $(LIBNL3_CFLAGS) -I $(top_builddir)/lnet/utils
+lctl_LDADD := liblustreapi.la $(PTHREAD_LIBS) $(LIBNL3_LIBS) -lyaml
+lctl_LDADD += $(top_builddir)/lnet/utils/lnetconfig/liblnetconfig.la
 
 lfs_SOURCES = lfs.c lfs_project.c lfs_project.h
 lfs_CFLAGS := -fPIC $(AM_CFLAGS) -I $(top_builddir)/lnet/utils
@@ -119,11 +120,15 @@ liblustreapi_la_SOURCES = liblustreapi.c liblustreapi_hsm.c \
 			  liblustreapi_ladvise.c liblustreapi_chlg.c \
 			  liblustreapi_heat.c liblustreapi_pcc.c \
 			  liblustreapi_lseek.c liblustreapi_swap.c
+liblustreapi_la_CFLAGS = -fPIC -D_GNU_SOURCE $(LIBNL3_CFLAGS) \
+			 -I $(top_builddir)/lnet/utils \
+			 -D_LARGEFILE64_SOURCE=1 -D_FILE_OFFSET_BITS=64 \
+			 -DLUSTRE_UTILS=1
 liblustreapi_la_LDFLAGS = $(LIBREADLINE) -version-info 1:0:0 \
 			  -Wl,--version-script=liblustreapi.map
 liblustreapi_la_LIBADD = $(top_builddir)/libcfs/libcfs/libcfs.la \
 			 $(top_builddir)/lnet/utils/lnetconfig/liblnetconfig.la \
-			 -lpthread
+			 $(LIBNL3_LIBS) -lpthread
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = lustre.pc
@@ -165,7 +170,8 @@ ofd_access_log_reader_SOURCES = \
 	ofd_access_batch.c \
 	ofd_access_batch.h \
 	ofd_access_log_reader.c
-ofd_access_log_reader_LDADD := -lpthread
+ofd_access_log_reader_LDADD := -lpthread liblustreapi.la
+ofd_access_log_reader_DEPENDENCIES := liblustreapi.la
 
 PLUGIN_LIB =
 if PLUGINS
