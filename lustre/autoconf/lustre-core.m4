@@ -4279,7 +4279,7 @@ AS_IF([test "$enable_dist" = "no"], [
 
 LDAP=""
 AC_ARG_ENABLE([ldap],
-      AC_HELP_STRING([--enable-ldap],
+      AS_HELP_STRING([--enable-ldap],
                       [Compile l_getidentity_nss utility with NSS modules support]),
       [],
       [AC_CHECK_LIB([ldap],
@@ -4297,7 +4297,7 @@ AC_SUBST(LDAP)
 
 # l_getidenity_nss
 AC_ARG_ENABLE([getidentity_nss],
-      AC_HELP_STRING([--enable-getidentity-nss],
+      AS_HELP_STRING([--enable-getidentity-nss],
                       [Compile l_getidentity_nss utility with NSS modules support]),
       [],[enable_getidentity_nss=yes])
 
