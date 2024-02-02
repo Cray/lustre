@@ -1019,7 +1019,7 @@ AC_DEFUN([LN_SRC_CONFIG_STRSCPY_EXISTS], [
 	],[-Werror])
 ])
 AC_DEFUN([LN_CONFIG_STRSCPY_EXISTS], [
-	LB2_MSG_LINUX_TEST_RESULT([kernel strscpy is available],
+	LB2_MSG_LINUX_TEST_RESULT([if kernel strscpy is available],
 	[strscpy_exists], [
 		AC_DEFINE(HAVE_STRSCPY, 1,
 			[kernel strscpy is available])
