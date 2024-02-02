@@ -5005,6 +5005,7 @@ lnet_parse(struct lnet_ni *ni, struct lnet_hdr *hdr,
 
 	/* message delay simulation */
 	if (unlikely(!list_empty(&the_lnet.ln_delay_rules) &&
+		     !CFS_FAIL_CHECK(CFS_FAIL_DELAY_MSG_FORWARD) &&
 		     lnet_delay_rule_match_locked(hdr, msg))) {
 		lnet_net_unlock(cpt);
 		return 0;
