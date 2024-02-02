@@ -3130,6 +3130,94 @@ test_254() {
 }
 run_test 254 "Message delayed beyond deadline should be dropped (multi-rail)"
 
+test_255() {
+	setup_router_test peer_buffer_credits=1024 || return $?
+
+	do_basic_rtr_test || return $?
+
+	local rtr_pc=$(do_node $ROUTER $LNETCTL peer show -v --nid ${RPEER_NIDS[0]} |
+		       awk '/max_ni_tx_credits:/{print $NF}' |
+		       xargs echo |
+		       sed 's/ /\+/g' | bc)
+
+	((rtr_pc > 0)) ||
+		error "$ROUTER couldn't determine peer credits for ${RPEER_NIDS[0]}"
+
+	local my_pc=$($LNETCTL peer show -v --nid ${ROUTER_NIDS[0]} |
+		      awk '/max_ni_tx_credits:/{print $NF}' |
+		      xargs echo |
+		      sed 's/ /\+/g' | bc)
+
+	((my_pc > 0)) || error "couldn't determine peer credits for ${ROUTER_NIDS[0]}"
+
+	if ((my_pc < rtr_pc )); then
+		cleanup_router_test || return $?
+		skip "Need local peer credits >= router's peer credits"
+	fi
+
+	local rnid lnid
+
+	local old_tto=$(do_node $ROUTER $LNETCTL global show |
+			awk '/transaction_timeout:/{print $NF}')
+
+	[[ -z $old_tto ]] &&
+		error "Cannot determine LNet transaction timeout"
+
+	local tto=10
+
+	do_node $ROUTER $LNETCTL set transaction_timeout 10 ||
+		error "Failed to set transaction_timeout"
+
+#define CFS_FAIL_DELAY_MSG_FORWARD      0xe001
+	do_node $ROUTER $LCTL set_param fail_loc=0xe001
+
+	# We want to consume all peer credits for at least transaction_timeout
+	# seconds
+	local delay=$((tto + 1))
+
+	for lnid in ${LNIDS[@]}; do
+		for rnid in ${RPEER_NIDS[@]}; do
+			echo "$ROUTER $LCTL net_delay_add -s ${lnid} -d ${rnid} -l ${delay} -r 1"
+			do_node $ROUTER $LCTL net_delay_add -s ${lnid} -d ${rnid} -l ${delay} -r 1
+		done
+	done
+
+	local i
+
+	for i in $(seq 1 ${rtr_pc}); do
+		$LNETCTL ping --timeout $((delay+2)) ${RPEER_NIDS[0]} 1>/dev/null &
+	done
+
+	echo "Issued ${rtr_pc} pings to ${RPEER_NIDS[0]}"
+
+	local pid
+
+	# This ping should be queued on the router's peer NI tx credit queue
+	$LNETCTL ping --timeout $((delay+2)) ${RPEER_NIDS[0]} &
+
+	echo "Issued last ping - sleep $delay"
+	sleep ${delay}
+
+	do_node $ROUTER $LCTL net_delay_del -a
+
+	wait
+
+	# Router should not drop any of the messages that have exceeded their deadline
+	local dropped=$(do_node $ROUTER $LNETCTL peer show -v 2 --nid ${RPEER_NIDS[0]} |
+			grep -A 2 dropped_stats |
+			awk '/get:/{print $2}' |
+			xargs echo |
+			sed 's/ /\+/g' | bc)
+
+	((dropped == 0)) ||
+		error "Expect 0 dropped GET but found $dropped"
+
+	do_node $ROUTER $LNETCTL set transaction_timeout ${old_tto}
+
+	return 0
+}
+run_test 255 "Router should not drop messages that are past the deadline"
+
 test_300() {
 	# LU-13274
 	local header
