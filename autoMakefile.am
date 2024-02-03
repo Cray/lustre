@@ -493,7 +493,6 @@ debs: undef.h debs_common
 	}; \
 	cp $$debiantmp/control.main.bkp debian/control.main || true && \
 	cp $$debiantmp/control.modules.in.bkp debian/control.modules.in || true && \
-	cp -v debian/control.main debian/control || true ; \
 	export KPKG_DEST_DIR="$$(pwd)/.." && \
 	version=$$(sed -ne '1s/^lustre (\(.*\)).*$$/\1/p' debian/changelog) && \
 	rm -rf debian/tmp/modules-deb && \
