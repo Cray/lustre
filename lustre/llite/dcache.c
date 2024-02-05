@@ -270,8 +270,12 @@ int ll_revalidate_it_finish(struct ptlrpc_request *request,
 
 	ll_set_lock_data(ll_i2sbi(inode)->ll_md_exp, inode, it,
 			 &bits);
-	if ((bits & MDS_INODELOCK_LOOKUP) && !d_lustre_invalid(de))
-		ll_update_dir_depth(de->d_parent->d_inode, inode);
+	if ((bits & MDS_INODELOCK_LOOKUP) && !d_lustre_invalid(de)) {
+		struct dentry *parent = dget_parent(de);
+
+		ll_update_dir_depth(d_inode(parent), inode);
+		dput(parent);
+	}
 
 	RETURN(rc);
 }
@@ -302,7 +306,8 @@ static int ll_revalidate_dentry(
 				struct dentry *dentry,
 				unsigned int lookup_flags)
 {
-	struct inode *dir = dentry->d_parent->d_inode;
+	struct dentry *parent;
+	struct inode *dir;
 	int rc;
 
 	CDEBUG(D_VFSTRACE, "VFS Op:name=%s, flags=%u\n",
@@ -344,8 +349,11 @@ static int ll_revalidate_dentry(
 	if (lookup_flags & LOOKUP_RCU)
 		return -ECHILD;
 
+	parent = dget_parent(dentry);
+	dir = d_inode(parent);
 	if (dentry_may_statahead(dir, dentry))
 		ll_revalidate_statahead(dir, &dentry, dentry->d_inode == NULL);
+	dput(parent);
 
 	return 1;
 }

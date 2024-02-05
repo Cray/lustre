@@ -1644,9 +1644,9 @@ static int start_statahead_thread(struct inode *dir, struct dentry *dentry,
 	int node = cfs_cpt_spread_node(cfs_cpt_tab, CFS_CPT_ANY);
 	struct ll_inode_info *lli = ll_i2info(dir);
 	struct ll_statahead_info *sai = NULL;
-	struct dentry *parent = dentry->d_parent;
+	struct dentry *parent;
 	struct task_struct *task;
-	struct ll_sb_info *sbi = ll_i2sbi(parent->d_inode);
+	struct ll_sb_info *sbi;
 	int first = LS_FIRST_DE;
 	int rc = 0;
 
@@ -1658,14 +1658,19 @@ static int start_statahead_thread(struct inode *dir, struct dentry *dentry,
 		/* It is not "ls -{a}l" operation, no need statahead for it. */
 		GOTO(out, rc = -EFAULT);
 
+	parent = dget_parent(dentry);
+	sbi = ll_i2sbi(d_inode(parent));
 	if (unlikely(atomic_inc_return(&sbi->ll_sa_running) >
 				       sbi->ll_sa_running_max)) {
 		CDEBUG(D_READA,
 		       "Too many concurrent statahead instances, avoid new statahead instance temporarily.\n");
+		dput(parent);
 		GOTO(out, rc = -EMFILE);
 	}
 
+	/* on success ll_sai_alloc holds a ref on parent */
 	sai = ll_sai_alloc(parent);
+	dput(parent);
 	if (!sai)
 		GOTO(out, rc = -ENOMEM);
 
