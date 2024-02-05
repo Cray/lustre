@@ -85,7 +85,6 @@ static const struct rhashtable_params uuid_hash_params = {
 	.key_offset	= offsetof(struct obd_export, exp_client_uuid),
 	.head_offset	= offsetof(struct obd_export, exp_uuid_hash),
 	.obj_cmpfn	= uuid_keycmp,
-	.max_size	= MAX_OBD_DEVICES,
 	.automatic_shrinking = true,
 };
 
