@@ -2611,6 +2611,25 @@ test_27Cg() {
 }
 run_test 27Cg "test overstriping with wrong OST idx"
 
+test_27Cj() {
+	[[ $($LCTL get_param mdc.*.import) =~ connect_flags.*overstriping ]] ||
+		skip "server does not support overstriping"
+	(( $MDS1_VERSION >= $(version_code 2.15.4) )) ||
+		skip "need MDS >= 2.15.4"
+
+	stack_trap "rm -f $DIR/$tfile"
+	# start_full_debug_logging
+	# number of stripes created will be 32*ost count
+	$LFS setstripe  -C -32 $DIR/$tfile || error "create $tfile failed"
+	local count=$($LFS getstripe -c $DIR/$tfile)
+	local stripe_cnt=$(($OSTCOUNT * 32))
+	(( $count == $stripe_cnt )) ||
+		error "$DIR/$tfile stripe count $count != $OSTCOUNT"
+	#check that beyond -32 it fails
+	!($LFS setstripe  -C -34 $DIR/$tfile) || error "setstripe should fail"
+}
+run_test 27Cj "overstriping with -C for max values in multiple of targets"
+
 test_27D() {
 	[ $OSTCOUNT -lt 2 ] && skip_env "needs >= 2 OSTs"
 	[ -n "$FILESET" ] && skip "SKIP due to FILESET set"
