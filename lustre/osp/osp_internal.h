@@ -554,10 +554,20 @@ static inline void osp_fid_to_obdid(struct lu_fid *last_fid, u64 *osi_id)
 		*osi_id = fid_oid(last_fid);
 }
 
-static inline void osp_update_last_fid(struct osp_device *d, struct lu_fid *fid)
+static inline void osp_update_last_fid(struct osp_device *d, struct lu_fid *fid,
+				       bool replay)
 {
-	int diff = osp_fid_diff(fid, &d->opd_last_used_fid);
 	struct lu_fid *gap_start = &d->opd_gap_start_fid;
+	int diff;
+
+	/*
+	 * replay could cross seq rollover, in this case we don't update
+	 * the last used fid
+	 */
+	if (replay && fid_seq(fid) != fid_seq(&d->opd_last_used_fid))
+		diff = 0;
+	else
+		diff = osp_fid_diff(fid, &d->opd_last_used_fid);
 
 	/*
 	 * we might have lost precreated objects due to VBR and precreate
