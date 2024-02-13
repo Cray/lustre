@@ -462,7 +462,12 @@ ll_read_ahead_pages(const struct lu_env *env, struct cl_io *io,
 					break;
 				}
 
-				cl_read_ahead_release(env, &ra);
+				if (ra.cra_release != NULL)
+					rc = ll_submit_read(env, io, queue);
+
+ 				cl_read_ahead_release(env, &ra);
+				if (rc < 0)
+					break;
 
 				rc = cl_io_read_ahead(env, io, page_idx, &ra);
 				if (rc < 0)
