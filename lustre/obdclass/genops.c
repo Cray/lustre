@@ -78,16 +78,15 @@ static struct obd_device *obd_device_alloc(void)
 
 static void obd_device_free(struct obd_device *obd)
 {
-        LASSERT(obd != NULL);
-        LASSERTF(obd->obd_magic == OBD_DEVICE_MAGIC, "obd %p obd_magic %08x != %08x\n",
-                 obd, obd->obd_magic, OBD_DEVICE_MAGIC);
-        if (obd->obd_namespace != NULL) {
-                CERROR("obd %p: namespace %p was not properly cleaned up (obd_force=%d)!\n",
-                       obd, obd->obd_namespace, obd->obd_force);
-                LBUG();
-        }
-        lu_ref_fini(&obd->obd_reference);
-        OBD_SLAB_FREE_PTR(obd, obd_device_cachep);
+	LASSERT(obd);
+	LASSERTF(obd->obd_magic == OBD_DEVICE_MAGIC,
+		"obd %px obd_magic %08x != %08x\n", obd, obd->obd_magic,
+		 OBD_DEVICE_MAGIC);
+	LASSERTF(!obd->obd_namespace,
+		"obd %px: namespace %px was not properly cleaned up (obd_force=%d)!\n",
+		 obd, obd->obd_namespace, obd->obd_force);
+	lu_ref_fini(&obd->obd_reference);
+	OBD_SLAB_FREE_PTR(obd, obd_device_cachep);
 }
 
 struct obd_type *class_search_type(const char *name)
@@ -430,10 +429,11 @@ void class_free_dev(struct obd_device *obd)
 {
 	struct obd_type *obd_type = obd->obd_type;
 
-	LASSERTF(obd->obd_magic == OBD_DEVICE_MAGIC, "%p obd_magic %08x "
-		 "!= %08x\n", obd, obd->obd_magic, OBD_DEVICE_MAGIC);
+	LASSERTF(obd->obd_magic == OBD_DEVICE_MAGIC,
+		 "%px obd_magic %08x != %08x\n",
+		 obd, obd->obd_magic, OBD_DEVICE_MAGIC);
 	LASSERTF(obd->obd_minor == -1 || obd_devs[obd->obd_minor] == obd,
-		 "obd %p != obd_devs[%d] %p\n",
+		 "obd %px != obd_devs[%d] %px\n",
 		 obd, obd->obd_minor, obd_devs[obd->obd_minor]);
 	LASSERTF(atomic_read(&obd->obd_refcount) == 0,
 		 "obd_refcount should be 0, not %d\n",
@@ -645,22 +645,22 @@ EXPORT_SYMBOL(class_uuid2obd);
  */
 struct obd_device *class_num2obd(int num)
 {
-        struct obd_device *obd = NULL;
+	struct obd_device *obd = NULL;
 
-        if (num < class_devno_max()) {
-                obd = obd_devs[num];
-                if (obd == NULL)
-                        return NULL;
+	if (num < class_devno_max()) {
+		obd = obd_devs[num];
+		if (obd == NULL)
+			return NULL;
 
-                LASSERTF(obd->obd_magic == OBD_DEVICE_MAGIC,
-                         "%p obd_magic %08x != %08x\n",
-                         obd, obd->obd_magic, OBD_DEVICE_MAGIC);
-                LASSERTF(obd->obd_minor == num,
-                         "%p obd_minor %0d != %0d\n",
-                         obd, obd->obd_minor, num);
-        }
+		LASSERTF(obd->obd_magic == OBD_DEVICE_MAGIC,
+			 "%px obd_magic %08x != %08x\n",
+			 obd, obd->obd_magic, OBD_DEVICE_MAGIC);
+		LASSERTF(obd->obd_minor == num,
+			 "%px obd_minor %0d != %0d\n",
+			 obd, obd->obd_minor, num);
+	}
 
-        return obd;
+	return obd;
 }
 EXPORT_SYMBOL(class_num2obd);
 
