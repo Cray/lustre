@@ -468,14 +468,9 @@ static int mdt_coordinator_cb(const struct lu_env *env,
 static void cdt_crh_free(struct rcu_head *head)
 {
 	struct cdt_restore_handle *crh;
+
 	crh = container_of(head, struct cdt_restore_handle, crh_rcu);
-
 	OBD_SLAB_FREE_PTR(crh, mdt_hsm_cdt_kmem);
-}
-
-static void cdt_crh_get(struct cdt_restore_handle *crh)
-{
-	atomic_inc(&crh->crh_refc);
 }
 
 static void
@@ -484,7 +479,8 @@ cdt_crh_put(struct cdt_restore_handle *crh, struct mdt_thread_info *cdt_mti)
 	if (atomic_dec_and_test(&crh->crh_refc)) {
 		/* XXX We pass a NULL object since the restore handle does not
 		 * keep a reference on the object being restored. */
-		mdt_object_unlock(cdt_mti, NULL, &crh->crh_lh, 1);
+		if (lustre_handle_is_used(&crh->crh_lh.mlh_reg_lh))
+			mdt_object_unlock(cdt_mti, NULL, &crh->crh_lh, 1);
 		call_rcu(&crh->crh_rcu, cdt_crh_free);
 	}
 }
@@ -901,8 +897,8 @@ int cdt_restore_handle_add(struct mdt_thread_info *mti, struct coordinator *cdt,
 	 */
 	crh->crh_extent.start = 0;
 	crh->crh_extent.end = he->length;
-	atomic_set(&crh->crh_refc, 1);
-	cdt_crh_get(crh);
+	atomic_set(&crh->crh_refc, 2);
+
 
 	rc = rhashtable_lookup_insert_fast(&cdt->cdt_restore_hash,
 					   &crh->crh_hash, crh_hash_params);
@@ -917,20 +913,20 @@ int cdt_restore_handle_add(struct mdt_thread_info *mti, struct coordinator *cdt,
 	if (IS_ERR(obj)) {
 		rc = rhashtable_remove_fast(&cdt->cdt_restore_hash,
 					    &crh->crh_hash, crh_hash_params);
-		/* Do not care about the result, just free crh as at this point
-		 * it can not be used anywhere:
-		 * rc < 0 - has been removed in a parallel thread, refc == 1
-		 * rc == 0 - successfully removed from rhtable, refc == 2
+		/* rc < 0 means it has been removed in a parallel thread.
+		 * This shouldn't happen by design as at current stage record
+		 * hasn't been added in llog yet.
 		 */
-		LASSERT((rc < 0 && atomic_read(&crh->crh_refc) == 1) ||
-			(rc == 0 && atomic_read(&crh->crh_refc) == 2));
+		if (!rc)
+			cdt_crh_put(crh, mti);
+		cdt_crh_put(crh, mti);
 
-		call_rcu(&crh->crh_rcu, cdt_crh_free);
 		RETURN(PTR_ERR(obj));
 	}
 
 	/* We do not keep a reference on the object during the restore
-	 * which can be very long. */
+	 * which can be very long.
+	 */
 	mdt_object_put(mti->mti_env, obj);
 	cdt_crh_put(crh, mti);
 	RETURN(rc);
@@ -1030,7 +1026,8 @@ static int hsm_restore_cb(const struct lu_env *env,
 
 	rc = cdt_restore_handle_add(mti, cdt, &hai->hai_fid, &hai->hai_extent);
 	if (rc == -EEXIST) {
-		CWARN("restore already exists in llog\n");
+		CWARN("%s: duplicate restore record for fid="DFID" found in the llog: rc = %d\n",
+		      mdt_obd_name(mti->mti_mdt), PFID(&hai->hai_fid), rc);
 		rc = 0;
 	}
 out:
