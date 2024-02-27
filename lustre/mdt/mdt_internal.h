@@ -177,7 +177,8 @@ struct coordinator {
 	struct list_head	 cdt_agents;	      /**< list of register
 						       * agents */
 	struct rhashtable	 cdt_restore_hash;    /**< rhashtable for
-						       * restore requests */
+						       * restore requests
+						       */
 
 	/* Hash of cookies to locations of record locations in agent
 	 * request log. */
@@ -1134,7 +1135,7 @@ int cdt_restore_handle_add(struct mdt_thread_info *mti, struct coordinator *cdt,
 			   const struct lu_fid *fid,
 			   const struct hsm_extent *he);
 bool cdt_restore_handle_exists(struct coordinator *cdt,
-						   const struct lu_fid *fid);
+			       const struct lu_fid *fid);
 void cdt_restore_handle_del(struct mdt_thread_info *mti,
 			    struct coordinator *cdt, const struct lu_fid *fid);
 int cdt_getref_try(struct coordinator *cdt);
