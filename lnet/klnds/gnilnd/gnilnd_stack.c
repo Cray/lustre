@@ -247,13 +247,13 @@ kgnilnd_reset_stack(void)
 
 			LASSERTF(conn_sched != GNILND_CONN_IDLE &&
 				 conn_sched != GNILND_CONN_PROCESS,
-				 "conn %p on ready list but in bad state: %d\n",
+				 "conn %px on ready list but in bad state: %d\n",
 				 conn, conn_sched);
 
 			list_del_init(&conn->gnc_schedlist);
 
 			if (!list_empty(&conn->gnc_delaylist))
-				list_del_init(&conn->gnc_delaylist); 
+				list_del_init(&conn->gnc_delaylist);
 
 			if (conn->gnc_state == GNILND_CONN_CLOSING) {
 				/* bump to CLOSED to fake out send of CLOSE */
