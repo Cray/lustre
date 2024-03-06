@@ -3715,9 +3715,14 @@ client_up() {
 	lfs_df_check $1
 }
 
+# usage: client_evicted clientnodename
+# return true if \a clientnodename was evicted by mds1 in current test
 client_evicted() {
-	sleep 1
-	! _lfs_df_check $1
+	local testid=$(echo $TESTNAME | tr '_' ' ')
+	local dev=$(facet_svc mds1)
+
+	client_up $1
+	$PDSH $1 "dmesg | tac | sed \"/$testid/,$ d\" | grep -q \"client was evicted by ${dev}\""
 }
 
 client_reconnect_try() {
