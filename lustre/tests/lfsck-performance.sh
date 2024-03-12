@@ -491,8 +491,16 @@ run_test 4b "Single MDS lfsck layout performance (repairing case) without load"
 t5_test() {
 	local saved_mdscount=$MDSCOUNT
 
+	# minimal number of free inodes among all OSTs
+	local inodes=$($LFS df -i | grep "\[OST:.*\]" | sort -nk 4 |
+			   head -1 | awk '{print $4}')
+
 	echo "stopall"
 	stopall > /dev/null || error "(1) Fail to stopall"
+
+	((inodes > MAXSUBDIR * UNIT * MDSCOUNT)) ||
+	    skip_env "min number of inodes $inodes, \
+need $((MAXSUBDIR * UNIT * MDSCOUNT))"
 
 	LFSCKDIR="$DIR/$tdir"
 	for ((i = 1; i <= $saved_mdscount; i++)); do
