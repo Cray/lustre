@@ -15725,6 +15725,90 @@ test_119j()
 }
 run_test 119j "basic tests of hybrid IO switching"
 
+test_119k()
+{
+	(( $LINUX_VERSION_CODE > $(version_code 4.5.0) )) ||
+		skip "needs kernel > 4.5.0 for ki_flags support"
+
+	local hybrid_noswitch
+	local hybrid_writes
+	local hybrid_reads
+	local wthresh=$($LCTL get_param -n \
+			llite.*.hybrid_io_write_threshold_bytes | head -n1)
+	local rthresh=$($LCTL get_param -n \
+			llite.*.hybrid_io_read_threshold_bytes | head -n1)
+
+	# Enable hybrid IO
+	local hybrid=$($LCTL get_param -n llite.*.hybrid_io)
+	$LCTL set_param llite.*.hybrid_io=1
+	stack_trap "$LCTL set_param -n llite.*.hybrid_io=$hybrid" EXIT
+	$LCTL set_param llite.*.stats=c
+
+	# Writes below the write threshold should not switch to hybrid
+	dd if=/dev/zero bs=$((wthresh / 2)) count=8 of=$DIR/$tfile ||
+		error "(0) dd failed"
+	hybrid_noswitch=($($LCTL get_param -n 'llite.*.stats' |
+			  awk '/hybrid_noswitch/ {print $2}'))
+	$LCTL get_param llite.*.stats
+	[[ $hybrid_noswitch == 8 ]] ||
+		error "(1) incorrect number of hybrid noswitch ($hybrid_noswitch), expected 8"
+	# Writes at the write threshold should switch to hybrid/DIO
+	dd if=/dev/zero bs=$wthresh count=8 of=$DIR/$tfile ||
+		error "(2) dd failed"
+	hybrid_writes=($($LCTL get_param -n 'llite.*.stats' |
+			awk '/hybrid_writesize_switch/ {print $2}'))
+	$LCTL get_param llite.*.stats
+	[[ $hybrid_writes == 8 ]] ||
+		error "(3) incorrect number of hybrid writes ($hybrid_writes), expected 8"
+
+	$LCTL set_param llite.*.stats=c
+	# Drop cached pages so reads go through the full IO path and
+	# reach the hybrid switch check instead of being served by
+	# ll_do_fast_read() from page cache.
+	cancel_lru_locks osc
+	# Reads below the read threshold should not switch to hybrid
+	dd if=$DIR/$tfile bs=$((rthresh / 2)) count=2 of=/dev/null ||
+		error "(4) dd failed"
+	hybrid_noswitch=($($LCTL get_param -n 'llite.*.stats' |
+			  awk '/hybrid_noswitch/ {print $2}'))
+	$LCTL get_param llite.*.stats
+	[[ $hybrid_noswitch == 2 ]] ||
+		error "(5) incorrect number of hybrid noswitch ($hybrid_noswitch), expected 2"
+	cancel_lru_locks osc
+	# Reads at the read threshold should use hybrid IO
+	dd if=$DIR/$tfile bs=$rthresh count=2 of=/dev/null ||
+		error "(6) dd failed"
+	hybrid_reads=($($LCTL get_param -n 'llite.*.stats' |
+			awk '/hybrid_readsize_switch/ {print $2}'))
+	$LCTL get_param llite.*.stats
+	[[ $hybrid_reads == 2 ]] ||
+		error "(7) incorrect number of hybrid reads ($hybrid_reads), expected 2"
+
+	$LCTL set_param llite.*.stats=c
+	# disable hybrid IO (original value restored by stack_trap above)
+	$LCTL set_param llite.*.hybrid_io=0
+
+	# Writes at the write threshold but hybrid IO is disabled
+	dd if=/dev/zero bs=$wthresh count=8 of=$DIR/$tfile ||
+		error "(8) dd failed"
+	hybrid_writes=($($LCTL get_param -n 'llite.*.stats' |
+			awk '/hybrid_writesize_switch/ {print $2}'))
+	$LCTL get_param llite.*.stats
+	[[ -z $hybrid_writes ]] ||
+		error "(9) there should be no hybrid writes, but we have '$hybrid_writes'"
+
+	cancel_lru_locks osc
+	# Reads at the read threshold but hybrid IO is disabled
+	dd if=$DIR/$tfile bs=$rthresh count=2 of=/dev/null ||
+		error "(10) dd failed"
+	hybrid_reads=($($LCTL get_param -n 'llite.*.stats' |
+			awk '/hybrid_readsize_switch/ {print $2}'))
+	$LCTL get_param llite.*.stats
+	[[ -z $hybrid_reads ]] ||
+		error "(11) there should be no hybrid reads, but we have '$hybrid_reads'"
+}
+run_test 119k "hybrid IO counting with stats and disabling"
+
 test_119m() {
 	dio_readv_writev_support
 
