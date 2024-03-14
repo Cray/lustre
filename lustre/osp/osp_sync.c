@@ -338,7 +338,7 @@ int osp_sync_declare_add(const struct lu_env *env, struct osp_object *o,
 		/* for a reason OSP wasn't able to open llog,
 		 * just skip logging this operation and hope
 		 * LFSCK will fix it eventually */
-		CERROR("logging isn't available, run LFSCK\n");
+		LCONSOLE(D_ERROR, "logging isn't available, run LFSCK\n");
 		RETURN(0);
 	}
 
