@@ -2527,6 +2527,8 @@ REMOTE_NET=${NETTYPE}2
 setup_router_test() {
 	local mod_opts="$@"
 
+	trap 'cleanup_router_test' EXIT
+
 	if [[ ${#RPEER_INTERFACES[@]} -eq 0 ]]; then
 		init_router_test_vars ||
 			return $?
@@ -2578,6 +2580,8 @@ do_route_del() {
 
 cleanup_router_test() {
 	local all_nodes=$(comma_list $HOSTNAME $ROUTER $RPEER)
+
+	trap "" EXIT
 
 	do_route_del $HOSTNAME $REMOTE_NET ${ROUTER_NIDS[0]} ||
 		error "Failed to delete $REMOTE_NET route"
@@ -2882,6 +2886,36 @@ test_225() {
 		return $?
 }
 run_test 225 "Check avoid_asym_router_failure=0 w/DD disabled"
+
+test_226() {
+	local opts="lnet_peer_discovery_disabled=1 lnet_health_sensitivity=0"
+
+	setup_router_test $opts || return $?
+
+	do_basic_rtr_test || return $?
+
+	do_node $RPEER $LNETCTL lnet unconfigure ||
+		error "Failed to unconfigure lnet on $RPEER"
+
+	do_lnetctl ping ${RPEER_NIDS[0]} &&
+		error "Expected ping to fail"
+
+	do_lnetctl ping ${RPEER_NIDS[0]} &&
+		error "Expected ping to fail"
+
+	local dropped=$(do_node $ROUTER \
+			$LNETCTL peer show -v 2 --nid ${RPEER_NIDS[0]} |
+			grep -A 2 dropped_stats |
+			awk '/get:/{print $2}' |
+			xargs echo |
+			sed 's/ /\+/g' | bc)
+
+	((dropped > 0)) ||
+		error "Expected dropped > 0 found $dropped"
+
+	cleanup_router_test
+}
+run_test 226 "Check router peer health w/DD disabled"
 
 test_230() {
 	[[ ${NETTYPE} == tcp* ]] ||
