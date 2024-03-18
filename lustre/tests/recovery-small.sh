@@ -3612,6 +3612,47 @@ test_156()
 }
 run_test 156 "Check transaction gap with many open files"
 
+cleanup_158() {
+	do_facet mds2 $LCTL set_param fail_loc=0
+	zconf_umount_clients $CLIENTS $MOUNT
+	mountcli
+}
+
+test_158a() {
+	(( $MDS1_VERSION >= $(version_code 2.15.8) )) ||
+		skip "Need MDS version at least 2.15.8 for -EACCES fix"
+	(( MDSCOUNT > 1 )) || skip "needs >= 2 MDTS"
+
+	remount_client $MOUNT
+	# ensure there is no MOUNT2 on clients
+	zconf_umount_clients $CLIENTS $MOUNT2 -f
+
+	stack_trap cleanup_158 EXIT RETURN
+
+	# client import is evicted after failover followed by -EACCES
+	#define OBD_FAIL_MDS_CONNECT_ACCESS	0x2402
+	do_facet mds2 $LCTL set_param fail_loc=0x2402
+	fail_nodf mds2
+	sleep 5
+	$LFS df $MOUNT
+	do_facet mds2 $LCTL set_param fail_loc=0
+	wait_recovery_complete mds2 || error "MDS recovery not done"
+	sleep 5
+
+	local mdc2=$($LCTL dl | awk '/mdc.*MDT0001-mdc*/ { print $4}')
+	local active=$($LCTL get_param -n mdc.$mdc2.active)
+	(( active == 0 )) || error "import status is 'active'"
+	$LCTL --device $mdc2 activate
+	active=$($LCTL get_param -n mdc.$mdc2.active)
+	(( active == 1 )) || error "import status is not 'active'"
+	status=$($LFS check mdts | grep $mdc2 | grep -c active)
+	(( status == 1 )) || {
+		$LFS check mdts
+		error "import is not operational"
+	}
+}
+run_test 158a "connect without access right"
+
 test_160() {
 	(( $MDS1_VERSION >= $(version_code 2.15.4) )) ||
 		skip "Need MDS version at least 2.15.4 for group lock destroy fix"
