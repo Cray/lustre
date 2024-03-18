@@ -764,6 +764,7 @@ extern char obd_jobid_var[];
 
 /* continuation of MDS related constants */
 #define OBD_FAIL_MDS_PAUSE_CREATE_AFTER_LOOKUP	0x2401
+#define OBD_FAIL_MDS_CONNECT_ACCESS		0x2402
 
 /* PLEASE, KEEP NUMBERS UP TO 0x3000 RESERVED FOR OBD_FAIL_MDS_* */
 
