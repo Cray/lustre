@@ -3565,7 +3565,7 @@ static int llog_search_pool_cb(const char *record, void *data)
 			 */
 			if (strstr(record, add_pool))
 				lpd->lpd_ost_num++;
-		} else if (lpd->lpd_ostname && lpd->lpd_ostname[0]) {
+		} else if (lpd->lpd_ostname[0]) {
 			if (strstr(record, lpd->lpd_ostname)) {
 				lpd->lpd_pool_exists = true;
 				if (strstr(record, add_pool)) {
@@ -5013,7 +5013,7 @@ int llog_poollist(char *fsname, char *poolname)
 {
 	char logname[MAX_OBD_NAME] = {'\0'};
 	struct llog_pool_list_data lpld;
-	struct llog_pool_name *tmp;
+	struct llog_pool_name *tmp, *pname;
 	struct list_head *head;
 	int rc = 0;
 
@@ -5042,7 +5042,7 @@ int llog_poollist(char *fsname, char *poolname)
 	if (poolname && poolname[0] && !lpld.lpld_exists && list_empty(head))
 		return -ENOENT;
 
-	list_for_each_entry(tmp, head, lpn_list) {
+	list_for_each_entry_safe(tmp, pname, head, lpn_list) {
 		if (poolname && poolname[0])
 			printf("%s\n", tmp->lpn_name);
 		else

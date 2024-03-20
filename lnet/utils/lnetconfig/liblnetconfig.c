@@ -87,12 +87,12 @@ int open_sysfs_file(const char *path, const char *attr, const int mode)
 {
 	int fd;
 	char filename[LNET_MAX_STR_LEN];
+	ssize_t needed;
 
-	if (strlen(path) + strlen(attr) >= LNET_MAX_STR_LEN)
+	needed = snprintf(filename, sizeof(filename), "%s%s",
+			  path, attr);
+	if (needed >= LNET_MAX_STR_LEN)
 		return -1;
-
-	snprintf(filename, sizeof(filename), "%s%s",
-		 path, attr);
 
 	fd = open(filename, mode);
 

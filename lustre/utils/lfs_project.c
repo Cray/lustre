@@ -308,21 +308,22 @@ lfs_project_handle_dir(struct list_head *head, const char *pathname,
 	}
 
 	while ((ent = readdir(dir)) != NULL) {
+		ssize_t needed;
+
 		/* skip "." and ".." */
 		if (strcmp(ent->d_name, ".") == 0 ||
 		    strcmp(ent->d_name, "..") == 0)
 			continue;
 
-		if (strlen(ent->d_name) + strlen(pathname) + 1 >=
-		    sizeof(fullname)) {
+		needed = snprintf(fullname, sizeof(fullname), "%s/%s", pathname,
+				  ent->d_name);
+		if (needed >= sizeof(fullname)) {
 			ret = -ENAMETOOLONG;
 			errno = ENAMETOOLONG;
 			fprintf(stderr, "%s: ignored too long path: %s/%s\n",
 					progname, pathname, ent->d_name);
 			continue;
 		}
-		snprintf(fullname, PATH_MAX, "%s/%s", pathname,
-			 ent->d_name);
 
 		rc = func(fullname, phc);
 		if (rc && !ret)
