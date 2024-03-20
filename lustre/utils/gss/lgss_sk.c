@@ -589,11 +589,13 @@ int main(int argc, char **argv)
 #endif
 		config->skc_prime_bits = prime_bits;
 	}
+	config->skc_fsname[0] = 0;
 	if (fsname)
 		/* fsname string length was checked when parsing
 		 * command-line options
 		 */
 		strcpy(config->skc_fsname, fsname);
+
 	if (nodemap)
 		/* nodemap string length was checked when parsing
 		 * command-line options

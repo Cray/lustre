@@ -1389,6 +1389,7 @@ static int do_dir_list(char const *dirname, unsigned int request_mask,
 	DIR *dir;
 	struct dirent *ent;
 	char fullname[PATH_MAX];
+	ssize_t needed;
 	int rc = 0;
 
 	dir = opendir(dirname);
@@ -1414,8 +1415,9 @@ static int do_dir_list(char const *dirname, unsigned int request_mask,
 			printf("%s", ent->d_name);
 			putchar('\n');
 		} else {
-			if (strlen(ent->d_name) + strlen(dirname) + 1 >=
-			    sizeof(fullname)) {
+			needed = snprintf(fullname, PATH_MAX, "%s/%s",
+					  dirname, ent->d_name);
+			if (needed >= sizeof(fullname)) {
 				errno = ENAMETOOLONG;
 				fprintf(stderr,
 					"lsx: ignored too long path: %s/%s\n",
@@ -1424,8 +1426,6 @@ static int do_dir_list(char const *dirname, unsigned int request_mask,
 					rc = -ENAMETOOLONG;
 				continue;
 			}
-			snprintf(fullname, PATH_MAX, "%s/%s",
-				 dirname, ent->d_name);
 			ret = do_statx(fullname, request_mask, flags);
 			if (!ret)
 				putchar('\n');
