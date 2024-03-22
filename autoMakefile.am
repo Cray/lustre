@@ -482,6 +482,8 @@ debs: undef.h debs_common
 		> debian/lustre-tests.install; \
 	tmpprofiles=`tr ' ' ',' <<< $$DEB_BUILD_PROFILES`; \
 	cp -v debian/control.main debian/control ; \
+	sed "s/_KVERS_/$(LINUXRELEASE)/g" debian/lustre-tests.install.in \
+		> debian/lustre-tests.install; \
 	dpkg-buildpackage -us -uc -I.git -I\*.out[0-9]\* -I\*.swp -P$$tmpprofiles || { \
 		rc=$${PIPESTATUS[0]}; \
 		cp $$debiantmp/control.main.bkp debian/control.main || true && \
