@@ -148,7 +148,7 @@ fi
 if [ "x${ext_mofed}" = "xyes" ] ; then
     module ko2iblnd lnet/klnds/o2iblnd net/lustre
 elif [ "x${int_mofed}" = "xyes" ] ; then
-    module ko2iblnd lnet/klnds/o2iblnd net/lustre
+    module ko2iblnd lnet/klnds/in-kernel-o2iblnd net/lustre
 fi
 
 module fid       lustre/fid      fs/lustre
