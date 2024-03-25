@@ -173,5 +173,5 @@ void __init init_libcfs_vfree_atomic(void)
 
 void __exit exit_libcfs_vfree_atomic(void)
 {
-	flush_scheduled_work();
+	__flush_workqueue(system_wq);
 }
