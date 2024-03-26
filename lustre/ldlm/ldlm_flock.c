@@ -824,8 +824,10 @@ ldlm_flock_completion_ast(struct ldlm_lock *lock, __u64 flags, void *data)
 	int rc = 0;
 	ENTRY;
 
-	OBD_FAIL_TIMEOUT(OBD_FAIL_LDLM_CP_CB_WAIT2, 4);
-	if (OBD_FAIL_PRECHECK(OBD_FAIL_LDLM_CP_CB_WAIT3)) {
+	if (CFS_FAIL_CHECK(OBD_FAIL_LDLM_LOCK_STACK))
+		LDLM_ERROR(lock, "Test ldlm error stack");
+	CFS_FAIL_TIMEOUT(OBD_FAIL_LDLM_CP_CB_WAIT2, 4);
+	if (CFS_FAIL_PRECHECK(OBD_FAIL_LDLM_CP_CB_WAIT3)) {
 		lock_res_and_lock(lock);
 		lock->l_flags |= LDLM_FL_FAIL_LOC;
 		unlock_res_and_lock(lock);
