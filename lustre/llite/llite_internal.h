@@ -1868,4 +1868,5 @@ bool ll_foreign_is_removable(struct dentry *dentry, bool unset);
 
 int ll_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
 
+void ll_splice_init(void);
 #endif /* LLITE_INTERNAL_H */

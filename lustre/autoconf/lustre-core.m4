@@ -3893,6 +3893,28 @@ AC_DEFUN([LC_HAVE_CLASS_CREATE_MODULE_ARG], [
 ]) # LC_HAVE_CLASS_CREATE_MODULE_ARG
 
 #
+# LC_HAVE_PIPE_INODE_INFO_TAIL
+#
+# linux kernel v5.5-rc1~113
+#   pipe: Allow pipes to have kernel-reserved slots
+#
+AC_DEFUN([LC_SRC_HAVE_PIPE_INODE_INFO_TAIL], [
+	LB2_LINUX_TEST_SRC([pipe_inode_info_tail], [
+		#include <linux/pipe_fs_i.h>
+	],[
+		struct pipe_inode_info pipe;
+
+		pipe.tail = 0;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_PIPE_INODE_INFO_TAIL], [
+	LB2_LINUX_TEST_RESULT([pipe_inode_info_tail], [
+		AC_DEFINE(HAVE_PIPE_INODE_INFO_TAIL, 1,
+			['pipe_inode_info' has tail])
+	])
+]) # LC_HAVE_PIPE_INODE_INFO_TAIL
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -4080,6 +4102,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 
 	# 5.5
 	LC_SRC_FSCRYPT_DIGESTED_NAME
+	LC_SRC_HAVE_PIPE_INODE_INFO_TAIL
 
 	# 5.7
 	LC_SRC_FSCRYPT_DUMMY_CONTEXT_ENABLED
@@ -4350,6 +4373,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 
 	# 5.5
 	LC_FSCRYPT_DIGESTED_NAME
+	LC_HAVE_PIPE_INODE_INFO_TAIL
 
 	# 5.7
 	LC_FSCRYPT_DUMMY_CONTEXT_ENABLED

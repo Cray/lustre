@@ -5917,6 +5917,64 @@ int ll_inode_permission(struct mnt_idmap *idmap, struct inode *inode, int mask)
 	RETURN(rc);
 }
 
+#ifndef HAVE_DEFAULT_FILE_SPLICE_READ_EXPORT
+static struct pipe_buf_operations lbo;
+static bool lbo_init = false;
+
+static int ll_pipe_buf_confirm(struct pipe_inode_info *info,
+			       struct pipe_buffer *buf)
+{
+	return 0;
+}
+
+void ll_splice_init(void)
+{
+	struct pipe_buf_operations *pbo;
+
+	/*
+	 * Create our own page_cache_pipe_buf_ops copy
+	 * with our own ->pipe_buf_confirm() which always
+	 * returns success
+	 */
+	pbo = cfs_kallsyms_lookup_name("page_cache_pipe_buf_ops");
+	if (pbo) {
+		lbo_init = true;
+		lbo = *pbo;
+		lbo.confirm = ll_pipe_buf_confirm;
+	}
+}
+
+ssize_t ll_file_splice_read(struct file *in, loff_t *ppos,
+			    struct pipe_inode_info *pipe,
+			    size_t len,
+			    unsigned int flags)
+{
+	int ret;
+
+	ret = generic_file_splice_read(in, ppos, pipe, len, flags);
+	if (ret > 0 && lbo_init) {
+#ifdef HAVE_PIPE_INODE_INFO_TAIL
+		unsigned int head = pipe->head,
+			     mask = pipe->ring_size - 1;
+#endif
+		unsigned int tail;
+
+#ifdef HAVE_PIPE_INODE_INFO_TAIL
+		for (tail = pipe->tail; !pipe_empty(head, tail); tail++) {
+			unsigned int index = tail & mask;
+#else
+		for (tail = 0; tail < pipe->nrbufs; tail++) {
+			unsigned int index = (pipe->curbuf+tail)%pipe->buffers;
+#endif
+			struct pipe_buffer *buf = &pipe->bufs[index];
+			buf->ops = &lbo;
+		}
+	}
+
+	return ret;
+}
+#endif
+
 /* -o localflock - only provides locally consistent flock locks */
 static const struct file_operations ll_file_operations = {
 #ifdef HAVE_FILE_OPERATIONS_READ_WRITE_ITER
@@ -5938,7 +5996,7 @@ static const struct file_operations ll_file_operations = {
 	.mmap		= ll_file_mmap,
 	.llseek		= ll_file_seek,
 #ifndef HAVE_DEFAULT_FILE_SPLICE_READ_EXPORT
-	.splice_read	= generic_file_splice_read,
+	.splice_read	= ll_file_splice_read,
 #else
 	.splice_read	= pcc_file_splice_read,
 #endif
@@ -5970,7 +6028,7 @@ static const struct file_operations ll_file_operations_flock = {
 	.mmap		= ll_file_mmap,
 	.llseek		= ll_file_seek,
 #ifndef HAVE_DEFAULT_FILE_SPLICE_READ_EXPORT
-	.splice_read	= generic_file_splice_read,
+	.splice_read	= ll_file_splice_read,
 #else
 	.splice_read	= pcc_file_splice_read,
 #endif
@@ -6005,7 +6063,7 @@ static const struct file_operations ll_file_operations_noflock = {
 	.mmap		= ll_file_mmap,
 	.llseek		= ll_file_seek,
 #ifndef HAVE_DEFAULT_FILE_SPLICE_READ_EXPORT
-	.splice_read	= generic_file_splice_read,
+	.splice_read	= ll_file_splice_read,
 #else
 	.splice_read	= pcc_file_splice_read,
 #endif
