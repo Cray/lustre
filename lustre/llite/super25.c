@@ -284,6 +284,8 @@ static int __init lustre_init(void)
 	if (rc != 0)
 		GOTO(out_inode_fini_env, rc);
 
+	ll_splice_init();
+
 	rc = register_filesystem(&lustre_fs_type);
 	if (rc)
 		GOTO(out_xattr, rc);
