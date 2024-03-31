@@ -1,5 +1,46 @@
+# default is to build and package without kfi
+%bcond_with kfi
+# default is to build without mofed
+%bcond_with mofed
+# default is to build in-kernel-ofed
+%bcond_without o2ib
+# default is to package lnds separately
+%bcond_without multiple_lnds
+# default is to package dkms-only
+%bcond_with kmp
+
+%if %{with kmp}
+%if %{with multiple_lnds}
+%global enable_multi_lnds 1
+%endif
+
+%if %{with kfi}
+%global kfabric_version %(rpm -q --qf '%{VERSION}-%{RELEASE}' cray-kfabric-devel)
+%global kfabric_info kfilnd compiled against: cray-kfabric-devel-%{kfabric_version}
+%else
+%global kfabric_info %{nil}
+%endif
+
+# Mofed is only applicable on x86_64
 %ifarch x86_64
+%if %{with mofed}
 %global mofed_version %(rpm -q --qf '%{VERSION}-%{RELEASE}' mlnx-ofa_kernel-devel)
+%global enable_mofed_o2iblnd 1
+%endif
+%endif
+
+# if mofed enabled:
+%if 0%{?enable_mofed_o2iblnd} > 0
+%global mofed_info ko2iblnd compiled against: mlnx-ofa_kernel-devel-%{mofed_version}
+%if %{_vendor}=="redhat"
+%global mofed_kernel_module_or_dkms (kmod-mlnx-ofa_kernel or mlnx-ofa_kernel-dkms)
+%else
+%global mofed_kernel_module_or_dkms (mlnx-ofa_kernel-kmp or mlnx-ofa_kernel-dkms)
+%endif
+%else
+%global mofed_info %{nil}
+%endif
+# with kmp
 %endif
 
 %define _version %(if test -s "%_sourcedir/_version"; then cat "%_sourcedir/_version"; else echo "UNKNOWN"; fi)
@@ -23,6 +64,16 @@ Group: System/Filesystems
 Source: cray-lustre-%{_version}.tar.bz2
 Source1: kmp-lustre.preamble
 Source2: kmp-lustre.files
+Source11: kmp-lnet-socklnd.preamble
+Source12: kmp-lnet-socklnd.files
+Source13: kmp-lnet-o2iblnd.preamble
+Source14: kmp-lnet-o2iblnd.files
+Source15: kmp-lnet-gnilnd.preamble
+Source16: kmp-lnet-gnilnd.files
+Source17: kmp-lnet-kfilnd.preamble
+Source18: kmp-lnet-kfilnd.files
+Source19: kmp-lnet-in-kernel-o2iblnd.preamble
+Source20: kmp-lnet-in-kernel-o2iblnd.files
 URL: %url
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 BuildRequires: %kernel_module_package_buildreqs
@@ -31,11 +82,23 @@ BuildRequires: systemd
 BuildRequires: libnl3-devel
 BuildRequires: keyutils-devel
 BuildRequires: libmount-devel
-%ifarch x86_64
-BuildRequires: mlnx-ofa_kernel-devel
-%endif
 BuildRequires: flex
 BuildRequires: bison
+BuildRequires: kernel-devel
+%ifarch x86_64
+%if %{with mofed}
+%if %{with kmp}
+BuildRequires: mlnx-ofa_kernel-devel
+Requires: %mofed_kernel_module_or_dkms 
+%endif
+%endif
+#arch x86_64
+%endif
+%if %{with kfi}
+%if %{with kmp}
+BuildRequires: cray-kfabric-devel
+%endif
+%endif
 
 # Vendor specific requires/defines/etc.
 %if %{_vendor}=="redhat"
@@ -43,21 +106,20 @@ BuildRequires: bison
 %global _with_linux --with-linux=/usr/src/kernels/%{kversion}
 %global requires_kmod_name kmod-%{lustre_name}
 %global requires_kmod_version %{version}
-%ifarch x86_64
-Requires: (kmod-mlnx-ofa_kernel or mlnx-ofa_kernel-dkms)
-%endif
 BuildRequires: redhat-rpm-config
 %define mkconf_options %{nil}
 %else
+BuildRequires: modutils
+BuildRequires: kernel-syms
+BuildRequires: kmod-compat
+BuildRequires: suse-kernel-rpm-scriptlets
+BuildRequires: (kernel-cray_shasta_c_64k-devel or kernel-cray_shasta_c-devel or kernel-default-devel)
 %global kversion %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease)
 %global _with_linux --with-linux=/usr/src/linux
 %global _with_linux_obj --with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor}
 %global requires_kmod_name %{lustre_name}-kmp
 %global krequires %(echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/\.aarch64$//' -e 's/-default$//' -e 's/-%{flavor}//')
 %global requires_kmod_version %{version}_k%(echo %{krequires} | sed -r 'y/-/_/; s/^(2\.6\.[0-9]+)_/\\1.0_/;')
-%ifarch x86_64
-Requires: (mlnx-ofa_kernel-kmp or mlnx-ofa_kernel-dkms)
-%endif
 %define mkconf_options -k updates
 %endif
 
@@ -70,10 +132,9 @@ Requires: (%{requires_kmod_name} = %{requires_kmod_version} or cray-lustre-clien
 
 %description
 Userspace tools and files for the Lustre filesystem.
-Compiled for kernel: %{kversion}
-%ifarch x86_64
-ko2iblnd compiled against: mlnx-ofa_kernel-devel-%{mofed_version}
-%endif
+%{expand:Compiled for kernel: %{kversion}}
+%{expand:%mofed_info}
+%{expand:%kfabric_info}
 
 %package devel
 Group: Development/Libraries
@@ -85,10 +146,9 @@ Summary: Cray Lustre Header files
 %description devel
 Development files for building against Lustre library.
 Includes headers, dynamic, and static libraries.
-Compiled for kernel: %{kversion}
-%ifarch x86_64
-ko2iblnd compiled against: mlnx-ofa_kernel-devel-%{mofed_version}
-%endif
+%{expand:Compiled for kernel: %{kversion}}
+%{expand:%mofed_info}
+%{expand:%kfabric_info}
 
 %package lnet-headers
 Group: Development/Libraries
@@ -97,10 +157,9 @@ Summary: Cray Lustre Network Header files
 
 %description lnet-headers
 Cray Lustre Network Header files
-Compiled for kernel: %{kversion}
-%ifarch x86_64
-ko2iblnd compiled against: mlnx-ofa_kernel-devel-%{mofed_version}
-%endif
+%{expand:Compiled for kernel: %{kversion}}
+%{expand:%mofed_info}
+%{expand:%kfabric_info}
 
 %package %{flavor}-lnet-devel
 Group: Development/Libraries
@@ -110,10 +169,9 @@ Summary: Cray Lustre Network kernel flavor specific devel files
 %description %{flavor}-lnet-devel
 Kernel flavor specific development files for building against Lustre
 Network (LNet)
-Compiled for kernel: %{kversion}
-%ifarch x86_64
-ko2iblnd compiled against: mlnx-ofa_kernel-devel-%{mofed_version}
-%endif
+%{expand:Compiled for kernel: %{kversion}}
+%{expand:%mofed_info}
+%{expand:%kfabric_info}
 
 %package dkms
 Group: System/Filesystems
@@ -157,7 +215,51 @@ Compiled for kernel: %{kversion}
 
 %global modules_fs_path /lib/modules/%{kversion}/%{kmoddir}
 
+%if %{with kmp}
 %kernel_module_package -n %{name} -p %SOURCE1 -f %SOURCE2 %{flavor}
+
+%if %{with multiple_lnds}
+%kernel_module_package -n %{name}-lnet-socklnd -p %SOURCE11 -f %SOURCE12 %{flavor}
+# Fixup the requires for mofed o2iblnd.
+# Note the BuildRequires is also in the main package for the OBS chroot
+%if 0%{?enable_mofed_o2iblnd} > 0
+%define preamble %{expand:%(
+TMPFILE=`mktemp`
+cat %{SOURCE13} > $TMPFILE
+echo "BuildRequires: mlnx-ofa_kernel-devel" >> TMPFILE
+echo "Requires: %{mofed_kernel_module_or_dkms}" >> TMPFILE
+echo "%{expand:%mofed_info}" >> TMPFILE
+echo "%{expand:%kfabric_info}" >> TMPFILE
+echo $TMPFILE
+)}
+%kernel_module_package -n %{name}-lnet-mofed-o2iblnd -p %preamble -f %SOURCE14 %{flavor}
+%endif
+%if %{with o2ib}
+## re-write post/preun generated by kmodtool [ls -s and rm -f]
+## to symlink in-kernel-o2iblnd as ko2iblnd.ko
+%define inkernmod %{modules_fs_path}/%{lustre_name}/net/in-kernel-ko2iblnd.ko
+%define inkernsym %{modules_fs_path}/%{lustre_name}/net/ko2iblnd.ko
+%define ofed_module_package %{expand:%(
+TMPFILE=`mktemp`
+cat <<EOF > $TMPFILE
+%kernel_module_package -n %{name}-lnet-in-kernel-o2iblnd -p %SOURCE19 -f %SOURCE20 %{flavor}
+EOF
+sed -i -e '/^%%post.*/a ln -sf %{inkernmod} %{inkernsym}' -e '/^%%preun.*/a rm -f %{inkernsym}' $TMPFILE
+echo $TMPFILE
+)}
+%{expand:%(cat '%{ofed_module_package}')}
+%endif
+
+%if 0%{?enable_gnilnd} > 0
+%kernel_module_package -n %{name}-lnet-gnilnd -p %SOURCE15 -f %SOURCE16 %{flavor}
+%endif
+
+%if %{with kfi}
+%kernel_module_package -n %{name}-lnet-kfilnd -p %SOURCE17 -f %SOURCE18 %{flavor}
+%endif
+%endif
+# with kmp
+%endif
 
 %prep
 %if %{undefined flavor}
@@ -189,26 +291,45 @@ if [ "%reconfigure" == "1" -o ! -x %_builddir/%{name}-%{version}/configure ];the
 	./autogen.sh
 fi
 
+O2IBPATH=no
+WITH_KFI=""
+
+%if %{with kmp}
 if [ -d /usr/src/ofa_kernel/%{flavor} ]; then
 	O2IBPATH=/usr/src/ofa_kernel/%{flavor}
 elif [ -d /usr/src/ofa_kernel/default ]; then
 	O2IBPATH=/usr/src/ofa_kernel/default
 else
+%if %{with o2ib}
 	O2IBPATH=yes
+%endif
 fi
 
 WITH_KFI=""
+%if %{with kfi}
 if [ -d /usr/src/kfabric/%{flavor} ]; then
 	WITH_KFI="--with-kfi=/usr/src/kfabric/%{flavor}"
 fi
+%endif
+# with kmp
+%endif
 
 if [ "%reconfigure" == "1" -o ! -f %_builddir/%{name}-%{version}/Makefile ];then
+%if %{with kmp}
 	%configure \
 		--disable-server \
 		--enable-client \
 		--with-kmp-moddir=%{kmoddir}/%{name} \
+		%{?with_multiple_lnds:--enable-multiple-lnds} \
 		--with-o2ib=${O2IBPATH} ${WITH_KFI} \
 		%{_with_linux} %{?_with_linux_obj}
+%else
+	%configure \
+		--disable-server \
+		--enable-client \
+		--without-modules \
+		%{_with_linux} %{?_with_linux_obj}
+%endif
 fi
 %{__make} %_smp_mflags
 
@@ -258,6 +379,9 @@ fi
 
 rm -f $RPM_BUILD_ROOT%{_libdir}/liblustreapi.la
 rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
+%if %{without kmp}
+find $RPM_BUILD_ROOT%{modules_fs_path} -name '*.ko' -exec rm -f {} ';'
+%endif
 
 %files
 %defattr(-,root,root)
@@ -279,6 +403,15 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_libdir}/liblustreapi.so*
 %{_datadir}/bash-completion/completions/*
 %exclude %{_pkgconfigdir}/lustre.pc
+%if %{with kmp}
+%if %{without o2ib}
+%exclude %{modules_fs_path}/%{lustre_name}/net/in-kernel-ko2iblnd.ko
+%endif
+%if %{without mofed}
+# Exclude the symlink'd o2ib
+%exclude %{modules_fs_path}/%{lustre_name}/net/ko2iblnd.ko
+%endif
+%endif
 
 %files devel
 %defattr(-,root,root)
