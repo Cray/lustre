@@ -69,6 +69,56 @@
             </file>
             <file>
                 <name>
+                    rpm/kmp-lnet-socklnd.preamble
+                </name>
+            </file>
+            <file>
+                <name>
+                    rpm/kmp-lnet-socklnd.files
+                </name>
+            </file>
+            <file>
+                <name>
+                    rpm/kmp-lnet-o2iblnd.preamble
+                </name>
+            </file>
+            <file>
+                <name>
+                    rpm/kmp-lnet-o2iblnd.files
+                </name>
+            </file>
+            <file>
+                <name>
+                    rpm/kmp-lnet-gnilnd.preamble
+                </name>
+            </file>
+            <file>
+                <name>
+                    rpm/kmp-lnet-gnilnd.files
+                </name>
+            </file>
+            <file>
+                <name>
+                    rpm/kmp-lnet-kfilnd.preamble
+                </name>
+            </file>
+            <file>
+                <name>
+                    rpm/kmp-lnet-kfilnd.files
+                </name>
+            </file>
+            <file>
+                <name>
+                    rpm/kmp-lnet-in-kernel-o2iblnd.preamble
+                </name>
+            </file>
+            <file>
+                <name>
+                    rpm/kmp-lnet-in-kernel-o2iblnd.files
+                </name>
+            </file>
+            <file>
+                <name>
                     cray-obs/cray-lustre-client.spec
                 </name>
             </file>
