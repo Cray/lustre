@@ -264,8 +264,7 @@ static inline int to_fault_error(int result)
 	return result;
 }
 
-int ll_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf,
-		     struct cl_io *io)
+int ll_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
 	struct inode *inode = file_inode(vma->vm_file);
 	int ret;
@@ -275,7 +274,7 @@ int ll_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf,
 		seq = read_seqbegin(&ll_i2info(inode)->lli_page_inv_lock);
 		ret = __ll_filemap_fault(vma, vmf);
 	} while (read_seqretry(&ll_i2info(inode)->lli_page_inv_lock, seq) &&
-		 (ret & VM_FAULT_SIGBUS) && io && !io->ci_dont_repeat);
+		 (ret & VM_FAULT_SIGBUS));
 
 	return ret;
 }
@@ -320,7 +319,7 @@ static vm_fault_t ll_fault0(struct vm_area_struct *vma, struct vm_fault *vmf)
 		 */
 		vmf->flags |= FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_RETRY_NOWAIT;
 		ll_cl_add(inode, env, NULL, LCC_MMAP);
-		fault_ret = ll_filemap_fault(vma, vmf, NULL);
+		fault_ret = ll_filemap_fault(vma, vmf);
 		ll_cl_remove(inode, env);
 		if (!has_retry)
 			vmf->flags &= ~FAULT_FLAG_RETRY_NOWAIT;

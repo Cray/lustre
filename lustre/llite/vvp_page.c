@@ -176,9 +176,11 @@ static void vvp_page_delete(const struct lu_env *env,
 	 * Vmpage might not be released due page refcount != 2,
 	 * clear Page uptodate here to avoid stale data.
 	 */
-	write_seqlock(&ll_i2info(inode)->lli_page_inv_lock);
-	ClearPageUptodate(vmpage);
-	write_sequnlock(&ll_i2info(inode)->lli_page_inv_lock);
+	if (PageUptodate(vmpage)) {
+		write_seqlock(&ll_i2info(inode)->lli_page_inv_lock);
+		ClearPageUptodate(vmpage);
+		write_sequnlock(&ll_i2info(inode)->lli_page_inv_lock);
+	}
 	/*
 	 * Reference from vmpage to cl_page is removed, but the reference back
 	 * is still here. It is removed later in vvp_page_fini().

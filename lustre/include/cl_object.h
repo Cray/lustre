@@ -2015,13 +2015,7 @@ struct cl_io {
 	 * to userspace, only the RPCs are submitted async, then waited for at
 	 * the llite layer before returning.
 	 */
-			     ci_parallel_dio:1,
-	/**
-	 * This flag indicates that there is no reason for
-	 * ll_filemap_fault and vvp_io_read_start to repeat read
-	 * reuqest.
-	 */
-			     ci_dont_repeat:1;
+			     ci_parallel_dio:1;
 	/**
 	 * Bypass quota check
 	 */
