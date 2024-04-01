@@ -1866,7 +1866,6 @@ int ll_manage_foreign(struct inode *inode, struct lustre_md *lmd);
 bool ll_foreign_is_openable(struct dentry *dentry, unsigned int flags);
 bool ll_foreign_is_removable(struct dentry *dentry, bool unset);
 
-int ll_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf,
-		     struct cl_io *io);
+int ll_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
 
 #endif /* LLITE_INTERNAL_H */

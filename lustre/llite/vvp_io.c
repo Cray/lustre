@@ -927,7 +927,7 @@ static int vvp_io_read_start(const struct lu_env *env,
 	 */
 	} while (read_seqretry(&ll_i2info(inode)->lli_page_inv_lock, seq) &&
 		 ((result >= 0 && iov_iter_count(&iter) > 0)
-		  || result == -EIO) && !io->ci_dont_repeat);
+		  || result == -EIO));
 
 out:
 	if (result >= 0) {
@@ -1432,8 +1432,7 @@ static int vvp_io_kernel_fault(struct vvp_fault_io *cfio)
 
 	vio = container_of(cfio, struct vvp_io, u.fault);
 
-	cfio->ft_flags = ll_filemap_fault(cfio->ft_vma, vmf,
-					  vio->vui_cl.cis_io);
+	cfio->ft_flags = ll_filemap_fault(cfio->ft_vma, vmf);
 	cfio->ft_flags_valid = 1;
 
 	if (vmf->page) {
