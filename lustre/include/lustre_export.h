@@ -280,7 +280,8 @@ struct obd_export {
 				exp_replay_done:1,
 				/* local client with recovery disabled */
 				exp_no_recovery:1,
-				exp_hashed:1;
+				exp_hashed:1,
+				exp_not_timed:1;
 	/* also protected by exp_lock */
 	enum lustre_sec_part	exp_sp_peer;
 	struct sptlrpc_flavor	exp_flvr;		/* current */
