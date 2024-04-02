@@ -8439,6 +8439,44 @@ test_56eb() {
 }
 run_test 56eb "check lfs getstripe on symlink"
 
+test_56ec() {
+	local path=$DIR/$tdir
+	local num_files=2
+	local projid=1234
+
+	# Create test dir
+	test_mkdir $path || error "mkdir $path failed"
+	touch $path/file0 $path/file$projid || error "touch failed"
+	stack_trap "rm -rf $path" EXIT
+	ls -r $path/
+
+	# Set projid 1234 on file1234
+	$LFS project -p $projid -s $path/file$projid
+	$LFS project -r $path/
+	echo -e "Output: $($LFS find $path --type f --printf '%LP %p\n')"
+
+	# Find all files and print their projids along with their path
+	local num_found=$($LFS find $path --type f --printf "%LP %p\n" | wc -l)
+	echo -e "num_found=${num_found}"
+
+	# Make sure we printed all the files
+	[[ $num_found -eq $num_files ]] ||
+		error "$LFS find with --printf printed $num_found files, "\
+		      "expected $num_files"
+
+	# Check to make sure the reported project ID from the %LP format
+	# specifier is correct. Each file is named with the projid assigned to
+	# it, so our output should look like "1234 /mnt/lustre/testdir/file1234"
+	local projids="0 $projid"
+	for id in $projids ; do
+		$LFS find $path --type f --printf "%LP %p\n" |
+			grep -E "$id $path/file$id" || error "Did not find "\
+				"any entries with expected "\
+				"\"$id $path/file$id\"."
+	done
+}
+run_test 56ec "test lfs find --printf doesn't skip files with project IDs"
+
 test_57a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 	# note test will not do anything if MDS is not local
