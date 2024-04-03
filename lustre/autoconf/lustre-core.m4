@@ -2390,6 +2390,27 @@ AC_DEFUN([LC_HAVE_CRYPTO_MAX_ALG_NAME_128], [
 ]) # LC_HAVE_CRYPTO_MAX_ALG_NAME_128
 
 #
+# LC_HAVE_PERCPU_COUNTER_ADD_BATCH
+#
+# Linux commit v4.11-12447-g104b4e5139fe
+#   percpu_counter: Rename __percpu_counter_add to percpu_counter_add_batch
+#
+AC_DEFUN([LC_SRC_HAVE_PERCPU_COUNTER_ADD_BATCH], [
+	LB2_LINUX_TEST_SRC([percpu_counter_add_batch_exists], [
+		#include <linux/percpu_counter.h>
+	],[
+		(void)percpu_counter_add_batch(NULL, 0, 0);
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_PERCPU_COUNTER_ADD_BATCH], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'percpu_counter_add_batch()' exists],
+	[percpu_counter_add_batch_exists], [
+		AC_DEFINE(HAVE_PERCPU_COUNTER_ADD_BATCH, 1,
+			['percpu_counter_add_batch()' exists])
+	])
+]) # LC_HAVE_PERCPU_COUNTER_ADD_BATCH
+
+#
 # Kernel version 4.12 commit 47f38c539e9a42344ff5a664942075bd4df93876
 # CURRENT_TIME is not 64 bit time safe so it was replaced with
 # current_time()
@@ -4533,6 +4554,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_VM_OPERATIONS_REMOVE_VMF_ARG
 	LC_SRC_HAVE_KEY_USAGE_REFCOUNT
 	LC_SRC_HAVE_CRYPTO_MAX_ALG_NAME_128
+	LC_SRC_HAVE_PERCPU_COUNTER_ADD_BATCH
 
 	# 4.12
 	LC_SRC_CURRENT_TIME
@@ -4831,6 +4853,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_VM_OPERATIONS_REMOVE_VMF_ARG
 	LC_HAVE_KEY_USAGE_REFCOUNT
 	LC_HAVE_CRYPTO_MAX_ALG_NAME_128
+	LC_HAVE_PERCPU_COUNTER_ADD_BATCH
 
 	# 4.12
 	LC_CURRENT_TIME
