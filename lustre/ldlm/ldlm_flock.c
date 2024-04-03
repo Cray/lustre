@@ -390,6 +390,7 @@ reprocess:
 #ifdef HAVE_SERVER_SUPPORT
 	else {
 		int reprocess_failed = 0;
+		int pr_matched = 0;
 		lockmode_verify(mode);
 
 		/* This loop determines if there are existing locks
@@ -400,8 +401,11 @@ reprocess:
 					  l_res_link);
 
 			if (ldlm_same_flock_owner(lock, req)) {
-				if (!ownlocks)
+				if (!ownlocks) {
 					ownlocks = tmp;
+					if (pr_matched)
+						break;
+				}
 				continue;
 			}
 
@@ -412,7 +416,10 @@ reprocess:
 			    lock->l_policy_data.l_flock.end >=
 				req->l_policy_data.l_flock.end) {
 				/* there can't be granted WR lock */
-				break;
+				if (ownlocks)
+					break;
+				pr_matched = 1;
+				continue;
 			}
 			/* locks are compatible, overlap doesn't matter */
 			if (lockmode_compat(lock->l_granted_mode, mode))
