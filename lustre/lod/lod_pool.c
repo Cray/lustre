@@ -353,7 +353,7 @@ bool lod_pool_exists(struct lod_device *lod, char *poolname)
 	return pool != NULL;
 }
 
-static struct pool_desc *lod_pool_find(struct lod_device *lod, char *poolname)
+static struct pool_desc *lod_pool_find(struct lod_device *lod, const char *poolname)
 {
 	struct pool_desc *pool;
 
@@ -672,7 +672,7 @@ int lod_check_index_in_pool(__u32 idx, struct pool_desc *pool)
  * \retval	pointer to pool descriptor on success
  * \retval	NULL if \a poolname could not be found or poolname is empty
  */
-struct pool_desc *lod_find_pool(struct lod_device *lod, char *poolname)
+struct pool_desc *lod_find_pool(struct lod_device *lod, const char *poolname)
 {
 	struct pool_desc *pool;
 

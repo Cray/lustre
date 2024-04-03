@@ -689,7 +689,7 @@ int lod_alloc_comp_entries(struct lod_object *lo, int mirror_cnt, int comp_cnt);
 int lod_fill_mirrors(struct lod_object *lo);
 
 /* lod_pool.c */
-struct pool_desc *lod_find_pool(struct lod_device *lod, char *poolname);
+struct pool_desc *lod_find_pool(struct lod_device *lod, const char *poolname);
 void lod_pool_putref(struct pool_desc *pool);
 int lod_pool_del(struct obd_device *obd, char *poolname);
 int lod_check_index_in_pool(__u32 idx, struct pool_desc *pool);
@@ -735,6 +735,7 @@ int lod_use_defined_striping(const struct lu_env *, struct lod_object *,
 			     const struct lu_buf *);
 int lod_qos_parse_config(const struct lu_env *env, struct lod_object *lo,
 			 const struct lu_buf *buf);
+void lod_qos_set_pool(struct lod_object *lo, int pos, const char *pool_name);
 int lod_qos_prep_create(const struct lu_env *env, struct lod_object *lo,
 			struct lu_attr *attr, struct thandle *th,
 			int comp_idx, __u64 reserve);
