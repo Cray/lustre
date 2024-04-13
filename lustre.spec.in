@@ -400,7 +400,7 @@ Summary: Lustre testing framework
 Group: System Environment/Kernel
 Provides: lustre-tests = %{version}
 %if %{with lustre_iokit}
-Requires: lustre-iokit
+Requires: %{lustre_name}-iokit
 %endif
 Requires: lustre-devel = %{version}
 %if 0%{?rhel} >= 8 || 0%{?suse_version} >= 1500
@@ -472,12 +472,12 @@ echo $TMPFILE
 %endif
 
 %if %{with lustre_iokit}
-%package -n lustre-iokit
+%package -n %{lustre_name}-iokit
 Summary: The Lustre IO-Kit is a collection of benchmark tools for a cluster with the Lustre file system.
 Group: Applications/System
 Requires: python3, sg3_utils
 
-%description -n lustre-iokit
+%description -n %{lustre_name}-iokit
 This package includes five tools:
 sgpdd-survey:
 A test of the 'bare metal' performance, bypassing as much of the kernel as we can. Uses the sgp_dd utility.
@@ -936,7 +936,7 @@ echo '%{_libdir}/lustre/tests/lutf/*' >>lustre-tests.files
 %endif
 
 %if %{with lustre_iokit}
-%files -n lustre-iokit
+%files -n %{lustre_name}-iokit
 %defattr(-, root, root)
 %{_bindir}/iokit-config
 %{_bindir}/iokit-gather-stats
