@@ -2969,6 +2969,9 @@ test_61a() { # LU-14508
 	echo XXXX > $file || error "write $file failed"
 	cp -p $file $file-2 || error "copy $file-2 failed"
 
+	# flush opencache to update atime with close rpc
+	cancel_lru_locks mdc
+
 	echo "sleep $nap seconds"
 	sleep $nap
 
