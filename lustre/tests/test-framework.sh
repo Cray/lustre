@@ -9268,14 +9268,17 @@ create_pool() {
 	local fsname=${1%%.*}
 	local poolname=${1##$fsname.}
 	local keep_pools=${2:-false}
+	local mdscount=${3:-$MDSCOUNT}
+	# can't pass an empty argument to destroy_test_pools
+	local dtp_fsname=${fsname:-$FSNAME}
 
-	stack_trap "destroy_test_pools $fsname" EXIT
+	stack_trap "destroy_test_pools $dtp_fsname $mdscount" EXIT
 	do_facet mgs lctl pool_new $1
 	local RC=$?
 	# get param should return err unless pool is created
 	[[ $RC -ne 0 ]] && return $RC
 
-	for mds_id in $(seq $MDSCOUNT); do
+	for ((mds_id = 1; mds_id < $mdscount; mds_id++)); do
 		local mdt_id=$((mds_id-1))
 		local lodname=$fsname-MDT$(printf "%04x" $mdt_id)-mdtlov
 		wait_update_facet mds$mds_id \
@@ -9331,6 +9334,7 @@ destroy_pool_int() {
 destroy_pool() {
 	local fsname=${1%%.*}
 	local poolname=${1##$fsname.}
+	local mdscount=${2:-$MDSCOUNT}
 
 	[[ x$fsname = x$poolname ]] && fsname=$FSNAME
 
@@ -9341,7 +9345,7 @@ destroy_pool() {
 	destroy_pool_int $fsname.$poolname
 	RC=$?
 	[[ $RC -ne 0 ]] && return $RC
-	for mds_id in $(seq $MDSCOUNT); do
+	for ((mds_id = 1; mds_id < $mdscount; mds_id++)); do
 		local mdt_id=$((mds_id-1))
 		local lodname=$fsname-MDT$(printf "%04x" $mdt_id)-mdtlov
 		wait_update_facet mds$mds_id \
@@ -9359,6 +9363,7 @@ destroy_pool() {
 
 destroy_pools () {
 	local fsname=${1:-$FSNAME}
+	local mdscount=${2:-$MDSCOUNT}
 	local poolname
 	local listvar=${fsname}_CREATED_POOLS
 
@@ -9366,13 +9371,15 @@ destroy_pools () {
 
 	echo "Destroy the created pools: ${!listvar}"
 	for poolname in ${!listvar//,/ }; do
-		destroy_pool $fsname.$poolname
+		destroy_pool $fsname.$poolname $mdscount
 	done
 }
 
 destroy_test_pools () {
 	local fsname=${1:-$FSNAME}
-	destroy_pools $fsname || true
+	local mdscount=${2:-$MDSCOUNT}
+
+	destroy_pools $fsname $mdscount || true
 }
 
 gather_logs () {
@@ -10513,10 +10520,11 @@ check_file_in_pool()
 }
 
 pool_add() {
-	echo "Creating new pool"
 	local pool=$1
+	local mdscount=${2:-$MDSCOUNT}
 
-	create_pool $FSNAME.$pool ||
+	echo "Creating new pool $pool"
+	create_pool $FSNAME.$pool false $mdscount ||
 		{ error_noexit "No pool created, result code $?"; return 1; }
 	[ $($LFS pool_list $FSNAME | grep -c "$FSNAME.${pool}\$") -eq 1 ] ||
 		{ error_noexit "$pool not in lfs pool_list"; return 2; }
@@ -10528,6 +10536,7 @@ pool_add_targets() {
 	local first=$2
 	local last=${3:-$first}
 	local step=${4:-1}
+	local mdscount=${5:-$MDSCOUNT}
 
 	local list=$(seq $first $step $last)
 
@@ -10546,7 +10555,7 @@ pool_add_targets() {
 	fi
 
 	# wait for OSTs to be added to the pool
-	for mds_id in $(seq $MDSCOUNT); do
+	for ((mds_id = 1; mds_id < $mdscount; mds_id++)); do
 		local mdt_id=$((mds_id-1))
 		local lodname=$FSNAME-MDT$(printf "%04x" $mdt_id)-mdtlov
 		wait_update_facet mds$mds_id \
