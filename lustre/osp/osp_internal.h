@@ -172,6 +172,8 @@ struct osp_device {
 	struct obd_device		*opd_obd;
 	struct obd_export		*opd_exp;
 	struct obd_connect_data		*opd_connect_data;
+	struct completion		opd_disconnect_cmplt;
+	int				opd_disconnect_res;
 
 	/* connection status. */
 	unsigned int			 opd_new_connection:1,
@@ -179,7 +181,8 @@ struct osp_device {
 					 opd_imp_connected:1,
 					 opd_imp_active:1,
 					 opd_imp_seen_connected:1,
-					 opd_connect_mdt:1;
+					 opd_connect_mdt:1,
+					 opd_disconnecting:1;
 
 	/* whether local recovery is completed:
 	 * reported via ->ldo_recovery_complete() */
