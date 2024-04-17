@@ -1,40 +1,19 @@
-this patch implements feature which allows ext4 fs users (e.g. Lustre)
-to store data in ext4 dirent.
-data is stored in ext4 dirent after file-name, this space is accounted
-in de->rec_len. flag EXT4_DIRENT_LUFID added to d_type if extra data
-is present.
+Subject: [PATCH] P: rhel9.3/ext4-data-in-dirent.patch
 
-make use of dentry->d_fsdata to pass fid to ext4. so no
-changes in ext4_add_entry() interface required.
+---
+ fs/ext4/dir.c         |   9 +-
+ fs/ext4/ext4.h        | 107 ++++++++++++++++--
+ fs/ext4/fast_commit.c |   2 +-
+ fs/ext4/inline.c      |   8 +-
+ fs/ext4/namei.c       | 251 ++++++++++++++++++++++++++++++++----------
+ fs/ext4/super.c       |  12 +-
+ 6 files changed, 314 insertions(+), 75 deletions(-)
 
-Index: linux-4.15.0/fs/ext4/dir.c
-===================================================================
---- linux-4.15.0.orig/fs/ext4/dir.c
-+++ linux-4.15.0/fs/ext4/dir.c
-@@ -68,11 +68,11 @@ int __ext4_check_dir_entry(const char *f
- 	const int rlen = ext4_rec_len_from_disk(de->rec_len,
- 						dir->i_sb->s_blocksize);
- 
--	if (unlikely(rlen < EXT4_DIR_REC_LEN(1)))
-+	if (unlikely(rlen < __EXT4_DIR_REC_LEN(1)))
- 		error_msg = "rec_len is smaller than minimal";
- 	else if (unlikely(rlen % 4 != 0))
- 		error_msg = "rec_len % 4 != 0";
--	else if (unlikely(rlen < EXT4_DIR_REC_LEN(de->name_len)))
-+	else if (unlikely(rlen < EXT4_DIR_REC_LEN(de)))
- 		error_msg = "rec_len is too small for name_len";
- 	else if (unlikely(((char *) de - buf) + rlen > size))
- 		error_msg = "directory entry across range";
-@@ -219,7 +219,7 @@ static int ext4_readdir(struct file *fil
- 				 * failure will be detected in the
- 				 * dirent test below. */
- 				if (ext4_rec_len_from_disk(de->rec_len,
--					sb->s_blocksize) < EXT4_DIR_REC_LEN(1))
-+				    sb->s_blocksize) < __EXT4_DIR_REC_LEN(1))
- 					break;
- 				i += ext4_rec_len_from_disk(de->rec_len,
- 							    sb->s_blocksize);
-@@ -442,12 +442,17 @@ int ext4_htree_store_dirent(struct file
+diff --git a/fs/ext4/dir.c b/fs/ext4/dir.c
+index 3985f8c3..b8e4df14 100644
+--- a/fs/ext4/dir.c
++++ b/fs/ext4/dir.c
+@@ -465,12 +465,17 @@ int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
  	struct fname *fname, *new_fn;
  	struct dir_private_info *info;
  	int len;
@@ -53,20 +32,20 @@ Index: linux-4.15.0/fs/ext4/dir.c
  	new_fn = kzalloc(len, GFP_KERNEL);
  	if (!new_fn)
  		return -ENOMEM;
-@@ -456,7 +461,7 @@ int ext4_htree_store_dirent(struct file
+@@ -479,7 +484,7 @@ int ext4_htree_store_dirent(struct file *dir_file, __u32 hash,
  	new_fn->inode = le32_to_cpu(dirent->inode);
  	new_fn->name_len = ent_name->len;
  	new_fn->file_type = dirent->file_type;
 -	memcpy(new_fn->name, ent_name->name, ent_name->len);
 +	memcpy(new_fn->name, ent_name->name, ent_name->len + extra_data);
- 	new_fn->name[ent_name->len] = 0;
  
  	while (*p) {
-Index: linux-4.15.0/fs/ext4/ext4.h
-===================================================================
---- linux-4.15.0.orig/fs/ext4/ext4.h
-+++ linux-4.15.0/fs/ext4/ext4.h
-@@ -1055,6 +1055,7 @@ struct ext4_inode_info {
+ 		parent = *p;
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index a4af3ec8..930ca3a5 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1184,6 +1184,7 @@ struct ext4_inode_info {
  	__u32 i_csum_seed;
  
  	kprojid_t i_projid;
@@ -74,7 +53,7 @@ Index: linux-4.15.0/fs/ext4/ext4.h
  };
  
  /*
-@@ -1088,6 +1089,7 @@ struct ext4_inode_info {
+@@ -1205,6 +1206,7 @@ struct ext4_inode_info {
   * Mount flags set via mount options or defaults
   */
  #define EXT4_MOUNT_NO_MBCACHE		0x00001 /* Do not use mbcache */
@@ -82,15 +61,15 @@ Index: linux-4.15.0/fs/ext4/ext4.h
  #define EXT4_MOUNT_GRPID		0x00004	/* Create files with directory's group */
  #define EXT4_MOUNT_DEBUG		0x00008	/* Some debugging messages */
  #define EXT4_MOUNT_ERRORS_CONT		0x00010	/* Continue on errors */
-@@ -1768,6 +1770,7 @@ EXT4_FEATURE_INCOMPAT_FUNCS(encrypt,		EN
+@@ -2174,6 +2176,7 @@ EXT4_FEATURE_INCOMPAT_FUNCS(casefold,		CASEFOLD)
  					 EXT4_FEATURE_INCOMPAT_FLEX_BG| \
  					 EXT4_FEATURE_INCOMPAT_EA_INODE| \
  					 EXT4_FEATURE_INCOMPAT_MMP | \
 +					 EXT4_FEATURE_INCOMPAT_DIRDATA| \
  					 EXT4_FEATURE_INCOMPAT_INLINE_DATA | \
  					 EXT4_FEATURE_INCOMPAT_ENCRYPT | \
- 					 EXT4_FEATURE_INCOMPAT_CSUM_SEED | \
-@@ -1943,6 +1946,43 @@ struct ext4_dir_entry_tail {
+ 					 EXT4_FEATURE_INCOMPAT_CASEFOLD | \
+@@ -2385,6 +2388,42 @@ struct ext4_dir_entry_tail {
  #define EXT4_FT_SYMLINK		7
  
  #define EXT4_FT_MAX		8
@@ -122,7 +101,6 @@ Index: linux-4.15.0/fs/ext4/ext4.h
 +
 +static inline unsigned char *ext4_dentry_get_data(struct super_block *sb,
 +						  struct ext4_dentry_param *p)
-+
 +{
 +	if (!ext4_has_feature_dirdata(sb))
 +		return NULL;
@@ -134,34 +112,54 @@ Index: linux-4.15.0/fs/ext4/ext4.h
  
  #define EXT4_FT_DIR_CSUM	0xDE
  
-@@ -1953,8 +1993,11 @@ struct ext4_dir_entry_tail {
-  */
+@@ -2396,6 +2435,17 @@ struct ext4_dir_entry_tail {
  #define EXT4_DIR_PAD			4
  #define EXT4_DIR_ROUND			(EXT4_DIR_PAD - 1)
--#define EXT4_DIR_REC_LEN(name_len)	(((name_len) + 8 + EXT4_DIR_ROUND) & \
-+#define __EXT4_DIR_REC_LEN(name_len)	(((name_len) + 8 + EXT4_DIR_ROUND) & \
- 					 ~EXT4_DIR_ROUND)
-+#define EXT4_DIR_REC_LEN(de)		(__EXT4_DIR_REC_LEN((de)->name_len +\
-+					ext4_get_dirent_data_len(de)))
-+
  #define EXT4_MAX_REC_LEN		((1<<16)-1)
++#define EXT4_DIR_REC_LEN_(name_len, i_dir) \
++	ext4_dir_rec_len((name_len), (i_dir))
++#define EXT4_DIR_ENTRY_LEN_(de, i_dir) \
++	(EXT4_DIR_REC_LEN_((de)->name_len + ext4_get_dirent_data_len(de), \
++		(i_dir)))
++/* ldiskfs */
++#define EXT4_DIR_REC_LEN(name_len, i_dir)	EXT4_DIR_REC_LEN_((name_len), (i_dir))
++#define EXT4_DIR_ENTRY_LEN(de, i_dir)		EXT4_DIR_ENTRY_LEN_((de), (i_dir))
++/* lustre osd_handler compat -- ifdef LDISKFS_DIR_REC_LEN_WITH_DIR */
++#define EXT4_DIR_REC_LEN_WITH_DIR		1
++#define __EXT4_DIR_REC_LEN(name_len)		EXT4_DIR_REC_LEN_((name_len), NULL)
  
  /*
-@@ -2357,11 +2400,11 @@ extern int ext4_find_dest_de(struct inod
+  * The rec_len is dependent on the type of directory. Directories that are
+@@ -2403,10 +2453,10 @@ struct ext4_dir_entry_tail {
+  * ext4_extended_dir_entry_2. For all entries related to '.' or '..' you should
+  * pass NULL for dir, as those entries do not use the extra fields.
+  */
+-static inline unsigned int ext4_dir_rec_len(__u8 name_len,
++static inline unsigned int ext4_dir_rec_len(__u32 name_len,
+ 						const struct inode *dir)
+ {
+-	int rec_len = (name_len + 8 + EXT4_DIR_ROUND);
++	__u32 rec_len = (name_len + 8 + EXT4_DIR_ROUND);
+ 
+ 	if (dir && ext4_hash_in_dirent(dir))
+ 		rec_len += sizeof(struct ext4_dir_entry_hash);
+@@ -2831,11 +2881,13 @@ extern int ext4_find_dest_de(struct inode *dir, struct inode *inode,
  			     struct buffer_head *bh,
  			     void *buf, int buf_size,
  			     struct ext4_filename *fname,
 -			     struct ext4_dir_entry_2 **dest_de);
-+			     struct ext4_dir_entry_2 **dest_de, int dlen);
- void ext4_insert_dentry(struct inode *inode,
++			     struct ext4_dir_entry_2 **dest_de,
++			     int dlen);
+ void ext4_insert_dentry(struct inode *dir, struct inode *inode,
  			struct ext4_dir_entry_2 *de,
  			int buf_size,
 -			struct ext4_filename *fname);
-+ 		        struct ext4_filename *fname, void *data);
++			struct ext4_filename *fname,
++			void *data);
  static inline void ext4_update_dx_flag(struct inode *inode)
  {
- 	if (!ext4_has_feature_dir_index(inode->i_sb))
-@@ -2373,10 +2416,17 @@ static const unsigned char ext4_filetype
+ 	if (!ext4_has_feature_dir_index(inode->i_sb) &&
+@@ -2851,10 +2903,17 @@ static const unsigned char ext4_filetype_table[] = {
  
  static inline  unsigned char get_dtype(struct super_block *sb, int filetype)
  {
@@ -181,18 +179,24 @@ Index: linux-4.15.0/fs/ext4/ext4.h
  }
  extern int ext4_check_all_de(struct inode *dir, struct buffer_head *bh,
  			     void *buf, int buf_size);
-@@ -2525,6 +2575,8 @@ extern struct inode *ext4_create_inode(h
- extern int ext4_delete_entry(handle_t *handle, struct inode * dir,
- 			     struct ext4_dir_entry_2 *de_del,
- 			     struct buffer_head *bh);
+@@ -3058,9 +3117,13 @@ extern int ext4_ind_migrate(struct inode *inode);
+ 
+ /* namei.c */
+ extern int ext4_init_new_dir(handle_t *handle, struct inode *dir,
+-			     struct inode *inode);
++			     struct inode *inode,
++			     const void *data1, const void *data2);
+ extern int ext4_dirblock_csum_verify(struct inode *inode,
+ 				     struct buffer_head *bh);
 +extern int ext4_add_dot_dotdot(handle_t *handle, struct inode *dir,
-+			       struct inode *inode, const void *, const void *);
++			       struct inode *inode,
++			       const void *data1, const void *data2);
  extern int ext4_htree_fill_tree(struct file *dir_file, __u32 start_hash,
  				__u32 start_minor_hash, __u32 *next_hash);
- extern int ext4_search_dir(struct buffer_head *bh,
-@@ -3265,6 +3317,36 @@ static inline void ext4_clear_io_unwritt
- 
- extern const struct iomap_ops ext4_iomap_ops;
+ extern struct inode *ext4_create_inode(handle_t *handle,
+@@ -3887,6 +3950,36 @@ static inline int ext4_buffer_uptodate(struct buffer_head *bh)
+ 	return buffer_uptodate(bh);
+ }
  
 +/*
 + * Compute the total directory entry data length.
@@ -227,11 +231,64 @@ Index: linux-4.15.0/fs/ext4/ext4.h
  #endif	/* __KERNEL__ */
  
  #define EFSBADCRC	EBADMSG		/* Bad CRC detected */
-Index: linux-4.15.0/fs/ext4/namei.c
-===================================================================
---- linux-4.15.0.orig/fs/ext4/namei.c
-+++ linux-4.15.0/fs/ext4/namei.c
-@@ -242,7 +242,8 @@ static unsigned dx_get_count(struct dx_e
+diff --git a/fs/ext4/fast_commit.c b/fs/ext4/fast_commit.c
+index 8de354dc..00c4769b 100644
+--- a/fs/ext4/fast_commit.c
++++ b/fs/ext4/fast_commit.c
+@@ -1674,7 +1674,7 @@ static int ext4_fc_replay_create(struct super_block *sb,
+ 			ext4_debug("Dir %d not found.", darg.ino);
+ 			goto out;
+ 		}
+-		ret = ext4_init_new_dir(NULL, dir, inode);
++		ret = ext4_init_new_dir(NULL, dir, inode, NULL, NULL);
+ 		iput(dir);
+ 		if (ret) {
+ 			ret = 0;
+diff --git a/fs/ext4/inline.c b/fs/ext4/inline.c
+index c4475a74..3fc75d80 100644
+--- a/fs/ext4/inline.c
++++ b/fs/ext4/inline.c
+@@ -1031,7 +1031,7 @@ static int ext4_add_dirent_to_inline(handle_t *handle,
+ 	struct ext4_dir_entry_2 *de;
+ 
+ 	err = ext4_find_dest_de(dir, inode, iloc->bh, inline_start,
+-				inline_size, fname, &de);
++				inline_size, fname, &de, 0);
+ 	if (err)
+ 		return err;
+ 
+@@ -1040,7 +1040,7 @@ static int ext4_add_dirent_to_inline(handle_t *handle,
+ 					    EXT4_JTR_NONE);
+ 	if (err)
+ 		return err;
+-	ext4_insert_dentry(dir, inode, de, inline_size, fname);
++	ext4_insert_dentry(dir, inode, de, inline_size, fname, NULL);
+ 
+ 	ext4_show_inline_dir(dir, iloc->bh, inline_start, inline_size);
+ 
+@@ -1398,7 +1398,7 @@ int ext4_inlinedir_to_tree(struct file *dir_file,
+ 			fake.name_len = 1;
+ 			strcpy(fake.name, ".");
+ 			fake.rec_len = ext4_rec_len_to_disk(
+-					  ext4_dir_rec_len(fake.name_len, NULL),
++					  EXT4_DIR_ENTRY_LEN(&fake, NULL),
+ 					  inline_size);
+ 			ext4_set_de_type(inode->i_sb, &fake, S_IFDIR);
+ 			de = &fake;
+@@ -1408,7 +1408,7 @@ int ext4_inlinedir_to_tree(struct file *dir_file,
+ 			fake.name_len = 2;
+ 			strcpy(fake.name, "..");
+ 			fake.rec_len = ext4_rec_len_to_disk(
+-					  ext4_dir_rec_len(fake.name_len, NULL),
++					  EXT4_DIR_ENTRY_LEN(&fake, NULL),
+ 					  inline_size);
+ 			ext4_set_de_type(inode->i_sb, &fake, S_IFDIR);
+ 			de = &fake;
+diff --git a/fs/ext4/namei.c b/fs/ext4/namei.c
+index d0afa8f2..839d51ba 100644
+--- a/fs/ext4/namei.c
++++ b/fs/ext4/namei.c
+@@ -291,13 +291,14 @@ static unsigned dx_get_count(struct dx_entry *entries);
  static unsigned dx_get_limit(struct dx_entry *entries);
  static void dx_set_count(struct dx_entry *entries, unsigned value);
  static void dx_set_limit(struct dx_entry *entries, unsigned value);
@@ -241,7 +298,14 @@ Index: linux-4.15.0/fs/ext4/namei.c
  static unsigned dx_node_limit(struct inode *dir);
  static struct dx_frame *dx_probe(struct ext4_filename *fname,
  				 struct inode *dir,
-@@ -385,22 +386,23 @@ static struct dx_countlimit *get_dx_coun
+ 				 struct dx_hash_info *hinfo,
+ 				 struct dx_frame *frame);
+-static void dx_release(struct dx_frame *frames);
++static void dx_release(struct dx_frame *frames, struct inode *dir);
+ static int dx_make_map(struct inode *dir, struct buffer_head *bh,
+ 		       struct dx_hash_info *hinfo,
+ 		       struct dx_map_entry *map_tail);
+@@ -437,22 +438,23 @@ static struct dx_countlimit *get_dx_countlimit(struct inode *inode,
  {
  	struct ext4_dir_entry *dp;
  	struct dx_root_info *root;
@@ -260,7 +324,7 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +		    EXT4_BLOCK_SIZE(inode->i_sb) - dot_rec_len)
  			return NULL;
 -		root = (struct dx_root_info *)(((void *)dp + 12));
-+		dotdot_rec_len = EXT4_DIR_REC_LEN((struct ext4_dir_entry_2 *)dp);
++		dotdot_rec_len = EXT4_DIR_ENTRY_LEN((struct ext4_dir_entry_2 *)dp, NULL);
 +		root = (struct dx_root_info *)(((void *)dp + dotdot_rec_len));
  		if (root->reserved_zero ||
  		    root->info_length != sizeof(struct dx_root_info))
@@ -273,22 +337,25 @@ Index: linux-4.15.0/fs/ext4/namei.c
  
  	if (offset)
  		*offset = count_offset;
-@@ -505,11 +506,12 @@ ext4_next_entry(struct ext4_dir_entry_2
+@@ -555,13 +557,14 @@ ext4_next_entry(struct ext4_dir_entry_2 *p, unsigned long blocksize)
+  * Future: use high four bits of block for coalesce-on-delete flags
+  * Mask them off for now.
   */
- struct dx_root_info *dx_get_dx_info(struct ext4_dir_entry_2 *de)
+-struct dx_root_info *dx_get_dx_info(struct ext4_dir_entry_2 *de)
++struct dx_root_info *dx_get_dx_info(struct ext4_dir_entry_2 *de, struct inode *i_dir)
  {
 +	BUG_ON(de->name_len != 1);
  	/* get dotdot first */
 -	de = (struct ext4_dir_entry_2 *)((char *)de + EXT4_DIR_REC_LEN(1));
-+	de = (struct ext4_dir_entry_2 *)((char *)de + EXT4_DIR_REC_LEN(de));
++	de = (struct ext4_dir_entry_2 *)((char *)de + EXT4_DIR_ENTRY_LEN(de, i_dir));
  
  	/* dx root info is after dotdot entry */
 -	de = (struct ext4_dir_entry_2 *)((char *)de + EXT4_DIR_REC_LEN(2));
-+	de = (struct ext4_dir_entry_2 *)((char *)de + EXT4_DIR_REC_LEN(de));
++	de = (struct ext4_dir_entry_2 *)((char *)de + EXT4_DIR_ENTRY_LEN(de, i_dir));
  
  	return (struct dx_root_info *)de;
  }
-@@ -554,10 +556,16 @@ static inline void dx_set_limit(struct d
+@@ -606,11 +609,16 @@ static inline void dx_set_limit(struct dx_entry *entries, unsigned value)
  	((struct dx_countlimit *) entries)->limit = cpu_to_le16(value);
  }
  
@@ -296,37 +363,38 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +static inline unsigned dx_root_limit(struct inode *dir,
 +		struct ext4_dir_entry_2 *dot_de, unsigned infosize)
  {
--	unsigned entry_space = dir->i_sb->s_blocksize - EXT4_DIR_REC_LEN(1) -
--		EXT4_DIR_REC_LEN(2) - infosize;
+-	unsigned int entry_space = dir->i_sb->s_blocksize -
+-			ext4_dir_rec_len(1, NULL) -
+-			ext4_dir_rec_len(2, NULL) - infosize;
 +	struct ext4_dir_entry_2 *dotdot_de;
 +	unsigned entry_space;
 +
 +	BUG_ON(dot_de->name_len != 1);
 +	dotdot_de = ext4_next_entry(dot_de, dir->i_sb->s_blocksize);
-+	entry_space = dir->i_sb->s_blocksize - EXT4_DIR_REC_LEN(dot_de) -
-+			 EXT4_DIR_REC_LEN(dotdot_de) - infosize;
++	entry_space = dir->i_sb->s_blocksize - EXT4_DIR_ENTRY_LEN(dot_de, NULL) -
++			 EXT4_DIR_ENTRY_LEN(dotdot_de, NULL) - infosize;
  
  	if (ext4_has_metadata_csum(dir->i_sb))
  		entry_space -= sizeof(struct dx_tail);
-@@ -566,7 +574,7 @@ static inline unsigned dx_root_limit(str
- 
- static inline unsigned dx_node_limit(struct inode *dir)
- {
--	unsigned entry_space = dir->i_sb->s_blocksize - EXT4_DIR_REC_LEN(0);
-+	unsigned entry_space = dir->i_sb->s_blocksize - __EXT4_DIR_REC_LEN(0);
- 
- 	if (ext4_has_metadata_csum(dir->i_sb))
- 		entry_space -= sizeof(struct dx_tail);
-@@ -678,7 +686,7 @@ static struct stats dx_show_leaf(struct
+@@ -728,7 +736,7 @@ static struct stats dx_show_leaf(struct inode *dir,
  				       (unsigned) ((char *) de - base));
  #endif
  			}
--			space += EXT4_DIR_REC_LEN(de->name_len);
-+			space += EXT4_DIR_REC_LEN(de);
+-			space += ext4_dir_rec_len(de->name_len, dir);
++			space += EXT4_DIR_ENTRY_LEN(de, dir);
  			names++;
  		}
  		de = ext4_next_entry(de, size);
-@@ -785,11 +793,14 @@ dx_probe(struct ext4_filename *fname, st
+@@ -822,7 +830,7 @@ dx_probe(struct ext4_filename *fname, struct inode *dir,
+ 	if (IS_ERR(frame->bh))
+ 		return (struct dx_frame *) frame->bh;
+ 
+-	info = dx_get_dx_info((struct ext4_dir_entry_2 *)frame->bh->b_data);
++	info = dx_get_dx_info((struct ext4_dir_entry_2 *)frame->bh->b_data, dir);
+ 	if (info->hash_version != DX_HASH_TEA &&
+ 	    info->hash_version != DX_HASH_HALF_MD4 &&
+ 	    info->hash_version != DX_HASH_LEGACY &&
+@@ -878,11 +886,14 @@ dx_probe(struct ext4_filename *fname, struct inode *dir,
  
  	entries = (struct dx_entry *)(((char *)info) + info->info_length);
  
@@ -344,88 +412,124 @@ Index: linux-4.15.0/fs/ext4/namei.c
  		goto fail;
  	}
  
-@@ -981,7 +992,7 @@ static int htree_dirblock_to_tree(struct
- 	de = (struct ext4_dir_entry_2 *) bh->b_data;
- 	top = (struct ext4_dir_entry_2 *) ((char *) de +
- 					   dir->i_sb->s_blocksize -
--					   EXT4_DIR_REC_LEN(0));
-+					   __EXT4_DIR_REC_LEN(0));
- #ifdef CONFIG_EXT4_FS_ENCRYPTION
- 	/* Check if the directory is encrypted */
- 	if (ext4_encrypted_inode(dir)) {
-@@ -1653,7 +1664,7 @@ dx_move_dirents(char *from, char *to, st
+@@ -959,7 +970,7 @@ fail:
+ 	return ret_err;
+ }
+ 
+-static void dx_release(struct dx_frame *frames)
++static void dx_release(struct dx_frame *frames, struct inode *dir)
+ {
+ 	struct dx_root_info *info;
+ 	int i;
+@@ -968,7 +979,7 @@ static void dx_release(struct dx_frame *frames)
+ 	if (frames[0].bh == NULL)
+ 		return;
+ 
+-	info = dx_get_dx_info((struct ext4_dir_entry_2 *)frames[0].bh->b_data);
++	info = dx_get_dx_info((struct ext4_dir_entry_2 *)frames[0].bh->b_data, dir);
+ 	/* save local copy, "info" may be freed after brelse() */
+ 	indirect_levels = info->indirect_levels;
+ 	for (i = 0; i <= indirect_levels; i++) {
+@@ -1269,12 +1280,12 @@ int ext4_htree_fill_tree(struct file *dir_file, __u32 start_hash,
+ 		    (count && ((hashval & 1) == 0)))
+ 			break;
+ 	}
+-	dx_release(frames);
++	dx_release(frames, dir);
+ 	dxtrace(printk(KERN_DEBUG "Fill tree: returned %d entries, "
+ 		       "next hash: %x\n", count, *next_hash));
+ 	return count;
+ errout:
+-	dx_release(frames);
++	dx_release(frames, dir);
+ 	return (err);
+ }
+ 
+@@ -1806,7 +1817,7 @@ static struct buffer_head * ext4_dx_find_entry(struct inode *dir,
+ errout:
+ 	dxtrace(printk(KERN_DEBUG "%s not found\n", fname->usr_fname->name));
+ success:
+-	dx_release(frames);
++	dx_release(frames, dir);
+ 	return bh;
+ }
+ 
+@@ -1930,7 +1941,7 @@ dx_move_dirents(struct inode *dir, char *from, char *to,
  	while (count--) {
  		struct ext4_dir_entry_2 *de = (struct ext4_dir_entry_2 *)
  						(from + (map->offs<<2));
--		rec_len = EXT4_DIR_REC_LEN(de->name_len);
-+		rec_len = EXT4_DIR_REC_LEN(de);
+-		rec_len = ext4_dir_rec_len(de->name_len, dir);
++		rec_len = EXT4_DIR_ENTRY_LEN(de, dir);
+ 
  		memcpy (to, de, rec_len);
  		((struct ext4_dir_entry_2 *) to)->rec_len =
- 				ext4_rec_len_to_disk(rec_len, blocksize);
-@@ -1677,7 +1688,7 @@ static struct ext4_dir_entry_2* dx_pack_
+@@ -1963,7 +1974,7 @@ static struct ext4_dir_entry_2 *dx_pack_dirents(struct inode *dir, char *base,
  	while ((char*)de < base + blocksize) {
  		next = ext4_next_entry(de, blocksize);
  		if (de->inode && de->name_len) {
--			rec_len = EXT4_DIR_REC_LEN(de->name_len);
-+			rec_len = EXT4_DIR_REC_LEN(de);
+-			rec_len = ext4_dir_rec_len(de->name_len, dir);
++			rec_len = EXT4_DIR_ENTRY_LEN(de, dir);
  			if (de > to)
  				memmove(to, de, rec_len);
  			to->rec_len = ext4_rec_len_to_disk(rec_len, blocksize);
-@@ -1808,10 +1819,10 @@ int ext4_find_dest_de(struct inode *dir,
+@@ -2106,10 +2117,11 @@ int ext4_find_dest_de(struct inode *dir, struct inode *inode,
  		      struct buffer_head *bh,
  		      void *buf, int buf_size,
  		      struct ext4_filename *fname,
 -		      struct ext4_dir_entry_2 **dest_de)
-+		      struct ext4_dir_entry_2 **dest_de, int dlen)
++		      struct ext4_dir_entry_2 **dest_de,
++		      int dlen)
  {
  	struct ext4_dir_entry_2 *de;
--	unsigned short reclen = EXT4_DIR_REC_LEN(fname_len(fname));
-+	unsigned short reclen = __EXT4_DIR_REC_LEN(fname_len(fname) + dlen);
+-	unsigned short reclen = ext4_dir_rec_len(fname_len(fname), dir);
++	unsigned short reclen = ext4_dir_rec_len(fname_len(fname) + dlen, dir);
  	int nlen, rlen;
  	unsigned int offset = 0;
  	char *top;
-@@ -1824,7 +1837,7 @@ int ext4_find_dest_de(struct inode *dir,
+@@ -2122,7 +2141,7 @@ int ext4_find_dest_de(struct inode *dir, struct inode *inode,
  			return -EFSCORRUPTED;
- 		if (ext4_match(fname, de))
+ 		if (ext4_match(dir, fname, de))
  			return -EEXIST;
--		nlen = EXT4_DIR_REC_LEN(de->name_len);
-+		nlen = EXT4_DIR_REC_LEN(de);
+-		nlen = ext4_dir_rec_len(de->name_len, dir);
++		nlen = EXT4_DIR_ENTRY_LEN(de, dir);
  		rlen = ext4_rec_len_from_disk(de->rec_len, buf_size);
  		if ((de->inode ? rlen - nlen : rlen) >= reclen)
  			break;
-@@ -1841,12 +1870,12 @@ int ext4_find_dest_de(struct inode *dir,
- void ext4_insert_dentry(struct inode *inode,
+@@ -2140,12 +2180,13 @@ void ext4_insert_dentry(struct inode *dir,
+ 			struct inode *inode,
  			struct ext4_dir_entry_2 *de,
  			int buf_size,
 -			struct ext4_filename *fname)
-+ 		        struct ext4_filename *fname, void *data)
++			struct ext4_filename *fname,
++			void *data)
  {
  
  	int nlen, rlen;
  
--	nlen = EXT4_DIR_REC_LEN(de->name_len);
-+	nlen = EXT4_DIR_REC_LEN(de);
+-	nlen = ext4_dir_rec_len(de->name_len, dir);
++	nlen = EXT4_DIR_ENTRY_LEN(de, dir);
  	rlen = ext4_rec_len_from_disk(de->rec_len, buf_size);
  	if (de->inode) {
  		struct ext4_dir_entry_2 *de1 =
-@@ -1860,6 +1889,11 @@ void ext4_insert_dentry(struct inode *in
- 	ext4_set_de_type(inode->i_sb, de, inode->i_mode);
- 	de->name_len = fname_len(fname);
- 	memcpy(de->name, fname_name(fname), fname_len(fname));
+@@ -2166,6 +2207,12 @@ void ext4_insert_dentry(struct inode *dir,
+ 		EXT4_DIRENT_HASHES(de)->minor_hash =
+ 						cpu_to_le32(hinfo->minor_hash);
+ 	}
 +	if (data) {
 +		de->name[fname_len(fname)] = 0;
 +		memcpy(&de->name[fname_len(fname) + 1], data, *(char *)data);
 +		de->file_type |= EXT4_DIRENT_LUFID;
 +	}
++
  }
  
  /*
-@@ -1877,14 +1911,19 @@ static int add_dirent_to_buf(handle_t *h
+@@ -2183,14 +2230,19 @@ static int add_dirent_to_buf(handle_t *handle, struct ext4_filename *fname,
  {
  	unsigned int	blocksize = dir->i_sb->s_blocksize;
  	int		csum_size = 0;
--	int		err;
-+	int		err, dlen = 0;
+-	int		err, err2;
++	int		err, err2, dlen = 0;
 +	unsigned char	*data;
  
 +	data = ext4_dentry_get_data(inode->i_sb, (struct ext4_dentry_param *)
@@ -442,17 +546,26 @@ Index: linux-4.15.0/fs/ext4/namei.c
  		if (err)
  			return err;
  	}
-@@ -1896,7 +1935,7 @@ static int add_dirent_to_buf(handle_t *h
+@@ -2203,7 +2255,7 @@ static int add_dirent_to_buf(handle_t *handle, struct ext4_filename *fname,
  	}
  
  	/* By now the buffer is marked for journaling */
--	ext4_insert_dentry(inode, de, blocksize, fname);
-+	ext4_insert_dentry(inode, de, blocksize, fname, data);
+-	ext4_insert_dentry(dir, inode, de, blocksize, fname);
++	ext4_insert_dentry(dir, inode, de, blocksize, fname, data);
  
  	/*
  	 * XXX shouldn't update any times until successful
-@@ -2005,7 +2047,8 @@ static int make_indexed_dir(handle_t *ha
+@@ -2309,7 +2364,7 @@ static int make_indexed_dir(handle_t *handle, struct ext4_filename *fname,
+ 				     blocksize);
  
+ 	/* initialize hashing info */
+-	dx_info = dx_get_dx_info(dot_de);
++	dx_info = dx_get_dx_info(dot_de, dir);
+ 	memset(dx_info, 0, sizeof(*dx_info));
+ 	dx_info->info_length = sizeof(*dx_info);
+ 	if (ext4_hash_in_dirent(dir))
+@@ -2320,7 +2375,8 @@ static int make_indexed_dir(handle_t *handle, struct ext4_filename *fname,
+ 	entries = (void *)dx_info + sizeof(*dx_info);
  	dx_set_block(entries, 1);
  	dx_set_count(entries, 1);
 -	dx_set_limit(entries, dx_root_limit(dir, sizeof(*dx_info)));
@@ -461,7 +574,13 @@ Index: linux-4.15.0/fs/ext4/namei.c
  
  	/* Initialize as for dx_probe */
  	fname->hinfo.hash_version = dx_info->hash_version;
-@@ -2047,7 +2070,105 @@ out_frames:
+@@ -2361,12 +2386,111 @@ out_frames:
+ 	 */
+ 	if (retval)
+ 		ext4_mark_inode_dirty(handle, dir);
+-	dx_release(frames);
++	dx_release(frames, dir);
+ 	brelse(bh2);
  	return retval;
  }
  
@@ -484,10 +603,10 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +		int limit, count;
 +		int entry_space;
 +
-+		len = __EXT4_DIR_REC_LEN(2 + dlen) -
-+			EXT4_DIR_REC_LEN(dotdot_de);
++		len = EXT4_DIR_REC_LEN(2 + dlen, NULL) -
++			EXT4_DIR_ENTRY_LEN(dotdot_de, NULL);
 +
-+		dx_info = dx_get_dx_info(dot_de);
++		dx_info = dx_get_dx_info(dot_de, NULL);
 +		entries = (struct dx_entry *)((char *)dx_info +
 +							sizeof(*dx_info));
 +		count = dx_get_count(entries);
@@ -498,7 +617,8 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +		 */
 +		entry_space = blocksize;
 +		entry_space -= (char *)dotdot_de - (char *)dot_de +
-+			       __EXT4_DIR_REC_LEN(2 + dlen) + sizeof(*dx_info);
++			       EXT4_DIR_REC_LEN(2 + dlen, NULL) +
++			       sizeof(*dx_info);
 +		if (ext4_has_metadata_csum(dir->i_sb))
 +			entry_space -= sizeof(struct dx_tail);
 +		limit = entry_space / sizeof(struct dx_entry);
@@ -515,7 +635,7 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +		int space = 0;
 +		unsigned rec_len = 0;
 +
-+		len = __EXT4_DIR_REC_LEN(2 + dlen) -
++		len = EXT4_DIR_REC_LEN(2 + dlen, NULL) -
 +			ext4_rec_len_from_disk(dotdot_de->rec_len, blocksize);
 +
 +		if (ext4_has_metadata_csum(dir->i_sb))
@@ -524,7 +644,7 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +		de = ext4_next_entry(dotdot_de, blocksize);
 +		while ((char *)de < top) {
 +			space += ext4_rec_len_from_disk(de->rec_len, blocksize) -
-+					EXT4_DIR_REC_LEN(de);
++					EXT4_DIR_ENTRY_LEN(de, dir);
 +			de = ext4_next_entry(de, blocksize);
 +		}
 +
@@ -537,7 +657,7 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +		while ((char *)de < top) {
 +			next = ext4_next_entry(de, blocksize);
 +			if (de->inode && de->name_len) {
-+				rec_len = EXT4_DIR_REC_LEN(de);
++				rec_len = EXT4_DIR_ENTRY_LEN(de, dir);
 +				if (de > to)
 +					memmove(to, de, rec_len);
 +				to->rec_len = ext4_rec_len_to_disk(rec_len,
@@ -554,10 +674,10 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +		/* move all the entries after dotdot to make space */
 +		de = ext4_next_entry(dotdot_de, blocksize);
 +		memmove((char *)de + len, de, (char *)prev - (char *)de +
-+			EXT4_DIR_REC_LEN(prev));
++			EXT4_DIR_ENTRY_LEN(prev, dir));
 +		/* fix the rec_len for dotdot */
 +		dotdot_de->rec_len = ext4_rec_len_to_disk(
-+					__EXT4_DIR_REC_LEN(2 + dlen),
++					EXT4_DIR_REC_LEN(2 + dlen, NULL),
 +					blocksize);
 +	}
 +
@@ -568,7 +688,7 @@ Index: linux-4.15.0/fs/ext4/namei.c
  static int ext4_update_dotdot(handle_t *handle, struct dentry *dentry,
  			      struct inode *inode)
  {
-@@ -2056,6 +2177,8 @@ static int ext4_update_dotdot(handle_t *
+@@ -2375,6 +2504,8 @@ static int ext4_update_dotdot(handle_t *
  	struct ext4_dir_entry_2 *dot_de, *dotdot_de;
  	unsigned int offset;
  	int retval = 0;
@@ -577,7 +697,7 @@ Index: linux-4.15.0/fs/ext4/namei.c
  
  	if (IS_ERR(handle))
  		return PTR_ERR(handle);
-@@ -2095,6 +2218,30 @@ static int ext4_update_dotdot(handle_t *
+@@ -2415,6 +2546,30 @@ static int ext4_update_dotdot(handle_t *
  
  	dotdot_de->inode = cpu_to_le32(inode->i_ino);
  
@@ -593,7 +713,7 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +		} else {
 +			if (ext4_rec_len_from_disk(dotdot_de->rec_len,
 +						   dir->i_sb->s_blocksize) <
-+			    __EXT4_DIR_REC_LEN(2 + dlen)) {
++			    EXT4_DIR_REC_LEN(2 + dlen, NULL)) {
 +				if (ext4_expand_dotdot(dir, bh, dlen) < 0)
 +					dlen = 0;
 +			}
@@ -608,7 +728,7 @@ Index: linux-4.15.0/fs/ext4/namei.c
  	ext4_mark_inode_dirty(handle, dir);
  	BUFFER_TRACE(dir_block, "call ext4_handle_dirty_metadata");
  	if (is_dx(dir)) {
-@@ -2140,6 +2195,7 @@ static int ext4_add_entry(handle_t *hand
+@@ -2458,6 +2526,7 @@ static int ext4_add_entry(handle_t *handle, struct dentry *dentry,
  	ext4_lblk_t block, blocks;
  	int	csum_size = 0;
  
@@ -616,7 +736,25 @@ Index: linux-4.15.0/fs/ext4/namei.c
  	if (ext4_has_metadata_csum(inode->i_sb))
  		csum_size = sizeof(struct ext4_dir_entry_tail);
  
-@@ -2661,37 +2717,70 @@ err_unlock_inode:
+@@ -2700,7 +2769,7 @@ again:
+ 			dx_set_count(entries, 1);
+ 			dx_set_block(entries + 0, newblock);
+ 			info = dx_get_dx_info((struct ext4_dir_entry_2 *)
+-					      frames[0].bh->b_data);
++					      frames[0].bh->b_data, dir);
+ 			info->indirect_levels = 1;
+ 			dxtrace(printk(KERN_DEBUG
+ 				       "Creating %d level index...\n",
+@@ -2726,7 +2795,7 @@ journal_error:
+ 	ext4_std_error(dir->i_sb, err); /* this is a no-op if err == 0 */
+ cleanup:
+ 	brelse(bh);
+-	dx_release(frames);
++	dx_release(frames, dir);
+ 	/* @restart is true means htree-path has been changed, we need to
+ 	 * repeat dx_probe() to find out valid htree-path
+ 	 */
+@@ -3029,38 +3098,73 @@ err_unlock_inode:
  	return err;
  }
  
@@ -643,7 +781,7 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +	}
  	de->inode = cpu_to_le32(inode->i_ino);
  	de->name_len = 1;
--	de->rec_len = ext4_rec_len_to_disk(EXT4_DIR_REC_LEN(de->name_len),
+-	de->rec_len = ext4_rec_len_to_disk(ext4_dir_rec_len(de->name_len, NULL),
 -					   blocksize);
  	strcpy(de->name, ".");
  	ext4_set_de_type(inode->i_sb, de, S_IFDIR);
@@ -656,11 +794,13 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +		memcpy(&de->name[2], data1, *(char *) data1);
 +		de->file_type |= EXT4_DIRENT_LUFID;
 +	}
-+	de->rec_len = cpu_to_le16(EXT4_DIR_REC_LEN(de));
++	de->rec_len = cpu_to_le16(EXT4_DIR_ENTRY_LEN(de, NULL));
++
 +	dot_reclen = cpu_to_le16(de->rec_len);
  	de = ext4_next_entry(de, blocksize);
  	de->inode = cpu_to_le32(parent_ino);
  	de->name_len = 2;
++
 +	strcpy(de->name, "..");
 +	ext4_set_de_type(inode->i_sb, de, S_IFDIR);
 +	data2 = ext4_dentry_get_data(inode->i_sb,
@@ -670,22 +810,24 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +		memcpy(&de->name[3], data2, *(char *) data2);
 +		de->file_type |= EXT4_DIRENT_LUFID;
 +	}
++
  	if (!dotdot_real_len)
  		de->rec_len = ext4_rec_len_to_disk(blocksize -
--					(csum_size + EXT4_DIR_REC_LEN(1)),
-+					(csum_size + dot_reclen),
- 					blocksize);
+-					(csum_size + ext4_dir_rec_len(1, NULL)),
+-					blocksize);
++					(csum_size + dot_reclen), blocksize);
  	else
  		de->rec_len = ext4_rec_len_to_disk(
--				EXT4_DIR_REC_LEN(de->name_len), blocksize);
+-					ext4_dir_rec_len(de->name_len, NULL),
++					EXT4_DIR_ENTRY_LEN(de, NULL),
+ 					blocksize);
 -	strcpy(de->name, "..");
 -	ext4_set_de_type(inode->i_sb, de, S_IFDIR);
-+				EXT4_DIR_REC_LEN(de), blocksize);
  
  	return ext4_next_entry(de, blocksize);
  }
  
- static int ext4_init_new_dir(handle_t *handle, struct inode *dir,
+ int ext4_init_new_dir(handle_t *handle, struct inode *dir,
 -			     struct inode *inode)
 +			     struct inode *inode,
 +			     const void *data1, const void *data2)
@@ -693,8 +835,8 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +	struct tp_block param;
  	struct buffer_head *dir_block = NULL;
  	struct ext4_dir_entry_2 *de;
- 	struct ext4_dir_entry_tail *t;
-@@ -2716,7 +2805,11 @@ static int ext4_init_new_dir(handle_t *h
+ 	ext4_lblk_t block = 0;
+@@ -3084,7 +3188,11 @@ int ext4_init_new_dir(handle_t *handle, struct inode *dir,
  	if (IS_ERR(dir_block))
  		return PTR_ERR(dir_block);
  	de = (struct ext4_dir_entry_2 *)dir_block->b_data;
@@ -705,9 +847,9 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +	ext4_init_dot_dotdot((struct inode *)(&param), de, blocksize,
 +			     csum_size, dir->i_ino, 10);
  	set_nlink(inode, 2);
- 	if (csum_size) {
- 		t = EXT4_DIRENT_TAIL(dir_block->b_data, blocksize);
-@@ -2733,6 +2826,29 @@ out:
+ 	if (csum_size)
+ 		ext4_initialize_dirent_tail(dir_block, blocksize);
+@@ -3099,6 +3207,29 @@ out:
  	return err;
  }
  
@@ -734,10 +876,10 @@ Index: linux-4.15.0/fs/ext4/namei.c
 +}
 +EXPORT_SYMBOL(ext4_add_dot_dotdot);
 +
- static int ext4_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
+ static int ext4_mkdir(struct user_namespace *mnt_userns, struct inode *dir,
+ 		      struct dentry *dentry, umode_t mode)
  {
- 	handle_t *handle;
-@@ -2759,7 +2875,7 @@ retry:
+@@ -3126,7 +3257,7 @@ retry:
  
  	inode->i_op = &ext4_dir_inode_operations;
  	inode->i_fop = &ext4_dir_operations;
@@ -746,110 +888,50 @@ Index: linux-4.15.0/fs/ext4/namei.c
  	if (err)
  		goto out_clear_inode;
  	err = ext4_mark_inode_dirty(handle, inode);
-@@ -2811,7 +2927,7 @@ bool ext4_empty_dir(struct inode *inode)
- 	}
- 
- 	sb = inode->i_sb;
--	if (inode->i_size < EXT4_DIR_REC_LEN(1) + EXT4_DIR_REC_LEN(2)) {
-+	if (inode->i_size < __EXT4_DIR_REC_LEN(1) + __EXT4_DIR_REC_LEN(2)) {
- 		EXT4_ERROR_INODE(inode, "invalid size");
- 		return true;
- 	}
-Index: linux-4.15.0/fs/ext4/inline.c
-===================================================================
---- linux-4.15.0.orig/fs/ext4/inline.c
-+++ linux-4.15.0/fs/ext4/inline.c
-@@ -1017,7 +1017,7 @@ static int ext4_add_dirent_to_inline(han
- 	struct ext4_dir_entry_2 *de;
- 
- 	err = ext4_find_dest_de(dir, inode, iloc->bh, inline_start,
--				inline_size, fname, &de);
-+				inline_size, fname, &de, 0);
- 	if (err)
- 		return err;
- 
-@@ -1025,7 +1025,7 @@ static int ext4_add_dirent_to_inline(han
- 	err = ext4_journal_get_write_access(handle, iloc->bh);
- 	if (err)
- 		return err;
--	ext4_insert_dentry(inode, de, inline_size, fname);
-+	ext4_insert_dentry(inode, de, inline_size, fname, NULL);
- 
- 	ext4_show_inline_dir(dir, iloc->bh, inline_start, inline_size);
- 
-@@ -1094,7 +1094,7 @@ static int ext4_update_inline_dir(handle
- 	int old_size = EXT4_I(dir)->i_inline_size - EXT4_MIN_INLINE_DATA_SIZE;
- 	int new_size = get_max_inline_xattr_value_size(dir, iloc);
- 
--	if (new_size - old_size <= EXT4_DIR_REC_LEN(1))
-+	if (new_size - old_size <= __EXT4_DIR_REC_LEN(1))
- 		return -ENOSPC;
- 
- 	ret = ext4_update_inline_data(handle, dir,
-@@ -1375,7 +1375,7 @@ int htree_inlinedir_to_tree(struct file
- 			fake.name_len = 1;
- 			strcpy(fake.name, ".");
- 			fake.rec_len = ext4_rec_len_to_disk(
--						EXT4_DIR_REC_LEN(fake.name_len),
-+						EXT4_DIR_REC_LEN(&fake),
- 						inline_size);
- 			ext4_set_de_type(inode->i_sb, &fake, S_IFDIR);
- 			de = &fake;
-@@ -1385,7 +1385,7 @@ int htree_inlinedir_to_tree(struct file
- 			fake.name_len = 2;
- 			strcpy(fake.name, "..");
- 			fake.rec_len = ext4_rec_len_to_disk(
--						EXT4_DIR_REC_LEN(fake.name_len),
-+						EXT4_DIR_REC_LEN(&fake),
- 						inline_size);
- 			ext4_set_de_type(inode->i_sb, &fake, S_IFDIR);
- 			de = &fake;
-@@ -1483,8 +1483,8 @@ int ext4_read_inline_dir(struct file *fi
- 	 * So we will use extra_offset and extra_size to indicate them
- 	 * during the inline dir iteration.
- 	 */
--	dotdot_offset = EXT4_DIR_REC_LEN(1);
--	dotdot_size = dotdot_offset + EXT4_DIR_REC_LEN(2);
-+	dotdot_offset = __EXT4_DIR_REC_LEN(1);
-+	dotdot_size = dotdot_offset + __EXT4_DIR_REC_LEN(2);
- 	extra_offset = dotdot_size - EXT4_INLINE_DOTDOT_SIZE;
- 	extra_size = extra_offset + inline_size;
- 
-@@ -1519,7 +1519,7 @@ int ext4_read_inline_dir(struct file *fi
- 			 * failure will be detected in the
- 			 * dirent test below. */
- 			if (ext4_rec_len_from_disk(de->rec_len, extra_size)
--				< EXT4_DIR_REC_LEN(1))
-+				< __EXT4_DIR_REC_LEN(1))
- 				break;
- 			i += ext4_rec_len_from_disk(de->rec_len,
- 						    extra_size);
-Index: linux-4.15.0/fs/ext4/super.c
-===================================================================
---- linux-4.15.0.orig/fs/ext4/super.c
-+++ linux-4.15.0/fs/ext4/super.c
-@@ -1347,7 +1347,7 @@ enum {
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index c013357d..1838ee86 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
+@@ -1571,7 +1571,7 @@ enum {
  	Opt_data_err_abort, Opt_data_err_ignore, Opt_test_dummy_encryption,
- 	Opt_usrjquota, Opt_grpjquota, Opt_offusrjquota, Opt_offgrpjquota,
- 	Opt_jqfmt_vfsold, Opt_jqfmt_vfsv0, Opt_jqfmt_vfsv1, Opt_quota,
+ 	Opt_inlinecrypt,
+ 	Opt_usrjquota, Opt_grpjquota, Opt_quota,
 -	Opt_noquota, Opt_barrier, Opt_nobarrier, Opt_err,
 +	Opt_noquota, Opt_barrier, Opt_nobarrier, Opt_err, Opt_dirdata,
- 	Opt_usrquota, Opt_grpquota, Opt_prjquota, Opt_i_version, Opt_dax,
- 	Opt_stripe, Opt_delalloc, Opt_nodelalloc, Opt_mblk_io_submit,
- 	Opt_lazytime, Opt_nolazytime, Opt_debug_want_extra_isize,
-@@ -1420,6 +1420,7 @@ static const match_table_t tokens = {
- 	{Opt_nolazytime, "nolazytime"},
- 	{Opt_debug_want_extra_isize, "debug_want_extra_isize=%u"},
- 	{Opt_nodelalloc, "nodelalloc"},
-+	{Opt_dirdata, "dirdata"},
- 	{Opt_removed, "mblk_io_submit"},
- 	{Opt_removed, "nomblk_io_submit"},
- 	{Opt_block_validity, "block_validity"},
-@@ -1641,6 +1642,7 @@ static const struct mount_opts {
+ 	Opt_usrquota, Opt_grpquota, Opt_prjquota,
+ 	Opt_dax, Opt_dax_always, Opt_dax_inode, Opt_dax_never,
+ 	Opt_stripe, Opt_delalloc, Opt_nodelalloc, Opt_warn_on_error,
+@@ -1687,6 +1687,7 @@ static const struct fs_parameter_spec ext4_param_specs[] = {
+ 	fsparam_u32	("stripe",		Opt_stripe),
+ 	fsparam_flag	("delalloc",		Opt_delalloc),
+ 	fsparam_flag	("nodelalloc",		Opt_nodelalloc),
++	fsparam_flag	("dirdata",		Opt_dirdata),
+ 	fsparam_flag	("warn_on_error",	Opt_warn_on_error),
+ 	fsparam_flag	("nowarn_on_error",	Opt_nowarn_on_error),
+ 	fsparam_u32	("debug_want_extra_isize",
+@@ -1823,6 +1824,7 @@ static const struct mount_opts {
+ 							MOPT_CLEAR | MOPT_Q},
  	{Opt_usrjquota, 0, MOPT_Q},
  	{Opt_grpjquota, 0, MOPT_Q},
- 	{Opt_offusrjquota, 0, MOPT_Q},
 +	{Opt_dirdata, EXT4_MOUNT_DIRDATA, MOPT_SET},
- 	{Opt_offgrpjquota, 0, MOPT_Q},
- 	{Opt_jqfmt_vfsold, QFMT_VFS_OLD, MOPT_QFMT},
- 	{Opt_jqfmt_vfsv0, QFMT_VFS_V0, MOPT_QFMT},
+ 	{Opt_jqfmt, 0, MOPT_QFMT},
+ 	{Opt_nombcache, EXT4_MOUNT_NO_MBCACHE, MOPT_SET},
+ 	{Opt_no_prefetch_block_bitmaps, EXT4_MOUNT_NO_PREFETCH_BLOCK_BITMAPS,
+@@ -3563,6 +3565,14 @@ int ext4_feature_set_ok(struct super_block *sb, int readonly)
+ 	}
+ #endif
+ 
++	if ((ext4_has_feature_casefold(sb) || ext4_has_feature_encrypt(sb)) &&
++	     ext4_has_feature_dirdata(sb)) {
++		ext4_msg(sb, KERN_ERR,
++			 "Filesystem with casefold and encrypt are incompatible "
++			 "with dirdata");
++		return 0;
++	}
++
+ 	if (readonly)
+ 		return 1;
+ 
+-- 
+2.25.1
+
