@@ -1479,6 +1479,8 @@ int ll_merge_attr(const struct lu_env *env, struct inode *inode)
 		rc = cl_object_attr_get(env, obj, attr);
 	cl_object_attr_unlock(obj);
 
+	CFS_FAIL_TIMEOUT(OBD_FAIL_LLITE_STAT_RACE2, 2);
+
 	if (rc != 0)
 		GOTO(out_size_unlock, rc = (rc == -ENODATA ? 0 : rc));
 
@@ -5627,6 +5629,9 @@ fill_attr:
 		stat->mode = inode->i_mode;
 	else
 		stat->mode = (inode->i_mode & ~S_IFMT) | S_IFLNK;
+
+	CFS_FAIL_TIMEOUT_RESET(OBD_FAIL_LLITE_STAT_RACE1,
+			       OBD_FAIL_LLITE_STAT_RACE2, 1);
 
 	stat->uid = inode->i_uid;
 	stat->gid = inode->i_gid;
