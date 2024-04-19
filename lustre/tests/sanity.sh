@@ -29028,6 +29028,35 @@ test_823() {
 }
 run_test 823 "Setting create_count > OST_MAX_PRECREATE is lowered to maximum"
 
+test_824() {
+	(( OST1_VERSION >= $(version_code 2.12.51) )) ||
+		skip "OST < 2.12.51 doesn't support this fail_loc"
+	(( MDSCOUNT >= 2 )) || skip_env "needs >= 2 MDTs"
+	(( OSTCOUNT >= 2 )) || skip_env "needs >= 2 OSTs"
+
+	# delay DISCONNECT for 8 seconds, on all OSTs and MDTs
+#define OBD_FAIL_OST_DISCONNECT_DELAY	 0x245
+	do_nodes $(comma_list $(mdts_nodes)) "$LCTL set_param \
+					      fail_loc=0x245 fail_val=8"
+	do_nodes $(comma_list $(osts_nodes)) "$LCTL set_param \
+					      fail_loc=0x245 fail_val=8"
+
+	local start_time=$(date +%s)
+
+	stop mds2
+
+	local end_time=$(date +%s)
+	local duration=$((end_time - start_time))
+
+	start mds2 $(mdsdevname 2) $MDS_MOUNT_OPTS ||
+			error "mount mds2 failed"
+	echo "Umount took $duration seconds"
+
+	#Valid timeout is 8 for MDTs + 8 for OSTs + 4 some for other umount
+	(( duration < 20 )) || error "Cascading timeouts on disconnect"
+}
+run_test 824 "MDT umount cascading disconnects timeouts"
+
 test_831() {
 	[[ $MDS1_VERSION -lt $(version_code 2.14.56) ]] &&
 		skip "Need MDS version 2.14.56"
