@@ -779,6 +779,7 @@ static int mdt_object_open_lock(struct mdt_thread_info *info,
 	__u32 dom_stripe = 0;
 	unsigned int dom_only = 0;
 	unsigned int dom_lock = 0;
+	struct ptlrpc_request *req = mdt_info_req(info);
 
 	ENTRY;
 
@@ -868,6 +869,18 @@ static int mdt_object_open_lock(struct mdt_thread_info *info,
 			trybits |= MDS_INODELOCK_DOM | MDS_INODELOCK_LAYOUT;
 		}
 
+		/* dir read on open - needs a update lock to protect an page cache contents
+		 * lets take UPD*/
+		if (S_ISDIR(lu_object_attr(&obj->mot_obj)) &&
+		    likely(req->rq_reqmsg->lm_repsize) &&
+		    likely(!(mdt_object_remote(obj) ||
+		    mdt_object_striped(info, obj))) &&
+		    exp_connect_open_readdir(info->mti_exp)) {
+			CDEBUG(D_INFO, "try to get dir lock\n");
+			*ibits |= MDS_INODELOCK_UPDATE;
+			lm = LCK_PR;
+		}
+
 		CDEBUG(D_INODE, "normal open:"DFID" lease count: %d, lm: %d\n",
 			PFID(mdt_object_fid(obj)),
 			atomic_read(&obj->mot_lease_count), lm);
@@ -903,9 +916,11 @@ static int mdt_object_open_lock(struct mdt_thread_info *info,
 					 false);
 
 	CDEBUG(D_INODE, "%s: Requested bits lock:"DFID ", ibits = %#llx/%#llx"
-	       ", open_flags = %#llo, try_layout = %d : rc = %d\n",
+	       ", open_flags = %#llo, try_layout = %d : lh %llx/%u : rc = %d\n",
 	       mdt_obd_name(info->mti_mdt), PFID(mdt_object_fid(obj)),
-	       *ibits, trybits, open_flags, try_layout, rc);
+	       *ibits, trybits, open_flags, try_layout, lhc->mlh_reg_lh.cookie,
+	       lustre_handle_is_used(&lhc->mlh_reg_lh),
+	       rc);
 
 	/* will change layout, revoke layout locks by enqueuing EX lock. */
 	if (rc == 0 && create_layout) {
@@ -1009,7 +1024,7 @@ static void mdt_object_open_unlock(struct mdt_thread_info *info,
 		RETURN_EXIT;
 
 	if (!(open_flags & MDS_OPEN_LOCK) && !(ibits & MDS_INODELOCK_LAYOUT) &&
-	    !(ibits & MDS_INODELOCK_DOM)) {
+	    !(ibits & MDS_INODELOCK_DOM) && !S_ISDIR(lu_object_attr(&obj->mot_obj))) {
 		/* for the open request, the lock will only return to client
 		 * if open or layout lock is granted. */
 		rc = 1;

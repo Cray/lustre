@@ -206,6 +206,8 @@ static struct ll_sb_info *ll_init_sbi(void)
 	sbi->ll_oc_thrsh_count = SBI_DEFAULT_OPENCACHE_THRESHOLD_COUNT;
 	sbi->ll_oc_max_ms = SBI_DEFAULT_OPENCACHE_THRESHOLD_MAX_MS;
 	sbi->ll_oc_thrsh_ms = SBI_DEFAULT_OPENCACHE_THRESHOLD_MS;
+
+	sbi->ll_dir_open_read = 1;
 	RETURN(sbi);
 out_destroy_ra:
 	if (sbi->ll_foreign_symlink_prefix)
@@ -348,7 +350,8 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt)
 				   OBD_CONNECT2_GETATTR_PFID |
 				   OBD_CONNECT2_DOM_LVB |
 				   OBD_CONNECT2_REP_MBITS |
-				   OBD_CONNECT2_ATOMIC_OPEN_LOCK;
+				   OBD_CONNECT2_ATOMIC_OPEN_LOCK |
+				   OBD_CONNECT2_READDIR_OPEN;
 
 #ifdef HAVE_LRU_RESIZE_SUPPORT
 	if (test_bit(LL_SBI_LRU_RESIZE, sbi->ll_flags))
@@ -3541,6 +3544,7 @@ struct md_op_data *ll_prep_md_op_data(struct md_op_data *op_data,
 		op_data->op_bias |= MDS_CREATE_VOLATILE;
 	}
 	op_data->op_data = data;
+	op_data->op_cli_flags |= CLI_READ_ON_OPEN;
 
 	return op_data;
 }
