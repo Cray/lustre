@@ -252,8 +252,8 @@ static int mdt_stripes_unlock(struct mdt_thread_info *mti,
 				policy);
 }
 
-static inline int mdt_object_striped(struct mdt_thread_info *mti,
-				     struct mdt_object *obj)
+int mdt_object_striped(struct mdt_thread_info *mti,
+		       struct mdt_object *obj)
 {
 	struct lu_device *bottom_dev;
 	struct lu_object *bottom_obj;

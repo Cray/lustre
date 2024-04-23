@@ -767,7 +767,8 @@ struct ll_sb_info {
 	unsigned int		 ll_xattr_cache_enabled:1,
 				 ll_xattr_cache_set:1, /* already set to 0/1 */
 				 ll_client_common_fill_super_succeeded:1,
-				 ll_checksum_set:1;
+				 ll_checksum_set:1,
+				 ll_dir_open_read:1;
 
 	struct lustre_client_ocd ll_lco;
 
@@ -1137,7 +1138,7 @@ int ll_dir_read(struct inode *inode, __u64 *pos, struct md_op_data *op_data,
 int ll_get_mdt_idx(struct inode *inode);
 int ll_get_mdt_idx_by_fid(struct ll_sb_info *sbi, const struct lu_fid *fid);
 struct page *ll_get_dir_page(struct inode *dir, struct md_op_data *op_data,
-			      __u64 offset, int *partial_readdir_rc);
+			      __u64 offset, bool is64bit, int *partial_readdir_rc);
 void ll_release_page(struct inode *inode, struct page *page, bool remove);
 int quotactl_ioctl(struct super_block *sb, struct if_quotactl *qctl);
 
@@ -1344,6 +1345,8 @@ ssize_t ll_copy_user_md(const struct lov_user_md __user *md,
 void ll_open_cleanup(struct super_block *sb, struct req_capsule *pill);
 
 void ll_dom_finish_open(struct inode *inode, struct ptlrpc_request *req);
+void ll_dir_finish_open(struct inode *inode, struct ptlrpc_request *req);
+
 
 /* Compute expected user md size when passing in a md from user space */
 static inline ssize_t ll_lov_user_md_size(const struct lov_user_md *lum)

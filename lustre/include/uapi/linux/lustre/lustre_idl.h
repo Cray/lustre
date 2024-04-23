@@ -401,7 +401,6 @@ enum lu_dirent_attrs {
 
 	/* The following attrs are used for MDT internal only,
 	 * not visible to client */
-
 	/* Something in the record is unknown, to be verified in further. */
 	LUDA_UNKNOWN		= 0x0400,
 	/* Ignore this record, go to next directly. */
@@ -853,6 +852,8 @@ struct ptlrpc_body_v2 {
 #define OBD_CONNECT2_PCCRO	      0x800000ULL /* Read-only PCC */
 #define OBD_CONNECT2_ATOMIC_OPEN_LOCK 0x4000000ULL/* request lock on 1st open */
 #define OBD_CONNECT2_ENCRYPT_NAME     0x8000000ULL /* name encrypt */
+#define OBD_CONNECT2_READDIR_OPEN     0x8000000000ULL /* read first dir page on open */
+
 /* XXX README XXX:
  * Please DO NOT add flag values here before first ensuring that this same
  * flag value is not in use on some other branch.  Please clear any such
@@ -916,7 +917,8 @@ struct ptlrpc_body_v2 {
 				OBD_CONNECT2_LSEEK | OBD_CONNECT2_DOM_LVB |\
 				OBD_CONNECT2_REP_MBITS | \
 				OBD_CONNECT2_ATOMIC_OPEN_LOCK | \
-				OBD_CONNECT2_ENCRYPT_NAME)
+				OBD_CONNECT2_ENCRYPT_NAME |\
+				OBD_CONNECT2_READDIR_OPEN)
 
 #define OST_CONNECT_SUPPORTED  (OBD_CONNECT_SRVLOCK | OBD_CONNECT_GRANT | \
 				OBD_CONNECT_REQPORTAL | OBD_CONNECT_VERSION | \
