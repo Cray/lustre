@@ -2473,14 +2473,22 @@ int mdt_mfd_close(struct mdt_thread_info *info, struct mdt_file_data *mfd)
 	else if (open_flags & MDS_FMODE_EXEC)
 		mdt_write_allow(o);
 
-        /* Update atime on close only. */
+	/* Update atime|mtime|ctime on close. */
 	if ((open_flags & MDS_FMODE_EXEC || open_flags & MDS_FMODE_READ ||
 	     open_flags & MDS_FMODE_WRITE) && (ma->ma_valid & MA_INODE) &&
-	    (ma->ma_attr.la_valid & LA_ATIME)) {
-                /* Set the atime only. */
-                ma->ma_valid = MA_INODE;
-                ma->ma_attr.la_valid = LA_ATIME;
-                rc2 = mo_attr_set(info->mti_env, next, ma);
+	    (ma->ma_attr.la_valid & LA_ATIME ||
+	     ma->ma_attr.la_valid & LA_MTIME ||
+	     ma->ma_attr.la_valid & LA_CTIME)) {
+		ma->ma_valid = MA_INODE;
+		ma->ma_attr_flags |= MDS_CLOSE_UPDATE_TIMES;
+		ma->ma_attr.la_valid &= (LA_ATIME | LA_MTIME | LA_CTIME);
+
+		if (ma->ma_attr.la_valid & LA_MTIME) {
+			if (mdt_attr_get_pfid(info, o, &ma->ma_pfid) == 0)
+				ma->ma_valid |= MA_PFID;
+		}
+
+		rc2 = mo_attr_set(info->mti_env, next, ma);
 		if (rc2 != 0) {
 			CDEBUG(D_INODE,
 			   "%s: File "DFID" set attr (%#llx) failed: rc = %d\n",
@@ -2489,7 +2497,7 @@ int mdt_mfd_close(struct mdt_thread_info *info, struct mdt_file_data *mfd)
 			if (rc == 0)
 				rc = rc2;
 		}
-        }
+	}
 
 	/* If file data is modified, add the dirty flag. */
 	if (ma->ma_attr_flags & MDS_DATA_MODIFIED) {
