@@ -2435,6 +2435,8 @@ void lustre_assert_wire_constants(void)
 		(unsigned)MDS_TRUNC_KEEP_LEASE);
 	LASSERTF(MDS_PCC_ATTACH == 0x00080000UL, "found 0x%.8xUL\n",
 		(unsigned)MDS_PCC_ATTACH);
+	LASSERTF(MDS_CLOSE_UPDATE_TIMES == 0x00100000UL, "found 0x%.8xUL\n",
+		(unsigned)MDS_CLOSE_UPDATE_TIMES);
 	LASSERTF(MDS_SETSTRIPE_CREATE == 0x00200000UL, "found 0x%.8xUL\n",
 		(unsigned)MDS_SETSTRIPE_CREATE);
 	LASSERTF(MDS_FID_OP == 0x00400000UL, "found 0x%.8xUL\n",

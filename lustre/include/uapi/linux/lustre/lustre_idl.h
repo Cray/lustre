@@ -1969,6 +1969,7 @@ enum mds_op_bias {
 	MDS_CLOSE_LAYOUT_SPLIT	= 1 << 17,
 	MDS_TRUNC_KEEP_LEASE	= 1 << 18,
 	MDS_PCC_ATTACH		= 1 << 19,
+	MDS_CLOSE_UPDATE_TIMES	= 1 << 20,
 	/* setstripe create only, don't restripe if target exists */
 	MDS_SETSTRIPE_CREATE	= 1 << 21,
 	MDS_FID_OP		= 1 << 22,
