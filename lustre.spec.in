@@ -199,7 +199,7 @@ Source9: find-provides.ksyms
 URL: https://wiki.whamcloud.com/
 BuildRoot: %{_tmppath}/lustre-%{version}-root
 %if %{with lustre_modules}
-Requires: %{requires_kmod_name} = %{requires_kmod_version}
+Requires: (%{lustre_name}-dkms or %{requires_kmod_name} = %{requires_kmod_version})
 %endif
 %if %{with lustre_tests_lutf}
 Requires: python3 >= 3.6.0
@@ -347,7 +347,7 @@ Group: Development/Kernel
 Provides: lustre-devel = %{version}
 Requires: %{lustre_name} = %{version}
 %if %{with lustre_modules}
-Requires: %{requires_kmod_name} = %{requires_kmod_version}
+Requires: (%{lustre_name}-dkms or %{requires_kmod_name} = %{requires_kmod_version})
 %endif
 
 %description devel
@@ -369,7 +369,7 @@ Requires: lustre-devel = %{version}
 Requires: python3 >= 3.6.0, python3-PyYAML
 %endif
 %if %{with lustre_modules}
-Requires: %{requires_kmod_name} = %{requires_kmod_version}
+Requires: (%{lustre_name}-dkms or %{requires_kmod_name} = %{requires_kmod_version})
 Requires: %{requires_kmod_tests_name} = %{requires_kmod_version}
 %endif
 %if %{with lustre_tests_lutf}
@@ -594,6 +594,24 @@ make install DESTDIR=$RPM_BUILD_ROOT
 # kernel_module_path macro.
 basemodpath=$RPM_BUILD_ROOT%{modules_fs_path}/%{name}
 %{__install} -D -m 0644 ${PWD}/Module.symvers %{buildroot}/Module.symvers
+%{__install} -D -m 0644 ${PWD}/Module.symvers %{buildroot}/%{_usrsrc}/lustre-%{version}/%{_arch}/%{_flavor}/Module.symvers
+%{__install} -D -m 0644 ${PWD}/config.h %{buildroot}/%{_usrsrc}/lustre-%{version}/%{_arch}/%{_flavor}/config.h
+%{__install} -D -m 0644 lustre/include/interval_tree.h %{buildroot}/%{_usrsrc}/lustre-%{version}/interval_tree.h
+for fname in $(find lnet/include -type f -name \*.h)
+do
+	target=$(echo ${fname} | sed 's:^lnet/include/::g')
+	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_usrsrc}/lustre-%{version}/${target}
+done
+for fname in $(find libcfs/include/libcfs -type f -name \*.h)
+do
+	target=$(echo ${fname} | sed -e 's:^libcfs/include/::g')
+	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_usrsrc}/lustre-%{version}/${target}
+done
+for fname in lnet.pc lustre.pc
+do
+	headers=%{_usrsrc}/lustre-%{version}
+	sed -i -e "s:@KMP_HEADERS@:${headers}:g" %{buildroot}/%{_libdir}/pkgconfig/${fname}
+done
 %if %{with ldiskfs}
 mkdir -p $basemodpath-osd-ldiskfs/fs
 mv $basemodpath/fs/osd_ldiskfs.ko $basemodpath-osd-ldiskfs/fs/osd_ldiskfs.ko
@@ -721,7 +739,9 @@ echo '%{_libdir}/lustre/tests/lutf/*' >>lustre-tests.files
 
 %files devel -f lustre-devel.files
 %defattr(-,root,root)
+%{_libdir}/pkgconfig/lnet.pc
 %{_libdir}/pkgconfig/lustre.pc
+%{_usrsrc}/lustre-%{version}
 %if %{with static}
 %{_libdir}/liblustreapi.a
 %endif
