@@ -343,13 +343,14 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
 #if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(3, 0, 53, 0)
 	case OBD_GET_VERSION: {
 		static bool warned;
+		size_t vstr_size = sizeof(LUSTRE_VERSION_STRING);
 
 		if (!data->ioc_inlbuf1) {
 			CERROR("No buffer passed in ioctl\n");
 			GOTO(out, err = -EINVAL);
 		}
 
-		if (strlen(LUSTRE_VERSION_STRING) + 1 > data->ioc_inllen1) {
+		if (vstr_size > data->ioc_inllen1) {
 			CERROR("ioctl buffer too small to hold version\n");
 			GOTO(out, err = -EINVAL);
 		}
@@ -360,8 +361,7 @@ int class_handle_ioctl(unsigned int cmd, unsigned long arg)
 			      "use llapi_get_version_string() and/or relink\n",
 			      current->comm);
 		}
-		memcpy(data->ioc_bulk, LUSTRE_VERSION_STRING,
-		       strlen(LUSTRE_VERSION_STRING) + 1);
+		strscpy(data->ioc_bulk, LUSTRE_VERSION_STRING, vstr_size);
 
 		if (copy_to_user((void __user *)arg, data, len))
 			err = -EFAULT;
