@@ -1633,7 +1633,7 @@ check_ldlm_request(void)
 	CHECK_MEMBER(ldlm_request, lock_flags);
 	CHECK_MEMBER(ldlm_request, lock_count);
 	CHECK_MEMBER(ldlm_request, lock_desc);
-	CHECK_MEMBER(ldlm_request, lock_handle);
+	CHECK_MEMBER_IS_FLEXIBLE(ldlm_request, lock_handle);
 }
 
 static void
