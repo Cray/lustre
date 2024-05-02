@@ -97,7 +97,7 @@ struct chlg_reader_state {
 	struct list_head	    crs_rec_queue;
 	unsigned int		    crs_last_catidx;
 	unsigned int		    crs_last_idx;
-	bool			    crs_poll;
+	unsigned int		    crs_flags;
 };
 
 struct chlg_rec_entry {
@@ -378,7 +378,8 @@ again:
 		CERROR("%s: fail to process llog: rc = %d\n", obd->obd_name, rc);
 		GOTO(err_out, rc);
 	}
-	if (!kthread_should_stop() && crs->crs_poll) {
+	if (!kthread_should_stop() &&
+	    (crs->crs_flags & CHANGELOG_FLAG_FOLLOW)) {
 		llog_cat_close(NULL, llh);
 		llog_ctxt_put(ctx);
 		class_decref(obd, "changelog", crs);
@@ -745,14 +746,14 @@ static unsigned int chlg_poll(struct file *file, poll_table *wait)
 	return mask;
 }
 
-static long chlg_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
+static long chlg_ioctl(struct file *file, unsigned int cmd, unsigned long flags)
 {
 	int rc;
 
 	struct chlg_reader_state *crs = file->private_data;
 	switch (cmd) {
 	case OBD_IOC_CHLG_POLL:
-		crs->crs_poll = !!arg;
+		crs->crs_flags = flags;
 		rc = 0;
 		break;
 	default:
