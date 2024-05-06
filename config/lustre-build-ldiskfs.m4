@@ -682,8 +682,8 @@ AC_MSG_RESULT([$enable_ldiskfs])
 AM_CONDITIONAL([LDISKFS_ENABLED], [test x$enable_ldiskfs = xyes])
 ]) # LB_CONFIG_LDISKFS
 
-AS_IF([test x$enable_ldiskfs != xno],[
-	AC_DEFUN([LB_EXT4_SRC_DIR_SRC],[
+AC_DEFUN([LB_KABI_LDISKFS], [AS_IF([test x$enable_ldiskfs != xno],[
+	AC_DEFUN([LB_EXT4_LDISKFS_TESTS],[
 		LB_SRC_EXT_FREE_BLOCKS_WITH_BUFFER_HEAD
 		LB_SRC_EXT4_JOURNAL_START_3ARGS
 		LB_SRC_EXT4_BREAD_4ARGS
@@ -698,7 +698,7 @@ AS_IF([test x$enable_ldiskfs != xno],[
 		LB_SRC_JBD2_JOURNAL_GET_MAX_TXN_BUFS
 		LB_SRC_EXT4_JOURNAL_GET_WRITE_ACCESS_4A
 	])
-	AC_DEFUN([LB_EXT4_SRC_DIR_RESULTS], [
+	AC_DEFUN([LB_EXT4_LDISKFS_CHECKS], [
 		LB_EXT_FREE_BLOCKS_WITH_BUFFER_HEAD
 		LB_EXT4_JOURNAL_START_3ARGS
 		LB_EXT4_BREAD_4ARGS
@@ -713,7 +713,7 @@ AS_IF([test x$enable_ldiskfs != xno],[
 		LB_JBD2_JOURNAL_GET_MAX_TXN_BUFS
 		LB_EXT4_JOURNAL_GET_WRITE_ACCESS_4A
 	])
-])
+])])
 
 #
 # LB_VALIDATE_EXT4_SRC_DIR
@@ -759,12 +759,12 @@ and kernel-debuginfo-common-<arch> packages are installed.
 ]) # LB_VALIDATE_EXT4_SRC_DIR
 
 #
-# LB_EXT4_SRC_DIR
+# LB_EXT4_SOURCE_PATH
 #
 # Determine the location of the ext4 source code.  It it required
 # for several configure tests and to build ldiskfs.
 #
-AC_DEFUN([LB_EXT4_SRC_DIR], [
+AC_DEFUN([LB_EXT4_SOURCE_PATH], [
 AC_MSG_CHECKING([ext4 source directory])
 # Kernel ext source located with devel headers
 linux_src=$LINUX
@@ -792,7 +792,7 @@ AC_MSG_RESULT([$EXT4_SRC_DIR])
 AC_SUBST(EXT4_SRC_DIR)
 
 LB_VALIDATE_EXT4_SRC_DIR
-]) # LB_EXT4_SRC_DIR
+]) # LB_EXT4_SOURCE_PATH
 
 #
 # LB_DEFINE_E2FSPROGS_NAMES
