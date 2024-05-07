@@ -260,15 +260,6 @@ Requires: python3 >= 3.6.0
 BuildRequires: python3-devel >= 3.6.0, swig
 %endif
 BuildRequires: libtool pkgconfig(yaml-0.1) pkgconfig(zlib) pkgconfig(libnl-3.0) flex bison
-%if %{with ldap}
-%if %{_vendor} == "redhat" || %{_vendor}=="fedora"
-BuildRequires: openldap-devel
-Requires: openldap
-%else
-BuildRequires: openldap2-devel
-Requires: openldap2
-%endif
-%endif
 %if "%{_vendor}" == "redhat"
 BuildRequires: redhat-rpm-config
 BuildRequires: pkgconfig
@@ -302,6 +293,13 @@ BuildRequires: kernel-source
 %if %{with servers}
 Requires: %{name}-osd
 Requires: %{name}-osd-mount
+%if %{with ldap}
+%if "%{_vendor}" == "redhat" || "%{_vendor}" == "fedora"
+BuildRequires: openldap-devel
+%else
+BuildRequires: openldap2-devel
+%endif
+%endif
 Obsoletes: lustre-server < %{version}
 Provides: lustre-server = %{version}-%{release}
 %endif
