@@ -239,6 +239,8 @@ case $JP_BUILD_MODE in
             # include OFED if this is a IB or IB/Ethernet build
             LUSTRE_DEVEL+=" mlnx-ofa_kernel-devel"
         fi
+
+        o_opt="${o_opt} --enable-ldap=yes"
     ;;
     client)
         MOCK_CONFIG="epel-${DISTRO}-${JP_TARGET_ARCH}"
