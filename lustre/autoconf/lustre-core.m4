@@ -4630,22 +4630,34 @@ AS_IF([test "$enable_dist" = "no"], [
 		])
 ])
 
+# lustre/utils/l_adsidentity.c
 LDAP=""
 AC_ARG_ENABLE([ldap],
-      AS_HELP_STRING([--enable-ldap],
-                      [Compile l_getidentity_nss utility with NSS modules support]),
-      [],
-      [AC_CHECK_LIB([ldap],
-             [ldap_sasl_bind_s],
-             [AC_CHECK_HEADERS([ldap.h],
-                               [LDAP="-lldap"
-                               enable_ldap="yes"
-                                AC_DEFINE([HAVE_LDAP], 1,
-                                          [support ldap upcall ype])],
-                               [AC_MSG_WARN([No ldap-devel package found])])],
-             [AC_MSG_WARN([No ldap package found])] )
-
-    ])
+              AS_HELP_STRING([--enable-ldap],
+		             [Compile l_adsidentity utility with LDAP support]),
+	      [AS_IF([test "$enable_ldap" = "yes"],
+		     [AC_CHECK_LIB([ldap], [ldap_sasl_bind_s],
+		     		   [AC_CHECK_HEADERS([ldap.h],
+				   		     [LDAP="-lldap"
+						      AC_DEFINE([HAVE_LDAP], 1,
+						      		[support ldap upcall ype])],
+						     [AC_MSG_WARN([No ldap-devel package found])
+						      enable_ldap="no"])],
+				   [AC_MSG_WARN([No ldap package found])
+				    enable_ldap="no"])]
+		     [])],
+	      [AC_CHECK_LIB([ldap],
+	                    [ldap_sasl_bind_s],
+			    [AC_CHECK_HEADERS([ldap.h],
+					      [LDAP="-lldap"
+					       enable_ldap="yes"
+					       AC_DEFINE([HAVE_LDAP], 1,
+						         [support ldap upcall ype])],
+					      [AC_MSG_WARN([No ldap-devel package found])
+					       enable_ldap="no"])],
+                            [AC_MSG_WARN([No ldap package found])
+			     enable_ldap="no"])])
+AC_MSG_RESULT([$enable_ldap])
 AC_SUBST(LDAP)
 
 # l_getidenity_nss
@@ -4803,7 +4815,7 @@ AM_CONDITIONAL(SELINUX, test "$SELINUX" = "-lselinux")
 AM_CONDITIONAL(GETSEPOL, test x$enable_getsepol = xyes)
 AM_CONDITIONAL(LLCRYPT, test x$enable_llcrypt = xyes)
 AM_CONDITIONAL(LIBAIO, test x$enable_libaio = xyes)
-AM_CONDITIONAL(LDAP_BUILD, test x$enable_ldap != x)
+AM_CONDITIONAL(LDAP_BUILD, test x$enable_ldap = xyes)
 AM_CONDITIONAL(GETIDENTITY_NSS_BUILD, test x$enable_getidentity_nss = xyes)
 ]) # LC_CONDITIONALS
 
