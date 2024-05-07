@@ -381,5 +381,7 @@ void kfilnd_peer_process_hello(struct kfilnd_peer *kp, struct kfilnd_msg *msg)
 		       libcfs_nid2str(kp->kp_nid), kp, kp->kp_addr,
 		       msg->proto.hello.version);
 		kfilnd_peer_clear_hello_state(kp);
+		lnet_notify(kp->kp_dev->kfd_ni, kp->kp_nid, true, false,
+			    kp->kp_last_alive);
 	}
 }

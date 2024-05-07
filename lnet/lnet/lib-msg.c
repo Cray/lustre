@@ -847,8 +847,8 @@ lnet_health_check(struct lnet_msg *msg)
 		lnet_incr_hstats(ni, lpni, hstatus);
 		/* For remote failures, health/recovery/resends are not needed
 		 * if the peer only has a single interface. Special case for
-		 * routers where we rely on health feature to manage route
-		 * aliveness. NB: unlike pb_nnis above, lp_nnis does _not_
+		 * routers where we rely on health feature to manage route and
+		 * peer aliveness. NB: unlike pb_nnis above, lp_nnis does _not_
 		 * include the lolnd, so a single-rail node would have
 		 * lp_nnis == 1.
 		 */
@@ -856,7 +856,7 @@ lnet_health_check(struct lnet_msg *msg)
 		    lpni->lpni_peer_net->lpn_peer &&
 		    lpni->lpni_peer_net->lpn_peer->lp_nnis <= 1) {
 			attempt_remote_resend = false;
-			if (!lnet_isrouter(lpni))
+			if (!(lnet_isrouter(lpni) || the_lnet.ln_routing))
 				handle_remote_health = false;
 		}
 		/* Do not put my interfaces into peer NI recovery. They should

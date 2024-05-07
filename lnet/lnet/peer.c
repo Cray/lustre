@@ -181,6 +181,7 @@ lnet_peer_ni_alloc(struct lnet_nid *nid)
 	lpni->lpni_nid = *nid;
 	lpni->lpni_cpt = cpt;
 	atomic_set(&lpni->lpni_healthv, LNET_MAX_HEALTH_VALUE);
+	lpni->lpni_notified = false;
 
 	net = lnet_get_net_locked(LNET_NID_NET(nid));
 	lpni->lpni_net = net;
@@ -3080,7 +3081,9 @@ static int lnet_peer_merge_data(struct lnet_peer *lp,
 				 */
 				lpni = lnet_find_peer_ni_locked(curnis[i]);
 				if (lpni) {
+					spin_lock(&lpni->lpni_lock);
 					lpni->lpni_ns_status = pbuf->pb_info.pi_ni[j].ns_status;
+					spin_unlock(&lpni->lpni_lock);
 					lnet_peer_ni_decref_locked(lpni);
 				}
 				break;
@@ -3110,7 +3113,9 @@ static int lnet_peer_merge_data(struct lnet_peer *lp,
 		}
 		lpni = lnet_find_peer_ni_locked(addnis[i].ns_nid);
 		if (lpni) {
+			spin_lock(&lpni->lpni_lock);
 			lpni->lpni_ns_status = addnis[i].ns_status;
+			spin_unlock(&lpni->lpni_lock);
 			lnet_peer_ni_decref_locked(lpni);
 		}
 	}
