@@ -126,7 +126,13 @@ test_iorfpp() {
 run_test iorfpp "iorfpp"
 
 test_racer_on_nfs() {
-	local racer_params="MDSCOUNT=$MDSCOUNT OSTCOUNT=$OSTCOUNT LFS=$LFS"
+	local racer_params=${RACER_ON_NFS_PARAMS:-"LCTL=$LCTL \
+		RACER_ENABLE_PFL=false RACER_ENABLE_DOM=false \
+		RACER_ENABLE_FLR=false RACER_ENABLE_SEL=false \
+		RACER_ENABLE_OVERSTRIPE=false RACER_STRIPECOUNT=0 \
+		RACER_PROGS=dir_create,file_chmod,file_chown,file_concat,\
+file_create,file_delxattr,file_exec,file_getxattr,file_link,file_list,file_mknod,\
+file_rename,file_rm,file_setxattr,file_symlink,file_truncate"}
 
 	do_nodes $CLIENTS "$racer_params $racer $TESTDIR"
 }
