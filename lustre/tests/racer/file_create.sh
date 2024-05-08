@@ -31,27 +31,33 @@ while /bin/true; do
 	file=$((RANDOM % MAX))
 	# $RANDOM is between 0 and 32767, and we want $blockcount in 64kB units
 	blockcount=$((RANDOM * MAX_MB / 32 / 64))
-	$RACER_ENABLE_OVERSTRIPE &&
-		stripecount="-C $((RANDOM %
-			(RACER_LOV_MAX_STRIPECOUNT +  1)))" ||
-		stripecount="-c $((RANDOM % (OSTCOUNT + 1)))"
+	if (( RACER_STRIPECOUNT != 0 )); then
+		$RACER_ENABLE_OVERSTRIPE &&
+			stripecount="-C $((RANDOM %
+				(RACER_LOV_MAX_STRIPECOUNT +  1)))" ||
+			stripecount="-c $((RANDOM % (OSTCOUNT + 1)))"
 
-	[ ${stripecount:2} -gt 0 ] && {
-		stripesize=$(((1 << (RANDOM % 5)) * 64))K
-		comp_end=$((${stripesize%K} * (RANDOM % 8 + 1)))K
-		pattern=${layout[$RANDOM % ${#layout[*]}]}
+		[ ${stripecount:2} -gt 0 ] && {
+			stripesize=$(((1 << (RANDOM % 5)) * 64))K
+			comp_end=$((${stripesize%K} * (RANDOM % 8 + 1)))K
+			pattern=${layout[$RANDOM % ${#layout[*]}]}
 
-		case $pattern in
-		dom) opt="setstripe -E $stripesize -L mdt -E eof $stripecount -S 1M" ;;
-		pfl) opt="setstripe -E $comp_end -S $stripesize -E eof $stripecount -S 2M" ;;
-		flr) opt="mirror create -N2 -E $comp_end -S $stripesize -E eof $stripecount -S 2M" ;;
-		sel) opt="setstripe -E 128M -S $stripesize -z 64M -E eof $stripecount -S 2M -z 128M" ;;
-		raid0) opt="setstripe -S $stripesize $stripecount" ;;
-		extra) opt="setstripe $RACER_EXTRA_LAYOUT" ;;
-		esac
+			case $pattern in
+			dom) opt="setstripe -E $stripesize -L mdt -E eof \
+				$stripecount -S 1M" ;;
+			pfl) opt="setstripe -E $comp_end -S $stripesize -E \
+				eof $stripecount -S 2M" ;;
+			flr) opt="mirror create -N2 -E $comp_end -S \
+				$stripesize -E eof $stripecount -S 2M" ;;
+			sel) opt="setstripe -E 128M -S $stripesize -z 64M \
+				-E eof $stripecount -S 2M -z 128M" ;;
+			raid0) opt="setstripe -S $stripesize $stripecount" ;;
+			extra) opt="setstripe $RACER_EXTRA_LAYOUT" ;;
+			esac
 
-		$LFS $opt $DIR/$file 2> /dev/null || true
-	}
+			$LFS $opt $DIR/$file 2> /dev/null || true
+		}
+	fi
 
 	# offset between 0 and 16MB (256 64k chunks), with 1/2 at offset 0
 	seek=$((RANDOM / 64)); [ $seek -gt 256 ] && seek=0
