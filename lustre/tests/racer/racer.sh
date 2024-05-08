@@ -10,6 +10,9 @@ NUM_THREADS=${NUM_THREADS:-3}
 
 RACER_MAX_CLEANUP_WAIT=${RACER_MAX_CLEANUP_WAIT:-$DURATION}
 
+# RACER_STRIPECOUNT=0 means no attempt to set striping at all
+RACER_STRIPECOUNT=${RACER_STRIPECOUNT:-1}
+
 mkdir -p $DIR
 
 if [[ -z "$RACER_PROGS" ]]; then
