@@ -268,10 +268,10 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 	case KFILND_MSG_IMMEDIATE:
 		nob = offsetof(struct kfilnd_msg, proto.immed.payload[rlen]);
 		if (nob > tn->tn_rx_msg.length) {
-			char *nid = "unknown"
+			char *nid = "unknown";
 
 			if (msg)
-				nid = libcfs_nidstr(&msg->msg_hdr.src_nid)
+				nid = libcfs_nidstr(&msg->msg_hdr.src_nid);
 			CERROR("Immediate message from %s too big: %d(%lu)\n",
 				nid, nob, tn->tn_rx_msg.length);
 			return -EPROTO;
