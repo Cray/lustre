@@ -5633,6 +5633,12 @@ fill_attr:
 	CFS_FAIL_TIMEOUT_RESET(OBD_FAIL_LLITE_STAT_RACE1,
 			       OBD_FAIL_LLITE_STAT_RACE2, 1);
 
+	/*
+	 * ll_merge_attr() does not update inode's timestamps
+	 * atomically. Protect against intermediate values
+	 */
+	if (!S_ISDIR(inode->i_mode))
+		ll_inode_size_lock(inode);
 	stat->uid = inode->i_uid;
 	stat->gid = inode->i_gid;
 	stat->atime = inode->i_atime;
@@ -5650,6 +5656,8 @@ fill_attr:
 	stat->nlink = inode->i_nlink;
 	stat->size = i_size_read(inode);
 	stat->blocks = inode->i_blocks;
+	if (!S_ISDIR(inode->i_mode))
+		ll_inode_size_unlock(inode);
 
 #if defined(HAVE_USER_NAMESPACE_ARG) || defined(HAVE_INODEOPS_ENHANCED_GETATTR)
 	if (flags & AT_STATX_DONT_SYNC) {
