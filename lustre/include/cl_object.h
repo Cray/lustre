@@ -100,6 +100,7 @@
 #include <linux/pagevec.h>
 #include <libcfs/linux/linux-misc.h>
 #include <lustre_dlm.h>
+#include <lustre_compat.h>
 
 struct obd_info;
 struct inode;
@@ -934,7 +935,7 @@ struct cl_page_operations {
         /** Destructor. Frees resources and slice itself. */
         void (*cpo_fini)(const struct lu_env *env,
 			 struct cl_page_slice *slice,
-			 struct pagevec *pvec);
+			 struct folio_batch *fbatch);
         /**
          * Optional debugging helper. Prints given page slice.
          *
@@ -1485,7 +1486,7 @@ struct cl_io_slice {
 };
 
 typedef void (*cl_commit_cbt)(const struct lu_env *, struct cl_io *,
-			      struct pagevec *);
+			      struct folio_batch *);
 
 struct cl_read_ahead {
 	/* Maximum page index the readahead window will end.
@@ -2262,28 +2263,24 @@ static inline int cl_object_refc(struct cl_object *clob)
 
 /** \defgroup cl_page cl_page
  * @{ */
-struct cl_page *cl_page_find        (const struct lu_env *env,
-                                     struct cl_object *obj,
-                                     pgoff_t idx, struct page *vmpage,
-                                     enum cl_page_type type);
-struct cl_page *cl_page_alloc       (const struct lu_env *env,
-				     struct cl_object *o, pgoff_t ind,
-				     struct page *vmpage,
-				     enum cl_page_type type);
-void            cl_page_get         (struct cl_page *page);
-void            cl_page_put         (const struct lu_env *env,
-                                     struct cl_page *page);
-void		cl_pagevec_put      (const struct lu_env *env,
-				     struct cl_page *page,
-				     struct pagevec *pvec);
-void            cl_page_print       (const struct lu_env *env, void *cookie,
-                                     lu_printer_t printer,
-                                     const struct cl_page *pg);
-void            cl_page_header_print(const struct lu_env *env, void *cookie,
-                                     lu_printer_t printer,
-                                     const struct cl_page *pg);
-struct cl_page *cl_vmpage_page      (struct page *vmpage, struct cl_object *obj);
-struct cl_page *cl_page_top         (struct cl_page *page);
+struct cl_page *cl_page_find(const struct lu_env *env,
+			     struct cl_object *obj,
+			     pgoff_t idx, struct page *vmpage,
+			     enum cl_page_type type);
+struct cl_page *cl_page_alloc(const struct lu_env *env,
+			      struct cl_object *o, pgoff_t ind,
+			      struct page *vmpage,
+			      enum cl_page_type type);
+void cl_page_get(struct cl_page *page);
+void cl_page_put(const struct lu_env *env, struct cl_page *page);
+void cl_batch_put(const struct lu_env *env, struct cl_page *page,
+		  struct folio_batch *fbatch);
+void cl_page_print(const struct lu_env *env, void *cookie,
+		   lu_printer_t printer, const struct cl_page *pg);
+void cl_page_header_print(const struct lu_env *env, void *cookie,
+			  lu_printer_t printer, const struct cl_page *pg);
+struct cl_page *cl_vmpage_page(struct page *vmpage, struct cl_object *obj);
+struct cl_page *cl_page_top(struct cl_page *page);
 
 const struct cl_page_slice *cl_page_at(const struct cl_page *page,
                                        const struct lu_device_type *dtype);

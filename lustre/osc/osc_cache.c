@@ -947,7 +947,7 @@ static int osc_extent_truncate(struct osc_extent *ext, pgoff_t trunc_index,
 	struct client_obd     *cli = osc_cli(obj);
 	struct osc_async_page *oap;
 	struct osc_async_page *tmp;
-	struct pagevec        *pvec;
+	struct folio_batch    *fbatch;
 	int                    pages_in_chunk = 0;
 	int                    ppc_bits    = cli->cl_chunkbits -
 					     PAGE_SHIFT;
@@ -972,8 +972,8 @@ static int osc_extent_truncate(struct osc_extent *ext, pgoff_t trunc_index,
 	io  = osc_env_thread_io(env);
 	io->ci_obj = cl_object_top(osc2cl(obj));
 	io->ci_ignore_layout = 1;
-	pvec = &osc_env_info(env)->oti_pagevec;
-	ll_pagevec_init(pvec, 0);
+	fbatch = &osc_env_info(env)->oti_fbatch;
+	ll_folio_batch_init(fbatch, 0);
 	rc = cl_io_init(env, io, CIT_MISC, io->ci_obj);
 	if (rc < 0)
 		GOTO(out, rc);
@@ -1011,12 +1011,12 @@ static int osc_extent_truncate(struct osc_extent *ext, pgoff_t trunc_index,
 		}
 
 		lu_ref_del(&page->cp_reference, "truncate", current);
-		cl_pagevec_put(env, page, pvec);
+		cl_batch_put(env, page, fbatch);
 
 		--ext->oe_nr_pages;
 		++nr_pages;
 	}
-	pagevec_release(pvec);
+	folio_batch_release(fbatch);
 
 	EASSERTF(ergo(ext->oe_start >= trunc_index + !!partial,
 		      ext->oe_nr_pages == 0),
@@ -2230,6 +2230,7 @@ __must_hold(&cli->cl_loi_list_lock)
 
 		spin_lock(&cli->cl_loi_list_lock);
 	}
+	EXIT;
 }
 
 int osc_io_unplug0(const struct lu_env *env, struct client_obd *cli,
@@ -2299,7 +2300,7 @@ int osc_queue_async_io(const struct lu_env *env, struct cl_io *io,
 	struct osc_async_page *oap = &ops->ops_oap;
 	struct client_obd     *cli = oap->oap_cli;
 	struct osc_object     *osc = oap->oap_obj;
-	struct pagevec        *pvec = &osc_env_info(env)->oti_pagevec;
+	struct folio_batch    *fbatch = &osc_env_info(env)->oti_fbatch;
 	pgoff_t index;
 	unsigned int tmp;
 	unsigned int grants = 0;
@@ -2432,9 +2433,9 @@ int osc_queue_async_io(const struct lu_env *env, struct cl_io *io,
 			 * must not hold a page lock while we do enter_cache,
 			 * so we must mark dirty & unlock any pages in the
 			 * write commit pagevec. */
-			if (pagevec_count(pvec)) {
-				cb(env, io, pvec);
-				pagevec_reinit(pvec);
+			if (folio_batch_count(fbatch)) {
+				cb(env, io, fbatch);
+				folio_batch_reinit(fbatch);
 			}
 			rc = osc_enter_cache(env, cli, oap, tmp);
 			if (rc == 0)
@@ -3077,7 +3078,7 @@ bool osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 			  osc_page_gang_cbt cb, void *cbdata)
 {
 	struct osc_page *ops;
-	struct pagevec	*pagevec;
+	struct folio_batch *fbatch;
 	void            **pvec;
 	pgoff_t         idx;
 	unsigned int    nr;
@@ -3089,8 +3090,8 @@ bool osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 
 	idx = start;
 	pvec = osc_env_info(env)->oti_pvec;
-	pagevec = &osc_env_info(env)->oti_pagevec;
-	ll_pagevec_init(pagevec, 0);
+	fbatch = &osc_env_info(env)->oti_fbatch;
+	ll_folio_batch_init(fbatch, 0);
 	spin_lock(&osc->oo_tree_lock);
 	while ((nr = radix_tree_gang_lookup(&osc->oo_tree, pvec,
 					    idx, OTI_PVEC_SIZE)) > 0) {
@@ -3136,9 +3137,9 @@ bool osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 			ops = pvec[i];
 			page = ops->ops_cl.cpl_page;
 			lu_ref_del(&page->cp_reference, "gang_lookup", current);
-			cl_pagevec_put(env, page, pagevec);
+			cl_batch_put(env, page, fbatch);
 		}
-		pagevec_release(pagevec);
+		folio_batch_release(fbatch);
 
 		if (nr < OTI_PVEC_SIZE || end_of_region)
 			break;
