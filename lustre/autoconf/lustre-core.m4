@@ -4261,6 +4261,29 @@ AC_DEFUN([LC_HAVE_INODE_GET_MTIME_SEC], [
 ]) # LC_HAVE_INODE_GET_MTIME_SEC
 
 #
+# LC_HAVE_SHRINKER_ALLOC
+#
+# Linux commit v6.6-rc4-53-gc42d50aefd17
+#   mm: shrinker: add infrastructure for dynamically allocating shrinker
+#
+AC_DEFUN([LC_SRC_HAVE_SHRINKER_ALLOC], [
+	LB2_LINUX_TEST_SRC([shrinker_alloc_exists], [
+		#include <linux/shrinker.h>
+	],[
+		struct shrinker *shrink __attribute__ ((unused));
+
+		shrink = shrinker_alloc(0, "%s", "whoami");
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_SHRINKER_ALLOC], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'shrinker_alloc()' exists],
+	[shrinker_alloc_exists], [
+		AC_DEFINE(HAVE_SHRINKER_ALLOC, 1,
+			['shrinker_alloc()' exists])
+	])
+]) # LC_HAVE_SHRINKER_ALLOC
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -4536,6 +4559,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 
 	# 6.7
 	LC_SRC_HAVE_INODE_GET_MTIME_SEC
+	LC_SRC_HAVE_SHRINKER_ALLOC
 
 	# 6.8
 	LC_SRC_LSMCONTEXT_HAS_ID
@@ -4831,6 +4855,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 
 	# 6.7
 	LC_HAVE_INODE_GET_MTIME_SEC
+	LC_HAVE_SHRINKER_ALLOC
 
 	# 6.8
 	LC_LSMCONTEXT_HAS_ID
