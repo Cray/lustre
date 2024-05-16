@@ -6788,6 +6788,26 @@ test_116() {
 }
 run_test 116 "DNE: Set default LMV layout from a remote client"
 
+test_117() {
+	touch $DIR1/$tfile
+#define OBD_FAIL_MDS_GRANT_BLOCKED_LOCK	 0x170
+	do_nodes $(comma_list $(mdts_nodes)) \
+		"lctl set_param -n fail_loc=0x170 2>/dev/null || true"
+	chmod 777 $DIR1/$tfile &
+	local PID1=$!
+	sleep 1
+
+	stat $DIR2/$tfile > /dev/null &
+	local PID2=$!
+	sleep 1
+
+	lctl set_param -n fail_loc=0x170 2>/dev/null
+
+	wait $PID1 || error "wait for chmod failed"
+	wait $PID2 || error "wait for stat failed"
+}
+run_test 117 "no CP AST for intent once a blocked lock is granted"
+
 test_200() {
 	remote_ost_nodsh && skip "remote OST with nodsh" && return
 

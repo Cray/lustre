@@ -296,6 +296,11 @@ noreproc:
 				 OBD_FAIL_LDLM_CP_BL_RACE | CFS_FAIL_ONCE)) {
 		ldlm_set_fail_loc(lock);
 		rc = -EINTR;
+	} else if (ns_is_server(ldlm_lock_to_ns(lock)) &&
+		   CFS_FAIL_CHECK(OBD_FAIL_MDS_GRANT_BLOCKED_LOCK)) {
+
+		ldlm_set_fail_loc2(lock);
+		CFS_FAIL_TIMEOUT(OBD_FAIL_MDS_GRANT_BLOCKED_LOCK, 2);
 	} else {
 		/* Go to sleep until the lock is granted or cancelled. */
 		if (ldlm_is_no_timeout(lock)) {

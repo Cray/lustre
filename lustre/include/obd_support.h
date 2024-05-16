@@ -233,6 +233,7 @@ extern bool obd_enable_health_write;
 #define OBD_FAIL_MDS_CHANGELOG_IDX_PUMP		0x16d
 #define OBD_FAIL_MDS_DELAY_DELORPHAN		0x16e
 #define OBD_FAIL_MDS_DIR_PAGE_WALK		0x16f
+#define OBD_FAIL_MDS_GRANT_BLOCKED_LOCK		0x170
 /* continue at 0x2400, see below */
 
 /* layout lock */
