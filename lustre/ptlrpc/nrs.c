@@ -286,11 +286,13 @@ static int nrs_policy_start_locked(struct ptlrpc_nrs_policy *policy, char *arg)
 		}
 	}
 
-	if (arg != NULL) {
-		if (strlcpy(policy->pol_arg, arg, sizeof(policy->pol_arg)) >=
-		    sizeof(policy->pol_arg)) {
+	if (arg) {
+		int cplen;
+
+		cplen = strscpy(policy->pol_arg, arg, sizeof(policy->pol_arg));
+		if (cplen < 0) {
 			CERROR("NRS: arg '%s' is too long\n", arg);
-			GOTO(out, rc = -E2BIG);
+			GOTO(out, rc = cplen);
 		}
 	} else {
 		policy->pol_arg[0] = '\0';
@@ -1166,9 +1168,11 @@ again:
  */
 static int ptlrpc_nrs_policy_register(struct ptlrpc_nrs_pol_conf *conf)
 {
-        struct ptlrpc_service	       *svc;
-	struct ptlrpc_nrs_pol_desc     *desc;
-	int				rc = 0;
+	struct ptlrpc_service *svc;
+	struct ptlrpc_nrs_pol_desc *desc;
+	int rc = 0;
+	int cplen;
+
 	ENTRY;
 
 	LASSERT(conf != NULL);
@@ -1213,10 +1217,10 @@ static int ptlrpc_nrs_policy_register(struct ptlrpc_nrs_pol_conf *conf)
 	if (desc == NULL)
 		GOTO(fail, rc = -ENOMEM);
 
-	if (strlcpy(desc->pd_name, conf->nc_name, sizeof(desc->pd_name)) >=
-	    sizeof(desc->pd_name)) {
+	cplen = strscpy(desc->pd_name, conf->nc_name, sizeof(desc->pd_name));
+	if (cplen < 0) {
 		OBD_FREE_PTR(desc);
-		GOTO(fail, rc = -E2BIG);
+		GOTO(fail, rc = cplen);
 	}
 	desc->pd_ops		 = conf->nc_ops;
 	desc->pd_compat		 = conf->nc_compat;

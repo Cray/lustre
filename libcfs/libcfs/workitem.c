@@ -347,7 +347,7 @@ cfs_wi_sched_create(char *name, struct cfs_cpt_table *cptab,
 		LIBCFS_FREE(sched, sizeof(*sched));
 		return -E2BIG;
 	}
-	strlcpy(sched->ws_name, name, sizeof(sched->ws_name));
+	strscpy(sched->ws_name, name, sizeof(sched->ws_name));
 
 	sched->ws_cptab = cptab;
 	sched->ws_cpt = cpt;

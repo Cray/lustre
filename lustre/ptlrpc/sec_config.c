@@ -103,7 +103,7 @@ int sptlrpc_parse_flavor(const char *str, struct sptlrpc_flavor *flvr)
                 return 0;
         }
 
-	strlcpy(buf, str, sizeof(buf));
+	strscpy(buf, str, sizeof(buf));
 
         bulk = strchr(buf, '-');
         if (bulk)
@@ -543,10 +543,10 @@ struct sptlrpc_conf_tgt *sptlrpc_conf_get_tgt(struct sptlrpc_conf *conf,
         if (!create)
                 return NULL;
 
-        OBD_ALLOC_PTR(conf_tgt);
-        if (conf_tgt) {
-		strlcpy(conf_tgt->sct_name, name, sizeof(conf_tgt->sct_name));
-                sptlrpc_rule_set_init(&conf_tgt->sct_rset);
+	OBD_ALLOC_PTR(conf_tgt);
+	if (conf_tgt) {
+		strscpy(conf_tgt->sct_name, name, sizeof(conf_tgt->sct_name));
+		sptlrpc_rule_set_init(&conf_tgt->sct_rset);
 		list_add(&conf_tgt->sct_list, &conf->sc_tgts);
         }
 
@@ -567,12 +567,10 @@ struct sptlrpc_conf *sptlrpc_conf_get(const char *fsname,
         if (!create)
                 return NULL;
 
-        OBD_ALLOC_PTR(conf);
-        if (conf == NULL)
-                return NULL;
-
-	if (strlcpy(conf->sc_fsname, fsname, sizeof(conf->sc_fsname)) >=
-	    sizeof(conf->sc_fsname)) {
+	OBD_ALLOC_PTR(conf);
+	if (conf == NULL)
+		return NULL;
+	if (strscpy(conf->sc_fsname, fsname, sizeof(conf->sc_fsname)) < 0) {
 		OBD_FREE_PTR(conf);
 		return NULL;
 	}
@@ -688,7 +686,7 @@ int sptlrpc_process_config(struct lustre_cfg *lcfg)
 	 *	is a actual filesystem.
 	 */
 	if (server_name2fsname(target, fsname, NULL))
-		strlcpy(fsname, target, sizeof(fsname));
+		strscpy(fsname, target, sizeof(fsname));
 
 	rc = sptlrpc_parse_rule(param, &rule);
 	if (rc)
