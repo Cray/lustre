@@ -997,25 +997,6 @@ AC_SUBST(KFILND)
 AC_SUBST(EXTRA_SYMBOLS)
 ]) # LN_CONFIG_KFILND
 
-# LN_CONFIG_STRSCPY_EXISTS
-#
-# If strscpy exists, prefer it over strlcpy
-#
-AC_DEFUN([LN_SRC_CONFIG_STRSCPY_EXISTS], [
-	LB2_LINUX_TEST_SRC([strscpy_exists], [
-		#include <linux/string.h>
-	],[
-		strscpy((char *)NULL, (const char *)NULL, 0);
-	],[-Werror])
-])
-AC_DEFUN([LN_CONFIG_STRSCPY_EXISTS], [
-	LB2_MSG_LINUX_TEST_RESULT([if kernel strscpy is available],
-	[strscpy_exists], [
-		AC_DEFINE(HAVE_STRSCPY, 1,
-			[kernel strscpy is available])
-	])
-]) # LN_CONFIG_STRSCPY_EXISTS
-
 # LN_CONFIG_SOCK_CREATE_KERN
 #
 # 4.x sock_create_kern() added a first parameter as 'struct net *'

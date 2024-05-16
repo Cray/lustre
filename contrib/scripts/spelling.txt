@@ -205,6 +205,7 @@ setup_timer||cfs_timer_setup
 sprintf||snprintf
 strcat||strncat
 strcpy||strncpy
+strlcpy||strscpy
 struct timeval||struct timespec64
 tempnam||mkstemp
 time_t||timeout_t

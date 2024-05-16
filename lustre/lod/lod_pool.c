@@ -430,7 +430,7 @@ int lod_pool_new(struct obd_device *obd, char *poolname)
 	if (new_pool == NULL)
 		RETURN(-ENOMEM);
 
-	strlcpy(new_pool->pool_name, poolname, sizeof(new_pool->pool_name));
+	strscpy(new_pool->pool_name, poolname, sizeof(new_pool->pool_name));
 	new_pool->pool_spill_expire = 0;
 	new_pool->pool_spill_is_active = false;
 	new_pool->pool_spill_threshold_pct = 0;

@@ -2548,7 +2548,7 @@ ksocknal_startup(struct lnet_ni *ni)
 	sa->sin_addr.s_addr = htonl(ifaces[i].li_ipaddr);
 	ksi->ksni_index = ksocknal_ip2index((struct sockaddr *)sa, ni);
 	ksi->ksni_netmask = ifaces[i].li_netmask;
-	strlcpy(ksi->ksni_name, ifaces[i].li_name, sizeof(ksi->ksni_name));
+	strscpy(ksi->ksni_name, ifaces[i].li_name, sizeof(ksi->ksni_name));
 
 	/* call it before add it to ksocknal_data.ksnd_nets */
 	rc = ksocknal_net_start_threads(net, ni->ni_cpts, ni->ni_ncpts);
