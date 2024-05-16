@@ -4498,6 +4498,7 @@ int mdt_intent_lock_replace(struct mdt_thread_info *info,
                 RETURN(ELDLM_LOCK_REPLACED);
         }
 
+	LDLM_DEBUG(new_lock, "new lock:");
         /*
          * Fixup the lock to be given to the client.
          */

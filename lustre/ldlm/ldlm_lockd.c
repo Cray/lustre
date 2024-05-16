@@ -1422,8 +1422,8 @@ existing_lock:
 	 * Now take into account flags to be inherited from original lock
 	 * request both in reply to client and in our own lock flags.
 	 */
-	dlm_rep->lock_flags = ldlm_flags_to_wire(flags);
 	lock->l_flags |= flags & LDLM_FL_INHERIT_MASK;
+	dlm_rep->lock_flags = ldlm_flags_to_wire(flags | lock->l_flags);
 
 	/*
 	 * Don't move a pending lock onto the export if it has already been
