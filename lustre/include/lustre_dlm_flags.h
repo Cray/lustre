@@ -73,6 +73,11 @@
 #define ldlm_set_ast_sent(_l)           LDLM_SET_FLAG((  _l), 1ULL <<  5)
 #define ldlm_clear_ast_sent(_l)         LDLM_CLEAR_FLAG((_l), 1ULL <<  5)
 
+#define LDLM_FL_FAIL_LOC2               0x0000000000000040ULL // bit  6
+#define ldlm_is_fail_loc2(_l)           LDLM_TEST_FLAG(( _l), 1ULL << 6)
+#define ldlm_set_fail_loc2(_l)          LDLM_SET_FLAG((  _l), 1ULL << 6)
+#define ldlm_clear_fail_loc2(_l)        LDLM_CLEAR_FLAG((_l), 1ULL << 6)
+
 /**
  * Lock is being replayed.  This could probably be implied by the fact that
  * one of BLOCK_{GRANTED,CONV,WAIT} is set, but that is pretty dangerous. */
@@ -399,7 +404,8 @@
 
 /** l_flags bits marked as "ast" bits */
 #define LDLM_FL_AST_MASK                (LDLM_FL_FLOCK_DEADLOCK		|\
-					 LDLM_FL_DISCARD_DATA)
+					 LDLM_FL_DISCARD_DATA		|\
+					 LDLM_FL_FAIL_LOC2)
 
 /** l_flags bits marked as "blocked" bits */
 #define LDLM_FL_BLOCKED_MASK            (LDLM_FL_BLOCK_GRANTED		|\
@@ -418,7 +424,8 @@
 #define LDLM_FL_INHERIT_MASK            (LDLM_FL_CANCEL_ON_BLOCK	|\
 					 LDLM_FL_NO_TIMEOUT		|\
 					 LDLM_FL_TEST_LOCK              |\
-					 LDLM_FL_NO_EXPANSION)
+					 LDLM_FL_NO_EXPANSION |\
+					 LDLM_FL_FAIL_LOC2)
 
 /** flags returned in @flags parameter on ldlm_lock_enqueue,
  * to be re-constructed on re-send */
