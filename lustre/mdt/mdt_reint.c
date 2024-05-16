@@ -761,6 +761,8 @@ static int mdt_attr_set(struct mdt_thread_info *info, struct mdt_object *mo,
 	if (ma->ma_attr.la_valid & (LA_UID|LA_GID|LA_PROJID))
 		mutex_lock(&mo->mot_lov_mutex);
 
+	OBD_FAIL_TIMEOUT(OBD_FAIL_MDS_GRANT_BLOCKED_LOCK, 2);
+
 	/* all attrs are packed into mti_attr in unpack_setattr */
 	rc = mo_attr_set(info->mti_env, mdt_object_child(mo), ma);
 
