@@ -606,7 +606,7 @@ lnet_pid_t ptl_get_pid(void)
 	return LNET_PID_LUSTRE;
 }
 
-int ptlrpc_ni_init(void)
+static int ptlrpc_ni_init(void)
 {
 	int rc;
 	lnet_pid_t pid;
@@ -640,19 +640,19 @@ int ptlrpc_ni_init(void)
 
 int ptlrpc_init_portals(void)
 {
-        int   rc = ptlrpc_ni_init();
+	int rc = ptlrpc_ni_init();
 
-        if (rc != 0) {
-                CERROR("network initialisation failed\n");
+	if (rc != 0) {
+		CERROR("network initialisation failed\n");
 		return rc;
-        }
-        rc = ptlrpcd_addref();
-        if (rc == 0)
-                return 0;
+	}
+	rc = ptlrpcd_addref();
+	if (rc == 0)
+		return 0;
 
-        CERROR("rpcd initialisation failed\n");
-        ptlrpc_ni_fini();
-        return rc;
+	CERROR("rpcd initialisation failed\n");
+	ptlrpc_ni_fini();
+	return rc;
 }
 
 void ptlrpc_exit_portals(void)

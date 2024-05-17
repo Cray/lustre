@@ -352,9 +352,6 @@ int server_mti_print(const char *title, struct mgs_target_info *mti);
 void server_calc_timeout(struct lustre_sb_info *lsi, struct obd_device *obd);
 
 /* obd_mount.c */
-int server_name2svname(const char *label, char *svname, const char **endptr,
-		       size_t svsize);
-
 int server_name_is_ost(const char *svname);
 int target_name2index(const char *svname, u32 *idx, const char **endptr);
 
@@ -362,6 +359,10 @@ int lustre_put_lsi(struct super_block *sb);
 int lustre_start_simple(char *obdname, char *type, char *uuid,
 			char *s1, char *s2, char *s3, char *s4);
 #endif /* HAVE_SERVER_SUPPORT */
+
+/* obd_mount.c */
+int server_name2svname(const char *label, char *svname, const char **endptr,
+		       size_t svsize);
 int server_name2fsname(const char *svname, char *fsname, const char **endptr);
 void obdname2fsname(const char *tgt, char *fsname, size_t fslen);
 

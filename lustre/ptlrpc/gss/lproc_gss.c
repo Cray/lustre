@@ -132,12 +132,13 @@ static const struct file_operations gss_proc_secinit = {
 	.write = gss_proc_write_secinit,
 };
 
-int sptlrpc_krb5_allow_old_client_csum_seq_show(struct seq_file *m, void *data)
+static int sptlrpc_krb5_allow_old_client_csum_seq_show(struct seq_file *m, void *data)
 {
 	seq_printf(m, "%u\n", krb5_allow_old_client_csum);
 	return 0;
 }
 
+static
 ssize_t sptlrpc_krb5_allow_old_client_csum_seq_write(struct file *file,
 						     const char __user *buffer,
 						     size_t count, loff_t *off)
@@ -155,13 +156,13 @@ ssize_t sptlrpc_krb5_allow_old_client_csum_seq_write(struct file *file,
 LPROC_SEQ_FOPS(sptlrpc_krb5_allow_old_client_csum);
 
 #ifdef HAVE_GSS_KEYRING
-int sptlrpc_gss_check_upcall_ns_seq_show(struct seq_file *m, void *data)
+static int sptlrpc_gss_check_upcall_ns_seq_show(struct seq_file *m, void *data)
 {
 	seq_printf(m, "%u\n", gss_check_upcall_ns);
 	return 0;
 }
 
-ssize_t sptlrpc_gss_check_upcall_ns_seq_write(struct file *file,
+static ssize_t sptlrpc_gss_check_upcall_ns_seq_write(struct file *file,
 					      const char __user *buffer,
 					      size_t count, loff_t *off)
 {

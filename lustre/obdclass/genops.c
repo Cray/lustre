@@ -89,7 +89,7 @@ static void obd_device_free(struct obd_device *obd)
 	OBD_SLAB_FREE_PTR(obd, obd_device_cachep);
 }
 
-struct obd_type *class_search_type(const char *name)
+SERVER_ONLY struct obd_type *class_search_type(const char *name)
 {
 	struct kobject *kobj = kset_find_obj(lustre_kset, name);
 
@@ -99,9 +99,9 @@ struct obd_type *class_search_type(const char *name)
 	kobject_put(kobj);
 	return NULL;
 }
-EXPORT_SYMBOL(class_search_type);
+SERVER_ONLY_EXPORT_SYMBOL(class_search_type);
 
-struct obd_type *class_get_type(const char *name)
+SERVER_ONLY struct obd_type *class_get_type(const char *name)
 {
 	struct obd_type *type;
 
@@ -145,6 +145,7 @@ struct obd_type *class_get_type(const char *name)
 	}
 	return type;
 }
+SERVER_ONLY_EXPORT_SYMBOL(class_get_type);
 
 void class_put_type(struct obd_type *type)
 {
@@ -598,7 +599,7 @@ struct obd_device *class_name2obd(const char *name)
 }
 EXPORT_SYMBOL(class_name2obd);
 
-int class_uuid2dev_nolock(struct obd_uuid *uuid)
+static int class_uuid2dev_nolock(struct obd_uuid *uuid)
 {
         int i;
 
@@ -1017,8 +1018,9 @@ static void obd_zombie_exp_cull(struct work_struct *ws)
 /* Creates a new export, adds it to the hash table, and returns a
  * pointer to it. The refcount is 2: one for the hash reference, and
  * one for the pointer returned by this function. */
-struct obd_export *__class_new_export(struct obd_device *obd,
-				      struct obd_uuid *cluuid, bool is_self)
+static struct obd_export *__class_new_export(struct obd_device *obd,
+					     struct obd_uuid *cluuid,
+					     bool is_self)
 {
         struct obd_export *export;
         int rc = 0;

@@ -43,6 +43,7 @@
 #include <uapi/linux/lustre/lustre_access_log.h>
 #include <uapi/linux/lustre/lustre_lfsck_user.h>
 #include <uapi/linux/lustre/lustre_cfg.h>
+#include "ptlrpc_internal.h"
 
 
 void lustre_assert_wire_constants(void)
