@@ -1834,7 +1834,7 @@ bool osd_tx_was_declared(const struct lu_env *env, struct osd_thandle *oth,
 	return false;
 }
 
-void osd_tx_declaration_free(struct osd_thandle *oth)
+static void osd_tx_declaration_free(struct osd_thandle *oth)
 {
 	struct osd_obj_declare *old, *tmp;
 
@@ -1993,17 +1993,17 @@ void osd_trans_dump_creds(const struct lu_env *env, struct thandle *th)
 }
 
 #ifdef HAVE_LDISKFS_JOURNAL_ENSURE_CREDITS
-void osd_ldiskfs_credits_for_revoke(struct osd_device *osd,
-				    struct osd_thandle *oh,
-				    int *credits, int *revoke)
+static void osd_ldiskfs_credits_for_revoke(struct osd_device *osd,
+					   struct osd_thandle *oh,
+					   int *credits, int *revoke)
 {
 	int blocks = LDISKFS_MAX_EXTENT_DEPTH * oh->oh_declared_ext;
 	*revoke += ldiskfs_trans_default_revoke_credits(osd_sb(osd)) + blocks;
 }
 #else
-void osd_ldiskfs_credits_for_revoke(struct osd_device *osd,
-				    struct osd_thandle *oh,
-				    int *credits, int *revoke)
+static void osd_ldiskfs_credits_for_revoke(struct osd_device *osd,
+					   struct osd_thandle *oh,
+					   int *credits, int *revoke)
 {
 	struct journal_s *journal = LDISKFS_SB(osd_sb(osd))->s_journal;
 	int blocks, jbsize, records_per_block;

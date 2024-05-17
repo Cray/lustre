@@ -856,8 +856,8 @@ static void mdc_clear_open_replay_data_locked(struct md_open_data *mod)
         obd_mod_put(mod);
 }
 
-int mdc_clear_open_replay_data(struct obd_export *exp,
-                               struct obd_client_handle *och)
+static int mdc_clear_open_replay_data(struct obd_export *exp,
+				      struct obd_client_handle *och)
 {
 	struct obd_import *imp;
 	struct md_open_data *mod = och->och_mod;
@@ -2694,8 +2694,8 @@ struct mdc_rmfid_args {
 	int mra_nr;
 };
 
-int mdc_rmfid_interpret(const struct lu_env *env, struct ptlrpc_request *req,
-			  void *args, int rc)
+static int mdc_rmfid_interpret(const struct lu_env *env,
+			       struct ptlrpc_request *req, void *args, int rc)
 {
 	struct mdc_rmfid_args *aa;
 	int *rcs, size;

@@ -557,74 +557,6 @@ kiblnd_get_conn_by_idx(struct lnet_ni *ni, int index)
 }
 
 static void
-kiblnd_debug_rx(struct kib_rx *rx)
-{
-	CDEBUG(D_CONSOLE, "      %p msg_type %x cred %d\n",
-	       rx, rx->rx_msg->ibm_type,
-	       rx->rx_msg->ibm_credits);
-}
-
-static void
-kiblnd_debug_tx(struct kib_tx *tx)
-{
-	CDEBUG(D_CONSOLE, "      %p snd %d q %d w %d rc %d dl %lld "
-	       "cookie %#llx msg %s%s type %x cred %d\n",
-               tx, tx->tx_sending, tx->tx_queued, tx->tx_waiting,
-	       tx->tx_status, ktime_to_ns(tx->tx_deadline), tx->tx_cookie,
-               tx->tx_lntmsg[0] == NULL ? "-" : "!",
-               tx->tx_lntmsg[1] == NULL ? "-" : "!",
-               tx->tx_msg->ibm_type, tx->tx_msg->ibm_credits);
-}
-
-void
-kiblnd_debug_conn(struct kib_conn *conn)
-{
-	struct list_head	*tmp;
-	int			i;
-
-	spin_lock(&conn->ibc_lock);
-
-	CDEBUG(D_CONSOLE, "conn[%d] %p [version %x] -> %s:\n",
-	       atomic_read(&conn->ibc_refcount), conn,
-	       conn->ibc_version, libcfs_nid2str(conn->ibc_peer->ibp_nid));
-	CDEBUG(D_CONSOLE, "   state %d nposted %d/%d cred %d o_cred %d "
-	       " r_cred %d\n", conn->ibc_state, conn->ibc_noops_posted,
-	       conn->ibc_nsends_posted, conn->ibc_credits,
-	       conn->ibc_outstanding_credits, conn->ibc_reserved_credits);
-	CDEBUG(D_CONSOLE, "   comms_err %d\n", conn->ibc_comms_error);
-
-	CDEBUG(D_CONSOLE, "   early_rxs:\n");
-	list_for_each(tmp, &conn->ibc_early_rxs)
-		kiblnd_debug_rx(list_entry(tmp, struct kib_rx, rx_list));
-
-	CDEBUG(D_CONSOLE, "   tx_noops:\n");
-	list_for_each(tmp, &conn->ibc_tx_noops)
-		kiblnd_debug_tx(list_entry(tmp, struct kib_tx, tx_list));
-
-	CDEBUG(D_CONSOLE, "   tx_queue_nocred:\n");
-	list_for_each(tmp, &conn->ibc_tx_queue_nocred)
-		kiblnd_debug_tx(list_entry(tmp, struct kib_tx, tx_list));
-
-	CDEBUG(D_CONSOLE, "   tx_queue_rsrvd:\n");
-	list_for_each(tmp, &conn->ibc_tx_queue_rsrvd)
-		kiblnd_debug_tx(list_entry(tmp, struct kib_tx, tx_list));
-
-	CDEBUG(D_CONSOLE, "   tx_queue:\n");
-	list_for_each(tmp, &conn->ibc_tx_queue)
-		kiblnd_debug_tx(list_entry(tmp, struct kib_tx, tx_list));
-
-	CDEBUG(D_CONSOLE, "   active_txs:\n");
-	list_for_each(tmp, &conn->ibc_active_txs)
-		kiblnd_debug_tx(list_entry(tmp, struct kib_tx, tx_list));
-
-	CDEBUG(D_CONSOLE, "   rxs:\n");
-	for (i = 0; i < IBLND_RX_MSGS(conn); i++)
-		kiblnd_debug_rx(&conn->ibc_rxs[i]);
-
-	spin_unlock(&conn->ibc_lock);
-}
-
-static void
 kiblnd_setup_mtu_locked(struct rdma_cm_id *cmid)
 {
         /* XXX There is no path record for iWARP, set by netdev->change_mtu? */
@@ -2537,7 +2469,7 @@ kiblnd_set_ni_fatal_on(struct kib_hca_dev *hdev, int val)
 	}
 }
 
-void
+static void
 kiblnd_event_handler(struct ib_event_handler *handler, struct ib_event *event)
 {
 	rwlock_t *g_lock = &kiblnd_data.kib_global_lock;

@@ -286,8 +286,8 @@ static ssize_t fallocate_zero_blocks_store(struct kobject *kobj,
 }
 LUSTRE_RW_ATTR(fallocate_zero_blocks);
 
-ssize_t force_sync_store(struct kobject *kobj, struct attribute *attr,
-			 const char *buffer, size_t count)
+static ssize_t force_sync_store(struct kobject *kobj, struct attribute *attr,
+				const char *buffer, size_t count)
 {
 	struct dt_device *dt = container_of(kobj, struct dt_device,
 					    dd_kobj);
@@ -746,8 +746,8 @@ static ssize_t index_backup_show(struct kobject *kobj, struct attribute *attr,
 	return sprintf(buf, "%d\n", dev->od_index_backup_policy);
 }
 
-ssize_t index_backup_store(struct kobject *kobj, struct attribute *attr,
-			   const char *buffer, size_t count)
+static ssize_t index_backup_store(struct kobject *kobj, struct attribute *attr,
+				  const char *buffer, size_t count)
 {
 	struct dt_device *dt = container_of(kobj, struct dt_device,
 					   dd_kobj);

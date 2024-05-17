@@ -402,8 +402,9 @@ struct vvp_seq_private {
 	loff_t			vvp_prev_pos;
 };
 
-unsigned int ll_filemap_get_one_page_contig(struct address_space *mapping,
-					     pgoff_t start, struct page **pg)
+static unsigned int
+ll_filemap_get_one_page_contig(struct address_space *mapping,
+			       pgoff_t start, struct page **pg)
 {
 #ifdef HAVE_FILEMAP_GET_FOLIOS_CONTIG
 	struct folio_batch fbatch;

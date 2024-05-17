@@ -41,6 +41,7 @@
 
 #include <obd_class.h>
 #include "lov_internal.h"
+#include "lov_cl_internal.h"
 
 static inline void
 lu_extent_le_to_cpu(struct lu_extent *dst, const struct lu_extent *src)

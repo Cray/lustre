@@ -93,7 +93,7 @@ struct ldlm_async_args {
  *
  * \retval size of the request buffer
  */
-int ldlm_request_bufsize(int count, int type)
+static int ldlm_request_bufsize(int count, int type)
 {
 	int avail = LDLM_LOCKREQ_HANDLES;
 
@@ -108,7 +108,7 @@ int ldlm_request_bufsize(int count, int type)
 	return sizeof(struct ldlm_request) + avail;
 }
 
-void ldlm_expired_completion_wait(struct lock_wait_data *lwd)
+static void ldlm_expired_completion_wait(struct lock_wait_data *lwd)
 {
 	struct ldlm_lock *lock = lwd->lwd_lock;
 	struct obd_import *imp;
@@ -2625,7 +2625,7 @@ static int lock_can_replay(struct obd_import *imp)
 	       1 + min_t(u32, cli->cl_max_rpcs_in_flight, 8);
 }
 
-int __ldlm_replay_locks(struct obd_import *imp, bool rate_limit)
+static int __ldlm_replay_locks(struct obd_import *imp, bool rate_limit)
 {
 	struct ldlm_namespace *ns = imp->imp_obd->obd_namespace;
 	LIST_HEAD(list);

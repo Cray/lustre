@@ -49,7 +49,7 @@
 #include <lustre_swab.h>
 #include <obd_class.h>
 #include <lustre_barrier.h>
-
+#include <lustre_disk.h>
 #include "mgc_internal.h"
 
 static int mgc_name2resid(char *name, int len, struct ldlm_res_id *res_id,
