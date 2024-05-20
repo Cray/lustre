@@ -287,6 +287,7 @@ static int osc_object_fiemap(const struct lu_env *env, struct cl_object *obj,
 			ldlm_lock_addref(&lockh, LCK_PR);
 			ldlm_lock_decref(&lockh, LCK_PW);
 		}
+		OBD_FAIL_TIMEOUT(OBD_FAIL_OSC_FIEMAP, cfs_fail_val);
 	} else { /* no cached lock, needs acquire lock on server side */
 		fmkey->lfik_oa.o_valid |= OBD_MD_FLFLAGS;
 		fmkey->lfik_oa.o_flags |= OBD_FL_SRVLOCK;
