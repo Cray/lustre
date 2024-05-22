@@ -271,6 +271,7 @@ extern char obd_jobid_var[];
 #define OBD_FAIL_MDS_STRIPE_FID		 0x189
 #define OBD_FAIL_MDS_LINK_RENAME_RACE	 0x18a
 #define OBD_FAIL_MDS_HSM_RESTORE_RACE	 0x18b
+#define OBD_FAIL_MDS_HSM_DATA_VERSION_NET 0x18e
 
 /* OI scrub */
 #define OBD_FAIL_OSD_SCRUB_DELAY			0x190
