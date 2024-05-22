@@ -1,1 +1,13 @@
 Obsoletes:      %{name}-modules < %{version}
+%if 0%{?enable_multi_lnds} == 0
+%if %{with mofed}
+%if 0%{?mofed_source} > 0
+BuildRequires: mlnx-ofa_kernel-devel
+%endif
+%if "%{_vendor}" == "redhat"
+Requires: kmod-mlnx-ofa_kernel
+%else
+Requires: mlnx-ofa_kernel-kmp
+%endif
+%endif
+%endif
