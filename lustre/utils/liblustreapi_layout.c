@@ -3512,6 +3512,7 @@ int llapi_layout_sanity(struct llapi_layout *layout,
  *				NULL no pool name check is performed
  *
  * \retval                      0, success, positive: various errors, see
+ *                              llapi_layout_sanity_perror, -1, failure
  */
 
 int llapi_layout_v2_sanity(struct llapi_layout *layout,
