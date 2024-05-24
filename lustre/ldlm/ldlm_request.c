@@ -265,7 +265,10 @@ EXPORT_SYMBOL(ldlm_completion_ast_async);
 int ldlm_completion_ast(struct ldlm_lock *lock, __u64 flags, void *data)
 {
 	/* XXX ALLOCATE - 160 bytes */
-	struct lock_wait_data lwd;
+	struct lock_wait_data lwd = {
+		.lwd_lock = NULL,
+		.lwd_conn_cnt = 0
+	};
 	struct obd_device *obd;
 	struct obd_import *imp = NULL;
 	timeout_t timeout;
