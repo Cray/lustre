@@ -237,8 +237,6 @@ void remove_file(char *name)
 	/* Process 0 remove the file(s) */
 	if (rank == 0) {
 		sprintf(filename, "%s/%s", testdir, name);
-		if (truncate(filename, 0) == -1)
-			FAILF("truncate of file %s", filename);
 		if (unlink(filename) == -1)
 			FAILF("unlink of file %s", filename);
 	}
