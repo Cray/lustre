@@ -684,7 +684,7 @@ static int osd_obj_update_entry(struct osd_thread_info *info,
 				struct dentry *dir, const char *name,
 				const struct lu_fid *fid,
 				const struct osd_inode_id *id,
-				handle_t *th)
+				handle_t *th, bool locked)
 {
 	struct inode *parent = dir->d_inode;
 	struct dentry *child;
@@ -709,7 +709,8 @@ static int osd_obj_update_entry(struct osd_thread_info *info,
 	child->d_name.len = strlen(name);
 
 	dquot_initialize(parent);
-	inode_lock(parent);
+	if (!locked)
+		inode_lock(parent);
 	bh = osd_ldiskfs_find_entry(parent, &child->d_name, &de, NULL, NULL);
 	if (IS_ERR(bh))
 		GOTO(out, rc = PTR_ERR(bh));
@@ -814,7 +815,8 @@ update:
 out:
 	if (!IS_ERR(bh))
 		brelse(bh);
-	inode_unlock(parent);
+	if (!locked)
+		inode_unlock(parent);
 	return rc;
 }
 
@@ -858,7 +860,7 @@ static int osd_obj_add_entry(struct osd_thread_info *info,
 			     struct osd_device *osd,
 			     struct dentry *dir, char *name,
 			     const struct osd_inode_id *id,
-			     handle_t *th)
+			     handle_t *th, bool locked)
 {
 	struct dentry *child;
 	struct inode *inode;
@@ -897,9 +899,11 @@ static int osd_obj_add_entry(struct osd_thread_info *info,
 		inode->i_ino++;
 
 	dquot_initialize(dir->d_inode);
-	inode_lock(dir->d_inode);
+	if (!locked)
+		inode_lock(dir->d_inode);
 	rc = osd_ldiskfs_add_entry(info, osd, th, child, inode, NULL);
-	inode_unlock(dir->d_inode);
+	if (!locked)
+		inode_unlock(dir->d_inode);
 
 	RETURN(rc);
 }
@@ -1142,9 +1146,10 @@ int osd_obj_map_insert(struct osd_thread_info *info,
 	osd_oid_name(name, sizeof(name), fid, oid);
 
 again:
-	rc = osd_obj_add_entry(info, osd, d, name, id, th);
+	rc = osd_obj_add_entry(info, osd, d, name, id, th, false);
 	if (rc == -EEXIST) {
-		rc = osd_obj_update_entry(info, osd, d, name, fid, id, th);
+		rc = osd_obj_update_entry(info, osd, d, name, fid, id, th,
+					  false);
 		if (unlikely(rc == -ENOENT))
 			goto again;
 
@@ -1211,7 +1216,7 @@ int osd_obj_map_update(struct osd_thread_info *info,
 	LASSERT(d);
 
 	osd_oid_name(name, sizeof(name), fid, ostid_id(ostid));
-	rc = osd_obj_update_entry(info, osd, d, name, fid, id, th);
+	rc = osd_obj_update_entry(info, osd, d, name, fid, id, th, false);
 
 	RETURN(rc);
 }
@@ -1370,7 +1375,7 @@ osd_object_spec_find(struct osd_thread_info *info, struct osd_device *osd,
 
 int osd_obj_spec_update(struct osd_thread_info *info, struct osd_device *osd,
 			const struct lu_fid *fid, const struct osd_inode_id *id,
-			handle_t *th)
+			handle_t *th, bool locked)
 {
 	struct dentry *root;
 	char *name = NULL;
@@ -1380,7 +1385,8 @@ int osd_obj_spec_update(struct osd_thread_info *info, struct osd_device *osd,
 
 	root = osd_object_spec_find(info, osd, fid, &name);
 	if (!IS_ERR(root)) {
-		rc = osd_obj_update_entry(info, osd, root, name, fid, id, th);
+		rc = osd_obj_update_entry(info, osd, root, name, fid, id, th,
+					  locked);
 	} else {
 		rc = PTR_ERR(root);
 		if (rc == -ENOENT)
@@ -1392,7 +1398,7 @@ int osd_obj_spec_update(struct osd_thread_info *info, struct osd_device *osd,
 
 int osd_obj_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
 			const struct lu_fid *fid, const struct osd_inode_id *id,
-			handle_t *th)
+			handle_t *th, bool locked)
 {
 	struct dentry *root;
 	char *name = NULL;
@@ -1402,7 +1408,7 @@ int osd_obj_spec_insert(struct osd_thread_info *info, struct osd_device *osd,
 
 	root = osd_object_spec_find(info, osd, fid, &name);
 	if (!IS_ERR(root)) {
-		rc = osd_obj_add_entry(info, osd, root, name, id, th);
+		rc = osd_obj_add_entry(info, osd, root, name, id, th, locked);
 	} else {
 		rc = PTR_ERR(root);
 		if (rc == -ENOENT)
