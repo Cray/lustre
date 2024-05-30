@@ -1910,7 +1910,8 @@ osd_ios_scan_one(struct osd_thread_info *info, struct osd_device *dev,
 			RETURN(rc);
 
 		rc = osd_scrub_refresh_mapping(info, dev, &tfid, id,
-					       DTO_INDEX_INSERT, true, 0, NULL);
+					       DTO_INDEX_INSERT, true,
+					       OI_LOCKED, NULL);
 		if (rc > 0)
 			rc = 0;
 
@@ -1928,7 +1929,8 @@ osd_ios_scan_one(struct osd_thread_info *info, struct osd_device *dev,
 	}
 
 	rc = osd_scrub_refresh_mapping(info, dev, &tfid, id,
-				       DTO_INDEX_UPDATE, true, 0, NULL);
+				       DTO_INDEX_UPDATE, true,
+				       OI_LOCKED, NULL);
 	if (rc > 0)
 		rc = 0;
 
