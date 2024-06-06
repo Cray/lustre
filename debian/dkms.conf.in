@@ -123,13 +123,21 @@ else
               grep -E '/ofa_kernel|/ofa_kernel/default|/openib' |
               grep -v /ofed_scripts/ | head -n1)
       if [[ -n "$paths" ]]; then
-          epaths=$(find $paths -name rdma_cm.h |
-                   grep -F -e "$(uname -r)" -e default |
+         # exact match:
+         if [[ "$(basename $paths)" == "$kernelver" ]]; then
+            epaths=$(find $paths -name rdma_cm.h |
                    sed -e 's:/include/rdma/rdma_cm.h::')
-          if [ $(echo $epaths | wc -w) -eq 1 ]; then
-             can_o2ib_mofed=yes
-             ext_mofed=yes
-          fi
+         else
+            # mofed kABI fallback
+            filter=$(echo $kernelver | grep -P -o "\d+\.\d+\.\d+-\d+")
+            epaths=$(find $paths -name rdma_cm.h |
+                   grep -F -e "$filter" |
+                   sed -e 's:/include/rdma/rdma_cm.h::')
+         fi
+         if [ $(echo $epaths | wc -w) -eq 1 ]; then
+            can_o2ib_mofed=yes
+            ext_mofed=yes
+         fi
       fi
    fi
 fi
