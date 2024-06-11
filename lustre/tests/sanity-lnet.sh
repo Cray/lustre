@@ -2506,20 +2506,26 @@ do_route_add() {
 		error "route add to $net via $gw failed rc=$?"
 }
 
-ROUTER=""
-ROUTER_INTERFACES=()
-RPEER=""
-RPEER_INTERFACES=()
+ROUTERS_REQUIRED=
+ROUTERS=()
+declare -A ROUTER_INTERFACES
+RPEERS_REQUIRED=
+RPEERS=()
+declare -A RPEER_INTERFACES
 init_router_test_vars() {
-	local rnodes=$(remote_nodes_list)
-	[[ -z $rnodes || $(wc -w <<<$rnodes) -lt 2 ]] &&
-		skip "Need at least 2 remote nodes found \"$rnodes\""
+	local rnodes_required
+	((rnodes_required=ROUTERS_REQUIRED+RPEERS_REQUIRED))
+	# all remote nodes, including some that may not be used
+	local rnodes_all=( $(remote_nodes_list) )
+	[[ -z $rnodes_all || "${#rnodes_all[@]}" -lt $rnodes_required ]] &&
+		skip "Need at least $rnodes_required remote nodes" \
+			"found \"${rnodes_all[@]}\""
 
-	ROUTER=$(awk '{print $1}' <<<$rnodes)
-	RPEER=$(awk '{print $2}' <<<$rnodes)
+	ROUTERS=( "${rnodes_all[@]:0:${ROUTERS_REQUIRED}}" )
+	RPEERS=( "${rnodes_all[@]:${ROUTERS_REQUIRED}:${RPEERS_REQUIRED}}" )
 
-	rnodes=$(comma_list $ROUTER $RPEER)
-	local all_nodes=$(comma_list $rnodes $HOSTNAME)
+	local rnodes=$(comma_list ${ROUTERS[@]} ${RPEERS[@]})
+	local all_nodes=$(comma_list ${ROUTERS[@]} ${RPEERS[@]} $HOSTNAME)
 
 	do_nodes $rnodes $LUSTRE_RMMOD ||
 		error "failed to unload modules"
@@ -2527,25 +2533,35 @@ init_router_test_vars() {
 	do_rpc_nodes $rnodes "load_lnet config_on_load=1" ||
 		error "Failed to load and configure LNet"
 
-	ROUTER_INTERFACES=( $(do_rpc_nodes --quiet $ROUTER lnet_if_list) )
+	for router in ${ROUTERS[@]}; do
+		ROUTER_INTERFACES[$router]=$(do_rpc_nodes --quiet \
+						$router lnet_if_list)
+	done
 
-	RPEER_INTERFACES=( $(do_rpc_nodes --quiet $RPEER lnet_if_list) )
+	for rpeer in ${RPEERS[@]}; do
+		RPEER_INTERFACES[$rpeer]=$(do_rpc_nodes --quiet \
+						$rpeer lnet_if_list)
+	done
 
 	do_nodes $all_nodes $LUSTRE_RMMOD ||
 		error "Failed to unload modules"
 
 	[[ ${#INTERFACES[@]} -eq 0 ]] &&
 		error "No interfaces configured for local host $HOSTNAME"
-	[[ ${#ROUTER_INTERFACES[@]} -eq 0 ]] &&
-		error "No interfaces configured for router $ROUTER"
-	[[ ${#RPEER_INTERFACES[@]} -eq 0 ]] &&
-		error "No interfaces configured for remote peer $RPEER"
+	for router in ${!ROUTER_INTERFACES[@]}; do
+		[[ -z "${ROUTER_INTERFACES[$router]}" ]] &&
+			error "No interfaces configured for router $router"
+	done
+	for rpeer in ${!RPEER_INTERFACES[@]}; do
+		[[ -z "${RPEER_INTERFACES[$rpeer]}" ]] &&
+			error "No interfaces configured for remote peer $rpeer"
+	done
 
 	return 0
 }
 
-ROUTER_NIDS=()
-RPEER_NIDS=()
+declare -A ROUTER_NIDS
+declare -A RPEER_NIDS
 LNIDS=()
 LOCAL_NET=${NETTYPE}1
 REMOTE_NET=${NETTYPE}2
@@ -2559,7 +2575,7 @@ setup_router_test() {
 			return $?
 	fi
 
-	local all_nodes=$(comma_list $ROUTER $RPEER $HOSTNAME)
+	local all_nodes=$(comma_list ${ROUTERS[@]} ${RPEERS[@]} $HOSTNAME)
 
 	do_nodes $all_nodes $LUSTRE_RMMOD ||
 		error "failed to unload modules"
@@ -2572,22 +2588,35 @@ setup_router_test() {
 	do_nodes $all_nodes "$LNETCTL lnet configure" ||
 		error "Failed to initialize DLC"
 
-	do_net_add $ROUTER $LOCAL_NET ${ROUTER_INTERFACES[0]} ||
-		return $?
+	for router in ${!ROUTER_INTERFACES[@]}; do
+		local router_interfaces=( ${ROUTER_INTERFACES[$router]} )
 
-	do_net_add $ROUTER $REMOTE_NET ${ROUTER_INTERFACES[0]} ||
-		return $?
+		do_net_add $router $LOCAL_NET ${router_interfaces[0]} ||
+			return $?
+		do_net_add $router $REMOTE_NET ${router_interfaces[0]} ||
+			return $?
+	done
 
-	do_net_add $RPEER $REMOTE_NET ${RPEER_INTERFACES[0]} ||
-		return $?
+	for rpeer in ${!RPEER_INTERFACES[@]}; do
+		local rpeer_interfaces=( ${RPEER_INTERFACES[$rpeer]} )
+
+		do_net_add $rpeer $REMOTE_NET ${rpeer_interfaces[0]} ||
+			return $?
+	done
 
 	add_net $LOCAL_NET ${INTERFACES[0]} ||
 		return $?
 
-	ROUTER_NIDS=( $(do_node $ROUTER $LCTL list_nids 2>/dev/null |
-			xargs echo) )
-	RPEER_NIDS=( $(do_node $RPEER $LCTL list_nids 2>/dev/null |
-		       xargs echo) )
+	for router in ${!ROUTER_INTERFACES[@]}; do
+		ROUTER_NIDS[$router]=$(do_node $router $LCTL list_nids
+					2>/dev/null | xargs echo)
+	done
+
+	for rpeer in ${!RPEER_INTERFACES[@]}; do
+		RPEER_NIDS[$rpeer]=$(do_node $rpeer $LCTL list_nids
+					2>/dev/null | xargs echo)
+	done
+
 	LNIDS=( $($LCTL list_nids 2>/dev/null | xargs echo) )
 }
 
@@ -2596,23 +2625,36 @@ do_route_del() {
 	local net=$2
 	local gw=$3
 
-	do_nodesv $node "if $LNETCTL route show --net $net --gateway $gw; then \
-				$LNETCTL route del --net $net --gateway $gw;   \
-			 else						       \
-				exit 0;					       \
-			 fi"
+	do_nodesv $node \
+	"output=\\\"\\\$($LNETCTL route show --net $net --gateway $gw 2>/dev/null)\\\"; \
+		if [[ -n \\\"\\\${output}\\\" ]]; then			\
+			echo \\\"Delete route to $net via $gw\\\";	\
+			$LNETCTL route del --net $net --gateway $gw;	\
+		else							\
+			exit 0;						\
+		fi"
 }
 
 cleanup_router_test() {
-	local all_nodes=$(comma_list $HOSTNAME $ROUTER $RPEER)
+	local all_nodes=$(comma_list $HOSTNAME ${ROUTERS[@]} ${RPEERS[@]})
 
 	trap "" EXIT
 
-	do_route_del $HOSTNAME $REMOTE_NET ${ROUTER_NIDS[0]} ||
-		error "Failed to delete $REMOTE_NET route"
+	for router in ${!ROUTER_NIDS[@]}; do
+		local router_nids=( ${ROUTER_NIDS[$router]} )
 
-	do_route_del $RPEER $LOCAL_NET ${ROUTER_NIDS[1]} ||
-		error "Failed to delete $LOCAL_NET route"
+		do_route_del $HOSTNAME $REMOTE_NET ${router_nids[0]} ||
+			error "Failed to delete $HOSTNAME -> "\
+				"$REMOTE_NET via ${router_nids[0]} route"
+	done
+
+	for router in ${!ROUTER_INTERFACES[@]}; do
+		local router_nids=( ${ROUTER_NIDS[$router]} )
+
+		do_route_del $rpeer $LOCAL_NET ${router_nids[1]} ||
+			error "Failed to delete $rpeer -> "\
+				"$LOCAL_NET via ${router_nids[1]} route"
+	done
 
 	do_nodes $all_nodes $LUSTRE_RMMOD ||
 		error "failed to unload modules"
@@ -2620,6 +2662,7 @@ cleanup_router_test() {
 	return 0
 }
 
+# check that all routes are up
 check_route_aliveness() {
 	local node="$1"
 	local expected="$2"
@@ -2631,9 +2674,10 @@ check_route_aliveness() {
 
 	chk_intvl=$(cat /sys/module/lnet/parameters/alive_router_check_interval)
 
-	lctl_actual=$(do_node $node $LCTL show_route | awk '{print $7}')
+	lctl_actual=$(do_node $node $LCTL show_route |
+			awk '{print $7}' | sort -u | xargs)
 	lnetctl_actual=$(do_node $node $LNETCTL route show -v |
-			 awk '/state/{print $NF}')
+			awk '/state/{print $NF}' | sort -u | xargs)
 
 	for ((i = 0; i < $chk_intvl; i++)); do
 		if [[ $lctl_actual == $expected ]] &&
@@ -2644,9 +2688,10 @@ check_route_aliveness() {
 		echo "wait 1s for route state change"
 		sleep 1
 
-		lctl_actual=$(do_node $node $LCTL show_route | awk '{print $7}')
+		lctl_actual=$(do_node $node $LCTL show_route |
+				awk '{print $7}' | sort -u | xargs)
 		lnetctl_actual=$(do_node $node $LNETCTL route show -v |
-				 awk '/state/{print $NF}')
+				awk '/state/{print $NF}' | sort -u | xargs)
 	done
 
 	[[ $lctl_actual != $expected ]] &&
@@ -2659,8 +2704,9 @@ check_route_aliveness() {
 }
 
 check_router_ni_status() {
-	local expected_local="$1"
-	local expected_remote="$2"
+	local router="$1"
+	local expected_local="$2"
+	local expected_remote="$3"
 
 	local actual_local
 	local actual_remote
@@ -2671,9 +2717,9 @@ check_router_ni_status() {
 	chk_intvl=$(cat /sys/module/lnet/parameters/alive_router_check_interval)
 	timeout=$(cat /sys/module/lnet/parameters/router_ping_timeout)
 
-	actual_local=$(do_node $ROUTER "$LNETCTL net show --net $LOCAL_NET" |
+	actual_local=$(do_node $router "$LNETCTL net show --net $LOCAL_NET" |
 		       awk '/status/{print $NF}')
-	actual_remote=$(do_node $ROUTER "$LNETCTL net show --net $REMOTE_NET" |
+	actual_remote=$(do_node $router "$LNETCTL net show --net $REMOTE_NET" |
 			awk '/status/{print $NF}')
 
 	for ((i = 0; i < $((chk_intvl + timeout)); i++)); do
@@ -2685,10 +2731,10 @@ check_router_ni_status() {
 		echo "wait 1s for NI state change"
 		sleep 1
 
-		actual_local=$(do_node $ROUTER \
+		actual_local=$(do_node $router \
 			       "$LNETCTL net show --net $LOCAL_NET" |
 				awk '/status/{print $NF}')
-		actual_remote=$(do_node $ROUTER \
+		actual_remote=$(do_node $router \
 				"$LNETCTL net show --net $REMOTE_NET" |
 				awk '/status/{print $NF}')
 	done
@@ -2702,43 +2748,66 @@ check_router_ni_status() {
 	return 0
 }
 
+
 do_basic_rtr_test() {
-	do_node $ROUTER "$LNETCTL set routing 1" ||
-		error "Unable to enable routing on $ROUTER"
+	for router in ${!ROUTER_INTERFACES[@]}; do
+		do_node $router "$LNETCTL set routing 1" ||
+			error "Unable to enable routing on $router"
+	done
 
-	do_route_add $HOSTNAME $REMOTE_NET ${ROUTER_NIDS[0]} ||
-		return $?
+	for router in ${!ROUTER_NIDS[@]}; do
+		local router_nids=( ${ROUTER_NIDS[$router]} )
 
-	do_route_add $RPEER $LOCAL_NET ${ROUTER_NIDS[1]} ||
-		return $?
+		do_route_add $HOSTNAME $REMOTE_NET ${router_nids[0]}
+	done
+
+	for router in ${!ROUTER_INTERFACES[@]}; do
+		local router_nids=( ${ROUTER_NIDS[$router]} )
+
+		for rpeer in ${!RPEER_INTERFACES[@]}; do
+			do_route_add $rpeer $LOCAL_NET ${router_nids[1]}
+		done
+	done
 
 	check_route_aliveness "$HOSTNAME" "up" ||
 		return $?
 
-	check_route_aliveness "$RPEER" "up" ||
-		return $?
+	for rpeer in ${RPEERS[@]}; do
+		check_route_aliveness "$rpeer" "up" ||
+			return $?
+	done
 
-	do_lnetctl ping ${RPEER_NIDS[0]} ||
-		error "Failed to ping ${RPEER_NIDS[0]}"
+	for rpeer in ${!RPEER_NIDS[@]}; do
+		local rpeer_nids=( ${RPEER_NIDS[$rpeer]} )
 
-	do_node $RPEER "$LNETCTL ping ${LNIDS[0]}" ||
-		error "$RPEER failed to ping ${LNIDS[0]}"
+		do_lnetctl ping ${rpeer_nids[0]} ||
+			error "Failed to ping ${rpeer_nids[0]}"
+	done
+
+	for rpeer in ${RPEERS[@]}; do
+		do_node $rpeer "$LNETCTL ping ${LNIDS[0]}" ||
+			error "$rpeer failed to ping ${LNIDS[0]}"
+	done
 
 	return 0
 }
 
 test_220() {
+	ROUTERS_REQUIRED=1
+	RPEERS_REQUIRED=1
+
 	setup_router_test || return $?
 
 	do_basic_rtr_test || return $?
 
-	do_rpc_nodes $HOSTNAME,$RPEER load_module ../lnet/selftest/lnet_selftest ||
-		error "Failed to load lnet-selftest module"
+	do_rpc_nodes $HOSTNAME,${RPEERS[0]} load_module \
+		../lnet/selftest/lnet_selftest ||
+			error "Failed to load lnet-selftest module"
 
-	$LSTSH -H -t $HOSTNAME -f $RPEER -m rw -s 4k ||
+	$LSTSH -H -t $HOSTNAME -f ${RPEERS[0]} -m rw -s 4k ||
 		error "lst failed"
 
-	$LSTSH -H -t $HOSTNAME -f $RPEER -m rw ||
+	$LSTSH -H -t $HOSTNAME -f ${RPEERS[0]} -m rw ||
 		error "lst failed"
 
 	cleanup_router_test || return $?
@@ -2746,6 +2815,9 @@ test_220() {
 run_test 220 "Add routes w/default options - check aliveness"
 
 test_221() {
+	ROUTERS_REQUIRED=1
+	RPEERS_REQUIRED=1
+
 	setup_router_test lnet_peer_discovery_disabled=1 || return $?
 
 	do_basic_rtr_test || return $?
@@ -2754,75 +2826,85 @@ test_221() {
 }
 run_test 221 "Add routes w/DD disabled - check aliveness"
 
+# assumes 1 router, 1 peer
 do_aarf_enabled_test() {
-	do_node $ROUTER "$LNETCTL set routing 1" ||
+
+	local router=${ROUTERS[0]}
+	local router_nids=( ${ROUTER_NIDS[$router]} )
+	local rpeer=${RPEERS[0]}
+	local rpeer_nids=( ${RPEER_NIDS[$rpeer]} )
+
+	do_node $router "$LNETCTL set routing 1" ||
 		error "Unable to enable routing on $ROUTER"
 
-	check_router_ni_status "down" "down"
+	check_router_ni_status $router "down" "down"
 
-	do_lnetctl ping ${RPEER_NIDS[0]} &&
+	do_lnetctl ping ${rpeer_nids[0]} &&
 		error "Ping should fail"
 
-	do_node $RPEER "$LNETCTL ping ${LNIDS[0]}" &&
-		error "$RPEER ping should fail"
+	do_node $rpeer "$LNETCTL ping ${LNIDS[0]}" &&
+		error "$rpeer ping should fail"
 
 	# Adding a route should cause the router's NI on LOCAL_NET to get up
-	do_route_add $HOSTNAME $REMOTE_NET ${ROUTER_NIDS[0]} ||
+	do_route_add $HOSTNAME $REMOTE_NET ${router_nids[0]} ||
 		return $?
 
-	check_router_ni_status "up" "down" ||
+	check_router_ni_status $router "up" "down" ||
 		return $?
 
 	# But route should still be down because of avoid_asym_router_failure
 	check_route_aliveness "$HOSTNAME" "down" ||
 		return $?
 
-	do_lnetctl ping ${RPEER_NIDS[0]} &&
+	do_lnetctl ping ${rpeer_nids[0]} &&
 		error "Ping should fail"
 
-	do_node $RPEER "$LNETCTL ping ${LNIDS[0]}" &&
-		error "$RPEER ping should fail"
+	do_node $rpeer "$LNETCTL ping ${LNIDS[0]}" &&
+		error "$rpeer ping should fail"
 
 	# Adding the symmetric route should cause the remote NI to go up and
 	# routes to go up
-	do_route_add $RPEER $LOCAL_NET ${ROUTER_NIDS[1]} ||
+	do_route_add $rpeer $LOCAL_NET ${router_nids[1]} ||
 		return $?
 
-	check_router_ni_status "up" "up" ||
+	check_router_ni_status $router "up" "up" ||
 		return $?
 
 	check_route_aliveness "$HOSTNAME" "up" ||
 		return $?
 
-	check_route_aliveness "$RPEER" "up" ||
+	check_route_aliveness "$rpeer" "up" ||
 		return $?
 
-	do_lnetctl ping ${RPEER_NIDS[0]} ||
-		error "Failed to ping ${RPEER_NIDS[0]}"
+	do_lnetctl ping ${rpeer_nids[0]} ||
+		error "Failed to ping ${rpeer_nids[0]}"
 
-	do_node $RPEER "$LNETCTL ping ${LNIDS[0]}" ||
-		error "$RPEER failed to ping ${LNIDS[0]}"
+	do_node $rpeer "$LNETCTL ping ${LNIDS[0]}" ||
+		error "$rpeer failed to ping ${LNIDS[0]}"
 
 	# Stop LNet on local host
 	do_lnetctl lnet unconfigure ||
 		error "Failed to stop LNet rc=$?"
 
-	check_router_ni_status "down" "up" ||
+	check_router_ni_status $router "down" "up" ||
 		return $?
 
-	check_route_aliveness "$RPEER" "down" ||
+	check_route_aliveness "$rpeer" "down" ||
 		return $?
 
-	do_lnetctl ping ${RPEER_NIDS[0]} &&
+	do_lnetctl ping ${rpeer_nids[0]} &&
 		error "Ping should fail"
 
-	do_node $RPEER "$LNETCTL ping ${LNIDS[0]}" &&
-		error "$RPEER ping should fail"
+	do_node $rpeer "$LNETCTL ping ${LNIDS[0]}" &&
+		error "$rpeer ping should fail"
 
 	return 0
 }
 
 test_222() {
+	ROUTERS_REQUIRED=1
+	RPEERS_REQUIRED=1
+
 	setup_router_test avoid_asym_router_failure=1 || return $?
 
 	do_aarf_enabled_test || return $?
@@ -2832,6 +2914,9 @@ test_222() {
 run_test 222 "Check avoid_asym_router_failure=1"
 
 test_223() {
+	ROUTERS_REQUIRED=1
+	RPEERS_REQUIRED=1
+
 	local opts="avoid_asym_router_failure=1 lnet_peer_discovery_disabled=1"
 
 	setup_router_test $opts || return $?
@@ -2843,52 +2928,61 @@ test_223() {
 run_test 223 "Check avoid_asym_router_failure=1 w/DD disabled"
 
 do_aarf_disabled_test() {
-	do_node $ROUTER "$LNETCTL set routing 1" ||
-		error "Unable to enable routing on $ROUTER"
+	local router=${ROUTERS[0]}
+	local router_nids=( ${ROUTER_NIDS[$router]} )
+	local rpeer=${RPEERS[0]}
+	local rpeer_nids=( ${RPEER_NIDS[$rpeer]} )
 
-	check_router_ni_status "down" "down"
+	do_node $router "$LNETCTL set routing 1" ||
+		error "Unable to enable routing on $router"
 
-	do_route_add $HOSTNAME $REMOTE_NET ${ROUTER_NIDS[0]} ||
+	check_router_ni_status $router "down" "down"
+
+	do_route_add $HOSTNAME $REMOTE_NET ${router_nids[0]} ||
 		return $?
 
-	check_router_ni_status "up" "down" ||
-		return $?
-
-	check_route_aliveness "$HOSTNAME" "up" ||
-		return $?
-
-	do_route_add $RPEER $LOCAL_NET ${ROUTER_NIDS[1]} ||
-		return $?
-
-	check_router_ni_status "up" "up" ||
+	check_router_ni_status $router "up" "down" ||
 		return $?
 
 	check_route_aliveness "$HOSTNAME" "up" ||
 		return $?
 
-	check_route_aliveness "$RPEER" "up" ||
+	do_route_add $rpeer $LOCAL_NET ${router_nids[1]} ||
 		return $?
 
-	do_lnetctl ping ${RPEER_NIDS[0]} ||
-		error "Failed to ping ${RPEER_NIDS[0]}"
+	check_router_ni_status $router "up" "up" ||
+		return $?
 
-	do_node $RPEER "$LNETCTL ping ${LNIDS[0]}" ||
-		error "$RPEER failed to ping ${LNIDS[0]}"
+
+	check_route_aliveness "$HOSTNAME" "up" ||
+		return $?
+
+	check_route_aliveness "$rpeer" "up" ||
+		return $?
+
+	do_lnetctl ping ${rpeer_nids[0]} ||
+		error "Failed to ping ${rpeer_nids[0]}"
+
+	do_node $rpeer "$LNETCTL ping ${LNIDS[0]}" ||
+		error "$rpeer failed to ping ${LNIDS[0]}"
 
 	# Stop LNet on local host
 	do_lnetctl lnet unconfigure ||
 		error "Failed to stop LNet rc=$?"
 
-	check_router_ni_status "down" "up" ||
+	check_router_ni_status $router "down" "up" ||
 		return $?
 
-	check_route_aliveness "$RPEER" "up" ||
+	check_route_aliveness "$rpeer" "up" ||
 		return $?
 
 	return 0
 }
 
 test_224() {
+	ROUTERS_REQUIRED=1
+	RPEERS_REQUIRED=1
+
 	setup_router_test avoid_asym_router_failure=0 ||
 		return $?
 
@@ -2901,6 +2995,9 @@ test_224() {
 run_test 224 "Check avoid_asym_router_failure=0"
 
 test_225() {
+	ROUTERS_REQUIRED=1
+	RPEERS_REQUIRED=1
+
 	local opts="avoid_asym_router_failure=0 lnet_peer_discovery_disabled=1"
 
 	setup_router_test $opts || return $?
@@ -2913,23 +3010,63 @@ test_225() {
 run_test 225 "Check avoid_asym_router_failure=0 w/DD disabled"
 
 test_226() {
-	local opts="lnet_peer_discovery_disabled=1 lnet_health_sensitivity=0"
+	ROUTERS_REQUIRED=2
+	RPEERS_REQUIRED=1
+
+	setup_router_test || return $?
+
+	do_basic_rtr_test || return $?
+
+	# ping the peer from host to make sure it works
+	local rpeer=${RPEERS[0]}
+	local rpeer_nids=( ${RPEER_NIDS[$rpeer]} )
+
+	for i in {1..4}; do
+		do_lnetctl ping ${rpeer_nids[0]} ||
+			error "Failed to ping ${rpeer_nids[0]} on try $i"
+	done
+
+	# remove a route from the remote peer
+	local router_nids=( ${ROUTER_NIDS[${ROUTERS[0]}]} )
+
+	do_route_del $rpeer $LOCAL_NET ${router_nids[1]} ||
+		error "$rpeer failed to delete route to $LOCAL_NET via ${router_nids[1]}"
+
+	# should attempt to use both routes due to round-robin
+	# failure case here is an LBUG on $rpeer
+	for i in {1..4}; do
+		do_lnetctl ping ${rpeer_nids[0]}
+	done
+
+	cleanup_router_test || return $?
+}
+run_test 226 "test missing route for 1 of 2 routers"
+
+test_230() {
+	[[ ${NETTYPE} == tcp* ]] || skip "Need tcp NETTYPE"
+
+	ROUTERS_REQUIRED=1
+	RPEERS_REQUIRED=1
 
 	setup_router_test $opts || return $?
 
 	do_basic_rtr_test || return $?
 
-	do_node $RPEER $LNETCTL lnet unconfigure ||
-		error "Failed to unconfigure lnet on $RPEER"
+	local rpeer=${RPEERS[0]}
+	local rpeer_nids=( ${RPEER_NIDS[$rpeer]} )
+	local router=${ROUTERS[0]}
 
-	do_lnetctl ping ${RPEER_NIDS[0]} &&
+	do_node $rpeer $LNETCTL lnet unconfigure ||
+		error "Failed to unconfigure lnet on $rpeer"
+
+	do_lnetctl ping ${rpeer_nids[0]} &&
 		error "Expected ping to fail"
 
-	do_lnetctl ping ${RPEER_NIDS[0]} &&
+	do_lnetctl ping ${rpeer_nids[0]} &&
 		error "Expected ping to fail"
 
-	local dropped=$(do_node $ROUTER \
-			$LNETCTL peer show -v 2 --nid ${RPEER_NIDS[0]} |
+	local dropped=$(do_node $router \
+			$LNETCTL peer show -v 2 --nid ${rpeer_nids[0]} |
 			grep -A 2 dropped_stats |
 			awk '/get:/{print $2}' |
 			xargs echo |
@@ -3190,79 +3327,102 @@ test_254() {
 run_test 254 "Message delayed beyond deadline should be dropped (multi-rail)"
 
 test_255() {
+	ROUTERS_REQUIRED=1
+	RPEERS_REQUIRED=1
+
 	setup_router_test peer_buffer_credits=1024 || return $?
 
 	do_basic_rtr_test || return $?
 
-	local rtr_pc=$(do_node $ROUTER $LNETCTL peer show -v --nid ${RPEER_NIDS[0]} |
+	local rpeer=${RPEERS[0]}
+	local rpeer_nids=( ${RPEER_NIDS[$rpeer]} )
+	local rpnid=${rpeer_nids[0]}
+	local router=${ROUTERS[0]}
+	local router_nids=( ${ROUTER_NIDS[$router]} )
+	local rtrpnid=${router_nids[0]}
+
+	local rtr_pc=$(do_node $router $LNETCTL peer show -v --nid $rpnid |
 		       awk '/max_ni_tx_credits:/{print $NF}' |
-		       xargs echo |
-		       sed 's/ /\+/g' | bc)
+		       xargs echo | sed 's/ /\+/g' | bc)
 
 	((rtr_pc > 0)) ||
-		error "$ROUTER couldn't determine peer credits for ${RPEER_NIDS[0]}"
+		error "$router couldn't determine peer credits for $rpnid"
 
-	local my_pc=$($LNETCTL peer show -v --nid ${ROUTER_NIDS[0]} |
+	local my_pc=$($LNETCTL peer show -v --nid $rtrpnid |
 		      awk '/max_ni_tx_credits:/{print $NF}' |
-		      xargs echo |
-		      sed 's/ /\+/g' | bc)
+		      xargs echo | sed 's/ /\+/g' | bc)
 
-	((my_pc > 0)) || error "couldn't determine peer credits for ${ROUTER_NIDS[0]}"
+	((my_pc > 0)) || error "couldn't determine peer credits for $rtrpnid"
 
 	if ((my_pc < rtr_pc )); then
 		cleanup_router_test || return $?
 		skip "Need local peer credits >= router's peer credits"
 	fi
 
-	local rnid lnid
-
-	local old_tto=$(do_node $ROUTER $LNETCTL global show |
+	local old_tto=$(do_node $router $LNETCTL global show |
 			awk '/transaction_timeout:/{print $NF}')
 
-	[[ -z $old_tto ]] &&
+	[[ -n $old_tto ]] ||
 		error "Cannot determine LNet transaction timeout"
 
 	local tto=10
 
-	do_node $ROUTER $LNETCTL set transaction_timeout 10 ||
+	do_node $router $LNETCTL set transaction_timeout $tto ||
 		error "Failed to set transaction_timeout"
 
-#define CFS_FAIL_DELAY_MSG_FORWARD      0xe001
-	do_node $ROUTER $LCTL set_param fail_loc=0xe001
+	local old_retry=$(do_node $router $LNETCTL global show |
+			  awk '/retry_count:/{print $NF}')
+
+	[[ -n $old_retry ]] ||
+		error "Cannot determine LNet retry count"
+
+	do_node $router $LNETCTL set retry_count 0 ||
+		error "Failed to set transaction_timeout"
+
+	#define CFS_FAIL_DELAY_MSG_FORWARD      0xe002
+	do_node $router $LCTL set_param fail_loc=0xe002
 
 	# We want to consume all peer credits for at least transaction_timeout
 	# seconds
 	local delay=$((tto + 1))
 
+	local rnid lnid cmd
+	local args="-l $delay -r 1 -m GET"
+
 	for lnid in ${LNIDS[@]}; do
-		for rnid in ${RPEER_NIDS[@]}; do
-			echo "$ROUTER $LCTL net_delay_add -s ${lnid} -d ${rnid} -l ${delay} -r 1"
-			do_node $ROUTER $LCTL net_delay_add -s ${lnid} -d ${rnid} -l ${delay} -r 1
+		for rnid in ${rpeer_nids[@]}; do
+			cmd="$LCTL net_delay_add -s ${lnid} -d ${rnid} $args"
+			echo "$router $cmd"
+			do_node $router $cmd || error "Failed to add delay rule"
 		done
 	done
 
 	local i
 
 	for i in $(seq 1 ${rtr_pc}); do
-		$LNETCTL ping --timeout $((delay+2)) ${RPEER_NIDS[0]} 1>/dev/null &
+		$LNETCTL ping --timeout $((delay+2)) $rpnid 1>/dev/null &
 	done
 
-	echo "Issued ${rtr_pc} pings to ${RPEER_NIDS[0]}"
+	echo "Issued ${rtr_pc} pings to $rpnid"
 
 	local pid
 
 	# This ping should be queued on the router's peer NI tx credit queue
-	$LNETCTL ping --timeout $((delay+2)) ${RPEER_NIDS[0]} &
+	$LNETCTL ping --timeout $((delay+2)) $rpnid &
 
 	echo "Issued last ping - sleep $delay"
 	sleep ${delay}
 
-	do_node $ROUTER $LCTL net_delay_del -a
+	do_node $router $LCTL net_delay_del -a
 
 	wait
 
-	# Router should not drop any of the messages that have exceeded their deadline
-	local dropped=$(do_node $ROUTER $LNETCTL peer show -v 2 --nid ${RPEER_NIDS[0]} |
+	do_node $router $LNETCTL set transaction_timeout ${old_tto}
+	do_node $router $LNETCTL set retry_count ${old_retry}
+
+	# Router should not drop any of the messages that have exceeded their
+	# deadline
+	local dropped=$(do_node $router $LNETCTL peer show -v 2 --nid $rpnid |
 			grep -A 2 dropped_stats |
 			awk '/get:/{print $2}' |
 			xargs echo |
@@ -3271,9 +3431,7 @@ test_255() {
 	((dropped == 0)) ||
 		error "Expect 0 dropped GET but found $dropped"
 
-	do_node $ROUTER $LNETCTL set transaction_timeout ${old_tto}
-
-	return 0
+	cleanup_router_test
 }
 run_test 255 "Router should not drop messages that are past the deadline"
 
