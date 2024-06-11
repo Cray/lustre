@@ -3466,6 +3466,28 @@ AC_DEFUN([LC_SECURITY_DENTRY_INIT_SECURTY_WITH_CTX], [
 ]) # LC_SECURITY_DENTRY_INIT_SECURTY_WITH_CTX
 
 #
+# LC_LSMCONTEXT_HAS_ID
+#
+# repo: git://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux/+git/noble
+# commit dad7cffb719e45fd43121ade4ada90ff376c9cad
+# LSM stacking v39: LSM: Ensure the correct LSM context releaser
+#
+AC_DEFUN([LC_SRC_LSMCONTEXT_HAS_ID], [
+	LB2_LINUX_TEST_SRC([lsmcontext_has_id], [
+		#include <linux/security.h>
+	],[
+		((struct lsmcontext *)1)->id = 0;
+	],[-Werror])
+])
+AC_DEFUN([LC_LSMCONTEXT_HAS_ID], [
+	LB2_MSG_LINUX_TEST_RESULT([if lsmcontext has id],
+	[lsmcontext_has_id], [
+		AC_DEFINE(HAVE_LSMCONTEXT_HAS_ID, 1,
+			[lsmcontext has id])
+	])
+]) # LC_LSMCONTEXT_HAS_ID
+
+#
 # LC_HAVE_ADDRESS_SPACE_OPERATIONS_MIGRATE_FOLIO
 #
 # Linux commit v5.19-rc3-392-g5490da4f06d1
@@ -4355,6 +4377,9 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_HAVE_FOLIO_BATCH
 	LC_SRC_HAVE_STRUCT_PAGEVEC
 
+	# 6.8
+	LC_SRC_LSMCONTEXT_HAS_ID
+
 	# kernel patch to extend integrity interface
 	LC_SRC_BIO_INTEGRITY_PREP_FN
 ])
@@ -4636,6 +4661,9 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_HAVE_GET_USER_PAGES_WITHOUT_VMA
 	LC_HAVE_FOLIO_BATCH
 	LC_HAVE_STRUCT_PAGEVEC
+
+	# 6.8
+	LC_LSMCONTEXT_HAS_ID
 
 	# kernel patch to extend integrity interface
 	LC_BIO_INTEGRITY_PREP_FN

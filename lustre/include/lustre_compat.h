@@ -617,7 +617,11 @@ static inline bool is_root_inode(struct inode *inode)
 static inline void lsmcontext_init(struct lsmcontext *cp, char *context,
 				   u32 size, int slot)
 {
+#ifdef HAVE_LSMCONTEXT_HAS_ID
+	cp->id = slot;
+#else
 	cp->slot = slot;
+#endif
 	cp->context = context;
 	cp->len = size;
 }
