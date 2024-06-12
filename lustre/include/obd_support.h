@@ -772,6 +772,7 @@ extern char obd_jobid_var[];
 #define OBD_FAIL_TIMEOUT_MS(id, ms)             CFS_FAIL_TIMEOUT_MS(id, ms)
 #define OBD_FAIL_TIMEOUT_ORSET(id, value, secs) CFS_FAIL_TIMEOUT_ORSET(id, value, secs)
 #define OBD_RACE(id)                            CFS_RACE(id)
+#define OBD_BUSY_RACE(id)			CFS_BUSY_RACE(id)
 #define OBD_FAIL_ONCE                           CFS_FAIL_ONCE
 #define OBD_FAILED                              CFS_FAILED
 
