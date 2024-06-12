@@ -515,62 +515,71 @@ int ldlm_lock_change_resource(struct ldlm_namespace *ns, struct ldlm_lock *lock,
                               const struct ldlm_res_id *new_resid)
 {
 	struct ldlm_resource *oldres;
-        struct ldlm_resource *newres;
-        int type;
-        ENTRY;
+	struct ldlm_resource *newres;
+	int type;
+	ENTRY;
 
-        LASSERT(ns_is_client(ns));
+	LASSERT(ns_is_client(ns));
 
 	oldres = lock_res_and_lock(lock);
 	if (memcmp(new_resid, &oldres->lr_name,
 		   sizeof(oldres->lr_name)) == 0) {
-                /* Nothing to do */
-                unlock_res_and_lock(lock);
-                RETURN(0);
-        }
+		/* Nothing to do */
+		unlock_res_and_lock(lock);
+		RETURN(0);
+	}
 
-        LASSERT(new_resid->name[0] != 0);
+	LASSERT(new_resid->name[0] != 0);
 
-        /* This function assumes that the lock isn't on any lists */
+	/* This function assumes that the lock isn't on any lists */
 	LASSERT(list_empty(&lock->l_res_link));
 
-        type = oldres->lr_type;
-        unlock_res_and_lock(lock);
+	type = oldres->lr_type;
+	unlock_res_and_lock(lock);
 
 	newres = ldlm_resource_get(ns, NULL, new_resid, type, 1);
 	if (IS_ERR(newres))
 		RETURN(PTR_ERR(newres));
 
-        lu_ref_add(&newres->lr_reference, "lock", lock);
-        /*
+	lu_ref_add(&newres->lr_reference, "lock", lock);
+	/*
 	 * To flip the lock from the old to the new resource, oldres
 	 * and newres have to be locked. Resource spin-locks are taken
 	 * in the memory address order to avoid dead-locks.
-	 * As this is the only circumstance where ->l_resource
-	 * can change, and this cannot race with itself, it is safe
-	 * to access lock->l_resource without being careful about locking.
-         */
-        oldres = lock->l_resource;
-	if (ldlm_is_fail_loc2(lock))
-		OBD_RACE(OBD_FAIL_MDS_GRANT_BLOCKED_LOCK);
-        if (oldres < newres) {
-                lock_res(oldres);
-                lock_res_nested(newres, LRT_NEW);
-        } else {
-                lock_res(newres);
-                lock_res_nested(oldres, LRT_NEW);
-        }
-        LASSERT(memcmp(new_resid, &oldres->lr_name,
-                       sizeof oldres->lr_name) != 0);
-	rcu_assign_pointer(lock->l_resource, newres);
-        unlock_res(oldres);
-	unlock_res(newres);
+	 */
+	rcu_read_lock();
+	while (1) {
+		oldres = rcu_dereference(lock->l_resource);
 
-        /* ...and the flowers are still standing! */
-        lu_ref_del(&oldres->lr_reference, "lock", lock);
-        ldlm_resource_putref(oldres);
+		if (ldlm_is_fail_loc2(lock))
+			OBD_BUSY_RACE(OBD_FAIL_MDS_GRANT_BLOCKED_LOCK);
 
-        RETURN(0);
+		if (oldres == newres)
+			break;
+
+		if (oldres < newres) {
+			lock_res(oldres);
+			lock_res_nested(newres, LRT_NEW);
+		} else {
+			lock_res(newres);
+			lock_res_nested(oldres, LRT_NEW);
+		}
+		if (lock->l_resource == oldres) {
+			rcu_assign_pointer(lock->l_resource, newres);
+			unlock_res(oldres);
+			unlock_res(newres);
+			break;
+		}
+		unlock_res(oldres);
+		unlock_res(newres);
+	}
+	rcu_read_unlock();
+
+	/* ...and the flowers are still standing! */
+	lu_ref_del(&oldres->lr_reference, "lock", lock);
+	ldlm_resource_putref(oldres);
+
+	RETURN(0);
 }
 
 /** \defgroup ldlm_handles LDLM HANDLES
