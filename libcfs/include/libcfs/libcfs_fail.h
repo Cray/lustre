@@ -185,6 +185,41 @@ static inline void cfs_race(__u32 id)
 }
 #define CFS_RACE(id) cfs_race(id)
 
+static inline void cfs_busy_race(__u32 id)
+{
+	if (CFS_FAIL_PRECHECK(id)) {
+		if (unlikely(__cfs_fail_check_set(id, 0, CFS_FAIL_LOC_NOSET))) {
+			unsigned long t = jiffies;
+			int rc = 0;
+			cfs_race_state = 0;
+			CERROR("cfs_busy_race id %x sleeping\n", id);
+			/*
+			 * XXX: don't wait forever as there is no guarantee
+			 * that this branch is executed first. for testing
+			 * purposes this construction works good enough
+			 */
+			while (cfs_race_state == 0) {
+				if (signal_pending(current)) {
+					rc = -EINTR;
+					break;
+				}
+
+				if (jiffies >= (t + 5*HZ)) {
+					rc = -ETIMEDOUT;
+					break;
+				}
+			}
+			CERROR("cfs_busy_fail_race id %x awake: rc=%d\n", id, rc);
+		} else {
+			CERROR("cfs_busy_fail_race id %x waking\n", id);
+			cfs_race_state = 1;
+			/* wake up the sleeper in case it's a CFS_RACE() */
+			wake_up(&cfs_race_waitq);
+		}
+	}
+}
+#define CFS_BUSY_RACE(id) cfs_busy_race(id)
+
 /**
  * Wait on race.
  *
