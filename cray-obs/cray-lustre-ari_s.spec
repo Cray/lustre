@@ -205,6 +205,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_pkgconfigdir}/cray-lustre-cfsutil-devel.pc
 %{_pkgconfigdir}/cray-lustre-ptlctl-devel.pc
 %{_libdir}/pkgconfig/lustre.pc
+%{_libdir}/pkgconfig/lnet.pc
 %dir %{_libdir}/lustre
 %{_libdir}/lustre/tests
 %{_modulefiles_prefix}
