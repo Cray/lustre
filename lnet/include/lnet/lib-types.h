@@ -327,6 +327,9 @@ struct lnet_lnd {
 	/* get dma_dev priority */
 	unsigned int (*lnd_get_dev_prio)(struct lnet_ni *ni,
 					 unsigned int dev_idx);
+
+	/* get LND timeout */
+	int (*lnd_get_timeout)(void);
 };
 
 struct lnet_tx_queue {

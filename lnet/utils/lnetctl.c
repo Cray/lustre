@@ -175,7 +175,9 @@ command_t net_cmds[] = {
 	 "\t--verbose: display detailed output per network."
 		       " Optional argument of '2' outputs more stats\n"},
 	{"set", jt_set_ni_value, 0, "set local NI specific parameter\n"
-	 "\t--nid: NI NID to set the\n"
+	 "\t--nid: NI NID to set the value on\n"
+	 "\t--net: network to set the value on (e.g. tcp, o2ib, kfi)\n"
+	 "\t--lnd-timeout: set LND timeout (seconds) for LND used by --net argument\n"
 	 "\t--health: specify health value to set\n"
 	 "\t--conns-per-peer: number of connections per peer\n"
 	 "\t--all: set all NIs value to the one specified\n"},
@@ -1740,16 +1742,21 @@ static int set_value_helper(int argc, char **argv,
 static int jt_set_ni_value(int argc, char **argv)
 {
 	char *nid = NULL;
+	__u32 net = 0;
+	int lnd_timeout = -1;
 	long int healthv = -1, cpp = -1;
 	bool all = false;
 	int rc, opt;
 	struct cYAML *err_rc = NULL;
+	char err_str[LNET_MAX_STR_LEN] = "";
 
-	const char *const short_options = "a:m:n:t:";
+	const char *const short_options = "ai:l:m:n:t:";
 	static const struct option long_options[] = {
 	{ .name = "all",	    .has_arg = no_argument,	  .val = 'a' },
-	{ .name = "conns-per-peer", .has_arg = required_argument, .val = 'm' },
 	{ .name = "nid",	    .has_arg = required_argument, .val = 'n' },
+	{ .name = "lnd-timeout",    .has_arg = required_argument, .val = 'l' },
+	{ .name = "conns-per-peer", .has_arg = required_argument, .val = 'm' },
+	{ .name = "net",	    .has_arg = required_argument, .val = 'i' },
 	{ .name = "health",	    .has_arg = required_argument, .val = 't' },
 	{ .name = NULL } };
 
@@ -1762,6 +1769,26 @@ static int jt_set_ni_value(int argc, char **argv)
 		switch (opt) {
 		case 'a':
 			all = true;
+			break;
+		case 'i':
+			net = libcfs_str2net(optarg);
+			if (net == LNET_NET_ANY) {
+				rc = LUSTRE_CFG_RC_BAD_PARAM;
+				snprintf(err_str, sizeof(err_str),
+			 		 "\"Invalid network type: %s\"",
+			 		 optarg);
+				goto build_error;
+			}
+			break;
+		case 'l':
+			lnd_timeout = atoi(optarg);
+			if (lnd_timeout < 0) {
+				rc = LUSTRE_CFG_RC_BAD_PARAM;
+				snprintf(err_str, sizeof(err_str),
+			 		 "\"Invalid LND timeout value '%s', must be >= 0\"",
+			 		 optarg);
+				goto build_error;
+			}
 			break;
 		case 'm':
 			rc = parse_long(optarg, &cpp);
@@ -1781,9 +1808,24 @@ static int jt_set_ni_value(int argc, char **argv)
 				continue;
 			}
 			break;
+		case '?':
+			rc = LUSTRE_CFG_RC_BAD_PARAM;
+			snprintf(err_str, sizeof(err_str),
+				 "\"Invalid option or missing argument\"");
+			goto build_error;
 		default:
 			return 0;
 		}
+	}
+
+	if (lnd_timeout >= 0 && net == 0) {
+		rc = LUSTRE_CFG_RC_BAD_PARAM;
+		snprintf(err_str, sizeof(err_str),
+			 "\"Specified --lnd-timeout without --net option\"");
+		goto build_error;
+	} else if (net > 0 && lnd_timeout >= 0) {
+		rc = lustre_lnet_config_lnd_timeout(lnd_timeout, net,
+						    -1, &err_rc);
 	}
 
 	if (cpp > -1)
@@ -1793,6 +1835,13 @@ static int jt_set_ni_value(int argc, char **argv)
 		rc = lustre_lnet_config_ni_healthv(healthv, all, nid,
 						   -1, &err_rc);
 
+	if (rc == LUSTRE_CFG_RC_NO_ERR)
+		goto out;
+
+build_error:
+	cYAML_build_error(rc, -1, "net", "set", err_str, &err_rc);
+
+out:
 	if (rc != LUSTRE_CFG_RC_NO_ERR)
 		cYAML_print_tree2file(stderr, err_rc);
 

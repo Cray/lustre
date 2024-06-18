@@ -175,6 +175,8 @@ struct ksock_net {
  */
 #define SOCKNAL_SHUTDOWN_BIAS  (INT_MIN+1)
 
+#define SOCKNAL_TIMEOUT_DEFAULT		50	/* default ksocklnd timeout in seconds */
+
 /** connd timeout */
 #define SOCKNAL_CONND_TIMEOUT  120
 /** reserved thread for accepting & creating new connd */

@@ -708,61 +708,67 @@ libcfs_num_match(__u32 addr, struct list_head *numaddr)
 }
 
 static struct netstrfns libcfs_netstrfns[] = {
-	{ .nf_type		= LOLND,
-	  .nf_name		= "lo",
-	  .nf_modname		= "klolnd",
-	  .nf_addr2str		= libcfs_decnum_addr2str,
-	  .nf_str2addr		= libcfs_lo_str2addr,
-	  .nf_parse_addrlist	= libcfs_num_parse,
-	  .nf_print_addrlist	= libcfs_num_addr_range_print,
-	  .nf_match_addr	= libcfs_num_match
+	{
+		.nf_type		= LOLND,
+		.nf_name		= "lo",
+		.nf_modname		= "klolnd",
+		.nf_addr2str		= libcfs_decnum_addr2str,
+		.nf_str2addr		= libcfs_lo_str2addr,
+		.nf_parse_addrlist	= libcfs_num_parse,
+		.nf_print_addrlist	= libcfs_num_addr_range_print,
+		.nf_match_addr		= libcfs_num_match
 	},
-	{ .nf_type		= SOCKLND,
-	  .nf_name		= "tcp",
-	  .nf_modname		= "ksocklnd",
-	  .nf_addr2str		= libcfs_ip_addr2str,
-	  .nf_addr2str_size	= libcfs_ip_addr2str_size,
-	  .nf_str2addr		= libcfs_ip_str2addr,
-	  .nf_str2addr_size	= libcfs_ip_str2addr_size,
-	  .nf_parse_addrlist	= cfs_ip_addr_parse,
-	  .nf_print_addrlist	= libcfs_ip_addr_range_print,
-	  .nf_match_addr	= cfs_ip_addr_match
+	{
+		.nf_type		= SOCKLND,
+		.nf_name		= "tcp",
+		.nf_modname		= "ksocklnd",
+		.nf_addr2str		= libcfs_ip_addr2str,
+		.nf_addr2str_size	= libcfs_ip_addr2str_size,
+		.nf_str2addr		= libcfs_ip_str2addr,
+		.nf_str2addr_size	= libcfs_ip_str2addr_size,
+		.nf_parse_addrlist	= cfs_ip_addr_parse,
+		.nf_print_addrlist	= libcfs_ip_addr_range_print,
+		.nf_match_addr		= cfs_ip_addr_match
 	},
-	{ .nf_type		= O2IBLND,
-	  .nf_name		= "o2ib",
-	  .nf_modname		= "ko2iblnd",
-	  .nf_addr2str		= libcfs_ip_addr2str,
-	  .nf_str2addr		= libcfs_ip_str2addr,
-	  .nf_parse_addrlist	= cfs_ip_addr_parse,
-	  .nf_print_addrlist	= libcfs_ip_addr_range_print,
-	  .nf_match_addr	= cfs_ip_addr_match
+	{
+		.nf_type		= O2IBLND,
+		.nf_name		= "o2ib",
+		.nf_modname		= "ko2iblnd",
+		.nf_addr2str		= libcfs_ip_addr2str,
+		.nf_str2addr		= libcfs_ip_str2addr,
+		.nf_parse_addrlist	= cfs_ip_addr_parse,
+		.nf_print_addrlist	= libcfs_ip_addr_range_print,
+		.nf_match_addr		= cfs_ip_addr_match
 	},
-	{ .nf_type		= GNILND,
-	  .nf_name		= "gni",
-	  .nf_modname		= "kgnilnd",
-	  .nf_addr2str		= libcfs_decnum_addr2str,
-	  .nf_str2addr		= libcfs_num_str2addr,
-	  .nf_parse_addrlist	= libcfs_num_parse,
-	  .nf_print_addrlist	= libcfs_num_addr_range_print,
-	  .nf_match_addr	= libcfs_num_match
+	{
+		.nf_type		= GNILND,
+		.nf_name		= "gni",
+		.nf_modname		= "kgnilnd",
+		.nf_addr2str		= libcfs_decnum_addr2str,
+		.nf_str2addr		= libcfs_num_str2addr,
+		.nf_parse_addrlist	= libcfs_num_parse,
+		.nf_print_addrlist	= libcfs_num_addr_range_print,
+		.nf_match_addr		= libcfs_num_match
 	},
-	{ .nf_type		= GNIIPLND,
-	  .nf_name		= "gip",
-	  .nf_modname		= "kgnilnd",
-	  .nf_addr2str		= libcfs_ip_addr2str,
-	  .nf_str2addr		= libcfs_ip_str2addr,
-	  .nf_parse_addrlist	= cfs_ip_addr_parse,
-	  .nf_print_addrlist	= libcfs_ip_addr_range_print,
-	  .nf_match_addr	= cfs_ip_addr_match
+	{
+		.nf_type		= GNIIPLND,
+		.nf_name		= "gip",
+		.nf_modname		= "kgnilnd",
+		.nf_addr2str		= libcfs_ip_addr2str,
+		.nf_str2addr		= libcfs_ip_str2addr,
+		.nf_parse_addrlist	= cfs_ip_addr_parse,
+		.nf_print_addrlist	= libcfs_ip_addr_range_print,
+		.nf_match_addr		= cfs_ip_addr_match
 	},
-	{ .nf_type		= PTL4LND,
-	  .nf_name		= "ptlf",
-	  .nf_modname		= "kptl4lnd",
-	  .nf_addr2str		= libcfs_decnum_addr2str,
-	  .nf_str2addr		= libcfs_num_str2addr,
-	  .nf_parse_addrlist	= libcfs_num_parse,
-	  .nf_print_addrlist	= libcfs_num_addr_range_print,
-	  .nf_match_addr	= libcfs_num_match
+	{
+		.nf_type		= PTL4LND,
+		.nf_name		= "ptlf",
+		.nf_modname		= "kptl4lnd",
+		.nf_addr2str		= libcfs_decnum_addr2str,
+		.nf_str2addr		= libcfs_num_str2addr,
+		.nf_parse_addrlist	= libcfs_num_parse,
+		.nf_print_addrlist	= libcfs_num_addr_range_print,
+		.nf_match_addr		= libcfs_num_match
 	},
 	{
 		.nf_type		= KFILND,

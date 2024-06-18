@@ -131,6 +131,8 @@ extern struct kib_tunables  kiblnd_tunables;
 #define IBLND_CREDITS_DEFAULT        8          /* default # of peer_ni credits */
 #define IBLND_CREDITS_MAX          ((typeof(((struct kib_msg *) 0)->ibm_credits)) - 1)  /* Max # of peer_ni credits */
 
+#define IBLND_TIMEOUT_DEFAULT		50	/* Default o2iblnd timeout in seconds */
+
 /* when eagerly to return credits */
 #define IBLND_CREDITS_HIGHWATER(t, conn) ((conn->ibc_version) == IBLND_MSG_VERSION_1 ? \
 					IBLND_CREDIT_HIGHWATER_V1 : \
@@ -713,8 +715,7 @@ int kiblnd_msg_queue_size(int version, struct lnet_ni *ni);
 
 static inline int kiblnd_timeout(void)
 {
-	return *kiblnd_tunables.kib_timeout ? *kiblnd_tunables.kib_timeout :
-		lnet_get_lnd_timeout();
+	return *kiblnd_tunables.kib_timeout ?: lnet_get_lnd_timeout();
 }
 
 /* lnd_connreq_timeout = lnd_timeout / 4 */

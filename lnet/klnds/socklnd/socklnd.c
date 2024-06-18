@@ -2435,6 +2435,7 @@ static const struct lnet_lnd the_ksocklnd = {
 	.lnd_recv		= ksocknal_recv,
 	.lnd_notify_peer_down	= ksocknal_notify_gw_down,
 	.lnd_accept		= ksocknal_accept,
+	.lnd_get_timeout	= ksocknal_timeout,
 };
 
 static int __init ksocklnd_init(void)

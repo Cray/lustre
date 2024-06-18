@@ -361,11 +361,12 @@ static int kfilnd_recv(struct lnet_ni *ni, void *private, struct lnet_msg *msg,
 static int kfilnd_startup(struct lnet_ni *ni);
 
 static const struct lnet_lnd the_kfilnd = {
-	.lnd_type	= KFILND,
-	.lnd_startup	= kfilnd_startup,
-	.lnd_shutdown	= kfilnd_shutdown,
-	.lnd_send	= kfilnd_send,
-	.lnd_recv	= kfilnd_recv,
+	.lnd_type		= KFILND,
+	.lnd_startup		= kfilnd_startup,
+	.lnd_shutdown		= kfilnd_shutdown,
+	.lnd_send		= kfilnd_send,
+	.lnd_recv		= kfilnd_recv,
+	.lnd_get_timeout	= kfilnd_timeout,
 };
 
 static int kfilnd_startup(struct lnet_ni *ni)
