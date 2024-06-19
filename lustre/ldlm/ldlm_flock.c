@@ -930,15 +930,15 @@ granted:
 		ldlm_flock_destroy(lock, args->fa_mode, LDLM_FL_WAIT_NOREPROC);
 		switch (lock->l_granted_mode) {
 		case LCK_PR:
-			getlk->fl_type = F_RDLCK;
+			getlk->C_FLC_TYPE = F_RDLCK;
 			break;
 		case LCK_PW:
-			getlk->fl_type = F_WRLCK;
+			getlk->C_FLC_TYPE = F_WRLCK;
 			break;
 		default:
-			getlk->fl_type = F_UNLCK;
+			getlk->C_FLC_TYPE = F_UNLCK;
 		}
-		getlk->fl_pid = (pid_t)lock->l_policy_data.l_flock.pid;
+		getlk->C_FLC_PID = (pid_t)lock->l_policy_data.l_flock.pid;
 		getlk->fl_start = (loff_t)lock->l_policy_data.l_flock.start;
 		getlk->fl_end = (loff_t)lock->l_policy_data.l_flock.end;
 	} else {
