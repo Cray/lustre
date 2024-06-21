@@ -1901,7 +1901,9 @@ static inline bool do_dump_on_eviction(struct obd_device *exp_obd)
 {
 	if (obd_lbug_on_eviction &&
 	    strncmp(exp_obd->obd_type->typ_name, LUSTRE_MGC_NAME,
-		    strlen(LUSTRE_MGC_NAME))) {
+		    strlen(LUSTRE_MGC_NAME)) &&
+	    strncmp(exp_obd->obd_type->typ_name, LUSTRE_MGS_NAME,
+		    strlen(LUSTRE_MGS_NAME))) {
 		CERROR("LBUG upon eviction\n");
 		LBUG();
 	}
