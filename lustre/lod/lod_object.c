@@ -2719,8 +2719,8 @@ __u16 lod_comp_entry_stripe_count(struct lod_object *lo, int comp_idx,
 	entry = &lo->ldo_comp_entries[comp_idx];
 	if (lod_comp_inited(entry))
 		return entry->llc_stripe_count;
-	if (entry->llc_stripe_count >= LOV_ALL_STRIPES_MIN &&
-	     entry->llc_stripe_count <= LOV_ALL_STRIPES_MAX)
+	if (entry->llc_stripe_count <= LOV_ALL_STRIPES &&
+	    entry->llc_stripe_count >= LOV_ALL_STRIPES_WIDE)
 		return lod_get_stripe_count_plain(lod, lo,
 						  entry->llc_stripe_count,
 						  entry->llc_pattern &
@@ -2867,9 +2867,8 @@ static int lod_declare_layout_add(const struct lu_env *env,
 		    (lod_comp_inited(lod_comp) ||
 		     lod_comp->llc_extent.e_start <
 		     lod_comp->llc_extent.e_end) &&
-		    lod_comp->llc_stripe_count != (__u16)-1 &&
-		    !(lod_comp->llc_stripe_count >= LOV_ALL_STRIPES_MIN &&
-		      lod_comp->llc_stripe_count <= LOV_ALL_STRIPES_MAX) &&
+		    !(lod_comp->llc_stripe_count <= LOV_ALL_STRIPES &&
+		      lod_comp->llc_stripe_count >= LOV_ALL_STRIPES_WIDE) &&
 		    ext->e_end != OBD_OBJECT_EOF &&
 		    (__u64)(lod_comp->llc_stripe_count *
 			    lod_comp->llc_stripe_size) >
@@ -5449,6 +5448,7 @@ static int lod_get_default_lov_striping(const struct lu_env *env,
 		       (int)v1->lmm_stripe_count, (int)v1->lmm_stripe_size,
 		       (int)v1->lmm_stripe_offset,
 		       ah ? ah->dah_append_stripes : 0);
+
 
 		if (ah && ah->dah_append_stripes)
 			lod_comp->llc_stripe_count = ah->dah_append_stripes;

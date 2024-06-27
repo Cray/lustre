@@ -43,6 +43,8 @@
 #include <linux/lustre/lustre_ioctl.h>
 #include <linux/lustre/lustre_kernelcomm.h>
 
+#include <lustre/lustreapi.h>
+
 #define MAX_IOC_BUFLEN	8192
 
 #define WANT_PATH   0x1
@@ -126,13 +128,13 @@ static inline bool llapi_stripe_size_is_too_big(uint64_t size)
 
 static inline bool llapi_stripe_count_is_valid(int64_t count)
 {
-	return (count >= LOV_ALL_STRIPES_MIN && count <= LOV_ALL_STRIPES_MAX) ||
-		   count <= LOV_MAX_STRIPE_COUNT;
+	return count >= LLAPI_OVERSTRIPE_COUNT_MAX &&
+	       count <= LOV_MAX_STRIPE_COUNT;
 }
 
 static inline bool llapi_stripe_index_is_valid(int64_t index)
 {
-	return index >= -1 && index <= LOV_V1_INSANE_STRIPE_COUNT;
+	return index >= -1 && index <= LOV_V1_INSANE_STRIPE_INDEX;
 }
 
 static inline bool llapi_pool_name_is_valid(const char **pool_name)
