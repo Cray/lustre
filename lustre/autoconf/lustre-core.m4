@@ -4284,6 +4284,54 @@ AC_DEFUN([LC_HAVE_SHRINKER_ALLOC], [
 ]) # LC_HAVE_SHRINKER_ALLOC
 
 #
+# LC_HAVE_DENTRY_D_CHILDREN
+#
+# Linux commit v6.7-rc1-3-gda549bdd15c2
+#   dentry: switch the lists of children to hlist
+#
+AC_DEFUN([LC_SRC_HAVE_DENTRY_D_CHILDREN], [
+	LB2_LINUX_TEST_SRC([dentry_d_children], [
+		#include <linux/dcache.h>
+	],[
+		struct dentry *dentry = NULL;
+
+		return hlist_empty(&dentry->d_children);
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_DENTRY_D_CHILDREN], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct dentry has d_children member],
+	[dentry_d_children], [
+		AC_DEFINE(HAVE_DENTRY_D_CHILDREN, 1,
+			[struct dentry has d_children member])
+	])
+]) # LC_HAVE_DENTRY_D_CHILDREN
+
+#
+# LC_HAVE_GENERIC_ERROR_REMOVE_FOLIO
+#
+# Linux commit v6.7-rc4-79-gaf7628d6ec19
+#   fs: convert error_remove_page to error_remove_folio
+#
+AC_DEFUN([LC_SRC_HAVE_GENERIC_ERROR_REMOVE_FOLIO], [
+	LB2_LINUX_TEST_SRC([generic_error_remove_folio], [
+		#include <linux/mm.h>
+	],[
+		struct address_space *mapping = NULL;
+		struct folio *folio = NULL;
+		int err = generic_error_remove_folio(mapping, folio);
+
+		(void) err;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_GENERIC_ERROR_REMOVE_FOLIO], [
+	LB2_MSG_LINUX_TEST_RESULT([if generic_error_remove_folio() exists],
+	[generic_error_remove_folio], [
+		AC_DEFINE(HAVE_GENERIC_ERROR_REMOVE_FOLIO, 1,
+			[generic_error_remove_folio() exists])
+	])
+]) # LC_HAVE_GENERIC_ERROR_REMOVE_FOLIO
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -4562,6 +4610,8 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_HAVE_SHRINKER_ALLOC
 
 	# 6.8
+	LC_SRC_HAVE_DENTRY_D_CHILDREN
+	LC_SRC_HAVE_GENERIC_ERROR_REMOVE_FOLIO
 	LC_SRC_LSMCONTEXT_HAS_ID
 
 	# kernel patch to extend integrity interface
@@ -4858,6 +4908,8 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_HAVE_SHRINKER_ALLOC
 
 	# 6.8
+	LC_HAVE_DENTRY_D_CHILDREN
+	LC_HAVE_GENERIC_ERROR_REMOVE_FOLIO
 	LC_LSMCONTEXT_HAS_ID
 
 	# kernel patch to extend integrity interface

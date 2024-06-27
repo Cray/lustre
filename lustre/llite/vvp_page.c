@@ -150,7 +150,7 @@ static void vvp_page_discard(const struct lu_env *env,
 	if (vpg->vpg_defer_uptodate && !vpg->vpg_ra_used && vmpage->mapping)
 		ll_ra_stats_inc(vmpage->mapping->host, RA_STAT_DISCARDED);
 
-	generic_error_remove_page(vmpage->mapping, vmpage);
+	generic_error_remove_folio(vmpage->mapping, page_folio(vmpage));
 }
 
 static void vvp_page_delete(const struct lu_env *env,
@@ -290,7 +290,8 @@ static void vvp_page_completion_read(const struct lu_env *env,
 			 * because subpage would be from wrong osc when trying
 			 * to read from a new mirror
 			 */
-			generic_error_remove_page(vmpage->mapping, vmpage);
+			generic_error_remove_folio(vmpage->mapping,
+						   page_folio(vmpage));
 		}
 	}
 
