@@ -964,6 +964,10 @@ static int osd_stripe_dir_filldir(void *buf,
 		return PTR_ERR(inode);
 
 	iput(inode);
+
+	if (CFS_FAIL_CHECK(OBD_FAIL_OFD_IGET_FAIL))
+		RETURN(-ESTALE);
+
 	osd_add_oi_cache(oti, dev, id, fid);
 	/* Check shard by scrub only if it has a problem with OI */
 	if (osd_oi_lookup(oti, dev, fid, &id2, 0) || !osd_id_eq(id, &id2))
@@ -1071,11 +1075,14 @@ again:
 	if (le32_to_cpu(lmv1->lmv_magic) != LMV_MAGIC_V1)
 		GOTO(out, rc = 0);
 
+	CFS_FAIL_CHECK_RESET(OBD_FAIL_OFD_IGET_FAIL_TO_START, OBD_FAIL_OFD_IGET_FAIL);
 	do {
 		oclb.oclb_items = 0;
 		rc = iterate_dir(filp, &oclb.ctx);
 	} while (rc >= 0 && oclb.oclb_items > 0 && !oclb.oclb_found &&
 		 filp->f_pos != LDISKFS_HTREE_EOF_64BIT);
+	CFS_FAIL_CHECK_RESET(OBD_FAIL_OFD_IGET_FAIL, 0);
+
 out:
 	fput(filp);
 	if (rc < 0)

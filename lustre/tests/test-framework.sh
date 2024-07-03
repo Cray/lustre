@@ -3239,7 +3239,7 @@ remount_facet() {
 	local facet=$1
 
 	stop $facet
-	mount_facet $facet
+	mount_facet $@
 }
 
 reboot_facet() {
