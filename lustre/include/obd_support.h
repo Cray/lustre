@@ -294,6 +294,8 @@ extern char obd_jobid_var[];
 #define OBD_FAIL_OSD_FID_REUSE				0x1a0
 
 #define OBD_FAIL_OFD_SET_OID				0x1e0
+#define OBD_FAIL_OFD_IGET_FAIL_TO_START			0x1e1
+#define OBD_FAIL_OFD_IGET_FAIL				0x1e2
 
 #define OBD_FAIL_OST                     0x200
 #define OBD_FAIL_OST_CONNECT_NET         0x201
