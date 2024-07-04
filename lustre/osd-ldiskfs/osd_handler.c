@@ -919,6 +919,7 @@ struct osd_check_lmv_buf {
 	struct osd_device *oclb_dev;
 	int oclb_items;
 	bool oclb_found;
+	int oclb_rc;
 };
 
 /**
@@ -960,13 +961,17 @@ static int osd_stripe_dir_filldir(void *buf,
 
 	osd_id_gen(id, ino, OSD_OII_NOGEN);
 	inode = osd_iget(oti, dev, id, 0);
-	if (IS_ERR(inode))
+	if (IS_ERR(inode)) {
+		oclb->oclb_rc = PTR_ERR(inode);
 		return PTR_ERR(inode);
+	}
 
 	iput(inode);
 
-	if (CFS_FAIL_CHECK(OBD_FAIL_OFD_IGET_FAIL))
+	if (CFS_FAIL_CHECK(OBD_FAIL_OFD_IGET_FAIL)) {
+		oclb->oclb_rc = -ESTALE;
 		RETURN(-ESTALE);
+	}
 
 	osd_add_oi_cache(oti, dev, id, fid);
 	/* Check shard by scrub only if it has a problem with OI */
@@ -1078,7 +1083,10 @@ again:
 	CFS_FAIL_CHECK_RESET(OBD_FAIL_OFD_IGET_FAIL_TO_START, OBD_FAIL_OFD_IGET_FAIL);
 	do {
 		oclb.oclb_items = 0;
+		oclb.oclb_rc = 0;
 		rc = iterate_dir(filp, &oclb.ctx);
+		if (rc == 0)
+			rc = oclb.oclb_rc;
 	} while (rc >= 0 && oclb.oclb_items > 0 && !oclb.oclb_found &&
 		 filp->f_pos != LDISKFS_HTREE_EOF_64BIT);
 	CFS_FAIL_CHECK_RESET(OBD_FAIL_OFD_IGET_FAIL, 0);
