@@ -642,6 +642,7 @@ int lov_page_stripe(const struct cl_page *page);
 bool lov_page_is_empty(const struct cl_page *page);
 int lov_lsm_entry(const struct lov_stripe_md *lsm, __u64 offset);
 int lov_io_layout_at(struct lov_io *lio, __u64 offset);
+bool lov_io_layout_at_confirm(struct lov_io *lio, int entry, __u64 offset);
 
 #define lov_foreach_target(lov, var)                    \
         for (var = 0; var < lov_targets_nr(lov); ++var)
