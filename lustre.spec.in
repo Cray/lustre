@@ -159,6 +159,7 @@
 		%global requires_kmod_version %{version}_%(echo %{krequires} | sed -r 'y/-/_/; s/^(2\.6\.[0-9]+)_/\\1.0_/;')
 	%endif
 %endif
+%global requires_release_major_minor %(echo %version | cut -d. -f1).%(echo %version | cut -d. -f2)
 %endif
 
 # RHEL >= 7 comes with systemd
@@ -199,7 +200,11 @@ Source9: find-provides.ksyms
 URL: https://wiki.whamcloud.com/
 BuildRoot: %{_tmppath}/lustre-%{version}-root
 %if %{with lustre_modules}
-Requires: (%{lustre_name}-dkms or %{requires_kmod_name} = %{requires_kmod_version})
+%if 0%{?suse_version} < 1500 || 0%{?rhel} < 8 || 0%{?fedora} < 34
+Requires: %{requires_kmod_name} = %{requires_kmod_version}
+%else
+Requires: (%{lustre_name}-dkms or %{requires_kmod_name} >= %{requires_release_major_minor})
+%endif
 %endif
 %if %{with lustre_tests_lutf}
 Requires: python3 >= 3.6.0
@@ -314,7 +319,12 @@ BuildRequires: libmount-devel
 Provides: lustre-osd-mount = %{version}
 Obsoletes: lustre-osd-mount < %{version}
 %if 0%{confzfsdobjpath} != 0
+%if 0%{?suse_version} < 1500 || 0%{?rhel} < 8 || 0%{?fedora} < 34
+# 'or' is not available so default is assuming 'zfs' is defined
+BuildRequires: libzfs%{?zfs}-devel
+%else
 BuildRequires: (libzfs-devel or libzfs4-devel or libzfs5-devel)
+%endif
 %endif
 # end confzfsdobjpath
 # Tests also require zpool from zfs package:
@@ -353,7 +363,11 @@ Group: Development/Kernel
 Provides: lustre-devel = %{version}
 Requires: %{lustre_name} = %{version}
 %if %{with lustre_modules}
-Requires: (%{lustre_name}-dkms or %{requires_kmod_name} = %{requires_kmod_version})
+%if 0%{?suse_version} < 1500 || 0%{?rhel} < 8 || 0%{?fedora} < 34
+Requires: %{requires_kmod_name} >= %{requires_release_major_minor}
+%else
+Requires: (%{lustre_name}-dkms or %{requires_kmod_name} >= %{requires_release_major_minor})
+%endif
 %endif
 
 %description devel
@@ -375,8 +389,12 @@ Requires: lustre-devel = %{version}
 Requires: python3 >= 3.6.0, python3-PyYAML
 %endif
 %if %{with lustre_modules}
-Requires: (%{lustre_name}-dkms or %{requires_kmod_name} = %{requires_kmod_version})
-Requires: %{requires_kmod_tests_name} = %{requires_kmod_version}
+%if 0%{?suse_version} < 1500 || 0%{?rhel} < 8 || 0%{?fedora} < 34
+Requires: %{requires_kmod_name} = %{requires_kmod_version}
+%else
+Requires: (%{lustre_name}-dkms or %{requires_kmod_name} >= %{requires_release_major_minor})
+%endif
+Requires: %{requires_kmod_tests_name} >= %{requires_release_major_minor}
 %endif
 %if %{with lustre_tests_lutf}
 Requires: python3 >= 3.6.0
