@@ -1469,7 +1469,7 @@ static inline void osc_release_bounce_pages(struct brw_page **pga,
 	}
 #endif
 
-	for (i = 0; i < page_count && pga[i]; i++) {
+	for (i = 0; i < page_count; i++) {
 		/* Bounce pages used by osc_encrypt_pagecache_blocks()
 		 * called from osc_brw_prep_request()
 		 * are identified thanks to the PageChecked flag.
