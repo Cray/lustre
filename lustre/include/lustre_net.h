@@ -839,8 +839,10 @@ struct ptlrpc_cli_req {
 	 * freed.
 	 */
 	void (*cr_commit_cb)(struct ptlrpc_request *);
+	/** pre replay cb - bulk checksum needs adjusted */
+	void (*cr_pre_replay_cb)(struct ptlrpc_request *);
 	/** Replay callback, called after request is replayed at recovery */
-	void (*cr_replay_cb)(struct ptlrpc_request *);
+	void (*cr_after_replay_cb)(struct ptlrpc_request *);
 };
 
 /** client request member alias */
@@ -875,7 +877,7 @@ struct ptlrpc_cli_req {
 #define rq_cb_data		rq_cli.cr_cb_data
 #define rq_unreplied_list	rq_cli.cr_unreplied_list
 #define rq_commit_cb		rq_cli.cr_commit_cb
-#define rq_replay_cb		rq_cli.cr_replay_cb
+#define rq_replay_cb		rq_cli.cr_after_replay_cb
 
 struct ptlrpc_srv_req {
 	/** initial thread servicing this request */
