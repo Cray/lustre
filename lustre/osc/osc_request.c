@@ -1326,8 +1326,8 @@ static int osc_checksum_bulk(int nob, size_t pg_count,
 		cfs_crypto_hash_update_page(req, pga[i]->pg,
 					    pga[i]->off & ~PAGE_MASK,
 					    count);
-		LL_CDEBUG_PAGE(D_PAGE, pga[i]->pg, "off %d\n",
-			       (int)(pga[i]->off & ~PAGE_MASK));
+		LL_CDEBUG_PAGE(D_PAGE, pga[i]->pg, "off %d - count %u\n",
+			       (int)(pga[i]->off & ~PAGE_MASK), count);
 
 		nob -= pga[i]->count;
 		pg_count--;
@@ -2424,6 +2424,8 @@ static int osc_brw_redo_request(struct ptlrpc_request *request,
 	new_req->rq_interpret_reply = request->rq_interpret_reply;
 	new_req->rq_async_args = request->rq_async_args;
 	new_req->rq_commit_cb = request->rq_commit_cb;
+	new_req->rq_cli.cr_pre_replay_cb = request->rq_cli.cr_pre_replay_cb;
+
 	/* cap resend delay to the current request timeout, this is similar to
 	 * what ptlrpc does (see after_reply()) */
 	if (aa->aa_resends > new_req->rq_timeout)
@@ -2634,6 +2636,27 @@ static int brw_interpret(const struct lu_env *env,
 	RETURN(rc);
 }
 
+static void brw_fix_chksum(struct ptlrpc_request *req)
+{
+	struct ptlrpc_bulk_desc *bulk = req->rq_bulk;
+	struct ost_body *body;
+
+	if (lustre_msg_get_opc(req->rq_reqmsg) != OST_WRITE)
+		return;
+
+	/* short io have a data copy */
+	if (!bulk)
+		return;
+
+	body = req_capsule_client_get(&req->rq_pill, &RMF_OST_BODY);
+	LASSERT(body != NULL);
+
+	/* disable a checksum for replay */
+	body->oa.o_valid &= ~OBD_MD_FLCKSUM;
+
+	EXIT;
+}
+
 static void brw_commit(struct ptlrpc_request *req)
 {
 	/* If osc_inc_unstable_pages (via osc_extent_finish) races with
@@ -2767,6 +2790,8 @@ int osc_build_rpc(const struct lu_env *env, struct client_obd *cli,
 
 	req->rq_commit_cb = brw_commit;
 	req->rq_interpret_reply = brw_interpret;
+	req->rq_cli.cr_pre_replay_cb = brw_fix_chksum;
+
 	req->rq_memalloc = mem_tight != 0;
 	oap->oap_request = ptlrpc_request_addref(req);
 	if (ndelay) {
