@@ -3381,6 +3381,9 @@ int ptlrpc_replay_req(struct ptlrpc_request *req)
 	spin_unlock(&req->rq_lock);
 	ptlrpc_request_addref(req); /* ptlrpcd needs a ref */
 
+	if (req->rq_cli.cr_pre_replay_cb)
+		req->rq_cli.cr_pre_replay_cb(req);
+
 	ptlrpcd_add_req(req);
 	RETURN(0);
 }

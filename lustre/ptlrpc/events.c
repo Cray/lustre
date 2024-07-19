@@ -479,8 +479,9 @@ void server_bulk_callback(struct lnet_event *ev)
 		 ev->type == LNET_EVENT_REPLY));
 
 	CDEBUG_LIMIT((ev->status == 0) ? D_NET : D_ERROR,
-		     "event type %d, status %d, desc %p\n",
-		     ev->type, ev->status, desc);
+		     "event #%llu/%llx type %d, status %d, desc %p/%px\n",
+		     ev->match_bits, ev->match_bits,
+		     ev->type, ev->status, desc, desc);
 
 	spin_lock(&desc->bd_lock);
 
