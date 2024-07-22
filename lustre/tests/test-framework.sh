@@ -9432,10 +9432,14 @@ pool_add_targets() {
 	echo "Adding targets to pool"
 	local pool=$1
 	local first=$2
-	local last=${3:-$first}
+	local last=$3
 	local step=${4:-1}
 
-	local list=$(seq $first $step $last)
+	if [ -z $last ]; then
+		local list=$first
+	else
+		local list=$(seq $first $step $last)
+	fi
 
 	local t=$(for i in $list; do printf "$FSNAME-OST%04x_UUID " $i; done)
 	local tg=$(for i in $list;
