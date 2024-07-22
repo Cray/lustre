@@ -2708,10 +2708,8 @@ __u16 lod_comp_entry_stripe_count(struct lod_object *lo, int comp_idx,
 	struct lod_layout_component *entry;
 	enum lod_uses_hint flags = LOD_USES_ASSIGNED_STRIPE;
 
-	if (is_dir) {
-		entry = &lo->ldo_def_striping->lds_def_comp_entries[comp_idx];
-		return entry->llc_ostlist.op_count;
-	}
+	if (is_dir)
+		return  0;
 
 	entry = &lo->ldo_comp_entries[comp_idx];
 	if (lod_comp_inited(entry))
@@ -5908,7 +5906,7 @@ static void lod_ah_init(const struct lu_env *env,
 				lod_comp->llc_stripe_offset =
 					def_comp->llc_stripe_offset;
 			if (lod_comp->llc_pool == NULL)
-				lod_qos_set_pool(lc, 0, def_comp->llc_pool);
+				lod_obj_set_pool(lc, 0, def_comp->llc_pool);
 		}
 	}
 out:
@@ -5932,7 +5930,7 @@ out:
 		desc = &d->lod_ost_descs.ltd_lov_desc;
 		lod_adjust_stripe_info(lod_comp, desc, ah->dah_append_stripes);
 		if (ah->dah_append_pool && ah->dah_append_pool[0])
-			lod_qos_set_pool(lc, 0, ah->dah_append_pool);
+			lod_obj_set_pool(lc, 0, ah->dah_append_pool);
 	}
 
 	EXIT;
