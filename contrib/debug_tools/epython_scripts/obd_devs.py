@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
+Copyright (c) 2015-2019 Cray Inc. All Rights Reserved.
 Utility to display obd_devices
-Copyright 2015-2019,2023 Hewlett Packard Enterprise Development LP
 """
 
 from pykdump.API import *
@@ -17,12 +17,12 @@ description_short = "Displays the contents of global 'obd_devs'"
 SEP_SIZE = 152
 def print_separator(count):
     s=""
-    for idx in range(count):
+    for idx in xrange(count):
         s += "="
-    print(s)
+    print s
 
 def print_header():
-    print("%-19s %-22s \t%-22s %-19s %-19s %-12s %-10s %-7s %-10s" % \
+    print "%-19s %-22s \t%-22s %-19s %-19s %-12s %-10s %-7s %-10s" % \
          ("obd_device",
           "obd_name",
           "ip_address",
@@ -31,7 +31,7 @@ def print_header():
           "imp_state",
           "ish_time",
           "index",
-          "conn_cnt"))
+          "conn_cnt")
     print_separator(SEP_SIZE)
 
 IMP_STATE = {
@@ -52,10 +52,10 @@ IMP_STATE = {
 def print_one_device(obd, stats_flag):
     try:
         nid = ll.obd2nidstr(obd)
-    except Exception as e:
+    except Exception, e:
         try:
-            print("0x%-17x %-22s" % (Addr(obd), ll.obd2str(obd)))
-        except Exception as e:
+            print "0x%-17x %-22s" % (Addr(obd), ll.obd2str(obd))
+        except Exception, e:
             return 1
         return 0
 
@@ -68,11 +68,11 @@ def print_one_device(obd, stats_flag):
           impstate=IMP_STATE.get(obd.u.cli.cl_import.imp_state)
           index=obd.u.cli.cl_import.imp_state_hist_idx - 1
           if index > 0 and index < 16:
-                ish_time=obd.u.cli.cl_import.imp_state_hist[index].ish_time
-          inflight=obd.u.cli.cl_import.imp_inflight.counter
+         	ish_time=obd.u.cli.cl_import.imp_state_hist[index].ish_time
+	  inflight=obd.u.cli.cl_import.imp_inflight.counter
           connect_cnt = obd.u.cli.cl_import.imp_conn_cnt
 
-    print("0x%-17x %-22s\t%-22s\t 0x%-17x 0x%-17x %-10s %-10d %5d %5d" % \
+    print "0x%-17x %-22s\t%-22s\t 0x%-17x 0x%-17x %-10s %-10d %5d %5d" % \
           (Addr(obd),
           ll.obd2str(obd),
           nid,
@@ -81,9 +81,9 @@ def print_one_device(obd, stats_flag):
           impstate,
           ish_time,
           index,
-          connect_cnt))
+          connect_cnt)
     if stats_flag:
-        print()
+        print
         rs.osc_rpc_stats_seq_show(Addr(obd.u.cli))
         print_separator(SEP_SIZE)
     return 0
