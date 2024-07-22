@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
+Copyright 2015-2019 Cray Inc.  All Rights Reserved
 Utility to list granted and waiting ldlm locks.
-Copyright 2015-2019,2023 Hewlett Packard Enterprise Development LP
 """
 
 from pykdump.API import *
@@ -40,63 +40,63 @@ def ldlm_dump_lock(lock, pos, lstname):
     obd = None
     imp = None
     if(lock == None):
-        print("   NULL LDLM lock")
+        print "   NULL LDLM lock"
         return
-    print("   -- Lock: (ldlm_lock) %#x/%#x (rc: %d) (pos: %d/%s) (pid: %d)" % \
-          (Addr(lock), lock.l_handle.h_cookie, lock.l_handle.h_ref.refs.counter,
-          pos, lstname, lock.l_pid))
+    print "   -- Lock: (ldlm_lock) %#x/%#x (rc: %d) (pos: %d/%s) (pid: %d)" % \
+          (Addr(lock), lock.l_handle.h_cookie, lock.l_refc.counter,
+          pos, lstname, lock.l_pid)
     if(lock.l_conn_export):
         obd = lock.l_conn_export.exp_obd
     if(lock.l_export and lock.l_export.exp_connection):
-        print("       Node: NID %s (remote: %#x) export" % \
+        print "       Node: NID %s (remote: %#x) export" % \
               (ll.nid2str(lock.l_export.exp_connection.c_peer.nid),
-              lock.l_remote_handle.cookie))
+              lock.l_remote_handle.cookie)
     elif(obd == None):
-        print("       Node: local")
+        print "       Node: local"
     else:
         imp = obd.u.cli.cl_import
-        print("       Node: NID %s (remote: %#x) import " % \
+        print "       Node: NID %s (remote: %#x) import " % \
               (ll.nid2str(imp.imp_connection.c_peer.nid),
-              lock.l_remote_handle.cookie))
+              lock.l_remote_handle.cookie)
 
     res = lock.l_resource
-    print("       Resource: %#x [0x%x:0x%x:0x%x].%x" % \
+    print "       Resource: %#x [0x%x:0x%x:0x%x].%x" % \
           (Addr(res),
           res.lr_name.name[0],
           res.lr_name.name[1],
           res.lr_name.name[2],
-          res.lr_name.name[3]))
+          res.lr_name.name[3])
 
-    print("       Req mode: %s, grant mode: %s, rc: %d, read: %d, \
+    print "       Req mode: %s, grant mode: %s, rc: %d, read: %d, \
           write: %d flags: %#x" % (lockmode2str(lock.l_req_mode),
           lockmode2str(lock.l_granted_mode),
-          lock.l_handle.h_ref.refs.counter, lock.l_readers, lock.l_writers,
-          lock.l_flags))
+          lock.l_refc.counter, lock.l_readers, lock.l_writers,
+          lock.l_flags)
 
     lr_type = lock.l_resource.lr_type
     if(lr_type == enum_LDLM_EXTENT):
-        print("       Extent: %d -> %d (req %d-%d)" % \
+        print "       Extent: %d -> %d (req %d-%d)" % \
               (lock.l_policy_data.l_extent.start,
               lock.l_policy_data.l_extent.end,
-              lock.l_req_extent.start, lock.l_req_extent.end))
+              lock.l_req_extent.start, lock.l_req_extent.end)
     elif(lr_type == enum_LDLM_FLOCK):
-        print("       Pid: %d Flock: 0x%x -> 0x%x" % \
+        print "       Pid: %d Flock: 0x%x -> 0x%x" % \
               (lock.l_policy_data.l_flock.pid,
               lock.l_policy_data.l_flock.start,
-              lock.l_policy_data.l_flock.end))
+              lock.l_policy_data.l_flock.end)
     elif(lr_type == enum_LDLM_IBITS):
-        print("       Bits: %#x" % \
-              (lock.l_policy_data.l_inodebits.bits))
+        print "       Bits: %#x" % \
+              (lock.l_policy_data.l_inodebits.bits)
 
 def ldlm_dump_resource(res):
     res_lr_granted = readSU('struct list_head', Addr(res.lr_granted))
     res_lr_waiting = readSU('struct list_head', Addr(res.lr_waiting))
-    print("-- Resource: (ldlm_resource) %#x [0x%x:0x%x:0x%x].%x (rc: %d)" % \
+    print "-- Resource: (ldlm_resource) %#x [0x%x:0x%x:0x%x].%x (rc: %d)" % \
           (Addr(res), res.lr_name.name[0], res.lr_name.name[1],
-           res.lr_name.name[2], res.lr_name.name[3], res.lr_refcount.counter))
+           res.lr_name.name[2], res.lr_name.name[3], res.lr_refcount.counter)
     if not ll.list_empty(res_lr_granted):
         pos = 0
-        print("   Granted locks: ")
+        print "   Granted locks: "
         tmp = res_lr_granted.next
         while(tmp != res_lr_granted):
             pos += 1
@@ -106,7 +106,7 @@ def ldlm_dump_resource(res):
             tmp = tmp.next
     if not ll.list_empty(res_lr_waiting):
         pos = 0
-        print("   Waiting locks: ")
+        print "   Waiting locks: "
         tmp = res_lr_waiting.next
         while(tmp != res_lr_waiting):
             pos += 1
@@ -116,9 +116,9 @@ def ldlm_dump_resource(res):
             tmp = tmp.next
 
 def print_namespace(ns, client_server):
-    print("Namespace: (ldlm_namespace) %#x, %s\t(rc: %d, side: %s)\tpoolcnt: %d unused: %d" % \
+    print "Namespace: (ldlm_namespace) %#x, %s\t(rc: %d, side: %s)\tpoolcnt: %d unused: %d" % \
           (Addr(ns), ll.obd2str(ns.ns_obd), ns.ns_bref.counter,
-          client_server, ns.ns_pool.pl_granted.counter, ns.ns_nr_unused))
+          client_server, ns.ns_pool.pl_granted.counter, ns.ns_nr_unused)
 
 def ldlm_dump_ns_resources(ns):
     if args.nflag:

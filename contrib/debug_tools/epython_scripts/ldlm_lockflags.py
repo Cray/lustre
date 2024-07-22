@@ -2,7 +2,7 @@
 
 """
 Utility to print LDLM lock flags as strings
-Copyright 2019,2023 Hewlett Packard Enterprise Development LP
+Copyright (c) 2019 Cray Inc. All Rights Reserved.
 """
 from pykdump.API import *
 from crashlib.input import toint
@@ -66,13 +66,13 @@ def print_flags(flag_dict, mask):
 
     flags = ""
     tmp = mask
-    for key, value in flag_dict.items():
+    for key, value in flag_dict.iteritems():
             if key & mask:
                 flags = flags + value + " "
                 tmp &= ~key
-    print("mask: 0x%x = %s" % (mask, flags))
+    print "mask: 0x%x = %s" % (mask, flags)
     if tmp != 0:
-        print("unknown bits set in mask: 0x%x" % tmp)
+        print "unknown bits set in mask: 0x%x" % tmp
 
 if __name__ == "__main__":
     description = "Prints string identifiers for specified LDLM flags."
