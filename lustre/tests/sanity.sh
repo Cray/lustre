@@ -8567,6 +8567,14 @@ test_56ec() {
 }
 run_test 56ec "test lfs find --printf doesn't skip files with project IDs"
 
+test_56ed() {
+
+	mkdir $DIR/$tdir
+	mkfifo $DIR/$tdir/$tfile-fifo
+	$LFS getdirstripe -r $DIR/$tdir || error "$LFS getdirstripe -r: $DIR"
+}
+run_test 56ed "check $LFS getdirstripe for FIFO file"
+
 test_57a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 	# note test will not do anything if MDS is not local
