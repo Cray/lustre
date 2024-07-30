@@ -1527,6 +1527,10 @@ dont_check_exports:
 			 * for each connect called disconnect
 			 * should be called to cleanup stuff
 			 */
+			spin_lock(&target->obd_dev_lock);
+			obd_export_timed_del(export);
+			spin_unlock(&target->obd_dev_lock);
+
 			class_export_get(export);
 			obd_disconnect(export);
 		}
