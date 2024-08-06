@@ -200,10 +200,10 @@ Source9: find-provides.ksyms
 URL: https://wiki.whamcloud.com/
 BuildRoot: %{_tmppath}/lustre-%{version}-root
 %if %{with lustre_modules}
-%if 0%{?suse_version} < 1500 || 0%{?rhel} < 8 || 0%{?fedora} < 34
-Requires: %{requires_kmod_name} = %{requires_kmod_version}
-%else
+%if 0%{?suse_version} >= 1500 || 0%{?rhel} >= 8 || 0%{?fedora} >= 34
 Requires: (%{lustre_name}-dkms or %{requires_kmod_name} >= %{requires_release_major_minor})
+%else
+Requires: %{requires_kmod_name} = %{requires_kmod_version}
 %endif
 %endif
 %if %{with lustre_tests_lutf}
@@ -319,11 +319,11 @@ BuildRequires: libmount-devel
 Provides: lustre-osd-mount = %{version}
 Obsoletes: lustre-osd-mount < %{version}
 %if 0%{confzfsdobjpath} != 0
-%if 0%{?suse_version} < 1500 || 0%{?rhel} < 8 || 0%{?fedora} < 34
+%if 0%{?suse_version} >= 1500 || 0%{?rhel} >= 8 || 0%{?fedora} >= 34
+BuildRequires: (libzfs-devel or libzfs4-devel or libzfs5-devel)
+%else
 # 'or' is not available so default is assuming 'zfs' is defined
 BuildRequires: libzfs%{?zfs}-devel
-%else
-BuildRequires: (libzfs-devel or libzfs4-devel or libzfs5-devel)
 %endif
 %endif
 # end confzfsdobjpath
@@ -363,10 +363,10 @@ Group: Development/Kernel
 Provides: lustre-devel = %{version}
 Requires: %{lustre_name} = %{version}
 %if %{with lustre_modules}
-%if 0%{?suse_version} < 1500 || 0%{?rhel} < 8 || 0%{?fedora} < 34
-Requires: %{requires_kmod_name} >= %{requires_release_major_minor}
-%else
+%if 0%{?suse_version} >= 1500 || 0%{?rhel} >= 8 || 0%{?fedora} >= 34
 Requires: (%{lustre_name}-dkms or %{requires_kmod_name} >= %{requires_release_major_minor})
+%else
+Requires: %{requires_kmod_name} >= %{requires_release_major_minor}
 %endif
 %endif
 
@@ -389,10 +389,10 @@ Requires: lustre-devel = %{version}
 Requires: python3 >= 3.6.0, python3-PyYAML
 %endif
 %if %{with lustre_modules}
-%if 0%{?suse_version} < 1500 || 0%{?rhel} < 8 || 0%{?fedora} < 34
-Requires: %{requires_kmod_name} = %{requires_kmod_version}
-%else
+%if 0%{?suse_version} >= 1500 || 0%{?rhel} >= 8 || 0%{?fedora} >= 34
 Requires: (%{lustre_name}-dkms or %{requires_kmod_name} >= %{requires_release_major_minor})
+%else
+Requires: %{requires_kmod_name} = %{requires_kmod_version}
 %endif
 Requires: %{requires_kmod_tests_name} >= %{requires_release_major_minor}
 %endif
