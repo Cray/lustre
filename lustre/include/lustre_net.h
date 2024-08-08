@@ -2214,7 +2214,8 @@ void ptlrpc_server_drop_request(struct ptlrpc_request *req);
 void ptlrpc_request_change_export(struct ptlrpc_request *req,
 				  struct obd_export *export);
 void ptlrpc_update_export_timer(struct ptlrpc_request *req);
-timeout_t ptlrpc_export_prolong_timeout(struct ptlrpc_request *req);
+timeout_t ptlrpc_export_prolong_timeout(struct ptlrpc_request *req,
+					bool recovery);
 
 int ptlrpc_hr_init(void);
 void ptlrpc_hr_fini(void);

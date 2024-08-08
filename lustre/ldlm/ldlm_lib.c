@@ -2445,29 +2445,8 @@ static void handle_recovery_req(struct ptlrpc_thread *thread,
 		 * Add request @timeout to the recovery time so next request from
 		 * this client may come in recovery time
 		 */
-		if (!AT_OFF) {
-			struct ptlrpc_service_part *svcpt;
-			timeout_t est_timeout;
-
-			svcpt = req->rq_rqbd->rqbd_svcpt;
-			/*
-			 * If the server sent early reply for this request,
-			 * the client will recalculate the timeout according to
-			 * current server estimate service time, so we will
-			 * use the maxium timeout here for waiting the client
-			 * sending the next req
-			 */
-			est_timeout = at_get(&svcpt->scp_at_estimate);
-			timeout = max_t(timeout_t, at_est2timeout(est_timeout),
-					lustre_msg_get_timeout(req->rq_reqmsg));
-			/*
-			 * Add 2 net_latency, one for balance rq_deadline
-			 * (see ptl_send_rpc), one for resend the req to server,
-			 * Note: client will pack net_latency in replay req
-			 * (see ptlrpc_replay_req)
-			 */
-			timeout += 2 * lustre_msg_get_service_timeout(req->rq_reqmsg);
-		}
+		if (!AT_OFF)
+			timeout = ptlrpc_export_prolong_timeout(req, true);
 		extend_recovery_timer(class_exp2obd(req->rq_export), timeout,
 				      true);
 	}
