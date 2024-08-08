@@ -1250,17 +1250,14 @@ static void ptlrpc_server_finish_active_request(
  * \retval             timeout in seconds to wait for the next client's RPC
  */
 static timeout_t ptlrpc_export_timeout(struct adaptive_timeout *at,
-				       struct adaptive_timeout *at_net,
+				       timeout_t netl,
 				       timeout_t rpc_left_time,
 				       bool pinger)
 {
-	timeout_t timeout, at_timeout, req_timeout, netl;
+	timeout_t timeout, at_timeout, req_timeout;
 
 	if (AT_OFF)
 		return obd_timeout / 2;
-
-	LASSERT(at_net != NULL);
-	netl = at_get(at_net);
 
 	if (pinger) {
 		/* There might be a delay till the next RPC. In fact it is two
@@ -1289,18 +1286,24 @@ static timeout_t ptlrpc_export_timeout(struct adaptive_timeout *at,
 
 /**
  * Used for lock prolog timeout, calculates a timeout for CANCEL to come.
- * In this case, there is an RPC, i.e. an IO, in hand. Therefore a particular
- * svcpt AT is used.
+ * Also used for recovery, calculates a timeout for a next recovery RPC to come.
+ * In this case, there is an RPC, in hand. Thus, a particular svcpt AT is used.
  *
  * The reverse import network AT is used as an estimate for the client side one.
  */
-timeout_t ptlrpc_export_prolong_timeout(struct ptlrpc_request *req)
+timeout_t ptlrpc_export_prolong_timeout(struct ptlrpc_request *req,
+					bool recovery)
 {
-	struct obd_import *revimp = req->rq_export->exp_imp_reverse;
+	timeout_t netl;
+
+	if (recovery)
+		netl = lustre_msg_get_service_timeout(req->rq_reqmsg);
+	else
+		netl = at_get(&req->rq_export->exp_imp_reverse->
+			      imp_at.iat_net_latency);
 
 	return ptlrpc_export_timeout(&req->rq_rqbd->rqbd_svcpt->scp_at_estimate,
-				     &revimp->imp_at.iat_net_latency,
-				     req->rq_deadline -
+				     netl, req->rq_deadline -
 				     ktime_get_real_seconds(), false);
 }
 
@@ -1314,10 +1317,10 @@ timeout_t ptlrpc_export_prolong_timeout(struct ptlrpc_request *req)
 static timeout_t ptlrpc_export_pinger_timeout(struct ptlrpc_request *req)
 {
 	struct obd_import *revimp = req->rq_export->exp_imp_reverse;
+	timeout_t netl = at_get(&revimp->imp_at.iat_net_latency);
 
 	return ptlrpc_export_timeout(&req->rq_rqbd->rqbd_svcpt->scp_at_estimate,
-				     &revimp->imp_at.iat_net_latency,
-				     0, true);
+				     netl, 0, true);
 }
 
 /**
