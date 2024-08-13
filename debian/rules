@@ -279,6 +279,7 @@ configure-stamp: autogen-stamp debian/control.main debian/control.modules.in
 			--with-linux-obj=$${KERNEL_OBJ} \
 			--disable-snmp \
 			--enable-quota \
+			--with-kmp-moddir=updates/kernel \
 			$${EXTRAFLAGS} \
 			$(EXTRA_OPTIONS) \
 	); \
@@ -610,7 +611,7 @@ kdist_config: prep-deb-files patch-stamp
 		--disable-snmp \
 		--disable-tests \
 		--enable-quota \
-		--with-kmp-moddir=updates \
+		--with-kmp-moddir=updates/kernel \
 		$${EXTRAFLAGS} \
 		$(EXTRA_OPTIONS)
 
