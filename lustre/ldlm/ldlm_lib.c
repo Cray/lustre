@@ -2184,6 +2184,10 @@ static int check_for_next_transno(struct lu_target *lut)
 		       req_transno, update_transno, obd->obd_last_committed);
 		obd->obd_next_recovery_transno = req_transno;
 		wake_up = 1;
+	} else if (queue_len > atomic_read(&obd->obd_req_replay_clients)) {
+		LASSERTF(queue_len <= atomic_read(&obd->obd_req_replay_clients),
+		 "ql: %d, replay clients %d\n", queue_len,
+		 atomic_read(&obd->obd_req_replay_clients));
 	} else if (atomic_read(&obd->obd_req_replay_clients) == 0) {
 		CDEBUG(D_HA, "waking for completed recovery\n");
 		wake_up = 1;
