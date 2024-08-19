@@ -1604,9 +1604,10 @@ int llapi_layout_file_open(const char *path, int open_flags, mode_t mode,
 			errno = ENOTTY;
 			return -1;
 		}
-		rc = llapi_layout_sanity((struct llapi_layout *)layout, false,
-					!!(layout->llot_mirror_count > 1),
-					fsname);
+		rc = llapi_layout_v2_sanity((struct llapi_layout *)layout,
+					    false,
+					    !!(layout->llot_mirror_count > 1),
+					    fsname);
 		if (rc) {
 			llapi_layout_sanity_perror(rc);
 			return -1;
@@ -2244,7 +2245,7 @@ int llapi_layout_file_comp_add(const char *path,
 		goto out;
 	}
 
-	rc = llapi_layout_sanity(existing_layout, false, false, fsname);
+	rc = llapi_layout_v2_sanity(existing_layout, false, false, fsname);
 	if (rc) {
 		tmp_errno = errno;
 		llapi_layout_sanity_perror(rc);
@@ -2379,7 +2380,7 @@ int llapi_layout_file_comp_del(const char *path, uint32_t id, uint32_t flags)
 		goto out;
 	}
 
-	rc = llapi_layout_sanity(existing_layout, false, false, NULL);
+	rc = llapi_layout_sanity(existing_layout, false, false);
 	if (rc) {
 		tmp_errno = errno;
 		llapi_layout_sanity_perror(rc);
@@ -2547,7 +2548,7 @@ int llapi_layout_file_comp_set(const char *path, uint32_t *ids, uint32_t *flags,
 		goto out;
 	}
 
-	rc = llapi_layout_sanity(existing_layout, false, false, fsname);
+	rc = llapi_layout_v2_sanity(existing_layout, false, false, fsname);
 	if (rc) {
 		tmp_errno = errno;
 		llapi_layout_sanity_perror(rc);
@@ -3466,7 +3467,26 @@ void llapi_layout_sanity_perror(int error)
  * components"?
  *
  * \param[in] layout            component layout list.
- * \param[in] fname		file the layout to be checked for
+ * \param[in] incomplete        if layout is complete or not - some checks can
+ *                              only be done on complete layouts.
+ * \param[in] flr		set when this is called from FLR mirror create
+ *
+ * \retval                      0, success, positive: various errors, see
+ *                              llapi_layout_sanity_perror, -1, failure
+ */
+
+int llapi_layout_sanity(struct llapi_layout *layout,
+			bool incomplete, bool flr)
+{
+	return llapi_layout_v2_sanity(layout, incomplete, flr, NULL);
+}
+
+/* This function has been introduced to do pool name checking
+ * on top of llapi_layout_sanity, the file name passed in this
+ * function is used later to verify if pool exist. The older version
+ * of the sanity function is passing NULL for the filename
+ * Input arguments ---
+ * \param[in] layout            component layout list.
  * \param[in] incomplete        if layout is complete or not - some checks can
  *                              only be done on complete layouts.
  * \param[in] flr		set when this is called from FLR mirror create
@@ -3474,9 +3494,9 @@ void llapi_layout_sanity_perror(int error)
  *				NULL no pool name check is performed
  *
  * \retval                      0, success, positive: various errors, see
- *                              llapi_layout_sanity_perror, -1, failure
  */
-int llapi_layout_sanity(struct llapi_layout *layout,
+
+int llapi_layout_v2_sanity(struct llapi_layout *layout,
 			bool incomplete, bool flr, char *fsname)
 {
 	struct llapi_layout_sanity_args args = { 0 };
