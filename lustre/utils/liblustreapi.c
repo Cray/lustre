@@ -484,10 +484,11 @@ static int llapi_stripe_param_verify(const struct llapi_stripe_param *param,
 		}
 
 		/* Make sure the pool exists */
-		if ((llapi_search_ost(fsname, *pool_name, NULL)) < 0) {
-			llapi_err_noerrno(LLAPI_MSG_ERROR,
-					  "pool '%s fsname %s' does not exist",
-					  *pool_name, fsname);
+		rc = llapi_search_ost(fsname, *pool_name, NULL);
+		if (rc < 0) {
+			llapi_error(LLAPI_MSG_ERROR, rc,
+				    "pool '%s fsname %s' does not exist",
+				    *pool_name, fsname);
 			rc = -EINVAL;
 			goto out;
 		}
@@ -631,7 +632,7 @@ int llapi_file_open_param(const char *name, int flags, mode_t mode,
 
 	/* Check if the stripe pattern is sane. */
 	rc = llapi_stripe_param_verify(param, &pool_name, fsname);
-	if (rc != 0)
+	if (rc < 0)
 		return rc;
 
 	if (param->lsp_is_specific)
