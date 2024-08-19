@@ -367,10 +367,8 @@ test_0b() {
 	$LFS setstripe -S 8M -c -1 -p $pool_name $td ||
 		error "$LFS setstripe $td failed"
 
-	create_pool $FSNAME.flash ||
-		error "create OST pool flash failed"
-	create_pool $FSNAME.archive ||
-		error "create OST pool archive failed"
+	create_pool $FSNAME.flash || error "create OST pool flash failed"
+	create_pool $FSNAME.archive || error "create OST pool archive failed"
 
 	# create a mirrored file with plain layout mirrors
 	$mirror_cmd -N -N -S 4M -c 2 -p flash -i 2 -o 2,3 \
