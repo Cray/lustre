@@ -929,7 +929,7 @@ static int lov_print_composite(const struct lu_env *env, void *cookie,
 	(*p)(env, cookie, "entries: %d, %s, lsm{%p 0x%08X %d %u}:\n",
 	     lsm->lsm_entry_count,
 	     test_bit(LO_LAYOUT_INVALID, &lov->lo_obj_flags) ? "invalid" :
-	     "valid", lsm, lsm->lsm_magic, atomic_read(&lsm->lsm_refc),
+	     "valid", lsm, lsm->lsm_magic, kref_read(&lsm->lsm_refc),
 	     lsm->lsm_layout_gen);
 
 	for (i = 0; i < lsm->lsm_entry_count; i++) {
@@ -959,7 +959,7 @@ static int lov_print_released(const struct lu_env *env, void *cookie,
 	(*p)(env, cookie,
 		"released: %s, lsm{%p 0x%08X %d %u}:\n",
 		test_bit(LO_LAYOUT_INVALID, &lov->lo_obj_flags) ? "invalid" :
-		"valid", lsm, lsm->lsm_magic, atomic_read(&lsm->lsm_refc),
+		"valid", lsm, lsm->lsm_magic, kref_read(&lsm->lsm_refc),
 		lsm->lsm_layout_gen);
 	return 0;
 }
@@ -974,7 +974,7 @@ static int lov_print_foreign(const struct lu_env *env, void *cookie,
 		"foreign: %s, lsm{%p 0x%08X %d %u}:\n",
 		test_bit(LO_LAYOUT_INVALID, &lov->lo_obj_flags) ?
 		"invalid" : "valid", lsm,
-		lsm->lsm_magic, atomic_read(&lsm->lsm_refc),
+		lsm->lsm_magic, kref_read(&lsm->lsm_refc),
 		lsm->lsm_layout_gen);
 	(*p)(env, cookie,
 		"raw_ea_content '%.*s'\n",
@@ -2292,7 +2292,7 @@ static struct lov_stripe_md *lov_lsm_addref(struct lov_object *lov)
 	if (lov->lo_lsm != NULL) {
 		lsm = lsm_addref(lov->lo_lsm);
 		CDEBUG(D_INODE, "lsm %p addref %d/%d by %p.\n",
-			lsm, atomic_read(&lsm->lsm_refc),
+			lsm, kref_read(&lsm->lsm_refc),
 			test_bit(LO_LAYOUT_INVALID, &lov->lo_obj_flags),
 			current);
 	}

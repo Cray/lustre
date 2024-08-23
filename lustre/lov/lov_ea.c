@@ -148,8 +148,10 @@ static void lsme_free(struct lov_stripe_md_entry *lsme)
 	OBD_FREE_LARGE(lsme, lsme_size);
 }
 
-void lsm_free(struct lov_stripe_md *lsm)
+void lsm_free(struct kref *kref)
 {
+	struct lov_stripe_md *lsm = container_of(kref, struct lov_stripe_md,
+						 lsm_refc);
 	unsigned int entry_count = lsm->lsm_entry_count;
 	unsigned int i;
 	size_t lsm_size;
@@ -352,7 +354,7 @@ lov_stripe_md *lsm_unpackmd_v1v3(struct lov_obd *lov, struct lov_mds_md *lmm,
 	if (!lsm)
 		GOTO(out_lsme, rc = -ENOMEM);
 
-	atomic_set(&lsm->lsm_refc, 1);
+	kref_init(&lsm->lsm_refc);
 	spin_lock_init(&lsm->lsm_lock);
 	lsm->lsm_maxbytes = maxbytes;
 	lmm_oi_le_to_cpu(&lsm->lsm_oi, &lmm->lmm_oi);
@@ -511,7 +513,7 @@ lsm_unpackmd_comp_md_v1(struct lov_obd *lov, void *buf, size_t buf_size)
 	if (!lsm)
 		return ERR_PTR(-ENOMEM);
 
-	atomic_set(&lsm->lsm_refc, 1);
+	kref_init(&lsm->lsm_refc);
 	spin_lock_init(&lsm->lsm_lock);
 	lsm->lsm_magic = le32_to_cpu(lcm->lcm_magic);
 	lsm->lsm_layout_gen = le32_to_cpu(lcm->lcm_layout_gen);
@@ -596,7 +598,7 @@ lov_stripe_md *lsm_unpackmd_foreign(struct lov_obd *lov, void *buf,
 	if (lsm == NULL)
 		RETURN(ERR_PTR(-ENOMEM));
 
-	atomic_set(&lsm->lsm_refc, 1);
+	kref_init(&lsm->lsm_refc);
 	spin_lock_init(&lsm->lsm_lock);
 	lsm->lsm_magic = le32_to_cpu(lfm->lfm_magic);
 	lsm->lsm_foreign_size = foreign_size_le(lfm);
@@ -644,7 +646,7 @@ void dump_lsm(unsigned int level, const struct lov_stripe_md *lsm)
 	CDEBUG_LIMIT(level,
 		     "lsm %p, objid "DOSTID", maxbytes %#llx, magic 0x%08X, refc: %d, entry: %u, mirror: %u, flags: %u,layout_gen %u\n",
 	       lsm, POSTID(&lsm->lsm_oi), lsm->lsm_maxbytes, lsm->lsm_magic,
-	       atomic_read(&lsm->lsm_refc), lsm->lsm_entry_count,
+	       kref_read(&lsm->lsm_refc), lsm->lsm_entry_count,
 	       lsm->lsm_mirror_count, lsm->lsm_flags, lsm->lsm_layout_gen);
 
 	if (lsm->lsm_magic == LOV_MAGIC_FOREIGN) {
