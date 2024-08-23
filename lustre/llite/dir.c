@@ -1435,7 +1435,7 @@ static long ll_dir_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	case FS_IOC_GETFLAGS:
 	case FS_IOC_SETFLAGS:
 		RETURN(ll_iocontrol(inode, file, cmd, arg));
-	case FSFILT_IOC_GETVERSION:
+	case LL_IOC_GETVERSION:
 	case FS_IOC_GETVERSION:
 		RETURN(put_user(inode->i_generation, (int __user *)arg));
 	/* We need to special case any other ioctls we want to handle,
