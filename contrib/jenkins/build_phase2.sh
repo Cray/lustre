@@ -176,8 +176,8 @@ fi
 
 LUSTRE_DEVEL="openldap-devel gcc libyaml-devel lsof pciutils procps module-init-tools zlib-devel libtool git swig libblkid-devel flex bison"
 EL7_DEVEL=python-devel
-EL8_DEVEL=
-EL9_DEVEL=
+EL8_DEVEL="python3 python3-devel"
+EL9_DEVEL="python3 python3-devel"
 
 ZFS7_DEVEL="zfs libzfs2-devel libzpool2 libzfs2 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python-docutils"
 ZFS8_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python2-docutils"
@@ -212,7 +212,7 @@ case $JP_BUILD_MODE in
         MOCK_CONFIG=${JP_MOCK_CFG:-mock_${JP_NEO_RELEASE}}
         DISTRO=8
 
-        if [[ $JP_NEO_RELEASE =~ CSL7.*|NEO7.*|ORNL7.* ]]
+        if [[ $JP_NEO_RELEASE =~ CSL7.*|NEO7.*|ORNL7.*|TST7.* ]]
         then
             DISTRO=9
         fi
@@ -224,14 +224,7 @@ case $JP_BUILD_MODE in
             LUSTRE_DEVEL+=" kernel-debuginfo kernel-debuginfo-common-${JP_TARGET_ARCH}"
         fi
         REPO_OPTS="--enablerepo=kernel_${JP_NEO_LABEL} --enablerepo=drivers_${JP_NEO_LABEL} --enablerepo=devvm_${JP_NEO_LABEL}"
-        if [ ! -z ${JP_TARGET_KERNEL} ] && [[ $JP_NEO_RELEASE =~ ORNL.* ]]
-        then
-            REPOBASE=http://appdev-vm.hpc.amslabs.hpecorp.net/yum/build/results/projects/ORNL${ORNL}/
-            ADD_REPOS="-a http://debuginfo.centos.org/8/x86_64/ \
-                        -a ${REPOBASE}/ORNL${ORNL}_cassini_driver/latest/${JP_TARGET_KERNEL} \
-                        -a ${REPOBASE}/ORNL${ORNL}_vendor_modules/latest/${JP_TARGET_KERNEL} \
-                        -a ${REPOBASE}/ORNL${ORNL}_kernel/${JP_TARGET_KERNEL}"
-        fi
+
         # RTP-3731 Add support for variable lustre name.
         sed -i -e "$(eval echo '/@RPMBUILD_BINARY_ARGS@/i\\\\t\\t --define \"lustre_name ${JP_PACKAGE_NAME}\" \\\\')" ${WORKSPACE}/autoMakefile.am
         JP_CLIENT_KERNEL=${JP_TARGET_KERNEL:+-$JP_TARGET_KERNEL}
@@ -239,7 +232,6 @@ case $JP_BUILD_MODE in
             # include OFED if this is a IB or IB/Ethernet build
             LUSTRE_DEVEL+=" mlnx-ofa_kernel-devel"
         fi
-
         o_opt="${o_opt} --enable-ldap=yes"
     ;;
     client)
@@ -307,7 +299,7 @@ fi
 # JP_MOFED_VERSION variable should look like "4.7-el7.6"
 if [ "$JP_BUILD_MODE" == "client" ] && [ ! -z ${JP_MOFED_VERSION} ]
 then
-    MOFED_PKGS="mlnx-ofa_kernel mlnx-ofa_kernel-devel kmod-mlnx-ofa_kernel"
+    MOFED_PKGS="mlnx-ofa_kernel mlnx-ofa_kernel-devel kmod-mlnx-ofa_kernel mlnx-tools"
     [ "$JP_MOFED_VERSION" != "external" ] && MOFED_OPTS="--enablerepo=mofed-${JP_MOFED_VERSION}"
     mkdir ${WORKSPACE}/mofed
     ${MOCK_CMD} ${MOFED_OPTS} --install $MOFED_PKGS
