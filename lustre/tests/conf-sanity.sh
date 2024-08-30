@@ -11311,6 +11311,9 @@ test_135() {
 	stack_trap "echo $rl > /sys/module/libcfs/parameters/libcfs_console_ratelimit" EXIT
 
 	test_mkdir -c 1 -i 0 $DIR/$tdir || error "Failed to create directory"
+	do_nodes $(comma_list $(osts_nodes)) $LCTL set_param \
+		seq.*OST*-super.width=$DATA_SEQ_MAX_WIDTH
+
 	changelog_chmask "ALL" || error "changelog_chmask failed"
 	changelog_register || error "changelog_register failed"
 
@@ -11332,6 +11335,7 @@ test_135() {
 
 	# Check changelog entries
 	lastread=$(__test_135_reader $fd $cl_user) || exit $?
+
 	! kill -0 $files_pid 2>/dev/null ||
 		error "creation thread is running. Is changelog reader stuck?"
 
