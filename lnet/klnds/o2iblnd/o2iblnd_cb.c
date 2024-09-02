@@ -50,6 +50,9 @@ static void kiblnd_queue_tx(struct kib_tx *tx, struct kib_conn *conn);
 static void kiblnd_unmap_tx(struct kib_tx *tx);
 static void kiblnd_check_sends_locked(struct kib_conn *conn);
 
+static void kiblnd_disconnect_conn(struct kib_conn *conn);
+
+
 static void
 kiblnd_tx_done(struct kib_tx *tx)
 {
@@ -2324,7 +2327,7 @@ kiblnd_connreq_done(struct kib_conn *conn, int status)
 	if (status != 0) {
 		/* failed to establish connection */
 		kiblnd_peer_connect_failed(peer_ni, active, status);
-		kiblnd_finalise_conn(conn);
+		kiblnd_disconnect_conn(conn);
 		return;
 	}
 
@@ -3468,8 +3471,6 @@ kiblnd_disconnect_conn(struct kib_conn *conn)
 
 	rdma_disconnect(conn->ibc_cmid);
 	kiblnd_finalise_conn(conn);
-
-	kiblnd_peer_notify(conn->ibc_peer);
 }
 
 /*
@@ -3546,6 +3547,7 @@ kiblnd_connd (void *arg)
 			dropped_lock = true;
 
 			kiblnd_disconnect_conn(conn);
+			kiblnd_peer_notify(conn->ibc_peer);
 			kiblnd_conn_decref(conn);
 
 			spin_lock_irqsave(lock, flags);
