@@ -6567,13 +6567,13 @@ debugsave() {
 
 debugrestore() {
 	[ -n "$DEBUGSAVE" ] &&
-		do_nodes $CLIENTS $LCTL set_param -n debug=${DEBUGSAVE// /+} ||
+		do_nodes $CLIENTS "$LCTL set_param debug=\\\"${DEBUGSAVE}\\\""||
 		true
 	DEBUGSAVE=""
 
 	[ -n "$DEBUGSAVE_SERVER" ] &&
 		do_nodes $(comma_list $(all_server_nodes)) \
-			 $LCTL set_param -n debug=${DEBUGSAVE_SERVER// /+} ||
+			 "$LCTL set_param debug=\\\"${DEBUGSAVE_SERVER}\\\"" ||
 			 true
 	DEBUGSAVE_SERVER=""
 }
