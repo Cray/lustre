@@ -1803,6 +1803,9 @@ static int mdt_hsm_release(struct mdt_thread_info *info, struct mdt_object *o,
 	if (data == NULL)
 		RETURN(-EPROTO);
 
+	if (req_capsule_req_need_swab(info->mti_pill))
+		lustre_swab_close_data_special(data, ma->ma_attr_flags);
+
 	lease = ldlm_handle2lock(&data->cd_handle);
 	if (lease == NULL)
 		RETURN(-ESTALE);
@@ -1991,8 +1994,8 @@ static int mdt_hsm_release(struct mdt_thread_info *info, struct mdt_object *o,
 
 	/* Swap layout with orphan objects. */
 	rc = mo_swap_layouts(info->mti_env, mdt_object_child(o),
-			     mdt_object_child(orphan), ma,
-			     SWAP_LAYOUTS_MDS_HSM);
+			     mdt_object_child(orphan), ma, 0, 0,
+			     SWAP_LAYOUTS_MDS_RELEASE);
 
 	if (!rc && ma->ma_attr_flags & MDS_PCC_ATTACH) {
 		ma->ma_need = MA_LOV;
@@ -2067,6 +2070,9 @@ int mdt_close_handle_layouts(struct mdt_thread_info *info,
 	data = req_capsule_client_get(info->mti_pill, &RMF_CLOSE_DATA);
 	if (data == NULL)
 		RETURN(-EPROTO);
+
+	if (req_capsule_req_need_swab(info->mti_pill))
+		lustre_swab_close_data_special(data, ma->ma_attr_flags);
 
 	if (fid_is_zero(&data->cd_fid) || !fid_is_sane(&data->cd_fid))
 		RETURN(-EINVAL);
@@ -2162,8 +2168,22 @@ int mdt_close_handle_layouts(struct mdt_thread_info *info,
 
 	/* Swap layout with orphan object */
 	if (ma->ma_attr_flags & MDS_CLOSE_LAYOUT_SWAP) {
+		__u64 dv1 = data->cd_data_version;
+		__u64 dv2 = 0;
+
+		if (ma->ma_attr_flags & MDS_CLOSE_LAYOUT_SWAP_HSM)
+			/* Compat: new clients send new dataversion in
+			 * cd_data_version2 and old one in cd_data_version.
+			 * Old clients sent cd_data_version = 0 and no
+			 * cd_data_version2.
+			 */
+			dv2 = data->cd_data_version2;
+
+		if (swap_objects)
+			swap(dv1, dv2);
+
 		rc = mo_swap_layouts(info->mti_env, mdt_object_child(o1),
-				     mdt_object_child(o2), ma, 0);
+				     mdt_object_child(o2), ma, dv1, dv2, 0);
 	} else if (ma->ma_attr_flags & MDS_CLOSE_LAYOUT_MERGE ||
 		   ma->ma_attr_flags & MDS_CLOSE_LAYOUT_SPLIT) {
 		struct lu_buf *buf = &info->mti_buf;
@@ -2290,7 +2310,7 @@ static int mdt_close_resync_done(struct mdt_thread_info *info,
 		RETURN(-EPROTO);
 
 	if (req_capsule_req_need_swab(info->mti_pill))
-		lustre_swab_close_data_resync_done(&data->cd_resync);
+		lustre_swab_close_data_special(data, ma->ma_attr_flags);
 
 	if (!fid_is_zero(&data->cd_fid))
 		RETURN(-EPROTO);

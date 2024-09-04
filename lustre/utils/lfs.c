@@ -1109,7 +1109,7 @@ static int check_lease(int fd)
 	return -EBUSY;
 }
 
-static int migrate_nonblock(int fd, int fdv)
+static int migrate_nonblock(int fd, int fdv, __u64 *dv_src)
 {
 	struct stat st;
 	__u64	dv1;
@@ -1139,6 +1139,9 @@ static int migrate_nonblock(int fd, int fdv)
 		error_loc = "cannot get data version";
 		return rc;
 	}
+
+	if (dv_src)
+		*dv_src = dv2;
 
 	if (dv1 != dv2) {
 		rc = -EAGAIN;
@@ -1337,6 +1340,8 @@ static int lfs_migrate(char *name, __u64 migration_flags,
 {
 	struct llapi_layout *existing;
 	uint64_t dom_new, dom_cur;
+	__u64 dv_src = 0;
+	__u64 dv_dst = 0;
 	int fd = -1;
 	int fdv = -1;
 	int rc;
@@ -1393,10 +1398,16 @@ static int lfs_migrate(char *name, __u64 migration_flags,
 		goto out;
 	}
 
-	rc = migrate_nonblock(fd, fdv);
+	rc = migrate_nonblock(fd, fdv, &dv_src);
 	if (rc < 0) {
 		llapi_lease_release(fd);
 		goto out;
+	}
+
+	rc = llapi_get_data_version(fdv, &dv_dst, LL_DV_RD_FLUSH);
+	if (rc != 0) {
+		error_loc = "cannot get data version";
+		return rc;
 	}
 
 	/*
@@ -1404,7 +1415,7 @@ static int lfs_migrate(char *name, __u64 migration_flags,
 	 * for a migration we need to check data version on file did
 	 * not change.
 	 */
-	rc = llapi_fswap_layouts(fd, fdv, 0, 0, SWAP_LAYOUTS_CLOSE);
+	rc = llapi_fswap_layouts(fd, fdv, dv_src, dv_dst, SWAP_LAYOUTS_CLOSE);
 	if (rc < 0) {
 		error_loc = "cannot swap layout";
 		goto out;
@@ -1977,7 +1988,7 @@ static int mirror_extend_layout(char *name, struct llapi_layout *m_layout,
 		goto out;
 	}
 
-	rc = migrate_nonblock(fd, fdv);
+	rc = migrate_nonblock(fd, fdv, NULL);
 	if (rc < 0) {
 		llapi_lease_release(fd);
 		goto out;
@@ -2482,7 +2493,7 @@ static int lfs_migrate_to_dom(int fd, int fdv, char *name,
 		goto out_close;
 	}
 
-	rc = migrate_nonblock(fd, fdv);
+	rc = migrate_nonblock(fd, fdv, NULL);
 	if (rc < 0)
 		goto out_release;
 
