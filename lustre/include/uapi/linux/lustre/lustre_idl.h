@@ -1977,6 +1977,9 @@ enum mds_op_bias {
 	MDS_FID_OP		= 1 << 22,
 	/* migrate dirent only */
 	MDS_MIGRATE_NSONLY	= 1 << 23,
+	/* Compat flag with clients that do not send old and new data version
+	 * after swap layout */
+	MDS_CLOSE_LAYOUT_SWAP_HSM	= 1 << 25,
 };
 
 #define MDS_CLOSE_INTENT (MDS_HSM_RELEASE | MDS_CLOSE_LAYOUT_SWAP |         \
@@ -3530,6 +3533,8 @@ struct close_data {
 		__u16				cd_mirror_id;
 		/* PCC release */
 		__u32				cd_archive_id;
+		/* migrate swap layout */
+		__u64				cd_data_version2;
 	};
 };
 
