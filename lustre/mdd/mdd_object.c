@@ -2237,31 +2237,29 @@ repeat:
 	RETURN(0);
 }
 
-static int mdd_xattr_hsm_replace(const struct lu_env *env,
-				 struct mdd_object *o, struct lu_buf *buf,
-				 struct thandle *handle)
+static int emit_changelog_after_swap_layout(const struct lu_env *env,
+					    struct thandle *handle,
+					    struct mdd_object *o,
+					    struct lu_buf *hsm_buf,
+					    const struct lu_fid *pfid)
 {
-	struct hsm_attrs *attrs;
+	enum changelog_rec_flags flags = 0;
+	enum changelog_rec_type type;
 	enum hsm_states hsm_flags;
-	enum changelog_rec_flags clf_flags = 0;
-	int rc;
-	ENTRY;
+	struct hsm_attrs *attrs;
 
-	rc = mdo_xattr_set(env, o, buf, XATTR_NAME_HSM, LU_XATTR_REPLACE,
-			   handle);
-	if (rc != 0)
-		RETURN(rc);
-
-	attrs = buf->lb_buf;
+	attrs = hsm_buf->lb_buf;
 	hsm_flags = le32_to_cpu(attrs->hsm_flags);
-	if (!(hsm_flags & HS_RELEASED) || mdd_is_dead_obj(o))
-		RETURN(0);
 
-	/* Add a changelog record for release. */
-	hsm_set_cl_event(&clf_flags, HE_RELEASE);
-	rc = mdd_changelog_data_store(env, mdo2mdd(&o->mod_obj), CL_HSM,
-				      clf_flags, o, handle, NULL);
-	RETURN(rc);
+	if ((hsm_flags & HS_RELEASED) && !mdd_is_dead_obj(o)) {
+		hsm_set_cl_event(&flags, HE_RELEASE);
+		type = CL_HSM;
+	} else {
+		type = CL_LAYOUT;
+	}
+
+	return mdd_changelog_data_store(env, mdo2mdd(&o->mod_obj), type,
+					flags, o, handle, pfid);
 }
 
 /*
@@ -2301,7 +2299,9 @@ static int mdd_layout_swap_allowed(const struct lu_env *env,
 		RETURN(-EBADF);
 	}
 
-	if (flags & SWAP_LAYOUTS_MDS_HSM)
+	/* Do not check uid/gid for release since the orphan is created as root
+	 */
+	if (flags & SWAP_LAYOUTS_MDS_RELEASE)
 		RETURN(0);
 
 	if ((attr1->la_uid != attr2->la_uid) ||
@@ -2471,12 +2471,200 @@ static inline struct thandle *mdd_th_sub(struct thandle *th)
 	return top_th->tt_master_sub_thandle;
 }
 
+/* Swap Layout HSM object information: every information needed to decide how
+ * to update the HSM xattr flag during a layout swap.
+ */
+struct sl_hsm_object_info {
+	struct mdd_object *o;   /* the object whose HSM attribute to check */
+	struct lu_buf *hsm_buf; /* buffer initialized with the content of the
+				 * HSM xattr.
+				 */
+	int xattr_flags;        /* 0: do not update HSM xattr
+				 * LU_XATTR_REPLACE or LU_XATTR_CREATE: update
+				 * the xattr with this flag
+				 */
+	__u64 dv;		/* dataversion of the object */
+};
+
+/* Read the HSM xattr and store its content into \p hsm_buf. */
+static int fetch_hsm_xattr(const struct lu_env *env, struct mdd_object *o,
+			   struct lu_buf *hsm_buf)
+{
+	int rc;
+
+	lu_buf_alloc(hsm_buf, sizeof(struct hsm_attrs));
+	if (hsm_buf->lb_buf == NULL)
+		return -ENOMEM;
+
+	rc = mdo_xattr_get(env, o, hsm_buf, XATTR_NAME_HSM);
+	if (rc < 0)
+		return rc;
+
+	return 0;
+}
+
+/* return true if HSM xattr needs update */
+static bool swap_hsm_set_dirty(struct lu_buf *out_buf, struct lu_buf *src_buf)
+{
+	struct md_hsm src_hsm;
+
+	lustre_buf2hsm(src_buf->lb_buf, src_buf->lb_len, &src_hsm);
+	if (!(src_hsm.mh_flags & (HS_ARCHIVED | HS_EXISTS)) ||
+	    src_hsm.mh_flags & HS_DIRTY)
+		/* do not update HSM attr of non archived or dirty files */
+		return false;
+
+	src_hsm.mh_flags |= HS_DIRTY;
+	lustre_hsm2buf(out_buf->lb_buf, &src_hsm);
+
+	return true;
+}
+
+/* return 1 HSM xattr needs update
+ *        0 do not update HSM xattr
+ *   -EPERM data version mismatch, no swap
+ */
+static int swap_hsm_update_version(struct lu_buf *out_buf, __u64 out_dv,
+				   struct lu_buf *src_buf, __u64 src_dv)
+{
+	struct md_hsm src_hsm;
+
+	/* Put lb_len as a second argument since we know that src_buf is a valid
+	 * HSM xattr buffer.
+	 */
+	lustre_buf2hsm(src_buf->lb_buf, src_buf->lb_len, &src_hsm);
+
+	if (!(src_hsm.mh_flags & (HS_ARCHIVED | HS_EXISTS)) ||
+	    src_hsm.mh_flags & HS_DIRTY)
+		return 0;
+
+	/* migration with old client -> set the dirty flag */
+	if (!src_dv || !out_dv) {
+		src_hsm.mh_flags |= HS_DIRTY;
+		goto hsm2buf;
+	}
+
+	if (src_hsm.mh_arch_ver != src_dv) {
+		CDEBUG(D_HSM,
+		       "HSM archive version and previous data version mismatch (arch_ver=%llu, prev_ver=%llu, new_ver=%llu)\n",
+		       src_hsm.mh_arch_ver, src_dv, out_dv);
+		return -EPERM;
+	}
+
+	src_hsm.mh_arch_ver = out_dv;
+hsm2buf:
+	lustre_hsm2buf(out_buf->lb_buf, &src_hsm);
+
+	return 1;
+}
+
+/* Allow HSM xattr swap only with volatile/orphan files.
+ * This is used by HSM release/restore.
+ */
+static inline bool swap_hsm_xattr_allowed(bool fst_has_hsm, bool snd_has_hsm,
+					  unsigned long o_fst_flag,
+					  unsigned long o_snd_flag)
+{
+	return (fst_has_hsm && snd_has_hsm &&
+		((o_fst_flag | o_snd_flag) & (ORPHAN_OBJ | VOLATILE_OBJ)));
+}
+
+/* Read and update the data version of both objects if necessary. If they have
+ * to be updated, declare the update.
+ * \p xattr_flags will be updated if necessary to be used by mdo_xattr_set
+ *
+ * \p dv contains the data version of the file before and after the migration.
+ *       It can be NULL when swapping layouts in other contexts (HSM or
+ *       lfs swap_layout).
+ */
+static int swap_layouts_prepare_hsm_attr(const struct lu_env *env,
+					 struct mdd_device *mdd,
+					 struct thandle *handle,
+					 struct sl_hsm_object_info *fst,
+					 struct sl_hsm_object_info *snd)
+{
+	unsigned long o_fst_fl;
+	unsigned long o_snd_fl;
+	int rc2;
+	int rc;
+
+	fst->xattr_flags = 0;
+	snd->xattr_flags = 0;
+
+	rc = fetch_hsm_xattr(env, fst->o, fst->hsm_buf);
+	if (rc != -ENODATA && rc != 0)
+		return rc;
+
+	rc2 = fetch_hsm_xattr(env, snd->o, snd->hsm_buf);
+	if (rc2 != -ENODATA && rc2 != 0)
+		return rc2;
+
+	/* if nothing to swap, not an error */
+	if (rc && rc2)
+		return 0;
+
+	/* swap if the first object have no HSM xattr */
+	if (rc && !rc2) {
+		swap(fst, snd);
+		swap(rc, rc2);
+	}
+
+	o_fst_fl = fst->o->mod_flags;
+	o_snd_fl = snd->o->mod_flags;
+
+	if ((o_snd_fl & VOLATILE_OBJ) && rc2) {
+		/* migration of fst */
+		rc = swap_hsm_update_version(snd->hsm_buf, snd->dv,
+					     fst->hsm_buf, fst->dv);
+		if (rc == 0)
+			return 0;
+		if (rc < 0)
+			return rc;
+
+		fst->xattr_flags = LU_XATTR_REPLACE;
+
+	} else if (swap_hsm_xattr_allowed(!rc, !rc2, o_fst_fl, o_snd_fl)) {
+		/* HSM release/restore -> HSM xattr swap */
+		fst->xattr_flags = LU_XATTR_REPLACE;
+		snd->xattr_flags = LU_XATTR_REPLACE;
+
+	} else if (!rc && !rc2) {
+		/* swap on 2 archived files is not supported (no rollback) */
+		return -EPERM;
+
+	} else if (rc2) {
+		/* swap layout with HSM fst and non-HSM snd */
+		if (!swap_hsm_set_dirty(snd->hsm_buf, fst->hsm_buf))
+			return 0;
+
+		fst->xattr_flags = LU_XATTR_REPLACE;
+	}
+
+	if (fst->xattr_flags) {
+		rc = mdd_declare_xattr_set(env, mdd, fst->o, snd->hsm_buf,
+					   XATTR_NAME_HSM, fst->xattr_flags,
+					   handle);
+		if (rc < 0)
+			return rc;
+	}
+
+	if (snd->xattr_flags) {
+		rc = mdd_declare_xattr_set(env, mdd, snd->o, fst->hsm_buf,
+					   XATTR_NAME_HSM, snd->xattr_flags,
+					   handle);
+		if (rc < 0)
+			return rc;
+	}
+
+	return 0;
+}
+
 /**
  * swap layouts between 2 lustre objects
  */
 static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 			    struct md_object *obj2, struct md_attr *ma,
-			    __u64 flags)
+			    __u64 dv1, __u64 dv2, __u64 flags)
 {
 	struct mdd_thread_info *info = mdd_env_info(env);
 	struct mdd_object *fst_o = md2mdd_obj(obj1);
@@ -2487,17 +2675,24 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 	struct lov_mds_md *fst_lmm, *snd_lmm;
 	struct lu_buf *fst_buf = &info->mdi_buf[0];
 	struct lu_buf *snd_buf = &info->mdi_buf[1];
+	struct sl_hsm_object_info fst_info;
+	struct sl_hsm_object_info snd_info;
+	struct mdd_object *vlt_o = NULL;
+	struct mdd_object *dom_o = NULL;
+	struct ost_id *saved_oi = NULL;
 	struct lu_buf *fst_hsm_buf = &info->mdi_buf[2];
 	struct lu_buf *snd_hsm_buf = &info->mdi_buf[3];
 	struct lu_buf dom_buf = LU_BUF_NULL;
-	struct ost_id *saved_oi = NULL;
 	struct thandle *handle;
-	struct mdd_object *dom_o = NULL, *vlt_o = NULL;
 	struct niobuf_local *lnb = NULL;
-	__u64 domsize_dom, domsize_vlt;
-	__u32 fst_gen, snd_gen, saved_gen;
+	__u64 domsize_dom;
+	__u64 domsize_vlt;
+	__u32 saved_gen;
+	__u32 fst_gen;
+	__u32 snd_gen;
 	int fst_fl, dom_len = 0;
-	int rc, rc2;
+	int rc2;
+	int rc;
 	int lnbs = 0;
 
 	ENTRY;
@@ -2509,8 +2704,10 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 	if (rc == 0) /* same fid ? */
 		RETURN(-EPERM);
 
-	if (fst_o->mod_flags & (ORPHAN_OBJ | VOLATILE_OBJ))
+	if (fst_o->mod_flags & (ORPHAN_OBJ | VOLATILE_OBJ)) {
 		swap(fst_o, snd_o);
+		swap(dv1, dv2);
+	}
 
 	rc = mdd_la_get(env, fst_o, fst_la);
 	if (rc != 0)
@@ -2654,6 +2851,7 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 	if (snd_buf->lb_buf == NULL) {
 		swap(fst_o, snd_o);
 		swap(fst_buf, snd_buf);
+		swap(dv1, dv2);
 	}
 
 	fst_gen = snd_gen = 0;
@@ -2712,36 +2910,17 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 	}
 	mdd_set_lmm_gen(snd_lmm, &fst_gen);
 
-	/* Prepare HSM attribute if it's required */
-	if (flags & SWAP_LAYOUTS_MDS_HSM) {
-		const int buflen = sizeof(struct hsm_attrs);
+	fst_info.o = fst_o;
+	fst_info.hsm_buf = fst_hsm_buf;
+	fst_info.dv = dv1;
 
-		lu_buf_alloc(fst_hsm_buf, buflen);
-		lu_buf_alloc(snd_hsm_buf, buflen);
-		if (fst_hsm_buf->lb_buf == NULL || snd_hsm_buf->lb_buf == NULL)
-			GOTO(stop, rc = -ENOMEM);
-
-		/* Read HSM attribute */
-		rc = mdo_xattr_get(env, fst_o, fst_hsm_buf, XATTR_NAME_HSM);
-		if (rc < 0)
-			GOTO(stop, rc);
-
-		rc = mdo_xattr_get(env, snd_o, snd_hsm_buf, XATTR_NAME_HSM);
-		if (rc < 0)
-			GOTO(stop, rc);
-
-		rc = mdd_declare_xattr_set(env, mdd, fst_o, snd_hsm_buf,
-					   XATTR_NAME_HSM, LU_XATTR_REPLACE,
-					   handle);
-		if (rc < 0)
-			GOTO(stop, rc);
-
-		rc = mdd_declare_xattr_set(env, mdd, snd_o, fst_hsm_buf,
-					   XATTR_NAME_HSM, LU_XATTR_REPLACE,
-					   handle);
-		if (rc < 0)
-			GOTO(stop, rc);
-	}
+	snd_info.o = snd_o;
+	snd_info.hsm_buf = snd_hsm_buf;
+	snd_info.dv = dv2;
+	rc = swap_layouts_prepare_hsm_attr(env, mdd, handle, &fst_info,
+					   &snd_info);
+	if (rc)
+		GOTO(stop, rc);
 
 	/* prepare transaction */
 	rc = mdd_declare_xattr_set(env, mdd, fst_o, snd_buf, XATTR_NAME_LOV,
@@ -2775,26 +2954,25 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 		}
 	}
 
-	if (flags & SWAP_LAYOUTS_MDS_HSM) {
-		rc = mdd_xattr_hsm_replace(env, fst_o, snd_hsm_buf, handle);
+	if (fst_info.xattr_flags) {
+		rc = mdo_xattr_set(env, fst_o, snd_info.hsm_buf,
+				   XATTR_NAME_HSM, fst_info.xattr_flags,
+				   handle);
 		if (rc < 0)
 			GOTO(stop, rc);
+	}
 
-		rc = mdd_xattr_hsm_replace(env, snd_o, fst_hsm_buf, handle);
-		if (rc < 0) {
-			rc2 = mdd_xattr_hsm_replace(env, fst_o, fst_hsm_buf,
-						    handle);
-			if (rc2 < 0)
-				CERROR("%s: HSM error restoring "DFID": rc = %d/%d\n",
-				       mdd_obj_dev_name(fst_o),
-				       PFID(mdd_object_fid(fst_o)), rc, rc2);
-			GOTO(stop, rc);
-		}
+	if (snd_info.xattr_flags) {
+		rc = mdo_xattr_set(env, snd_o, fst_info.hsm_buf,
+				   XATTR_NAME_HSM, snd_info.xattr_flags,
+				   handle);
+		if (rc < 0)
+			GOTO(out_restore_hsm_fst, rc);
 	}
 
 	rc = mdo_xattr_set(env, fst_o, snd_buf, XATTR_NAME_LOV, fst_fl, handle);
 	if (rc != 0)
-		GOTO(stop, rc);
+		GOTO(out_restore_hsm, rc);
 
 	if (unlikely(OBD_FAIL_CHECK(OBD_FAIL_MDS_HSM_SWAP_LAYOUTS))) {
 		rc = -EOPNOTSUPP;
@@ -2809,14 +2987,15 @@ static int mdd_swap_layouts(const struct lu_env *env, struct md_object *obj1,
 		GOTO(out_restore, rc);
 
 	/* Issue one changelog record per file */
-	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, fst_o, handle,
-				      ma && (ma->ma_valid & MA_PFID) ?
-				      &ma->ma_pfid : NULL);
+	rc = emit_changelog_after_swap_layout(env, handle, fst_o, fst_hsm_buf,
+					      ma && (ma->ma_valid & MA_PFID) ?
+					      &ma->ma_pfid : NULL);
 	if (rc)
 		GOTO(stop, rc);
 
-	rc = mdd_changelog_data_store(env, mdd, CL_LAYOUT, 0, snd_o, handle,
-				      NULL);
+	rc = emit_changelog_after_swap_layout(env, handle, snd_o, snd_hsm_buf,
+					      ma && (ma->ma_valid & MA_PFID) ?
+					      &ma->ma_pfid : NULL);
 	if (rc)
 		GOTO(stop, rc);
 	EXIT;
@@ -2838,16 +3017,23 @@ out_restore:
 		if (rc2 < 0)
 			goto do_lbug;
 
-		if (flags & SWAP_LAYOUTS_MDS_HSM) {
-			++steps;
-			rc2 = mdd_xattr_hsm_replace(env, fst_o, fst_hsm_buf,
-						    handle);
+out_restore_hsm:
+		if (snd_info.xattr_flags) {
+			/* roll back swap HSM */
+			steps = 1;
+			rc2 = mdo_xattr_set(env, snd_o, snd_hsm_buf,
+					    XATTR_NAME_HSM, LU_XATTR_REPLACE,
+					    handle);
 			if (rc2 < 0)
 				goto do_lbug;
+		}
 
-			++steps;
-			rc2 = mdd_xattr_hsm_replace(env, snd_o, snd_hsm_buf,
-						    handle);
+out_restore_hsm_fst:
+		if (fst_info.xattr_flags) {
+			steps = 2;
+			rc2 = mdo_xattr_set(env, fst_o, fst_hsm_buf,
+					    XATTR_NAME_HSM, LU_XATTR_REPLACE,
+					    handle);
 		}
 
 	do_lbug:

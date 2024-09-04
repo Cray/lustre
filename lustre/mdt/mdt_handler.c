@@ -1847,7 +1847,7 @@ static int mdt_swap_layouts(struct tgt_session_info *tsi)
 		GOTO(unlock1, rc);
 
 	rc = mo_swap_layouts(info->mti_env, mdt_object_child(o1),
-			     mdt_object_child(o2), ma, msl->msl_flags);
+			     mdt_object_child(o2), ma, 0, 0, msl->msl_flags);
 	if (rc < 0)
 		GOTO(unlock2, rc);
 
