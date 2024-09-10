@@ -49,6 +49,8 @@
 #include <linux/fs.h>
 /* XATTR_{REPLACE,CREATE} */
 #include <linux/xattr.h>
+#include <linux/workqueue.h>
+#include <linux/sched/loadavg.h>
 
 #include <ldiskfs/ldiskfs.h>
 #include <ldiskfs/xattr.h>
@@ -88,6 +90,10 @@ int ldiskfs_track_declares_assert;
 module_param(ldiskfs_track_declares_assert, int, 0644);
 MODULE_PARM_DESC(ldiskfs_track_declares_assert, "LBUG during tracking of declares");
 
+static struct delayed_work flush_fput;
+atomic_t descriptors_cnt;
+unsigned int ldiskfs_flush_descriptors_cnt = 100000;
+unsigned int ldiskfs_flush_descriptors_minutes = 10;
 /* Slab to allocate dynlocks */
 struct kmem_cache *dynlock_cachep;
 
@@ -1029,7 +1035,7 @@ static int osd_check_lmv(struct osd_thread_info *oti, struct osd_device *dev,
 	oti->oti_obj_dentry.d_inode = inode;
 	oti->oti_obj_dentry.d_sb = inode->i_sb;
 
-	filp = alloc_file_pseudo(inode, dev->od_mnt, "/", O_NOATIME,
+	filp = osd_alloc_file_pseudo(inode, dev->od_mnt, "/", O_NOATIME,
 				 inode->i_fop);
 	if (IS_ERR(filp))
 		RETURN(-ENOMEM);
@@ -5249,7 +5255,7 @@ static int osd_object_sync(const struct lu_env *env, struct dt_object *dt,
 	int rc;
 
 	ENTRY;
-	file = alloc_file_pseudo(inode, dev->od_mnt, "/", O_NOATIME,
+	file = osd_alloc_file_pseudo(inode, dev->od_mnt, "/", O_NOATIME,
 				 inode->i_fop);
 	if (IS_ERR(file))
 		RETURN(PTR_ERR(file));
@@ -6961,8 +6967,8 @@ struct osd_it_ea *osd_it_dir_init(const struct lu_env *env,
 	struct file *file;
 
 	ENTRY;
-	file = alloc_file_pseudo(inode, dev->od_mnt, "/", O_NOATIME,
-				 inode->i_fop);
+	file = osd_alloc_file_pseudo(inode, dev->od_mnt, "/", O_NOATIME,
+				     inode->i_fop);
 	if (IS_ERR(file))
 		RETURN(ERR_CAST(file));
 
@@ -8841,6 +8847,66 @@ static ssize_t track_declares_assert_store(struct kobject *kobj,
 }
 LUSTRE_RW_ATTR(track_declares_assert);
 
+static ssize_t flush_descriptors_cnt_show(struct kobject *kobj,
+					 struct attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", ldiskfs_flush_descriptors_cnt);
+}
+
+static ssize_t flush_descriptors_cnt_store(struct kobject *kobj,
+					  struct attribute *attr,
+					  const char *buffer, size_t count)
+{
+	int rc;
+
+	rc = kstrtou32(buffer, 0, &ldiskfs_flush_descriptors_cnt);
+	if (rc)
+		return rc;
+	return count;
+}
+LUSTRE_RW_ATTR(flush_descriptors_cnt);
+
+static ssize_t flush_descriptors_minutes_show(struct kobject *kobj,
+					      struct attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", ldiskfs_flush_descriptors_minutes);
+}
+
+static ssize_t flush_descriptors_minutes_store(struct kobject *kobj,
+					       struct attribute *attr,
+					       const char *buffer, size_t count)
+{
+	int rc;
+
+	rc = kstrtouint(buffer, 0, &ldiskfs_flush_descriptors_minutes);
+	if (rc)
+		return rc;
+
+	mod_delayed_work(system_long_wq, &flush_fput, HZ * 60 *
+			 ldiskfs_flush_descriptors_minutes);
+
+	return count;
+}
+LUSTRE_RW_ATTR(flush_descriptors_minutes);
+
+static void osd_flush_fput(struct work_struct *work)
+{
+	bool flush;
+	int cnt = atomic_read(&descriptors_cnt);
+
+	flush = (cnt > ldiskfs_flush_descriptors_cnt);
+
+	/* flush file descriptors when LA is less 0.5 by default */
+	CDEBUG(flush ? D_HA : D_INFO, "Pseudo files %d%s\n", cnt,
+	       flush ? ", flushing file descriptors" : "");
+	if (flush) {
+		atomic_set(&descriptors_cnt, 0);
+		cfs_flush_delayed_fput();
+	}
+	queue_delayed_work(system_long_wq, &flush_fput, HZ * 60 *
+			   ldiskfs_flush_descriptors_minutes);
+}
+
 static int __init osd_init(void)
 {
 	struct kobject *kobj;
@@ -8852,7 +8918,7 @@ static int __init osd_init(void)
 	/* please, try to keep osd_thread_info smaller than a page */
 	BUILD_BUG_ON(sizeof(struct osd_thread_info) > PAGE_SIZE);
 #endif
-
+	atomic_set(&descriptors_cnt, 0);
 	osd_oi_mod_init();
 
 	rc = lu_kmem_init(ldiskfs_caches);
@@ -8870,9 +8936,13 @@ static int __init osd_init(void)
 	if (kobj) {
 		rc = sysfs_create_file(kobj,
 				       &lustre_attr_track_declares_assert.attr);
+		rc += sysfs_create_file(kobj,
+					&lustre_attr_flush_descriptors_cnt.attr);
+		rc += sysfs_create_file(kobj,
+				&lustre_attr_flush_descriptors_minutes.attr);
 		kobject_put(kobj);
 		if (rc) {
-			CWARN("osd-ldiskfs: track_declares_assert failed to register with sysfs\n");
+			CWARN("osd-ldiskfs: failed to register with sysfs\n");
 			rc = 0;
 		}
 	}
@@ -8883,6 +8953,10 @@ static int __init osd_init(void)
 			cfs_kallsyms_lookup_name("flush_delayed_fput");
 #endif
 
+	INIT_DELAYED_WORK(&flush_fput, osd_flush_fput);
+	queue_delayed_work(system_long_wq, &flush_fput, HZ * 60 *
+			   ldiskfs_flush_descriptors_minutes);
+
 	return rc;
 }
 
@@ -8890,10 +8964,15 @@ static void __exit osd_exit(void)
 {
 	struct kobject *kobj;
 
+	cancel_delayed_work_sync(&flush_fput);
 	kobj = kset_find_obj(lustre_kset, LUSTRE_OSD_LDISKFS_NAME);
 	if (kobj) {
 		sysfs_remove_file(kobj,
 				  &lustre_attr_track_declares_assert.attr);
+		sysfs_remove_file(kobj,
+				  &lustre_attr_flush_descriptors_cnt.attr);
+		sysfs_remove_file(kobj,
+				  &lustre_attr_flush_descriptors_minutes.attr);
 		kobject_put(kobj);
 	}
 	class_unregister_type(LUSTRE_OSD_LDISKFS_NAME);
