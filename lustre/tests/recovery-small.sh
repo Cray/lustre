@@ -1012,16 +1012,6 @@ test_24a() { # bug 11710 details correct fsync() behavior
 }
 run_test 24a "fsync error (should return error)"
 
-wait_client_evicted () {
-	local facet=$1
-	local exports=$2
-	local varsvc=${facet}_svc
-
-	wait_update $(facet_active_host $facet) \
-		"lctl get_param -n *.${!varsvc}.num_exports | cut -d' ' -f2" \
-		$((exports - 1)) $3
-}
-
 test_24b() {
 	remote_ost_nodsh && skip "remote OST with nodsh" && return 0
 
@@ -1090,22 +1080,35 @@ test_26a() {      # was test_26 bug 5921 - evict dead exports by pinger
 }
 run_test 26a "evict dead exports"
 
+wait_client_evicted () {
+	local facet=$1
+	local exports=$2
+	local timeout=$3
+	local varsvc=${facet}_svc
+
+	wait_update_cond $(facet_active_host $facet) \
+		"lctl get_param -n *.${!varsvc}.num_exports | cut -d' ' -f2" \
+		"-le" $((exports - 1)) $timeout
+}
+
 test_26b() {      # bug 10140 - evict dead exports by pinger
 	remote_ost_nodsh && skip "remote OST with nodsh" && return 0
 
-	if [ $(facet_host mgs) = $(facet_host ost1) ]; then
+	[[ $(facet_host mgs) != $(facet_host ost1) ]] ||
 		skip "msg and ost1 are at the same node"
-		return 0
-	fi
 
 	check_timeout || return 1
 	clients_up
-	zconf_mount `hostname` $MOUNT2 ||
+	zconf_mount $HOSTNAME $MOUNT2 ||
                 { error "Failed to mount $MOUNT2"; return 2; }
-	sleep 1 # wait connections being established
+	# make sure all imports are connected and not IDLE
+	do_facet client $LFS df > /dev/null
+	$LFS setstripe -c -1 $MOUNT/$tfile
 
-	local MDS_NEXP=$(do_facet $SINGLEMDS lctl get_param -n mdt.${mds1_svc}.num_exports | cut -d' ' -f2)
-	local OST_NEXP=$(do_facet ost1 lctl get_param -n obdfilter.${ost1_svc}.num_exports | cut -d' ' -f2)
+	local mds_nexp=$(do_facet mds1 \
+		lctl get_param -n mdt.${mds1_svc}.num_exports)
+	local ost_nexp=$(do_facet ost1 \
+		lctl get_param -n obdfilter.${ost1_svc}.num_exports)
 	# must be equal on all the nodes
 	local INTERVAL=$(do_facet $SINGLEMDS lctl get_param -n ping_interval)
 	local AT_MAX_SAVED=$(at_max_get mds1)
@@ -1115,18 +1118,18 @@ test_26b() {      # bug 10140 - evict dead exports by pinger
 	stack_trap "at_max_set $AT_MAX_SAVED mds1" EXIT
 	stack_trap "at_max_set $AT_MAX_SAVED ost1" EXIT
 
-	echo starting with $OST_NEXP OST and $MDS_NEXP MDS exports
+	echo "starting with '$ost_nexp' OST and '$mds_nexp' MDS exports"
 
-	zconf_umount `hostname` $MOUNT2 -f
+	zconf_umount $HOSTNAME $MOUNT2 -f
 
 	# see ptlrpc_export_timeout() for the pinger case; take a bit more the test sake
 	local TOUT=$((INTERVAL * 2 + (TIMEOUT / 20 + 5 + TIMEOUT) * 3))
 	TOUT=$((TOUT + (TOUT >> 3)))
 	echo i $INTERVAL m $AT_MAX_SAVED t $TIMEOUT $TOUT
-	wait_client_evicted ost1 $OST_NEXP $TOUT ||
-		error "Client was not evicted by ost"
-	wait_client_evicted $SINGLEMDS $MDS_NEXP $TOUT ||
-		error "Client was not evicted by mds"
+	wait_client_evicted ost1 $ost_nexp $TOUT ||
+		error "Client was not evicted by OSS"
+	wait_client_evicted mds1 $mds_nexp $TOUT ||
+		error "Client was not evicted by MDS"
 }
 run_test 26b "evict dead exports"
 
