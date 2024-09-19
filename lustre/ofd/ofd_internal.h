@@ -204,6 +204,7 @@ struct ofd_object {
 	unsigned int		ofo_pfid_checking:1,
 				ofo_pfid_verified:1,
 				ofo_resource_ids_set:1;
+	struct rw_semaphore	ofo_group_sem;
 };
 
 static inline struct ofd_object *ofd_obj(struct lu_object *o)

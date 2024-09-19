@@ -557,6 +557,19 @@ out_tx:
 	ofd_trans_stop(env, ofd, th, rc);
 }
 
+static inline void ofd_group_lock(struct tgt_session_info *tsi,
+				  struct ofd_object *fo)
+{
+	if (tgt_ses_req(tsi) && tgt_ses_req(tsi)->rq_group)
+		down_read(&fo->ofo_group_sem);
+}
+
+static inline void ofd_group_unlock(struct tgt_session_info *tsi,
+				    struct ofd_object *fo)
+{
+	if (tgt_ses_req(tsi) && tgt_ses_req(tsi)->rq_group)
+		up_read(&fo->ofo_group_sem);
+}
 /**
  * Prepare buffers for read request processing.
  *
@@ -599,6 +612,8 @@ static int ofd_preprw_read(const struct lu_env *env, struct obd_export *exp,
 	LASSERT(fo != NULL);
 
 	ofd_info(env)->fti_obj = fo;
+
+	ofd_group_lock(tgt_ses_info(env), fo);
 
 	ofd_handle_attrs(env, ofd, fo, oa);
 
@@ -666,6 +681,7 @@ unlock:
 buf_put:
 	dt_bufs_put(env, ofd_object_child(fo), lnb, *nr_local);
 obj_put:
+	ofd_group_unlock(tgt_ses_info(env), fo);
 	ofd_object_put(env, fo);
 	return rc;
 }
@@ -700,6 +716,7 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 			    struct niobuf_remote *rnb, int *nr_local,
 			    struct niobuf_local *lnb)
 {
+	struct tgt_session_info	*tsi = tgt_ses_info(env);
 	struct ofd_object *fo;
 	int i, j, k, rc = 0, tot_bytes = 0;
 	enum dt_bufs_type dbt = DT_BUFS_TYPE_WRITE;
@@ -775,9 +792,12 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 
 	ofd_info(env)->fti_obj = fo;
 
+	ofd_group_lock(tsi, fo);
+
 	if (!ofd_object_exists(fo)) {
 		CERROR("%s: BRW to missing obj "DOSTID"\n",
 		       exp->exp_obd->obd_name, POSTID(&obj->ioo_oid));
+		ofd_group_unlock(tsi, fo);
 		GOTO(err_put, rc = -ENOENT);
 	}
 
@@ -854,6 +874,7 @@ err:
 	ofd_read_unlock(env, fo);
 err_nolock:
 	dt_bufs_put(env, ofd_object_child(fo), lnb, *nr_local);
+	ofd_group_unlock(tsi, fo);
 err_put:
 	ofd_object_put(env, fo);
 err_commit:
@@ -987,7 +1008,7 @@ ofd_commitrw_read(const struct lu_env *env, struct ofd_device *ofd,
 	 * OST_DESTROY to remove the object.
 	 */
 	dt_bufs_put(env, ofd_object_child(fo), lnb, niocount);
-
+	ofd_group_unlock(tgt_ses_info(env), fo);
 	ofd_object_put(env, fo);
 
 	RETURN(0);
@@ -1407,6 +1428,7 @@ out_stop:
 
 out:
 	dt_bufs_put(env, o, lnb, niocount);
+	ofd_group_unlock(tgt_ses_info(env), fo);
 	ofd_object_put(env, fo);
 	if (granted > 0)
 		tgt_grant_commit(exp, granted, old_rc);
