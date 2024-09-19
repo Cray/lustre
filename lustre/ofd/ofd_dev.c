@@ -538,6 +538,8 @@ static struct lu_object *ofd_object_alloc(const struct lu_env *env,
 		struct lu_object	*o;
 		struct lu_object_header *h;
 
+		init_rwsem(&of->ofo_group_sem);
+
 		o = &of->ofo_obj.do_lu;
 		h = &of->ofo_header;
 		lu_object_header_init(h);
@@ -2173,8 +2175,13 @@ static int ofd_punch_hdl(struct tgt_session_info *tsi)
 	info->fti_attr.la_size = start;
 	info->fti_attr.la_valid |= LA_SIZE;
 
+	down_write(&fo->ofo_group_sem);
+
 	rc = ofd_object_punch(tsi->tsi_env, fo, start, end, &info->fti_attr,
 			      (struct obdo *)oa);
+
+	up_write(&fo->ofo_group_sem);
+
 	if (rc)
 		GOTO(out_put, rc);
 
@@ -2497,6 +2504,7 @@ static void ofd_prolong_extent_locks(struct tgt_session_info *tsi,
 		 * fast path. */
 		lock = ldlm_handle2lock(&oa->o_handle);
 		if (lock != NULL) {
+			tgt_ses_req(tsi)->rq_group = !!(lock->l_granted_mode & LCK_GROUP);
 			/* Fast path to check if the lock covers the whole IO
 			 * region exclusively. */
 			if (ldlm_extent_contain(&lock->l_policy_data.l_extent,

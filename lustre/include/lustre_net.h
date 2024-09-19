@@ -1088,7 +1088,8 @@ struct ptlrpc_request {
                                  /* doesn't expect reply FIXME */
                                  rq_no_reply:1,
 				 rq_pill_init:1, /* pill initialized */
-				 rq_srv_req:1; /* server request */
+				 rq_srv_req:1, /* server request */
+				 rq_group:1; /* protected by a group lock*/
 
 
 	/** various buffer pointers */
