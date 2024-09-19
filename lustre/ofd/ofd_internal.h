@@ -192,6 +192,7 @@ struct ofd_object {
 	time64_t		ofo_atime_ondisk;
 	unsigned int		ofo_pfid_checking:1,
 				ofo_pfid_verified:1;
+	struct rw_semaphore	ofo_group_sem;
 };
 
 static inline struct ofd_object *ofd_obj(struct lu_object *o)
