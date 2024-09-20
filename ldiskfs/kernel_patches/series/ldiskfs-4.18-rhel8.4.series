@@ -41,3 +41,4 @@ rhel8.4/ext4-mballoc-reset-allocator-on-delete.patch
 rhel8.4/ext4-optimize-find_delayed_extent.patch
 rhel8/ext4-encdata.patch
 rhel8.4/ext4-limit-per-inode-preallocation-list.patch
+rhel8.4/ext4-mballoc-optimise-cr-loops.patch
