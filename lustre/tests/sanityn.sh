@@ -6080,6 +6080,33 @@ test_114() {
 }
 run_test 114 "no CP AST for intent once a blocked lock is granted"
 
+test_120() {
+	local WCE=$(do_facet ost1 lctl get_param "osd-*.$FSNAME-OST0000.writethrough_cache_enable")
+
+	# the issue reproduces without the osd cache as well but we would need to
+	# add the page to the page cache via partial truncate and avoid
+	# invalidation by keeping a reference to this page, let's use WCE=1 instead
+	do_facet ost1 lctl set_param "osd-*.$FSNAME-OST0000.writethrough_cache_enable=1"
+
+	rm -f $DIR1/$tfile
+	$LFS setstripe $DIR1/$tfile -i 0 -c 1
+	dd if=/dev/zero of=$DIR1/$tfile bs=4k count=1 oflag=direct
+
+	# lock the page and pause before attempting to take osd_read_lock
+	# and osd_trunc_lock
+	do_facet ost1 $LCTL set_param fail_loc=0x80000227 fail_val=5
+	$MULTIOP $DIR1/$tfile oO_WRONLY:O_SYNC:G123w4096g123c &
+	sleep 1
+	# possibly deadlock now via reverse locking
+	# ofd_write_lock -> lock_page or osd_trunc_lock -> lock_page
+	$MULTIOP $DIR2/$tfile oO_WRONLY:G123T4094g123c
+
+	wait
+
+	do_facet ost1 lctl set_param $WCE
+}
+run_test 120 "write vs truncate does not deadlock under group lock"
+
 log "cleanup: ======================================================"
 
 # kill and wait in each test only guarentee script finish, but command in script
