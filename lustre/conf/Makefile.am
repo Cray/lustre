@@ -34,11 +34,13 @@
 SUBDIRS = resource
 DIST_SUBDIRS = resource
 
-EXTRA_DIST = lustre.dtd lustre2ldif.xsl top.ldif \
+EXTRA_DIST = lustre.dtd lustre2ldif.xsl top.ldif dkms-lustre \
              99-lustre.rules lustre ldev.conf ko2iblnd.conf lsvcgss \
              lnet_routes.conf lnet.conf lgssc.conf 99-lustre-server.rules
 
 sysconf_DATA = lnet.conf
+sysconfigdir = $(sysconfdir)/sysconfig
+sysconfig_DATA = dkms-lustre
 
 if UTILS
 noinst_DATA = top.ldif lustre2ldif.xsl
@@ -54,8 +56,7 @@ if ZFS_ENABLED
 sysconf_DATA += ldev.conf
 endif
 if RHEL
-sysconfigdir = $(sysconfdir)/sysconfig
-sysconfig_DATA = lustre
+sysconfig_DATA += lustre
 if GSS_KEYRING
 sysconfig_DATA += lsvcgss
 endif
