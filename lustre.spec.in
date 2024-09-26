@@ -768,6 +768,7 @@ echo '%{_sysconfdir}/ha.d/resource.d/Lustre' >>lustre.files
 echo '%{_unitdir}/lnet.service' >>lustre.files
 %endif
 
+# vendor is redhat
 %if "%{_vendor}" == "redhat"
 # The following scripts are Red Hat specific
 %if %{with servers}
@@ -783,6 +784,9 @@ echo '%config(noreplace) %{_sysconfdir}/sysconfig/lsvcgss' >>lustre.files
 echo '%{_sysconfdir}/init.d/lnet' >>lustre.files
 %endif
 %endif
+# End: vendor is redhat
+
+echo '%config(noreplace) %{_sysconfdir}/sysconfig/dkms-lustre' >>lustre.files
 %if %{with gss_keyring}
 echo '%config(noreplace) %{_sysconfdir}/request-key.d/lgssc.conf' >>lustre.files
 %endif
