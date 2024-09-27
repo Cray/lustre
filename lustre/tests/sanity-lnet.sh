@@ -3095,6 +3095,45 @@ test_226() {
 }
 run_test 226 "test missing route for 1 of 2 routers"
 
+test_227() {
+	ROUTERS_REQUIRED=2
+	RPEERS_REQUIRED=1
+
+	setup_router_test || return $?
+
+	do_basic_rtr_test || return $?
+
+	do_rpc_nodes $HOSTNAME,${RPEERS[0]} load_module \
+		../lnet/selftest/lnet_selftest ||
+			error "Failed to load lnet-selftest module"
+
+	local lstpid rc
+
+	$LSTSH -H -t $HOSTNAME -f ${RPEERS[0]} -m rw &
+	lstpid=$!
+
+	do_lnetctl peer set --health 500 --all ||
+		error "Failed to set peer NI health rc = $?"
+
+	wait $lstpid
+	rc=$?
+
+	((rc == 0)) ||
+		error "LST returned non-zero rc = $rc"
+
+	do_lnetctl peer set --health 1000 --all ||
+		error "Failed to set peer NI health rc = $?"
+
+	local no_route=$(dmesg | tail | grep lnet_handle_find_routed_path |
+			 grep -c "no route")
+
+	((no_route == 0)) ||
+		error "Detected no route send failures"
+
+	cleanup_router_test || return $?
+}
+run_test 227 "Routes should stay up when health is decremented"
+
 test_230() {
 	[[ ${NETTYPE} == tcp* ]] || skip "Need tcp NETTYPE"
 
