@@ -34,12 +34,56 @@ WTIME=${WTIME:-86400}
 
 RCMD="do_facet ${SINGLEMDS}"
 RLCTL="${RCMD} ${LCTL}"
-MDT_DEV="${FSNAME}-MDT0000"
-MDT_DEVNAME=$(mdsdevname ${SINGLEMDS//mds/})
-START_NAMESPACE="${RLCTL} lfsck_start -M ${MDT_DEV} -t namespace"
-STOP_LFSCK="${RLCTL} lfsck_stop -M ${MDT_DEV} -A"
-SHOW_NAMESPACE="${RLCTL} get_param -n mdd.${MDT_DEV}.lfsck_namespace"
 MNTOPTS_NOSCRUB="-o user_xattr,noscrub"
+
+start_singlemds () {
+	local dev=$(facet_device $SINGLEMDS)
+	start ${SINGLEMDS} $dev $MNTOPTS_NOSCRUB ||
+		error "Fail to start $SINGLEMDS! device: $dev"
+}
+
+start_lfsck () {
+	local type=$1
+	local params="$2"
+
+	${RLCTL} lfsck_start -M $(facet_svc $SINGLEMDS) -t $type $params ||
+		error "Failed to start lfsck $type on $SINGLEMDS"
+}
+
+stop_lfsck () {
+	${RLCTL} lfsck_stop -M $(facet_svc $SINGLEMDS) -A
+}
+
+show_lfsck () {
+	do_facet $1 \
+		"$LCTL get_param -n mdd.$(facet_svc $1).lfsck_$2"
+}
+
+start_namespace () {
+	start_lfsck namespace "$@"
+}
+
+show_namespace () {
+	show_lfsck $SINGLEMDS namespace
+}
+
+start_layout () {
+	start_lfsck layout "$@"
+}
+
+lfsck_wait_facet_status_completed () {
+	local facet=$1
+	local type=$2
+	local err=${3:-1}
+
+	wait_update_facet $facet "$LCTL get_param -n \
+		mdd.$(facet_svc $facet).lfsck_$type |
+		awk '/^status/ { print \\\$2 }'" "completed" $WTIME || {
+		show_lfsck $facet $type
+		error "($err) Expected: status completed"
+	}
+}
+
 remote_mds && ECHOCMD=${RCMD} || ECHOCMD="eval"
 
 if [ ${NTHREADS} -eq 0 ]; then
@@ -52,15 +96,17 @@ lfsck_attach() {
 
 	${ECHOCMD} "${LCTL} <<-EOF
 		attach echo_client lfsck-MDT0000 lfsck-MDT0000_UUID
-		setup ${MDT_DEV} mdd
+		setup $(facet_svc $SINGLEMDS) mdd
 	EOF"
 }
 
 lfsck_detach() {
-	${ECHOCMD} "${LCTL} <<-EOF
-		--device lfsck-MDT0000 cleanup
-		--device lfsck-MDT0000 detach
-	EOF"
+	if ${ECHOCMD} "${LCTL} dl | grep lfsck-MDT0000"; then
+		${ECHOCMD} "${LCTL} <<-EOF
+			--device lfsck-MDT0000 cleanup
+			--device lfsck-MDT0000 detach
+		EOF"
+	fi
 }
 
 lfsck_create() {
@@ -100,8 +146,7 @@ lfsck_create_nfiles() {
 
 		echo "[cycle: ${cycle}] [threads: ${threads}]"\
 		     "[files: ${count}] [basedir: ${tdir}]"
-		start ${SINGLEMDS} $MDT_DEVNAME $MNTOPTS_NOSCRUB ||
-			error "Fail to start MDS!"
+		start_singlemds
 		#define OBD_FAIL_FID_IGIF	0x1504
 		[ ! -z $linkea ] && ${RLCTL} set_param fail_loc=0x1504
 
@@ -143,21 +188,15 @@ test_0() {
 		echo "+++ end to create for ${i} files set at: $(date) +++"
 
 		BCOUNT=${i}
-		start ${SINGLEMDS} $MDT_DEVNAME $MNTOPTS_NOSCRUB > /dev/null ||
-			error "Fail to start MDS!"
+		start_singlemds
 
 		echo "start lfsck_namespace for ${i} files set at: $(date)"
-		$START_NAMESPACE || error "Fail to start lfsck_namespace!"
+		start_namespace
 
-		while true; do
-			local STATUS=$($SHOW_NAMESPACE |
-					awk '/^status/ { print $2 }')
-			[ "$STATUS" == "completed" ] && break
-			sleep 3 # check status every 3 seconds
-		done
+		lfsck_wait_facet_status_completed $SINGLEMDS namespace
 
 		echo "end lfsck_namespace for ${i} files set at: $(date)"
-		SPEED=$($SHOW_NAMESPACE |
+		SPEED=$(show_namespace |
 			awk '/^average_speed_phase1/ { print $2 }')
 		echo "lfsck_namespace speed is ${SPEED}/sec"
 		stop ${SINGLEMDS} > /dev/null || error "Fail to stop MDS!"
@@ -198,21 +237,15 @@ test_1() {
 		echo "backup/restore ${i} files used ${delta} seconds"
 		echo "backup/restore speed is $((i / delta))/sec"
 
-		start ${SINGLEMDS} $MDT_DEVNAME $MNTOPTS_NOSCRUB > /dev/null ||
-			error "Fail to start MDS!"
+		start_singlemds
 
 		echo "start lfsck_namespace for ${i} files set at: $(date)"
-		$START_NAMESPACE || error "Fail to start lfsck_namespace!"
+		start_namespace
 
-		while true; do
-			local STATUS=$($SHOW_NAMESPACE |
-					awk '/^status/ { print $2 }')
-			[ "$STATUS" == "completed" ] && break
-			sleep 3 # check status every 3 seconds
-		done
+		lfsck_wait_facet_status_completed $SINGLEMDS namespace
 
 		echo "end lfsck_namespace for ${i} files set at: $(date)"
-		local SPEED=$($SHOW_NAMESPACE |
+		local SPEED=$(show_namespace |
 			      awk '/^average_speed_phase1/ { print $2 }')
 		echo "lfsck_namespace speed is ${SPEED}/sec"
 		stop ${SINGLEMDS} > /dev/null || error "Fail to stop MDS!"
@@ -236,21 +269,15 @@ test_2() {
 			error "Fail to create files!"
 		echo "+++ end to create for ${i} files set at: $(date) +++"
 
-		start ${SINGLEMDS} $MDT_DEVNAME $MNTOPTS_NOSCRUB > /dev/null ||
-			error "Fail to start MDS!"
+		start_singlemds
 
 		echo "start lfsck_namespace for ${i} files set at: $(date)"
-		$START_NAMESPACE || error "Fail to start lfsck_namespace!"
+		start_namespace
 
-		while true; do
-			local STATUS=$($SHOW_NAMESPACE |
-					awk '/^status/ { print $2 }')
-			[ "$STATUS" == "completed" ] && break
-			sleep 3 # check status every 3 seconds
-		done
+		lfsck_wait_facet_status_completed $SINGLEMDS namespace
 
 		echo "end lfsck_namespace for ${i} files set at: $(date)"
-		local SPEED=$($SHOW_NAMESPACE |
+		local SPEED=$(show_namespace |
 			      awk '/^average_speed_phase1/ { print $2 }')
 		echo "lfsck_namespace speed is ${SPEED}/sec"
 		stop ${SINGLEMDS} > /dev/null || error "Fail to stop MDS!"
@@ -281,21 +308,15 @@ test_3() {
 		BCOUNT=${i}
 	done
 
-	start ${SINGLEMDS} $MDT_DEVNAME $MNTOPTS_NOSCRUB > /dev/null ||
-		error "Fail to start MDS!"
+	start_singlemds
 
 	echo "start lfsck_namespace for ${BASE_COUNT} files set at: $(date)"
-	$START_NAMESPACE || error "Fail to start lfsck_namespace!"
+	start_namespace
 
-	while true; do
-		local STATUS=$($SHOW_NAMESPACE |
-				awk '/^status/ { print $2 }')
-		[ "$STATUS" == "completed" ] && break
-		sleep 3 # check status every 3 seconds
-	done
+	lfsck_wait_facet_status_completed $SINGLEMDS namespace
 
 	echo "end lfsck_namespace for ${BASE_COUNT} files set at: $(date)"
-	local FULL_SPEED=$($SHOW_NAMESPACE |
+	local FULL_SPEED=$(show_namespace |
 		      awk '/^average_speed_phase1/ { print $2 }')
 	echo "lfsck_namespace full_speed is ${FULL_SPEED}/sec"
 	stop ${SINGLEMDS} > /dev/null || error "Fail to stop MDS!"
@@ -303,13 +324,11 @@ test_3() {
 	local j
 
 	for ((j = $inc_speed; j < $FULL_SPEED; j = $((j + inc_speed)))); do
-		start ${SINGLEMDS} $MDT_DEVNAME $MNTOPTS_NOSCRUB > /dev/null ||
-			error "Fail to start MDS!"
+		start_singlemds
 
-		$STOP_LFSCK > /dev/null 2>&1
+		stop_lfsck > /dev/null 2>&1
 		echo "start lfsck_namespace with speed ${j} at: $(date)"
-		$START_NAMESPACE --reset -s ${j} ||
-			error "Fail to start lfsck_namespace with speed ${j}!"
+		start_namespace "--reset -s ${j}"
 		# lfsck_namespace will be paused when MDS stop,
 		# and will be restarted automatically when mount up again.
 		stop ${SINGLEMDS} > /dev/null || error "Fail to stop MDS!"
@@ -324,13 +343,11 @@ test_3() {
 		i=$((i + inc_count))
 	done
 
-	start ${SINGLEMDS} $MDT_DEVNAME $MNTOPTS_NOSCRUB > /dev/null ||
-		error "Fail to start MDS!"
+	start_singlemds
 
-	$STOP_LFSCK /dev/null 2>&1
+	stop_lfsck /dev/null 2>&1
 	echo "start lfsck_namespace with full speed at: $(date)"
-	$START_NAMESPACE --reset -s 0 ||
-		error "Fail to start lfsck_namespace with full speed!"
+	start_namespace --reset -s 0
 	stop ${SINGLEMDS} > /dev/null || error "Fail to stop MDS!"
 
 	local nfiles=$(((i - BCOUNT) / 2))
@@ -352,14 +369,10 @@ show_layout() {
 
 layout_test_one() {
 	echo "***** Start layout LFSCK on all devices at: $(date) *****"
-	$RLCTL lfsck_start -M ${MDT_DEV} -t layout -A -r || return 21
 
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_layout |
-		awk '/^status/ { print \\\$2 }'" "completed" $WTIME || {
-		show_layout 1
-		return 22
-	}
+	start_layout "-A -r"
+
+	lfsck_wait_facet_status_completed $SINGLEMDS layout 22
 	echo "***** End layout LFSCK on all devices at: $(date) *****"
 
 	for n in $(seq $MDSCOUNT); do
@@ -438,7 +451,7 @@ t4_test() {
 		echo
 
 		for ((j = $MINSUBDIR; j <= $MAXSUBDIR; j = $((j * FACTOR)))); do
-			echo "formatall"
+			echo "subdirs=${j}: formatall"
 			formatall > /dev/null ||
 				error "(2) Fail to formatall, subdirs=${j}"
 
@@ -457,10 +470,7 @@ t4_test() {
 			[ $RC -eq 0 ] ||
 				error "(6) generate set $RC, subdirs=${j}"
 
-			RC=0
-			layout_test_one || RC=$?
-			[ $RC -eq 0 ] ||
-				error "(7) LFSCK failed with $RC, subdirs=${j}"
+			layout_test_one
 		done
 
 		echo "stopall"
@@ -566,6 +576,7 @@ lfsck_fast_create() {
 	local ldir="/test-${lbase}"
 	local cycle=0
 	local count=$UNIT
+	local rc=0
 
 	while true; do
 		[ $count -eq 0 -o  $count -gt ${total} ] && count=$total
@@ -577,15 +588,19 @@ lfsck_fast_create() {
 		     "[files: $count] [basedir: $tdir]"
 
 		lfsck_create
+		local rc=$?
+		[ $rc -eq 0 ] || break
 
 		total=$((total - usize * NTHREADS))
 		[ $total -eq 0 ] && break
 		lbase=$((lbase + usize))
 		cycle=$((cycle + 1))
 	done
+	return $rc
 }
 
 lfsck_detach_error() {
+	trap 0
 	lfsck_detach
 	error "$@"
 }
@@ -618,15 +633,8 @@ test_6() {
 
 	echo
 	echo "***** Start layout LFSCK on single MDS at: $(date) *****"
-	$RLCTL lfsck_start -M ${MDT_DEV} -t layout -r ||
-		error "(7) Fail to start layout LFSCK"
-
-	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
-		mdd.${MDT_DEV}.lfsck_layout |
-		awk '/^status/ { print \\\$2 }'" "completed" $WTIME || {
-		show_layout 1
-		error "(8) layout LFSCK cannot finished in time"
-	}
+	start_layout "-r"
+	lfsck_wait_facet_status_completed $SINGLEMDS layout 8
 	echo "***** End layout LFSCK on single MDS at: $(date) *****"
 
 	local SPEED=$(show_layout 1 |
@@ -637,29 +645,28 @@ test_6() {
 	local nfiles=$((inc_count / 2))
 
 	lfsck_attach
+
+	# call detach on exit when test fails on
+	# stop_lfsck(), start_layout()
+	stack_trap "lfsck_detach"
 	for ((m = 0, n = $INCFACTOR; n < 100;
 	      m = $((m + inc_count)), n = $((n + INCFACTOR)))); do
 		local sl=$((SPEED * n / 100))
 
-		$STOP_LFSCK > /dev/null 2>&1
+		stop_lfsck > /dev/null 2>&1
 		echo
 		echo "start lfsck_layout with speed ${sl} at: $(date)"
-		$RLCTL lfsck_start -M ${MDT_DEV} -t layout -r -s ${sl} ||
-			lfsck_detach_error \
-			"(9) Fail to start lfsck_layout with speed ${sl}"
-
+		start_layout "-r -s ${sl}"
 		echo "&&&&& Start create files set from ${m} at: $(date) &&&&&"
 		lfsck_fast_create $nfiles ${m} $NTHREADS ||
 			lfsck_detach_error "(10) Fail to create files"
 		echo "&&&&& End create files set from ${m} at: $(date) &&&&&"
 	done
 
-	$STOP_LFSCK > /dev/null 2>&1
+	stop_lfsck > /dev/null 2>&1
 	echo
 	echo "start lfsck_layout with full speed at: $(date)"
-	$RLCTL lfsck_start -M ${MDT_DEV} -t layout -r -s 0 ||
-		lfsck_detach_error \
-		"(11) Fail to start lfsck_layout with full speed"
+	start_layout "-r -s 0"
 
 	echo "&&&&& start to create files set from ${m} at: $(date) &&&&&"
 	lfsck_fast_create $nfiles ${m} $NTHREADS ||
@@ -667,7 +674,7 @@ test_6() {
 	echo "&&&&& end to create files set from ${m} at: $(date) &&&&&"
 
 	m=$((m + inc_count))
-	$STOP_LFSCK > /dev/null 2>&1
+	stop_lfsck > /dev/null 2>&1
 	echo
 	echo "create without lfsck_layout run back-ground"
 	echo "&&&&& start to create files set from ${m} at: $(date) &&&&&"
@@ -684,31 +691,18 @@ test_6() {
 }
 run_test 6 "lfsck layout impact on create performance"
 
-show_namespace() {
-	local idx=$1
-
-	do_facet mds${idx} \
-		"$LCTL get_param -n mdd.$(facet_svc mds${idx}).lfsck_namespace"
-}
-
 namespace_test_one() {
 	echo "***** Start namespace LFSCK on all devices at: $(date) *****"
-	$RLCTL lfsck_start -M ${MDT_DEV} -t namespace -A -r || return 21
-
+	start_namespace "-A -r"
 	for n in $(seq $MDSCOUNT); do
-		wait_update_facet mds${n} "$LCTL get_param -n \
-			mdd.$(facet_svc mds${n}).lfsck_namespace |
-			awk '/^status/ { print \\\$2 }'" "completed" $WTIME || {
-			show_namespace ${n}
-			return 22
-		}
+		lfsck_wait_facet_status_completed mds${n} namespace 22
 	done
 	echo "***** End namespace LFSCK on all devices at: $(date) *****"
 
 	for n in $(seq $MDSCOUNT); do
-		show_namespace ${n}
+		show_lfsck mds${n} namespace
 
-		local SPEED=$(show_namespace ${n} |
+		local SPEED=$(show_lfsck mds${n} namespace |
 			      awk '/^average_speed_total/ { print $2 }')
 		echo
 		echo "lfsck_namespace speed on MDS_${n} is $SPEED objs/sec"
@@ -867,7 +861,7 @@ t7_test() {
 
 		for ((j = $MINSUBDIR; j <= $MAXSUBDIR;
 		      j = $((j + MINSUBDIR)))); do
-			echo "formatall"
+			echo "subdirs=${j}: formatall"
 			formatall > /dev/null ||
 				error "(2) Fail to formatall, subdirs=${j}"
 
@@ -890,9 +884,7 @@ t7_test() {
 				error "(6) generate set $RC, subdirs=${j}"
 
 			RC=0
-			namespace_test_one || RC=$?
-			[ $RC -eq 0 ] ||
-				error "(7) LFSCK failed with $RC, subdirs=${j}"
+			namespace_test_one
 
 			do_nodes $(comma_list $(mdts_nodes)) \
 				$LCTL set_param fail_loc=0
@@ -957,20 +949,14 @@ test_8() {
 
 	echo
 	echo "***** Start namespace LFSCK at: $(date) *****"
-	$RLCTL lfsck_start -M ${MDT_DEV} -t namespace -A -r ||
-		error "(7) Fail to start namespace LFSCK"
+	start_namespace "-A -r"
 
 	for n in $(seq $MDSCOUNT); do
-		wait_update_facet mds${n} "$LCTL get_param -n \
-			mdd.$(facet_svc mds${n}).lfsck_namespace |
-			awk '/^status/ { print \\\$2 }'" "completed" $WTIME || {
-			show_namespace ${n}
-			error "(8) namespace LFSCK cannot finished in time"
-		}
+		lfsck_wait_facet_status_completed mds${n} namespace 8
 	done
 	echo "***** End namespace LFSCK at: $(date) *****"
 
-	local SPEED=$(show_namespace 1 |
+	local SPEED=$(show_namespace |
 		      awk '/^average_speed_phase1/ { print $2 }')
 	echo "lfsck_namespace full_speed is $SPEED objs/sec"
 	echo
@@ -981,7 +967,11 @@ test_8() {
 
 	lfsck_attach
 
+	# call detach on exit when test fails on
+	# stop_lfsck(), start_namespace()
+	stack_trap "lfsck_detach"
 	local stime=$(date +%s)
+
 	lfsck_fast_create $nfiles ${m} $NTHREADS ||
 		lfsck_detach_error "(9) Fail to create files"
 	local etime=$(date +%s)
@@ -993,11 +983,9 @@ test_8() {
 	      m = $((m + inc_count)), n = $((n + INCFACTOR)))); do
 		local sl=$((SPEED * n / 100))
 
-		$STOP_LFSCK > /dev/null 2>&1
+		stop_lfsck > /dev/null 2>&1
 		echo "start lfsck_namespace with speed ${sl} at: $(date)"
-		$RLCTL lfsck_start -M ${MDT_DEV} -t namespace -A -r -s ${sl} ||
-			lfsck_detach_error \
-			"(10) Fail to start lfsck_namespace with speed ${sl}"
+		start_namespace "-A -r -s ${sl}"
 
 		stime=$(date +%s)
 		lfsck_fast_create $nfiles ${m} $NTHREADS ||
@@ -1009,11 +997,9 @@ test_8() {
 		echo
 	done
 
-	$STOP_LFSCK > /dev/null 2>&1
+	stop_lfsck
 	echo "start lfsck_namespace with full speed at: $(date)"
-	$RLCTL lfsck_start -M ${MDT_DEV} -t namespace -A -r -s 0 ||
-		lfsck_detach_error \
-		"(12) Fail to start lfsck_namespace with full speed"
+	start_namespace "-A -r -s 0"
 
 	stime=$(date +%s)
 	lfsck_fast_create $nfiles ${m} $NTHREADS ||
@@ -1023,7 +1009,7 @@ test_8() {
 		"$((etime - stime)) seconds"
 	echo
 
-	$STOP_LFSCK > /dev/null 2>&1
+	stop_lfsck
 
 	lfsck_detach
 
