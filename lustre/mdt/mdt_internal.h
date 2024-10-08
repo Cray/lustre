@@ -128,6 +128,7 @@ static inline char *cdt_mdt_state2str(int state)
 struct coordinator {
 	refcount_t		 cdt_ref;	     /**< cdt refcount */
 	wait_queue_head_t	 cdt_waitq;	     /**< cdt wait queue */
+	wait_queue_head_t	 cdt_cancel_all;     /**< cancel_all wait */
 	bool			 cdt_event;	     /**< coordinator event */
 	struct task_struct	*cdt_task;	     /**< cdt thread handle */
 	struct lu_env		 cdt_env;	     /**< coordinator lustre
@@ -138,7 +139,7 @@ struct coordinator {
 	struct kobject		 cdt_hsm_kobj;		/* hsm sysfs object */
 	__u64			 cdt_policy;	     /**< policy flags */
 	enum cdt_states		 cdt_state;	      /**< state */
-	__u64			 cdt_last_cookie;     /**< last cookie
+	atomic64_t		 cdt_last_cookie;     /**< last cookie
 						       * allocated */
 	struct rw_semaphore	 cdt_lock;	      /**< protect llog
 						       * access and cdt_state */
@@ -184,6 +185,7 @@ struct coordinator {
 	bool			 cdt_remove_archive_on_last_unlink;
 
 	bool			 cdt_wakeup_coordinator;
+	bool			 cdt_idle;
 };
 
 /* mdt state flag bits */
@@ -1043,19 +1045,12 @@ int mdt_hsm_ct_unregister(struct tgt_session_info *tsi);
 int mdt_hsm_request(struct tgt_session_info *tsi);
 int mdt_hsm_data_version(struct tgt_session_info *tsi);
 
-/* mdt/mdt_hsm_cdt_actions.c */
-enum cdt_lock_type {
-	CDT_LOCK_READ,
-	CDT_LOCK_WRITE,
-	CDT_LOCK_NONE
-};
-
 extern const struct file_operations mdt_hsm_actions_fops;
 void dump_llog_agent_req_rec(const char *prefix,
 			     const struct llog_agent_req_rec *larr);
 int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
 		     llog_cb_t cb, void *data, u32 start_cat_idx,
-		     u32 start_rec_idx, enum cdt_lock_type lock);
+		     u32 start_rec_idx);
 int mdt_agent_record_add(const struct lu_env *env, struct mdt_device *mdt,
 			 __u32 archive_id, __u64 flags,
 			 struct hsm_action_item *hai);
