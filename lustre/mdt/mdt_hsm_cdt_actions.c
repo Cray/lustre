@@ -203,7 +203,6 @@ void dump_llog_agent_req_rec(const char *prefix,
  * \param mdt [IN] MDT device
  * \param cb [IN] llog callback funtion
  * \param data [IN] llog callback  data
- * \param lock [IN] lock type
  * \param start_cat_idx first catalog index to examine
  * \param start_rec_idx first record index to examine
  * \retval 0 success
@@ -211,11 +210,10 @@ void dump_llog_agent_req_rec(const char *prefix,
  */
 int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
 		     llog_cb_t cb, void *data, u32 start_cat_idx,
-		     u32 start_rec_idx, enum cdt_lock_type lock)
+		     u32 start_rec_idx)
 {
 	struct obd_device	*obd = mdt2obd_dev(mdt);
 	struct llog_ctxt	*lctxt = NULL;
-	struct coordinator	*cdt = &mdt->mdt_coordinator;
 	int			 rc;
 	ENTRY;
 
@@ -223,10 +221,6 @@ int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
 	if (lctxt == NULL || lctxt->loc_handle == NULL)
 		RETURN(-ENOENT);
 
-	if (lock == CDT_LOCK_READ)
-		down_read(&cdt->cdt_lock);
-	else if (lock == CDT_LOCK_WRITE)
-		down_write(&cdt->cdt_lock);
 
 	rc = llog_cat_process(env, lctxt->loc_handle, cb, data, start_cat_idx,
 			      start_rec_idx);
@@ -237,11 +231,6 @@ int cdt_llog_process(const struct lu_env *env, struct mdt_device *mdt,
 		rc = 0;
 
 	llog_ctxt_put(lctxt);
-
-	if (lock == CDT_LOCK_READ)
-		up_read(&cdt->cdt_lock);
-	else if (lock == CDT_LOCK_WRITE)
-		up_write(&cdt->cdt_lock);
 
 	RETURN(rc);
 }
@@ -284,21 +273,19 @@ int mdt_agent_record_add(const struct lu_env *env, struct mdt_device *mdt,
 	if (lctxt == NULL || lctxt->loc_handle == NULL)
 		GOTO(free, rc = -ENOENT);
 
-	down_write(&cdt->cdt_lock);
-
 	/* in case of cancel request, the cookie is already set to the
 	 * value of the request cookie to be cancelled
 	 * so we do not change it */
 	if (hai->hai_action == HSMA_CANCEL)
 		larr->arr_hai.hai_cookie = hai->hai_cookie;
 	else
-		larr->arr_hai.hai_cookie = cdt->cdt_last_cookie++;
+		larr->arr_hai.hai_cookie =
+				atomic64_inc_return(&cdt->cdt_last_cookie);
 
 	rc = llog_cat_add(env, lctxt->loc_handle, &larr->arr_hdr, NULL);
 	if (rc > 0)
 		rc = 0;
 
-	up_write(&cdt->cdt_lock);
 	llog_ctxt_put(lctxt);
 
 	EXIT;
@@ -452,7 +439,7 @@ int mdt_agent_record_update(struct mdt_thread_info *mti,
 	ducb.change_time = ktime_get_real_seconds();
 
 	rc = cdt_llog_process(env, mdt, mdt_agent_record_update_cb, &ducb,
-			      start_cat_idx, start_rec_idx, CDT_LOCK_WRITE);
+			      start_cat_idx, start_rec_idx);
 	if (rc < 0)
 		CERROR("%s: cdt_llog_process() failed, rc=%d, cannot update "
 		       "status for %u cookies, done %u\n",
@@ -595,7 +582,6 @@ static int hsm_actions_show_cb(const struct lu_env *env,
 static int mdt_hsm_actions_debugfs_show(struct seq_file *s, void *v)
 {
 	struct agent_action_iterator *aai = s->private;
-	struct coordinator *cdt = &aai->aai_mdt->mdt_coordinator;
 	int rc;
 
 	ENTRY;
@@ -608,11 +594,9 @@ static int mdt_hsm_actions_debugfs_show(struct seq_file *s, void *v)
 	if (aai->aai_eof)
 		RETURN(0);
 
-	down_read(&cdt->cdt_lock);
 	rc = llog_cat_process(&aai->aai_env, aai->aai_ctxt->loc_handle,
 			      hsm_actions_show_cb, s,
 			      aai->aai_cat_index, aai->aai_index);
-	up_read(&cdt->cdt_lock);
 	if (rc == 0) /* all llog parsed */
 		aai->aai_eof = true;
 	if (rc == LLOG_PROC_BREAK) /* buffer full */

@@ -431,6 +431,10 @@ static int mdt_coordinator_cb(const struct lu_env *env,
 	struct coordinator *cdt = &mdt->mdt_coordinator;
 	ENTRY;
 
+
+	if (cdt->cdt_state == CDT_DISABLE)
+		RETURN(-ECANCELED);
+
 	larr = (struct llog_agent_req_rec *)hdr;
 	dump_llog_agent_req_rec("mdt_coordinator_cb(): ", larr);
 	switch (larr->arr_status) {
@@ -665,6 +669,10 @@ static int mdt_coordinator(void *data)
 		u32 start_rec_idx;
 		struct hsm_record_update *updates;
 
+		if (cdt->cdt_state == CDT_DISABLE) {
+			cdt->cdt_idle = true;
+			wake_up(&cdt->cdt_cancel_all);
+		}
 		/* Limit execution of the expensive requests traversal
 		 * to at most one second. This prevents repeatedly
 		 * locking/unlocking the catalog for each request
@@ -696,6 +704,7 @@ static int mdt_coordinator(void *data)
 			continue;
 		}
 
+		cdt->cdt_idle = false;
 		/* If no event, and no housekeeping to do, continue to
 		 * wait. */
 		if (last_housekeeping + cdt->cdt_loop_period <=
@@ -745,8 +754,7 @@ static int mdt_coordinator(void *data)
 		hsd.hsd_one_restore = false;
 
 		rc = cdt_llog_process(mti->mti_env, mdt, mdt_coordinator_cb,
-				      &hsd, start_cat_idx, start_rec_idx,
-				      CDT_LOCK_WRITE);
+				      &hsd, start_cat_idx, start_rec_idx);
 		if (rc < 0)
 			goto clean_cb_alloc;
 
@@ -794,6 +802,12 @@ static int mdt_coordinator(void *data)
 			    cdt->cdt_max_requests)
 				break;
 
+			/* if cancels happen during llog process or sending
+			 * assumes that other records are cancelled
+			 */
+			if (cdt->cdt_state == CDT_DISABLE)
+				goto update_recs;
+
 			rc = mdt_hsm_agent_send(mti, hal, 0);
 			/* if failure, we suppose it is temporary
 			 * if the copy tool failed to do the request
@@ -821,7 +835,7 @@ static int mdt_coordinator(void *data)
 				hsd.hsd_start_rec_idx = start_rec_idx;
 			}
 		}
-
+update_recs:
 		if (update_idx) {
 			rc = mdt_agent_record_update(mti, updates, update_idx);
 			if (rc)
@@ -989,9 +1003,9 @@ static int hsm_restore_cb(const struct lu_env *env,
 
 	larr = (struct llog_agent_req_rec *)hdr;
 	hai = &larr->arr_hai;
-	if (hai->hai_cookie >= cdt->cdt_last_cookie) {
+	if (hai->hai_cookie >= atomic64_read(&cdt->cdt_last_cookie)) {
 		/* update the cookie to avoid collision */
-		cdt->cdt_last_cookie = hai->hai_cookie + 1;
+		atomic64_set(&cdt->cdt_last_cookie, hai->hai_cookie + 1);
 	}
 
 	if (hai->hai_action != HSMA_RESTORE ||
@@ -1035,7 +1049,7 @@ static int mdt_hsm_pending_restore(struct mdt_thread_info *mti)
 	hrd.hrd_mti = mti;
 
 	rc = cdt_llog_process(mti->mti_env, mti->mti_mdt, hsm_restore_cb, &hrd,
-			      0, 0, CDT_LOCK_WRITE);
+			      0, 0);
 
 	RETURN(rc);
 }
@@ -1078,11 +1092,11 @@ int mdt_hsm_cdt_init(struct mdt_device *mdt)
 	ENTRY;
 
 	init_waitqueue_head(&cdt->cdt_waitq);
+	init_waitqueue_head(&cdt->cdt_cancel_all);
 	init_rwsem(&cdt->cdt_lock);
 	init_rwsem(&cdt->cdt_agent_lock);
 	init_rwsem(&cdt->cdt_request_lock);
 	set_cdt_state(cdt, CDT_STOPPED);
-
 	INIT_LIST_HEAD(&cdt->cdt_request_list);
 	INIT_LIST_HEAD(&cdt->cdt_agents);
 
@@ -1141,6 +1155,7 @@ int mdt_hsm_cdt_init(struct mdt_device *mdt)
 
 	/* by default do not remove archives on last unlink */
 	cdt->cdt_remove_archive_on_last_unlink = false;
+	cdt->cdt_idle = true;
 
 	RETURN(0);
 
@@ -1210,8 +1225,7 @@ static int mdt_hsm_cdt_start(struct mdt_device *mdt)
 	cdt->cdt_policy = CDT_DEFAULT_POLICY;
 
 	/* just need to be larger than previous one */
-	/* cdt_last_cookie is protected by cdt_lock */
-	cdt->cdt_last_cookie = ktime_get_real_seconds();
+	atomic64_set(&cdt->cdt_last_cookie, ktime_get_real_seconds());
 	atomic_set(&cdt->cdt_request_count, 0);
 	atomic_set(&cdt->cdt_archive_count, 0);
 	atomic_set(&cdt->cdt_restore_count, 0);
@@ -1899,6 +1913,10 @@ static int hsm_cancel_all_actions(struct mdt_device *mdt)
 	if (rc)
 		GOTO(out_cdt_state_unlock, rc);
 
+	/* waits while coordinator finish work */
+	if (wait_event_interruptible(cdt->cdt_cancel_all, cdt->cdt_idle))
+		GOTO(out_cdt_state, rc = -EINTR);
+
 	/* send cancel to all running requests */
 	down_read(&cdt->cdt_request_lock);
 	list_for_each_entry(car, &cdt->cdt_request_list, car_request_list) {
@@ -1965,7 +1983,7 @@ static int hsm_cancel_all_actions(struct mdt_device *mdt)
 
 	/* cancel all on-disk records */
 	rc = cdt_llog_process(mti->mti_env, mti->mti_mdt, mdt_cancel_all_cb,
-			      (void *)mti, 0, 0, CDT_LOCK_NONE);
+			      (void *)mti, 0, 0);
 out_cdt_state:
 	/* Enable coordinator, unless the coordinator was stopping. */
 	set_cdt_state_locked(cdt, old_state);
