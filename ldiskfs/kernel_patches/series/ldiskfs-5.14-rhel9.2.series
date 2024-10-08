@@ -12,6 +12,7 @@ rhel9.2/ext4-data-in-dirent.patch
 rhel8/ext4-nocmtime.patch
 base/ext4-htree-lock.patch
 rhel9.2/ext4-pdirop.patch
+rhel8/ext4-deep-tree.patch
 rhel9/ext4-max-dir-size.patch
 linux-5.16/ext4-corrupted-inode-block-bitmaps-handling-patches.patch
 rhel9/ext4-give-warning-with-dir-htree-growing.patch
@@ -30,10 +31,12 @@ linux-5.14/ext4-ialloc-uid-gid-and-pass-owner-down.patch
 linux-5.14/ext4-projid-xattrs.patch
 rhel9.1/ext4-delayed-iput.patch
 rhel8/ext4-ext-merge.patch
+rhel9.2/ext4-mballoc-prefer_fast_tracks.patch
 linux-5.14/ext4-xattr-disable-credits-check.patch
 rhel9.2/ext4-fiemap-kernel-data.patch
 rhel8/ext4-old_ea_inodes_handling_fix.patch
 rhel9.2/ext4-filename-encode.patch
 rhel9.1/ext4-enc-flag.patch
 rhel9.2/ext4-encdata.patch
+rhel9.2/ext4-mballoc-reset-allocator-on-delete.patch
 rhel9/ext4-add-periodic-superblock-update.patch
