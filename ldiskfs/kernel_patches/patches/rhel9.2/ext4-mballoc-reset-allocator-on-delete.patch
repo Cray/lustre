@@ -1,0 +1,88 @@
+commit 97141fb63a40f4ee06aadbb547f276dc348c484b
+Author: Alexander Zarochentsev <alexander.zarochentsev@hpe.com>
+Date:   Tue Sep 26 13:04:49 2023 +0000
+
+LUS-11813 ldiskfs: reset mb_last_group on block freeing
+
+An tunable mechanism to reset streaming block allocator
+head in case of block freeing to force block reusage in
+subsequent block allocations.
+
+Signed-off-by: Alexander Zarochentsev <alexander.zarochentsev@hpe.com>
+Change-Id: Ib238b1c92dd315b78e91a0252061ecefa0248699
+Reviewed-on: https://es-gerrit.hpc.amslabs.hpecorp.net/162546
+Reviewed-by: Andrew Perepechko <andrew.perepechko@hpe.com>
+Reviewed-by: Alexander Boyko <alexander.boyko@hpe.com>
+Tested-by: Vitaly Fertman <vitaly.fertman@hpe.com>
+
+---
+ fs/ext4/ext4.h    |  3 +++
+ fs/ext4/mballoc.c | 10 ++++++++++
+ fs/ext4/sysfs.c   |  2 ++
+ 3 files changed, 15 insertions(+)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 564690ba..5dfed8c6 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1653,6 +1653,9 @@ struct ext4_sb_info {
+ 	unsigned int s_mb_klta_rate;
+ 	unsigned int s_mb_klta_start;
+ 
++	/* reset mb_last_group on block range freeing */
++       	unsigned int s_mb_reset_last_group;
++
+ 	/* stats for buddy allocator */
+ 	atomic_t s_bal_reqs;	/* number of reqs with len > 1 */
+ 	atomic_t s_bal_success;	/* we found long enough chunks */
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 80286ab7..c5bd9d03 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -1749,6 +1749,7 @@ static void mb_free_blocks(struct inode *inode, struct ext4_buddy *e4b,
+ 	int block;
+ 	int last = first + count - 1;
+ 	struct super_block *sb = e4b->bd_sb;
++	struct ext4_sb_info *sbi = EXT4_SB(sb);
+ 
+ 	if (WARN_ON(count == 0))
+ 		return;
+@@ -1758,6 +1759,15 @@ static void mb_free_blocks(struct inode *inode, struct ext4_buddy *e4b,
+ 	if (unlikely(EXT4_MB_GRP_BBITMAP_CORRUPT(e4b->bd_info)))
+ 		return;
+ 
++	if (sbi->s_mb_reset_last_group && count >= sbi->s_mb_reset_last_group) {
++		spin_lock(&sbi->s_md_lock);
++		if (e4b->bd_group < sbi->s_mb_last_group) {
++			sbi->s_mb_last_group = e4b->bd_group;
++			sbi->s_mb_last_start = 0;
++		}
++                spin_unlock(&sbi->s_md_lock);
++	}
++
+ 	mb_check_buddy(e4b);
+ 	mb_free_blocks_double(inode, e4b, first, count);
+ 
+diff --git a/fs/ext4/sysfs.c b/fs/ext4/sysfs.c
+index a5ffe65a..582936ee 100644
+--- a/fs/ext4/sysfs.c
++++ b/fs/ext4/sysfs.c
+@@ -280,6 +280,7 @@ EXT4_ATTR(last_error_time, 0444, last_error_time);
+ EXT4_ATTR(journal_task, 0444, journal_task);
+ EXT4_RW_ATTR_SBI_UI(mb_prefetch, s_mb_prefetch);
+ EXT4_RW_ATTR_SBI_UI(mb_prefetch_limit, s_mb_prefetch_limit);
++EXT4_RW_ATTR_SBI_UI(mb_reset_last_group, s_mb_reset_last_group);
+ EXT4_RW_ATTR_SBI_UL(last_trim_minblks, s_last_trim_minblks);
+ 
+ static unsigned int old_bump_val = 128;
+@@ -338,6 +339,7 @@ static struct attribute *ext4_attrs[] = {
+ #endif
+ 	ATTR_LIST(mb_prefetch),
+ 	ATTR_LIST(mb_prefetch_limit),
++	ATTR_LIST(mb_reset_last_group),
+ 	ATTR_LIST(last_trim_minblks),
+ 	NULL,
+ };
+-- 
+2.34.1
+
