@@ -384,17 +384,6 @@ static int mdt_agent_record_update_cb(const struct lu_env *env,
 			    update->status == ARS_CANCELED)
 				cdt_restore_handle_del(mti, cdt, &hai->hai_fid);
 
-			/* Allow other threads that need cdt_lock to make
-			 * progress, when there is a large number of updates
-			 */
-			if (ducb->updates_done % CDT_BATCH_SIZE == 0 &&
-			    rwsem_is_contended(&cdt->cdt_lock) &&
-			    need_resched()) {
-				up_write(&cdt->cdt_lock);
-				cond_resched();
-				down_write(&cdt->cdt_lock);
-			}
-
 			break;
 		}
 	}

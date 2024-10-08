@@ -147,7 +147,6 @@ struct hsm_scan_data {
 	int			 hsd_action_count;
 	int			 hsd_request_len; /* array alloc len */
 	int			 hsd_request_count; /* array used count */
-	int			 hsd_requests_handled;
 	struct hsm_scan_request	*hsd_request;
 };
 
@@ -431,16 +430,6 @@ static int mdt_coordinator_cb(const struct lu_env *env,
 	struct mdt_device *mdt = hsd->hsd_mti->mti_mdt;
 	struct coordinator *cdt = &mdt->mdt_coordinator;
 	ENTRY;
-
-	/* Allow other threads that need cdt_lock to make
-	 * progress, when there is a large number of updates
-	 */
-	if (++hsd->hsd_requests_handled % CDT_BATCH_SIZE == 0 &&
-	     rwsem_is_contended(&cdt->cdt_lock) && need_resched()) {
-		up_write(&cdt->cdt_lock);
-		cond_resched();
-		down_write(&cdt->cdt_lock);
-	}
 
 	larr = (struct llog_agent_req_rec *)hdr;
 	dump_llog_agent_req_rec("mdt_coordinator_cb(): ", larr);
@@ -753,7 +742,6 @@ static int mdt_coordinator(void *data)
 
 		hsd.hsd_action_count = 0;
 		hsd.hsd_request_count = 0;
-		hsd.hsd_requests_handled = 0;
 		hsd.hsd_one_restore = false;
 
 		rc = cdt_llog_process(mti->mti_env, mdt, mdt_coordinator_cb,
