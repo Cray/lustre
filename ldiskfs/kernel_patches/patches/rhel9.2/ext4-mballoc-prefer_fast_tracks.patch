@@ -1,0 +1,220 @@
+LUS-3719 ldiskfs: keep low tracks allocated by mballoc
+
+Do not allow block groups with high group number to be
+scanned during cr=0 round if low groups are not allocated
+by given allocation ratio.
+
+Signed-off-by: Alexander Zarochentsev <alexander.zarochentsev@hpe.com>
+Change-Id: I3ecd161285fd5d1e89225910aeb8bb2023804f6e
+Reviewed-on: https://es-gerrit.dev.cray.com/160639/
+Reviewed-by: Andrew Perepechko <andrew.perepechko@hpe.com>
+Reviewed-by: Artem Blagodarenko <artem.blagodarenko@hpe.com>
+Tested-by: Elena Gryaznova <elena.gryaznova@hpe.com>
+
+---
+ fs/ext4/ext4.h    |  4 ++++
+ fs/ext4/mballoc.c | 44 ++++++++++++++++++++++++++++++++++++++++++--
+ fs/ext4/mballoc.h |  5 +++++
+ fs/ext4/sysfs.c   | 40 ++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 91 insertions(+), 2 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index e956f248..af4c17de 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1643,6 +1643,10 @@ struct ext4_sb_info {
+ 	unsigned int s_mb_prefetch;
+ 	unsigned int s_mb_prefetch_limit;
+ 
++	/* keep low tracks allocated */
++	unsigned int s_mb_klta_rate;
++	unsigned int s_mb_klta_start;
++
+ 	/* stats for buddy allocator */
+ 	atomic_t s_bal_reqs;	/* number of reqs with len > 1 */
+ 	atomic_t s_bal_success;	/* we found long enough chunks */
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 812e98f8..463426b3 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2598,16 +2598,31 @@ void ext4_mb_prefetch_fini(struct super_block *sb, ext4_group_t group,
+ 	}
+ }
+ 
++static u64 available_blocks_count(struct ext4_sb_info *sbi)
++{
++	ext4_fsblk_t resv_blocks;
++	u64 bfree;
++	struct ext4_super_block *es = sbi->s_es;
++
++	resv_blocks = EXT4_C2B(sbi, atomic64_read(&sbi->s_resv_clusters));
++	bfree = percpu_counter_sum_positive(&sbi->s_freeclusters_counter) -
++		 percpu_counter_sum_positive(&sbi->s_dirtyclusters_counter);
++
++	bfree = EXT4_C2B(sbi, max_t(s64, bfree, 0));
++	return bfree - (ext4_r_blocks_count(es) + resv_blocks);
++}
++
+ static noinline_for_stack int
+ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
+ {
+-	ext4_group_t prefetch_grp = 0, ngroups, group, i;
++	ext4_group_t prefetch_grp = 0, ngroups, group, i, group_limit = 0;
+ 	int cr = -1, new_cr;
+ 	int err = 0, first_err = 0;
+ 	unsigned int nr = 0, prefetch_ios = 0;
+ 	struct ext4_sb_info *sbi;
+ 	struct super_block *sb;
+ 	struct ext4_buddy e4b;
++	u64 avail_blocks;
+ 	int lost;
+ 
+ 	sb = ac->ac_sb;
+@@ -2658,9 +2673,29 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
+ 		ac->ac_g_ex.fe_start = sbi->s_mb_last_start;
+ 		spin_unlock(&sbi->s_md_lock);
+ 	}
+-
+ 	/* Let's just scan groups to find more-less suitable blocks */
+ 	cr = ac->ac_2order ? 0 : 1;
++
++	avail_blocks = available_blocks_count(sbi);
++	if (!cr && (ac->ac_flags & EXT4_MB_STREAM_ALLOC)) {
++		unsigned int rate = sbi->s_mb_klta_rate;
++		__u64 val;
++
++		if (rate != 0) {
++			val = ext4_blocks_count(sbi->s_es) - avail_blocks;
++			val = val * 100 / sbi->s_blocks_per_group / rate + 1;
++			if (val < sbi->s_groups_count) {
++				group_limit = val;
++				if (group_limit <= sbi->s_mb_klta_start)
++					group_limit = sbi->s_mb_klta_start;
++				if (ac->ac_g_ex.fe_group > group_limit) {
++					ac->ac_g_ex.fe_group = 0;
++					ac->ac_g_ex.fe_start = 0;
++				}
++			}
++		}
++	}
++
+ 	/*
+ 	 * cr == 0 try to get exact allocation,
+ 	 * cr == 3  try to get anything
+@@ -3588,6 +3623,11 @@ int ext4_mb_init(struct super_block *sb)
+ 	sbi->s_mb_stats = MB_DEFAULT_STATS;
+ 	sbi->s_mb_order2_reqs = MB_DEFAULT_ORDER2_REQS;
+ 	sbi->s_mb_max_inode_prealloc = MB_DEFAULT_MAX_INODE_PREALLOC;
++	sbi->s_mb_klta_start = sbi->s_groups_count / 10;
++	if (blk_queue_nonrot(bdev_get_queue(sb->s_bdev)))
++		sbi->s_mb_klta_rate = 0;
++	else
++		sbi->s_mb_klta_rate = MB_KLTA_RATE_DEFAULT;
+ 	/*
+ 	 * The default group preallocation is 512, which for 4k block
+ 	 * sizes translates to 2 megabytes.  However for bigalloc file
+diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
+index aa75a83e..a3d8bbb3 100644
+--- a/fs/ext4/mballoc.h
++++ b/fs/ext4/mballoc.h
+@@ -95,6 +95,11 @@
+  */
+ #define MB_NUM_ORDERS(sb)		((sb)->s_blocksize_bits + 2)
+ 
++/*
++ * Keep low tracks allocated (KLTA)
++ */
++#define MB_KLTA_RATE_DEFAULT		25
++
+ struct ext4_free_data {
+ 	/* this links the free block information from sb_info */
+ 	struct list_head		efd_list;
+diff --git a/fs/ext4/sysfs.c b/fs/ext4/sysfs.c
+index 72aeede8..a5ffe65a 100644
+--- a/fs/ext4/sysfs.c
++++ b/fs/ext4/sysfs.c
+@@ -21,6 +21,8 @@
+ typedef enum {
+ 	attr_noop,
+ 	attr_delayed_allocation_blocks,
++	attr_mb_klta_rate,
++	attr_mb_klta_start,
+ 	attr_session_write_kbytes,
+ 	attr_lifetime_write_kbytes,
+ 	attr_reserved_clusters,
+@@ -135,6 +137,32 @@ static ssize_t journal_task_show(struct ext4_sb_info *sbi, char *buf)
+ 			task_pid_vnr(sbi->s_journal->j_task));
+ }
+ 
++static ssize_t mb_klta_rate_store(struct ext4_sb_info *sbi,
++				  const char *buf, size_t count)
++{
++	unsigned long long val;
++	int ret;
++
++	ret = kstrtoull(buf, 0, &val);
++	if (ret || val > 100)
++		return -EINVAL;
++	sbi->s_mb_klta_rate = (unsigned int)val;
++	return count;
++}
++
++static ssize_t mb_klta_start_store(struct ext4_sb_info *sbi,
++				   const char *buf, size_t count)
++{
++	unsigned long long val;
++	int ret;
++
++	ret = kstrtoull(buf, 0, &val);
++	if (ret || val > sbi->s_groups_count)
++		return -EINVAL;
++	sbi->s_mb_klta_start = (ext4_group_t)val;
++	return count;
++}
++
+ #define EXT4_ATTR(_name,_mode,_id)					\
+ static struct ext4_attr ext4_attr_##_name = {				\
+ 	.attr = {.name = __stringify(_name), .mode = _mode },		\
+@@ -200,6 +228,8 @@ static struct ext4_attr ext4_attr_##_name = {			\
+ #define ATTR_LIST(name) &ext4_attr_##name.attr
+ 
+ EXT4_ATTR_FUNC(delayed_allocation_blocks, 0444);
++EXT4_ATTR_FUNC(mb_klta_rate, 0644);
++EXT4_ATTR_FUNC(mb_klta_start, 0644);
+ EXT4_ATTR_FUNC(session_write_kbytes, 0444);
+ EXT4_ATTR_FUNC(lifetime_write_kbytes, 0444);
+ EXT4_ATTR_FUNC(reserved_clusters, 0644);
+@@ -257,6 +287,8 @@ EXT4_ATTR_PTR(max_writeback_mb_bump, 0444, pointer_ui, &old_bump_val);
+ 
+ static struct attribute *ext4_attrs[] = {
+ 	ATTR_LIST(delayed_allocation_blocks),
++	ATTR_LIST(mb_klta_rate),
++	ATTR_LIST(mb_klta_start),
+ 	ATTR_LIST(session_write_kbytes),
+ 	ATTR_LIST(lifetime_write_kbytes),
+ 	ATTR_LIST(reserved_clusters),
+@@ -389,6 +421,10 @@ static ssize_t ext4_attr_show(struct kobject *kobj,
+ 		return sysfs_emit(buf, "%llu\n",
+ 				(s64) EXT4_C2B(sbi,
+ 		       percpu_counter_sum(&sbi->s_dirtyclusters_counter)));
++	case attr_mb_klta_rate:
++		return sysfs_emit(buf, "%u\n", sbi->s_mb_klta_rate);
++	case attr_mb_klta_start:
++		return sysfs_emit(buf, "%u\n", sbi->s_mb_klta_start);
+ 	case attr_session_write_kbytes:
+ 		return session_write_kbytes_show(sbi, buf);
+ 	case attr_lifetime_write_kbytes:
+@@ -490,6 +526,10 @@ static ssize_t ext4_attr_store(struct kobject *kobj,
+ 			return ret;
+ 		*((unsigned long *) ptr) = t;
+ 		return len;
++	case attr_mb_klta_rate:
++		return mb_klta_rate_store(sbi, buf, len);
++	case attr_mb_klta_start:
++		return mb_klta_start_store(sbi, buf, len);
+ 	case attr_inode_readahead:
+ 		return inode_readahead_blks_store(sbi, buf, len);
+ 	case attr_trigger_test_error:
+-- 
+2.34.1
+
