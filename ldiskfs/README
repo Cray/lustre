@@ -61,8 +61,19 @@ would copy the patch to:
   patches/rhel6.4/foo.patch
 
 The next step would be to edit series/ldiskfs-2.6-rhel6.4.series to point
-to the new patch.  Finally, the developer may edit files and "quilt refresh"
-the new patch.
+to the new patch.
+
+The quilt library is useful apply patches here easily:
+
+  quilt push <patch>           # apply patches up to <patch>
+  # edit the source files as needed
+  quilt refresh                # update the top patch with your changes
+
+Alternatively, patches can be created and updated manually with diff
+and patch:
+
+  diff -u original_file modified_file > patches/rhel6.4/foo.patch
+  patch -p1 < patches/rhel6.4/foo.patch
 
 Detecting which patch series to apply
 -------------------------------------

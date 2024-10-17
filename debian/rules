@@ -237,7 +237,7 @@ configure-stamp: autogen-stamp debian/control.main debian/control.modules.in
 	fi; \
 	if echo "$${DEB_BUILD_PROFILES}" | grep -q "ldiskfs"; then \
 		export EXTRAFLAGS="$${EXTRAFLAGS} \
-			--enable-ldiskfs --enable-quilt"; \
+			--enable-ldiskfs"; \
 	else \
 		export EXTRAFLAGS="$${EXTRAFLAGS} --disable-ldiskfs"; \
 	fi; \
@@ -571,10 +571,10 @@ kdist_config: prep-deb-files patch-stamp
 	fi; \
 	if echo "$${DEB_BUILD_PROFILES}" | grep -q "ldiskfs"; then \
 		export EXTRAFLAGS="$${EXTRAFLAGS} \
-			--enable-ldiskfs --enable-quilt"; \
+			--enable-ldiskfs"; \
 	else \
 		export EXTRAFLAGS="$${EXTRAFLAGS} \
-			--disable-ldiskfs --disable-quilt"; \
+			--disable-ldiskfs"; \
 	fi; \
 	if echo "$${DEB_BUILD_PROFILES}" | grep -q "multiple-lnds"; then \
 		export EXTRAFLAGS="$${EXTRAFLAGS} --enable-multiple-lnds"; \

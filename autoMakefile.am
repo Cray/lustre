@@ -354,7 +354,7 @@ debs: undef.h debs_common
 	lversion=$$(echo @VERSION@ | tr '_' '-'); \
 	cversion=$$(sed -ne '1s/^lustre (\(.*\)-[0-9][0-9]*).*$$/\1/p' debian/changelog); \
 	if [ "$$lversion" != "$$cversion" ]; then \
-		echo -e "1i\nlustre ($$lversion-1) unstable; urgency=low\n\n  * Automated changelog entry update\n\n -- Andreas Dilger <adilger@thelustrecollective.com>  $$(date -R)\n\n.\nwq" | ed debian/changelog; \
+		sed -i "1i lustre ($$lversion-1) unstable; urgency=low\n\n  * Automated changelog entry update\n\n -- Andreas Dilger <adilger@thelustrecollective.com>  $$(date -R)" debian/changelog; \
 	fi; \
 	rm -rf debs; \
 	if test "x@ENABLE_SERVER@" = "xyes"; then \
@@ -599,7 +599,7 @@ dkms-debs: undef.h debs_common
 	lversion=$$(echo @VERSION@ | tr '_' '-'); \
 	cversion=$$(sed -ne '1s/^lustre (\(.*\)-[0-9][0-9]*).*$$/\1/p' debian/changelog); \
 	if [ "$$lversion" != "$$cversion" ]; then \
-		echo -e "1i\nlustre ($$lversion-1) unstable; urgency=low\n\n  * Automated changelog entry update\n\n -- Brian J. Murrell <brian@interlinx.bc.ca>  $$(date -R)\n\n.\nwq" | ed debian/changelog; \
+		sed -i "1i lustre ($$lversion-1) unstable; urgency=low\n\n  * Automated changelog entry update\n\n -- Andreas Dilger <adilger@thelustrecollective.com> $$(date -R)" debian/changelog; \
 	fi; \
 	rm -rf debs; \
 	export DEB_BUILD_PROFILES="client"; \
