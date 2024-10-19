@@ -128,17 +128,6 @@ AS_IF([test "x$with_libmount" = xyes], [
 ]) # LB_LIBMOUNT
 
 #
-# LB_PATH_SNMP
-#
-# check for in-tree snmp support
-#
-AC_DEFUN([LB_PATH_SNMP], [
-LB_CHECK_FILE([$srcdir/snmp/lustre-snmp.c], [SNMP_DIST_SUBDIR="snmp"])
-AC_SUBST(SNMP_DIST_SUBDIR)
-AC_SUBST(SNMP_SUBDIR)
-]) # LB_PATH_SNMP
-
-#
 # LB_CONFIG_MODULES
 #
 # Build kernel modules?
@@ -672,9 +661,6 @@ fi
 if test x$enable_iokit != xyes ; then
 	RPMBINARGS="$RPMBINARGS --without lustre_iokit"
 fi
-if test x$enable_snmp != xyes ; then
-	RPMBINARGS="$RPMBINARGS --without snmp"
-fi
 if test x$enable_manpages != xyes ; then
 	RPMBINARGS="$RPMBINARGS --without manpages"
 fi
@@ -765,7 +751,6 @@ LIBCFS_CONFIG_CDEBUG
 LC_QUOTA
 
 AS_IF([test "x$enable_dist" != xno], [],[LB_LIBMOUNT])
-LB_PATH_SNMP
 LB_PATH_LUSTREIOKIT
 
 LB_DEFINE_E2FSPROGS_NAMES
@@ -773,7 +758,6 @@ LB_DEFINE_E2FSPROGS_NAMES
 LIBCFS_CONFIGURE
 LN_CONFIGURE
 LC_CONFIGURE
-AS_IF([test -n "$SNMP_DIST_SUBDIR"], [LS_CONFIGURE])
 
 LB_CONDITIONALS
 LB_CONFIG_HEADERS
@@ -782,7 +766,6 @@ LIBCFS_CONFIG_FILES
 LB_CONFIG_FILES
 LN_CONFIG_FILES
 LC_CONFIG_FILES
-AS_IF([test -n "$SNMP_DIST_SUBDIR"], [LS_CONFIG_FILES])
 
 AC_SUBST(ac_configure_args)
 
