@@ -35,6 +35,7 @@
 
 #ifdef CONFIG_PROC_FS
 
+#define JOB_CLEANUP_BATCH 1024
 /*
  * JobID formats & JobID environment variable names for supported
  * job schedulers:
@@ -148,32 +149,6 @@ static struct cfs_hash_ops job_stats_hash_ops = {
 };
 
 /**
- * Jobstats expiry iterator to clean up old jobids
- *
- * Called for each job_stat structure on this device, it should delete stats
- * older than the specified \a oldest_time in seconds.  If \a oldest_time is
- * in the future then this will delete all statistics (e.g. during shutdown).
- *
- * \param[in] hs	hash of all jobids on this device
- * \param[in] bd	hash bucket containing this jobid
- * \param[in] hnode	hash structure for this jobid
- * \param[in] data	pointer to stats expiry time in seconds
- */
-static int job_cleanup_iter_callback(struct cfs_hash *hs,
-				     struct cfs_hash_bd *bd,
-				     struct hlist_node *hnode, void *data)
-{
-	ktime_t oldest_time = *((ktime_t *)data);
-	struct job_stat *job;
-
-	job = hlist_entry(hnode, struct job_stat, js_hash);
-	if (ktime_before(job->js_time_latest, oldest_time))
-		cfs_hash_bd_del_locked(hs, bd, hnode);
-
-	return 0;
-}
-
-/**
  * Clean up jobstats that were updated more than \a before seconds ago.
  *
  * Since this function may be called frequently, do not scan all of the
@@ -201,6 +176,8 @@ static void lprocfs_job_cleanup(struct obd_job_stats *stats, bool clear)
 	ktime_t cleanup_interval = stats->ojs_cleanup_interval;
 	ktime_t now = ktime_get_real();
 	ktime_t oldest;
+	struct job_stat *job;
+	int batch;
 
 	if (likely(!clear)) {
 		/* ojs_cleanup_interval of zero means never clean up stats */
@@ -225,7 +202,6 @@ static void lprocfs_job_cleanup(struct obd_job_stats *stats, bool clear)
 	write_unlock(&stats->ojs_lock);
 
 	/* Can't hold ojs_lock over hash iteration, since it is grabbed by
-	 * job_cleanup_iter_callback()
 	 *   ->cfs_hash_bd_del_locked()
 	 *     ->job_putref()
 	 *       ->job_free()
@@ -237,8 +213,34 @@ static void lprocfs_job_cleanup(struct obd_job_stats *stats, bool clear)
 	 * Subtract twice the cleanup_interval, since it is 1/2 the maximum age.
 	 */
 	oldest = ktime_sub(now, ktime_add(cleanup_interval, cleanup_interval));
-	cfs_hash_for_each_safe(stats->ojs_hash, job_cleanup_iter_callback,
-			       &oldest);
+	do {
+		batch = JOB_CLEANUP_BATCH;
+
+		write_lock(&stats->ojs_lock);
+		while ((job = list_first_entry_or_null(&stats->ojs_list,
+						      struct job_stat,
+						      js_list)) != NULL) {
+			if (!ktime_before(job->js_time_latest, oldest) ||
+			    !(--batch))
+				break;
+
+			atomic_inc(&job->js_refcount);
+			/* list_del to process the list, the final
+			 * list_del is done in job_free */
+			list_del_init(&job->js_list);
+			write_unlock(&stats->ojs_lock);
+
+			cfs_hash_del(stats->ojs_hash, job->js_jobid,
+				     &job->js_hash);
+
+			job_putref(job);
+
+			write_lock(&stats->ojs_lock);
+		}
+		write_unlock(&stats->ojs_lock);
+
+		cond_resched();
+	} while (!batch);
 
 	write_lock(&stats->ojs_lock);
 	stats->ojs_cleaning = false;
@@ -310,21 +312,13 @@ int lprocfs_job_stats_log(struct obd_device *obd, char *jobid,
 	if (job2 != job) {
 		job_putref(job);
 		job = job2;
-		/* We cannot LASSERT(!list_empty(&job->js_list)) here,
-		 * since we just lost the race for inserting "job" into the
-		 * ojs_list, and some other thread is doing it _right_now_.
-		 * Instead, be content the other thread is doing this, since
-		 * "job2" was initialized in job_alloc() already. LU-2163 */
-	} else {
-		LASSERT(list_empty(&job->js_list));
-		write_lock(&stats->ojs_lock);
-		list_add_tail(&job->js_list, &stats->ojs_list);
-		write_unlock(&stats->ojs_lock);
 	}
-
 found:
 	LASSERT(stats == job->js_jobstats);
+	write_lock(&stats->ojs_lock);
 	job->js_time_latest = ktime_get_real();
+	list_move_tail(&job->js_list, &stats->ojs_list);
+	write_unlock(&stats->ojs_lock);
 	lprocfs_counter_add(job->js_stats, event, amount);
 
 	job_putref(job);
