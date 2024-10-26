@@ -447,17 +447,9 @@ ksocknal_lib_setup_sock (struct socket *sock)
 	int keep_intvl;
 	int keep_count;
 	int do_keepalive;
-	struct sock     *sk = sock->sk;
-	struct tcp_sock *tp = tcp_sk(sk);
-#ifdef HAVE_SOCK_NOT_OWNED_BY_ME
-	struct net      *net = sock_net(sk);
+	struct tcp_sock *tp = tcp_sk(sock->sk);
 
-	/* Set sk_net_refcnt and namespace for orphan cleanup LU-18137 */
-	sk->sk_net_refcnt = 1;
-	get_net(net);
-#endif
-
-	sk->sk_allocation = GFP_NOFS;
+	sock->sk->sk_allocation = GFP_NOFS;
 
 	/* Ensure this socket aborts active sends immediately when closed. */
 	sock_reset_flag(sock->sk, SOCK_LINGER);

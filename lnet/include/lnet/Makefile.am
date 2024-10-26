@@ -4,6 +4,7 @@ EXTRA_DIST = \
 	lib-lnet.h \
 	lib-types.h \
 	udsp.h \
+	lnet_compat.h \
 	lnet_rdma.h \
 	lnet_gds.h \
 	lock.h \
