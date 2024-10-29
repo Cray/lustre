@@ -186,6 +186,8 @@ struct lnet_counters_health {
 	__u32	lch_remote_error_count;
 	__u32	lch_remote_timeout_count;
 	__u32	lch_network_timeout_count;
+	__u32	lch_failed_resends;
+	__u32	lch_successful_resends;
 };
 
 struct lnet_counters {
