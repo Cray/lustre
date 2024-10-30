@@ -134,6 +134,10 @@ ln_routing2str(void)
 		return "Routing Disabled\n";
 	case LNET_ROUTING_ENABLED:
 		return "Routing Enabled\n";
+	case LNET_ROUTING_STARTING:
+		return "Routing Starting\n";
+	case LNET_ROUTING_STOPPING:
+		return "Routing Stopping\n";
 	default:
 		return "Routing Unknown\n";
 	}
