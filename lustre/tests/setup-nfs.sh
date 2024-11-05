@@ -70,7 +70,7 @@ cleanup_nfs() {
 	local NFS_CLIENTS=${3}
 
 	echo -e "\nUnmounting NFS clients..."
-	do_nodes $NFS_CLIENTS "umount -f $MNTPNT" || true
+	zconf_umount_clients "$NFS_CLIENTS" $MNTPNT -f || return 1
 
 	echo -e "\nUnexporting Lustre filesystem..."
 	do_nodes $NFS_CLIENTS "chkconfig --list rpcidmapd 2>/dev/null |
