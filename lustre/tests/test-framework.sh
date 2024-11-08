@@ -6803,7 +6803,7 @@ error_exit() {
 error_ignore() {
 	local TYPE="IGNORE ($1)"
 	shift
-	report_error "$@"
+	report_error false "$@"
 }
 
 error_and_remount() {
