@@ -1269,6 +1269,8 @@ void ll_free_rw_stats_info(struct ll_sb_info *sbi);
 enum {
 	LPROC_LL_READ_BYTES,
 	LPROC_LL_WRITE_BYTES,
+	LPROC_LL_HIO_READ,
+	LPROC_LL_HIO_WRITE,
 	LPROC_LL_READ,
 	LPROC_LL_WRITE,
 	LPROC_LL_IOCTL,
