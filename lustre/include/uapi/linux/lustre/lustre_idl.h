@@ -846,6 +846,8 @@ struct ptlrpc_body_v2 {
 #define OBD_CONNECT2_UNALIGNED_DIO	0x400000000ULL /* unaligned DIO */
 #define OBD_CONNECT2_CONN_POLICY	0x800000000ULL /* server-side connection policy */
 #define OBD_CONNECT2_MIRROR_ID_FIX     0x2000000000ULL /* rr_mirror_id move */
+#define OBD_CONNECT2_READDIR_OPEN	0x8000000000ULL /* read first dir page on open */
+
 /* XXX README XXX README XXX README XXX README XXX README XXX README XXX
  * Please DO NOT add OBD_CONNECT flags before first ensuring that this value
  * is not in use by some other branch/patch.  Email adilger@whamcloud.com
