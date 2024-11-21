@@ -541,7 +541,7 @@ wait_quota_setting_synced() {
 # enable quota debug
 quota_init() {
 	do_nodes $(comma_list $(nodes_list)) \
-		"$LCTL set_param -n debug=+quota,trace"
+		"$LCTL set_param -n debug=+quota+trace"
 }
 quota_init
 reset_quota_settings
@@ -3900,6 +3900,9 @@ test_delete_qid()
 
 test_48()
 {
+	(( MDS1_VERSION >= $(version_code 2.14.57.68) )) ||
+		skip "need MDS >= v2_14_57-68-g78be823f3339 to delete quota"
+
 	setup_quota_test || error "setup quota failed with $?"
 	set_ost_qtype $QTYPE || error "enable ost quota failed"
 	quota_init
@@ -5911,7 +5914,7 @@ run_test 88 "Writing over quota should not hang"
 quota_fini()
 {
 	do_nodes $(comma_list $(nodes_list)) \
-		"lctl set_param -n debug=-quota,trace"
+		"lctl set_param -n debug=-quota-trace"
 	if $PQ_CLEANUP; then
 		disable_project_quota
 	fi
