@@ -391,6 +391,7 @@ find $RPM_BUILD_ROOT%{modules_fs_path} -name '*.ko' -exec rm -f {} ';'
 %{_sysconfdir}/lnet_routes.conf
 %{_sysconfdir}/modprobe.d
 %{_sysconfdir}/udev
+%config(noreplace) %{_sysconfdir}/sysconfig/dkms-lustre
 %{_sbindir}/*
 %{_bindir}/*
 %{_mandir}

@@ -154,6 +154,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 /sbin/mount.lustre
 /etc/udev
 /lib/modules/%{kversion}
+%config(noreplace) /etc/sysconfig/dkms-lustre
 %{_sbindir}/*
 %{_bindir}/*
 %{_unitdir}/lnet.service

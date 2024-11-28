@@ -211,6 +211,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_sysconfdir}/lnet_routes.conf
 %{_sysconfdir}/modprobe.d
 %{_sysconfdir}/udev
+%config(noreplace) /etc/sysconfig/dkms-lustre
 %{_sbindir}/*
 %{_bindir}/*
 %{_mandir}
