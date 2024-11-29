@@ -6052,6 +6052,8 @@ test_114() {
 run_test 114 "no CP AST for intent once a blocked lock is granted"
 
 test_120() {
+	[ "$ost1_FSTYPE" == ldiskfs ] || skip "osd-ldiskfs specific test"
+
 	local WCE=$(do_facet ost1 lctl get_param "osd-*.$FSNAME-OST0000.writethrough_cache_enable")
 
 	# the issue reproduces without the osd cache as well but we would need to
