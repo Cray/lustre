@@ -3607,7 +3607,8 @@ enum {
 	LFS_STATS_INTERVAL_OPT,
 	LFS_LINKS_OPT,
 	LFS_ATTRS_OPT,
-	LFS_XATTRS_MATCH_OPT
+	LFS_XATTRS_MATCH_OPT,
+	LFS_MIGRATE_NOFIX,
 };
 
 #ifndef LCME_USER_MIRROR_FLAGS
@@ -3658,6 +3659,7 @@ static int lfs_setstripe_internal(int argc, char **argv,
 	bool foreign_mode = false;
 	char *xattr = NULL;
 	bool overstriped = false;
+	bool clear_hash_fixed = false;
 	uint32_t type = LU_FOREIGN_TYPE_NONE, flags = 0;
 	char *mode_opt = NULL;
 	mode_t previous_umask = 0;
@@ -3764,6 +3766,7 @@ static int lfs_setstripe_internal(int argc, char **argv,
 	{ .val = 'y',	.name = "yaml",		.has_arg = required_argument },
 	{ .val = 'z',   .name = "ext-size",	.has_arg = required_argument},
 	{ .val = 'z',   .name = "extension-size", .has_arg = required_argument},
+	{ .val = LFS_MIGRATE_NOFIX, .name = "clear-fixed", .has_arg = no_argument},
 	{ .name = NULL } };
 
 	setstripe_args_init(&lsa);
@@ -3928,6 +3931,15 @@ static int lfs_setstripe_internal(int argc, char **argv,
 					progname, argv[0], optarg);
 				goto usage_error;
 			}
+			break;
+		case LFS_MIGRATE_NOFIX:
+			if (!migrate_mode) {
+				fprintf(stderr,
+					"%s %s: --clear-fixed valid only for migrate command\n",
+					progname, argv[0]);
+				goto usage_error;
+			}
+			clear_hash_fixed = true;
 			break;
 		case 'b':
 			if (!migrate_mode) {
@@ -4509,6 +4521,9 @@ static int lfs_setstripe_internal(int argc, char **argv,
 
 		if (overstriped)
 			lmu->lum_hash_type |= LMV_HASH_FLAG_OVERSTRIPED;
+
+		if (!clear_hash_fixed)
+			lmu->lum_hash_type |= LMV_HASH_FLAG_FIXED;
 
 		if (lsa.lsa_pool_name)
 			snprintf(lmu->lum_pool_name, sizeof(lmu->lum_pool_name),
