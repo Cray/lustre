@@ -4107,25 +4107,19 @@ LNetCtl(unsigned int cmd, void *arg)
 		return lnet_fail_nid(data->ioc_nid, data->ioc_count);
 
 	case IOC_LIBCFS_ADD_ROUTE: {
-		/* default router sensitivity to 1 */
-		unsigned int sensitivity = 1;
+		__u32 hops, priority;
+
 		config = arg;
 
 		if (config->cfg_hdr.ioc_len < sizeof(*config))
 			return -EINVAL;
 
-		if (config->cfg_config_u.cfg_route.rtr_sensitivity) {
-			sensitivity =
-			  config->cfg_config_u.cfg_route.rtr_sensitivity;
-		}
+		hops = config->cfg_config_u.cfg_route.rtr_hop;
+		priority = config->cfg_config_u.cfg_route.rtr_priority;
 
 		lnet_nid4_to_nid(config->cfg_nid, &nid);
 		mutex_lock(&the_lnet.ln_api_mutex);
-		rc = lnet_add_route(config->cfg_net,
-				    config->cfg_config_u.cfg_route.rtr_hop,
-				    &nid,
-				    config->cfg_config_u.cfg_route.
-					rtr_priority, sensitivity);
+		rc = lnet_add_route(config->cfg_net, hops, &nid, priority);
 		mutex_unlock(&the_lnet.ln_api_mutex);
 		return rc;
 	}
@@ -4155,9 +4149,7 @@ LNetCtl(unsigned int cmd, void *arg)
 				    &config->cfg_nid,
 				    &config->cfg_config_u.cfg_route.rtr_flags,
 				    &config->cfg_config_u.cfg_route.
-					rtr_priority,
-				    &config->cfg_config_u.cfg_route.
-					rtr_sensitivity);
+					rtr_priority);
 		mutex_unlock(&the_lnet.ln_api_mutex);
 		return rc;
 
