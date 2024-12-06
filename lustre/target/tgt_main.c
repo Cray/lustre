@@ -494,6 +494,7 @@ int tgt_init(const struct lu_env *env, struct lu_target *lut,
 	lut->lut_reply_bitmap = NULL;
 	obd->u.obt.obt_lut = lut;
 	obd->u.obt.obt_magic = OBT_MAGIC;
+	obd->u.obt.obt_jobstats.ojs_cntr_num = 0;
 
 	/* set request handler slice and parameters */
 	lut->lut_slice = slice;

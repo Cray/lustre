@@ -84,9 +84,6 @@ extern char obd_jobid_var[];
 #define HASH_EXP_LOCK_BKT_BITS  5
 #define HASH_EXP_LOCK_CUR_BITS  7
 #define HASH_EXP_LOCK_MAX_BITS  16
-#define HASH_JOB_STATS_BKT_BITS 5
-#define HASH_JOB_STATS_CUR_BITS 7
-#define HASH_JOB_STATS_MAX_BITS 12
 
 /* Timeout definitions */
 #define OBD_TIMEOUT_DEFAULT             100
