@@ -925,6 +925,8 @@ load_module() {
 	elif [[ "$base" == lnet_selftest ]] &&
 	     [[ -f $LUSTRE/../lnet/selftest/$base$ext ]]; then
 		path=$LUSTRE/../lnet/selftest/$base$ext
+	elif [[ -f $module$ext ]]; then
+		path=$module$ext
 	else
 		path=''
 	fi
@@ -1050,7 +1052,7 @@ load_lnet() {
 
 	set_experimental_features_flag
 
-	LNDPATH=${LNDPATH:-"../lnet/klnds"}
+	LNDPATH=${LNDPATH:-"$LUSTRE/../lnet/klnds"}
 	if [ -z "$LNETLND" ]; then
 		case $NETTYPE in
 		o2ib*)  [[ -f ${LNDPATH}/o2iblnd/ko2iblnd.ko ]] &&
@@ -1065,7 +1067,7 @@ load_lnet() {
 				LNETLND="socklnd/ksocklnd"
 		esac
 	fi
-	load_module ../lnet/klnds/$LNETLND
+	load_module $LNDPATH/$LNETLND
 
 	if [[ $1 == config_on_load=1 ]]; then
 		if $FORCE_LARGE_NID; then
