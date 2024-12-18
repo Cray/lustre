@@ -49,22 +49,12 @@ Index: linux-3.10.0-1160.88.1.el7/fs/ext4/ext4.h
  #define EXT4_MAXQUOTAS 3
  
 +/* Default min freed blocks which we could clear BG_TRIMMED flag */
-+#define EXT4_DEF_BG_TRIMMED_THRESHOLD	128
++#define EXT4_DEF_TRIM_MIN_BLOCKS	128
 +
  /*
   * Structure of the super block
   */
-@@ -1456,6 +1461,9 @@ struct ext4_sb_info {
- 	/* the size of zero-out chunk */
- 	unsigned int s_extent_max_zeroout_kb;
- 
-+	/* Min freed blocks per group that we could clear BG_TRIMMED on it */
-+	unsigned long s_bg_trimmed_threshold;
-+
- 	unsigned int s_log_groups_per_flex;
- 	struct flex_groups *s_flex_groups;
- 	ext4_group_t s_flex_groups_allocated;
-@@ -2796,6 +2804,7 @@ struct ext4_group_info {
+@@ -2805,6 +2810,7 @@ struct ext4_group_info {
  	struct rb_root  bb_free_root;
  	ext4_grpblk_t	bb_first_free;	/* first free block */
  	ext4_grpblk_t	bb_free;	/* total free blocks */
@@ -119,16 +109,7 @@ Index: linux-3.10.0-1160.88.1.el7/fs/ext4/mballoc.c
  
  #ifdef DOUBLE_CHECK
  	{
-@@ -3115,6 +3116,8 @@ int ext4_mb_init(struct super_block *sb)
- 	if (sbi->s_mb_prefetch_limit > ext4_get_groups_count(sb))
- 		sbi->s_mb_prefetch_limit = ext4_get_groups_count(sb);
- 
-+	sbi->s_bg_trimmed_threshold = EXT4_DEF_BG_TRIMMED_THRESHOLD;
-+
- 	sbi->s_locality_groups = alloc_percpu(struct ext4_locality_group);
- 	if (sbi->s_locality_groups == NULL) {
- 		ret = -ENOMEM;
-@@ -3315,15 +3318,6 @@ static void ext4_free_data_callback(stru
+@@ -3310,15 +3311,6 @@ static void ext4_free_data_callback(stru
  	rb_erase(&entry->efd_node, &(db->bb_free_root));
  	mb_free_blocks(NULL, &e4b, entry->efd_start_cluster, entry->efd_count);
  
@@ -154,7 +135,7 @@ Index: linux-3.10.0-1160.88.1.el7/fs/ext4/mballoc.c
  
  		ext4_lock_group(sb, block_group);
  		mb_clear_bits(bitmap_bh->b_data, bit, count_clusters);
-@@ -5437,6 +5430,22 @@ do_more:
+@@ -5432,6 +5423,24 @@ do_more:
  	ret = ext4_free_group_clusters(sb, gdp) + count_clusters;
  	ext4_free_group_clusters_set(sb, gdp, ret);
  	ext4_block_bitmap_csum_set(sb, block_group, gdp, bitmap_bh);
@@ -166,18 +147,20 @@ Index: linux-3.10.0-1160.88.1.el7/fs/ext4/mballoc.c
 +	 */
 +	if (!test_opt(sb, DISCARD)) {
 +		struct ext4_super_block *es = sbi->s_es;
++		unsigned long minblks;
 +
++		minblks = atomic_read(&EXT4_SB(sb)->s_last_trim_minblks);
 +		e4b.bd_info->bb_freed_since_trim += count;
 +
 +		if (e4b.bd_info->bb_freed_since_trim >=
-+		    sbi->s_bg_trimmed_threshold ||
++		    (minblks ? minblks : EXT4_DEF_TRIM_MIN_BLOCKS) ||
 +		    !(es->s_flags & cpu_to_le32(EXT2_FLAGS_TRACK_TRIM)))
 +			gdp->bg_flags &= cpu_to_le16(~EXT4_BG_TRIMMED);
 +	}
  	ext4_group_desc_csum_set(sb, block_group, gdp);
  	ext4_unlock_group(sb, block_group);
  
-@@ -5676,9 +5685,16 @@ ext4_trim_all_free(struct super_block *s
+@@ -5671,9 +5680,18 @@ ext4_trim_all_free(struct super_block *s
  	void *bitmap;
  	ext4_grpblk_t next, count = 0, free_count = 0;
  	struct ext4_buddy e4b;
@@ -189,8 +172,10 @@ Index: linux-3.10.0-1160.88.1.el7/fs/ext4/mballoc.c
  
  	trace_ext4_trim_all_free(sb, group, start, max);
 +	gdp = ext4_get_group_desc(sb, group, &gd_bh);
-+	if (!gdp)
-+		return -EIO;
++	if (!gdp) {
++		ret = -EIO;
++		return ret;
++	}
  
  	ret = ext4_mb_load_buddy(sb, group, &e4b);
  	if (ret)
@@ -258,23 +243,3 @@ Index: linux-3.10.0-1160.88.1.el7/fs/ext4/mballoc.c
  	ext4_debug("trimmed %d blocks in the group %d\n",
  		count, group);
  
-Index: linux-3.10.0-1160.88.1.el7/fs/ext4/super.c
-===================================================================
---- linux-3.10.0-1160.88.1.el7.orig/fs/ext4/super.c
-+++ linux-3.10.0-1160.88.1.el7/fs/ext4/super.c
-@@ -2936,6 +2936,7 @@ EXT4_RW_ATTR_SBI_UI(mb_prefetch, s_mb_pr
- EXT4_RW_ATTR_SBI_UI(mb_prefetch_limit, s_mb_prefetch_limit);
- EXT4_DEPRECATED_ATTR(max_writeback_mb_bump, 128);
- EXT4_RW_ATTR_SBI_UI(extent_max_zeroout_kb, s_extent_max_zeroout_kb);
-+EXT4_RW_ATTR_SBI_UI(bg_trimmed_threshold, s_bg_trimmed_threshold);
- EXT4_ATTR(trigger_fs_error, 0200, NULL, trigger_test_error);
- EXT4_RW_ATTR_SBI_UI(err_ratelimit_interval_ms, s_err_ratelimit_state.interval);
- EXT4_RW_ATTR_SBI_UI(err_ratelimit_burst, s_err_ratelimit_state.burst);
-@@ -2969,6 +2970,7 @@ static struct attribute *ext4_attrs[] =
- 	ATTR_LIST(mb_group_prealloc),
- 	ATTR_LIST(max_writeback_mb_bump),
- 	ATTR_LIST(extent_max_zeroout_kb),
-+	ATTR_LIST(bg_trimmed_threshold),
- 	ATTR_LIST(trigger_fs_error),
- 	ATTR_LIST(err_ratelimit_interval_ms),
- 	ATTR_LIST(err_ratelimit_burst),
