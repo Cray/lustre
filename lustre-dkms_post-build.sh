@@ -50,7 +50,8 @@ case $1 in
 		      vdev_clear-lustre.sh \
 		      vdev_remove-lustre.sh
 	do
-		install -D -m 0755 lustre/scripts/${script} /etc/zfs/zed.d/${script}
+	    install -D -m 0755 lustre/scripts/${script} /etc/zfs/zed.d/${script}
+	    >&2 echo "installing lustre/scripts/${script} => /etc/zfs/zed.d/${script}"
 	done
 	;;
 esac

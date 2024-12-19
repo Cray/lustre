@@ -10,6 +10,8 @@
 %define _sysconfdir /etc
 
 %global lustre_name cray-lustre-client
+%define module %{lustre_name}
+%define mkconf lustre/scripts/dkms.mkconf
 
 Name: %{lustre_name}
 Summary: Cray Lustre Filesystem
@@ -37,9 +39,10 @@ Requires: cray-kfabric-udev
 %global _with_linux --with-linux=/usr/src/kernels/%{kversion}
 %global requires_kmod_name kmod-%{lustre_name}
 %global requires_kmod_version %{version}
-Requires: kmod-cray-kfabric
-Requires: kmod-mlnx-ofa_kernel
+Requires: (kmod-cray-kfabric or cray-kfabric-dkms)
+Requires: (kmod-mlnx-ofa_kernel or mlnx-ofa_kernel-dkms)
 BuildRequires: redhat-rpm-config
+%define mkconf_options %{nil}
 %else
 %global kversion %(make -s -C /usr/src/linux-obj/%{_target_cpu}/%{flavor} kernelrelease)
 %global _with_linux --with-linux=/usr/src/linux
@@ -47,8 +50,9 @@ BuildRequires: redhat-rpm-config
 %global requires_kmod_name %{lustre_name}-kmp
 %global krequires %(echo %{kversion} | sed -e 's/\.x86_64$//' -e 's/\.i[3456]86$//' -e 's/-smp$//' -e 's/-bigsmp$//' -e 's/[-.]ppc64$//' -e 's/\.aarch64$//' -e 's/-default$//' -e 's/-%{flavor}//')
 %global requires_kmod_version %{version}_k%(echo %{krequires} | sed -r 'y/-/_/; s/^(2\.6\.[0-9]+)_/\\1.0_/;')
-Requires: cray-kfabric-kmp
-Requires: mlnx-ofa_kernel-kmp
+Requires: (cray-kfabric-kmp or cray-kfabric-dkms)
+Requires: (mlnx-ofa_kernel-kmp or mlnx-ofa_kernel-dkms)
+%define mkconf_options -k updates
 %endif
 
 Requires: %{requires_kmod_name} = %{requires_kmod_version}
@@ -101,6 +105,35 @@ Compiled for kernel: %{kversion}
 ko2iblnd compiled against: mlnx-ofa_kernel-devel-%{mofed_version}
 kkfilnd compiled against: cray-kfabric-devel-%{kfabric_version}
 
+%package dkms
+Group: System/Filesystems
+License: GPL
+Summary: Cray Lustre Filesystem DKMS
+URL: %url
+BuildArch: noarch
+Requires: dkms >= 2.2.0.3-28.git.7c3e7c5
+Requires: gcc, make, perl
+Requires: libtool libyaml-devel zlib-devel
+Requires: libnl3-devel keyutils-devel
+Requires: cray-kfabric-devel
+Requires: automake
+Requires: pkg-config
+Requires: kernel-devel
+Requires: autoconf
+Requires: bash-completion bash-completion-devel
+Requires: libmount-devel
+# NOTE: mlnx-ofa_kernel-devel appears to be optional
+Requires: flex
+Requires: bison
+Provides: %{lustre_name} = %{version}
+Conflicts:  kmod-%{lustre_name}
+Conflicts:  %{lustre_name}-kmp
+
+%description dkms
+This package contains the dkms Lustre kernel modules.
+and userspace tools and files for the Lustre filesystem.
+Compiled for kernel: %{kversion}
+
 %if %{undefined kmoddir}
 	%if %{defined kernel_module_package_moddir}
 		%global kmoddir %{kernel_module_package_moddir}
@@ -131,6 +164,16 @@ ln -f lnet/ChangeLog ChangeLog-lnet
 
 %build
 echo "LUSTRE_VERSION = %{_version}" > LUSTRE-VERSION-FILE
+
+# DKMS
+%{mkconf} -n %{module} -v %{version} -f dkms.conf %{mkconf_options}
+if [ "$RPM_BUILD_ROOT" != "/" ]; then
+    rm -rf $RPM_BUILD_ROOT
+fi
+mkdir -p $RPM_BUILD_ROOT/usr/src
+cp -rfp ${RPM_BUILD_DIR}/cray-lustre-%{version} $RPM_BUILD_ROOT/usr/src/
+mv $RPM_BUILD_ROOT/usr/src/cray-lustre-%{version} $RPM_BUILD_ROOT/usr/src/%{module}-%{version}
+# end DKMS
 
 if [ "%reconfigure" == "1" -o ! -x %_builddir/%{name}-%{version}/configure ];then
 	chmod +x autogen.sh
@@ -183,6 +226,8 @@ do
 	eval "sed -i 's,@cfgdir@,%{cfgdir},' cray-obs/${f}"
 	install -D -m 0644 cray-obs/${f} $RPM_BUILD_ROOT%{_pkgconfigdir}/${f}
 done
+# DKMS
+install -D -m 0644 cray-obs/cray-lnet.pc $RPM_BUILD_ROOT%{_pkgconfigdir}/cray-lnet-dkms.pc
 
 if [[ -e %{buildroot}/%{_sysconfdir}/modprobe.d/ko2iblnd.conf ]]; then
 	%{__sed} -i -e 's/^\(install ko2iblnd .*\)/\#\1/' %{buildroot}/%{_sysconfdir}/modprobe.d/ko2iblnd.conf
@@ -253,12 +298,48 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_includedir}/interval_tree.h
 %{_pkgconfigdir}/cray-lnet.pc
 
+%files dkms
+%defattr(-,root,root)
+/usr/src/%{module}-%{version}
+%{_pkgconfigdir}/cray-lnet-dkms.pc
+
 %post
 /sbin/ldconfig
 %systemd_post lnet.service
 
+%post dkms
+if [ ! -f %{_pkgconfigdir}/cray-lnet.pc ] ; then
+    ln -s %{_pkgconfigdir}/cray-lnet-dkms.pc %{_pkgconfigdir}/cray-lnet.pc
+fi
+
+COMMON_POSTINT=/usr/libexec/dkms/common.postinst
+if ! -f ${COMMON_POSTINT} ; then
+    if -f /usr/lib/dkms/common.postinst; then
+        COMMON_POSTINT=/usr/lib/dkms/common.postinst
+    fi
+fi
+for POSTINST in ${COMMON_POSTINT}; do
+    if [ -f $POSTINST ]; then
+        $POSTINST %{module} %{version}
+        exit $?
+    fi
+    echo "WARNING: $POSTINST does not exist."
+done
+echo -e "ERROR: DKMS version is too old and %{module} was not"
+echo -e "built with legacy DKMS support."
+echo -e "You must either rebuild %{module} with legacy postinst"
+echo -e "support or upgrade DKMS to a more current version."
+exit 1
+
 %preun
 %systemd_preun lnet.service
+
+%preun dkms
+if [ -L %{_pkgconfigdir}/cray-lnet.pc ] ; then
+    rm %{_pkgconfigdir}/cray-lnet.pc
+fi
+dkms remove -m %{module} -v %{version} --all --rpm_safe_upgrade
+exit 0
 
 %postun
 /sbin/ldconfig
@@ -272,3 +353,6 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 
 %clean
 %clean_build_root
+if [ "$RPM_BUILD_ROOT" != "/" ]; then
+    rm -rf $RPM_BUILD_ROOT
+fi

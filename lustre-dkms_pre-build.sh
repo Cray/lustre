@@ -17,7 +17,7 @@
 # $5 : $arch
 # $6 : $source_tree
 # $7 : $dkms_tree
-# $8 : $kmoddir [lustre-client either 'extra|updates']
+# $8 : $kmoddir [cray-lustre-client either 'extra|updates']
 
 case $1 in
     lustre-client)
