@@ -3052,7 +3052,6 @@ bool osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 			cl_page_get(page);
 			pvec[j++] = ops;
 		}
-		++idx;
 
 		/*
 		 * Here a delicate locking dance is performed. Current thread
@@ -3094,6 +3093,7 @@ bool osc_page_gang_lookup(const struct lu_env *env, struct cl_io *io,
 		if (need_resched())
 			cond_resched();
 
+		++idx;
 		spin_lock(&osc->oo_tree_lock);
 		tree_lock = true;
 	}
