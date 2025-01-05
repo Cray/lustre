@@ -109,6 +109,7 @@ int llog_backup(const struct lu_env *env, struct obd_device *obd,
 int llog_read_header(const struct lu_env *env, struct llog_handle *handle,
 		     const struct obd_uuid *uuid);
 __u64 llog_size(const struct lu_env *env, struct llog_handle *llh);
+__u64 llog_get_record_off(const struct lu_env *env, struct llog_rec_hdr *hdr);
 
 /* llog_process flags */
 #define LLOG_FLAG_NODEAMON 0x0001
@@ -180,6 +181,9 @@ __u32 llog_cat_free_space(struct llog_handle *cat_llh);
 int llog_cat_reverse_process(const struct lu_env *env,
 			     struct llog_handle *cat_llh, llog_cb_t cb,
 			     void *data);
+int llog_cat_modify_rec(const struct lu_env *env, struct llog_handle *cathandle,
+			struct llog_logid *lid, struct llog_rec_hdr *hdr,
+			__u64 offset);
 /* llog_obd.c */
 int llog_setup(const struct lu_env *env, struct obd_device *obd,
 	       struct obd_llog_group *olg, int index,

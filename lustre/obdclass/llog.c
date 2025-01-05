@@ -1567,3 +1567,24 @@ __u64 llog_size(const struct lu_env *env, struct llog_handle *llh)
 }
 EXPORT_SYMBOL(llog_size);
 
+/*
+ * Get record file offset, should be called only by llog_process_thread
+ * callbacks. 0 means error, zero offset has llog header.
+ */
+__u64 llog_get_record_off(const struct lu_env *env, struct llog_rec_hdr *hdr)
+{
+	struct llog_thread_info *lti;
+	struct llog_cookie *lgc;
+
+	if (!env)
+		return 0;
+
+	lti = llog_info(env);
+	lgc = &lti->lgi_cookie;
+
+	if (hdr->lrh_index == lgc->lgc_index)
+		return lgc->lgc_offset;
+
+	return 0;
+}
+EXPORT_SYMBOL(llog_get_record_off);
