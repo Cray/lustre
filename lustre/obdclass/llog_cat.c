@@ -1221,3 +1221,36 @@ int llog_cat_cleanup(const struct lu_env *env, struct llog_handle *cathandle,
 		       PLOGID(&cathandle->lgh_id));
 	return rc;
 }
+
+/* Modify a llog record base on llog_logid and record offset */
+int llog_cat_modify_rec(const struct lu_env *env, struct llog_handle *cathandle,
+			struct llog_logid *lid, struct llog_rec_hdr *hdr,
+			__u64 offset)
+{
+	struct llog_thread_info *lti = llog_info(env);
+	struct llog_handle *llh;
+	int rc;
+
+	ENTRY;
+
+	rc = llog_cat_id2handle(env, cathandle, &llh, lid);
+	if (rc) {
+		CDEBUG(D_OTHER, "%s: failed to find log file "DFID": rc = %d\n",
+		       loghandle2name(llh), PFID(&lid->lgl_oi.oi_fid), rc);
+
+		RETURN(rc);
+	}
+	lti->lgi_cookie.lgc_offset = offset;
+	lti->lgi_cookie.lgc_index = hdr->lrh_index;
+	rc = llog_write(env, llh, hdr, hdr->lrh_index);
+	if (rc) {
+		CDEBUG(D_OTHER, "%s: failed to modify record "DFID".%d: rc = %d\n",
+		       loghandle2name(llh), PFID(&lid->lgl_oi.oi_fid),
+		       hdr->lrh_index, rc);
+	}
+
+	llog_handle_put(env, llh);
+
+	RETURN(rc);
+}
+EXPORT_SYMBOL(llog_cat_modify_rec);
