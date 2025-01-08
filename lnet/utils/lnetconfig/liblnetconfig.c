@@ -2651,6 +2651,7 @@ int lustre_lnet_config_lnd_timeout(int timeout, __u32 net, int seq_no,
 			rc = write_sysfs_file(gnilnd_modparam_path,
 					      "timeout", val, 1,
 					      strlen(val) + 1);
+			break;
 		default:
 			snprintf(err_str, sizeof(err_str),
 				 "\"Net %s does not accept a LND timeout\"",
