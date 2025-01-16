@@ -54,6 +54,18 @@ BUILD_NUMBER=${BUILD_NUMBER:-3}  #never used
 # ---------------------------------
 RPMBUILD_DIR=$WORKSPACE
 
+if [ "$JP_BUILD_MODE" == "full" ]
+then
+    #LUSQE-2112, enable module code signing
+    if [ -f /build/bin/code_signing_tools/signmount ]; then
+        . /build/bin/code_signing_tools/signmount
+        SIGNOPTS=$(bindMount)
+        KMOD_SIGN_VALUE=/signtools/signko\ %{buildroot}/lib/modules
+    else
+        KMOD_SIGN_VALUE='{nil}'
+    fi
+fi
+
 build_iem() {
     PACKAGE=lustre-iem
     VERSION=${JP_VERSION}
@@ -375,9 +387,10 @@ fi
 KERNEL=$(rpm -r $ROOT -q --qf '%{VERSION}-%{RELEASE}'  kernel${BUILD_TYPE}-devel)
 K_ARCH=$JP_TARGET_ARCH
 release=$(echo "${KERNEL}" | tr "-" "_")
-${MOCK_CMD}  --no-clean --rebuild ${srpm} --define "myrelease ${release}${GITHASH}" --define "configure_args ${o_opt} ${JP_BUILD_OPTIONS}" \
+${MOCK_CMD}  ${SIGNOPTS} --no-clean --rebuild ${srpm} --define "myrelease ${release}${GITHASH}" --define "configure_args ${o_opt} ${JP_BUILD_OPTIONS}" \
     --define "kver ${KERNEL}${DOTDEBUG}" --define "kversion ${KERNEL}.${K_ARCH}${DOTDEBUG}" --define "kdir /usr/src/kernels/${KERNEL}.${K_ARCH}${DOTDEBUG}" \
     --define "lustre_name ${JP_PACKAGE_NAME}"  \
+    --define "__brp_kmod_sign $KMOD_SIGN_VALUE" \
     --define "mpi_name mpich" \
     --define "$WITH_GSS_KEYRING 1" \
     --define "rpm_rel ${RPM_RELEASE}" \

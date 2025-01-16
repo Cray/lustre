@@ -14,6 +14,7 @@ pipeline {
         BRANCH_NAME = "release"
         TARGET_OS = "hpc-lus-filesystem"
         TARGET_ARCH = "noarch"
+        CSCREDS = credentials('cscreds')
     }
 
     options {
