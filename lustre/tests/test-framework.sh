@@ -8630,13 +8630,14 @@ save_lustre_params() {
 	for facet in ${facets//,/ }; do
 		facet_svc=$(facet_svc $facet)
 		do_facet $facet \
-			"params=\\\$($LCTL get_param $2);
+			"params=\\\$($LCTL get_param $2) || exit 1;
 			 [[ -z \\\"$facet_svc\\\" ]] && param= ||
 			 param=\\\$(grep $facet_svc <<< \\\"\\\$params\\\");
 			 [[ -z \\\$param ]] && param=\\\"\\\$params\\\";
 			 while read s; do echo $facet \\\$s;
 			 done <<< \\\"\\\$param\\\""
 	done
+	(( $? == 0 )) || error_exit "failed to get lustre params"
 }
 
 # restore lustre parameters from input stream, produces by save_lustre_params
@@ -8646,7 +8647,8 @@ restore_lustre_params() {
 	local val
 
 	while IFS=" =" read facet name val; do
-		do_facet $facet "$LCTL set_param -n $name=$val"
+		do_facet $facet "$LCTL set_param -n $name=$val" ||
+			error_exit "failed to set lustre params"
 	done
 }
 
