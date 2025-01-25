@@ -7567,7 +7567,7 @@ run_test 107b "Grouplock is added to the head of waiting list"
 test_108a() {
 	local offset
 
-	$LFS setstripe -E 1M -c 1 -E -1 $DIR1/$tfile ||
+	$LFS setstripe -c 1 $DIR1/$tfile ||
 		error "Create $DIR1/$tfile failed"
 
 	dd if=/dev/zero of=$DIR1/$tfile bs=10000 count=1 ||
