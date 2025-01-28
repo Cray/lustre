@@ -444,6 +444,7 @@ static int mdt_restripe_migrate_finish(struct mdt_thread_info *info,
 				       struct lmv_mds_md_v1 *lmv)
 {
 	struct mdt_device *mdt = info->mti_mdt;
+	struct mdt_dir_restriper *restriper = &mdt->mdt_restriper;
 	struct lu_buf buf;
 	struct mdt_lock_handle *lh;
 	int rc;
@@ -470,10 +471,10 @@ static int mdt_restripe_migrate_finish(struct mdt_thread_info *info,
 	LASSERT(!list_empty(&stripe->mot_restripe_linkage));
 	LASSERT(stripe->mot_restriping);
 
-	spin_lock(&mdt->mdt_lock);
+	spin_lock(&restriper->mdr_lock);
 	stripe->mot_restriping = 0;
 	list_del_init(&stripe->mot_restripe_linkage);
-	spin_unlock(&mdt->mdt_lock);
+	spin_unlock(&restriper->mdr_lock);
 
 	mdt_object_put(info->mti_env, stripe);
 
@@ -696,10 +697,10 @@ out:
 			       mdt_obd_name(mdt), PFID(&fid1), PNAME(lname),
 			       rc);
 
-		spin_lock(&mdt->mdt_lock);
+		spin_lock(&restriper->mdr_lock);
 		stripe->mot_restriping = 0;
 		list_del_init(&stripe->mot_restripe_linkage);
-		spin_unlock(&mdt->mdt_lock);
+		spin_unlock(&restriper->mdr_lock);
 
 		mdt_object_put(env, stripe);
 	}
