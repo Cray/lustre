@@ -1335,7 +1335,10 @@ setup_router_test() {
 
 	local mod_opts="$@"
 
-	if [[ ${#RPEER_INTERFACES[@]} -eq 0 ]]; then
+	# We need to (re)initialize the test vars if the requested number
+	# of peers or routers differs from the last initialization.
+	if [[ ${#RPEER_INTERFACES[@]} -ne $rpeers_required ]] ||
+	   [[ ${#ROUTER_INTERFACES[@]} -ne $routers_required ]]; then
 		init_router_test_vars $routers_required $rpeers_required ||
 			return $?
 	fi
@@ -3585,6 +3588,49 @@ test_227() {
 	cleanup_router_test
 }
 run_test 227 "Check router peer health w/DD disabled"
+
+test_228() {
+	setup_router_test -r 2 || return $?
+
+	do_basic_rtr_test || return $?
+
+	do_rpc_nodes $HOSTNAME,${RPEERS[0]} load_module \
+		../lnet/selftest/lnet_selftest ||
+			error "Failed to load lnet-selftest module"
+
+	local lstpid rc
+
+	$LSTSH -H -t $HOSTNAME -f ${RPEERS[0]} -m rw -D 10 &
+	lstpid=$!
+
+	sleep 5
+
+	do_lnetctl set health_sensitivity 0 ||
+		error "Failed to set health_sensitivity 0 rc = $?"
+
+	do_lnetctl peer set --health 500 --all ||
+		error "Failed to set peer NI health rc = $?"
+
+	wait $lstpid
+	rc=$?
+
+	do_lnetctl peer set --health 1000 --all ||
+		error "Failed to set peer NI health rc = $?"
+
+	dmesg | tac | sed "/${TESTNAME//_/ }/,$ d"
+
+	local no_route=$(dmesg | tac | sed "/${TESTNAME//_/ }/,$ d" |
+			 grep lnet_handle_find_routed_path |
+			 grep -c "no route")
+
+
+	((no_route == 0)) || error "Detected 'no route' send failures"
+
+	((rc == 0)) || error "LST failed with rc = $rc"
+
+	cleanup_router_test || return $?
+}
+run_test 228 "Routes should stay up when health is decremented"
 
 test_230() {
 	[[ ${NETTYPE} == tcp* ]] || skip "Need tcp NETTYPE"
