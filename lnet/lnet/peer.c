@@ -541,7 +541,6 @@ lnet_peer_del_nid(struct lnet_peer *lp, lnet_nid_t nid4, unsigned int flags)
 		}
 	}
 
-	lpni = lnet_peer_ni_find_locked(&nid);
 	/* If we're asked to lock down the primary NID we shouldn't be
 	 * deleting it
 	 */
@@ -551,6 +550,7 @@ lnet_peer_del_nid(struct lnet_peer *lp, lnet_nid_t nid4, unsigned int flags)
 		goto out;
 	}
 
+	lpni = lnet_peer_ni_find_locked(&nid);
 	if (!lpni) {
 		rc = -ENOENT;
 		goto out;
@@ -3844,17 +3844,17 @@ __must_hold(&lp->lp_lock)
 	if (rc)
 		goto fail_unlink;
 
-	CDEBUG(D_NET, "peer %s\n", libcfs_nidstr(&lp->lp_primary_nid));
-
 	spin_lock(&lp->lp_lock);
+
+	CDEBUG(D_NET, "peer %s(%p) state %#x\n",
+	       libcfs_nidstr(&lp->lp_primary_nid), lp, lp->lp_state);
+
 	return 0;
 
 fail_unlink:
 	LNetMDUnlink(lp->lp_push_mdh);
 	LNetInvalidateMDHandle(&lp->lp_push_mdh);
 fail_error:
-	CDEBUG(D_NET, "peer %s(%p): %d\n", libcfs_nidstr(&lp->lp_primary_nid),
-	       lp, rc);
 	/*
 	 * The errors that get us here are considered hard errors and
 	 * cause Discovery to terminate. So we clear PUSH_SENT, but do
@@ -3864,6 +3864,8 @@ fail_error:
 	 */
 	spin_lock(&lp->lp_lock);
 	lp->lp_state &= ~(LNET_PEER_PUSH_SENT | LNET_PEER_PUSH_FAILED);
+	CDEBUG(D_NET, "peer %s(%p) state %#x: %d\n",
+	       libcfs_nidstr(&lp->lp_primary_nid), lp, lp->lp_state, rc);
 	return rc;
 }
 
