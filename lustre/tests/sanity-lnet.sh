@@ -3934,6 +3934,39 @@ test_310() {
 }
 run_test 310 "Set timeout and verify"
 
+test_350() {
+	reinit_dlc || return $?
+
+	do_lnetctl net add --net ${NETTYPE} --if ${INTERFACES[0]} ||
+		error "Failed to add net"
+	do_lnetctl net add --net ${NETTYPE}2 --if ${INTERFACES[0]} ||
+		error "Failed to add net"
+
+	local nids=$($LCTL list_nids | xargs echo | sed 's/ /,/g')
+
+	[[ -n $nids ]] || error "Failed to get nids"
+
+	local pnid=$($LCTL list_nids | head -n 1)
+
+	pnid=${pnid}3
+	do_lnetctl peer add --prim ${pnid} --lock_prim --nid $nids
+
+#define LNET_PEER_MULTI_RAIL            BIT(0)
+#define LNET_PEER_LOCK_PRIMARY          BIT(20)
+	local state=1048577
+	do_lnetctl peer set --state $state --nid $pnid
+
+	local actual=$($LNETCTL peer show -v 3 --nid $pnid |
+		       awk '/peer state/{print $NF}')
+
+	((actual == state)) ||
+		error "Expect peer state $state but found $actual"
+
+	do_lnetctl discover $pnid || error "Discovery failed"
+
+	lustre_rmmod
+}
+run_test 350 "Check refcount loss when locked primary NID doesn't exist"
 
 check_udsp_prio() {
 	local target_net="${1}"
