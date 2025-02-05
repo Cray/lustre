@@ -1,4 +1,7 @@
-obj-m += @LDISKFS_SUBDIR@/ libcfs/ lnet/
+ifneq (@LDISKFS_SUBDIR@,)
+obj-m += @LDISKFS_SUBDIR@/
+endif
+obj-m += libcfs/ lnet/
 obj-m += lustre/
 
 @INCLUDE_RULES@
