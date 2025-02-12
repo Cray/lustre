@@ -6380,6 +6380,38 @@ test_86()
 }
 run_test 86 "Pre-acquired quota should be released if quota is over limit"
 
+# interop quota
+test_88()
+{
+	(($PAGE_SIZE > 4096)) || skip "require client with >4k pages"
+	setup_quota_test || error "setup quota failed with $?"
+
+	set_ost_qtype $QTYPE || error "enable ost quota failed"
+
+	$LFS setquota -u $TSTUSR -B 100M -i 0 $MOUNT ||
+		error "enable quota -B 100M failed."
+
+	local tfile
+	local result
+
+	local repeat=$(seq 10)
+	local arr=(1075761 1075770 1075800 1076000 1080000 1093000 2010000 \
+		   2080000 2095000 4096000)
+	[[ "$SLOW" = "no" ]] && repeat=1
+
+	for r in $repeat; do
+		for bs in ${arr[@]}; do
+			tfile=$DIR/$tdir/dd_largefile.${bs}
+			${RUNAS} dd if=/dev/urandom of=${tfile} bs=${bs} \
+				count=100 status=progress
+			rm -f ${tfile}
+		done
+	done
+
+	return 0
+}
+run_test 88 "Writing over quota should not hang"
+
 check_quota_no_mount()
 {
 	local opts="$1"
