@@ -2657,6 +2657,12 @@ struct cl_sub_dio {
 	struct ll_dio_pages	csd_dio_pages;
 	unsigned		csd_creator_free:1;
 };
+
+static inline u64 cl_io_nob_aligned(u64 off, u32 nob, u32 pgsz)
+{
+	return (((nob / pgsz) - 1) * pgsz) + (pgsz - (off & (pgsz - 1)));
+}
+
 #if defined(HAVE_DIRECTIO_ITER) || defined(HAVE_IOV_ITER_RW) || \
 	defined(HAVE_DIRECTIO_2ARGS)
 #define HAVE_DIO_ITER 1
