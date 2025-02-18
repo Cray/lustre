@@ -1493,6 +1493,33 @@ static inline void osc_release_bounce_pages(struct brw_page **pga,
 #endif
 }
 
+static inline bool is_interop_required(u64 foffset, u32 off0, u32 npgs,
+				       struct brw_page **pga)
+{
+	struct brw_page *pg0 = pga[0];
+	struct brw_page *pgN = pga[npgs - 1];
+	const u32 nob = ((npgs - 2) << PAGE_SHIFT) + pg0->count +
+			pgN->count;
+
+	return ((nob + off0) >= LNET_MTU &&
+	    cl_io_nob_aligned(foffset, nob, MD_MAX_INTEROP_PAGE_SIZE) !=
+	    cl_io_nob_aligned(foffset, nob, MD_MIN_INTEROP_PAGE_SIZE));
+}
+
+static inline u32 interop_pages(u64 foffset, u32 npgs, struct brw_page **pga)
+{
+	u32 off0;
+
+	if (foffset == 0 || npgs < 15)
+		return 0;
+
+	off0 = (foffset & (MD_MAX_INTEROP_PAGE_SIZE - 1));
+	if (is_interop_required(foffset, off0, npgs, pga))
+		return off0 >> MD_MIN_INTEROP_PAGE_SHIFT;
+
+	return 0;
+}
+
 static int
 osc_brw_prep_request(int cmd, struct client_obd *cli, struct obdo *oa,
 		     u32 page_count, struct brw_page **pga,
@@ -1514,11 +1541,14 @@ osc_brw_prep_request(int cmd, struct client_obd *cli, struct obdo *oa,
 	bool gpu = 0;
 	bool enable_checksum = true;
 	struct cl_page *clpage;
+	u64 foffset = 0;
+	u32 iop_pages = 0;
 
 	ENTRY;
 	if (pga[0]->pg) {
 		clpage = oap2cl_page(brw_page2oap(pga[0]));
 		inode = clpage->cp_inode;
+		foffset = pga[0]->off;
 		if (clpage->cp_type == CPT_TRANSIENT)
 			directio = true;
 	}
@@ -1741,6 +1771,12 @@ retry_encrypt:
 		desc = NULL;
 		short_io_buf = NULL;
 		goto no_bulk;
+	}
+
+	if (PAGE_SIZE > MD_MIN_INTEROP_PAGE_SIZE) {
+		iop_pages = interop_pages(foffset, page_count, pga);
+		if (iop_pages)
+			GOTO(out, rc = -EINVAL);
 	}
 
 	desc = ptlrpc_prep_bulk_imp(req, page_count,

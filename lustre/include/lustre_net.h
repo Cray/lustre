@@ -89,7 +89,14 @@
  * use the negotiated per-client ocd_brw_size to determine the bulk
  * RPC count. */
 #define PTLRPC_BULK_OPS_MASK	(~((__u64)PTLRPC_BULK_OPS_COUNT - 1))
-
+/*
+ * Unaligned DIO adjust MD size for alignment to the interop page size
+ * Enable page alignmen interop range:
+ *  MD_MAX_INTEROP_PAGE_SIZE(64k) <-> MD_MIN_INTEROP_PAGE_SIZE(4k)
+ */
+#define MD_MIN_INTEROP_PAGE_SHIFT	12
+#define MD_MIN_INTEROP_PAGE_SIZE	(1u << MD_MIN_INTEROP_PAGE_SHIFT)
+#define MD_MAX_INTEROP_PAGE_SIZE	(1u << 16)
 /**
  * Define maxima for bulk I/O.
  *
