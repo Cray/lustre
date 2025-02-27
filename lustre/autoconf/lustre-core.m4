@@ -225,17 +225,20 @@ AC_DEFUN([LC_CONFIG_QUOTA], [
 # 3.1 renames lock-manager ops(lock_manager_operations) from fl_xxx to lm_xxx
 # see kernel commit 8fb47a4fbf858a164e973b8ea8ef5e83e61f2e50
 #
-AC_DEFUN([LC_LM_XXX_LOCK_MANAGER_OPS], [
-LB_CHECK_COMPILE([if 'lock-manager' ops renamed to 'lm_xxx'],
-lock_manager_ops_lm_xxx, [
-	#include <linux/fs.h>
-],[
-	struct lock_manager_operations lm_ops;
-	lm_ops.lm_notify = NULL;
-],[
-	AC_DEFINE(HAVE_LM_XXX_LOCK_MANAGER_OPS, 1,
-		[lock-manager ops renamed to lm_xxx])
+AC_DEFUN([LC_SRC_LM_XXX_LOCK_MANAGER_OPS], [
+	LB2_LINUX_TEST_SRC([lock_manager_ops_lm_xxx], [
+		#include <linux/fs.h>
+	],[
+		struct lock_manager_operations lm_ops;
+		lm_ops.lm_notify = NULL;
+	])
 ])
+AC_DEFUN([LC_LM_XXX_LOCK_MANAGER_OPS], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'lock-manager' ops renamed to 'lm_xxx'],
+	[lock_manager_ops_lm_xxx], [
+		AC_DEFINE(HAVE_LM_XXX_LOCK_MANAGER_OPS, 1,
+			[lock-manager ops renamed to lm_xxx])
+	])
 ]) # LC_LM_XXX_LOCK_MANAGER_OPS
 
 #
@@ -4272,6 +4275,34 @@ AC_DEFUN([LC_HAVE_MNT_IDMAP_ARG], [
 ]) # LC_HAVE_MNT_IDMAP_ARG
 
 #
+# LC_HAVE_LMO_LM_NOTIFY
+#
+# Linux commit v6.2-rc3-9-g5970e15dbcfe
+#   filelock: move file locking definitions to separate header file
+#
+AC_DEFUN([LC_SRC_HAVE_LMO_LM_NOTIFY], [
+	LB2_LINUX_TEST_SRC([lock_manager_operations_lm_notify_member], [
+		#include <linux/fs.h>
+		#include <linux/filelock.h>
+	],[
+		struct file_lock *flock = NULL;
+		struct lock_manager_operations *lm_ops;
+
+		lm_ops->lm_notify(flock);
+		lm_ops->lm_grant(NULL, 0);
+	])
+])
+AC_DEFUN([LC_HAVE_LMO_LM_NOTIFY], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct lock_manager_operations has lm_notify],
+	[lock_manager_operations_lm_notify_member], [
+		AC_DEFINE(HAVE_LM_XXX_LOCK_MANAGER_OPS, 1,
+			[struct lock_manager_operations has lm_notify])
+		AC_DEFINE(HAVE_LM_GRANT_2ARGS, 1,
+			[lock_manager_operations.lm_grant takes two args])
+	])
+]) # LC_HAVE_LMO_LM_NOTIFY
+
+#
 # LC_HAVE_LOCKS_LOCK_FILE_WAIT_IN_FILELOCK
 #
 # Linux commit v6.2-rc3-9-g5970e15dbcfe
@@ -4770,6 +4801,9 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_POSIX_ACL_CONFIG
 	LC_SRC_HAVE_PROJECT_QUOTA
 
+	# 3.1
+	LC_SRC_LM_XXX_LOCK_MANAGER_OPS
+
 	# 3.11
 	LC_SRC_INVALIDATE_RANGE
 	LC_SRC_HAVE_DIR_CONTEXT
@@ -5014,6 +5048,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	# 6.3
 	LC_SRC_HAVE_MNT_IDMAP_ARG
 	LC_SRC_HAVE_LOCKS_LOCK_FILE_WAIT_IN_FILELOCK
+	LC_SRC_HAVE_LMO_LM_NOTIFY
 	LC_SRC_HAVE_U64_CAPABILITY
 	LC_SRC_HAVE_FOLIO_BATCH_REINIT
 
@@ -5336,6 +5371,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	# 6.3
 	LC_HAVE_MNT_IDMAP_ARG
 	LC_HAVE_LOCKS_LOCK_FILE_WAIT_IN_FILELOCK
+	LC_HAVE_LMO_LM_NOTIFY
 	LC_HAVE_U64_CAPABILITY
 	LC_HAVE_FOLIO_BATCH_REINIT
 
