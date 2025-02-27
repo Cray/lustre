@@ -6861,10 +6861,11 @@ test_80()
 	do_facet mds1 $LCTL set_param fail_loc=0xa06
 	$RUNAS $DD of=$TESTFILE3 count=3 ||
 		quota_error u $TSTUSR "write failed"
-	$RUNAS $DD of=$TESTFILE2 count=7 ||
-		quota_error u $TSTUSR "write failed"
-	$RUNAS $DD of=$TESTFILE1 count=1 oflag=direct ||
-		quota_error u $TSTUSR "write failed"
+	# Don't care about the result - it is a valid behvaiour
+	# as we write up to the QP limit(10MB). In rare cases,
+	# when it fails, test might not reproduce the problem.
+	$RUNAS $DD of=$TESTFILE2 count=7
+	$RUNAS $DD of=$TESTFILE1 count=1 oflag=direct
 	sync
 	sleep 3
 	$LFS quota -v -u --pool $qpool $TSTUSR $DIR
@@ -6874,9 +6875,14 @@ test_80()
 	do_facet mds1 $LCTL set_param fail_loc=0
 	start ost2 $(ostdevname 2) $OST_MOUNT_OPTS || error "start ost2 failed"
 	$LFS quota -v -u $TSTUSR --pool $qpool $DIR
-	# OST0 needs some time to update quota usage after removing TESTFILE2
+	# OST1 needs some time to update quota usage after removing TESTFILE2
 	sleep 4
 	$LFS quota -v -u $TSTUSR --pool $qpool $DIR
+	# Reproduces a case when dt-qpool1 edquot is switched from 1 to 0,
+	# but it doesn't send un update to OST. Finally, we have edquot:0
+	# for the pool at QMT and edquot:1 at OST. Write to TESTFILE0 would
+	# fail only during 5 seconds after setting edquot(see
+	# qsd_acquire_local).
 	$RUNAS $DD of=$TESTFILE0 count=2 oflag=direct ||
 		quota_error u $TSTUSR "write failure, but expect success"
 }
