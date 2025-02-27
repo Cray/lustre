@@ -6034,9 +6034,9 @@ int ll_inode_permission(struct mnt_idmap *idmap, struct inode *inode, int mask)
 	RETURN(rc);
 }
 
-#if defined(HAVE_FILEMAP_SPLICE_READ)
-# define ll_splice_read		filemap_splice_read
-#elif !defined(HAVE_DEFAULT_FILE_SPLICE_READ_EXPORT)
+#if !defined(HAVE_FILEMAP_SPLICE_READ) && \
+    !defined(HAVE_DEFAULT_FILE_SPLICE_READ_EXPORT) && \
+     defined(HAVE_KALLSYMS_LOOKUP_NAME)
 static struct pipe_buf_operations lbo;
 static bool lbo_init = false;
 
