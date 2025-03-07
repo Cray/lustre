@@ -257,7 +257,7 @@ Index: linux-4.18.0-80.1.2.el8_0/fs/ext4/mballoc.c
  
  	/* do normalize only data requests, metadata requests
  	   do not need preallocation */
-@@ -3095,51 +3209,46 @@ ext4_mb_normalize_request(struct ext4_al
+@@ -3095,51 +3209,49 @@ ext4_mb_normalize_request(struct ext4_al
  	size = size << bsbits;
  	if (size < i_size_read(ac->ac_inode))
  		size = i_size_read(ac->ac_inode);
@@ -329,6 +329,9 @@ Index: linux-4.18.0-80.1.2.el8_0/fs/ext4/mballoc.c
 +			do_div(tend, wind);
 +			tend = tend * wind + wind;
 +			size = tend - start;
++		} else {
++			start = ac->ac_o_ex.fe_logical;
++			size = EXT4_C2B(EXT4_SB(ac->ac_sb), ac->ac_o_ex.fe_len);
 +		}
  	} else {
 -		start_off = (loff_t) ac->ac_o_ex.fe_logical << bsbits;
