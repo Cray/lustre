@@ -262,7 +262,7 @@ index b014aa93..e1074fdb 100644
  
  	/* do normalize only data requests, metadata requests
  	   do not need preallocation */
-@@ -4008,51 +4122,46 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
+@@ -4008,51 +4122,49 @@ ext4_mb_normalize_request(struct ext4_allocation_context *ac,
  	size = size << bsbits;
  	if (size < i_size_read(ac->ac_inode))
  		size = i_size_read(ac->ac_inode);
@@ -336,6 +336,9 @@ index b014aa93..e1074fdb 100644
 +			do_div(tend, wind);
 +			tend = tend * wind + wind;
 +			size = tend - start;
++		} else {
++			start = ac->ac_o_ex.fe_logical;
++			size = EXT4_C2B(EXT4_SB(ac->ac_sb), ac->ac_o_ex.fe_len);
 +		}
  	} else {
 -		start_off = (loff_t) ac->ac_o_ex.fe_logical << bsbits;
