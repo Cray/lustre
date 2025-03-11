@@ -704,6 +704,9 @@ static void ll_readahead_handle_work(struct work_struct *wq)
 				 &ra_end_idx, 0, MAYNEED);
 	if (ria->ria_reserved != 0)
 		ll_ra_count_put(ll_i2sbi(inode), ria->ria_reserved);
+
+	rc = ll_submit_read(env, io, queue);
+
 	if (ria->ria_end_idx == ra_end_idx && ra_end_idx == (kms >> PAGE_SHIFT))
 		ll_ra_stats_inc(inode, RA_STAT_EOF);
 
