@@ -642,7 +642,7 @@ ksocknal_launch_connection_locked(struct ksock_conn_cb *conn_cb)
 	list_add_tail(&conn_cb->ksnr_connd_list,
 		      &ksocknal_data.ksnd_connd_routes);
 	wake_up(&ksocknal_data.ksnd_connd_waitq);
-
+	LASSERT(conn_cb->ksnr_scheduled);
 	spin_unlock_bh(&ksocknal_data.ksnd_connd_lock);
 }
 
@@ -2033,6 +2033,8 @@ ksocknal_connect(struct ksock_conn_cb *conn_cb)
 		write_lock_bh(&ksocknal_data.ksnd_global_lock);
 	}
 
+	LASSERT(conn_cb->ksnr_connd_list.next == LIST_POISON1 &&
+		conn_cb->ksnr_connd_list.prev == LIST_POISON2);
 	conn_cb->ksnr_scheduled = 0;
 	conn_cb->ksnr_connecting = 0;
 
@@ -2085,6 +2087,8 @@ ksocknal_connect(struct ksock_conn_cb *conn_cb)
  failed:
 	write_lock_bh(&ksocknal_data.ksnd_global_lock);
 
+	LASSERT(conn_cb->ksnr_connd_list.next == LIST_POISON1 &&
+		conn_cb->ksnr_connd_list.prev == LIST_POISON2);
 	conn_cb->ksnr_scheduled = 0;
 	conn_cb->ksnr_connecting = 0;
 
