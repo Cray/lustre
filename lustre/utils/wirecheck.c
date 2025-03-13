@@ -145,7 +145,12 @@ do {								\
 	CHECK_VALUE((int)sizeof(((s *)0)->m));			\
 } while(0)
 
-#define CHECK_MEMBER_IS_FLEXIBLE(s, m)			\
+#define CHECK_MEMBER_SIZEOF_ARRAY_ELEMENT_TYPEDEF(s, m)		\
+do {								\
+	CHECK_VALUE((int)sizeof(*((s *)0)->m));			\
+} while (0)
+
+#define CHECK_MEMBER_IS_FLEXIBLE(s, m)					\
 do {									\
 	CHECK_MEMBER_OFFSET(s, m);					\
 	CHECK_BUILD_TEST(offsetof(struct s, m) != sizeof(struct s));	\
@@ -162,6 +167,12 @@ do {								\
 	CHECK_MEMBER_OFFSET_TYPEDEF(s, m);			\
 	CHECK_MEMBER_SIZEOF_TYPEDEF(s, m);			\
 } while(0)
+
+#define CHECK_MEMBER_IS_FLEXIBLE_TYPEDEF(s, m)			\
+do {								\
+	CHECK_MEMBER_OFFSET_TYPEDEF(s, m);			\
+	CHECK_MEMBER_SIZEOF_ARRAY_ELEMENT_TYPEDEF(s, m);	\
+} while (0)
 
 #define CHECK_STRUCT(s)						\
 do {								\
@@ -390,7 +401,7 @@ check_ladvise_hdr(void)
 	CHECK_MEMBER(ladvise_hdr, lah_value1);
 	CHECK_MEMBER(ladvise_hdr, lah_value2);
 	CHECK_MEMBER(ladvise_hdr, lah_value3);
-	CHECK_MEMBER(ladvise_hdr, lah_advise);
+	CHECK_MEMBER_IS_FLEXIBLE(ladvise_hdr, lah_advise);
 
 	CHECK_CVALUE_X(LF_ASYNC);
 	CHECK_CVALUE_X(LF_UNSET);
@@ -2192,7 +2203,7 @@ typedef struct {
 
 typedef struct {
 	__u32			a_version;
-	posix_acl_xattr_entry	a_entries[0];
+	posix_acl_xattr_entry	a_entries[];
 } posix_acl_xattr_header;
 
 static void
@@ -2215,7 +2226,7 @@ check_posix_acl_xattr_header(void)
 	CHECK_STRUCT_TYPEDEF(posix_acl_xattr_header);
 	CHECK_MEMBER_TYPEDEF(posix_acl_xattr_header, a_version);
 	printf("#ifndef HAVE_STRUCT_POSIX_ACL_XATTR\n");
-	CHECK_MEMBER_TYPEDEF(posix_acl_xattr_header, a_entries);
+	CHECK_MEMBER_IS_FLEXIBLE_TYPEDEF(posix_acl_xattr_header, a_entries);
 	printf("#endif /* HAVE_STRUCT_POSIX_ACL_XATTR */\n");
 	printf("#endif /* CONFIG_FS_POSIX_ACL */\n");
 }
@@ -2284,7 +2295,7 @@ check_link_ea_entry(void)
 	CHECK_STRUCT(link_ea_entry);
 	CHECK_MEMBER(link_ea_entry, lee_reclen);
 	CHECK_MEMBER(link_ea_entry, lee_parent_fid);
-	CHECK_MEMBER(link_ea_entry, lee_name);
+	CHECK_MEMBER_IS_FLEXIBLE(link_ea_entry, lee_name);
 }
 
 static void
@@ -2320,7 +2331,7 @@ check_hsm_action_item(void)
 	CHECK_MEMBER(hsm_action_item, hai_extent);
 	CHECK_MEMBER(hsm_action_item, hai_cookie);
 	CHECK_MEMBER(hsm_action_item, hai_gid);
-	CHECK_MEMBER(hsm_action_item, hai_data);
+	CHECK_MEMBER_IS_FLEXIBLE(hsm_action_item, hai_data);
 }
 
 static void
@@ -2476,7 +2487,7 @@ static void check_hsm_user_request(void)
 	BLANK_LINE();
 	CHECK_STRUCT(hsm_user_request);
 	CHECK_MEMBER(hsm_user_request, hur_request);
-	CHECK_MEMBER(hsm_user_request, hur_user_item);
+	CHECK_MEMBER_IS_FLEXIBLE(hsm_user_request, hur_user_item);
 }
 
 static void check_hsm_user_import(void)
@@ -2499,7 +2510,7 @@ static void check_netobj_s(void)
 	BLANK_LINE();
 	CHECK_STRUCT(netobj_s);
 	CHECK_MEMBER(netobj_s, len);
-	CHECK_MEMBER(netobj_s, data);
+	CHECK_MEMBER_IS_FLEXIBLE(netobj_s, data);
 }
 
 static void check_rawobj_s(void)
@@ -2801,7 +2812,7 @@ static void check_update_params(void)
 {
 	BLANK_LINE();
 	CHECK_STRUCT(update_params);
-	CHECK_MEMBER(update_params, up_params);
+	CHECK_MEMBER_IS_FLEXIBLE(update_params, up_params);
 }
 
 static void check_update_op(void)
@@ -2818,7 +2829,7 @@ static void check_update_ops(void)
 {
 	BLANK_LINE();
 	CHECK_STRUCT(update_ops);
-	CHECK_MEMBER(update_ops, uops_op);
+	CHECK_MEMBER_IS_FLEXIBLE(update_ops, uops_op);
 }
 
 static void check_update_records(void)
