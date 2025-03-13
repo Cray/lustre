@@ -924,13 +924,13 @@ struct ptlrpc_svc_ctx {
 #define LUSTRE_MAX_GROUPS               (128)
 
 struct ptlrpc_user_desc {
-        __u32           pud_uid;
-        __u32           pud_gid;
-        __u32           pud_fsuid;
-        __u32           pud_fsgid;
-        __u32           pud_cap;
-        __u32           pud_ngroups;
-        __u32           pud_groups[0];
+	__u32           pud_uid;
+	__u32           pud_gid;
+	__u32           pud_fsuid;
+	__u32           pud_fsgid;
+	__u32           pud_cap;
+	__u32           pud_ngroups;
+	__u32           pud_groups[];
 };
 
 /*
@@ -956,12 +956,12 @@ enum {
 };
 
 struct ptlrpc_bulk_sec_desc {
-        __u8            bsd_version;    /* 0 */
-        __u8            bsd_type;       /* SPTLRPC_BULK_XXX */
-        __u8            bsd_svc;        /* SPTLRPC_BULK_SVC_XXXX */
-        __u8            bsd_flags;      /* flags */
-        __u32           bsd_nob;        /* nob of bulk data */
-        __u8            bsd_data[0];    /* policy-specific token */
+	__u8            bsd_version;    /* 0 */
+	__u8            bsd_type;       /* SPTLRPC_BULK_XXX */
+	__u8            bsd_svc;        /* SPTLRPC_BULK_SVC_XXXX */
+	__u8            bsd_flags;      /* flags */
+	__u32           bsd_nob;        /* nob of bulk data */
+	__u8            bsd_data[];     /* policy-specific token */
 };
 
 extern struct dentry *sptlrpc_debugfs_dir;

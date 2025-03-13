@@ -131,7 +131,7 @@ struct lu_seq_range {
 struct lu_seq_range_array {
 	__u32 lsra_count;
 	__u32 lsra_padding;
-	struct lu_seq_range lsra_lsr[0];
+	struct lu_seq_range lsra_lsr[];
 };
 
 #define LU_SEQ_RANGE_MDT	0x0
@@ -610,7 +610,7 @@ struct lustre_msg_v2 {
 	__u32 lm_flags;		/* enum lustre_msghdr MSGHDR_* flags */
 	__u32 lm_padding_2;	/* unused */
 	__u32 lm_padding_3;	/* unused */
-	__u32 lm_buflens[0];	/* length of additional buffers in bytes,
+	__u32 lm_buflens[];	/* length of additional buffers in bytes,
 				 * padded to a multiple of 8 bytes. */
 	/*
 	 * message buffers are packed after padded lm_buflens[] array,
@@ -2237,7 +2237,7 @@ struct lmv_mds_md_v1 {
 	__u32 lmv_padding2;
 	__u64 lmv_padding3;
 	char lmv_pool_name[LOV_MAXPOOLNAME + 1];	/* pool name */
-	struct lu_fid lmv_stripe_fids[0];	/* FIDs for each stripe */
+	struct lu_fid lmv_stripe_fids[];	/* FIDs for each stripe */
 };
 
 /* stripe count before directory split */
@@ -2618,17 +2618,17 @@ struct mgs_target_info {
 };
 
 struct mgs_nidtbl_entry {
-        __u64           mne_version;    /* table version of this entry */
-        __u32           mne_instance;   /* target instance # */
-        __u32           mne_index;      /* target index */
-        __u32           mne_length;     /* length of this entry - by bytes */
-        __u8            mne_type;       /* target type LDD_F_SV_TYPE_OST/MDT */
-        __u8            mne_nid_type;   /* type of nid(mbz). for ipv6. */
-        __u8            mne_nid_size;   /* size of each NID, by bytes */
-        __u8            mne_nid_count;  /* # of NIDs in buffer */
-        union {
-                lnet_nid_t nids[0];     /* variable size buffer for NIDs. */
-        } u;
+	__u64		mne_version;	/* table version of this entry */
+	__u32		mne_instance;	/* target instance # */
+	__u32		mne_index;	/* target index */
+	__u32		mne_length;	/* length of this entry - by bytes */
+	__u8		mne_type;	/* target type LDD_F_SV_TYPE_OST/MDT */
+	__u8		mne_nid_type;	/* type of NID. for IPv6. */
+	__u8		mne_nid_size;	/* size of each NID, by bytes */
+	__u8		mne_nid_count;	/* # of NIDs in buffer */
+	union {
+		DECLARE_FLEX_ARRAY(lnet_nid_t, nids); /* variable size buffer for NIDs. */
+	} u;
 };
 
 enum mgs_cfg_type {
@@ -3347,7 +3347,7 @@ struct getparent {
 	struct lu_fid	gp_fid;         /**< parent FID */
 	__u32		gp_linkno;	/**< hardlink number */
 	__u32		gp_name_size;   /**< size of the name field */
-	char		gp_name[0];     /**< zero-terminated link name */
+	char		gp_name[];      /**< zero-terminated link name */
 } __attribute__((packed));
 
 enum layout_intent_opc {
