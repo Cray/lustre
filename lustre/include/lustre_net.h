@@ -1652,7 +1652,7 @@ struct ptlrpc_service {
 	/**
 	 * partition data for ptlrpc service
 	 */
-	struct ptlrpc_service_part	*srv_parts[0];
+	struct ptlrpc_service_part	*srv_parts[];
 };
 
 /**
