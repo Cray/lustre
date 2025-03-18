@@ -675,6 +675,7 @@ static int vvp_io_setattr_lock(const struct lu_env *env,
 		else if (io->u.ci_setattr.sa_attr.lvb_size == 0)
 			enqflags = CEF_DISCARD_DATA;
 	} else if (cl_io_is_fallocate(io)) {
+		trunc_sem_down_write(&lli->lli_trunc_sem);
 		lock_start = io->u.ci_setattr.sa_falloc_offset;
 		lock_end = io->u.ci_setattr.sa_falloc_end - 1;
 	} else {
@@ -703,7 +704,7 @@ static void vvp_io_setattr_unlock(const struct lu_env *env,
 	struct inode		*inode = vvp_object_inode(io->ci_obj);
 	struct ll_inode_info	*lli   = ll_i2info(inode);
 
-	if (cl_io_is_trunc(io))
+	if (cl_io_is_trunc(io) || cl_io_is_fallocate(io))
 		trunc_sem_up_write(&lli->lli_trunc_sem);
 }
 
@@ -764,7 +765,6 @@ static int vvp_io_setattr_start(const struct lu_env *env,
 	} else if (cl_io_is_fallocate(io)) {
 		loff_t size;
 
-		trunc_sem_down_write(&lli->lli_trunc_sem);
 		mutex_lock(&lli->lli_setattr_mutex);
 		inode_dio_wait(inode);
 
@@ -814,7 +814,6 @@ static void vvp_io_setattr_end(const struct lu_env *env,
 		}
 		inode_set_ctime_current(inode);
 		mutex_unlock(&lli->lli_setattr_mutex);
-		trunc_sem_up_write(&lli->lli_trunc_sem);
 	} else {
 		mutex_unlock(&lli->lli_setattr_mutex);
 	}
