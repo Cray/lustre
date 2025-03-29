@@ -74,7 +74,7 @@ case $with_o2ib in
 	yes)	INT_O2IBPATHS="$LINUX $LINUX/drivers/infiniband"
 		BUILT_IN_KO2IBLND="yes"
 		# Use ofed_info to find external driver
-		AS_IF([which ofed_info 2>/dev/null], [
+		AS_IF([command -v ofed_info >/dev/null], [
 			AS_IF([test x$uses_dpkg = xyes], [
 				LIST_ALL_PKG="dpkg -l | awk '{print \[$]2}'"
 				LSPKG="dpkg --listfiles"
