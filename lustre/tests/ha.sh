@@ -497,6 +497,7 @@ ha_trap_exit()
 		# could be completed by ha_stop_loads()->wait
 		wait $ha_recovery_status_pid || true
 	fi
+
 	if [ -e "$ha_fail_file" ]; then
 		ha_info "Test directories ${ha_testdirs[@]} not removed"
 		ha_info "Temporary directory $ha_tmp_dir not removed"
@@ -554,6 +555,36 @@ ha_unlock()
     rm -r "$lock"
 }
 
+declare ha_log_size=${ha_log_size:-6000}
+declare ha_debug_d=${DEBUGDAEMON:-false}
+declare ha_debug_d_log=$TMP/log
+declare ha_debug_cli=${ha_debug_cli:-}
+
+ha_debug_daemon_start()
+{
+	$ha_debug_d || return 0
+
+	local nodes=${1// /,}
+
+	ha_info "Starting DEBUG DAEMON on $nodes"
+	ha_on $nodes "rm -f $ha_debug_d_log; \
+		lctl debug_daemon start $ha_debug_d_log $ha_log_size; \
+		lctl mark DAEMON start"
+}
+
+ha_debug_daemon_stop()
+{
+	$ha_debug_d || return 0
+
+	local nodes=${1// /,}
+	local log=${ha_tmp_dir}-$(date +%s).dk
+
+	ha_info "Stopping DEBUG DAEMON on $nodes. \
+		Dumping lctl log to $log"
+	ha_on $nodes "lctl mark DAEMON stop; lctl debug_daemon stop; \
+		lctl df $ha_debug_d_log > ${log}; ls -al ${log} "
+}
+
 ha_dump_logs()
 {
 	local nodes=${1// /,}
@@ -603,6 +634,8 @@ ha_repeat_mpi_load()
 
 	cmdrun=${cmdrun//"{params}"/$parameter}
 
+	local -a cli=($(cat $machines))
+
 	machines="-machinefile $machines"
 	while [ ! -e "$ha_stop_file" ] && ((rc == 0)) && ((rccheck == 0)) &&
 		( ((nr_loops < ${11})) || ((${11} == 0)) ); do
@@ -610,6 +643,13 @@ ha_repeat_mpi_load()
 		local cur=$client-$tag-$nr_loops-$mpiuser
 		local log=$ha_tmp_dir/$cur
 		dir=$test_dir/$cur
+
+		if [[ "$client" == "$ha_debug_cli" ]]; then
+			ha_debug_daemon_start "${cli[*]} ${ha_servers[*]}"
+		else
+			ha_info "$client is not a client to start debug \
+				daemons from, DAEMON not started"
+		fi
 
 		cmd=${cmdrun//"{}"/$dir}
 		ha_info "$client Starts: $mpiuser: $cmd \
@@ -653,6 +693,14 @@ ha_repeat_mpi_load()
 		ha_on $client "su $mpiuser bash -c \" $mpirun $mpirunoptions \
 			-np $((${#ha_clients[@]} * mpi_threads_per_client / ha_nclientsset)) \
 			$machines $cmd \" " || rc=$?
+
+		if [[ "$client" == "$ha_debug_cli" ]]; then
+			ha_debug_daemon_stop "${cli[*]} ${ha_servers[*]}"
+		else
+			ha_info "$client is not a client which started debug \
+				daemons, nothing to stop"
+		fi
+
 		ha_on ${ha_clients[0]} "$check_attrs &&                    \
 			$LFS df $dir &&                                    \
 			$check_attrs " && rccheck=1
@@ -838,7 +886,7 @@ ha_start_mpi_loads()
 						tr ' ' '\n' | sort -u ))
 				# remove client from the free client list
 				remove_client_from_list $client
-				ha_sleep 2
+				ha_sleep 5
 			done
 		done
 		(( inststarted+=inst ))
