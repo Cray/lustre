@@ -46,6 +46,7 @@ struct thandle *mdd_trans_create(const struct lu_env *env,
 	if (IS_ERR(th))
 		barrier_exit(mdd->mdd_bottom);
 
+	mdd_env_info(env)->mdi_chlog_declared = 0;
 	return th;
 }
 
