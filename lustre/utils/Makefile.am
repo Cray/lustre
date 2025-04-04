@@ -138,7 +138,7 @@ liblustreapi_la_CFLAGS = -fPIC -D_GNU_SOURCE $(LIBNL3_CFLAGS) \
 			 -DLUSTRE_UTILS=1
 liblustreapi_la_LDFLAGS = $(LIBREADLINE) -version-info 1:0:0 \
 			  -Wl,--version-script=liblustreapi.map
-liblustreapi_la_LIBADD = $(top_builddir)/libcfs/libcfs/libcfs.la \
+liblustreapi_la_LIBADD = $(top_builddir)/lib/libcfs/libcfs.la \
 			 $(top_builddir)/lnet/utils/lnetconfig/liblnetconfig.la \
 			 $(LIBNL3_LIBS) -lpthread
 
@@ -264,7 +264,7 @@ mount_lustre_SOURCES = mount_lustre.c mount_utils.c mount_utils.h $(GSSSRC) \
 mount_lustre_CPPFLAGS := ${MNTMODCFLAGS}
 mount_lustre_LDFLAGS  := ${MNTMODLDFLAGS}
 mount_lustre_LDADD    := $(SELINUX) $(LDLIBMOUNT) $(PLUGIN_LIB) $(GSSLIB)
-mount_lustre_LDADD    += $(top_builddir)/libcfs/libcfs/libcfs.la $(MNTMODLIBS)
+mount_lustre_LDADD    += $(top_builddir)/lib/libcfs/libcfs.la $(MNTMODLIBS)
 mount_lustre_LDADD    += liblustreapi.la
 
 mkfs_lustre_SOURCES = mkfs_lustre.c mount_utils.c mount_utils.h $(GSSSRC)
@@ -283,13 +283,13 @@ l_tunedisk_LDFLAGS  := ${MNTMODLDFLAGS}
 l_tunedisk_LDADD    := $(mount_lustre_LDADD)
 
 l_foreign_symlink_SOURCES = l_foreign_symlink.c
-l_foreign_symlink_LDADD := $(top_builddir)/libcfs/libcfs/libcfs.la
-l_foreign_symlink_DEPENDENCIES := $(top_builddir)/libcfs/libcfs/libcfs.la
+l_foreign_symlink_LDADD := $(top_builddir)/lib/libcfs/libcfs.la
+l_foreign_symlink_DEPENDENCIES := $(top_builddir)/lib/libcfs/libcfs.la
 
 l_getidentity_SOURCES = l_getidentity.c
-l_getidentity_LDADD := $(top_builddir)/libcfs/libcfs/libcfs.la
+l_getidentity_LDADD := $(top_builddir)/lib/libcfs/libcfs.la
 l_getidentity_LDFLAGS = -ldl
-l_getidentity_DEPENDENCIES := $(top_builddir)/libcfs/libcfs/libcfs.la
+l_getidentity_DEPENDENCIES := $(top_builddir)/lib/libcfs/libcfs.la
 CONFDIR_DATA += configs/perm.conf
 EXTRA_DIST += configs/perm.conf
 
