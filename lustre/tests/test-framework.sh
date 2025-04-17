@@ -2762,13 +2762,20 @@ start() {
 	mount_facet ${facet}
 	RC=$?
 
-	if [[ $RC == 0 && $facet == *ost* && $OSTDEVBASE == */tmp/* ]]; then
+	[[ $RC != 0 ]] && return $RC
+
+	if [[ $facet == *ost* && $OSTDEVBASE == */tmp/* ]]; then
 		varname="${facet}_FSTRIM"
 		if [[ -z ${!varname} ]]; then
-			if do_facet ${facet} "fstrim -v $mntpt"; then
-				eval export $varname="yes"
-			else
-				eval export $varname="no"
+			local ftype=$(facet_fstype $facet)
+			eval export $varname="no"
+			if [[ $ftype = "ldiskfs" ]]; then
+				do_facet ${facet} "fstrim -v $mntpt" &&
+					eval export $varname="yes"
+			elif [[ $ftype = "zfs" ]]; then
+				local pn=$(zpool_name $facet)
+				do_facet ${facet} "zpool trim $pn" &&
+					eval export $varname="yes"
 			fi
 		fi
 	fi
@@ -4093,13 +4100,15 @@ fstrim_inram_devs() {
 	local v
 	local pids
 
-	[[ "$(facet_fstype ost1)" = "ldiskfs" ]] || return 0
 	[[ $OSTDEVBASE == */tmp/* ]] || return 0
 
 	for (( i=1; i <= $OSTCOUNT; i++)); do
 		v="ost${i}_FSTRIM"
 		[[ ${!v} != "yes" ]] && continue
-		do_facet ost$i "fstrim $(facet_mntpt ost$i)" &
+		[[ "$(facet_fstype ost$i)" = "ldiskfs" ]] &&
+			{ do_facet ost$i "fstrim $(facet_mntpt ost$i)" & }
+		[[ "$(facet_fstype ost$i)" = "zfs" ]] &&
+			{ do_facet ost$i "zpool trim $(zpool_name ost$i)" & }
 		pids+=" $!"
 	done
 	[[ -n $pids ]] && wait $pids
