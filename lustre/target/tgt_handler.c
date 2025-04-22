@@ -1337,6 +1337,7 @@ int tgt_sync(const struct lu_env *env, struct lu_target *tgt,
 
 	/* if no objid is specified, it means "sync whole filesystem" */
 	if (obj == NULL) {
+		lu_objects_destroy_delayed();
 		rc = dt_sync(env, tgt->lut_bottom);
 	} else if (dt_version_get(env, obj) >
 		   tgt->lut_obd->obd_last_committed) {
