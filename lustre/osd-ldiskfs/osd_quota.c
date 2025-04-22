@@ -539,8 +539,8 @@ int osd_declare_qid(const struct lu_env *env, struct osd_thandle *oh,
 		inode = obj->oo_inode;
 		ino = inode ? inode->i_ino : 0;
 	}
-	CDEBUG(D_QUOTA, "fid="DFID" ino=%llu type=%u, id=%llu\n",
-	       PFID(&fid), ino, qi->lqi_type, qi->lqi_id.qid_uid);
+	CDEBUG(D_QUOTA, "fid="DFID" %p ino=%llu type=%u, id=%llu\n",
+	       PFID(&fid), inode, ino, qi->lqi_type, qi->lqi_id.qid_uid);
 
 	LASSERT(oh != NULL);
 	LASSERTF(oh->ot_id_cnt <= OSD_MAX_UGID_CNT, "count=%d\n",

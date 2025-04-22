@@ -3712,6 +3712,8 @@ wait_update_facet() {
 }
 
 sync_all_data_mdts() {
+# force flush delayed destroy
+	do_nodes $(mdts_nodes) "lctl set_param -n mdt.*.force_sync=1"
 	do_nodes $(mdts_nodes) "lctl set_param -n os[cd]*.*MDT*.force_sync=1"
 }
 

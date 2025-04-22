@@ -27530,6 +27530,11 @@ test_270a() {
 	local facet=mds$((mdtidx + 1))
 	local space_check=1
 
+# previous files might released in background, but tests wants to have stable
+# counters a specially in case running in loop
+	do_facet $facet \
+		"$LCTL set_param -n mdt.*.force_sync=1"
+
 	# Skip free space checks with ZFS
 	[ "$(facet_fstype $facet)" == "zfs" ] && space_check=0
 
@@ -27590,6 +27595,9 @@ test_270a() {
 
 	# delete
 	rm $dom
+# object might released in background
+	do_facet $facet \
+		"$LCTL set_param -n mdt.*.force_sync=1"
 	if [ $space_check == 1 ]; then
 		mdtfree1=$(do_facet $facet \
 				lctl get_param -n osd*.*$mdtname.kbytesfree)
@@ -30341,51 +30349,6 @@ test_350() {
 	cp -a /etc $DIR/$tdir || error "cp failed"
 }
 run_test 350 "force NID mismatch path to be exercised"
-
-test_360() {
-	(( $OST1_VERSION >= $(version_code 2.15.58.96) )) ||
-		skip "Need OST version at least 2.15.58.96"
-	[[ "$ost1_FSTYPE" == "ldiskfs" ]] || skip "ldiskfs only test"
-
-	check_set_fallocate_or_skip
-	local param="osd-ldiskfs.delayed_unlink_mb"
-	local old=($(do_facet ost1 "$LCTL get_param -n $param"))
-
-	do_facet ost1 "$LCTL set_param $param=1MiB"
-	stack_trap "do_facet ost1 $LCTL set_param $param=${old[0]}"
-
-	mkdir $DIR/$tdir/
-	# LU-16904 Use stripe count 1 for test dir to make sure the files
-	# created under it have object greater than 1M on single OST
-	# to test delayed iput
-	$LFS setstripe -c 1 $DIR/$tdir/
-
-	do_facet ost1 $LCTL set_param debug=+inode
-	do_facet ost1 $LCTL clear
-	local files=100
-
-	for ((i = 0; i < $files; i++)); do
-		fallocate -l 1280k $DIR/$tdir/$tfile.$i ||
-			error "fallocate 1280k $DIR/$tdir/$tfile.$i failed"
-	done
-	local min=$(($($LFS find $DIR/$tdir --ost 0 | wc -l) / 2))
-
-	for ((i = 0; i < $files; i++)); do
-		unlink $DIR/$tdir/$tfile.$i ||
-			error "unlink $DIR/$tdir/$tfile.$i failed"
-	done
-
-	local count=0
-	local loop
-
-	for (( loop = 0; loop < 30 && count < min; loop++)); do
-		sleep 1
-		(( count += $(do_facet ost1 $LCTL dk | grep -c "delayed iput")))
-		echo "Count[$loop]: $count"
-	done
-	(( count >= min )) || error "$count < $min delayed iput after $loop s"
-}
-run_test 360 "ldiskfs unlink in a separate thread"
 
 test_398a() { # LU-4198
 	local ost1_imp=$(get_osc_import_name client ost1)

@@ -43,6 +43,10 @@ struct lu_site_bkt_data {
 	 * moved to the lu_site::ls_lru.prev
 	 */
 	struct list_head		lsb_lru;
+
+	/** object list for delayed freeding */
+	struct list_head		lsb_free;
+
 	/**
 	 * Wait-queue signaled when an object in this site is ultimately
 	 * destroyed (lu_object_free()) or initialized (lu_object_start()).
@@ -86,6 +90,9 @@ MODULE_PARM_DESC(lu_cache_nr, "Maximum number of objects in lu_object cache");
 
 static void lu_object_free(const struct lu_env *env, struct lu_object *o);
 static __u32 ls_stats_read(struct lprocfs_stats *stats, int idx);
+
+static struct delayed_work lu_site_flush;
+
 
 u32 lu_fid_hash(const void *data, u32 len, u32 seed)
 {
@@ -137,6 +144,7 @@ void lu_object_put(const struct lu_env *env, struct lu_object *o)
 	struct lu_site *site = o->lo_dev->ld_site;
 	struct lu_object *orig = o;
 	const struct lu_fid *fid = lu_object_fid(o);
+	bool free;
 
 	LASSERTF(atomic_read(&top->loh_ref) > 0, "o %p\n", o);
 	/*
@@ -197,9 +205,9 @@ still_active:
 	 * here we need the latest actual value of it so check lu_object
 	 * directly here.
 	 */
+	LASSERT(list_empty(&top->loh_lru));
 	if (!lu_object_is_dying(top) &&
 	    (lu_object_exists(orig) || lu_object_is_cl(orig))) {
-		LASSERT(list_empty(&top->loh_lru));
 		list_add_tail(&top->loh_lru, &bkt->lsb_lru);
 		spin_unlock(&bkt->lsb_waitq.lock);
 		percpu_counter_inc(&site->ls_lru_len_counter);
@@ -222,9 +230,15 @@ still_active:
 		rhashtable_remove_fast(&site->ls_obj_hash, &top->loh_hash,
 				       obj_hash_params);
 
+	free = lu_object_is_dfree(top) || !fid_is_norm(fid);
+	/* delayed free */
+	if (!free)
+		list_add_tail(&top->loh_lru, &bkt->lsb_free);
+
 	spin_unlock(&bkt->lsb_waitq.lock);
 	/* Object was already removed from hash above, can kill it. */
-	lu_object_free(env, orig);
+	if (free)
+		lu_object_free(env, orig);
 }
 EXPORT_SYMBOL(lu_object_put);
 
@@ -298,7 +312,6 @@ static struct lu_object *lu_object_alloc(const struct lu_env *env,
 		return top;
 	/* The only place where obj fid is assigned. It's constant after this */
 	top->lo_header->loh_fid = *f;
-
 	return top;
 }
 
@@ -448,7 +461,14 @@ again:
 		bkt = &s->ls_bkts[i];
 		spin_lock(&bkt->lsb_waitq.lock);
 
+		/* we can sleep with objects free */
+		if (canblock)
+			list_splice_init(&bkt->lsb_free, &dispose);
+
 		list_for_each_entry_safe(h, temp, &bkt->lsb_lru, loh_lru) {
+			struct lu_object *top = lu_object_top(h);
+			bool free;
+
 			LASSERT(atomic_read(&h->loh_ref) == 0);
 
 			LINVRNT(lu_bkt_hash(s, &h->loh_fid) == i);
@@ -456,7 +476,14 @@ again:
 			set_bit(LU_OBJECT_UNHASHED, &h->loh_flags);
 			rhashtable_remove_fast(&s->ls_obj_hash, &h->loh_hash,
 					       obj_hash_params);
-			list_move(&h->loh_lru, &dispose);
+
+			free = lu_object_is_dfree(top->lo_header) ||
+				!fid_is_norm(lu_object_fid(top));
+			if (free || canblock)
+				list_move(&h->loh_lru, &dispose);
+			else
+				list_move(&h->loh_lru, &bkt->lsb_free);
+
 			percpu_counter_dec(&s->ls_lru_len_counter);
 			if (did_sth == 0)
 				did_sth = 1;
@@ -477,8 +504,10 @@ again:
 		while ((h = list_first_entry_or_null(&dispose,
 						     struct lu_object_header,
 						     loh_lru)) != NULL) {
+			struct lu_object *top = lu_object_top(h);
+
 			list_del_init(&h->loh_lru);
-			lu_object_free(env, lu_object_top(h));
+			lu_object_free(env, top);
 			lprocfs_counter_incr(s->ls_stats, LU_SS_LRU_PURGED);
 		}
 
@@ -486,6 +515,12 @@ again:
 			break;
 	}
 	mutex_unlock(&s->ls_purge_mutex);
+
+	/* Final shutdown */
+	if (canblock && nr == ~0) {
+		wait_event_idle(s->ls_freeq,
+			atomic_read(&s->ls_free_done) == 1);
+	}
 
 	if (nr != 0 && did_sth && start != 0) {
 		start = 0; /* restart from the first bucket */
@@ -985,6 +1020,9 @@ static DECLARE_RWSEM(lu_sites_guard);
 /* Global environment used by site shrinker. */
 static struct lu_env lu_shrink_env;
 
+static struct lu_env lu_free_env;
+
+
 struct lu_site_print_arg {
 	struct lu_env   *lsp_env;
 	void            *lsp_cookie;
@@ -1124,6 +1162,7 @@ int lu_site_init(struct lu_site *s, struct lu_device *top)
 	for (i = 0; i < s->ls_bkt_cnt; i++) {
 		bkt = &s->ls_bkts[i];
 		INIT_LIST_HEAD(&bkt->lsb_lru);
+		INIT_LIST_HEAD(&bkt->lsb_free);
 		init_waitqueue_head(&bkt->lsb_waitq);
 	}
 
@@ -1150,6 +1189,9 @@ int lu_site_init(struct lu_site *s, struct lu_device *top)
 
 	INIT_LIST_HEAD(&s->ls_ld_linkage);
 	spin_lock_init(&s->ls_ld_lock);
+
+	atomic_set(&s->ls_free_done, 1);
+	init_waitqueue_head(&s->ls_freeq);
 
 	lu_dev_add_linkage(s, top);
 
@@ -1190,6 +1232,8 @@ int lu_site_init_finish(struct lu_site *s)
 
 	down_write(&lu_sites_guard);
 	result = lu_context_refill(&lu_shrink_env.le_ctx);
+	if (result == 0)
+		result = lu_context_refill(&lu_free_env.le_ctx);
 	if (result == 0)
 		list_add(&s->ls_linkage, &lu_sites);
 	up_write(&lu_sites_guard);
@@ -1479,6 +1523,7 @@ void lu_context_key_degister(struct lu_context_key *key)
 	lu_context_key_quiesce(NULL, key);
 
 	key_fini(&lu_shrink_env.le_ctx, key->lct_index);
+	key_fini(&lu_free_env.le_ctx, key->lct_index);
 
 	/**
 	 * Wait until all transient contexts referencing this key have
@@ -2063,6 +2108,57 @@ static void lu_site_stats_get(const struct lu_site *s,
 	stats->lss_populated = 0;
 }
 
+static void collect_free(struct lu_site *s, struct list_head *dispose)
+{
+	int i;
+	struct lu_site_bkt_data *bkt;
+
+	for (i = 0; i < s->ls_bkt_cnt ; i++) {
+		bkt = &s->ls_bkts[i];
+		spin_lock(&bkt->lsb_waitq.lock);
+
+		list_splice_init(&bkt->lsb_free, dispose);
+		spin_unlock(&bkt->lsb_waitq.lock);
+	}
+}
+
+static void lu_objects_flush(struct work_struct *work)
+{
+	struct lu_site *s;
+	struct lu_object_header *h;
+
+	LIST_HEAD(dispose);
+
+	down_read(&lu_sites_guard);
+	list_for_each_entry(s, &lu_sites, ls_linkage) {
+
+		atomic_set(&s->ls_free_done, 0);
+		collect_free(s, &dispose);
+		/*
+		 * Free everything on the dispose list. This is safe against
+		 * races due to the reasons described in lu_object_put().
+		 */
+		while ((h = list_first_entry_or_null(&dispose,
+						     struct lu_object_header,
+						     loh_lru)) != NULL) {
+			list_del_init(&h->loh_lru);
+			lu_object_free(&lu_free_env, lu_object_top(h));
+		}
+
+		atomic_set(&s->ls_free_done, 1);
+		wake_up(&s->ls_freeq);
+	}
+	up_read(&lu_sites_guard);
+
+	queue_delayed_work(system_long_wq, &lu_site_flush, HZ);
+}
+
+void lu_objects_destroy_delayed(void)
+{
+	mod_delayed_work(system_long_wq, &lu_site_flush,0);
+	flush_delayed_work(&lu_site_flush);
+}
+EXPORT_SYMBOL(lu_objects_destroy_delayed);
 
 /*
  * lu_cache_shrink_count() returns an approximate number of cached objects
@@ -2084,7 +2180,6 @@ static unsigned long lu_cache_shrink_count(struct shrinker *sk,
 					   struct shrink_control *sc)
 {
 	struct lu_site *s;
-	struct lu_site *tmp;
 	unsigned long cached = 0;
 
 	if (!(sc->gfp_mask & __GFP_FS))
@@ -2092,7 +2187,7 @@ static unsigned long lu_cache_shrink_count(struct shrinker *sk,
 
 	if (!down_read_trylock(&lu_sites_guard))
 		return 0;
-	list_for_each_entry_safe(s, tmp, &lu_sites, ls_linkage)
+	list_for_each_entry(s, &lu_sites, ls_linkage)
 		cached += percpu_counter_read_positive(&s->ls_lru_len_counter);
 	up_read(&lu_sites_guard);
 
@@ -2170,6 +2265,14 @@ int lu_global_init(void)
 		goto out;
 	}
 
+	down_write(&lu_sites_guard);
+	result = lu_env_init(&lu_free_env, LCT_SHRINKER);
+	up_write(&lu_sites_guard);
+	if (result) {
+		lu_context_key_degister(&lu_global_key);
+		goto out_shrink_env;
+	}
+
 	/*
 	 * seeks estimation: 3 seeks to read a record from oi, one to read
 	 * inode, one for ea. Unfortunately setting this high value results in
@@ -2195,6 +2298,9 @@ int lu_global_init(void)
 	if (result)
 		goto out_shrinker;
 
+	INIT_DELAYED_WORK(&lu_site_flush, lu_objects_flush);
+	queue_delayed_work(system_long_wq, &lu_site_flush, HZ);
+
 	return result;
 
 out_shrinker:
@@ -2202,6 +2308,7 @@ out_shrinker:
 out_env:
 	/* ordering here is explained in lu_global_fini() */
 	lu_context_key_degister(&lu_global_key);
+out_shrink_env:
 	down_write(&lu_sites_guard);
 	lu_env_fini(&lu_shrink_env);
 	up_write(&lu_sites_guard);
@@ -2212,6 +2319,7 @@ out:
 /* Dual to lu_global_init(). */
 void lu_global_fini(void)
 {
+	cancel_delayed_work_sync(&lu_site_flush);
 	ll_shrinker_free(lu_site_shrinker);
 
 	lu_context_key_degister(&lu_global_key);
@@ -2222,6 +2330,7 @@ void lu_global_fini(void)
 	 */
 	down_write(&lu_sites_guard);
 	lu_env_fini(&lu_shrink_env);
+	lu_env_fini(&lu_free_env);
 	up_write(&lu_sites_guard);
 
 	rhashtable_destroy(&lu_env_rhash);

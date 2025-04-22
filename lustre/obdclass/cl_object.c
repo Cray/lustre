@@ -63,6 +63,7 @@ int cl_object_header_init(struct cl_object_header *h)
 		spin_lock_init(&h->coh_attr_guard);
 		lockdep_set_class(&h->coh_attr_guard, &cl_attr_guard_class);
 		h->coh_page_bufsize = 0;
+		set_bit(LU_OBJECT_DFREE, &h->coh_lu.loh_flags);
 	}
 	RETURN(result);
 }

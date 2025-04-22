@@ -553,7 +553,6 @@ extern bool obd_enable_fname_encoding;
 #define OBD_FAIL_QUOTA_RECALC            0xA07
 #define OBD_FAIL_QUOTA_GRANT             0xA08
 #define OBD_FAIL_QUOTA_NOSYNC            0xA09
-#define OBD_FAIL_QUOTA_USAGE_NOWAIT      0xA10
 #define OBD_FAIL_QUOTA_DROP_VER_UPDATE	 0xA11
 
 #define OBD_FAIL_LPROC_REMOVE            0xB00

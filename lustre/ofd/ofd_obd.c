@@ -1230,6 +1230,15 @@ out:
 	return rc;
 }
 
+/* this should sync the whole device */
+static int ofd_device_sync(const struct lu_env *env, struct ofd_device *ofd)
+{
+	lu_objects_destroy_delayed();
+
+	RETURN(dt_sync(env, ofd->ofd_osd));
+}
+
+
 /**
  * Implementation of obd_ops::o_iocontrol.
  *
@@ -1271,10 +1280,10 @@ static int ofd_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 		GOTO(out, rc);
 	case OBD_IOC_SYNC:
 		CDEBUG(D_RPCTRACE, "syncing ost %s\n", obd->obd_name);
-		rc = dt_sync(&env, ofd->ofd_osd);
+		rc = ofd_device_sync(&env, ofd);
 		GOTO(out, rc);
 	case OBD_IOC_SET_READONLY:
-		rc = dt_sync(&env, ofd->ofd_osd);
+		rc = ofd_device_sync(&env, ofd);
 		if (rc == 0)
 			rc = dt_ro(&env, ofd->ofd_osd);
 		GOTO(out, rc);

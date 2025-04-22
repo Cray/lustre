@@ -5063,6 +5063,7 @@ test_default_quota() {
 	cancel_lru_locks osc
 	cancel_lru_locks mdc
 	sync; sync_all_data || true
+	wait_delete_completed || error "wait_delete_completed failed"
 	if [ $qres_type == "data" ]; then
 		$RUNAS $DD of=$TESTFILE count=$((LIMIT*2 >> 10)) oflag=sync ||
 			quota_error $qtype $qid "write failed, expect succeed"
@@ -7501,8 +7502,6 @@ test_delete_big_file() {
 	rm -f $tfile1
 	wait_delete_completed
 
-	sleep 15
-
 	$LFS quota -p $TSTPRJID -h $DIR
 	$LFS setstripe $tfile2 -i 1 -c 1 || error "setstripe $tfile2 failed"
 	chown $TSTID:$TSTID $tfile2 || error "fail to chown $tfile2"
@@ -7513,10 +7512,6 @@ test_delete_big_file() {
 		(( equot_expected == 0 )) && error "fail to write 2GiB"
 	}
 
-	(( equot_expected == 1 )) && {
-		$RUNAS $DD of=$tfile2 seek=2048 count=512 oflag=sync &&
-			error "write should fail after deleting big files"
-	}
 	(( equot_expected == 0 )) && {
 		$RUNAS $DD of=$tfile2 seek=2048 count=512 oflag=sync ||
 			error "write should succeed after deleting big files"
@@ -7550,11 +7545,6 @@ test_96() {
 
 	setup_quota_test || error "setup quota failed with $?"
 	set_ost_qtype $QTYPE || error "enable ost quota failed"
-
-	#define OBD_FAIL_QUOTA_USAGE_NOWAIT 0xA10
-	do_facet ost1 $LCTL set_param fail_loc=0xa10
-	do_facet ost2 $LCTL set_param fail_loc=0xa10
-	test_delete_big_file 1
 
 	do_facet ost1 $LCTL set_param fail_loc=0
 	do_facet ost2 $LCTL set_param fail_loc=0

@@ -2689,8 +2689,6 @@ static int osd_declare_punch(const struct lu_env *env, struct dt_object *dt,
 	struct osd_thandle *oh;
 	struct osd_object  *obj = osd_dt_obj(dt);
 	struct inode	   *inode;
-	long long	    space = 0;
-	loff_t		    size;
 	int		    rc;
 	ENTRY;
 
@@ -2711,12 +2709,8 @@ static int osd_declare_punch(const struct lu_env *env, struct dt_object *dt,
 	inode = obj->oo_inode;
 	LASSERT(inode);
 
-	size = i_size_read(inode);
-	if (size > start)
-		space = -stoqb((size > end ? end : size - start));
-
 	rc = osd_declare_inode_qid(env, i_uid_read(inode), i_gid_read(inode),
-				   i_projid_read(inode), space, oh, obj,
+				   i_projid_read(inode), 0, oh, obj,
 				   NULL, OSD_QID_BLK);
 
 	/* if object holds encrypted content, we need to make sure we truncate

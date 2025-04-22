@@ -540,16 +540,20 @@ enum lu_object_header_flags {
 	 * as last reference to it is released. This flag cannot be cleared
 	 * once set.
 	 */
-	LU_OBJECT_HEARD_BANSHEE = 0,
-	/*
+	LU_OBJECT_HEARD_BANSHEE = BIT(0),
+	/**
 	 * Mark this object has already been taken out of cache.
 	 */
-	LU_OBJECT_UNHASHED	= 1,
-	/*
+	LU_OBJECT_UNHASHED	= BIT(1),
+	/**
 	 * Object is initialized, when object is found in cache, it may not be
 	 * intialized yet, the object allocator will initialize it.
 	 */
-	LU_OBJECT_INITED	= 2,
+	LU_OBJECT_INITED	= BIT(2),
+	/**
+	 * Direct object free
+	 */
+	LU_OBJECT_DFREE		= BIT(3),
 };
 
 enum lu_object_header_attr {
@@ -668,6 +672,9 @@ struct lu_site {
 	struct lu_target	*ls_tgt;
 	/* Number of objects in lsb_lru_lists - used for shrinking */
 	struct percpu_counter   ls_lru_len_counter;
+	/** delayed free */
+	atomic_t		ls_free_done;
+	wait_queue_head_t	ls_freeq;
 };
 
 wait_queue_head_t *
@@ -731,6 +738,12 @@ static inline int lu_object_is_inited(const struct lu_object_header *h)
 	return test_bit(LU_OBJECT_INITED, &h->loh_flags);
 }
 
+/* Return true if object should free without delay */
+static inline int lu_object_is_dfree(const struct lu_object_header *h)
+{
+	return test_bit(LU_OBJECT_DFREE, &h->loh_flags);
+}
+
 void lu_object_put(const struct lu_env *env, struct lu_object *o);
 void lu_object_put_nocache(const struct lu_env *env, struct lu_object *o);
 void lu_object_unhash(const struct lu_env *env, struct lu_object *o);
@@ -744,6 +757,7 @@ static inline int lu_site_purge(const struct lu_env *env, struct lu_site *s,
 {
 	return lu_site_purge_objects(env, s, nr, 1);
 }
+void lu_objects_destroy_delayed(void);
 
 void lu_site_print(const struct lu_env *env, struct lu_site *s, atomic_t *ref,
 		   int msg_flags, lu_printer_t printer);

@@ -3362,6 +3362,7 @@ int mdt_device_sync(const struct lu_env *env, struct mdt_device *mdt)
 	int rc;
 
 	ENTRY;
+	lu_objects_destroy_delayed();
 
 	rc = dt->dd_ops->dt_sync(env, dt);
 	RETURN(rc);
@@ -8176,7 +8177,7 @@ static int mdt_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 		rc = mdt_device_sync(&env, mdt);
 		GOTO(out, rc);
 	case OBD_IOC_SET_READONLY:
-		rc = dt_sync(&env, dt);
+		rc = mdt_device_sync(&env, mdt);
 		if (rc == 0)
 			rc = dt_ro(&env, dt);
 		GOTO(out, rc);

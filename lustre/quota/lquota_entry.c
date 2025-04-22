@@ -257,8 +257,6 @@ static void lqe_init(struct lquota_entry *lqe)
 	LASSERT(site != NULL);
 	LASSERT(site->lqs_ops->lqe_init != NULL);
 
-	LQUOTA_DEBUG(lqe, "init");
-
 	site->lqs_ops->lqe_init(lqe, site->lqs_parent);
 }
 

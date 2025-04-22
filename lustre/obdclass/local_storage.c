@@ -75,7 +75,7 @@ static struct lu_object *ls_object_alloc(const struct lu_env *env,
 		lu_object_add_top(h, l);
 
 		l->lo_ops = &ls_lu_obj_ops;
-
+		set_bit(LU_OBJECT_DFREE, &h->loh_flags);
 		return l;
 	} else {
 		return NULL;
