@@ -167,6 +167,7 @@ static struct ll_sb_info *ll_init_sbi(void)
 	set_bit(LL_SBI_VERBOSE, sbi->ll_flags);
 #ifdef CONFIG_ENABLE_CHECKSUM
 	set_bit(LL_SBI_CHECKSUM, sbi->ll_flags);
+	set_bit(LL_SBI_RCHECKSUM_FORCE, sbi->ll_flags);
 #endif
 #ifdef CONFIG_ENABLE_FLOCK
 	set_bit(LL_SBI_FLOCK, sbi->ll_flags);
@@ -285,7 +286,7 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt)
 	struct md_op_data *op_data;
 	struct lustre_md lmd;
 	u64 valid;
-	int size, err, checksum;
+	int size, err, checksum, rchecksum_force;
 	bool api32;
 	void *encctx;
 	int encctxlen;
@@ -766,6 +767,20 @@ retry_connect:
 			GOTO(out_root, err);
 		}
 	}
+	rchecksum_force = test_bit(LL_SBI_RCHECKSUM_FORCE, sbi->ll_flags);
+	if (sbi->ll_recovery_checksum_force) {
+		err = obd_set_info_async(NULL, sbi->ll_dt_exp,
+					 sizeof(KEY_RCHECKSUM_FORCE),
+					 KEY_RCHECKSUM_FORCE,
+					 sizeof(rchecksum_force),
+					 &rchecksum_force, NULL);
+		if (err) {
+			CERROR("%s: Set recovery_checksum_force failed: rc = %d\n",
+			       sbi->ll_dt_exp->exp_obd->obd_name, err);
+			GOTO(out_root, err);
+		}
+	}
+
 	cl_sb_init(sb);
 
 	sb->s_root = d_make_root(root);
@@ -968,6 +983,8 @@ static const match_table_t ll_sbi_flags_name = {
 	{LL_SBI_NOLCK,			"nolock"},
 	{LL_SBI_CHECKSUM,		"checksum"},
 	{LL_SBI_CHECKSUM,		"nochecksum"},
+	{LL_SBI_RCHECKSUM_FORCE,	"rchecksum_force"},
+	{LL_SBI_RCHECKSUM_FORCE,	"norchecksum_force"},
 	{LL_SBI_LOCALFLOCK,		"localflock"},
 	{LL_SBI_FLOCK,			"flock"},
 	{LL_SBI_FLOCK,			"noflock"},
@@ -1106,6 +1123,9 @@ static int ll_options(char *options, struct super_block *sb)
 
 		case LL_SBI_CHECKSUM:
 			sbi->ll_checksum_set = 1;
+			fallthrough;
+		case LL_SBI_RCHECKSUM_FORCE:
+			sbi->ll_recovery_checksum_force = 1;
 			fallthrough;
 		case LL_SBI_USER_XATTR:
 		case LL_SBI_USER_FID2PATH:
