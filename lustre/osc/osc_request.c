@@ -2828,7 +2828,8 @@ int osc_build_rpc(const struct lu_env *env, struct client_obd *cli,
 
 	req->rq_commit_cb = brw_commit;
 	req->rq_interpret_reply = brw_interpret;
-	req->rq_cli.cr_pre_replay_cb = brw_fix_chksum;
+	if (cli->cl_recovery_checksum_force)
+		req->rq_cli.cr_pre_replay_cb = brw_fix_chksum;
 
 	req->rq_memalloc = mem_tight != 0;
 	oap->oap_request = ptlrpc_request_addref(req);
@@ -3443,6 +3444,16 @@ int osc_set_info_async(const struct lu_env *env, struct obd_export *exp,
                 exp->exp_obd->u.cli.cl_checksum = (*(int *)val) ? 1 : 0;
                 RETURN(0);
         }
+
+	if (KEY_IS(KEY_RCHECKSUM_FORCE)) {
+		int v;
+
+		if (vallen != sizeof(int))
+			RETURN(-EINVAL);
+		v = (*(int *)val);
+		exp->exp_obd->u.cli.cl_recovery_checksum_force = !!v;
+		RETURN(0);
+	}
 
         if (KEY_IS(KEY_SPTLRPC_CONF)) {
                 sptlrpc_conf_client_adapt(obd);
