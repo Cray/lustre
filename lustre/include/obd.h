@@ -187,6 +187,7 @@ struct client_obd {
 
 	unsigned int		 cl_checksum:1, /* 0 = disabled, 1 = enabled */
 				 cl_checksum_dump:1, /* same */
+				 cl_recovery_checksum_force:1, /* same */
 				 cl_ocd_grant_param:1,
 				 cl_lsom_update:1, /* send LSOM updates */
 				 cl_root_squash:1, /* if root squash enabled*/
@@ -813,6 +814,7 @@ static inline bool obd_mdt_recovery_abort(struct obd_device *obd)
 #define KEY_CHANGELOG_CLEAR     "changelog_clear"
 #define KEY_FID2PATH            "fid2path"
 #define KEY_CHECKSUM            "checksum"
+#define KEY_RCHECKSUM_FORCE     "recovery_checksum_force"
 #define KEY_CLEAR_FS            "clear_fs"
 #define KEY_CONN_DATA           "conn_data"
 #define KEY_EVICT_BY_NID        "evict_by_nid"

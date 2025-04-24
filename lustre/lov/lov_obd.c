@@ -1167,7 +1167,7 @@ static int lov_set_info_async(const struct lu_env *env, struct obd_export *exp,
 
 	lov_tgts_getref(obd);
 
-	if (KEY_IS(KEY_CHECKSUM))
+	if (KEY_IS(KEY_CHECKSUM) || KEY_IS(KEY_RCHECKSUM_FORCE))
 		do_inactive = true;
 
 	for (i = 0; i < lov->desc.ld_tgt_count; i++) {

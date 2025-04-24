@@ -863,6 +863,7 @@ enum ll_sbi_flags {
 	LL_SBI_FOREIGN_SYMLINK,		/* foreign fake-symlink support */
 	LL_SBI_FOREIGN_SYMLINK_UPCALL,	/* foreign fake-symlink upcall set */
 	LL_SBI_STATFS_PROJECT,		/* statfs returns project quota */
+	LL_SBI_RCHECKSUM_FORCE,		/* disable checksum during recovery */
 	LL_SBI_NUM_MOUNT_OPT,
 
 	LL_SBI_ACL,			/* support ACL */
@@ -925,8 +926,8 @@ struct ll_sb_info {
 				 ll_inode_cache_enabled:1,
 				 ll_enable_statahead_fname:1,
 				 ll_intent_mkdir_enabled:1,
-				 ll_dir_open_read:1;
-
+				 ll_dir_open_read:1,
+				 ll_recovery_checksum_force:1;
 
 	struct lustre_client_ocd ll_lco;
 

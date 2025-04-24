@@ -452,6 +452,35 @@ static ssize_t checksums_store(struct kobject *kobj,
 }
 LUSTRE_RW_ATTR(checksums);
 
+static ssize_t recovery_checksum_force_show(struct kobject *kobj,
+					    struct attribute *attr, char *buf)
+{
+	struct obd_device *obd = container_of(kobj, struct obd_device,
+					      obd_kset.kobj);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n",
+			 !!obd->u.cli.cl_recovery_checksum_force);
+}
+
+static ssize_t recovery_checksum_force_store(struct kobject *kobj,
+					     struct attribute *attr,
+					     const char *buffer, size_t count)
+{
+	struct obd_device *obd = container_of(kobj, struct obd_device,
+					      obd_kset.kobj);
+	bool val;
+	int rc;
+
+	rc = kstrtobool(buffer, &val);
+	if (rc)
+		return rc;
+
+	obd->u.cli.cl_recovery_checksum_force = val;
+
+	return count;
+}
+LUSTRE_RW_ATTR(recovery_checksum_force);
+
 DECLARE_CKSUM_NAME;
 
 static int osc_checksum_type_seq_show(struct seq_file *m, void *v)
@@ -932,6 +961,7 @@ static struct attribute *osc_attrs[] = {
 	&lustre_attr_active.attr,
 	&lustre_attr_enable_page_cache_shrink.attr,
 	&lustre_attr_checksums.attr,
+	&lustre_attr_recovery_checksum_force.attr,
 	&lustre_attr_checksum_dump.attr,
 	&lustre_attr_cur_dirty_bytes.attr,
 	&lustre_attr_cur_lost_grant_bytes.attr,
