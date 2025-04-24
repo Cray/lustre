@@ -9,6 +9,7 @@ pipeline {
 
     environment {
         SLACK_TOKEN = credentials('dst-slack-bot-token')
+        JiraUserPass = credentials('gsptool_secret_text')
         // Needed by signArtifacts for correct location of buildlog.logs in Artifactory:
         PRODUCT = "neo"
         BRANCH_NAME = "release"
