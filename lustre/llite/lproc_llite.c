@@ -639,6 +639,47 @@ LUSTRE_RW_ATTR(checksums);
 
 LUSTRE_ATTR(checksum_pages, 0644, checksums_show, checksums_store);
 
+static ssize_t recovery_checksum_force_show(struct kobject *kobj, struct attribute *attr,
+			         char *buf)
+{
+	struct ll_sb_info *sbi = container_of(kobj, struct ll_sb_info,
+					      ll_kset.kobj);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+			 test_bit(LL_SBI_RCHECKSUM_FORCE, sbi->ll_flags));
+}
+
+static ssize_t recovery_checksum_force_store(struct kobject *kobj, struct attribute *attr,
+			          const char *buffer, size_t count)
+{
+	struct ll_sb_info *sbi = container_of(kobj, struct ll_sb_info,
+					      ll_kset.kobj);
+	bool val;
+	int tmp;
+	int rc;
+
+	if (!sbi->ll_dt_exp)
+		/* Not set up yet */
+		return -EAGAIN;
+
+	rc = kstrtobool(buffer, &val);
+	if (rc)
+		return rc;
+	if (val)
+		set_bit(LL_SBI_RCHECKSUM_FORCE, sbi->ll_flags);
+	else
+		clear_bit(LL_SBI_RCHECKSUM_FORCE, sbi->ll_flags);
+	tmp = val;
+
+	rc = obd_set_info_async(NULL, sbi->ll_dt_exp, sizeof(KEY_RCHECKSUM_FORCE),
+				KEY_RCHECKSUM_FORCE, sizeof(tmp), &tmp, NULL);
+	if (rc)
+		CWARN("Failed to set OSC checksum flags: %d\n", rc);
+
+	return count;
+}
+LUSTRE_RW_ATTR(recovery_checksum_force);
+
 static ssize_t ll_rd_track_id(struct kobject *kobj, char *buf,
 			      enum stats_track_type type)
 {
@@ -1836,6 +1877,7 @@ static struct attribute *llite_attrs[] = {
 	&lustre_attr_uuid.attr,
 	&lustre_attr_checksums.attr,
 	&lustre_attr_checksum_pages.attr,
+	&lustre_attr_recovery_checksum_force.attr,
 	&lustre_attr_max_read_ahead_mb.attr,
 	&lustre_attr_max_read_ahead_per_file_mb.attr,
 	&lustre_attr_max_read_ahead_whole_mb.attr,

@@ -468,6 +468,7 @@ int client_obd_setup(struct obd_device *obd, struct lustre_cfg *lcfg)
 #ifdef CONFIG_ENABLE_CHECKSUM
 	/* Turn on checksumming by default. */
 	cli->cl_checksum = 1;
+	cli->cl_recovery_checksum_force = 1;
 	/*
 	 * The supported checksum types will be worked out at connect time
 	 * Set cl_chksum* to CRC32 for now to avoid returning screwed info
