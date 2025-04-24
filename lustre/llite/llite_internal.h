@@ -816,6 +816,7 @@ enum ll_sbi_flags {
 	LL_SBI_USER_FID2PATH,		/* fid2path by unprivileged users */
 	LL_SBI_USER_XATTR,		/* support user xattr */
 	LL_SBI_VERBOSE,			/* verbose mount/umount */
+	LL_SBI_RCHECKSUM_FORCE,		/* disable checksum during recovery */
 	LL_SBI_NUM_MOUNT_OPT,
 
 	LL_SBI_64BIT_HASH,		/* support 64-bits dir hash/offset */
@@ -879,7 +880,8 @@ struct ll_sb_info {
 				 ll_intent_mkdir_enabled:1,
 				 ll_sync_on_close:1,
 				 ll_xattr_cache_enabled:1,
-				 ll_xattr_cache_set:1; /* already set to 0/1 */
+				 ll_xattr_cache_set:1, /* already set to 0/1 */
+				 ll_recovery_checksum_force:1;
 
 	struct lustre_client_ocd ll_lco;
 
