@@ -867,6 +867,10 @@ struct ll_sb_info {
 	/* cached file security context xattr name. e.g: security.selinux */
 	char *ll_secctx_name;
 	__u32 ll_secctx_name_size;
+
+	unsigned long (*ll_count_objects)(struct shrinker *shrink,
+					  struct shrink_control *sc);
+	unsigned int		 ll_max_shrink;
 };
 
 #define SBI_DEFAULT_HEAT_DECAY_WEIGHT	((80 * 256 + 50) / 100)
