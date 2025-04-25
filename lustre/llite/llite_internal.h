@@ -1001,6 +1001,10 @@ struct ll_sb_info {
 	struct list_head	 ll_all_quota_list;
 
 	struct rhashtable	 ll_proj_sfs_htable;
+
+	unsigned long (*ll_count_objects)(struct shrinker *shrink,
+					  struct shrink_control *sc);
+	unsigned int		 ll_max_shrink;
 };
 
 #define SBI_DEFAULT_HEAT_DECAY_WEIGHT	((80 * 256 + 50) / 100)
