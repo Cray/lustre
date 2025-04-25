@@ -1583,6 +1583,36 @@ static ssize_t dir_read_on_open_store(struct kobject *kobj,
 
 LUSTRE_RW_ATTR(dir_read_on_open);
 
+static ssize_t max_shrink_show(struct kobject *kobj,
+				     struct attribute *attr,
+				     char *buf)
+{
+	struct ll_sb_info *sbi = container_of(kobj, struct ll_sb_info,
+					      ll_kset.kobj);
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", sbi->ll_max_shrink);
+}
+
+static ssize_t max_shrink_store(struct kobject *kobj,
+				      struct attribute *attr,
+				      const char *buffer,
+				      size_t count)
+{
+	struct ll_sb_info *sbi = container_of(kobj, struct ll_sb_info,
+					      ll_kset.kobj);
+	unsigned int val;
+	int rc;
+
+	rc = kstrtouint(buffer, 10, &val);
+	if (rc)
+		return rc;
+
+	sbi->ll_max_shrink = val;
+
+	return count;
+}
+LUSTRE_RW_ATTR(max_shrink);
+
 static int ll_unstable_stats_seq_show(struct seq_file *m, void *v)
 {
 	struct super_block	*sb    = m->private;
@@ -1907,6 +1937,7 @@ static struct attribute *llite_attrs[] = {
 	&lustre_attr_opencache_threshold_ms.attr,
 	&lustre_attr_opencache_max_ms.attr,
 	&lustre_attr_dir_read_on_open.attr,
+	&lustre_attr_max_shrink.attr,
 	NULL,
 };
 
