@@ -1141,6 +1141,7 @@ struct ll_file_data {
 	 */
 	bool fd_write_failed;
 	bool ll_lock_no_expand;
+	unsigned int			lfd_hsm_agent_registered:1;
 	/* Used by mirrored file to lead IOs to a specific mirror, usually
 	 * for mirror resync. 0 means default.
 	 */
