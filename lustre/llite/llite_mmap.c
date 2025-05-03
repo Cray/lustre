@@ -459,6 +459,11 @@ out:
 				   ktime_us_delta(ktime_get(), kstart));
 	}
 
+	CDEBUG(D_IOTRACE,
+	       "COMPLETED: "DFID": vma=%p start=%#lx end=%#lx vm_flags=%#lx idx=%lu\n",
+	       PFID(&ll_i2info(file_inode(vma->vm_file))->lli_fid),
+	       vma, vma->vm_start, vma->vm_end, vma->vm_flags, vmf->pgoff);
+
 	return result;
 }
 
@@ -534,6 +539,11 @@ out:
 				   ktime_us_delta(ktime_get(), kstart));
 	}
 
+	CDEBUG(D_IOTRACE,
+	       "COMPLETED: "DFID": vma=%p start=%#lx end=%#lx vm_flags=%#lx idx=%lu\n",
+	       PFID(&ll_i2info(file_inode(vma->vm_file))->lli_fid),
+	       vma, vma->vm_start, vma->vm_end, vma->vm_flags,
+	       vmf->page->index);
 	return result;
 }
 
