@@ -2243,6 +2243,12 @@ out:
 				   ktime_us_delta(ktime_get(), kstart));
 	}
 
+	CDEBUG(D_IOTRACE,
+	       "COMPLETED: file %s:"DFID", ppos: %lld, count: %zu\n",
+	       file_dentry(file)->d_name.name,
+	       PFID(ll_inode2fid(file_inode(file))), iocb->ki_pos,
+	       iov_iter_count(to));
+
 	RETURN(result);
 }
 
@@ -2391,6 +2397,12 @@ out:
 		ll_stats_ops_tally(ll_i2sbi(file_inode(file)), LPROC_LL_WRITE,
 				   ktime_us_delta(ktime_get(), kstart));
 	}
+
+	CDEBUG(D_IOTRACE,
+	       "COMPLETED: file %s:"DFID", ppos: %lld, count: %zu\n",
+	       file_dentry(file)->d_name.name,
+	       PFID(ll_inode2fid(file_inode(file))), iocb->ki_pos,
+	       iov_iter_count(from));
 
 	RETURN(rc_normal);
 }
