@@ -435,6 +435,12 @@ struct osd_thandle {
 	/* Link to the device, for debugging. */
 	struct lu_ref_link      ot_dev_link;
 	unsigned int		ot_credits;
+	/*
+	 * For iterative operation within one transaction,
+	 * for example fallocate, it is a number of credits
+	 * enough for completing at least one iteration.
+	 */
+	unsigned int		ot_credits_iter;
 	unsigned int		oh_declared_ext;
 
 	/* quota IDs related to the transaction */
