@@ -649,6 +649,21 @@ static int kfilnd_tn_state_tagged_recv_posted(struct kfilnd_transaction *tn,
 	}
 }
 
+static bool kfilnd_tn_can_replay(struct kfilnd_transaction *tn,
+				 enum tn_events event)
+{
+	if (event == TN_EVENT_INIT_IMMEDIATE)
+		return true;
+
+	if (event == TN_EVENT_INIT_BULK)
+		return true;
+
+	if (event == TN_EVENT_RX_OK && tn->tn_early_rx)
+		return true;
+
+	return false;
+}
+
 static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 				enum tn_events event, int status,
 				bool *tn_released)
@@ -666,7 +681,7 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 	 * message for replay.
 	 */
 	if (kfilnd_peer_needs_throttle(tn->tn_kp) &&
-	    (event == TN_EVENT_INIT_IMMEDIATE || event == TN_EVENT_INIT_BULK)) {
+	    kfilnd_tn_can_replay(tn, event)) {
 		if (kfilnd_peer_deleted(tn->tn_kp)) {
 			/* We'll assign a NETWORK_TIMEOUT message health status
 			 * below because we don't know why this peer was marked
@@ -802,23 +817,27 @@ static int kfilnd_tn_state_idle(struct kfilnd_transaction *tn,
 			rc = 0;
 		}
 
-		/* If this is a new peer then we cannot progress the transaction
-		 * and must drop it
-		 */
+		msg = tn->tn_rx_msg.msg;
+
 		if (kfilnd_peer_is_new_peer(tn->tn_kp)) {
-			KFILND_TN_ERROR(tn,
-					"Dropping message from %s due to stale peer",
-					libcfs_nid2str(tn->tn_kp->kp_nid));
-			kfilnd_tn_status_update(tn, -EPROTO,
-						LNET_MSG_STATUS_LOCAL_DROPPED);
-			rc = 0;
-			goto out;
+			if (msg->type == KFILND_MSG_IMMEDIATE ||
+			    msg->version == KFILND_MSG_VERSION_2) {
+				tn->tn_early_rx = true;
+				KFILND_TN_DEBUG(tn, "Replay early rx\n");
+				return -EAGAIN;
+			} else {
+				KFILND_TN_ERROR(tn,
+						"Dropping message from %s due to stale peer",
+						libcfs_nid2str(tn->tn_kp->kp_nid));
+				kfilnd_tn_status_update(tn, -EPROTO,
+							LNET_MSG_STATUS_LOCAL_DROPPED);
+				rc = 0;
+				goto out;
+			}
 		}
 
 		LASSERT(kfilnd_peer_is_new_peer(tn->tn_kp) == false);
-		msg = tn->tn_rx_msg.msg;
 
-		/* Update the NID address with the new preferred RX context. */
 		kfilnd_peer_alive(tn->tn_kp);
 
 		/* Pass message up to LNet
