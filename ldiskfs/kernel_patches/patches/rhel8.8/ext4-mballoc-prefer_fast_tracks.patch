@@ -1,0 +1,191 @@
+From 682289d85b1d5abf5479698ec49bdf7153d495ee Mon Sep 17 00:00:00 2001
+From: Shaun Tancheff <shaun.tancheff@hpe.com>
+Date: Thu, 22 May 2025 11:08:48 +0700
+Subject: [PATCH] rhel8.7/ext4-mballoc-prefer_fast_tracks.patch
+
+---
+ fs/ext4/ext4.h    |  4 ++++
+ fs/ext4/mballoc.c | 26 +++++++++++++++++++++++++-
+ fs/ext4/mballoc.h |  5 +++++
+ fs/ext4/sysfs.c   | 41 +++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 75 insertions(+), 1 deletion(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 78dd0512..b94b0ac9 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
+@@ -1521,6 +1521,10 @@ struct ext4_sb_info {
+ 	/* reset mb_last_group on block range freeing */
+        	unsigned int s_mb_reset_last_group;
+ 
++	/* keep low tracks allocated */
++	unsigned int s_mb_klta_rate;
++	unsigned int s_mb_klta_start;
++
+ 	/* stats for buddy allocator */
+ 	atomic_t s_bal_reqs;	/* number of reqs with len > 1 */
+ 	atomic_t s_bal_success;	/* we found long enough chunks */
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 52144795..a9abddda 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
+@@ -2642,7 +2642,7 @@ void ext4_mb_prefetch_fini(struct super_block *sb, ext4_group_t group,
+ static noinline_for_stack int
+ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
+ {
+-	ext4_group_t prefetch_grp = 0, ngroups, group, i;
++	ext4_group_t prefetch_grp = 0, ngroups, group, i, group_limit = 0;
+ 	int cr = -1, new_cr;
+ 	int err = 0, first_err = 0;
+ 	unsigned int nr = 0, prefetch_ios = 0;
+@@ -2717,6 +2717,25 @@ ext4_mb_regular_allocator(struct ext4_allocation_context *ac)
+ 		atomic64_inc(&sbi->s_bal_cX_skipped[0]);
+ 	}
+ 
++	if (!cr && (ac->ac_flags & EXT4_MB_STREAM_ALLOC)) {
++		unsigned int rate = sbi->s_mb_klta_rate;
++		__u64 val;
++
++		if (rate != 0) {
++			val = ext4_blocks_count(sbi->s_es) - avail_blocks;
++			val = val * 100 / sbi->s_blocks_per_group / rate + 1;
++			if (val < sbi->s_groups_count) {
++				group_limit = val;
++				if (group_limit <= sbi->s_mb_klta_start)
++					group_limit = sbi->s_mb_klta_start;
++				if (ac->ac_g_ex.fe_group > group_limit) {
++					ac->ac_g_ex.fe_group = 0;
++					ac->ac_g_ex.fe_start = 0;
++				}
++			}
++		}
++	}
++
+ 	/*
+ 	 * cr == 0 try to get exact allocation,
+ 	 * cr == 3  try to get anything
+@@ -3531,6 +3550,11 @@ int ext4_mb_init(struct super_block *sb)
+ 	 */
+ 	sbi->s_mb_group_prealloc = max(MB_DEFAULT_GROUP_PREALLOC >>
+ 				       sbi->s_cluster_bits, 32);
++	sbi->s_mb_klta_start = sbi->s_groups_count / 10;
++	if (blk_queue_nonrot(bdev_get_queue(sb->s_bdev)))
++		sbi->s_mb_klta_rate = 0;
++	else
++		sbi->s_mb_klta_rate = MB_KLTA_RATE_DEFAULT;
+ 	/*
+ 	 * If there is a s_stripe > 1, then we set the s_mb_group_prealloc
+ 	 * to the lowest multiple of s_stripe which is bigger than
+diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
+index 6600131d..5b7515c3 100644
+--- a/fs/ext4/mballoc.h
++++ b/fs/ext4/mballoc.h
+@@ -99,6 +99,11 @@
+  */
+ #define MB_NUM_ORDERS(sb)		((sb)->s_blocksize_bits + 2)
+ 
++/*
++ * Keep low tracks allocated (KLTA)
++ */
++#define MB_KLTA_RATE_DEFAULT		25
++
+ struct ext4_free_data {
+ 	/* this links the free block information from sb_info */
+ 	struct list_head		efd_list;
+diff --git a/fs/ext4/sysfs.c b/fs/ext4/sysfs.c
+index 2b924a4b..d3984c24 100644
+--- a/fs/ext4/sysfs.c
++++ b/fs/ext4/sysfs.c
+@@ -23,6 +23,8 @@ typedef enum {
+ 	attr_mb_c1_threshold,
+ 	attr_mb_c2_threshold,
+ 	attr_mb_c3_threshold,
++	attr_mb_klta_rate,
++	attr_mb_klta_start,
+ 	attr_session_write_kbytes,
+ 	attr_lifetime_write_kbytes,
+ 	attr_reserved_clusters,
+@@ -154,6 +156,7 @@ int save_threshold_percent(struct ext4_sb_info *sbi, const char *buf,
+ 
+ #define THRESHOLD_PERCENT(sbi, blocks)					\
+ 	(((blocks) - 1) * 100 / ext4_blocks_count((sbi)->s_es) + 1)
++
+ static ssize_t mb_threshold_store(struct ext4_sb_info *sbi,
+ 				  const char *buf, size_t count,
+ 				  ext4_fsblk_t *blocks)
+@@ -163,6 +166,32 @@ static ssize_t mb_threshold_store(struct ext4_sb_info *sbi,
+ 	return ret ?: count;
+ }
+ 
++static ssize_t mb_klta_rate_store(struct ext4_sb_info *sbi,
++				  const char *buf, size_t count)
++{
++	unsigned long long val;
++	int ret;
++
++	ret = kstrtoull(buf, 0, &val);
++	if (ret || val > 100)
++       		return -EINVAL;
++	sbi->s_mb_klta_rate = (unsigned int)val;
++	return count;
++}
++
++static ssize_t mb_klta_start_store(struct ext4_sb_info *sbi,
++				   const char *buf, size_t count)
++{
++	unsigned long long val;
++	int ret;
++
++	ret = kstrtoull(buf, 0, &val);
++	if (ret || val > sbi->s_groups_count)
++		return -EINVAL;
++	sbi->s_mb_klta_start = (ext4_group_t)val;
++	return count;
++}
++
+ #define EXT4_ATTR(_name,_mode,_id)					\
+ static struct ext4_attr ext4_attr_##_name = {				\
+ 	.attr = {.name = __stringify(_name), .mode = _mode },		\
+@@ -208,6 +237,8 @@ EXT4_ATTR_FUNC(reserved_clusters, 0644);
+ EXT4_ATTR_FUNC(mb_c1_threshold, 0644);
+ EXT4_ATTR_FUNC(mb_c2_threshold, 0644);
+ EXT4_ATTR_FUNC(mb_c3_threshold, 0644);
++EXT4_ATTR_FUNC(mb_klta_rate, 0644);
++EXT4_ATTR_FUNC(mb_klta_start, 0644);
+ 
+ EXT4_ATTR_OFFSET(inode_readahead_blks, 0644, inode_readahead,
+ 		 ext4_sb_info, s_inode_readahead_blks);
+@@ -251,6 +282,8 @@ static struct attribute *ext4_attrs[] = {
+ 	ATTR_LIST(mb_c1_threshold),
+ 	ATTR_LIST(mb_c2_threshold),
+ 	ATTR_LIST(mb_c3_threshold),
++	ATTR_LIST(mb_klta_rate),
++	ATTR_LIST(mb_klta_start),
+ 	ATTR_LIST(inode_readahead_blks),
+ 	ATTR_LIST(inode_goal),
+ 	ATTR_LIST(max_dir_size),
+@@ -348,6 +381,10 @@ static ssize_t ext4_attr_show(struct kobject *kobj,
+ 	case attr_mb_c3_threshold:
+ 		return scnprintf(buf, PAGE_SIZE, "%llu\n",
+ 				 THRESHOLD_PERCENT(sbi, sbi->s_mb_c3_blocks));
++	case attr_mb_klta_rate:
++		return snprintf(buf, PAGE_SIZE, "%u\n", sbi->s_mb_klta_rate);
++	case attr_mb_klta_start:
++		return snprintf(buf, PAGE_SIZE, "%u\n", sbi->s_mb_klta_start);
+ 	case attr_session_write_kbytes:
+ 		return session_write_kbytes_show(sbi, buf);
+ 	case attr_lifetime_write_kbytes:
+@@ -423,6 +460,10 @@ static ssize_t ext4_attr_store(struct kobject *kobj,
+ 		return mb_threshold_store(sbi, buf, len, &sbi->s_mb_c2_blocks);
+ 	case attr_mb_c3_threshold:
+ 		return mb_threshold_store(sbi, buf, len, &sbi->s_mb_c3_blocks);
++	case attr_mb_klta_rate:
++		return mb_klta_rate_store(sbi, buf, len);
++	case attr_mb_klta_start:
++		return mb_klta_start_store(sbi, buf, len);
+ 	}
+ 	return 0;
+ }
+-- 
+2.45.2
+
