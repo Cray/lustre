@@ -33,20 +33,14 @@ base/ext4-projid-xattrs.patch
 rhel8.5/ext4-enc-flag.patch
 rhel8/ext4-ext-merge.patch
 base/ext4-delayed-iput.patch
-rhel8.7/ext4-mballoc-prefer_fast_tracks.patch
 rhel8/ext4-add-periodic-superblock-update.patch
 rhel8.7/ext4-filename-encode.patch
 rhel8/ext4-old_ea_inodes_handling_fix.patch
-rhel8.4/ext4-mballoc-reset-allocator-on-delete.patch
 rhel8.4/ext4-optimize-find_delayed_extent.patch
 rhel8/ext4-encdata.patch
 rhel8/ext4-race-in-ext4-destroy-inode.patch
-rhel8.7/ext4-limit-per-inode-preallocation-list.patch
 rhel8/ext4-mballoc-dense.patch
 rhel8/ext4-limit-per-inode-preallocation-list.patch
-rhel8.4/ext4-mballoc-reset-allocator-on-delete.patch
-rhel8.7/ext4-mballoc-prefer_fast_tracks.patch
-rhel8.4/ext4-mballoc-optimise-cr-loops.patch
 rhel8.8/ext4-add-prefetching-for-block-allocation-bitmaps.patch
 rhel8.8/ext4-add-prefetch-block-bitmap-mount-option.patch
 rhel8.8/ext4-optimize-the-ext4_mb_good_group.patch
@@ -67,3 +61,6 @@ rhel8.8/ext4-refactor-code-related-to-freeing-pa.patch
 rhel8.8/ext4-allow-ext4_get_group_info-to-fail.patch
 rhel8.8/ext4-not-skip-prefetching-BLOCK_UNINIT-groups.patch
 rhel8.8/ext4-ensure-ext4_mb_prefetch_fini-called-for-all-prefetched-bg.patch
+rhel8.4/ext4-mballoc-reset-allocator-on-delete.patch
+rhel8.8/ext4-mballoc-prefer_fast_tracks.patch
+rhel8.8/ext4-mballoc-optimise-cr-loops.patch

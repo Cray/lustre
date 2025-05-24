@@ -62,10 +62,17 @@ Reviewed-by: Andreas Dilger <adilger@dilger.ca>
 Link: https://lore.kernel.org/r/20210401172129.189766-6-harshadshirwadkar@gmail.com
 Signed-off-by: Theodore Ts'o <tytso@mit.edu>
 ---
-Index: linux-stage/fs/ext4/ext4.h
-===================================================================
---- linux-stage.orig/fs/ext4/ext4.h
-+++ linux-stage/fs/ext4/ext4.h
+ fs/ext4/ext4.h    |  19 +++
+ fs/ext4/mballoc.c | 399 ++++++++++++++++++++++++++++++++++++++++++++--
+ fs/ext4/mballoc.h |  17 +-
+ fs/ext4/super.c   |  36 ++++-
+ fs/ext4/sysfs.c   |   2 +
+ 5 files changed, 455 insertions(+), 18 deletions(-)
+
+diff --git a/fs/ext4/ext4.h b/fs/ext4/ext4.h
+index 5e327c83..006a9351 100644
+--- a/fs/ext4/ext4.h
++++ b/fs/ext4/ext4.h
 @@ -151,6 +151,13 @@ enum SHIFT_DIRECTION {
  #define EXT4_MB_USE_RESERVED		0x2000
  /* Do strict check for free blocks while retrying block allocation */
@@ -80,7 +87,7 @@ Index: linux-stage/fs/ext4/ext4.h
  #define EXT4_MB_VERY_DENSE		0x80000
  
  struct ext4_allocation_request {
-@@ -1199,6 +1206,8 @@ struct ext4_inode_info {
+@@ -1197,6 +1204,8 @@ struct ext4_inode_info {
  #define EXT4_MOUNT2_DAX_NEVER		0x00000020 /* Do not allow Direct Access */
  #define EXT4_MOUNT2_DAX_INODE		0x00000040 /* For printing options only */
  
@@ -89,7 +96,7 @@ Index: linux-stage/fs/ext4/ext4.h
  
  #define clear_opt(sb, opt)		EXT4_SB(sb)->s_mount_opt &= \
  						~EXT4_MOUNT_##opt
-@@ -1488,9 +1497,14 @@ struct ext4_sb_info {
+@@ -1483,9 +1492,14 @@ struct ext4_sb_info {
  	unsigned int s_mb_free_pending;
  	struct list_head s_freed_data_list;	/* List of blocks to be freed
  						   after commit completed */
@@ -104,7 +111,7 @@ Index: linux-stage/fs/ext4/ext4.h
  	unsigned long s_mb_small_req;
  	unsigned long s_mb_large_req;
  	unsigned int s_mb_max_to_scan;
-@@ -1520,6 +1534,8 @@ struct ext4_sb_info {
+@@ -1515,6 +1529,8 @@ struct ext4_sb_info {
  	atomic_t s_bal_goals;	/* goal hits */
  	atomic_t s_bal_breaks;	/* too long searches */
  	atomic_t s_bal_2orders;	/* 2^order hits */
@@ -113,8 +120,8 @@ Index: linux-stage/fs/ext4/ext4.h
  	atomic64_t s_bal_cX_groups_considered[4];
  	atomic64_t s_bal_cX_hits[4];
  	atomic64_t s_bal_cX_failed[4];          /* cX loop didn't find blocks */
-@@ -3206,12 +3222,15 @@ struct ext4_group_info {
- 	ext4_grpblk_t	bb_freed_since_trim; /* blocks freed since last trim */
+@@ -3197,12 +3213,15 @@ struct ext4_group_info {
+ 	ext4_grpblk_t	bb_free;	/* total free blocks */
  	ext4_grpblk_t	bb_fragments;	/* nr of freespace fragments */
  	ext4_grpblk_t	bb_largest_free_order;/* order of largest frag in BG */
 +	ext4_group_t    bb_group;	/* Group number */
@@ -129,10 +136,10 @@ Index: linux-stage/fs/ext4/ext4.h
  	ext4_grpblk_t	bb_counters[];	/* Nr of free power-of-two-block
  					 * regions, index is order.
  					 * bb_counters[3] = 5 means
-Index: linux-stage/fs/ext4/mballoc.c
-===================================================================
---- linux-stage.orig/fs/ext4/mballoc.c
-+++ linux-stage/fs/ext4/mballoc.c
+diff --git a/fs/ext4/mballoc.c b/fs/ext4/mballoc.c
+index 67c84cc2..8600feda 100644
+--- a/fs/ext4/mballoc.c
++++ b/fs/ext4/mballoc.c
 @@ -127,11 +127,50 @@
   * the smallest multiple of the stripe value (sbi->s_stripe) which is
   * greater than the default mb_group_prealloc.
@@ -220,7 +227,7 @@ Index: linux-stage/fs/ext4/mballoc.c
   */
  static struct kmem_cache *ext4_pspace_cachep;
  static struct kmem_cache *ext4_ac_cachep;
-@@ -351,6 +405,8 @@ static void ext4_mb_generate_from_freeli
+@@ -351,6 +405,8 @@ static void ext4_mb_generate_from_freelist(struct super_block *sb, void *bitmap,
  						ext4_group_t group);
  static void ext4_mb_new_preallocation(struct ext4_allocation_context *ac);
  
@@ -229,7 +236,7 @@ Index: linux-stage/fs/ext4/mballoc.c
  /*
   * The algorithm using this percpu seq counter goes below:
   * 1. We sample the percpu discard_pa_seq counter before trying for block
-@@ -747,6 +803,269 @@ static void ext4_mb_mark_free_simple(str
+@@ -747,6 +803,269 @@ static void ext4_mb_mark_free_simple(struct super_block *sb,
  	}
  }
  
@@ -499,7 +506,7 @@ Index: linux-stage/fs/ext4/mballoc.c
  /*
   * Cache the order of the largest free extent we have available in this block
   * group.
-@@ -754,18 +1073,33 @@ static void ext4_mb_mark_free_simple(str
+@@ -754,18 +1073,33 @@ static void ext4_mb_mark_free_simple(struct super_block *sb,
  static void
  mb_set_largest_free_order(struct super_block *sb, struct ext4_group_info *grp)
  {
@@ -536,7 +543,7 @@ Index: linux-stage/fs/ext4/mballoc.c
  }
  
  static noinline_for_stack
-@@ -826,6 +1160,7 @@ int ext4_mb_generate_buddy(struct super_
+@@ -826,6 +1160,7 @@ int ext4_mb_generate_buddy(struct super_block *sb,
  	period = get_cycles() - period;
  	atomic_inc(&sbi->s_mb_buddies_generated);
  	atomic64_add(period, &sbi->s_mb_generation_time);
@@ -544,7 +551,7 @@ Index: linux-stage/fs/ext4/mballoc.c
  
  	return 0;
  }
-@@ -1556,6 +1891,7 @@ static void mb_free_blocks(struct inode
+@@ -1556,6 +1891,7 @@ static void mb_free_blocks(struct inode *inode, struct ext4_buddy *e4b,
  
  done:
  	mb_set_largest_free_order(sb, e4b->bd_info);
@@ -552,7 +559,7 @@ Index: linux-stage/fs/ext4/mballoc.c
  	mb_check_buddy(e4b);
  }
  
-@@ -1693,6 +2029,7 @@ static int mb_mark_used(struct ext4_budd
+@@ -1693,6 +2029,7 @@ static int mb_mark_used(struct ext4_buddy *e4b, struct ext4_free_extent *ex)
  	}
  	mb_set_largest_free_order(e4b->bd_sb, e4b->bd_info);
  
@@ -590,7 +597,7 @@ Index: linux-stage/fs/ext4/mballoc.c
  
  			/*
  			 * Batch reads of the block allocation bitmaps
-@@ -2651,6 +2992,8 @@ int ext4_seq_mb_stats_show(struct seq_fi
+@@ -2651,6 +2992,8 @@ int ext4_seq_mb_stats_show(struct seq_file *seq, void *offset)
  		   atomic64_read(&sbi->s_bal_cX_groups_considered[0]));
  	seq_printf(seq, "\t\tuseless_loops: %llu\n",
  		   atomic64_read(&sbi->s_bal_cX_failed[0]));
@@ -599,7 +606,7 @@ Index: linux-stage/fs/ext4/mballoc.c
  
  	seq_puts(seq, "\tcr1_stats:\n");
  	seq_printf(seq, "\t\thits: %llu\n", atomic64_read(&sbi->s_bal_cX_hits[1]));
-@@ -2658,6 +3001,8 @@ int ext4_seq_mb_stats_show(struct seq_fi
+@@ -2658,6 +3001,8 @@ int ext4_seq_mb_stats_show(struct seq_file *seq, void *offset)
  		   atomic64_read(&sbi->s_bal_cX_groups_considered[1]));
  	seq_printf(seq, "\t\tuseless_loops: %llu\n",
  		   atomic64_read(&sbi->s_bal_cX_failed[1]));
@@ -608,19 +615,18 @@ Index: linux-stage/fs/ext4/mballoc.c
  
  	seq_puts(seq, "\tcr2_stats:\n");
  	seq_printf(seq, "\t\thits: %llu\n", atomic64_read(&sbi->s_bal_cX_hits[2]));
-@@ -2945,8 +3290,11 @@ int ext4_mb_add_groupinfo(struct super_b
+@@ -2945,7 +3290,10 @@ int ext4_mb_add_groupinfo(struct super_block *sb, ext4_group_t group,
  	INIT_LIST_HEAD(&meta_group_info[i]->bb_prealloc_list);
  	init_rwsem(&meta_group_info[i]->alloc_sem);
  	meta_group_info[i]->bb_free_root = RB_ROOT;
 +	INIT_LIST_HEAD(&meta_group_info[i]->bb_largest_free_order_node);
 +	RB_CLEAR_NODE(&meta_group_info[i]->bb_avg_fragment_size_rb);
  	meta_group_info[i]->bb_largest_free_order = -1;  /* uninit */
- 	meta_group_info[i]->bb_freed_since_trim = 0;
 +	meta_group_info[i]->bb_group = group;
  
  	mb_group_bb_bitmap_alloc(sb, meta_group_info[i], group);
  	return 0;
-@@ -3137,6 +3485,27 @@ int ext4_mb_init(struct super_block *sb)
+@@ -3136,6 +3484,27 @@ int ext4_mb_init(struct super_block *sb)
  		i++;
  	} while (i < MB_NUM_ORDERS(sb));
  
@@ -648,7 +654,7 @@ Index: linux-stage/fs/ext4/mballoc.c
  	spin_lock_init(&sbi->s_md_lock);
  	sbi->s_mb_free_pending = 0;
  	INIT_LIST_HEAD(&sbi->s_freed_data_list);
-@@ -3236,6 +3605,10 @@ int ext4_mb_init(struct super_block *sb)
+@@ -3233,6 +3602,10 @@ int ext4_mb_init(struct super_block *sb)
  		spin_lock_init(&lg->lg_prealloc_lock);
  	}
  
@@ -659,7 +665,7 @@ Index: linux-stage/fs/ext4/mballoc.c
  	/* init file for buddy data */
  	ret = ext4_mb_init_backend(sb);
  	if (ret != 0)
-@@ -3247,6 +3620,8 @@ out_free_locality_groups:
+@@ -3244,6 +3617,8 @@ out_free_locality_groups:
  	free_percpu(sbi->s_locality_groups);
  	sbi->s_locality_groups = NULL;
  out:
@@ -668,7 +674,7 @@ Index: linux-stage/fs/ext4/mballoc.c
  	kfree(sbi->s_mb_prealloc_table);
  	kfree(sbi->s_mb_offsets);
  	sbi->s_mb_offsets = NULL;
-@@ -3304,6 +3679,8 @@ int ext4_mb_release(struct super_block *
+@@ -3301,6 +3676,8 @@ int ext4_mb_release(struct super_block *sb)
  		kvfree(group_info);
  		rcu_read_unlock();
  	}
@@ -677,14 +683,15 @@ Index: linux-stage/fs/ext4/mballoc.c
  	kfree(sbi->s_mb_prealloc_table);
  	kfree(sbi->s_mb_offsets);
  	kfree(sbi->s_mb_maxs);
-Index: linux-stage/fs/ext4/mballoc.h
-===================================================================
---- linux-stage.orig/fs/ext4/mballoc.h
-+++ linux-stage/fs/ext4/mballoc.h
-@@ -83,6 +83,18 @@
+diff --git a/fs/ext4/mballoc.h b/fs/ext4/mballoc.h
+index 8018f125..ee54a240 100644
+--- a/fs/ext4/mballoc.h
++++ b/fs/ext4/mballoc.h
+@@ -82,6 +82,18 @@
+  */
  #define MB_DEFAULT_MAX_INODE_PREALLOC	512
  
- /*
++/*
 + * Number of groups to search linearly before performing group scanning
 + * optimization.
 + */
@@ -696,10 +703,9 @@ Index: linux-stage/fs/ext4/mballoc.h
 + */
 +#define MB_DEFAULT_LINEAR_SCAN_THRESHOLD	16
 +
-+/*
+ /*
   * Number of valid buddy orders
   */
- #define MB_NUM_ORDERS(sb)		((sb)->s_blocksize_bits + 2)
 @@ -173,11 +185,14 @@ struct ext4_allocation_context {
  	/* copy of the best found extent taken before preallocation efforts */
  	struct ext4_free_extent ac_f_ex;
@@ -716,10 +722,10 @@ Index: linux-stage/fs/ext4/mballoc.h
  	__u8 ac_status;
  	__u8 ac_criteria;
  	__u8 ac_2order;		/* if request is to allocate 2^N blocks and
-Index: linux-stage/fs/ext4/super.c
-===================================================================
---- linux-stage.orig/fs/ext4/super.c
-+++ linux-stage/fs/ext4/super.c
+diff --git a/fs/ext4/super.c b/fs/ext4/super.c
+index 8239be1d..ea5aac54 100644
+--- a/fs/ext4/super.c
++++ b/fs/ext4/super.c
 @@ -1623,7 +1623,7 @@ enum {
  	Opt_mb_c1_threshold, Opt_mb_c2_threshold, Opt_mb_c3_threshold,
  	Opt_discard, Opt_nodiscard, Opt_init_itable, Opt_noinit_itable,
@@ -737,7 +743,7 @@ Index: linux-stage/fs/ext4/super.c
  	{Opt_removed, "check=none"},	/* mount option from ext2/3 */
  	{Opt_removed, "nocheck"},	/* mount option from ext2/3 */
  	{Opt_removed, "reservation"},	/* mount option from ext2/3 */
-@@ -1750,6 +1751,8 @@ static ext4_fsblk_t get_sb_block(void **
+@@ -1750,6 +1751,8 @@ static ext4_fsblk_t get_sb_block(void **data)
  }
  
  #define DEFAULT_JOURNAL_IOPRIO (IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, 3))
@@ -762,7 +768,7 @@ Index: linux-stage/fs/ext4/super.c
  {
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
  	const struct mount_opts *m;
-@@ -2242,6 +2247,14 @@ static int handle_mount_opt(struct super
+@@ -2242,6 +2247,14 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
  		sbi->s_mount_opt |= m->mount_opt;
  	} else if (token == Opt_data_err_ignore) {
  		sbi->s_mount_opt &= ~m->mount_opt;
@@ -777,7 +783,7 @@ Index: linux-stage/fs/ext4/super.c
  	} else {
  		if (!args->from)
  			arg = 1;
-@@ -2264,6 +2277,7 @@ static int handle_mount_opt(struct super
+@@ -2264,6 +2277,7 @@ static int handle_mount_opt(struct super_block *sb, char *opt, int token,
  static int parse_options(char *options, struct super_block *sb,
  			 unsigned long *journal_devnum,
  			 unsigned int *journal_ioprio,
@@ -785,7 +791,7 @@ Index: linux-stage/fs/ext4/super.c
  			 int is_remount)
  {
  	struct ext4_sb_info *sbi = EXT4_SB(sb);
-@@ -2284,7 +2298,8 @@ static int parse_options(char *options,
+@@ -2284,7 +2298,8 @@ static int parse_options(char *options, struct super_block *sb,
  		args[0].to = args[0].from = NULL;
  		token = match_token(p, tokens, args);
  		if (handle_mount_opt(sb, p, token, args, journal_devnum,
@@ -795,7 +801,7 @@ Index: linux-stage/fs/ext4/super.c
  			return 0;
  	}
  #ifdef CONFIG_QUOTA
-@@ -3859,6 +3874,7 @@ static int ext4_fill_super(struct super_
+@@ -3859,6 +3874,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	__u64 blocks_count;
  	int err = 0;
  	unsigned int journal_ioprio = DEFAULT_JOURNAL_IOPRIO;
@@ -803,7 +809,7 @@ Index: linux-stage/fs/ext4/super.c
  	ext4_group_t first_not_zeroed;
  
  	if ((data && !orig_data) || !sbi)
-@@ -4092,7 +4108,7 @@ static int ext4_fill_super(struct super_
+@@ -4092,7 +4108,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  		if (!s_mount_opts)
  			goto failed_mount;
  		if (!parse_options(s_mount_opts, sb, &journal_devnum,
@@ -812,7 +818,7 @@ Index: linux-stage/fs/ext4/super.c
  			ext4_msg(sb, KERN_WARNING,
  				 "failed to parse options in superblock: %s",
  				 s_mount_opts);
-@@ -4101,7 +4117,7 @@ static int ext4_fill_super(struct super_
+@@ -4101,7 +4117,7 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
  	}
  	sbi->s_def_mount_opt = sbi->s_mount_opt;
  	if (!parse_options((char *) data, sb, &journal_devnum,
@@ -836,7 +842,7 @@ Index: linux-stage/fs/ext4/super.c
  	err = ext4_mb_init(sb);
  	if (err) {
  		ext4_msg(sb, KERN_ERR, "failed to initialize mballoc (%d)",
-@@ -5593,7 +5617,7 @@ static int ext4_remount(struct super_blo
+@@ -5593,7 +5617,7 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
  	vfs_flags = SB_LAZYTIME | SB_I_VERSION;
  	sb->s_flags = (sb->s_flags & ~vfs_flags) | (*flags & vfs_flags);
  
@@ -845,23 +851,26 @@ Index: linux-stage/fs/ext4/super.c
  		err = -EINVAL;
  		goto restore_opts;
  	}
-Index: linux-stage/fs/ext4/sysfs.c
-===================================================================
---- linux-stage.orig/fs/ext4/sysfs.c
-+++ linux-stage/fs/ext4/sysfs.c
-@@ -223,6 +223,7 @@ EXT4_RW_ATTR_SBI_UI(mb_small_req, s_mb_s
+diff --git a/fs/ext4/sysfs.c b/fs/ext4/sysfs.c
+index a4abdebb..16a22b98 100644
+--- a/fs/ext4/sysfs.c
++++ b/fs/ext4/sysfs.c
+@@ -223,6 +223,7 @@ EXT4_RW_ATTR_SBI_UI(mb_small_req, s_mb_small_req);
  EXT4_RW_ATTR_SBI_UI(mb_large_req, s_mb_large_req);
  EXT4_RW_ATTR_SBI_UI(mb_group_prealloc, s_mb_group_prealloc);
  EXT4_RW_ATTR_SBI_UI(mb_max_inode_prealloc, s_mb_max_inode_prealloc);
 +EXT4_RW_ATTR_SBI_UI(mb_max_linear_groups, s_mb_max_linear_groups);
  EXT4_RW_ATTR_SBI_UI(extent_max_zeroout_kb, s_extent_max_zeroout_kb);
- EXT4_RW_ATTR_SBI_UI(bg_trimmed_threshold, s_bg_trimmed_threshold);
  EXT4_ATTR(trigger_fs_error, 0200, trigger_test_error);
-@@ -263,6 +264,7 @@ static struct attribute *ext4_attrs[] =
+ EXT4_RW_ATTR_SBI_UI(err_ratelimit_interval_ms, s_err_ratelimit_state.interval);
+@@ -262,6 +263,7 @@ static struct attribute *ext4_attrs[] = {
  	ATTR_LIST(mb_large_req),
  	ATTR_LIST(mb_group_prealloc),
  	ATTR_LIST(mb_max_inode_prealloc),
 +	ATTR_LIST(mb_max_linear_groups),
  	ATTR_LIST(max_writeback_mb_bump),
  	ATTR_LIST(extent_max_zeroout_kb),
- 	ATTR_LIST(bg_trimmed_threshold),
+ 	ATTR_LIST(trigger_fs_error),
+-- 
+2.45.2
+
