@@ -12245,7 +12245,7 @@ function createmany() {
 
 	if (( count > 100 )); then
 		debugsave
-		do_nodes $(comma_list $(all_nodes)) $LCTL set_param -n debug=ha
+		do_nodes $(comma_list $(all_nodes)) $LCTL set_param -n debug=0
 	fi
 	$LUSTRE/tests/createmany $*
 	rc=$?
