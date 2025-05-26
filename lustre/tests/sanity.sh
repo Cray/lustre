@@ -6056,6 +6056,33 @@ test_44f() {
 }
 run_test 44f "Check fiemap for sparse files"
 
+test_44g() {
+	mount_client $MOUNT2 || error "mount_client on $MOUNT2 failed"
+	stack_trap "umount $MOUNT2" EXIT
+
+	$LFS setstripe -c 2 -S 2g $MOUNT/$tfile ||
+	    error "lfs setstripe failed"
+
+	dd if=/dev/urandom of=$TMP/$tfile bs=4k count=1
+
+	# write random data to 1048570-th block
+	dd if=$TMP/$tfile of=$MOUNT/$tfile seek=1048570 bs=4k count=1
+
+	# grow file over current last stripe set
+	dd if=/dev/zero of=$MOUNT/$tfile conv=notrunc seek=1048575 bs=4k \
+	   count=2
+
+	# overwrite partially 1048570-th block
+	dd if=$TMP/$tfile of=$MOUNT2/$tfile bs=2k conv=notrunc \
+	   seek=$((1048570 * 2)) count=1
+
+	# read 1048570-th block
+	dd if=$MOUNT/$tfile of=$TMP/$tfile.2 skip=1048570 bs=4k count=1
+
+	cmp $TMP/$tfile $TMP/$tfile.2 || error "files differ"
+}
+run_test 44g "test overflow in lov_stripe_size"
+
 dirty_osc_total() {
 	tot=0
 	for d in `lctl get_param -n ${OSC}.*.cur_dirty_bytes`; do
