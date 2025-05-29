@@ -96,6 +96,14 @@ if [ "$ost1_FSTYPE" = "zfs" ]; then
 	ALWAYS_EXCEPT+="                130b 130c 130d 130e 130f 130g"
 fi
 
+if [[ "$CLIENT_OS_ID_LIKE" =~ "rhel" ]]; then
+	if (( $CLIENT_OS_VERSION_CODE >= $(version_code 9.3.0) )); then
+		# disable test_906 temporarily until rhel9.3 solves the
+		# failure on fio io_uring I/O engine.
+		always_except LU-17289 906
+	fi
+fi
+
 proc_regexp="/{proc,sys}/{fs,sys,kernel/debug}/{lustre,lnet}/"
 
 # Get the SLES distro version
