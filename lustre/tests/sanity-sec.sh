@@ -15,9 +15,10 @@ init_test_env $@
 init_logging
 
 ALWAYS_EXCEPT="$SANITY_SEC_EXCEPT "
-# bug number for skipped test:
-ALWAYS_EXCEPT+=" "
-# UPDATE THE COMMENT ABOVE WITH BUG NUMBERS WHEN CHANGING ALWAYS_EXCEPT!
+if [[ "$MDS1_OS_ID_LIKE" =~ "rhel" ]] &&
+   (( $MDS1_OS_VERSION_CODE >= $(version_code 9.3) )); then
+	always_except LU-16915 51
+fi
 
 [ "$SLOW" = "no" ] && EXCEPT_SLOW="26"
 
