@@ -1,0 +1,165 @@
+Index: linux-stage/fs/ext4/ext4.h
+===================================================================
+--- linux-stage.orig/fs/ext4/ext4.h
++++ linux-stage/fs/ext4/ext4.h
+@@ -1675,6 +1675,13 @@ struct ext4_sb_info {
+ 	atomic_t s_mb_discarded;
+ 	atomic_t s_lock_busy;
+ 
++	/* per cN loop min allocation failure size */
++	long s_mb_cX_failed_size[3];
++	/* and their TTL */
++	long s_mb_cX_failed_ttl[3];
++	/* initial TTL value, 0 to disable the feature */
++	long s_mb_cX_ttl0;
++
+ 	/* locality groups */
+ 	struct ext4_locality_group __percpu *s_locality_groups;
+ 
+Index: linux-stage/fs/ext4/mballoc.c
+===================================================================
+--- linux-stage.orig/fs/ext4/mballoc.c
++++ linux-stage/fs/ext4/mballoc.c
+@@ -2722,6 +2722,16 @@ ext4_mb_regular_allocator(struct ext4_al
+ repeat:
+ 	for (; cr < 4 && ac->ac_status == AC_STATUS_CONTINUE; cr++) {
+ 		ac->ac_criteria = cr;
++
++		if (cr < 3 &&
++		    sbi->s_mb_cX_failed_size[cr] != 0 &&
++		    ac->ac_g_ex.fe_len >= sbi->s_mb_cX_failed_size[cr]) {
++			if (--(sbi->s_mb_cX_failed_ttl[cr]) > 0)
++				continue;
++			sbi->s_mb_cX_failed_ttl[cr] = 0;
++			sbi->s_mb_cX_failed_size[cr] = 0;
++		}
++
+ 		/*
+ 		 * searching for the right group start
+ 		 * from the goal value specified
+@@ -2736,8 +2746,8 @@ repeat:
+ 
+ 			cond_resched();
+ 			if (new_cr != cr) {
+-				cr = new_cr;
+-				goto repeat;
++				i = ngroups;
++				break;
+ 			}
+ 
+ 			/*
+@@ -2800,9 +2810,18 @@ repeat:
+ 			if (ac->ac_status != AC_STATUS_CONTINUE)
+ 				break;
+ 		}
+-		/* Processed all groups and haven't found blocks */
+-		if (sbi->s_mb_stats && i == ngroups)
+-			atomic64_inc(&sbi->s_bal_cX_failed[cr]);
++		if (i == ngroups) {
++			if (sbi->s_mb_stats)
++				atomic64_inc(&sbi->s_bal_cX_failed[cr]);
++			if (cr < 3 &&
++			    (sbi->s_mb_cX_failed_size[cr] == 0 ||
++			    sbi->s_mb_cX_failed_size[cr] > ac->ac_g_ex.fe_len)) {
++				sbi->s_mb_cX_failed_size[cr] = ac->ac_g_ex.fe_len;
++				sbi->s_mb_cX_failed_ttl[cr] = sbi->s_mb_cX_ttl0;
++			}
++			if (cr != new_cr)
++				cr = new_cr - 1;
++		}
+ 	}
+ 
+ 	if (ac->ac_b_ex.fe_len > 0 && ac->ac_status != AC_STATUS_FOUND &&
+@@ -3647,6 +3666,7 @@ int ext4_mb_init(struct super_block *sb)
+ 	sbi->s_mb_min_to_scan = MB_DEFAULT_MIN_TO_SCAN;
+ 	sbi->s_mb_stats = MB_DEFAULT_STATS;
+ 	sbi->s_mb_order2_reqs = MB_DEFAULT_ORDER2_REQS;
++	sbi->s_mb_cX_ttl0 = EXT4_MB_FAIL_SIZE_TTL;
+ 	/*
+ 	 * The default group preallocation is 512, which for 4k block
+ 	 * sizes translates to 2 megabytes.  However for bigalloc file
+Index: linux-stage/fs/ext4/mballoc.h
+===================================================================
+--- linux-stage.orig/fs/ext4/mballoc.h
++++ linux-stage/fs/ext4/mballoc.h
+@@ -68,6 +68,9 @@
+  */
+ #define MB_DEFAULT_ORDER2_REQS		8
+ 
++/* TTL for failed allocation request size */
++#define EXT4_MB_FAIL_SIZE_TTL           100
++
+ /*
+  * default group prealloc size 512 blocks
+  */
+Index: linux-stage/fs/ext4/sysfs.c
+===================================================================
+--- linux-stage.orig/fs/ext4/sysfs.c
++++ linux-stage/fs/ext4/sysfs.c
+@@ -37,6 +37,7 @@ typedef enum {
+ 	attr_pointer_string,
+ 	attr_pointer_atomic,
+ 	attr_journal_task,
++	attr_mb_cX_ttl0,
+ } attr_id_t;
+ 
+ typedef enum {
+@@ -135,6 +136,24 @@ static ssize_t journal_task_show(struct
+ 			task_pid_vnr(sbi->s_journal->j_task));
+ }
+ 
++static ssize_t mb_cX_ttl0_store(struct ext4_sb_info *sbi,
++				const char *buf, size_t count)
++{
++	unsigned long val;
++	int ret;
++	int cr;
++
++	ret = kstrtol(buf, 0, &val);
++	if (ret || val < 0)
++		return -EINVAL;
++
++	sbi->s_mb_cX_ttl0 = val;
++	for (cr = 0; cr < 3; cr++)
++		sbi->s_mb_cX_failed_size[cr] = 0;
++
++	return count;
++}
++
+ #define EXT4_ATTR(_name,_mode,_id)					\
+ static struct ext4_attr ext4_attr_##_name = {				\
+ 	.attr = {.name = __stringify(_name), .mode = _mode },		\
+@@ -250,6 +269,7 @@ EXT4_ATTR(journal_task, 0444, journal_ta
+ EXT4_RW_ATTR_SBI_UI(mb_prefetch, s_mb_prefetch);
+ EXT4_RW_ATTR_SBI_UI(mb_prefetch_limit, s_mb_prefetch_limit);
+ EXT4_RW_ATTR_SBI_UL(last_trim_minblks, s_last_trim_minblks);
++EXT4_ATTR_FUNC(mb_cX_ttl0, 0644);
+ 
+ static unsigned int old_bump_val = 128;
+ EXT4_ATTR_PTR(max_writeback_mb_bump, 0444, pointer_ui, &old_bump_val);
+@@ -305,6 +325,7 @@ static struct attribute *ext4_attrs[] =
+ 	ATTR_LIST(mb_prefetch),
+ 	ATTR_LIST(mb_prefetch_limit),
+ 	ATTR_LIST(last_trim_minblks),
++	ATTR_LIST(mb_cX_ttl0),
+ 	NULL,
+ };
+ ATTRIBUTE_GROUPS(ext4);
+@@ -448,6 +469,8 @@ static ssize_t ext4_attr_show(struct kob
+ 		return print_tstamp(buf, sbi->s_es, s_last_error_time);
+ 	case attr_journal_task:
+ 		return journal_task_show(sbi, buf);
++	case attr_mb_cX_ttl0:
++		return sysfs_emit(buf, "%ld\n", sbi->s_mb_cX_ttl0);
+ 	}
+ 
+ 	return 0;
+@@ -492,6 +515,8 @@ static ssize_t ext4_attr_store(struct ko
+ 		return inode_readahead_blks_store(sbi, buf, len);
+ 	case attr_trigger_test_error:
+ 		return trigger_test_error(sbi, buf, len);
++	case attr_mb_cX_ttl0:
++		return mb_cX_ttl0_store(sbi, buf, len);
+ 	}
+ 	return 0;
+ }
