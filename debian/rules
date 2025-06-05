@@ -412,9 +412,9 @@ binary-$(DEV_PKG): build-stamp
 	dh_builddeb -p $(DEV_PKG)
 
 binary-$(SOURCE_PKG): build-stamp
-	dh_testdir
+	dh_testdir 
 	dh_testroot
-	# Copy everything
+	# Copy everything 
 	dh_installdirs -p $(SOURCE_PKG) usr/src/modules/lustre/debian
 	rsync -av --exclude='debian/$(SOURCE_PKG)/*' \
 	      --link-dest=$(PWD) \
@@ -425,14 +425,14 @@ binary-$(SOURCE_PKG): build-stamp
 	sed -i -e 's/FULLCLEAN=full-clean/FULLCLEAN=/' debian/$(SOURCE_PKG)/usr/src/modules/lustre/debian/rules
 	# clean up dest
 	rm -rf debian/$(SOURCE_PKG)/usr/src/modules/lustre/debian/patched \
-	       debian/$(SOURCE_PKG)/usr/src/modules/lustre/debian/patches/*
+	       debian/$(SOURCE_PKG)/usr/src/modules/lustre/debian/patches/* 
 	$(MAKE) -C debian/$(SOURCE_PKG)/usr/src/modules/lustre -f debian/rules clean
 	# Create the module-source tarball.
 	cd debian/$(SOURCE_PKG)/usr/src && tar --exclude-vcs -jcf lustre-$${SRC_GIT_HASH}.tar.bz2 modules
 	rm -rf debian/$(SOURCE_PKG)/usr/src/modules
 	dh_install -p$(SOURCE_PKG)
 	dh_installchangelogs -p $(SOURCE_PKG) lustre/ChangeLog
-	dh_installdocs -p $(SOURCE_PKG)
+	dh_installdocs -p $(SOURCE_PKG) 
 	dh_link -p $(SOURCE_PKG) /usr/share/modass/packages/default.sh /usr/share/modass/overrides/lustre-source
 	dh_compress -p $(SOURCE_PKG)
 	dh_installdeb -p $(SOURCE_PKG)
