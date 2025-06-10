@@ -54,6 +54,7 @@ BUILD_NUMBER=${BUILD_NUMBER:-3}  #never used
 # ---------------------------------
 RPMBUILD_DIR=$WORKSPACE
 
+KMOD_SIGN_VALUE='%{nil}'
 if [ "$JP_BUILD_MODE" == "full" ]
 then
     #LUSQE-2112, enable module code signing
@@ -61,8 +62,6 @@ then
         . /build/bin/code_signing_tools/signmount
         SIGNOPTS=$(bindMount)
         KMOD_SIGN_VALUE=/signtools/signko\ %{buildroot}/lib/modules
-    else
-        KMOD_SIGN_VALUE='{nil}'
     fi
 fi
 
