@@ -956,6 +956,125 @@ test_26() {
 }
 run_test 26 "Delete peer with primary nid locked"
 
+add_net() {
+	local net="$1"
+	local if="$2"
+
+	do_lnetctl net add --net ${net} --if ${if} ||
+		error "Failed to add net ${net} on if ${if}"
+}
+
+test_50_check_ip2nets() {
+	local expected=( $@ )
+
+	reinit_dlc || return $?
+
+	do_lnetctl import $TMP/sanity-lnet-$testnum.yaml ||
+		error "Failed to import yaml rc=$?"
+
+	local actual=( $($LCTL list_nids | xargs echo) )
+
+	((${#expected[@]} == ${#actual[@]})) ||
+		error "Expected ${#expected[@]} NIDs found ${#actual[@]}"
+
+	local nid idx=0
+
+	cat $TMP/sanity-lnet-$testnum.yaml
+
+	for nid in ${expected[@]}; do
+		echo "$idx: $nid ${actual[idx]}"
+		[[ $nid == ${actual[idx]} ]] ||
+			error "Expected $nid == ${actual[idx]}"
+		((idx++))
+	done
+
+	return 0
+}
+
+test_50() {
+	reinit_dlc || return $?
+
+	add_net "$NETTYPE" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}2" "${INTERFACES[0]}" || return $?
+
+	local nids=( $($LCTL list_nids | xargs echo) )
+
+	local ip=$(ip -o -4 a s ${INTERFACES[0]} | awk '{print $4}' |
+		   sed 's/\/.*//')
+
+	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - net-spec: $NETTYPE
+    interfaces:
+         0: ${INTERFACES[0]}
+    ip-range:
+         0: $ip
+EOF
+
+	test_50_check_ip2nets ${nids[0]} || return $?
+
+	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - net-spec: $NETTYPE
+    interfaces:
+         0: ${INTERFACES[0]}
+         1: $FAKE_IF
+    ip-range:
+         0: $ip
+         1: $FAKE_IP
+EOF
+
+	test_50_check_ip2nets ${nids[0]} || return $?
+
+	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - net-spec: $NETTYPE
+    interfaces:
+         0: ${INTERFACES[0]}
+         1: $FAKE_IF
+    ip-range:
+         0: $ip
+         1: $FAKE_IP
+  - net-spec: ${NETTYPE}2
+    interfaces:
+         0: ${INTERFACES[0]}
+    ip-range:
+         0: $ip
+EOF
+
+	test_50_check_ip2nets ${nids[@]} || return $?
+
+	[[ $NETTYPE == tcp* ]] || return 0
+
+	cleanup_netns || error "Failed to cleanup netns before test execution"
+	cleanup_lnet || error "Failed to unload modules before test execution"
+	setup_fakeif || return $?
+
+	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - net-spec: $NETTYPE
+    interfaces:
+         0: ${INTERFACES[0]}
+         1: $FAKE_IF
+    ip-range:
+         0: $ip
+         1: $FAKE_IP
+  - net-spec: ${NETTYPE}2
+    interfaces:
+         0: ${INTERFACES[0]}
+    ip-range:
+         0: $ip
+EOF
+
+	test_50_check_ip2nets ${nids[0]} $FAKE_IP@${NETTYPE} ${nids[1]} ||
+		return $?
+
+	cleanup_fakeif || return $?
+
+	return 0
+}
+run_test 50 "Check ip2nets yaml config"
+
 test_99a() {
 	reinit_dlc || return $?
 
@@ -1047,14 +1166,6 @@ have_interface() {
 	local if="$1"
 	local ip=$(ip addr show dev $if | awk '/ inet /{print $2}')
 	[[ -n $ip ]]
-}
-
-add_net() {
-	local net="$1"
-	local if="$2"
-
-	do_lnetctl net add --net ${net} --if ${if} ||
-		error "Failed to add net ${net} on if ${if}"
 }
 
 compare_route_add() {
