@@ -671,7 +671,7 @@ void ll_dir_finish_open(struct inode *inode, struct ptlrpc_request *req)
 	npages = DIV_ROUND_UP(npages, PAGE_SIZE);
 
 	for(i = 0; i < npages; i++) {
-		page = page_cache_alloc(inode->i_mapping);
+		page = __page_cache_alloc(mapping_gfp_mask(inode->i_mapping));
 		if (!page)
 			continue;
 
