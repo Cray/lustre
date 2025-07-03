@@ -1685,7 +1685,8 @@ static void server_put_super(struct super_block *sb)
 		GOTO(out, rc);
 	}
 	rc = lu_env_add(&env);
-	LASSERT(rc == 0);
+	if (unlikely(rc))
+		GOTO(out_fini, rc);
 
 	/* Stop the target */
 	if (!test_bit(LMD_FLG_NOSVC, lsi->lsi_lmd->lmd_flags) &&
@@ -1776,6 +1777,7 @@ static void server_put_super(struct super_block *sb)
 	}
 
 	lu_env_remove(&env);
+out_fini:
 	lu_env_fini(&env);
 
 out:

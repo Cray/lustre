@@ -1350,7 +1350,8 @@ static int osp_sync_thread(void *_args)
 		RETURN(rc);
 	}
 	rc = lu_env_add(&env);
-	LASSERT(rc == 0);
+	if (unlikely(rc))
+		GOTO(out_fini, rc);
 
 again:
 	ctxt = llog_get_context(obd, LLOG_MDS_OST_ORIG_CTXT);
@@ -1467,16 +1468,18 @@ out:
 		 atomic_read(&d->opd_sync_rpcs_in_flight),
 		 list_empty(&d->opd_sync_committed_there) ? "" : "!");
 
-	lu_env_remove(&env);
-	lu_env_fini(&env);
-
 	if (xchg(&d->opd_sync_task, NULL) == NULL)
 		/* already being waited for */
 		wait_event_interruptible(d->opd_sync_waitq,
 					 kthread_should_stop());
+	rc = 0;
+	lu_env_remove(&env);
+out_fini:
+	lu_env_fini(&env);
+
 	OBD_FREE_PTR(args);
 
-	RETURN(0);
+	RETURN(rc);
 }
 
 /**

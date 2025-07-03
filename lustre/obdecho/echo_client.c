@@ -2294,7 +2294,9 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 	if (IS_ERR(env))
 		RETURN(PTR_ERR(env));
 
-	lu_env_add(env);
+	rc = lu_env_add(env);
+	if (rc)
+		GOTO(out_put, rc);
 
 #ifdef HAVE_SERVER_SUPPORT
 	if (cmd == OBD_IOC_ECHO_MD || cmd == OBD_IOC_ECHO_ALLOC_SEQ)
@@ -2424,6 +2426,7 @@ echo_client_iocontrol(unsigned int cmd, struct obd_export *exp, int len,
 	EXIT;
 out:
 	lu_env_remove(env);
+out_put:
 	cl_env_put(env, &refcheck);
 
 	return rc;
