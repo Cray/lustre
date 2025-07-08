@@ -34164,6 +34164,22 @@ test_907() {
 }
 run_test 907 "write rpc error during unlink"
 
+test_909() {
+	(( $MDS1_VERSION >= $(version_code 2.16.1) )) ||
+	skip "Need MDS version at least 2.16.1"
+	(( $MDSCOUNT >= 2 )) || skip_env "needs >= 2 MDTs"
+
+	test_mkdir -i 1 $DIR/$tdir || error "mkdir $DIR/$tdir failed"
+	$LFS setstripe -E 1M -L mdt $DIR/$tdir/$tfile ||
+	error "failed to create DoM-only file $DIR/$tdir/$tfile"
+	mdt_index=$($LFS getstripe "$DIR/$tdir/$tfile" | \
+		awk 'found && /lmm_mdt_index:/ { print $2; exit }
+			/lmm_pattern:/ { found = ($2 == "mdt") }')
+	[[ "$mdt_index" == "1" ]] ||
+		error "invalid mdt index $mdt_index != 1"
+}
+run_test 909 "Verify mdt index"
+
 complete_test $SECONDS
 [ -f $EXT2_DEV ] && rm $EXT2_DEV || true
 check_and_cleanup_lustre
