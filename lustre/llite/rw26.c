@@ -290,67 +290,27 @@ static ssize_t ll_get_user_pages(int rw, struct iov_iter *iter,
 #endif
 }
 
-/* iov_iter_alignment() is introduced in 3.16 similar to HAVE_DIO_ITER */
-#if defined(HAVE_DIO_ITER)
-static unsigned long iov_iter_alignment_vfs(const struct iov_iter *i)
+/* Check that the buffers are page-aligned, last length can be arbitrary */
+static bool ll_iov_iter_aligned(const struct iov_iter *i)
 {
-	return iov_iter_alignment(i);
-}
-#else /* copied from alignment_iovec() */
-static unsigned long iov_iter_alignment_vfs(const struct iov_iter *i)
-{
-	const struct iovec *iov = i->iov;
-	unsigned long res;
-	size_t size = i->count;
-	size_t n;
+	struct iov_iter iter = *i;
 
-	if (!size)
-		return 0;
+	while (iov_iter_count(&iter)) {
+		struct iovec v = iov_iter_iovec(&iter);
+		uintptr_t base = (uintptr_t)v.iov_base;
+		size_t len = v.iov_len;
 
-	res = (unsigned long)iov->iov_base + i->iov_offset;
-	n = iov->iov_len - i->iov_offset;
-	if (n >= size)
-		return res | size;
+		if (base & ~PAGE_MASK)
+			return false;
 
-	size -= n;
-	res |= n;
-	while (size > (++iov)->iov_len) {
-		res |= (unsigned long)iov->iov_base | iov->iov_len;
-		size -= iov->iov_len;
-	}
-	res |= (unsigned long)iov->iov_base | size;
+		iov_iter_advance(&iter, len);
 
-	return res;
-}
-#endif
-
-/*
- * Lustre could relax a bit for alignment, io count is not
- * necessary page alignment.
- */
-static unsigned long ll_iov_iter_alignment(struct iov_iter *i)
-{
-	size_t orig_size = i->count;
-	size_t count = orig_size & ~PAGE_MASK;
-	unsigned long res;
-
-	if (!count)
-		return iov_iter_alignment_vfs(i);
-
-	if (orig_size > PAGE_SIZE) {
-		iov_iter_truncate(i, orig_size - count);
-		res = iov_iter_alignment_vfs(i);
-		iov_iter_reexpand(i, orig_size);
-
-		return res;
+		if (iov_iter_count(&iter) &&
+		    (len & ~PAGE_MASK))
+			return false;
 	}
 
-	res = iov_iter_alignment_vfs(i);
-	/* start address is page aligned */
-	if ((res & ~PAGE_MASK) == orig_size)
-		return PAGE_SIZE;
-
-	return res;
+	return true;
 }
 
 static int
@@ -492,7 +452,7 @@ ll_direct_IO_impl(struct kiocb *iocb, struct iov_iter *iter, int rw)
 	       MAX_DIO_SIZE >> PAGE_SHIFT);
 
 	/* Check that all user buffers are aligned as well */
-	if (ll_iov_iter_alignment(iter) & ~PAGE_MASK)
+	if (!ll_iov_iter_aligned(iter))
 		RETURN(-EINVAL);
 
 	lcc = ll_cl_find(inode);
