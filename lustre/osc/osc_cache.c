@@ -56,7 +56,7 @@ static void osc_unreserve_grant(struct client_obd *cli, unsigned int reserved,
 static inline char *ext_flags(struct osc_extent *ext, char *flags)
 {
 	char *buf = flags;
-	*buf++ = ext->oe_rw ? 'r' : 'w';
+	*buf++ = ext->oe_write ? 'w' : 'r';
 	if (!RB_EMPTY_NODE(&ext->oe_node))
 		*buf++ = 'i';
 	if (ext->oe_sync)
@@ -318,6 +318,7 @@ static struct osc_extent *osc_extent_alloc(struct osc_object *obj)
 	INIT_LIST_HEAD(&ext->oe_pages);
 	init_waitqueue_head(&ext->oe_waitq);
 	ext->oe_dlmlock = NULL;
+	ext->oe_write = WRITE;
 
 	return ext;
 }
@@ -609,7 +610,7 @@ void osc_extent_release(const struct lu_env *env, struct osc_extent *ext,
 			if (osc_extent_merge(env, ext, next_extent(ext)) == 0)
 				grant += cli->cl_grant_extent_tax;
 
-			if (!hp && !ext->oe_rw && ext->oe_dlmlock) {
+			if (!hp && ext->oe_write && ext->oe_dlmlock) {
 				lock_res_and_lock(ext->oe_dlmlock);
 				hp = ldlm_is_cbpending(ext->oe_dlmlock);
 				unlock_res_and_lock(ext->oe_dlmlock);
@@ -853,10 +854,7 @@ int osc_extent_finish(const struct lu_env *env, struct osc_extent *ext,
 	enum cl_req_type crt;
 	ENTRY;
 
-	if (ext->oe_rw == 0)
-		crt = CRT_WRITE;
-	else
-		crt = CRT_READ;
+	crt = ext->oe_write;
 
 	OSC_EXTENT_DUMP(D_CACHE, ext, "extent finished.\n");
 
@@ -2661,10 +2659,7 @@ int osc_queue_dio_pages(const struct lu_env *env, struct cl_io *io,
 
 	ENTRY;
 
-	if (brw_flags & OBD_BRW_READ)
-		crt = CRT_READ;
-	else
-		crt = CRT_WRITE;
+	crt = brw_flags & OBD_BRW_READ ? CRT_READ : CRT_WRITE;
 
 	/* we should never have more pages than can fit in an RPC, but if we do
 	 * we must allow sending of a larger RPC
@@ -2691,7 +2686,7 @@ int osc_queue_dio_pages(const struct lu_env *env, struct cl_io *io,
 		RETURN(-ENOMEM);
 	}
 
-	ext->oe_rw = !!(brw_flags & OBD_BRW_READ);
+	ext->oe_write = crt;
 	ext->oe_sync = 1;
 	ext->oe_no_merge = !can_merge;
 	ext->oe_urgent = 1;
@@ -2715,7 +2710,7 @@ int osc_queue_dio_pages(const struct lu_env *env, struct cl_io *io,
 	oscl = oio->oi_write_osclock ? : oio->oi_read_osclock;
 	if (oscl && oscl->ols_dlmlock != NULL)
 		ext->oe_dlmlock = ldlm_lock_get(oscl->ols_dlmlock);
-	if (!ext->oe_rw) { /* direct io write */
+	if (ext->oe_write) { /* direct io write */
 		int grants;
 		int ppc;
 
@@ -2761,7 +2756,7 @@ int osc_queue_dio_pages(const struct lu_env *env, struct cl_io *io,
 	osc_object_lock(obj);
 	/* Reuse the initial refcount for RPC, don't drop it */
 	osc_extent_state_set(ext, OES_LOCK_DONE);
-	if (!ext->oe_rw) { /* write */
+	if (ext->oe_write) { /* write */
 		list_add_tail(&ext->oe_link, &obj->oo_urgent_exts);
 		osc_update_pending(obj, OBD_BRW_WRITE, page_count);
 	} else {
@@ -2792,10 +2787,7 @@ int osc_queue_sync_pages(const struct lu_env *env, struct cl_io *io,
 
 	ENTRY;
 
-	if (brw_flags & OBD_BRW_READ)
-		crt = CRT_READ;
-	else
-		crt = CRT_WRITE;
+	crt = brw_flags & OBD_BRW_READ ? CRT_READ : CRT_WRITE;
 
 	list_for_each_entry(oap, list, oap_pending_item) {
 		struct osc_page *opg = oap2osc_page(oap);
@@ -2824,7 +2816,7 @@ int osc_queue_sync_pages(const struct lu_env *env, struct cl_io *io,
 		RETURN(-ENOMEM);
 	}
 
-	ext->oe_rw = !!(brw_flags & OBD_BRW_READ);
+	ext->oe_write = crt;
 	ext->oe_sync = 1;
 	ext->oe_no_merge = !can_merge;
 	ext->oe_urgent = 1;
@@ -2845,7 +2837,7 @@ int osc_queue_sync_pages(const struct lu_env *env, struct cl_io *io,
 		anchor = clpage->cp_sync_io;
 		ext->oe_csd = anchor->csi_dio_aio;
 	}
-	if (ext->oe_dio && !ext->oe_rw) { /* direct io write */
+	if (ext->oe_dio && ext->oe_write) { /* direct io write */
 		int grants;
 		int ppc;
 
@@ -2889,7 +2881,7 @@ int osc_queue_sync_pages(const struct lu_env *env, struct cl_io *io,
 	osc_object_lock(obj);
 	/* Reuse the initial refcount for RPC, don't drop it */
 	osc_extent_state_set(ext, OES_LOCK_DONE);
-	if (!ext->oe_rw) { /* write */
+	if (ext->oe_write) { /* write */
 		if (!ext->oe_srvlock && !ext->oe_dio) {
 			/* The most likely case here is from lack of grants
 			 * so we are either out of quota or out of space.
@@ -2941,7 +2933,8 @@ int osc_queue_sync_pages(const struct lu_env *env, struct cl_io *io,
 		osc_update_pending(obj, OBD_BRW_READ, page_count);
 	}
 
-	OSC_EXTENT_DUMP(D_CACHE, ext, "allocate ext: rw=%d\n", ext->oe_rw);
+	OSC_EXTENT_DUMP(D_CACHE, ext, "allocate ext: write=%d\n",
+			ext->oe_write);
 	osc_object_unlock(obj);
 
 	osc_io_unplug_async(env, cli, obj);
