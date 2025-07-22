@@ -57,7 +57,7 @@ static size_t check_bytes(const char *buf, int byte, size_t len)
 int main(int argc, char **argv)
 {
 #ifdef O_DIRECT
-	int fd;
+	int fd, off = 0;
 	char *buf, *fname;
 	int blocks, seek_blocks;
 	long len;
@@ -67,8 +67,8 @@ int main(int argc, char **argv)
 	int action;
 	int rc;
 
-	if (argc < 5 || argc > 6) {
-		printf("Usage: %s <read/write/rdwr/readhole> file seek nr_blocks [blocksize]\n",
+	if (argc < 5 || argc > 7) {
+		printf("Usage: %s <read/write/rdwr/readhole> file seek nr_blocks [blocksize] [page_offset]\n",
 		       argv[0]);
 		return 1;
 	}
@@ -83,7 +83,7 @@ int main(int argc, char **argv)
 		action = O_RDONLY;
 		pad = 0;
 	} else {
-		printf("Usage: %s <read/write/rdwr> file seek nr_blocks [blocksize]\n",
+		printf("Usage: %s <read/write/rdwr> file seek nr_blocks [blocksize] [page_offset]\n",
 		       argv[0]);
 		return 1;
 	}
@@ -92,7 +92,7 @@ int main(int argc, char **argv)
 	seek_blocks = strtoul(argv[3], 0, 0);
 	blocks = strtoul(argv[4], 0, 0);
 	if (!blocks) {
-		printf("Usage: %s <read/write/rdwr> file seek nr_blocks [blocksize]\n",
+		printf("Usage: %s <read/write/rdwr> file seek nr_blocks [blocksize] [page_offset]\n",
 		       argv[0]);
 		return 1;
 	}
@@ -110,18 +110,22 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	printf("directio on %s for %dx%lu bytes\n", fname, blocks,
-	       (unsigned long)st.st_blksize);
+	if (argc >= 7)
+		off = strtoul(argv[6], 0, 0);
+
+	printf("directio on %s for %dx%lu bytes, offset %d\n", fname, blocks,
+	       (unsigned long)st.st_blksize, off);
 
 	seek = (off64_t)seek_blocks * (off64_t)st.st_blksize;
 	len = blocks * st.st_blksize;
 
-	buf = mmap(0, len,
+	buf = mmap(0, len + off,
 		   PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, 0, 0);
 	if (buf == MAP_FAILED) {
 		printf("No memory %s\n", strerror(errno));
 		return 1;
 	}
+	buf += off;
 	memset(buf, pad, len);
 
 	if (action == O_WRONLY || action == O_RDWR) {

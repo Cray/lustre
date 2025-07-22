@@ -13288,6 +13288,12 @@ test_119d() # bug 15950
 }
 run_test 119d "The DIO path should try to send a new rpc once one is completed"
 
+test_119e()
+{
+        directio write $DIR/$tfile 0 1 2049 2049 || true
+}
+run_test 119e "unaligned direct I/O should not panic"
+
 test_120a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 	remote_mds_nodsh && skip "remote MDS with nodsh"
