@@ -662,6 +662,7 @@ static int osd_bufs_put(const struct lu_env *env, struct dt_object *dt,
 		 */
 		if (PagePrivate2(page)) {
 			oti->oti_dio_pages_used--;
+			lnb[i].lnb_dio = 0;
 		} else {
 			if (lnb[i].lnb_locked)
 				unlock_page(page);
@@ -777,6 +778,7 @@ bypass_checks:
 			GOTO(cleanup, rc = -ENOMEM);
 
 		lnb->lnb_locked = 1;
+		lnb->lnb_dio = !!cache;
 		if (cache)
 			mark_page_accessed(lnb->lnb_page);
 	}
