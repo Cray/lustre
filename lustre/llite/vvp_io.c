@@ -630,8 +630,11 @@ static int vvp_io_write_lock(const struct lu_env *env,
 	loff_t end;
 
 	if (io->u.ci_wr.wr_append) {
+		LASSERT(io->u.ci_wr.wr_append_lockpos >=
+			io->u.ci_wr.wr.crw_pos + io->u.ci_wr.wr.crw_bytes);
+
 		start = 0;
-		end   = OBD_OBJECT_EOF;
+		end   = io->u.ci_wr.wr_append_lockpos;
 	} else {
 		start = io->u.ci_wr.wr.crw_pos;
 		end   = start + io->u.ci_wr.wr.crw_bytes - 1;
@@ -1340,8 +1343,17 @@ static int vvp_io_write_start(const struct lu_env *env,
 		 * out-of-order writes.
 		 */
 		ll_merge_attr(env, inode);
-		pos = io->u.ci_wr.wr.crw_pos = i_size_read(inode);
-		vio->vui_iocb->ki_pos = pos;
+		io->u.ci_wr.wr.crw_pos = i_size_read(inode);
+		if (io->u.ci_wr.wr_append_lockpos <
+		    io->u.ci_wr.wr.crw_pos + io->u.ci_wr.wr.crw_bytes) {
+			CDEBUG(D_VFSTRACE, "size changed during append old size %llu, new size %llu, bytes %lu\n",
+			       pos, io->u.ci_wr.wr.crw_pos, io->ci_bytes);
+			if (io->ci_bytes == 0)
+				io->ci_need_restart = 1;
+			RETURN(0);
+		}
+
+		pos = vio->vui_iocb->ki_pos = io->u.ci_wr.wr.crw_pos;
 	} else {
 		LASSERTF(vio->vui_iocb->ki_pos == pos,
 			 "ki_pos %lld [%lld, %lld)\n",

@@ -503,8 +503,6 @@ static int lov_io_slice_init(struct lov_io *lio,
 		lio->lis_endpos = io->u.ci_rw.crw_pos + io->u.ci_rw.crw_bytes;
 		lio->lis_io_endpos = lio->lis_endpos;
 		if (cl_io_is_append(io)) {
-			LASSERT(io->ci_type == CIT_WRITE);
-
 			/*
 			 * If there is LOV EA hole, then we may cannot locate
 			 * the current file-tail exactly.
@@ -512,9 +510,6 @@ static int lov_io_slice_init(struct lov_io *lio,
 			if (unlikely(obj->lo_lsm->lsm_entries[0]->lsme_pattern &
 				     LOV_PATTERN_F_HOLE))
 				GOTO(out, result = -EIO);
-
-			lio->lis_pos = 0;
-			lio->lis_endpos = OBD_OBJECT_EOF;
 		}
 		break;
 
@@ -758,12 +753,11 @@ static void lov_io_sub_inherit(struct lov_io_sub *sub, struct lov_io *lio,
 	case CIT_WRITE: {
 		io->u.ci_wr.wr_sync = cl_io_is_sync_write(parent);
 		io->ci_tried_all_mirrors = parent->ci_tried_all_mirrors;
-		if (cl_io_is_append(parent)) {
+		if (cl_io_is_append(parent))
 			io->u.ci_wr.wr_append = 1;
-		} else {
-			io->u.ci_rw.crw_pos = start;
-			io->u.ci_rw.crw_bytes = end - start;
-		}
+
+		io->u.ci_rw.crw_pos = start;
+		io->u.ci_rw.crw_bytes = end - start;
 		break;
 	}
 	case CIT_LADVISE: {
@@ -968,8 +962,28 @@ static int lov_io_rw_iter_init(const struct lu_env *env,
 	LASSERT(io->ci_type == CIT_READ || io->ci_type == CIT_WRITE);
 	ENTRY;
 
-	if (cl_io_is_append(io))
+	if (cl_io_is_append(io)) {
+		struct lov_layout_entry *lle;
+		struct lov_mirror_entry *lre;
+		loff_t endpos = 0;
+
+		/* cover the whole inited region for append */
+		LASSERT(lio->lis_mirror_index >= 0);
+		lre = lov_mirror_entry(lio->lis_object, lio->lis_mirror_index);
+		lov_foreach_mirror_layout_entry(lio->lis_object, lle, lre) {
+			if (!lsme_inited(lle->lle_lsme))
+				break;
+
+			endpos = lle->lle_lsme->lsme_extent.e_end;
+		}
+
+		lio->lis_pos = 0;
+		if (endpos == OBD_OBJECT_EOF || lio->lis_endpos < endpos)
+			lio->lis_endpos = endpos;
+
+		io->u.ci_wr.wr_append_lockpos = lio->lis_endpos;
 		RETURN(lov_io_iter_init(env, ios));
+	}
 
 	index = lov_io_layout_at(lio, io->u.ci_rw.crw_pos);
 	if (index < 0) { /* non-existing layout component */

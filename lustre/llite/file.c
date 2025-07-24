@@ -1943,6 +1943,17 @@ restart:
 	io->ci_ndelay_tried = retried;
 	io->ci_parallel_dio = is_parallel_dio;
 
+	if (io->u.ci_wr.wr_append) {
+		/* If restarted, attrs are already merged */
+		if (retries == 1000) {
+			rc = ll_merge_attr(env, inode);
+			if (rc != 0)
+				RETURN(rc);
+		}
+
+		*ppos = i_size_read(inode);
+	}
+
 	if (cl_io_rw_init(env, io, iot, *ppos, per_bytes) == 0) {
 		if (iocb_ki_flags_check(flags, APPEND))
 			range_lock_init(&range, 0, LUSTRE_EOF);
