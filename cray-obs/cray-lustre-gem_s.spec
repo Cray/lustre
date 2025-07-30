@@ -237,16 +237,6 @@ do
     fi
 done
 
-for header in interval_tree.h
-do
-    found=`find %{_builddir} -name $header`
-    if [ -n "${found}" ]; then
-        for each in ${found}; do
-            install -D -m 0644 ${each} %{buildroot}%{_includedir}/${header}
-        done
-    fi
-done
-
 install -D -m 0644 %{_builddir}/cray-lustre-%{_version}/config.h %{buildroot}%{_includedir}/lustre/%{flavor}/config.h
 install -D -m 0644 %{_builddir}/cray-lustre-%{_version}/Module.symvers %{buildroot}/opt/cray/lustre-%{flavor}/%{version}-%{release}/lib64/symvers/%{flavor}/Module.symvers
 
@@ -360,7 +350,6 @@ popd
 %dir /opt/cray/lustre-%{flavor}/%{version}-%{release}/lib64/symvers
 %dir /opt/cray/lustre-%{flavor}/%{version}-%{release}/lib64/symvers/%{flavor}
 /opt/cray/lustre-cray_gem_s/%{version}-%{release}/lib64/pkgconfig/*.pc
-/opt/cray/lustre-%{flavor}/%{version}-%{release}/include/interval_tree.h
 /opt/cray/lustre-%{flavor}/%{version}-%{release}/include/libcfs/*.h
 /opt/cray/lustre-%{flavor}/%{version}-%{release}/include/libcfs/linux/*.h
 /opt/cray/lustre-%{flavor}/%{version}-%{release}/include/libcfs/util/*.h

@@ -90,6 +90,7 @@ if [ "%reconfigure" == "1" -o ! -f %_builddir/%{source_name}/Makefile ];then
 	%configure --disable-checksum \
 		--disable-doc \
 		--disable-server \
+		--disable-tests \
 		--with-o2ib=no \
 		--enable-gni \
 		--with-linux-obj=/usr/src/linux-obj/%{_target_cpu}/%{flavor} \
@@ -152,12 +153,13 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %files
 %defattr(-,root,root)
 /sbin/mount.lustre
-/etc/udev
+%{_prefix}/lib/udev
 /lib/modules/%{kversion}
 %config(noreplace) /etc/sysconfig/dkms-lustre
 %{_sbindir}/*
 %{_bindir}/*
 %{_unitdir}/lnet.service
+%{_unitdir}/lsvcgss.service
 %{_includedir}/lustre
 %{_includedir}/linux/lnet
 %{_includedir}/linux/lustre
@@ -171,6 +173,8 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_pkgconfigdir}/cray-lustre-ptlctl-devel.pc
 %{_libdir}/pkgconfig/lustre.pc
 %{_libdir}/pkgconfig/lnet.pc
+%exclude /etc/lnet-sysctl.conf
+%exclude %{_prefix}/lib/firewalld/*
 
 %files -n cray-lustre-cray_ari_c-%{_lnet_version}-devel
 %defattr(-,root,root)

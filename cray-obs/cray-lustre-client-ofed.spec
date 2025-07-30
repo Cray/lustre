@@ -173,8 +173,6 @@ do
 	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_includedir}/${target}
 done
 
-%{__install} -D -m 0644 lustre/include/interval_tree.h %{buildroot}/%{_includedir}/interval_tree.h
-
 %define cfgdir %{_includedir}/lustre/%{flavor}
 for f in cray-lustre-api-devel.pc cray-lnet.pc
 do
@@ -209,6 +207,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_sysconfdir}/lustre
 %{_sysconfdir}/lnet.conf
 %{_sysconfdir}/lnet_routes.conf
+%{_sysconfdir}/lnet-sysctl.conf
 %{_sysconfdir}/modprobe.d
 %{_sysconfdir}/udev
 %config(noreplace) /etc/sysconfig/dkms-lustre
@@ -216,6 +215,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_bindir}/*
 %{_mandir}
 %{_unitdir}/lnet.service
+%{_unitdir}/lsvcgss.service
 %dir %{_libdir}/lustre
 %{_libdir}/lustre/tests
 # The versioned shared library files for liblnetconfig are needed for
@@ -224,6 +224,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_libdir}/liblustreapi.so*
 %{_datadir}/bash-completion/completions/*
 %exclude %{_pkgconfigdir}/lustre.pc
+%exclude %{_prefix}/lib/firewalld/*
 
 %files devel
 %defattr(-,root,root)
@@ -253,7 +254,6 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_includedir}/linux
 %{_includedir}/uapi
 %{_includedir}/libcfs
-%{_includedir}/interval_tree.h
 %{_pkgconfigdir}/cray-lnet.pc
 
 %post

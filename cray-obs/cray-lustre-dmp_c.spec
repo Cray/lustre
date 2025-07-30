@@ -108,6 +108,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_bindir}/*
 %{_mandir}/*
 %{_unitdir}/lnet.service
+%{_unitdir}/lsvcgss.service
 %{_includedir}/lustre
 %{_includedir}/linux/lnet
 %{_includedir}/linux/lustre
@@ -128,7 +129,9 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %exclude %{_libdir}/lustre/tests
 %exclude /etc/lnet.conf
 %exclude /etc/lnet_routes.conf
+%exclude /etc/lnet-sysctl.conf
 %exclude /etc/lustre/perm.conf
+%exclude %{_prefix}/lib/firewalld/*
 %exclude %{_pkgconfigdir}/cray-lnet.pc
 %{_libdir}/pkgconfig/lustre.pc
 %{_libdir}/pkgconfig/lnet.pc

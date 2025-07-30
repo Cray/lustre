@@ -78,6 +78,14 @@ Development files for building against Lustre library.
 Includes headers, dynamic, and static libraries.
 Compiled for kernel: %{kversion}
 
+%package -n cray-lustre-cray_ari_s-%{_lnet_version}-tests
+Summary: Lustre testing framework
+Requires: cray-lustre-cray_ari_s-%{_lnet_version}
+
+%description -n cray-lustre-cray_ari_s-%{_lnet_version}-tests
+Test files for building against Lustre library.
+Compiled for kernel: %{kversion}
+
 %if %{with server}
 %package resource-agents
 Summary: HA Resuable Cluster Resource Scripts for Lustre
@@ -155,8 +163,6 @@ do
 	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_includedir}/${target}
 done
 
-%{__install} -D -m 0644 lustre/include/interval_tree.h %{buildroot}/%{_includedir}/interval_tree.h
-
 %define cfgdir %{_includedir}/lustre/%{flavor}
 for f in cray-lustre-api-devel.pc cray-lustre-cfsutil-devel.pc \
 	 cray-lustre-ptlctl-devel.pc cray-lnet.pc
@@ -189,19 +195,20 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %if %{with server}
 /sbin/mount.lustre_tgt
 %endif
-/etc/udev
+%{_prefix}/lib/udev
 /lib/modules/%{kversion}
 %{_sbindir}/*
 %{_bindir}/*
 %{_mandir}/*
 %{_unitdir}/lnet.service
+%{_unitdir}/lsvcgss.service
 %{_includedir}/lustre
 %{_includedir}/linux/lnet
 %{_includedir}/linux/lustre
-%{_libdir}/liblustreapi.a
-%{_libdir}/liblustreapi.so*
 %{_libdir}/liblnetconfig.a
 %{_libdir}/liblnetconfig.so*
+%{_libdir}/liblustreapi.a
+%{_libdir}/liblustreapi.so*
 %{_pkgconfigdir}/cray-lustre-api-devel.pc
 %{_pkgconfigdir}/cray-lustre-cfsutil-devel.pc
 %{_pkgconfigdir}/cray-lustre-ptlctl-devel.pc
@@ -221,10 +228,18 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %exclude /etc/lustre/perm.conf
 %exclude /etc/modprobe.d/ko2iblnd.conf
 %exclude /etc/lnet.conf
+%exclude /etc/lnet-sysctl.conf
 %exclude /etc/lnet_routes.conf
+%exclude %{_prefix}/lib/firewalld/*
 %exclude %{_mandir}/man5
 %exclude %{_mandir}/man8/lhbadm.8.gz
 %exclude %{_pkgconfigdir}/cray-lnet.pc
+%exclude %{_libdir}/lustre/tests/*
+%exclude %{_bindir}/mcreate
+%exclude %{_bindir}/statx
+%exclude %{_sbindir}/wirecheck
+%exclude %{_sbindir}/wiretest
+
 
 %files -n cray-lustre-cray_ari_s-%{_lnet_version}-devel
 %defattr(-,root,root)
@@ -234,6 +249,14 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %attr (644,root,root) %{_datadir}/symvers/%{_arch}/%{flavor}/Module.symvers
 %{_pkgconfigdir}/cray-lnet.pc
 %{_includedir}/*
+
+%files -n cray-lustre-cray_ari_s-%{_lnet_version}-tests
+%dir %{_libdir}/lustre/tests
+%{_libdir}/lustre/tests/*
+%{_bindir}/mcreate
+%{_bindir}/statx
+%{_sbindir}/wirecheck
+%{_sbindir}/wiretest
 
 %if %{with server}
 %files resource-agents

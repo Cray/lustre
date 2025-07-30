@@ -104,8 +104,6 @@ do
 	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_includedir}/${target}
 done
 
-%{__install} -D -m 0644 lustre/include/interval_tree.h %{buildroot}/%{_includedir}/interval_tree.h
-
 %define cfgdir %{_includedir}/lustre/%{flavor}
 for f in cray-lustre-api-devel.pc cray-lnet.pc
 do
@@ -139,6 +137,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_bindir}/*
 %{_mandir}/*
 %{_unitdir}/lnet.service
+%{_unitdir}/lsvcgss.service
 %{_includedir}/lustre
 %{_includedir}/linux/lnet
 %{_includedir}/linux/lustre
@@ -155,6 +154,8 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %exclude /etc/modprobe.d/ko2iblnd.conf
 %exclude /etc/lnet.conf
 %exclude /etc/lnet_routes.conf
+%exclude /etc/lnet-sysctl.conf
+%exclude %{_prefix}/lib/firewalld/*
 %exclude %{_mandir}/man5
 %exclude %{_mandir}/man8/lhbadm.8.gz
 %exclude %{_pkgconfigdir}/cray-lnet.pc
