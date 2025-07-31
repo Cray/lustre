@@ -1208,7 +1208,9 @@ static int ll_statahead_by_list(struct dentry *parent)
 	       smp_load_acquire(&sai->sai_task) &&
 	       lli->lli_sa_enabled) {
 		struct lu_dirpage *dp;
-		struct lu_dirent  *ent;
+		struct lu_dirent *ent;
+		void *kaddr = NULL;
+		u32 flags;
 
 		op_data = ll_prep_md_op_data(op_data, dir, dir, NULL, 0, 0,
 					     LUSTRE_OPC_ANY, dir);
@@ -1227,8 +1229,8 @@ static int ll_statahead_by_list(struct dentry *parent)
 			       lli->lli_stat_pid, rc);
 			break;
 		}
-
-		dp = page_address(page);
+		kaddr = kmap(page);
+		dp = kaddr;
 		for (ent = lu_dirent_start(dp);
 		     /* matches smp_store_release() in ll_deauthorize_statahead() */
 		     ent != NULL && smp_load_acquire(&sai->sai_task) &&
@@ -1352,8 +1354,12 @@ static int ll_statahead_by_list(struct dentry *parent)
 		}
 
 		pos = le64_to_cpu(dp->ldp_hash_end);
-		ll_release_page(dir, page,
-				le32_to_cpu(dp->ldp_flags) & LDF_COLLIDE);
+		flags = le32_to_cpu(dp->ldp_flags);
+		if (kaddr) {
+			kunmap(kmap_to_page(kaddr));
+			kaddr = NULL;
+		}
+		ll_release_page(dir, page, flags & LDF_COLLIDE);
 
 		if (sa_low_hit(sai)) {
 			rc = -EFAULT;
@@ -1789,7 +1795,7 @@ static int is_first_dirent(struct inode *dir, struct dentry *dentry)
 			break;
 		}
 
-		dp = page_address(page);
+		dp = kmap_local_page(page);
 		for (ent = lu_dirent_start(dp); ent != NULL;
 		     ent = lu_dirent_next(ent)) {
 			__u64 hash;
@@ -1857,6 +1863,7 @@ static int is_first_dirent(struct inode *dir, struct dentry *dentry)
 			else
 				rc = LS_FIRST_DOT_DE;
 
+			kunmap_local(dp);
 			ll_release_page(dir, page, false);
 			GOTO(out, rc);
 		}
@@ -1865,15 +1872,18 @@ static int is_first_dirent(struct inode *dir, struct dentry *dentry)
 			/*
 			 * End of directory reached.
 			 */
+			kunmap_local(dp);
 			ll_release_page(dir, page, false);
 			GOTO(out, rc);
 		} else {
+			u32 flags = le32_to_cpu(dp->ldp_flags);
+
 			/*
 			 * chain is exhausted
 			 * Normal case: continue to the next page.
 			 */
-			ll_release_page(dir, page, le32_to_cpu(dp->ldp_flags) &
-					      LDF_COLLIDE);
+			kunmap_local(dp);
+			ll_release_page(dir, page, flags & LDF_COLLIDE);
 			page = ll_get_dir_page(dir, op_data, pos, is_hash64,
 						NULL);
 		}

@@ -64,6 +64,7 @@ static int mgs_nidtbl_read(struct obd_export *exp, struct mgs_nidtbl *tbl,
 	__u64 version = res->mcr_offset;
 	bool nobuf = false;
 	void *buf = NULL;
+	void *kaddr = NULL;
 	int bytes_in_unit = 0;
 	int units_in_page = 0;
 	int index = 0;
@@ -126,6 +127,11 @@ static int mgs_nidtbl_read(struct obd_export *exp, struct mgs_nidtbl *tbl,
 			LASSERT((rc & (unit_size - 1)) == 0);
 
 			if (units_in_page == 0) {
+				/* destroy previous map */
+				if (kaddr) {
+					kunmap_local(kaddr);
+					kaddr = NULL;
+				}
 				/* allocate a new page */
 				pages[index] = alloc_page(GFP_KERNEL);
 				if (!pages[index]) {
@@ -133,12 +139,8 @@ static int mgs_nidtbl_read(struct obd_export *exp, struct mgs_nidtbl *tbl,
 					break;
 				}
 
-				/* destroy previous map */
-				if (index > 0)
-					kunmap(pages[index - 1]);
-
 				/* reassign buffer */
-				buf = kmap(pages[index]);
+				buf = kaddr = kmap_local_page(pages[index]);
 				++index;
 
 				units_in_page = PAGE_SIZE / unit_size;
@@ -224,8 +226,8 @@ static int mgs_nidtbl_read(struct obd_export *exp, struct mgs_nidtbl *tbl,
 		       tbl->mn_fsdb->fsdb_name, entry_len,
 		       bytes_in_unit, index, nrpages, units_total);
 	}
-	if (index > 0)
-		kunmap(pages[index - 1]);
+	if (kaddr)
+		kunmap_local(kaddr);
 out:
 	LASSERT(version <= tbl->mn_version);
 	res->mcr_size = tbl->mn_version;
