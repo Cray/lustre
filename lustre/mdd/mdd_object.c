@@ -2312,8 +2312,9 @@ static int mdd_layout_swap_allowed(const struct lu_env *env,
 }
 
 /* XXX To set the proper lmm_oi & lmm_layout_gen when swap layouts, we have to
- *     look into the layout in MDD layer. */
-static int mdd_lmm_oi(struct lov_mds_md *lmm, struct ost_id *oi, bool get)
+ *     look into the layout in MDD layer.
+ */
+int mdd_lmm_oi(struct lov_mds_md *lmm, struct ost_id *oi, bool set)
 {
 	struct lov_comp_md_v1	*comp_v1;
 	struct lov_mds_md	*v1;
@@ -2327,39 +2328,49 @@ static int mdd_lmm_oi(struct lov_mds_md *lmm, struct ost_id *oi, bool get)
 		if (ent_count == 0)
 			return -EINVAL;
 
-		if (get) {
-			off = le32_to_cpu(comp_v1->lcm_entries[0].lcme_offset);
-			v1 = (struct lov_mds_md *)((char *)comp_v1 + off);
-			*oi = v1->lmm_oi;
-		} else {
+		if (set) {
 			for (i = 0; i < le32_to_cpu(ent_count); i++) {
 				off = le32_to_cpu(comp_v1->lcm_entries[i].
 						lcme_offset);
 				v1 = (struct lov_mds_md *)((char *)comp_v1 +
 						off);
-				v1->lmm_oi = *oi;
+				if (le32_to_cpu(v1->lmm_magic) !=
+							LOV_MAGIC_FOREIGN)
+					v1->lmm_oi = *oi;
+			}
+		} else {
+			int i = 0;
+
+			off = le32_to_cpu(comp_v1->lcm_entries[i].lcme_offset);
+			v1 = (struct lov_mds_md *)((char *)comp_v1 + off);
+			if (le32_to_cpu(v1->lmm_magic) != LOV_MAGIC_FOREIGN) {
+				*oi = v1->lmm_oi;
+			} else {
+				if (ent_count == 1)
+					return -EINVAL;
+
+				i = 1;
+				off = le32_to_cpu(
+					comp_v1->lcm_entries[i].lcme_offset);
+				v1 = (struct lov_mds_md *)((char *)comp_v1 +
+							   off);
+				if (le32_to_cpu(v1->lmm_magic) ==
+							LOV_MAGIC_FOREIGN)
+					return -EINVAL;
+
+				*oi = v1->lmm_oi;
 			}
 		}
 	} else if (le32_to_cpu(lmm->lmm_magic) == LOV_MAGIC_V1 ||
 		   le32_to_cpu(lmm->lmm_magic) == LOV_MAGIC_V3) {
-		if (get)
-			*oi = lmm->lmm_oi;
-		else
+		if (set)
 			lmm->lmm_oi = *oi;
+		else
+			*oi = lmm->lmm_oi;
 	} else {
 		return -EINVAL;
 	}
 	return 0;
-}
-
-static inline int mdd_get_lmm_oi(struct lov_mds_md *lmm, struct ost_id *oi)
-{
-	return mdd_lmm_oi(lmm, oi, true);
-}
-
-static inline int mdd_set_lmm_oi(struct lov_mds_md *lmm, struct ost_id *oi)
-{
-	return mdd_lmm_oi(lmm, oi, false);
 }
 
 static int mdd_lmm_gen(struct lov_mds_md *lmm, __u32 *gen, bool get)
