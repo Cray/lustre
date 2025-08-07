@@ -3748,11 +3748,13 @@ static inline void mdd_xattrs_fini(struct mdd_xattrs *xattrs)
 static int mdd_xattrs_migrate_prep(const struct lu_env *env,
 				   struct mdd_xattrs *xattrs,
 				   struct mdd_object *sobj,
+				   struct mdd_object *tobj,
 				   bool skip_linkea,
 				   bool skip_dmv)
 {
 	struct lu_attr *attr = MDD_ENV_VAR(env, cattr);
 	struct mdd_xattr_entry *entry;
+	struct ost_id oi = {0, };
 	bool needencxattr = false;
 	bool encxattrfound = false;
 	char *xname;
@@ -3763,6 +3765,13 @@ static int mdd_xattrs_migrate_prep(const struct lu_env *env,
 	int rc;
 
 	ENTRY;
+
+	if (S_ISREG(attr->la_mode)) {
+		LASSERT(tobj != NULL);
+
+		fid_to_lmm_oi(mdd_object_fid(tobj), &oi);
+		lmm_oi_cpu_to_le(&oi, &oi);
+	}
 
 	list_xsize = mdo_xattr_list(env, sobj, &LU_BUF_NULL);
 	if (list_xsize == -ENODATA)
@@ -3830,6 +3839,13 @@ reloop:
 			if (rc == -ENODATA)
 				continue;
 			GOTO(fini, rc);
+		}
+
+		if (S_ISREG(attr->la_mode) &&
+		    strcmp(XATTR_NAME_LOV, xname) == 0) {
+			struct lov_mds_md *lmm = entry->mxe_buf.lb_buf;
+
+			mdd_set_lmm_oi(lmm, &oi);
 		}
 
 		entry->mxe_name = xname;
@@ -4729,7 +4745,8 @@ retry:
 	 * RPCs inside transaction.
 	 */
 	if (!spec->sp_migrate_nsonly) {
-		rc = mdd_xattrs_migrate_prep(env, &xattrs, sobj, true, true);
+		rc = mdd_xattrs_migrate_prep(env, &xattrs, sobj, tobj,
+					     true, true);
 		if (rc)
 			GOTO(out, rc);
 	}
@@ -5053,8 +5070,8 @@ int mdd_dir_layout_shrink(const struct lu_env *env,
 		}
 
 		if (!lmv_is_fixed(lmv))
-			rc = mdd_xattrs_migrate_prep(env, &xattrs, obj, false,
-						     false);
+			rc = mdd_xattrs_migrate_prep(env, &xattrs, obj, NULL,
+						     false, false);
 	}
 
 	handle = mdd_trans_create(env, mdd);
@@ -5322,7 +5339,8 @@ int mdd_dir_layout_split(const struct lu_env *env, struct md_object *o,
 
 	mdd_xattrs_init(&xattrs);
 	if (is_plain)
-		rc = mdd_xattrs_migrate_prep(env, &xattrs, obj, true, true);
+		rc = mdd_xattrs_migrate_prep(env, &xattrs, obj, tobj,
+					     true, true);
 
 	handle = mdd_trans_create(env, mdd);
 	if (IS_ERR(handle))
