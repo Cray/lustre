@@ -4423,6 +4423,32 @@ AC_DEFUN([LC_HAVE_SHRINKER_ALLOC], [
 ]) # LC_HAVE_SHRINKER_ALLOC
 
 #
+# LC_HAVE_S_SHRINK_AS_A_POINTER
+#
+# Linux commit v6.6-rc4-53-gc42d50aefd17
+#   mm: shrinker: add infrastructure for dynamically allocating shrinker
+#
+# While s_shrink is now a pointer in most cases, el9.6 backport of this
+# keeps s_shrink as contained in struct superblock for their kABI support
+#
+AC_DEFUN([LC_SRC_HAVE_S_SHRINK_AS_A_POINTER], [
+	LB2_LINUX_TEST_SRC([s_shrink_as_a_pointer], [
+		#include <linux/shrinker.h>
+	],[
+		struct super_block *sb __attribute__ ((unused)) = NULL;
+
+		sb->s_shrink->count_objects = 0;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_S_SHRINK_AS_A_POINTER], [
+	LB2_MSG_LINUX_TEST_RESULT([if s_shrink member of super_block is a pointer],
+	[s_shrink_as_a_pointer], [
+		AC_DEFINE(HAVE_S_SHRINK_AS_A_POINTER, 1,
+			[s_shrink member of super_block is a pointer])
+	])
+]) # LC_HAVE_S_SHRINK_AS_A_POINTER
+
+#
 # LC_HAVE_DENTRY_D_CHILDREN
 #
 # Linux commit v6.7-rc1-3-gda549bdd15c2
@@ -4775,6 +4801,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	# 6.7
 	LC_SRC_HAVE_INODE_GET_MTIME_SEC
 	LC_SRC_HAVE_SHRINKER_ALLOC
+	LC_SRC_HAVE_S_SHRINK_AS_A_POINTER
 
 	# 6.8
 	LC_SRC_HAVE_DENTRY_D_CHILDREN
@@ -5081,6 +5108,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	# 6.7
 	LC_HAVE_INODE_GET_MTIME_SEC
 	LC_HAVE_SHRINKER_ALLOC
+	LC_HAVE_S_SHRINK_AS_A_POINTER
 
 	# 6.8
 	LC_HAVE_DENTRY_D_CHILDREN

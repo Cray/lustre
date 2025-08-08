@@ -1325,7 +1325,11 @@ static int super_setup_bdi_name(struct super_block *sb, char *fmt, ...)
 static unsigned long ll_count_objects(struct shrinker *shrink,
 				      struct shrink_control *sc)
 {
+#ifdef HAVE_S_SHRINK_AS_A_POINTER
+	struct super_block *sb = shrink->private_data;
+#else
 	struct super_block *sb = container_of(shrink, struct super_block, s_shrink);
+#endif
 	struct ll_sb_info *sbi = ll_s2sbi(sb);
 	unsigned int max = sbi->ll_max_shrink;
 	long total_objects;
@@ -1481,8 +1485,13 @@ int ll_fill_super(struct super_block *sb)
 	if (err < 0)
 		GOTO(out_free_md, err);
 
+#ifdef HAVE_S_SHRINK_AS_A_POINTER
+	sbi->ll_count_objects = sb->s_shrink->count_objects;
+	sb->s_shrink->count_objects = ll_count_objects;
+#else
 	sbi->ll_count_objects = sb->s_shrink.count_objects;
 	sb->s_shrink.count_objects = ll_count_objects;
+#endif
 	sbi->ll_max_shrink = 0;
 
 	sbi->ll_client_common_fill_super_succeeded = 1;
