@@ -244,8 +244,17 @@ static ssize_t ll_get_user_pages(int rw, struct iov_iter *iter,
 	size_t result;
 
 	result = iov_iter_get_pages_alloc2(iter, pages, maxsize, &start);
-	if (result > 0)
+	if (result > 0) {
+		size_t left = iov_iter_count(iter);
 		*npages = DIV_ROUND_UP(result + start, PAGE_SIZE);
+		if (start & ~PAGE_MASK ||
+		    (((start + result) & ~PAGE_MASK) && left && maxsize > result)) {
+			ll_release_user_pages(*pages, *npages);
+			*pages = NULL;
+			*npages = 0;
+			result = -EINVAL;
+		}
+	}
 
 	return result;
 #else
@@ -265,6 +274,9 @@ static ssize_t ll_get_user_pages(int rw, struct iov_iter *iter,
 		return -EINVAL;
 
 	size = min_t(size_t, maxsize, iter->iov->iov_len);
+	if ((size & ~PAGE_MASK) && (iter->nr_segs > 1))
+		return -EINVAL;
+
 	page_count = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	OBD_ALLOC_PTR_ARRAY_LARGE(*pages, page_count);
 	if (*pages == NULL)
@@ -288,29 +300,6 @@ static ssize_t ll_get_user_pages(int rw, struct iov_iter *iter,
 
 	return size;
 #endif
-}
-
-/* Check that the buffers are page-aligned, last length can be arbitrary */
-static bool ll_iov_iter_aligned(const struct iov_iter *i)
-{
-	struct iov_iter iter = *i;
-
-	while (iov_iter_count(&iter)) {
-		struct iovec v = iov_iter_iovec(&iter);
-		uintptr_t base = (uintptr_t)v.iov_base;
-		size_t len = v.iov_len;
-
-		if (base & ~PAGE_MASK)
-			return false;
-
-		iov_iter_advance(&iter, len);
-
-		if (iov_iter_count(&iter) &&
-		    (len & ~PAGE_MASK))
-			return false;
-	}
-
-	return true;
 }
 
 static int
@@ -451,10 +440,6 @@ ll_direct_IO_impl(struct kiocb *iocb, struct iov_iter *iter, int rw)
 	       file_offset, file_offset, count >> PAGE_SHIFT,
 	       MAX_DIO_SIZE >> PAGE_SHIFT);
 
-	/* Check that all user buffers are aligned as well */
-	if (!ll_iov_iter_aligned(iter))
-		RETURN(-EINVAL);
-
 	lcc = ll_cl_find(inode);
 	if (lcc == NULL)
 		RETURN(-EIO);
@@ -537,8 +522,9 @@ ll_direct_IO_impl(struct kiocb *iocb, struct iov_iter *iter, int rw)
 		}
 		if (unlikely(result < 0))
 			GOTO(out, result);
-
+#if !defined(HAVE_DIO_ITER)
 		iov_iter_advance(iter, count);
+#endif
 		tot_bytes += count;
 		file_offset += count;
 	}
