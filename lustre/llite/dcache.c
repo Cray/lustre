@@ -270,12 +270,8 @@ int ll_revalidate_it_finish(struct ptlrpc_request *request,
 
 	ll_set_lock_data(ll_i2sbi(inode)->ll_md_exp, inode, it,
 			 &bits);
-	if (bits & MDS_INODELOCK_LOOKUP) {
+	if ((bits & MDS_INODELOCK_LOOKUP) && !d_lustre_invalid(de))
 		ll_update_dir_depth(de->d_parent->d_inode, inode);
-		if (!ll_d_setup(de, true))
-			RETURN(-ENOMEM);
-		d_lustre_revalidate(de);
-	}
 
 	RETURN(rc);
 }

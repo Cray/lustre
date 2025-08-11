@@ -783,16 +783,7 @@ retry:
 	if (!rc && itp->it_lock_mode) {
 		__u64 bits = 0;
 
-		/* If we got a lock back and it has a LOOKUP bit set,
-		 * make sure the dentry is marked as valid so we can find it.
-		 * We don't need to care about actual hashing since other bits
-		 * of kernel will deal with that later.
-		 */
 		ll_set_lock_data(sbi->ll_md_exp, de->d_inode, itp, &bits);
-		if (bits & MDS_INODELOCK_LOOKUP) {
-			d_lustre_revalidate(de);
-			ll_update_dir_depth(parent->d_inode, de->d_inode);
-		}
 
 		/* if DoM bit returned along with LAYOUT bit then there
 		 * can be read-on-open data returned.
@@ -803,6 +794,12 @@ retry:
 			ll_dir_finish_open(de->d_inode, req);
 	}
 
+	/*
+	 * open may not fetch LOOKUP lock, update dir depth and
+	 * anyway.
+	 */
+	if (!rc && !d_lustre_invalid(de))
+		ll_update_dir_depth(parent->d_inode, de->d_inode);
 out:
 	ptlrpc_req_finished(req);
 	ll_intent_drop_lock(itp);
@@ -5659,13 +5656,16 @@ static int ll_inode_revalidate(struct dentry *dentry, enum ldlm_intent_flags op)
 	struct md_op_data *op_data;
 	const char *name = NULL;
 	size_t namelen = 0;
+	int flags = 0;
 	int rc = 0;
 	ENTRY;
 
 	CDEBUG(D_VFSTRACE, "VFS Op:inode="DFID"(%p),name=%s\n",
 	       PFID(ll_inode2fid(inode)), inode, dentry->d_name.name);
 
-	if (exp_connect_flags2(exp) & OBD_CONNECT2_GETATTR_PFID) {
+	if ((exp_connect_flags2(exp) & OBD_CONNECT2_GETATTR_PFID) &&
+	    !d_lustre_invalid(dentry)) {
+		flags = MF_GETATTR_BY_FID;
 		parent = dentry->d_parent->d_inode;
 		name = dentry->d_name.name;
 		namelen = dentry->d_name.len;
@@ -5678,9 +5678,7 @@ static int ll_inode_revalidate(struct dentry *dentry, enum ldlm_intent_flags op)
 	if (IS_ERR(op_data))
 		RETURN(PTR_ERR(op_data));
 
-	/* Call getattr by fid */
-	if (exp_connect_flags2(exp) & OBD_CONNECT2_GETATTR_PFID)
-		op_data->op_flags = MF_GETATTR_BY_FID;
+	op_data->op_flags |= flags;
 	rc = md_intent_lock(exp, op_data, &oit, &req, &ll_md_blocking_ast, 0);
 	ll_finish_md_op_data(op_data);
 	if (rc < 0) {
