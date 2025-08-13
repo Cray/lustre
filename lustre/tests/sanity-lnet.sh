@@ -4222,6 +4222,103 @@ test_256() {
 }
 run_test 256 "Router should not drop messages that are past the deadline"
 
+test_257() {
+	setup_router_test -r 2 -p 1 || return $?
+
+	do_basic_rtr_test || return $?
+
+	do_rpc_nodes $HOSTNAME,${RPEERS[0]} load_module \
+		../lnet/selftest/lnet_selftest ||
+			error "Failed to load lnet-selftest module"
+
+	local param
+	local all_nodes=$(comma_list ${ROUTERS[@]} ${RPEERS[@]} $HOSTNAME)
+
+	for param in alive_router_check_interval router_ping_timeout; do
+		do_nodes $all_nodes "echo 5 > /sys/module/lnet/parameters/$param"
+	done
+
+	$LSTSH -H -t $HOSTNAME -f ${RPEERS[0]} -m rw &
+
+	log "Wait 5s for LST to start"
+	sleep 5
+
+	log "Disable routing on ${ROUTERS[0]}"
+	do_node ${ROUTERS[0]} "$LNETCTL set routing 0" ||
+		error "Failed to disable routing rc = $?"
+
+	log "Wait for lst to finish"
+	wait
+
+	local drops=$(do_node ${ROUTERS[0]} \
+		      "$LNETCTL net show -v; $LNETCTL peer show -v" |
+		      awk '/drop_count:/{print $NF}' | xargs echo |
+		      sed 's/ /\+/g' | bc)
+
+	((drops == 0)) ||
+		error "Detected $drops dropped messages - expect 0"
+
+	$LSTSH -H -t $HOSTNAME -f ${RPEERS[0]} -m rw &
+
+	log "Wait 5s for LST to start"
+	sleep 5
+
+	log "Enable routing on ${ROUTERS[0]}"
+	do_node ${ROUTERS[0]} "$LNETCTL set routing 1" ||
+		error "Failed to disable routing rc = $?"
+
+	log "Wait for lst to finish"
+	wait
+
+	drops=$(do_node ${ROUTERS[0]} \
+		"$LNETCTL net show -v; $LNETCTL peer show -v" |
+		awk '/drop_count:/{print $NF}' | xargs echo |
+		sed 's/ /\+/g' | bc)
+
+	((drops == 0)) ||
+		error "Detected $drops dropped messages - expect 0"
+
+	cleanup_router_test
+}
+run_test 257 "Test graceful router shutdown/startup"
+
+test_258() {
+	setup_health_test true || return $?
+
+	local retries=$($LNETCTL global show | awk '/retry_count:/{print $NF}')
+	(( retries > 0 )) || skip "Need retry_count > 0, found $retries"
+
+	local hstatus
+	for hstatus in ${LNET_LOCAL_RESEND_STATUSES}; do
+		echo "Simulate intermittent $hstatus"
+
+		lnet_health_pre || return $?
+		add_health_test_drop_rules ${hstatus} 2
+		do_lnetctl ping --source ${LNIDS[0]} ${RNIDS[0]} ||
+			error "ping failed with rc = $?"
+		$LCTL net_drop_del -a
+		lnet_health_post
+
+		check_successful_resends || return $?
+	done
+
+	for hstatus in ${LNET_REMOTE_RESEND_STATUSES}; do
+		echo "Simulate intermittent $hstatus"
+
+		lnet_health_pre || return $?
+		add_health_test_drop_rules ${hstatus} 2
+		do_lnetctl ping --source ${LNIDS[0]} ${RNIDS[0]} ||
+			error "ping failed with rc = $?"
+		lnet_health_post
+		$LCTL net_drop_del -a
+
+		check_successful_resends || return $?
+	done
+
+	cleanup_health_test
+}
+run_test 258 "Check for successful resends"
+
 check_sysctl() {
 	while IFS= read -r line; do
 		# Couldn't find a way to break this line
@@ -4326,102 +4423,94 @@ test_260() {
 }
 run_test 260 "test that linux sysctl parameter are set correctly"
 
-test_257() {
-	setup_router_test -r 2 -p 1 || return $?	
+test_265() {
+	reinit_dlc || return $?
 
-	do_basic_rtr_test || return $?
+	local cpt
 
-	do_rpc_nodes $HOSTNAME,${RPEERS[0]} load_module \
-		../lnet/selftest/lnet_selftest ||
-			error "Failed to load lnet-selftest module"
+	for cpt in "[1-0]" "[]"; do
+		cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+net:
+-     net type: ${NETTYPE}
+      local NI(s):
+      -     interfaces:
+                  0: ${INTERFACES[0]}
+            CPT: "${cpt}"
+EOF
 
-	local param
-	local all_nodes=$(comma_list ${ROUTERS[@]} ${RPEERS[@]} $HOSTNAME)
+		! do_lnetctl import $TMP/sanity-lnet-$testnum.yaml ||
+			error "Import should have failed"
 
-	for param in alive_router_check_interval router_ping_timeout; do
-		do_nodes $all_nodes "echo 5 > /sys/module/lnet/parameters/$param"
+		cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+net:
+-     net type: ${NETTYPE}
+      local NI(s):
+      -     interfaces:
+                  0: ${INTERFACES[0]}
+            CPT: ${cpt}
+EOF
+
+		! do_lnetctl import $TMP/sanity-lnet-$testnum.yaml ||
+			error "Import should have failed"
 	done
-
-	$LSTSH -H -t $HOSTNAME -f ${RPEERS[0]} -m rw &
-
-	log "Wait 5s for LST to start"
-	sleep 5
-
-	log "Disable routing on ${ROUTERS[0]}"
-	do_node ${ROUTERS[0]} "$LNETCTL set routing 0" ||
-		error "Failed to disable routing rc = $?"
-
-	log "Wait for lst to finish"
-	wait
-
-	local drops=$(do_node ${ROUTERS[0]} \
-		      "$LNETCTL net show -v; $LNETCTL peer show -v" |
-		      awk '/drop_count:/{print $NF}' | xargs echo |
-		      sed 's/ /\+/g' | bc)
-
-	((drops == 0)) ||
-		error "Detected $drops dropped messages - expect 0"
-
-	$LSTSH -H -t $HOSTNAME -f ${RPEERS[0]} -m rw &
-
-	log "Wait 5s for LST to start"
-	sleep 5
-
-	log "Enable routing on ${ROUTERS[0]}"
-	do_node ${ROUTERS[0]} "$LNETCTL set routing 1" ||
-		error "Failed to disable routing rc = $?"
-
-	log "Wait for lst to finish"
-	wait
-
-	drops=$(do_node ${ROUTERS[0]} \
-		"$LNETCTL net show -v; $LNETCTL peer show -v" |
-		awk '/drop_count:/{print $NF}' | xargs echo |
-		sed 's/ /\+/g' | bc)
-
-	((drops == 0)) ||
-		error "Detected $drops dropped messages - expect 0"
-
-	cleanup_router_test
 }
-run_test 257 "Test graceful router shutdown/startup"
+run_test 265 "Import of invalid CPT should fail"
 
-test_258() {
-	setup_health_test true || return $?
+test_266() {
+	reinit_dlc || return $?
 
-	local retries=$($LNETCTL global show | awk '/retry_count:/{print $NF}')
-	(( retries > 0 )) || skip "Need retry_count > 0, found $retries"
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
 
-	local hstatus
-	for hstatus in ${LNET_LOCAL_RESEND_STATUSES}; do
-		echo "Simulate intermittent $hstatus"
+	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
 
-		lnet_health_pre || return $?
-		add_health_test_drop_rules ${hstatus} 2
-		do_lnetctl ping --source ${LNIDS[0]} ${RNIDS[0]} ||
-			error "ping failed with rc = $?"
-		$LCTL net_drop_del -a
-		lnet_health_post
+	local cpt=$($LNETCTL net show -v --net ${NETTYPE} |
+		    awk '/CPT/{print $NF}')
+	local low=$(awk -F, '{print $1}'<<<"$cpt" | tr -d '[]"')
+	local high=$(awk -F, '{print $NF}'<<<"$cpt" | tr -d '[]"')
 
-		check_successful_resends || return $?
-	done
+	local tyaml=$TMP/sanity-lnet-$testnum.yaml
 
-	for hstatus in ${LNET_REMOTE_RESEND_STATUSES}; do
-		echo "Simulate intermittent $hstatus"
+	cat <<EOF > $tyaml
+net:
+-     net type: ${NETTYPE}
+      local NI(s):
+      -     interfaces:
+                  0: ${INTERFACES[0]}
+EOF
+	$LNETCTL net show -v -n ${NETTYPE} | awk '/^\s+tunables:$/,/^\s+CPT:/' |
+		grep -v -e 'dev cpt' -e 'CPT' >> $tyaml
 
-		lnet_health_pre || return $?
-		add_health_test_drop_rules ${hstatus} 2
-		do_lnetctl ping --source ${LNIDS[0]} ${RNIDS[0]} ||
-			error "ping failed with rc = $?"
-		lnet_health_post
-		$LCTL net_drop_del -a
+	echo "            CPT: \"[$low-$high]\"" >> $tyaml
 
-		check_successful_resends || return $?
-	done
+	reinit_dlc || return $?
 
-	cleanup_health_test
+	do_lnetctl import $tyaml || error "Import failed rc = $?"
+
+	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-actual.yaml
+
+	compare_yaml_files || return $?
+
+	cat <<EOF > $tyaml
+net:
+-     net type: ${NETTYPE}
+      local NI(s):
+      -     interfaces:
+                  0: ${INTERFACES[0]}
+EOF
+	$LNETCTL net show -v -n ${NETTYPE} | awk '/^\s+tunables:$/,/^\s+CPT:/' |
+		grep -v -e 'dev cpt' -e 'CPT' >> $tyaml
+
+	echo "            CPT: [$low-$high]" >> $tyaml
+
+	reinit_dlc || return $?
+
+	do_lnetctl import $tyaml || error "Import failed rc = $?"
+
+	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-actual.yaml
+
+	compare_yaml_files || return $?
 }
-run_test 258 "Check for successful resends"
+run_test 266 "Validate CPT parsing in network sequence"
 
 test_300() {
 	# LU-13274
