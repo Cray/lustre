@@ -196,6 +196,9 @@ cfs_range_expr_parse(struct cfs_lstr *src, unsigned min, unsigned max,
 	}
 
  out:
+	if (re->re_lo > re->re_hi)
+		goto failed;
+
 	*expr = re;
 	return 0;
 
