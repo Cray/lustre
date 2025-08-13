@@ -308,7 +308,8 @@ struct lnet_lnd {
 					 unsigned int dev_idx);
 
 	/* Handle LND specific Netlink handling */
-	int (*lnd_nl_get)(int cmd, struct sk_buff *msg, int type, void *data);
+	int (*lnd_nl_get)(int cmd, struct sk_buff *msg, int type, void *data,
+			  bool export_backup);
 	int (*lnd_nl_set)(int cmd, struct nlattr *attr, int type, void *data);
 
 	const struct ln_key_list *lnd_keys;

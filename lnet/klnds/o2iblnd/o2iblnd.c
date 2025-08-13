@@ -1249,7 +1249,8 @@ static const struct ln_key_list kiblnd_tunables_keys = {
 };
 
 static int
-kiblnd_nl_get(int cmd, struct sk_buff *msg, int type, void *data)
+kiblnd_nl_get(int cmd, struct sk_buff *msg, int type, void *data,
+	      bool export_backup)
 {
 	struct lnet_ioctl_config_o2iblnd_tunables *tuns;
 	struct lnet_ni *ni = data;
@@ -1263,10 +1264,8 @@ kiblnd_nl_get(int cmd, struct sk_buff *msg, int type, void *data)
 	tuns = &ni->ni_lnd_tunables.lnd_tun_u.lnd_o2ib;
 	nla_put_u32(msg, LNET_NET_O2IBLND_TUNABLES_ATTR_HIW_PEER_CREDITS,
 		    tuns->lnd_peercredits_hiw);
-	if (tuns->lnd_map_on_demand) {
-		nla_put_flag(msg,
-			     LNET_NET_O2IBLND_TUNABLES_ATTR_MAP_ON_DEMAND);
-	}
+	nla_put_u32(msg, LNET_NET_O2IBLND_TUNABLES_ATTR_MAP_ON_DEMAND,
+		    tuns->lnd_map_on_demand);
 	nla_put_u32(msg, LNET_NET_O2IBLND_TUNABLES_ATTR_CONCURRENT_SENDS,
 		    tuns->lnd_concurrent_sends);
 	nla_put_u32(msg, LNET_NET_O2IBLND_TUNABLES_ATTR_FMR_POOL_SIZE,
@@ -1278,8 +1277,9 @@ kiblnd_nl_get(int cmd, struct sk_buff *msg, int type, void *data)
 	nla_put_u16(msg, LNET_NET_O2IBLND_TUNABLES_ATTR_NTX, tuns->lnd_ntx);
 	nla_put_u16(msg, LNET_NET_O2IBLND_TUNABLES_ATTR_CONNS_PER_PEER,
 		    tuns->lnd_conns_per_peer);
-	nla_put_u32(msg, LNET_NET_O2IBLND_TUNABLES_ATTR_LND_TIMEOUT,
-		    kiblnd_timeout());
+	if (!export_backup)
+		nla_put_u32(msg, LNET_NET_O2IBLND_TUNABLES_ATTR_LND_TIMEOUT,
+			    kiblnd_timeout());
 	nla_put_s16(msg, LNET_NET_O2IBLND_TUNABLES_ATTR_LND_TOS,
 		    tuns->lnd_tos);
 
@@ -1318,7 +1318,7 @@ kiblnd_nl_set_default(int cmd, int type, void *data)
 		lt->lnd_ntx = df->lnd_ntx;
 		break;
 	case LNET_NET_O2IBLND_TUNABLES_ATTR_LND_TIMEOUT:
-		lt->lnd_timeout = df->lnd_timeout;
+		lt->lnd_timeout = kiblnd_timeout();
 		break;
 	case LNET_NET_O2IBLND_TUNABLES_ATTR_CONNS_PER_PEER:
 		lt->lnd_conns_per_peer = df->lnd_conns_per_peer;
@@ -1370,7 +1370,7 @@ kiblnd_nl_set(int cmd, struct nlattr *attr, int type, void *data)
 		tunables->lnd_tun_u.lnd_o2ib.lnd_ntx = nla_get_s64(attr);
 		break;
 	case LNET_NET_O2IBLND_TUNABLES_ATTR_LND_TIMEOUT:
-		tunables->lnd_tun_u.lnd_o2ib.lnd_timeout = nla_get_s64(attr);
+		/* Ignore */
 		break;
 	case LNET_NET_O2IBLND_TUNABLES_ATTR_CONNS_PER_PEER:
 		num = nla_get_s64(attr);
