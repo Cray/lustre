@@ -2426,12 +2426,14 @@ static int sigpending(int sig)
 static void ptlrpc_interrupted_set(struct ptlrpc_request_set *set)
 {
 	struct ptlrpc_request *req;
+	int usr2_pending = sigpending(SIGUSR2);
 
 	LASSERT(set != NULL);
-	CDEBUG(D_ERROR, "INTERRUPTED SET %p SIGUSR2 pending: %d\n",
-	       set, sigpending(SIGUSR2));
+	CDEBUG(usr2_pending ? D_ERROR : D_HA,
+	       "INTERRUPTED SET %p SIGUSR2 pending: %d\n",
+	       set, usr2_pending);
 
-	if (sigpending(SIGUSR2))
+	if (usr2_pending)
 		return;
 
 	list_for_each_entry(req, &set->set_requests, rq_set_chain) {
