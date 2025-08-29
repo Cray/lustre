@@ -58,6 +58,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include "mpi.h"
+#include <assert.h>
 
 #define DEFAULT_ITER    10000
 
@@ -126,7 +127,7 @@ int main(int argc, char *argv[])
 	unsigned int write_max = WRITE_SIZE_MAX;
 	unsigned int append_max = APPEND_SIZE_MAX;
 	unsigned int write_size = 0, append_size = 0, trunc_size = 0;
-	unsigned int trunc_max = 0, trunc_offset = 0;
+	unsigned int trunc_max = 0, read_size = 0;
 	char *append_buf;
 	char *write_buf;
 	char *read_buf = NULL;
@@ -305,16 +306,21 @@ int main(int argc, char *argv[])
 		if (rank == 0) {
 			write_size = (rand() % (write_max - 1)) + 1;
 			append_size = (rand() % (append_max - 1)) + 1;
-			trunc_size = (append_size == 1) ? 1 :
-				      (rand() %
-				      ((trunc_max ?: append_size) - 1)) + 1;
-			trunc_offset = write_size + trunc_size;
+			/* Let's cover some region before&after expected append
+			 * Let it be just 25% of the write region to not get
+			 * too many trunc_size < write_size cases, but enough
+			 * to get to the previous component if it is 64k.
+			 * Let it be the full append_max as append is a random
+			 * within append_max */
+			trunc_size = (rand() % ((trunc_max ?: append_max) +
+						write_size / 4)) +
+				     write_size - write_size / 4;
 
 			if (verbose || n % 1000 == 0)
 				rprintf(rank, n, 0, STATUS_FMT"\n",
 					write_char, write_size, write_size,
 					append_char, append_size, append_size,
-					trunc_offset, trunc_offset);
+					trunc_size, trunc_size);
 
 			write_rank = (classic_write ? 0 : rand()) % nproc;
 			do {
@@ -355,8 +361,6 @@ int main(int argc, char *argv[])
 			write_rank  = mpi_shared_vars[3];
 			append_rank = mpi_shared_vars[4];
 			trunc_rank  = mpi_shared_vars[5];
-
-			trunc_offset = write_size + trunc_size;
 		}
 
 		if (rank == write_rank || rank == 0)
@@ -425,12 +429,12 @@ int main(int argc, char *argv[])
 			 *      to fail currently (2009-02-01).
 			 */
 			ifnames = (classic_trunc ? rank : rand()) % nfnames;
-			ret = truncate(fnames[ifnames], trunc_offset);
+			ret = truncate(fnames[ifnames], trunc_size);
 			if (verbose > 1 || ret != 0)
 				rprintf(rank, n, ret,
 					"truncate %s (%u) @ %u: %s\n",
 					fnames[ifnames], ifnames,
-					trunc_offset, strerror(errno));
+					trunc_size, strerror(errno));
 		}
 
 		error = MPI_Barrier(MPI_COMM_WORLD);
@@ -473,7 +477,9 @@ int main(int argc, char *argv[])
 				done += ret;
 			} while (done != st.st_size);
 
-			if (memcmp(read_buf, write_buf, write_size)) {
+			read_size = trunc_size < write_size ?
+				    trunc_size : write_size;
+			if (memcmp(read_buf, write_buf, read_size)) {
 				rprintf(rank, n, 0,
 					"WRITE bad [0-%d]/[0-%#x] != %c\n",
 					write_size - 1, write_size - 1,
@@ -481,35 +487,39 @@ int main(int argc, char *argv[])
 				error = 1;
 			}
 
-			tmp_buf = read_buf + write_size;
+			tmp_buf = read_buf + read_size;
 
-			if (st.st_size == trunc_offset) {
+			if (st.st_size == trunc_size) {
 				/* Check case 1: first append then truncate */
 				int tmp_size, tmp_offset;
 
-				tmp_size = trunc_size < append_size ?
-						trunc_size : append_size;
-				tmp_offset = write_size + tmp_size;
+				tmp_offset =
+					trunc_size < write_size + append_size ?
+					trunc_size : write_size + append_size;
+				tmp_size = tmp_offset - read_size;
+				assert(tmp_size >= 0);
 
 				if (memcmp(tmp_buf, append_buf, tmp_size)) {
 					rprintf(rank, n, 0,
 						"trunc-after-APPEND bad [%d-%d]/[%#x-%#x] != %c\n",
-						write_size, tmp_offset - 1,
-						write_size, tmp_offset - 1,
+						read_size, tmp_offset - 1,
+						read_size, tmp_offset - 1,
 						append_char);
 					error = 1;
-				} else if (trunc_size > append_size &&
+				} else if (trunc_size >
+					   write_size + append_size &&
 					   memcmp(tmp_buf + append_size,
 						  trunc_buf,
-						  trunc_size - append_size)) {
+						  trunc_size - write_size -
+						  append_size)) {
 					rprintf(rank, n, 0,
 						"TRUNC-after-append bad [%d-%d]/[%#x-%#x] != 0\n",
-						tmp_offset, trunc_offset - 1,
-						tmp_offset, trunc_offset - 1);
+						tmp_offset, trunc_size - 1,
+						tmp_offset, trunc_size - 1);
 					error = 1;
 				}
 			} else {
-				int expected_size = trunc_offset + append_size;
+				int expected_size = trunc_size + append_size;
 				/* Check case 2: first truncate then append */
 				if (st.st_size != expected_size) {
 					rprintf(rank, n, 0,
@@ -519,18 +529,19 @@ int main(int argc, char *argv[])
 					error = 1;
 				}
 
-				if (memcmp(tmp_buf, trunc_buf, trunc_size)) {
+				if (memcmp(tmp_buf, trunc_buf,
+					   trunc_size - read_size)) {
 					rprintf(rank, n, 0,
 						"append-after-TRUNC bad [%d-%d]/[%#x-%#x] != 0\n",
-						write_size, trunc_offset - 1,
-						write_size, trunc_offset - 1);
+						read_size, trunc_size - 1,
+						read_size, trunc_size - 1);
 					error = 1;
-				} else if (memcmp(read_buf + trunc_offset,
+				} else if (memcmp(read_buf + trunc_size,
 						  append_buf, append_size)) {
 					rprintf(rank, n, 0,
 						"APPEND-after-trunc bad [%d-%d]/[%#x-%#x] != %c\n",
-						trunc_offset, expected_size - 1,
-						trunc_offset, expected_size - 1,
+						trunc_size, expected_size - 1,
+						trunc_size, expected_size - 1,
 						append_char);
 					error = 1;
 				}
@@ -542,7 +553,7 @@ int main(int argc, char *argv[])
 				rprintf(rank, n, 0, STATUS_FMT"\n",
 					write_char, write_size, write_size,
 					append_char, append_size, append_size,
-					trunc_offset, trunc_offset);
+					trunc_size, trunc_size);
 
 				sprintf(command, "od -Ax -a %s", fnames[0]);
 				ret = system(command);
@@ -554,7 +565,7 @@ int main(int argc, char *argv[])
 	if (rank == 0 || verbose)
 		printf("r=%2u n=%4u: "STATUS_FMT"\nPASS\n", rank, n - 1,
 		       write_char, write_size, write_size, append_char,
-		       append_size, append_size, trunc_offset, trunc_offset);
+		       append_size, append_size, trunc_size, trunc_size);
 
 	close(fd);
 
