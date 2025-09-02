@@ -1258,7 +1258,9 @@ void ll_ras_enter(struct file *f, loff_t pos, size_t count)
 	unsigned long index = pos >> PAGE_SHIFT;
 	struct ll_sb_info *sbi = ll_i2sbi(inode);
 
-	spin_lock(&ras->ras_lock);
+	if (!spin_trylock(&ras->ras_lock))
+		return;
+
 	ras->ras_requests++;
 	ras->ras_consecutive_requests++;
 	ras->ras_need_increase_window = false;
@@ -1334,7 +1336,9 @@ static void ras_update(struct ll_sb_info *sbi, struct inode *inode,
 	bool hit = flags & LL_RAS_HIT;
 
 	ENTRY;
-	spin_lock(&ras->ras_lock);
+
+	if (!spin_trylock(&ras->ras_lock))
+		return;
 
 	if (!hit)
 		CDEBUG(D_READA|D_IOTRACE, DFID " pages at %lu miss.\n",
@@ -2074,6 +2078,11 @@ out:
 #ifdef HAVE_AOPS_READ_FOLIO
 int ll_read_folio(struct file *file, struct folio *folio)
 {
-	return ll_readpage(file, folio_page(folio, 0));
+	struct page *page = &folio->page;
+
+	LASSERTF(folio_nr_pages(folio) == 1,
+		 "folio:%px npgs:%ld\n", folio, folio_nr_pages(folio));
+
+	return ll_readpage(file, page);
 }
 #endif
