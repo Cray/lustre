@@ -122,7 +122,7 @@ void rprintf(int rank, int loop, int error, const char *fmt, ...)
 int main(int argc, char *argv[])
 {
 	int n, nloops = DEFAULT_ITER;
-	int nfnames = 0, ifnames, fd;
+	int nfnames = 0, ifnames, fd = 0, fdname = 0;
 	int rank = -1, nproc, ret;
 	unsigned int write_max = WRITE_SIZE_MAX;
 	unsigned int append_max = APPEND_SIZE_MAX;
@@ -135,7 +135,7 @@ int main(int argc, char *argv[])
 	int seed = time(0);
 	int done;
 	int error;
-	int verbose = 0;
+	int verbose = 0, do_unlink = 0;
 	int classic_check = 0, classic_trunc = 0, classic_write = 0;
 	char write_char = 'A', append_char = 'a';
 	char *fnames[FNAMES_MAX], *end;
@@ -154,7 +154,7 @@ int main(int argc, char *argv[])
 	else
 		prog++;
 
-	while ((c = getopt(argc, argv, "a:cCn:s:t:Tvw:W")) != -1) {
+	while ((c = getopt(argc, argv, "a:cCn:s:t:Tuvw:W")) != -1) {
 		switch (c) {
 		case 'a':
 			append_max = strtoul(optarg, &end, 0);
@@ -194,6 +194,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'T':
 			classic_trunc++;
+			break;
+		case 'u':
+			do_unlink++;
 			break;
 		case 'v':
 			verbose++;
@@ -265,8 +268,9 @@ int main(int argc, char *argv[])
 		fd = open(fnames[0], O_WRONLY | O_CREAT | O_TRUNC, 0666);
 		rprintf(rank, -1, fd < 0,
 			"create %s, max size: %u, seed %u: %s\n", fnames[0],
-			max_size, seed, strerror(errno));
+			max_size, seed, fd < 0 ? strerror(errno) : "ok");
 		close(fd);
+		fd = 0;
 
 		trunc_buf = calloc(1, trunc_max ?: append_max);
 		if (!trunc_buf)
@@ -282,22 +286,27 @@ int main(int argc, char *argv[])
 				prog, max_size);
 	}
 
-	error = MPI_Barrier(MPI_COMM_WORLD);
-	if (verbose > 2 || error != MPI_SUCCESS)
-		rprintf(rank, -1, error != MPI_SUCCESS,
-			"prep MPI_Barrier: %d\n", error);
-
-	ifnames = rank % nfnames;
-	fd = open(fnames[ifnames], O_RDWR | O_APPEND);
-	if (verbose || fd < 0)
-		rprintf(rank, -1, errno, "open '%s' (%u): %s\n",
-			fnames[ifnames], ifnames, strerror(errno));
-
 	for (n = 0; n < nloops; n++) {
 		/* Initialized only to quiet stupid GCC warnings */
 		unsigned int append_rank = n, trunc_rank = n + 1;
 		unsigned int write_rank = 0;
 		unsigned int mpi_shared_vars[6];
+
+		if (fd == 0 || do_unlink) {
+			error = MPI_Barrier(MPI_COMM_WORLD);
+			if (verbose > 2 || error != MPI_SUCCESS)
+				rprintf(rank, -1, error != MPI_SUCCESS,
+					"prep MPI_Barrier: %d\n", error);
+
+			fdname = ifnames = rank % nfnames;
+			fd = open(fnames[ifnames], O_CREAT | O_RDWR | O_APPEND,
+				  0666);
+			if (verbose > 1 || fd < 0)
+				rprintf(rank, n, fd < 0 ? errno : 0,
+					"open '%s' (%u): %s\n",
+					fnames[ifnames], ifnames,
+					fd < 0 ? strerror(errno) : "ok");
+		}
 
 		/* reset the environment */
 		write_char = 'A' + (n % 26);
@@ -373,7 +382,7 @@ int main(int argc, char *argv[])
 				rprintf(rank, n, ret,
 					"initial truncate %s (%u) @ 0: %s\n",
 					fnames[ifnames], ifnames,
-					strerror(errno));
+					ret ? strerror(errno) : "ok");
 
 			done = 0;
 			do {
@@ -384,7 +393,7 @@ int main(int argc, char *argv[])
 						ret < 0 && errno != EINTR,
 						"write %d/%d @ %d: %s\n",
 						ret + done, write_size, done,
-						strerror(errno));
+						ret < 0 ? strerror(errno):"ok");
 					if (ret < 0 && errno != EINTR)
 						break;
 				}
@@ -434,7 +443,7 @@ int main(int argc, char *argv[])
 				rprintf(rank, n, ret,
 					"truncate %s (%u) @ %u: %s\n",
 					fnames[ifnames], ifnames,
-					trunc_size, strerror(errno));
+					trunc_size, ret ? strerror(errno):"ok");
 		}
 
 		error = MPI_Barrier(MPI_COMM_WORLD);
@@ -455,7 +464,8 @@ int main(int argc, char *argv[])
 				rprintf(rank, n, ret,
 					"stat %s (%u) size %llu: %s\n",
 					fnames[ifnames], ifnames,
-					(long long)st.st_size, strerror(errno));
+					(long long)st.st_size,
+					ret ? strerror(errno) : "ok");
 
 			ret = lseek(fd, 0, SEEK_SET);
 			if (ret != 0)
@@ -559,7 +569,19 @@ int main(int argc, char *argv[])
 				ret = system(command);
 				MPI_Abort(MPI_COMM_WORLD, 1);
 			}
+
+			if (do_unlink) {
+				ret = unlink(fnames[fdname]);
+				if (verbose > 1 || ret != 0) {
+					rprintf(rank, n, ret != 0,
+						"unlink %s (%u): %s\n",
+						fnames[fdname], fdname,
+						ret ? strerror(errno) : "ok");
+				}
+			}
 		}
+		if (do_unlink)
+			close(fd);
 	}
 
 	if (rank == 0 || verbose)
