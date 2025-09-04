@@ -2958,6 +2958,8 @@ test_38() {
 	local bsize
 	local pagesz=$(getconf PAGE_SIZE)
 
+	[[ $(facet_fstype ost1) == zfs ]] && skip "skip ZFS backend"
+
 	$LCTL get_param mdc.*.import | grep -q client_encryption ||
 		skip "client encryption not supported"
 
