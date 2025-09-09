@@ -28,7 +28,6 @@
 #include <limits.h>
 #include <string.h>
 #include <openssl/dh.h>
-#include <openssl/engine.h>
 #include <openssl/err.h>
 
 #include "sk_utils.h"
