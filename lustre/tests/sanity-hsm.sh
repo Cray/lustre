@@ -1173,6 +1173,7 @@ test_12c() {
 	local f=$DIR/$tdir/$tfile
 	mkdir_on_mdt0 $DIR/$tdir
 	$LFS setstripe -c 2 "$f"
+	stack_trap "rm -rf $DIR/$tdir"
 	local fid=$(create_file "$f" 1M 5)
 
 	local FILE_CRC=$(md5sum $f)
@@ -1653,6 +1654,7 @@ test_15() {
 	copytool setup
 
 	mkdir_on_mdt0 $DIR/$tdir
+	stack_trap "rm -rf $DIR/$tdir"
 
 	# archive files
 	local f=$DIR/$tdir/$tfile
@@ -1708,6 +1710,7 @@ test_16() {
 
 	mkdir_on_mdt0 $DIR/$tdir
 	local f=$DIR/$tdir/$tfile
+	stack_trap "rm -f $ref $f"
 	local fid=$(copy_file $ref $f)
 	rm $ref
 	local start=$(date +%s)
@@ -2809,6 +2812,7 @@ test_31a() {
 
 	create_archive_file $tdir/$tfile
 	local f=$DIR/$tdir/$tfile
+	stack_trap "rm -f $f"
 	copytool import $tdir/$tfile $f
 	local fid=$($LFS path2fid $f)
 	copytool setup
@@ -2828,6 +2832,7 @@ test_31b() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid=$(create_file "$f" 1MB 39)
+	stack_trap "rm -f $f"
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
 	wait_request_state $fid ARCHIVE SUCCEED
@@ -2847,6 +2852,7 @@ test_31c() {
 
 	local f=$DIR/$tdir/$tfile
 	local fid=$(create_file "$f" 1M 39)
+	stack_trap "rm -f $f"
 
 	$LFS hsm_archive --archive $HSM_ARCHIVE_NUMBER $f
 	wait_request_state $fid ARCHIVE SUCCEED
