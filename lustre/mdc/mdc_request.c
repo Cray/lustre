@@ -721,6 +721,7 @@ void mdc_commit_open(struct ptlrpc_request *req)
 {
 	struct md_open_data *mod = req->rq_cb_data;
 
+	LASSERT(mod || req->rq_committed == 1);
 	if (mod == NULL)
 		return;
 
