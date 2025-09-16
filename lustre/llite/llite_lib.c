@@ -3663,16 +3663,22 @@ int ll_remount_fs(struct super_block *sb, int *flags, char *data)
  * \param[in] sb	super block for this file-system
  * \param[in] open_req	pointer to the original open request
  */
-void ll_open_cleanup(struct super_block *sb, struct req_capsule *pill)
+void ll_open_cleanup(struct super_block *sb, struct lookup_intent *it)
 {
 	struct mdt_body			*body;
 	struct md_op_data		*op_data;
+	struct ptlrpc_request		*open_req = it->it_request;
 	struct ptlrpc_request		*close_req = NULL;
 	struct obd_export		*exp	   = ll_s2sbi(sb)->ll_md_exp;
 
 	ENTRY;
 
-	body = req_capsule_server_get(pill, &RMF_MDT_BODY);
+	DEBUG_REQ(D_HA, open_req, "open :");
+	ll_intent_drop_lock(it);
+	spin_lock(&open_req->rq_lock);
+	open_req->rq_replay = 0;
+	spin_unlock(&open_req->rq_lock);
+	body = req_capsule_server_get(&open_req->rq_pill, &RMF_MDT_BODY);
 	OBD_ALLOC_PTR(op_data);
 	if (op_data == NULL) {
 		CWARN("%s: cannot allocate op_data to release open handle for "
@@ -3840,8 +3846,7 @@ out:
 	md_put_lustre_md(sbi->ll_md_exp, &md);
 
 	if (rc != 0 && it != NULL && it->it_op & IT_OPEN) {
-		ll_intent_drop_lock(it);
-		ll_open_cleanup(sb != NULL ? sb : (*inode)->i_sb, pill);
+		ll_open_cleanup(sb != NULL ? sb : (*inode)->i_sb, it);
 	}
 
 	return rc;
