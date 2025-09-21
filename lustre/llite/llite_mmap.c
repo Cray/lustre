@@ -104,6 +104,8 @@ ll_fault_io_init(struct lu_env *env, struct vm_area_struct *vma,
 	struct cl_io	       *io;
 	struct cl_fault_io     *fio;
 	int			rc;
+	unsigned int ra_pages = RA_MIN_MMAP_RANGE_PAGES;
+
 	ENTRY;
 
 	if (ll_file_nolock(file))
@@ -128,10 +130,10 @@ restart:
 	       PFID(&ll_i2info(inode)->lli_fid), vma, vma->vm_start,
 	       vma->vm_end, vma->vm_flags, fio->ft_index);
 
-	if (vma->vm_flags & VM_SEQ_READ)
-		io->ci_seq_read = 1;
-	else if (vma->vm_flags & VM_RAND_READ)
+	if (vma->vm_flags & VM_RAND_READ)
 		io->ci_rand_read = 1;
+	else
+		io->ci_seq_read = 1;
 
 	rc = cl_io_init(env, io, CIT_FAULT, io->ci_obj);
 	if (rc == 0) {
@@ -139,6 +141,9 @@ restart:
 		struct ll_file_data *fd = file->private_data;
 
 		LASSERT(vio->vui_cl.cis_io == io);
+		if (!mkwrite)
+			ll_ras_enter(file, index << PAGE_SHIFT,
+				     ra_pages << PAGE_SHIFT);
 
 		/* mmap lock must be MANDATORY it has to cache
 		 * pages. */
