@@ -109,6 +109,7 @@ again:
 			vio->vui_fd = attr->ia_file->private_data;
 
 		result = cl_io_loop(env, io);
+		CFS_FAIL_TIMEOUT(OBD_FAIL_LLITE_TRUNC_PAUSE, 2);
 	} else {
 		result = io->ci_result;
 	}

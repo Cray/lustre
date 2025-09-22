@@ -6919,6 +6919,35 @@ log "cleanup: ======================================================"
 [ "$(mount | grep $MOUNT2)" ] && wait_update $HOSTNAME "fuser -m $MOUNT2" "" ||
 	true
 
+test_121() {
+	rm -f $DIR/$tfile
+	$LFS setstripe -E 64K -E 128K -E -1 $DIR/$tfile ||
+		error "setstripe $DIR/$tfile failed"
+
+	yes | dd bs=20k count=1 of=$DIR/$tfile conv=notrunc ||
+		error "1st dd failed"
+
+#define OBD_FAIL_LLITE_TRUNC_PAUSE		    0x1436
+	lctl set_param fail_loc=0x80001436
+	truncate $DIR/$tfile 51200 &
+	local PID=$!
+
+	sleep 1
+
+	yes | dd bs=20k count=1 of=$DIR2/$tfile conv=notrunc oflag=append ||
+		error "2nd dd failed"
+
+	wait $PID || error "trunc failed"
+
+	local size=$(stat -c "%s" $DIR2/$tfile)
+	hexdump $DIR/$tfile
+
+	(( $size == 71680 )) || error "wrong size $size"
+
+	return 0
+}
+run_test 121 "trunc append race"
+
 complete_test $SECONDS
 rm -f $SAMPLE_FILE
 check_and_cleanup_lustre
