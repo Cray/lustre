@@ -5264,14 +5264,14 @@ test_450() {
 
 	setup_fakeif || return $?
 
-	add_net "tcp" "${INTERFACES[0]}" || return $?
-	add_net "tcp" "$FAKE_IF" || return $?
+	add_net "$NETTYPE" "${INTERFACES[0]}" || return $?
+	add_net "$NETTYPE" "$FAKE_IF" || return $?
 
 	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
 
 	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
 net:
-    - net type: tcp
+    - net type: $NETTYPE
       local NI(s):
         - interfaces:
               0: ${INTERFACES[0]}
