@@ -82,7 +82,6 @@ int cl_setattr_ost(struct cl_object *obj, const struct iattr *attr,
 
 	io = vvp_env_thread_io(env);
 	io->ci_obj = obj;
-	io->ci_verify_layout = 1;
 
 	io->u.ci_setattr.sa_attr.lvb_atime = attr->ia_atime.tv_sec;
 	io->u.ci_setattr.sa_attr.lvb_mtime = attr->ia_mtime.tv_sec;
