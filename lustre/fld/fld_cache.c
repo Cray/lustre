@@ -27,7 +27,12 @@
 #include "fld_internal.h"
 
 /**
- * create fld cache.
+ * fld_cache_init() - create fld cache.
+ * @name: name of the cache
+ * @cache_size: cache size
+ * @cache_threshold: cache shrink threashold
+ *
+ * Returns pointer to struct fld_cache on success or %negative on failure
  */
 struct fld_cache *fld_cache_init(const char *name, int cache_size,
 				 int cache_threshold)
@@ -64,7 +69,8 @@ struct fld_cache *fld_cache_init(const char *name, int cache_size,
 }
 
 /**
- * destroy fld cache.
+ * fld_cache_fini() - destroy fld cache.
+ * @cache: cache to destroy
  */
 void fld_cache_fini(struct fld_cache *cache)
 {
@@ -78,7 +84,7 @@ void fld_cache_fini(struct fld_cache *cache)
 	OBD_FREE_PTR(cache);
 }
 
-/**
+/*
  * delete given node from list.
  */
 static void fld_cache_entry_delete(struct fld_cache *cache,
@@ -90,7 +96,7 @@ static void fld_cache_entry_delete(struct fld_cache *cache,
 	OBD_FREE_PTR(node);
 }
 
-/**
+/*
  * fix list by checking new entry with NEXT entry in order.
  */
 static void fld_fix_new_list(struct fld_cache *cache)
@@ -160,7 +166,10 @@ restart_fixup:
 }
 
 /**
- * add node to fld cache
+ * fld_cache_entry_add() - add node to fld cache
+ * @cache: fld_cache struct to which the new entry will be added
+ * @f_new: fld_cache_entry struct which is added to @cache
+ * @pos: location/position to add entry
  */
 static inline void fld_cache_entry_add(struct fld_cache *cache,
 				       struct fld_cache_entry *f_new,
@@ -174,8 +183,13 @@ static inline void fld_cache_entry_add(struct fld_cache *cache,
 }
 
 /**
- * Check if cache needs to be shrunk. If so - do it.
- * Remove one entry in list and so on until cache is shrunk enough.
+ * fld_cache_shrink() - shrink cache
+ * @cache: cache to shrink
+ *
+ * Check if cache needs to be shrunk. If so - do it. Remove one entry in list
+ * and so on until cache is shrunk enough.
+ *
+ * Returns 0 always
  */
 static int fld_cache_shrink(struct fld_cache *cache)
 {
@@ -205,7 +219,7 @@ static int fld_cache_shrink(struct fld_cache *cache)
 	RETURN(0);
 }
 
-/**
+/*
  * kill all fld cache entries.
  */
 void fld_cache_flush(struct fld_cache *cache)
@@ -221,10 +235,12 @@ void fld_cache_flush(struct fld_cache *cache)
 }
 
 /**
- * punch hole in existing range. divide this range and add new
- * entry accordingly.
+ * fld_cache_punch_hole() - punch hole in existing range. divide this range and
+ * add new entry accordingly.
+ * @cache: fld_cache struct to which to punch hold
+ * @f_curr: Pointer to current fld_cache_entry (actual range)
+ * @f_new: Pointer to new fld_cache_entry which is getting inserted
  */
-
 static void fld_cache_punch_hole(struct fld_cache *cache,
 				 struct fld_cache_entry *f_curr,
 				 struct fld_cache_entry *f_new)
@@ -263,7 +279,10 @@ static void fld_cache_punch_hole(struct fld_cache *cache,
 }
 
 /**
- * handle range overlap in fld cache.
+ * fld_cache_overlap_handle() - handle range overlap(conflict) in fld cache.
+ * @cache: fld_cache struct
+ * @f_curr: Pointer to current fld_cache_entry which is overlapping
+ * @f_new: Pointer to new fld_cache_entry which is getting inserted
  */
 static void fld_cache_overlap_handle(struct fld_cache *cache,
 				struct fld_cache_entry *f_curr,
@@ -344,10 +363,14 @@ struct fld_cache_entry
 }
 
 /**
- * Insert FLD entry in FLD cache.
+ * fld_cache_insert_nolock() - Insert FLD entry in FLD cache.
+ * @cache: fld_cache struct to which the new entry will be inserted
+ * @f_new: fld_cache_entry entry to be inserted
  *
  * This function handles all cases of merging and breaking up of
  * ranges.
+ *
+ * Returns 0 always
  */
 int fld_cache_insert_nolock(struct fld_cache *cache,
 			    struct fld_cache_entry *f_new)
@@ -437,7 +460,14 @@ void fld_cache_delete_nolock(struct fld_cache *cache,
 }
 
 /**
- * lookup \a seq sequence for range in fld cache.
+ * fld_cache_lookup() - lookup @seq sequence for range in fld cache.
+ * @cache: fld_cache struct that lookup(search) is done
+ * @seq: FID which is being searched
+ * @range: lookup/search if success will fill @range [out]
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on failure
  */
 int fld_cache_lookup(struct fld_cache *cache,
 		     const u64 seq, struct lu_seq_range *range)

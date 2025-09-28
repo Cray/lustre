@@ -115,14 +115,11 @@ out:
 }
 
 /**
- * insert range in fld store.
- *
- *      \param  range  range to be inserted
- *      \param  th     transaction for this operation as it could compound
- *                     transaction.
- *
- *      \retval  0  success
- *      \retval  -ve error
+ * fld_index_create() - insert range in fld store.
+ * @env: current lustre environment
+ * @fld: fld store
+ * @new_range: range to be inserted
+ * @th: transaction for this operation as it could compound transaction.
  *
  * The whole fld index insertion is protected by seq->lss_mutex (see
  * seq_server_alloc_super), i.e. only one thread will access fldb each
@@ -132,7 +129,11 @@ out:
  * whether it can be merged from the left.
  *
  * Caller must hold fld->lsf_lock
- **/
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on error
+ */
 int fld_index_create(const struct lu_env *env, struct lu_server_fld *fld,
 		     const struct lu_seq_range *new_range, struct thandle *th)
 {
@@ -197,15 +198,19 @@ out:
 }
 
 /**
+ * fld_index_lookup() - lookup range for a seq passed.
+ * @env: current lustre environment
+ * @fld: fld store
+ * @seq: seq for lookup.
+ * @range: result of lookup.
+ *
  * lookup range for a seq passed. note here we only care about the start/end,
  * caller should handle the attached location data (flags, index).
  *
- * \param  seq     seq for lookup.
- * \param  range   result of lookup.
- *
- * \retval  0           found, \a range is the matched range;
- * \retval -ENOENT      not found, \a range is the left-side range;
- * \retval  -ve         other error;
+ * Return:
+ * * %0 found, @range is the matched range;
+ * * %-ENOENT not found, @range is the left-side range;
+ * * %negative other error
  */
 int fld_index_lookup(const struct lu_env *env, struct lu_server_fld *fld,
 		     u64 seq, struct lu_seq_range *range)
@@ -235,17 +240,17 @@ int fld_index_lookup(const struct lu_env *env, struct lu_server_fld *fld,
 }
 
 /**
- * insert entry in fld store.
- *
- * \param  env    relevant lu_env
- * \param  fld    fld store
- * \param  range  range to be inserted
- *
- * \retval  0  success
- * \retval  -ve error
+ * fld_insert_entry() - insert entry in fld store.
+ * @env: current lustre environment
+ * @fld: fld store
+ * @range: range to be inserted
  *
  * Caller must hold fld->lsf_lock
- **/
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on error
+ */
 
 int fld_insert_entry(const struct lu_env *env,
 		     struct lu_server_fld *fld,
