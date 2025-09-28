@@ -62,10 +62,18 @@ int fld_declare_server_create(const struct lu_env *env,
 EXPORT_SYMBOL(fld_declare_server_create);
 
 /**
- * Insert FLD index entry and update FLD cache.
+ * fld_server_create() - Insert FLD index entry and update FLD cache.
+ * @env: current lustre environment
+ * @fld: server-side pointer to FLD
+ * @range: actual data to insert
+ * @th: transaction handle
  *
  * This function is called from the sequence allocator when a super-sequence
  * is granted to a server.
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on error
  */
 int fld_server_create(const struct lu_env *env, struct lu_server_fld *fld,
 		      const struct lu_seq_range *range, struct thandle *th)
@@ -80,9 +88,9 @@ int fld_server_create(const struct lu_env *env, struct lu_server_fld *fld,
 }
 EXPORT_SYMBOL(fld_server_create);
 
-/**
+/*
  * Extract index information from fld name like srv-fsname-MDT0000
- **/
+ */
 int fld_name_to_index(const char *name, u32 *index)
 {
 	char *dash;
@@ -99,9 +107,9 @@ int fld_name_to_index(const char *name, u32 *index)
 	RETURN(rc);
 }
 
-/**
+/*
  * Retrieve fldb entry from MDT0 and add to local FLDB and cache.
- **/
+ */
 int fld_update_from_controller(const struct lu_env *env,
 			       struct lu_server_fld *fld)
 {
@@ -180,8 +188,16 @@ out:
 EXPORT_SYMBOL(fld_update_from_controller);
 
 /**
- * Lookup sequece in local cache/fldb.
- **/
+ * fld_local_lookup() - Lookup sequece in (server) local cache/fldb.
+ * @env: current lustre environment
+ * @fld: server-side pointer to FLD
+ * @seq: sequence to search
+ * @range: actual range we get after lookup [out]
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on error
+ */
 int fld_local_lookup(const struct lu_env *env, struct lu_server_fld *fld,
 		     u64 seq, struct lu_seq_range *range)
 {
@@ -213,11 +229,19 @@ int fld_local_lookup(const struct lu_env *env, struct lu_server_fld *fld,
 EXPORT_SYMBOL(fld_local_lookup);
 
 /**
- *  Lookup MDT/OST by seq, returns a range for given seq.
+ * fld_server_lookup() - Lookup MDT/OST by seq, returns a range for given seq.
+ * @env: current lustre environment
+ * @fld: server-side pointer to FLD
+ * @seq: sequence to search
+ * @range: actual range we get after lookup [out]
  *
- *  If that entry is not cached in fld cache, request is sent to super
- *  sequence controller node (MDT0). All other MDT[1...N] and client
- *  cache fld entries, but this cache is not persistent.
+ * If that entry is not cached in fld cache, request is sent to super
+ * sequence controller node (MDT0). All other MDT[1...N] and client
+ * cache fld entries, but this cache is not persistent.
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on error
  */
 int fld_server_lookup(const struct lu_env *env, struct lu_server_fld *fld,
 		      u64 seq, struct lu_seq_range *range)
@@ -271,7 +295,7 @@ int fld_server_lookup(const struct lu_env *env, struct lu_server_fld *fld,
 }
 EXPORT_SYMBOL(fld_server_lookup);
 
-/**
+/*
  * All MDT server handle fld lookup operation. But only MDT0 has fld index.
  * if entry is not found in cache we need to forward lookup request to MDT0
  */
@@ -352,13 +376,18 @@ static int fld_handle_query(struct tgt_session_info *tsi)
 	RETURN(rc);
 }
 
-/*
- * Returns true, if fid is local to this server node.
+/**
+ * fid_is_local() - Report if the fid is local to this server node
+ * @env: current lustre environment
+ * @site: struct lu_site (local server)
+ * @fid: FID which is being checked
  *
  * WARNING: this function is *not* guaranteed to return false if fid is
  * remote: it makes an educated conservative guess only.
  *
  * fid_is_local() is supposed to be used in assertion checks only.
+ *
+ * Returns %True, if fid is local to this server node.
  */
 int fid_is_local(const struct lu_env *env,
 		 struct lu_site *site, const struct lu_fid *fid)
