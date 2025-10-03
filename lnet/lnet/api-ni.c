@@ -39,7 +39,7 @@ EXPORT_SYMBOL(the_lnet);
 
 static char *ip2nets = "";
 module_param(ip2nets, charp, 0444);
-MODULE_PARM_DESC(ip2nets, "LNET network <- IP table");
+MODULE_PARM_DESC(ip2nets, "LNET network <- IP table (Deprecated)");
 
 static char *networks = "";
 module_param(networks, charp, 0444);
@@ -47,7 +47,7 @@ MODULE_PARM_DESC(networks, "local networks");
 
 static char *routes = "";
 module_param(routes, charp, 0444);
-MODULE_PARM_DESC(routes, "routes to non-local networks");
+MODULE_PARM_DESC(routes, "routes to non-local networks (Deprecated)");
 
 static int rnet_htable_size = LNET_REMOTE_NETS_HASH_DEFAULT;
 module_param(rnet_htable_size, int, 0444);
