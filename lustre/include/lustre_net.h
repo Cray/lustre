@@ -89,14 +89,7 @@
  * use the negotiated per-client ocd_brw_size to determine the bulk
  * RPC count. */
 #define PTLRPC_BULK_OPS_MASK	(~((__u64)PTLRPC_BULK_OPS_COUNT - 1))
-/*
- * Unaligned DIO adjust MD size for alignment to the interop page size
- * Enable page alignmen interop range:
- *  MD_MAX_INTEROP_PAGE_SIZE(64k) <-> MD_MIN_INTEROP_PAGE_SIZE(4k)
- */
-#define MD_MIN_INTEROP_PAGE_SHIFT	12
-#define MD_MIN_INTEROP_PAGE_SIZE	(1u << MD_MIN_INTEROP_PAGE_SHIFT)
-#define MD_MAX_INTEROP_PAGE_SIZE	(1u << 16)
+#define PTLRPC_BULK_INTEROP_PAGE_SIZE	4096
 /**
  * Define maxima for bulk I/O.
  *
@@ -1378,11 +1371,12 @@ extern const struct ptlrpc_bulk_frag_ops ptlrpc_bulk_kiov_nopin_ops;
 struct ptlrpc_bulk_desc {
 	unsigned int	bd_refs; /* number MD's assigned including zero-sends */
 	/** completed with failure */
-	unsigned long bd_failure:1;
+	unsigned long bd_failure:1,
 	/** client side */
-	unsigned long bd_registered:1,
-	/* bulk request is RDMA transfer, use page->host as real address */
-			bd_is_rdma:1;
+		      bd_registered:1,
+	/* bulk request is GPU RDMA transfer, use page->host as real address */
+		      bd_is_rdma:1,
+		      bd_is_srv:1; /* export or import should be used */
 	/** For serialization with callback */
 	spinlock_t bd_lock;
 	/** {put,get}{source,sink}{kvec,kiov} */
@@ -1396,14 +1390,14 @@ struct ptlrpc_bulk_desc {
 	/** Back pointer to the request */
 	struct ptlrpc_request *bd_req;
 	const struct ptlrpc_bulk_frag_ops *bd_frag_ops;
-	wait_queue_head_t      bd_waitq;        /* server side only WQ */
-	int                    bd_iov_count;    /* # entries in bd_iov */
-	int                    bd_max_iov;      /* allocated size of bd_iov */
-	int                    bd_nob;          /* # bytes covered */
-	int                    bd_nob_transferred; /* # bytes GOT/PUT */
-	unsigned int		bd_nob_last;	/* # bytes in last MD */
+	wait_queue_head_t	bd_waitq;        /* server side only WQ */
+	int			bd_iov_count;    /* # entries in bd_iov */
+	int			bd_max_iov;      /* allocated size of bd_iov */
+	int			bd_nob;          /* # bytes covered */
+	int			bd_nob_transferred; /* # bytes GOT/PUT */
+	unsigned int		bd_iop_len;	/* md iop bytes */
 
-	__u64                  bd_last_mbits;
+	__u64			bd_last_mbits;
 
 	struct ptlrpc_cb_id    bd_cbid;         /* network callback info */
 	lnet_nid_t             bd_sender;       /* stash event::sender */

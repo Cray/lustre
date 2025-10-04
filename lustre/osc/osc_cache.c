@@ -1835,7 +1835,35 @@ struct extent_rpc_data {
 	unsigned int		erd_max_pages;
 	unsigned int		erd_max_chunks;
 	unsigned int		erd_max_extents;
+	unsigned int		erd_max_io_slots; /* max iov count */
+	unsigned int		erd_io_slots;	  /* iov used */
 };
+
+#define IO_SLOTS(brw)	(((size_t)LNET_MAX_IOV * (brw)) >> LNET_MTU_BITS)
+
+#define write_rpc_def(rpclist, cli)					\
+{									\
+	.erd_rpc_list	= (rpclist),					\
+	.erd_page_count	= 0,						\
+	.erd_max_pages	= (cli)->cl_max_pages_per_rpc,			\
+	.erd_max_chunks	= osc_max_write_chunks(cli),			\
+	.erd_max_extents = 256,						\
+	.erd_io_slots	= 0,						\
+	.erd_max_io_slots = IO_SLOTS(					\
+		(cli)->cl_import->imp_connect_data.ocd_brw_size),	\
+}
+
+#define read_rpc_def(rpclist, cli)					\
+{									\
+	.erd_rpc_list	= (rpclist),					\
+	.erd_page_count	= 0,						\
+	.erd_max_pages	= (cli)->cl_max_pages_per_rpc,			\
+	.erd_max_chunks	= UINT_MAX,					\
+	.erd_max_extents = UINT_MAX,					\
+	.erd_io_slots	= 0,						\
+	.erd_max_io_slots = IO_SLOTS(					\
+		(cli)->cl_import->imp_connect_data.ocd_brw_size),	\
+}
 
 static inline unsigned osc_extent_chunks(const struct osc_extent *ext)
 {
@@ -1884,6 +1912,9 @@ static int try_to_add_extent_for_io(struct client_obd *cli,
 {
 	struct osc_extent *tmp;
 	unsigned int chunk_count;
+#if PAGE_SIZE != PTLRPC_BULK_INTEROP_PAGE_SIZE
+	unsigned int unalign_tax = 0;
+#endif
 	ENTRY;
 
 	EASSERT((ext->oe_state == OES_CACHE || ext->oe_state == OES_LOCK_DONE),
@@ -1904,12 +1935,23 @@ static int try_to_add_extent_for_io(struct client_obd *cli,
 
 	data->erd_max_pages = max(ext->oe_mppr, data->erd_max_pages);
 	EASSERTF(data->erd_page_count != 0 ||
-		ext->oe_nr_pages <= data->erd_max_pages, ext,
-		"The first extent to be fit in a RPC contains %u pages, "
-		"which is over the limit %u.\n", ext->oe_nr_pages,
-		data->erd_max_pages);
+		 ext->oe_nr_pages <= data->erd_max_pages, ext,
+		 "The first extent to be fit in a RPC contains %u pages, "
+		 "which is over the limit %u.\n", ext->oe_nr_pages,
+		 data->erd_max_pages);
 	if (data->erd_page_count + ext->oe_nr_pages > data->erd_max_pages)
 		RETURN(0);
+
+#if PAGE_SIZE != PTLRPC_BULK_INTEROP_PAGE_SIZE
+	/** unaligned extent might needs one more page due split */
+	if (ext->oe_start != 0)
+		unalign_tax = 1;
+
+	/* check for full bulk size when free bulk 64k IOV remain */
+	if (data->erd_io_slots + ext->oe_nr_pages + unalign_tax >
+	    data->erd_max_io_slots)
+		RETURN(0);
+#endif
 
 	list_for_each_entry(tmp, data->erd_rpc_list, oe_link) {
 		EASSERT(tmp->oe_owner == current, tmp);
@@ -1921,6 +1963,9 @@ static int try_to_add_extent_for_io(struct client_obd *cli,
 	data->erd_max_extents--;
 	data->erd_max_chunks -= chunk_count;
 	data->erd_page_count += ext->oe_nr_pages;
+#if PAGE_SIZE != PTLRPC_BULK_INTEROP_PAGE_SIZE
+	data->erd_io_slots += ext->oe_nr_pages + unalign_tax;
+#endif
 	list_move_tail(&ext->oe_link, data->erd_rpc_list);
 	ext->oe_owner = current;
 	RETURN(1);
@@ -1944,13 +1989,7 @@ static unsigned int get_write_extents(struct osc_object *obj,
 {
 	struct client_obd *cli = osc_cli(obj);
 	struct osc_extent *ext;
-	struct extent_rpc_data data = {
-		.erd_rpc_list	= rpclist,
-		.erd_page_count	= 0,
-		.erd_max_pages	= cli->cl_max_pages_per_rpc,
-		.erd_max_chunks	= osc_max_write_chunks(cli),
-		.erd_max_extents = 256,
-	};
+	struct extent_rpc_data data = write_rpc_def(rpclist, cli);
 
 	assert_osc_object_is_locked(obj);
 	while ((ext = list_first_entry_or_null(&obj->oo_hp_exts,
@@ -2083,13 +2122,7 @@ __must_hold(osc)
 	struct osc_extent *ext;
 	struct osc_extent *next;
 	LIST_HEAD(rpclist);
-	struct extent_rpc_data data = {
-		.erd_rpc_list	= &rpclist,
-		.erd_page_count	= 0,
-		.erd_max_pages	= cli->cl_max_pages_per_rpc,
-		.erd_max_chunks	= UINT_MAX,
-		.erd_max_extents = UINT_MAX,
-	};
+	struct extent_rpc_data data = read_rpc_def(&rpclist, cli);
 	int rc = 0;
 	ENTRY;
 

@@ -137,8 +137,9 @@ struct ptlrpc_bulk_desc *ptlrpc_prep_bulk_exp(struct ptlrpc_request *req,
 	if (desc == NULL)
 		RETURN(NULL);
 
-        desc->bd_export = class_export_get(exp);
-        desc->bd_req = req;
+	desc->bd_export = class_export_get(exp);
+	desc->bd_req = req;
+	desc->bd_is_srv = 1;
 
         desc->bd_cbid.cbid_fn  = server_bulk_callback;
         desc->bd_cbid.cbid_arg = desc;
