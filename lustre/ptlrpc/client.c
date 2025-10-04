@@ -190,7 +190,7 @@ struct ptlrpc_bulk_desc *ptlrpc_new_bulk(unsigned int nfrags,
 	desc->bd_portal = portal;
 	desc->bd_type = type;
 	desc->bd_md_count = 0;
-	desc->bd_nob_last = LNET_MTU;
+	desc->bd_iop_len = 0;
 	desc->bd_frag_ops = ops;
 	LASSERT(max_brw > 0);
 	desc->bd_md_max_brw = min(max_brw, PTLRPC_BULK_OPS_COUNT);
@@ -245,29 +245,18 @@ struct ptlrpc_bulk_desc *ptlrpc_prep_bulk_imp(struct ptlrpc_request *req,
 }
 EXPORT_SYMBOL(ptlrpc_prep_bulk_imp);
 
-void __ptlrpc_prep_bulk_page(struct ptlrpc_bulk_desc *desc,
+#define IOP_MASK	(~(PTLRPC_BULK_INTEROP_PAGE_SIZE - 1))
+#define IOP_LEN(len)	((len + PTLRPC_BULK_INTEROP_PAGE_SIZE - 1) & IOP_MASK)
+
+static void __ptlrpc_add_bulk_chunk(struct ptlrpc_bulk_desc *desc,
 			     struct page *page, int pageoffset, int len,
 			     int pin)
 {
 	struct bio_vec *kiov;
 
-	LASSERT(desc->bd_iov_count < desc->bd_max_iov);
-	LASSERT(page != NULL);
-	LASSERT(pageoffset >= 0);
-	LASSERT(len > 0);
-	LASSERT(pageoffset + len <= PAGE_SIZE);
-
 	kiov = &desc->bd_vec[desc->bd_iov_count];
 
-	if (((desc->bd_iov_count % LNET_MAX_IOV) == 0) ||
-	     ((desc->bd_nob_last + len) > LNET_MTU)) {
-		desc->bd_mds_off[desc->bd_md_count] = desc->bd_iov_count;
-		desc->bd_md_count++;
-		desc->bd_nob_last = 0;
-		LASSERT(desc->bd_md_count <= PTLRPC_BULK_OPS_COUNT);
-	}
-
-	desc->bd_nob_last += len;
+	desc->bd_iop_len += IOP_LEN(len);
 	desc->bd_nob += len;
 
 	if (pin)
@@ -278,6 +267,43 @@ void __ptlrpc_prep_bulk_page(struct ptlrpc_bulk_desc *desc,
 	kiov->bv_len = len;
 
 	desc->bd_iov_count++;
+	LASSERT(desc->bd_iov_count <= desc->bd_max_iov);
+}
+
+/* add one page to desc->bd_vec bio_vec array and advance */
+void __ptlrpc_prep_bulk_page(struct ptlrpc_bulk_desc *desc,
+			     struct page *page, int pageoffset, int len,
+			     int pin)
+{
+	LASSERT(page != NULL);
+	LASSERT(pageoffset >= 0);
+	LASSERT(len > 0);
+	LASSERT(pageoffset + len <= PAGE_SIZE);
+
+restart:
+	if (((desc->bd_iov_count % LNET_MAX_IOV) == 0) ||
+	    ((desc->bd_iop_len + PTLRPC_BULK_INTEROP_PAGE_SIZE) > LNET_MTU)) {
+		/* no free for align chunk */
+		desc->bd_mds_off[desc->bd_md_count] = desc->bd_iov_count;
+		desc->bd_md_count++;
+		desc->bd_iop_len = 0;
+		if (desc->bd_md_count > desc->bd_md_max_brw &&
+		   (desc->bd_md_max_brw << 1) <= PTLRPC_BULK_OPS_COUNT)
+			desc->bd_md_max_brw = (desc->bd_md_max_brw << 1);
+	} else if ((desc->bd_iop_len + len) > LNET_MTU) {
+		/* can't fit full chunk but should have some aligned chunks */
+		/* lets find how much align chunks can fit in current md */
+		unsigned int ch = LNET_MTU - desc->bd_iop_len;
+		unsigned int sz = ch & ~(PTLRPC_BULK_INTEROP_PAGE_SIZE - 1);
+
+		__ptlrpc_add_bulk_chunk(desc, page, pageoffset, sz, pin);
+
+		/* create a new, different kiov chunk mapped to the same page */
+		pageoffset += sz;
+		len -= sz;
+		goto restart;
+	}
+	__ptlrpc_add_bulk_chunk(desc, page, pageoffset, len, pin);
 }
 EXPORT_SYMBOL(__ptlrpc_prep_bulk_page);
 
@@ -293,7 +319,7 @@ void ptlrpc_free_bulk(struct ptlrpc_bulk_desc *desc)
 
 	sptlrpc_enc_pool_put_pages(desc);
 
-	if (desc->bd_export)
+	if (desc->bd_is_srv)
 		class_export_put(desc->bd_export);
 	else
 		class_import_put(desc->bd_import);
