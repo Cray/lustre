@@ -623,6 +623,9 @@ static int lov_io_slice_init(struct lov_io *lio,
 		io->ci_write_intent.e_end = lio->lis_endpos;
 	}
 
+	CDEBUG(D_LAYOUT, "%llu %llu\n", io->ci_write_intent.e_start,
+	       io->ci_write_intent.e_end);
+
 	index = 0;
 	lov_foreach_io_layout(index, lio, &io->ci_write_intent) {
 		if (!lsm_entry_inited(obj->lo_lsm, index)) {

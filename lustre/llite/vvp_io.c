@@ -1344,6 +1344,7 @@ static int vvp_io_write_start(const struct lu_env *env,
 		 */
 		ll_merge_attr(env, inode);
 		io->u.ci_wr.wr.crw_pos = i_size_read(inode);
+
 		if (io->u.ci_wr.wr_append_lockpos <
 		    io->u.ci_wr.wr.crw_pos + io->u.ci_wr.wr.crw_bytes) {
 			CDEBUG(D_VFSTRACE, "size changed during append old size %llu, new size %llu, bytes %lu\n",
@@ -1361,8 +1362,9 @@ static int vvp_io_write_start(const struct lu_env *env,
 			 pos, pos + crw_bytes);
 	}
 
-	CDEBUG(D_VFSTRACE, "%s: write [%llu, %llu)\n",
-	       file_dentry(file)->d_name.name, pos, pos + crw_bytes);
+	CDEBUG(D_VFSTRACE, "%s: write [%llu, %llu) append %d append lockpos "
+	       "%llu\n", file_dentry(file)->d_name.name, pos, pos + crw_bytes,
+	       cl_io_is_append(io), io->u.ci_wr.wr_append_lockpos);
 
 	/* The maximum Lustre file size is variable, based on the OST maximum
 	 * object size and number of stripes.  This needs another check in

@@ -719,7 +719,7 @@ test_11a() {
 	rm -f $comp_file
 
 	# only 1st component instantiated
-	$LFS setstripe -E 1M -S 1M -E 2M -E 3M -E -1 $comp_file ||
+	$LFS setstripe -E 1M -S 1M -E 2M -E 3M -E 4M -E -1 $comp_file ||
 		error "Create $comp_file failed"
 
 	local f1=$($LFS getstripe -I1 $comp_file | grep "l_fid")
@@ -753,14 +753,18 @@ test_11a() {
 	f4=$($LFS getstripe -I4 $comp_file | grep "l_fid")
 	[[ -n $f4 ]] && error "3: 4th component instantiated"
 
-	# all 4 components instantiated, using append write
+	# 4 of 5 components instantiated, using append write
 	dd if=/dev/zero of=$comp_file bs=1k count=1 seek=2k
+
 	ls -l $comp_file
 	rwv -f $comp_file -w -a -n 2 $((1024*1023)) 1
 	ls -l $comp_file
 
 	f4=$($LFS getstripe -I4 $comp_file | grep "l_fid")
 	[[ -z $f4 ]] && error "4: 4th component uninstantiated"
+
+	local f5=$($LFS getstripe -I5 $comp_file | grep "l_fid")
+	[[ -n $f5 ]] && error "3: 5th component instantiated"
 
 	return 0
 }
@@ -2609,6 +2613,24 @@ test_26c() {
 	[ $? != 0 ] || error "append must return an error"
 }
 run_test 26c "Append to not-existend component, crossing the component border"
+
+test_26d() {
+	$LFS setstripe -E 1m -S 1M -c 1 -E 10M $DIR/$tfile
+	dd if=/dev/urandom bs=1M count=1 >> $DIR/$tfile
+	[ $? == 0 ] || error "append failed on 1st dd"
+
+	local id=$($LFS getstripe -I2 $DIR/$tfile | grep "l_fid")
+	[[ -n $id ]] && error "2nd component instantiated"
+
+	dd if=/dev/urandom bs=1M count=5 >> $DIR/$tfile
+	[ $? == 0 ] || error "append failed on 2nd dd"
+
+	id=$($LFS getstripe -I2 $DIR/$tfile | grep "l_fid")
+	[[ -z $id ]] && error "2nd component uninstantiated"
+
+	return 0
+}
+run_test 26d "Append to existend component, not fully specified layout"
 
 test_27() {
 	[[ $($LCTL get_param mdc.*.import) =~ connect_flags.*overstriping ]] ||
