@@ -6620,6 +6620,30 @@ static inline int lqa_get_range(const char *range, __u32 *start, __u32 *end)
 	return 0;
 }
 
+static inline int lqa_name_insane(const char *arg, int len)
+{
+	const char *c;
+	int rc = 0;
+
+	if (strnlen(arg, len + 1) > len) {
+		rc = -ENAMETOOLONG;
+		fprintf(stderr, "lqa name '%.*s' is longer than %d: rc = %d\n",
+			len, arg, len, rc);
+		return rc;
+	}
+
+	for (c = arg; *c != '\0'; c++) {
+		if (isalnum(*c) || *c == '_')
+			continue;
+		rc = -EINVAL;
+		fprintf(stderr, "lqa name '%.*s' has illegal character '%c'(0x%02x): rc = %d\n",
+			len, arg, isprint(*c) ? *c : ' ', *c, rc);
+		return rc;
+	}
+
+	return rc;
+}
+
 static inline int lqa_cmd(int argc, char **argv, enum lqa_cmd_type cmd)
 {
 	char *lqaname = NULL;
@@ -6647,11 +6671,10 @@ static inline int lqa_cmd(int argc, char **argv, enum lqa_cmd_type cmd)
 			}
 			break;
 		case 'n':
+			rc = lqa_name_insane(optarg, LQA_NAME_MAX);
+			if (rc)
+				return rc;
 			lqaname = optarg;
-			if (strnlen(lqaname, LQA_NAME_MAX + 1) > LQA_NAME_MAX) {
-				fprintf(stderr, "lqaname is too long\n");
-				return -ENAMETOOLONG;
-			}
 			break;
 		case 'r':
 			if (!(cmd == LQA_ADD || cmd == LQA_REM))

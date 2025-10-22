@@ -7657,6 +7657,7 @@ test_97a()
 {
 	local lqa="lqa1"
 	local longstr="0123456789123456789"
+	local badname="lqa2*"
 
 	(( $MDS1_VERSION >= $(version_code 2.17.50) )) ||
 		skip "need MDS >= 2.17.50 to support lctl lqa commands"
@@ -7664,6 +7665,7 @@ test_97a()
 	$LQA_NEW && error "lqa new succeeded with no lqa"
 #define LQA_NAME_MAX 15 /* Maximum lqa name length */
 	$LQA_NEW --name $longstr && error "lqa max name length is 16"
+	$LQA_NEW --name $badname && error "Name $badname contains an asterisk"
 	$LQA_NEW --name $lqa || error "cannot create $lqa"
 	stack_trap "$LQA_DESTROY --name $lqa || true"
 
@@ -7789,6 +7791,8 @@ test_97c ()
 
 	$LQA_ADD --name $lqa --range 10-19 ||
 		error "cannot add range 10-19 to $lqa"
+	$LFS setquota -u $TSTID --lqa $lqa -B ${bhard} -b ${bsoft} -I ${ihard} \
+		-i ${isoft} $DIR && error "QID can't be set for lqa:$lqa"
 	$LFS setquota -U --lqa $lqa -B ${bhard} -b ${bsoft} -I ${ihard} \
 		-i ${isoft} $DIR || error "set user quota failed for lqa:$lqa"
 	$LFS quota -U --lqa $lqa $DIR

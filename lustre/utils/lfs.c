@@ -9582,8 +9582,8 @@ static inline bool lfs_arg_insane(const char *arg, int len, const char *name)
 	for (c = arg; *c != '\0'; c++) {
 		if (isalnum(*c) || *c == '_')
 			continue;
-		fprintf(stderr, "%s name '%.*s' has illegal characters %d\n",
-			name, len, arg, len);
+		fprintf(stderr, "%s name '%.*s' has illegal character '%c'(0x%02x)\n",
+			name, len, arg, isprint(*c) ? *c : ' ', *c);
 		return true;
 	}
 
@@ -10052,13 +10052,13 @@ quota_type_def:
 					progname);
 			break;
 		case LFS_LQA_OPT:
-			if (lfs_lqaarg_insane(optarg)) {
-				rc = -1;
+			if (qctl->qc_type == ALLQUOTA || qctl->qc_id != 0) {
+				fprintf(stderr, "Specify LQA quota type with -U,-G, or -P\n");
+				rc = CMD_HELP;
 				goto out;
 			}
-			if (qctl->qc_type == ALLQUOTA) {
-				fprintf(stderr, "LQA requires to specify quota type\n");
-				rc = CMD_HELP;
+			if (lfs_lqaarg_insane(optarg)) {
+				rc = -1;
 				goto out;
 			}
 			snprintf(qctl->qc_lqaname, LQA_NAME_MAX + 1, "%s",
@@ -11286,7 +11286,7 @@ static int lfs_quota(int argc, char **argv)
 		case LFS_LQA_OPT:
 			if (!param.qp_show_default ||
 			    qctl->qc_type == ALLQUOTA) {
-				fprintf(stderr, "Specity LQA quota type with -U,-G, or -P\n");
+				fprintf(stderr, "Specify LQA quota type with -U,-G, or -P\n");
 				rc = CMD_HELP;
 				goto out;
 			}
