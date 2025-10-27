@@ -1421,7 +1421,7 @@ ha_wait_nodes()
 				return 1
 			else
 				local down=${nodes_down[@]}
-				down=${down// /,/}
+				down=${down// /,}
 				ha_info "REBOOTING $ha_reboot $down \
 					attempt: $i"
 				local cmd="$ha_reboot $down"
