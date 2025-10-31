@@ -140,6 +140,7 @@ extern const struct file_operations kfilnd_target_state_stats_file_ops;
 extern const struct file_operations kfilnd_target_stats_file_ops;
 extern const struct file_operations kfilnd_initiator_stats_file_ops;
 extern const struct file_operations kfilnd_reset_stats_file_ops;
+extern const struct file_operations kfilnd_mempool_stats_file_ops;
 
 extern struct workqueue_struct *kfilnd_wq;
 
@@ -157,6 +158,11 @@ extern unsigned int wq_max_active;
 
 int kfilnd_tunables_setup(struct lnet_ni *ni);
 int kfilnd_tunables_init(void);
+int kfilnd_get_tn_reserve_min(void);
+int kfilnd_get_msg_reserve_min(void);
+int kfilnd_get_peer_credits(void);
+int kfilnd_tn_get_mempool_stats(int *tn_min, int *tn_curr,
+				int *msg_min, int *msg_curr);
 
 struct kfilnd_transaction;
 struct kfilnd_ep;
