@@ -1208,7 +1208,6 @@ route:
       gateway: 7.7.7.7@tcp
       hop: -1
       priority: 0
-      health_sensitivity: 1
 peer:
     - primary nid: 7.7.7.7@tcp
       Multi-Rail: False
@@ -1240,17 +1239,14 @@ route:
       gateway: 8.8.8.10@tcp
       hop: -1
       priority: 0
-      health_sensitivity: 1
     - net: tcp8
       gateway: 8.8.8.9@tcp
       hop: -1
       priority: 0
-      health_sensitivity: 1
     - net: tcp8
       gateway: 8.8.8.8@tcp
       hop: -1
       priority: 0
-      health_sensitivity: 1
 peer:
     - primary nid: 8.8.8.9@tcp
       Multi-Rail: False
@@ -3250,6 +3246,43 @@ test_226() {
 run_test 226 "test missing route for 1 of 2 routers"
 
 test_227() {
+	[[ ${NETTYPE} == tcp* ]] || skip "Need tcp NETTYPE"
+
+	ROUTERS_REQUIRED=1
+	RPEERS_REQUIRED=1
+
+	setup_router_test $opts || return $?
+
+	do_basic_rtr_test || return $?
+
+	local rpeer=${RPEERS[0]}
+	local rpeer_nids=( ${RPEER_NIDS[$rpeer]} )
+	local router=${ROUTERS[0]}
+
+	do_node $rpeer $LNETCTL lnet unconfigure ||
+		error "Failed to unconfigure lnet on $rpeer"
+
+	do_lnetctl ping ${rpeer_nids[0]} &&
+		error "Expected ping to fail"
+
+	do_lnetctl ping ${rpeer_nids[0]} &&
+		error "Expected ping to fail"
+
+	local dropped=$(do_node $router \
+			$LNETCTL peer show -v 2 --nid ${rpeer_nids[0]} |
+			grep -A 2 dropped_stats |
+			awk '/get:/{print $2}' |
+			xargs echo |
+			sed 's/ /\+/g' | bc)
+
+	((dropped > 0)) ||
+		error "Expected dropped > 0 found $dropped"
+
+	cleanup_router_test
+}
+run_test 227 "Check router peer health w/DD disabled"
+
+test_228() {
 	ROUTERS_REQUIRED=2
 	RPEERS_REQUIRED=1
 
@@ -3286,44 +3319,7 @@ test_227() {
 
 	cleanup_router_test || return $?
 }
-run_test 227 "Routes should stay up when health is decremented"
-
-test_230() {
-	[[ ${NETTYPE} == tcp* ]] || skip "Need tcp NETTYPE"
-
-	ROUTERS_REQUIRED=1
-	RPEERS_REQUIRED=1
-
-	setup_router_test $opts || return $?
-
-	do_basic_rtr_test || return $?
-
-	local rpeer=${RPEERS[0]}
-	local rpeer_nids=( ${RPEER_NIDS[$rpeer]} )
-	local router=${ROUTERS[0]}
-
-	do_node $rpeer $LNETCTL lnet unconfigure ||
-		error "Failed to unconfigure lnet on $rpeer"
-
-	do_lnetctl ping ${rpeer_nids[0]} &&
-		error "Expected ping to fail"
-
-	do_lnetctl ping ${rpeer_nids[0]} &&
-		error "Expected ping to fail"
-
-	local dropped=$(do_node $router \
-			$LNETCTL peer show -v 2 --nid ${rpeer_nids[0]} |
-			grep -A 2 dropped_stats |
-			awk '/get:/{print $2}' |
-			xargs echo |
-			sed 's/ /\+/g' | bc)
-
-	((dropped > 0)) ||
-		error "Expected dropped > 0 found $dropped"
-
-	cleanup_router_test
-}
-run_test 226 "Check router peer health w/DD disabled"
+run_test 228 "Routes should stay up when health is decremented"
 
 test_230() {
 	[[ ${NETTYPE} == tcp* ]] ||
@@ -3427,7 +3423,7 @@ test_231() {
 }
 run_test 231 "Check DLC handling of peer_timeout parameter"
 
-test_232() {
+test_233() {
 	setup_health_test true || return $?
 
 	local retries=$($LNETCTL global show | awk '/retry_count:/{print $NF}')
@@ -3462,7 +3458,7 @@ test_232() {
 
 	cleanup_health_test
 }
-run_test 232 "Check for successful resends"
+run_test 233 "Check for successful resends"
 
 check_parameter() {
 	local para=$1
@@ -3475,7 +3471,7 @@ check_parameter() {
 		     grep -c "^ \+${para}: ${value}$") != 1 ))
 }
 
-test_232() {
+test_241() {
 	reinit_dlc || return $?
 
 	do_lnetctl net add --net ${NETTYPE} --if ${INTERFACES[0]} ||
@@ -3510,7 +3506,7 @@ test_232() {
 	# Restore tunable timeout to old value
 	do_lnetctl net set --net ${NETTYPE} --lnd-timeout ${old_lnd_to}
 }
-run_test 232 "Check setting LND timeout value via lnetctl updates tunables"
+run_test 241 "Check setting LND timeout value via lnetctl updates tunables"
 
 ### Test that linux route is added for each ni
 test_250() {
@@ -3672,7 +3668,7 @@ test_254() {
 }
 run_test 254 "Message delayed beyond deadline should be dropped (multi-rail)"
 
-test_255() {
+test_256() {
 	ROUTERS_REQUIRED=1
 	RPEERS_REQUIRED=1
 
@@ -3784,7 +3780,7 @@ test_255() {
 
 	cleanup_router_test
 }
-run_test 255 "Router should not drop messages that are past the deadline"
+run_test 256 "Router should not drop messages that are past the deadline"
 
 test_257() {
 	ROUTERS_REQUIRED=2
