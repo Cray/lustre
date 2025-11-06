@@ -964,117 +964,6 @@ add_net() {
 		error "Failed to add net ${net} on if ${if}"
 }
 
-test_50_check_ip2nets() {
-	local expected=( $@ )
-
-	reinit_dlc || return $?
-
-	do_lnetctl import $TMP/sanity-lnet-$testnum.yaml ||
-		error "Failed to import yaml rc=$?"
-
-	local actual=( $($LCTL list_nids | xargs echo) )
-
-	((${#expected[@]} == ${#actual[@]})) ||
-		error "Expected ${#expected[@]} NIDs found ${#actual[@]}"
-
-	local nid idx=0
-
-	cat $TMP/sanity-lnet-$testnum.yaml
-
-	for nid in ${expected[@]}; do
-		echo "$idx: $nid ${actual[idx]}"
-		[[ $nid == ${actual[idx]} ]] ||
-			error "Expected $nid == ${actual[idx]}"
-		((idx++))
-	done
-
-	return 0
-}
-
-test_50() {
-	reinit_dlc || return $?
-
-	add_net "$NETTYPE" "${INTERFACES[0]}" || return $?
-	add_net "${NETTYPE}2" "${INTERFACES[0]}" || return $?
-
-	local nids=( $($LCTL list_nids | xargs echo) )
-
-	local ip=$(ip -o -4 a s ${INTERFACES[0]} | awk '{print $4}' |
-		   sed 's/\/.*//')
-
-	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
-ip2nets:
-  - net-spec: $NETTYPE
-    interfaces:
-         0: ${INTERFACES[0]}
-    ip-range:
-         0: $ip
-EOF
-
-	test_50_check_ip2nets ${nids[0]} || return $?
-
-	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
-ip2nets:
-  - net-spec: $NETTYPE
-    interfaces:
-         0: ${INTERFACES[0]}
-         1: $FAKE_IF
-    ip-range:
-         0: $ip
-         1: $FAKE_IP
-EOF
-
-	test_50_check_ip2nets ${nids[0]} || return $?
-
-	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
-ip2nets:
-  - net-spec: $NETTYPE
-    interfaces:
-         0: ${INTERFACES[0]}
-         1: $FAKE_IF
-    ip-range:
-         0: $ip
-         1: $FAKE_IP
-  - net-spec: ${NETTYPE}2
-    interfaces:
-         0: ${INTERFACES[0]}
-    ip-range:
-         0: $ip
-EOF
-
-	test_50_check_ip2nets ${nids[@]} || return $?
-
-	[[ $NETTYPE == tcp* ]] || return 0
-
-	cleanup_netns || error "Failed to cleanup netns before test execution"
-	cleanup_lnet || error "Failed to unload modules before test execution"
-	setup_fakeif || return $?
-
-	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
-ip2nets:
-  - net-spec: $NETTYPE
-    interfaces:
-         0: ${INTERFACES[0]}
-         1: $FAKE_IF
-    ip-range:
-         0: $ip
-         1: $FAKE_IP
-  - net-spec: ${NETTYPE}2
-    interfaces:
-         0: ${INTERFACES[0]}
-    ip-range:
-         0: $ip
-EOF
-
-	test_50_check_ip2nets ${nids[0]} $FAKE_IP@${NETTYPE} ${nids[1]} ||
-		return $?
-
-	cleanup_fakeif || return $?
-
-	return 0
-}
-run_test 50 "Check ip2nets yaml config"
-
 test_99a() {
 	reinit_dlc || return $?
 
@@ -1415,6 +1304,337 @@ test_106() {
 	return 0
 }
 run_test 106 "Deleting GW peer should fail"
+
+do_import_test() {
+	reinit_dlc || return $?
+
+	cat ${1:-"$TMP/sanity-lnet-$testnum-expected.yaml"}
+
+	do_lnetctl import ${1:-"$TMP/sanity-lnet-$testnum-expected.yaml"} ||
+		error "Import failed with rc = $?"
+
+	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-actual.yaml
+
+	compare_yaml_files || return $?
+}
+
+test_150() {
+	reinit_dlc || return $?
+
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
+
+	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
+
+	cat <<EOF > $TMP/sanity-lnet.yaml
+ip2nets:
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+    ip-range:
+        0: $(ip -o -4 a s ${INTERFACES[0]} | awk '{print $4}' | sed 's/\/.*//')
+EOF
+
+	do_import_test "$TMP/sanity-lnet.yaml" || return $?
+}
+run_test 150 "Check import of ip2nets yaml sequence"
+
+test_151() {
+	[[ $NETTYPE == tcp* ]] || skip "Need tcp nettype"
+
+	cleanup_netns || error "Failed to cleanup netns before test execution"
+	cleanup_lnet || error "Failed to unload modules before test execution"
+
+	setup_fakeif || error "Failed to add fake IF"
+
+	reinit_dlc || return $?
+
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
+	add_net "${NETTYPE}" "${FAKE_IF}" || return $?
+
+	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
+
+	local if0_ip=$(ip -o -4 a s ${INTERFACES[0]} | awk '{print $4}' |
+		       sed 's/\/.*//')
+
+	echo "Check import of ip2nets with two matching interfaces"
+
+	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+        1: ${FAKE_IF}
+    ip-range:
+        0: ${if0_ip}
+        1: ${FAKE_IP}
+EOF
+
+	do_import_test "$TMP/sanity-lnet-$testnum.yaml" || return $?
+
+	echo "Additional rules for same net should not change config"
+
+	cat <<EOF >> $TMP/sanity-lnet-$testnum.yaml
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${FAKE_IF}
+    ip-range:
+        0: ${FAKE_IP}
+EOF
+
+	do_import_test "$TMP/sanity-lnet-$testnum.yaml" || return $?
+
+	add_net "${NETTYPE}2" "${INTERFACES[0]}"
+
+	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
+
+	echo "Additional rule for second net should apply"
+
+	cat <<EOF >> $TMP/sanity-lnet-$testnum.yaml
+  - net-spec: ${NETTYPE}2
+    interfaces:
+        0: ${INTERFACES[0]}
+EOF
+
+	do_import_test "$TMP/sanity-lnet-$testnum.yaml" || return $?
+
+	cleanup_fakeif
+	setup_netns
+}
+run_test 151 "Check correct application of multiple ip2nets rules"
+
+test_152() {
+	[[ $NETTYPE == tcp* ]] || skip "Need tcp nettype"
+
+	cleanup_netns || error "Failed to cleanup netns before test execution"
+	cleanup_lnet || error "Failed to unload modules before test execution"
+
+	reinit_dlc || return $?
+
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
+
+	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
+
+	local if0_ip=$(ip -o -4 a s ${INTERFACES[0]} | awk '{print $4}' |
+		       sed 's/\/.*//')
+	local i range
+
+	echo "Check import of ip2nets with wildcard IP patterns"
+
+	for i in {3..1}; do
+		range=$(echo "$if0_ip" | cut -d. -f1-$i)
+		for ((j = 3; j >= $i; j--)); do
+			range="${range:+$range.}*"
+		done
+
+		cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+    ip-range:
+        0: ${range}
+EOF
+
+		do_import_test "$TMP/sanity-lnet-$testnum.yaml" || return $?
+	done
+
+	setup_fakeif || error "Failed to add fake IF"
+
+	echo "Check match-all expression mask later rules"
+
+	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+    ip-range:
+        0: "*.*.*.*"
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+        1: ${FAKE_IF}
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+        1: ${FAKE_IF}
+    ip-range:
+        0: $if0_ip
+        1: $FAKE_IP
+EOF
+
+	do_import_test "$TMP/sanity-lnet-$testnum.yaml" || return $?
+
+	cleanup_fakeif
+	setup_netns
+}
+run_test 152 "Check import of ip2nets with wildcard IP patterns"
+
+create_ipv4_range() {
+	local stepped=${1:-false}
+
+	local if0_ip=$(ip -o -4 a s ${INTERFACES[0]} | awk '{print $4}' |
+		       sed 's/\/.*//')
+	local if0_net=$(echo "$if0_ip" | cut -d. -f1-3)
+	local if0_host=$(echo "$if0_ip" | cut -d. -f4)
+	local range_start=$((if0_host - 4 < 0 ? 0 : if0_host - 4))
+	local range_end=$((if0_host + 4 > 255 ? 255 : if0_host + 4))
+
+	if ${stepped}; then
+		(((if0_host - range_start) % 2 == 0)) || range_start=${if0_host}
+
+		echo "${if0_net}.[${range_start}-${range_end}/2]"
+	else
+		echo "${if0_net}.[${range_start}-${range_end}]"
+	fi
+}
+
+test_153() {
+	[[ $NETTYPE == tcp* ]] || skip "Need tcp nettype"
+
+	cleanup_lnet || error "Failed to unload modules before test execution"
+
+	reinit_dlc || return $?
+
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
+
+	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
+
+	local ip_range=$(create_ipv4_range)
+
+	echo "Check import of ip2nets with IP address ranges"
+
+	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+    ip-range:
+        0: ${ip_range}
+EOF
+
+	do_import_test "$TMP/sanity-lnet-$testnum.yaml" || return $?
+}
+run_test 153 "Check import of ip2nets with IP address ranges"
+
+test_154() {
+	[[ $NETTYPE == tcp* ]] || skip "Need tcp nettype"
+
+	cleanup_netns || error "Failed to cleanup netns before test execution"
+	cleanup_lnet || error "Failed to unload modules before test execution"
+
+	setup_fakeif || error "Failed to add fake IF"
+
+	reinit_dlc || return $?
+
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
+
+	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
+
+	local ip_range=$(create_ipv4_range true)
+
+	echo "Check import of ip2nets with stepped IP address ranges"
+
+	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+    ip-range:
+        0: ${ip_range}
+EOF
+
+	do_import_test "$TMP/sanity-lnet-$testnum.yaml" || return $?
+
+	cleanup_fakeif
+	setup_netns
+}
+run_test 154 "Check import of ip2nets with stepped IP address ranges"
+
+test_155() {
+	[[ $NETTYPE == tcp* ]] || skip "Need tcp nettype"
+
+	reinit_dlc || return $?
+
+	local if0_ip=$(ip -o -4 a s ${INTERFACES[0]} | awk '{print $4}' |
+		       sed 's/\/.*//')
+
+	echo "Check import with no matching rules (should fail)"
+
+	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+    ip-range:
+        0: 10.20.30.40
+EOF
+
+	! do_lnetctl import "$TMP/sanity-lnet-$testnum.yaml" ||
+		error "Import should have failed"
+}
+run_test 155 "Check ip2nets import failure with no matching rules"
+
+test_156() {
+	[[ $NETTYPE == tcp* ]] || skip "Need tcp nettype"
+
+	cleanup_lnet || error "Failed to unload modules before test execution"
+
+	reinit_dlc || return $?
+
+	add_net "${NETTYPE}" "${INTERFACES[0]}" || return $?
+
+	$LNETCTL export --backup > $TMP/sanity-lnet-$testnum-expected.yaml
+
+	local if0_ip=$(ip -o -4 a s ${INTERFACES[0]} | awk '{print $4}' |
+		       sed 's/\/.*//')
+	local if0_net3=$(echo "$if0_ip" | cut -d. -f1-3)
+	local if0_host=$(echo "$if0_ip" | cut -d. -f4)
+	local host2=$if0_host
+	local i
+
+	for i in {1..4}; do
+		((host2 + 2 < 255)) &&
+			host2=$((host2 + 2)) ||
+			host2=1
+		range=${range:+$range,}$host2
+		((i == 2)) && range=${range},$if0_host
+	done
+
+	echo "Check import of ip2nets with comma-separated IP list"
+
+	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+    ip-range:
+        0: ${if0_net3}.[${range}]
+EOF
+
+	do_import_test "$TMP/sanity-lnet-$testnum.yaml"
+}
+run_test 156 "Check import of ip2nets with comma-separated IP ranges"
+
+test_157() {
+	reinit_dlc || return $?
+
+	echo "Check import failure with missing net-spec"
+
+	cat <<EOF > $TMP/sanity-lnet-$testnum.yaml
+ip2nets:
+  - interfaces:
+        0: ${INTERFACES[0]}
+    ip-range:
+        0: 192.168.1.1
+EOF
+
+	! do_lnetctl import "$TMP/sanity-lnet-$testnum.yaml" ||
+		error "Import should have failed with missing net-spec"
+}
+run_test 157 "Check import failure with malformed ip2nets YAML"
 
 test_200() {
 	[[ ${NETTYPE} == tcp* ]] ||
