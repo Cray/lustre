@@ -1204,7 +1204,7 @@ static int lustre_lnet_kfi_intf2nid(struct lnet_dlc_intf_descr *intf,
 	} else {
 		rc = sscanf(intf->intf_name, "cxi%u", &nic_index);
 		if (rc != 1)
-			return LUSTRE_CFG_RC_NO_MATCH;
+			return LUSTRE_CFG_RC_BAD_PARAM;
 	}
 
 	size = snprintf(NULL, 0, cxi_nic_addr_path, nic_index) + 1;
@@ -1217,11 +1217,11 @@ static int lustre_lnet_kfi_intf2nid(struct lnet_dlc_intf_descr *intf,
 	rc = read_sysfs_file(path, "nic_addr", val, 1, sizeof(val));
 	free(path);
 	if (rc)
-		return LUSTRE_CFG_RC_NO_MATCH;
+		return LUSTRE_CFG_RC_BAD_PARAM;
 
 	addr = strtol(val, NULL, 16);
 	if (addr == LONG_MIN || addr == LONG_MAX)
-		return LUSTRE_CFG_RC_NO_MATCH;
+		return LUSTRE_CFG_RC_BAD_PARAM;
 
 	*nid_addr = addr;
 
@@ -1277,6 +1277,7 @@ static int lustre_lnet_intf2nids(struct lnet_dlc_network_descr *nw,
 		if (rc) {
 			snprintf(err_str, str_len,
 				 "\"cannot read gni nid\"");
+			rc = LUSTRE_CFG_RC_BAD_PARAM;
 			goto failed;
 		}
 		gni_num = atoi(val);
@@ -1332,7 +1333,7 @@ static int lustre_lnet_intf2nids(struct lnet_dlc_network_descr *nw,
 out:
 	*nnids = count;
 
-	return 0;
+	return LUSTRE_CFG_RC_NO_ERR;
 
 failed:
 	free(*nids);
@@ -1366,7 +1367,8 @@ failed:
  */
 int lustre_lnet_match_ip_to_intf(struct ifaddrs *ifa,
 				 struct list_head *intf_list,
-				 struct list_head *ip_ranges)
+				 struct list_head *ip_ranges,
+				 char *err_str, size_t str_len)
 {
 	int rc;
 	__u32 ip;
@@ -1400,6 +1402,8 @@ int lustre_lnet_match_ip_to_intf(struct ifaddrs *ifa,
 				return LUSTRE_CFG_RC_MATCH;
 			}
 		}
+
+		snprintf(err_str, str_len, "No UP interfaces were found");
 		return LUSTRE_CFG_RC_NO_MATCH;
 	}
 
@@ -1444,6 +1448,9 @@ int lustre_lnet_match_ip_to_intf(struct ifaddrs *ifa,
 		if (!list_empty(intf_list))
 			return LUSTRE_CFG_RC_MATCH;
 
+		snprintf(err_str, str_len,
+			 "IP pattern(s) do not match available interfaces");
+
 		return LUSTRE_CFG_RC_NO_MATCH;
 	}
 
@@ -1468,15 +1475,20 @@ int lustre_lnet_match_ip_to_intf(struct ifaddrs *ifa,
 		}
 
 		if (ifaddr == NULL) {
+			snprintf(err_str, str_len, "No interface matching '%s'",
+				 intf_descr->intf_name);
 			list_del(&intf_descr->intf_on_network);
 			free_intf_descr(intf_descr);
-			continue;
+			return LUSTRE_CFG_RC_NO_MATCH;
 		}
 
 		if ((ifaddr->ifa_flags & IFF_UP) == 0) {
+			snprintf(err_str, str_len,
+				 "Matched interface '%s' is not UP",
+				 intf_descr->intf_name);
 			list_del(&intf_descr->intf_on_network);
 			free_intf_descr(intf_descr);
-			continue;
+			return LUSTRE_CFG_RC_NO_MATCH;
 		}
 
 		ip = ((struct sockaddr_in *)ifaddr->ifa_addr)->sin_addr.s_addr;
@@ -1489,9 +1501,16 @@ int lustre_lnet_match_ip_to_intf(struct ifaddrs *ifa,
 		}
 
 		if (!rc) {
-			/* no match for this interface */
+			/* This interface was specified by user but does not
+			 * match any IP-range that was specified. Therefore,
+			 * this ip2nets rule doesn't apply to this node
+			 */
+			snprintf(err_str, str_len,
+				 "Interface '%s' doesn't match an IP pattern",
+				 intf_descr->intf_name);
 			list_del(&intf_descr->intf_on_network);
 			free_intf_descr(intf_descr);
+			return LUSTRE_CFG_RC_NO_MATCH;
 		}
 	}
 
@@ -1514,10 +1533,9 @@ static int lustre_lnet_resolve_ip2nets_rule(struct lustre_lnet_ip2nets *ip2nets,
 
 	rc = lustre_lnet_match_ip_to_intf(ifa,
 					  &ip2nets->ip2nets_net.nw_intflist,
-					  &ip2nets->ip2nets_ip_ranges);
+					  &ip2nets->ip2nets_ip_ranges, err_str,
+					  str_len);
 	if (rc != LUSTRE_CFG_RC_MATCH) {
-		snprintf(err_str, str_len,
-			 "\"couldn't match ip to existing interfaces\"");
 		freeifaddrs(ifa);
 		return rc;
 	}
@@ -1641,8 +1659,14 @@ lustre_lnet_config_ip2nets(struct lustre_lnet_ip2nets *ip2nets,
 	 */
 	rc = lustre_lnet_resolve_ip2nets_rule(ip2nets, &nids, &nnids, err_str,
 					      sizeof(err_str));
-	if (rc != LUSTRE_CFG_RC_NO_ERR && rc != LUSTRE_CFG_RC_MATCH)
+	/* NO_MATCH is okay for ip2nets, but anything else is an error */
+	if (rc != LUSTRE_CFG_RC_NO_ERR && rc != LUSTRE_CFG_RC_NO_MATCH &&
+	    rc != LUSTRE_CFG_RC_MATCH)
 		goto out;
+
+	/* Skip configuration if resolution returned NO_MATCH */
+	if (rc == LUSTRE_CFG_RC_NO_MATCH)
+		goto free_nids_out;
 
 	if (list_empty(&ip2nets->ip2nets_net.nw_intflist)) {
 		snprintf(err_str, sizeof(err_str),
@@ -4677,9 +4701,12 @@ static int handle_yaml_config_ip2nets(struct cYAML *tree,
 
 	/*
 	 * don't stop because there was no match. Continue processing the
-	 * rest of the rules. If non-match then nothing is configured
+	 * rest of the rules. If non-match then nothing is configured.
+	 * Also treat -EEXIST (network already configured) as a non-error
+	 * to support multiple ip2nets rules for the same network where
+	 * only the first matching rule is applied.
 	 */
-	if (rc == LUSTRE_CFG_RC_NO_MATCH)
+	if (rc == -EEXIST)
 		rc = LUSTRE_CFG_RC_NO_ERR;
 out:
 	list_for_each_entry_safe(intf_descr, intf_tmp,
@@ -5527,12 +5554,29 @@ static int lustre_yaml_cb_helper(char *f, struct lookup_cmd_hdlr_tbl *table,
 		}
 
 		if (cYAML_is_sequence(child)) {
+			bool any_success = false;
+			bool hard_fail = false;
+			int is_ip2nets = (strcmp(child->cy_string, "ip2nets") == 0);
+
 			while ((head = cYAML_get_next_seq_item(child, &item))
 			       != NULL) {
 				rc = cb(head, show_rc, err_rc);
+				if (is_ip2nets && rc == LUSTRE_CFG_RC_NO_ERR)
+					any_success = 1;
+				else if (is_ip2nets &&
+					 rc != LUSTRE_CFG_RC_NO_MATCH)
+					hard_fail = 1;
+
 				if (rc != LUSTRE_CFG_RC_NO_ERR)
 					return_rc = rc;
 			}
+
+			/* For ip2nets sequences, if all rules failed with
+			 * NO_MATCH, that's an error. But if at least one
+			 * succeeded, ignore failures in other rules.
+			 */
+			if (is_ip2nets && any_success && !hard_fail)
+				return_rc = LUSTRE_CFG_RC_NO_ERR;
 		} else {
 			rc = cb(child, show_rc, err_rc);
 			if (rc != LUSTRE_CFG_RC_NO_ERR)
