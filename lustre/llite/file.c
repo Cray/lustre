@@ -6891,7 +6891,7 @@ out:
 		conf.coc_opc = OBJECT_CONF_WAIT;
 		conf.coc_inode = inode;
 		rc = ll_layout_conf(inode, &conf);
-		if (rc == 0)
+		if (rc == 0 && try)
 			rc = -ERESTARTSYS;
 
 		CDEBUG(D_INODE, "%s file="DFID" waiting layout return: %d\n",
