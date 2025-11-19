@@ -2682,7 +2682,7 @@ lnet_startup_lndnet(struct lnet_net *net, struct lnet_lnd_tunables *tun)
 						"loading support.");
 #endif
 				rc = -EINVAL;
-				goto failed0;
+				goto out_free_net;
 			}
 		}
 
@@ -2694,47 +2694,52 @@ lnet_startup_lndnet(struct lnet_net *net, struct lnet_lnd_tunables *tun)
 	}
 
 	/*
-	 * net_l: if the network being added is unique then net_l
-	 *        will point to that network
-	 *        if the network being added is not unique then
-	 *        net_l points to the existing network.
+	 * net_l points to the logical network that will own the NIs:
+	 *   - If the incoming network ID is unique, net_l is the newly
+	 *     allocated 'net' passed into this function.
+	 *   - If a network with this ID already exists, net_l is set to that
+	 *     existing network, and 'net' is only used as a temporary
+	 *     container for its new NIs.
 	 *
-	 * When we enter the loop below, we'll pick NIs off he
-	 * network beign added and start them up, then add them to
-	 * a local ni list. Once we've successfully started all
-	 * the NIs then we join the local NI list (of started up
-	 * networks) with the net_l->net_ni_list, which should
-	 * point to the correct network to add the new ni list to
+	 * In the loop below we:
+	 *   - Detach each NI from net->net_ni_added.
+	 *   - Verify that its interface is unique on net_l.
+	 *   - Re-parent the NI to net_l and start it via lnet_startup_lndni().
+	 *   - Track successfully started NIs on local_ni_list.
 	 *
-	 * If any of the new NIs fail to start up, then we want to
-	 * iterate through the local ni list, which should include
-	 * any NIs which were successfully started up, and shut
-	 * them down.
+	 * If any NI fails to start, we iterate over local_ni_list and shut
+	 * down those NIs, then free the temporary 'net'.
 	 *
-	 * After than we want to delete the network being added,
-	 * to avoid a memory leak.
+	 * After all NIs have started successfully, we splice local_ni_list
+	 * into net_l->net_ni_list. If net_l referred to an existing network,
+	 * the temporary 'net' is freed. Otherwise, the new 'net' is linked
+	 * into the global the_lnet.ln_nets list.
 	 */
 	while (!list_empty(&net->net_ni_added)) {
 		ni = list_entry(net->net_ni_added.next, struct lnet_ni,
 				ni_netlist);
 		list_del_init(&ni->ni_netlist);
 
-		/* make sure that the the NI we're about to start
-		 * up is actually unique. if it's not fail. */
+		/* make sure that the the NI we're about to start up is
+		 * actually unique. if it's not fail.
+		 */
 		if (!lnet_ni_unique_net(&net_l->net_ni_list,
 					ni->ni_interface)) {
+			/* ni deleted from net_ni_added, so free it here */
 			rc = -EEXIST;
-			goto failed1;
+			lnet_ni_free(ni);
+			goto out_shutdown_local_ni_list;
 		}
 
-		/* adjust the pointer the parent network, just in case it
-		 * the net is a duplicate */
+		/* adjust the pointer to the parent network, just in case the
+		 * net is a duplicate
+		 */
 		ni->ni_net = net_l;
 
 		rc = lnet_startup_lndni(ni, tun);
 
 		if (rc < 0)
-			goto failed1;
+			goto out_shutdown_local_ni_list;
 
 		lnet_ni_addref(ni);
 		list_add_tail(&ni->ni_netlist, &local_ni_list);
@@ -2775,11 +2780,8 @@ lnet_startup_lndnet(struct lnet_net *net, struct lnet_lnd_tunables *tun)
 
 	return ni_count;
 
-failed1:
-	/*
-	 * shutdown the new NIs that are being started up
-	 * free the NET being started
-	 */
+out_shutdown_local_ni_list:
+	/* shutdown the new NIs that were started up */
 	while (!list_empty(&local_ni_list)) {
 		ni = list_entry(local_ni_list.next, struct lnet_ni,
 				ni_netlist);
@@ -2787,7 +2789,8 @@ failed1:
 		lnet_shutdown_lndni(ni);
 	}
 
-failed0:
+out_free_net:
+	/* free the temporary 'net' */
 	lnet_net_free(net);
 
 	return rc;
@@ -3762,9 +3765,6 @@ int lnet_dyn_add_ni(struct lnet_ioctl_config_ni *conf)
 	}
 
 	mutex_unlock(&the_lnet.ln_api_mutex);
-
-	if (rc)
-		lnet_ni_free(ni);
 
 	return rc;
 }
