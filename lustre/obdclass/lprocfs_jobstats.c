@@ -481,7 +481,6 @@ void lprocfs_job_stats_fini(struct obd_device *obd)
 {
 	struct obd_job_stats *stats = &obd->u.obt.obt_jobstats;
 	struct job_stat *job, *n;
-	int retry = 0;
 	bool purge = false;
 
 	set_bit(OJS_FINI, &stats->ojs_flags);
@@ -510,12 +509,11 @@ void lprocfs_job_stats_fini(struct obd_device *obd)
 				purge = true;
 			}
 		}
-
+		wait_on_bit_timeout(&stats->ojs_flags, OJS_ACTIVE_JOBS,
+				    TASK_UNINTERRUPTIBLE, cfs_time_seconds(5));
 		if (atomic64_read(&stats->ojs_jobs))
 			purge = true;
-	} while (purge && retry++ < 3);
-	wait_on_bit_timeout(&stats->ojs_flags, OJS_ACTIVE_JOBS,
-			    TASK_UNINTERRUPTIBLE, cfs_time_seconds(30));
+	} while (purge);
 	rcu_barrier();
 	LASSERTF(atomic64_read(&stats->ojs_jobs) == 0, "jobs:%llu flags:%lx\n",
 		 (long long)atomic64_read(&stats->ojs_jobs), stats->ojs_flags);
@@ -542,10 +540,11 @@ static void *lprocfs_jobstats_seq_start(struct seq_file *p, loff_t *pos)
 
 static void *lprocfs_jobstats_seq_next(struct seq_file *p, void *v, loff_t *pos)
 {
+	struct obd_job_stats *stats = p->private;
 	struct job_stat *job = v, *next = NULL;
 
 	++*pos;
-	if (!job)
+	if (!job || test_bit(OJS_FINI, &stats->ojs_flags))
 		return next;
 	next = job_get_next_pos(job);
 	if (next)
@@ -689,11 +688,14 @@ static int lprocfs_jobstats_seq_open(struct inode *inode, struct file *file)
 	struct obd_job_stats *stats;
 	int rc;
 
+	stats = pde_data(inode);
+	if (test_bit(OJS_FINI, &stats->ojs_flags))
+		return -EBUSY;
+
 	rc = seq_open(file, &lprocfs_jobstats_seq_sops);
 	if (rc)
 		return rc;
 
-	stats = pde_data(inode);
 	/* wait for any active cleaning to finish */
 	set_bit(OJS_HEADER, &stats->ojs_flags);
 	seq = file->private_data;
