@@ -1134,9 +1134,9 @@ static int mdc_io_setattr_start(const struct lu_env *env,
 	return rc;
 }
 
-static int mdc_io_read_ahead(const struct lu_env *env,
-			     const struct cl_io_slice *ios,
-			     pgoff_t start, struct cl_read_ahead *ra)
+static int mdc_io_read_ahead_prep(const struct lu_env *env,
+				  const struct cl_io_slice *ios,
+				  pgoff_t start, struct cl_read_ahead *ra)
 {
 	struct osc_object *osc = cl2osc(ios->cis_obj);
 	struct osc_io *oio = cl2osc_io(env, ios);
@@ -1376,11 +1376,11 @@ static const struct cl_io_operations mdc_io_ops = {
 			.cio_end    = osc_io_lseek_end,
 		},
 	},
-	.cio_read_ahead   = mdc_io_read_ahead,
-	.cio_lru_reserve  = osc_io_lru_reserve,
-	.cio_submit	  = osc_io_submit,
-	.cio_commit_async = osc_io_commit_async,
-	.cio_extent_release = osc_io_extent_release,
+	.cio_read_ahead_prep	= mdc_io_read_ahead_prep,
+	.cio_lru_reserve	= osc_io_lru_reserve,
+	.cio_submit		= osc_io_submit,
+	.cio_commit_async	= osc_io_commit_async,
+	.cio_extent_release	= osc_io_extent_release,
 };
 
 static int mdc_io_init(const struct lu_env *env, struct cl_object *obj,

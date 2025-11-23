@@ -83,6 +83,7 @@ char usage[] =
 "	 g gid put grouplock\n"
 "	 H[num] create HSM released file with num stripes\n"
 "	 I  fiemap\n"
+"	 J  madvise(MADV_HUGEPAGE)\n"
 "	 K  link path to filename\n"
 "	 L  link\n"
 "	 l  symlink filename to path\n"
@@ -518,6 +519,13 @@ int main(int argc, char **argv)
 		case 'j':
 			if (flock(fd, LOCK_EX) == -1)
 				errx(-1, "flock()");
+			break;
+		case 'J':
+			if (madvise(mmap_ptr, mmap_len, MADV_HUGEPAGE)) {
+				save_errno = errno;
+				perror("madvise()");
+				exit(save_errno);
+			}
 			break;
 		case 'K':
 			oldpath = POP_ARG();
