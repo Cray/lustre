@@ -3106,6 +3106,9 @@ ll_get_grouplock(struct inode *inode, struct file *file, unsigned long arg)
 
 	if (ll_file_nolock(file))
 		RETURN(-EOPNOTSUPP);
+
+	if (file->f_flags & O_APPEND)
+		RETURN(-EOPNOTSUPP);
 retry:
 	if (file->f_flags & O_NONBLOCK) {
 		if (!mutex_trylock(&lli->lli_group_mutex))

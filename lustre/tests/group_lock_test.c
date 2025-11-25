@@ -192,7 +192,7 @@ static void test11(void)
 			oflags = O_WRONLY;
 			break;
 		case 2:
-			oflags = O_WRONLY | O_APPEND;
+			oflags = O_WRONLY | O_NONBLOCK;
 			break;
 		case 3:
 			oflags = O_WRONLY | O_CLOEXEC;
