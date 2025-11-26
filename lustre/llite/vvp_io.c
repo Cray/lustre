@@ -220,6 +220,8 @@ static int vvp_io_one_lock_index(const struct lu_env *env, struct cl_io *io,
 		descr->cld_mode = CLM_GROUP;
 		descr->cld_gid  = vio->vui_fd->fd_grouplock.lg_gid;
 		enqflags |= CEF_LOCK_MATCH;
+		/* Store gid in cl_io for CIT_EC_RD to use */
+		io->ci_group_gid = vio->vui_fd->fd_grouplock.lg_gid;
 	} else {
 		descr->cld_mode  = mode;
 	}
@@ -444,7 +446,8 @@ static int vvp_mmap_locks(const struct lu_env *env,
 
 	ENTRY;
 
-	LASSERT(io->ci_type == CIT_READ || io->ci_type == CIT_WRITE);
+	LASSERT(io->ci_type == CIT_READ || io->ci_type == CIT_WRITE ||
+		io->ci_type == CIT_EC_RD);
 
 	/* nfs or loop back device write */
 	if (vio->vui_iter == NULL)
@@ -475,6 +478,7 @@ static int vvp_mmap_locks(const struct lu_env *env,
 			struct file *file = pcc_vma_file(vma);
 			struct dentry *de = file_dentry(file);
 			struct inode *inode = de->d_inode;
+			struct cl_object *obj = ll_i2info(inode)->lli_clob;
 			int flags = CEF_MUST;
 
 			if (ll_file_nolock(file)) {
@@ -483,6 +487,20 @@ static int vvp_mmap_locks(const struct lu_env *env,
 				break;
 			}
 
+			/* For EC recovery reads, tolerate stripes that are
+			 * already in LSS_READ_ERR state on the EC object
+			 * being reconstructed. CEF_HEED_ERROR tells the LOV
+			 * layer to skip sub-lock creation for unavailable
+			 * stripes, so the lock enqueue does not block on
+			 * unavailable OSTs.
+			 * Only apply this tolerance to locks on the EC
+			 * object (io->ci_obj), not to unrelated mmap buffer
+			 * files.
+			 */
+			if (io->ci_type == CIT_EC_RD &&
+			    cl_object_same(io->ci_obj, obj))
+				flags |= CEF_HEED_ERROR;
+
 			/*
 			 * XXX: Required lock mode can be weakened: CIT_WRITE
 			 * io only ever reads user level buffer, and CIT_READ
@@ -490,7 +508,7 @@ static int vvp_mmap_locks(const struct lu_env *env,
 			 */
 			policy_from_vma(&policy, vma, addr, bytes);
 			descr->cld_mode = vvp_mode_from_vma(vma);
-			descr->cld_obj = ll_i2info(inode)->lli_clob;
+			descr->cld_obj = obj;
 			descr->cld_start = policy.l_extent.start >> PAGE_SHIFT;
 			descr->cld_end = policy.l_extent.end >> PAGE_SHIFT;
 			descr->cld_enq_flags = flags;
@@ -1413,6 +1431,149 @@ static void vvp_io_write_end(const struct lu_env *env,
 		ll_merge_attr_try(env, inode);
 }
 
+static int vvp_update_inode_size(struct inode *inode)
+{
+	struct ll_sb_info *sbi = ll_i2sbi(inode);
+	struct ptlrpc_request *req = NULL;
+	struct md_op_data *op_data;
+	struct mdt_body *body;
+	int lmm_size = OBD_MAX_DEFAULT_EA_SIZE;
+	int rc = 0;
+
+	ENTRY;
+	op_data = ll_prep_md_op_data(NULL, inode, NULL, NULL, 0, lmm_size,
+				     LUSTRE_OPC_ANY, NULL);
+	if (IS_ERR(op_data))
+		RETURN(PTR_ERR(op_data));
+
+	op_data->op_valid = OBD_MD_FLGETATTR | OBD_MD_FLEASIZE;
+	rc = md_getattr(sbi->ll_md_exp, op_data, &req);
+	ll_finish_md_op_data(op_data);
+	if (rc)
+		RETURN(rc);
+
+	body = req_capsule_server_get(&req->rq_pill, &RMF_MDT_BODY);
+	if (body && (body->mbo_valid & OBD_MD_FLSIZE) &&
+	    body->mbo_size > i_size_read(inode)) {
+		ll_inode_size_lock(inode);
+		i_size_write(inode, body->mbo_size);
+		ll_inode_size_unlock(inode);
+		CDEBUG(D_INODE, "update file size to %llu\n", body->mbo_size);
+	}
+	ptlrpc_req_put(req);
+
+	RETURN(rc);
+}
+
+static int vvp_io_ec_rd_start(const struct lu_env *env,
+			      const struct cl_io_slice *ios)
+{
+	struct cl_io *io = ios->cis_io;
+	struct cl_object *obj = io->ci_obj;
+	struct inode *inode = vvp_object_inode(obj);
+	struct ll_cl_context *lcc = &ll_env_info(env)->lti_io_ctx;
+	struct ll_inode_info	*lli = ll_i2info(inode);
+	loff_t end;
+	int rc = 0;
+
+	ENTRY;
+	cl_page_list_init(&io->u.ci_ec.ec_page_list);
+	io->u.ci_ec.ec_recovery_failed = false;
+
+	trunc_sem_down_read(&lli->lli_trunc_sem);
+	/* Cap lcc_end_index at i_size to prevent readahead from fetching
+	 * pages beyond EOF.  ec_inner is expanded to full raid-group
+	 * boundaries by lov_io_set_range(), which can far exceed the file
+	 * data.  Pages beyond i_size on deactivated stripes have no DLM lock.
+	 */
+	end = io->u.ci_ec.ec_inner.crw_pos +
+	      io->u.ci_ec.ec_inner.crw_bytes;
+	end = min_t(loff_t, end, io->u.ci_ec.ec_inode_size);
+	lcc->lcc_end_index = DIV_ROUND_UP(end, PAGE_SIZE);
+
+	RETURN(rc);
+}
+
+static void vvp_io_ec_rd_end(const struct lu_env *env,
+			    const struct cl_io_slice *ios)
+{
+	struct vvp_io *vio = cl2vvp_io(env, ios);
+	struct cl_io *io = ios->cis_io;
+	struct cl_object *obj = io->ci_obj;
+	struct inode *inode = vvp_object_inode(obj);
+	struct ll_inode_info *lli = ll_i2info(inode);
+	struct cl_page *page;
+	struct iov_iter iter;
+	bool direct_io = iocb_ki_flags_check(vio->vui_iocb, IOCB_DIRECT);
+	ssize_t result;
+
+	ENTRY;
+	/* disown the recovered pages, i.e. unlock vmpage, for
+	 * generic_file_read_iter() would wait for the page locks.  When
+	 * ec_page_list is empty, no recovery was needed but we must still
+	 * call generic_file_read_iter() below to deliver data from the
+	 * page cache to userspace.
+	 */
+	cl_page_list_for_each(page, &io->u.ci_ec.ec_page_list)
+		cl_page_disown(env, io, page);
+
+	/* Recovery failed (too many dead stripes): skip the cache read so
+	 * we don't serve zero-filled or stale pages.  The -EIO from
+	 * cio_start will propagate out through cl_io_loop.
+	 */
+	if (io->u.ci_ec.ec_recovery_failed)
+		goto out;
+
+	if (vio->vui_iocb->ki_pos >= i_size_read(inode) &&
+	    io->u.ci_ec.ec_inode_size > i_size_read(inode)) {
+		ll_inode_size_lock(inode);
+		i_size_write(inode, io->u.ci_ec.ec_inode_size);
+		ll_inode_size_unlock(inode);
+	}
+
+	/* If ki_pos is at or beyond EOF, skip the page cache read.
+	 * In some kernels generic_file_read_iter() still tries to read
+	 * pages at EOF rather than returning 0.  For CIT_EC_RD this
+	 * triggers ll_readpage() which returns -EIO for pages beyond
+	 * lcc_end_index (no DLM lock coverage), and that -EIO is
+	 * propagated to userspace instead of the expected 0 (EOF).
+	 */
+	if (vio->vui_iocb->ki_pos >= i_size_read(inode))
+		goto out;
+
+	iter = *vio->vui_iter;
+	/* The user's iocb may have IOCB_DIRECT set (this is the EC
+	 * recovery path for an O_DIRECT read).  generic_file_read_iter
+	 * dispatches IOCB_DIRECT through mapping->a_ops->direct_IO,
+	 * which is ll_direct_IO and LASSERTs io->ci_dio_aio.  But the
+	 * outer DIO aio was freed before we restarted as CIT_EC_RD,
+	 * so we must take the buffered path here.
+	 */
+	if (direct_io)
+		vio->vui_iocb->ki_flags &= ~IOCB_DIRECT;
+	result = generic_file_read_iter(vio->vui_iocb, &iter);
+	if (direct_io)
+		vio->vui_iocb->ki_flags |= IOCB_DIRECT;
+	/* outer io read result */
+	if (result >= 0) {
+		CDEBUG(D_VFSTRACE, "ec read result %zd\n", result);
+		io->ci_bytes += result;
+	} else {
+		/* Record the read error so cl_io_loop() reports it back
+		 * through io->ci_result, and stop iterating rather than
+		 * silently swallowing the error.
+		 */
+		io->ci_result = result;
+		io->ci_continue = 0;
+	}
+out:
+	trunc_sem_up_read(&lli->lli_trunc_sem);
+
+	/* put vmpage and cl_page */
+	cl_page_list_fini(env, &io->u.ci_ec.ec_page_list);
+
+	EXIT;
+}
 
 static int vvp_io_kernel_fault(struct vvp_fault_io *cfio)
 {
@@ -1753,6 +1914,50 @@ static void vvp_io_lseek_end(const struct lu_env *env,
 	inode_unlock(inode);
 }
 
+static int vvp_io_ec_rd_iter_init(const struct lu_env *env,
+				  const struct cl_io_slice *ios)
+{
+	struct cl_io *io = ios->cis_io;
+	struct cl_object *obj = io->ci_obj;
+	struct inode *inode = vvp_object_inode(obj);
+	int rc = 0;
+
+	ENTRY;
+	/* i_size_read() might not return the real file size when the
+	 * OST holding the last block of data is down. So we'd refresh
+	 * the file size here if the expanded read range overlaps EOF, and
+	 * lov_ec_read_stripe_pages() will skip read beyond EOF
+	 * (ec_inode_size), just assign zero filled buffer.
+	 */
+	if (io->u.ci_ec.ec_inner.crw_pos + io->u.ci_ec.ec_inner.crw_bytes >=
+	    i_size_read(inode)) {
+		rc = vvp_update_inode_size(inode);
+		if (rc < 0)
+			RETURN(rc);
+	}
+	if (io->u.ci_ec.ec_inode_size < i_size_read(inode))
+		io->u.ci_ec.ec_inode_size = i_size_read(inode);
+
+	RETURN(rc);
+}
+
+static int vvp_io_ec_rd_lock(const struct lu_env *env,
+			     const struct cl_io_slice *ios)
+{
+	struct cl_io *io = ios->cis_io;
+	struct vvp_io *vio = cl2vvp_io(env, ios);
+
+	ENTRY;
+	vvp_io_update_iov(env, vio, io);
+	/* Protect the user buffer from concurrent truncation of the file
+	 * backing its VMAs, just as vvp_io_rw_lock() does for CIT_READ.
+	 * The file-extent lock on the EC object is handled by lov_io_lock()
+	 * with CEF_MUST | CEF_HEED_ERROR, so only the mmap-buffer locks are
+	 * needed here.
+	 */
+	RETURN(vvp_mmap_locks(env, vio, io));
+}
+
 static const struct cl_io_operations vvp_io_ops = {
 	.op = {
 		[CIT_READ] = {
@@ -1771,6 +1976,14 @@ static const struct cl_io_operations vvp_io_ops = {
 			.cio_start     = vvp_io_write_start,
 			.cio_end       = vvp_io_write_end,
 			.cio_advance   = vvp_io_advance,
+		},
+		[CIT_EC_RD] = {
+			.cio_fini	= vvp_io_fini,
+			.cio_iter_init	= vvp_io_ec_rd_iter_init,
+			.cio_lock	= vvp_io_ec_rd_lock,
+			.cio_start	= vvp_io_ec_rd_start,
+			.cio_end	= vvp_io_ec_rd_end,
+			.cio_advance	= vvp_io_advance,
 		},
 		[CIT_SETATTR] = {
 			.cio_fini       = vvp_io_setattr_fini,
@@ -1829,7 +2042,8 @@ int vvp_io_init(const struct lu_env *env, struct cl_object *obj,
 	cl_io_slice_add(io, &vio->vui_cl, obj, &vvp_io_ops);
 	vio->vui_ra_valid = false;
 	result = 0;
-	if (io->ci_type == CIT_READ || io->ci_type == CIT_WRITE) {
+	if (io->ci_type == CIT_READ || io->ci_type == CIT_WRITE ||
+	    io->ci_type == CIT_EC_RD) {
 		size_t bytes;
 		struct ll_inode_info *lli = ll_i2info(inode);
 		struct job_info ji;

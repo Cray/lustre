@@ -1689,10 +1689,32 @@ int ll_io_read_page(const struct lu_env *env, struct cl_io *io,
 
 	} else if (cl_page_index(page) == io_start_index &&
 		   io_end_index - io_start_index > 0) {
-		rc2 = ll_readpages(env, io, &queue->c2_qin, io_start_index + 1,
-				   io_end_index);
-		CDEBUG(D_READA, DFID " %d pages read at %lu\n",
-		       PFID(ll_inode2fid(inode)), rc2, cl_page_index(page));
+		/* CIT_EC_RD can meet stripes without a DLM lock, so only
+		 * read on up to where locks are available.  ll_readahead()
+		 * bounds itself through cl_io_read_ahead_prep(), so this is
+		 * only needed on the readahead-disabled path.
+		 */
+		if (io->ci_type == CIT_EC_RD) {
+			struct cl_read_ahead ra = { 0 };
+
+			rc2 = cl_io_read_ahead_prep(env, io, io_start_index,
+						    &ra);
+			if (rc2 < 0)
+				io_end_index = io_start_index;
+			else if (io_end_index > ra.cra_end_idx)
+				io_end_index = ra.cra_end_idx;
+
+			if (rc2 >= 0)
+				cl_read_ahead_release(env, &ra);
+			rc2 = 0;
+		}
+		if (io_end_index - io_start_index > 0) {
+			rc2 = ll_readpages(env, io, &queue->c2_qin,
+					   io_start_index + 1, io_end_index);
+			CDEBUG(D_READA, DFID " %d pages read at %lu\n",
+			       PFID(ll_inode2fid(inode)), rc2,
+			       cl_page_index(page));
+		}
 	}
 
 	if (queue->c2_qin.pl_nr > 0) {
@@ -2006,10 +2028,23 @@ int ll_readpage(struct file *file, struct page *vmpage)
 		 * This should never occur except in kernels with the bug
 		 * mentioned above.
 		 */
-		if (folio_index_page(vmpage) >= lcc->lcc_end_index) {
+		if (lcc->lcc_end_index > 0 &&
+		    folio_index_page(vmpage) >= lcc->lcc_end_index) {
 			CDEBUG(D_VFSTRACE,
 			       "pgno:%ld, beyond read end_index:%ld\n",
 			       folio_index_page(vmpage), lcc->lcc_end_index);
+
+			/* For EC recovery reads, the page beyond end_index
+			 * has no DLM lock (EC recovery only locks the actual
+			 * read range).  Return -EIO to stop the kernel from
+			 * retrying: AOP_TRUNCATED_PAGE would cause an
+			 * infinite loop because the page is never actually
+			 * truncated.
+			 */
+			if (io->ci_type == CIT_EC_RD) {
+				unlock_page(vmpage);
+				RETURN(-EIO);
+			}
 
 			result = cl_io_read_ahead_prep(env, io,
 						       folio_index_page(vmpage),
@@ -2020,6 +2055,36 @@ int ll_readpage(struct file *file, struct page *vmpage)
 				unlock_page(vmpage);
 				RETURN(AOP_TRUNCATED_PAGE);
 			}
+		}
+
+		/* For EC recovery, verify DLM lock coverage for every page.
+		 * During generic_file_read_iter() in vvp_io_ec_rd_end(),
+		 * pages on good stripes need to be read from OSTs and have
+		 * locks.  Pages on deactivated stripes should already be in
+		 * the page cache from EC reconstruction.  If a page without
+		 * lock coverage reaches here, it maps to a failed stripe --
+		 * return -EIO to prevent LBUG in osc_req_attr_set().
+		 */
+		if (io->ci_type == CIT_EC_RD) {
+			result = cl_io_read_ahead_prep(env, io,
+						       folio_index_page(vmpage),
+						       &ra);
+			if (result < 0 ||
+			    folio_index_page(vmpage) > ra.cra_end_idx) {
+				if (result >= 0)
+					cl_read_ahead_release(env,
+							      &ra);
+				unlock_page(vmpage);
+				if (PageUptodate(vmpage))
+					RETURN(0);
+				RETURN(-EIO);
+			}
+			cl_read_ahead_release(env, &ra);
+			/* The cra_release helper does not clear cra_release;
+			 * the out: path below would call it again on the same
+			 * @ra and underflow the DLM lock readers count.
+			 */
+			ra.cra_release = NULL;
 		}
 	}
 

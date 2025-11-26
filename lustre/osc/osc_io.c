@@ -517,6 +517,7 @@ static bool osc_import_not_healthy(struct obd_import *imp)
 
 int osc_io_iter_init(const struct lu_env *env, const struct cl_io_slice *ios)
 {
+	struct cl_io *io = ios->cis_io;
 	struct osc_object *osc = cl2osc(ios->cis_obj);
 	struct obd_import *imp = osc_cli(osc)->cl_import;
 	struct osc_io *oio = osc_env_io(env);
@@ -541,6 +542,8 @@ int osc_io_iter_init(const struct lu_env *env, const struct cl_io_slice *ios)
 
 	if (capable(CAP_SYS_RESOURCE))
 		oio->oi_cap_sys_resource = 1;
+
+	oio->oi_lockless = io->ci_lockless;
 
 	RETURN(rc);
 }
@@ -1445,6 +1448,12 @@ static const struct cl_io_operations osc_io_ops = {
 			.cio_start  = osc_io_write_start,
 			.cio_end    = osc_io_end,
 			.cio_fini   = osc_io_fini
+		},
+		[CIT_EC_RD] = {
+			.cio_iter_init = osc_io_iter_init,
+			.cio_iter_fini = osc_io_rw_iter_fini,
+			.cio_start  = osc_io_read_start,
+			.cio_fini   = osc_io_fini,
 		},
 		[CIT_SETATTR] = {
 			.cio_iter_init = osc_io_iter_init,

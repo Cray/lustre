@@ -816,24 +816,35 @@ static inline bool lov_pattern_supported(enum lov_pattern pattern)
 	enum lov_pattern pattern_base = pattern & ~(LOV_PATTERN_F_RELEASED |
 						    LOV_PATTERN_F_MASK);
 
-	return pattern_base == LOV_PATTERN_RAID0 ||
-	       pattern_base == (LOV_PATTERN_RAID0 | LOV_PATTERN_OVERSTRIPING) ||
-	       pattern_base == (LOV_PATTERN_RAID0 | LOV_PATTERN_PARITY) ||
-	       pattern_base == (LOV_PATTERN_RAID0 | LOV_PATTERN_COMPRESS) ||
-	       pattern_base == LOV_PATTERN_MDT;
+	/* compression is only supported standalone with raid0 for now */
+	if (pattern_base == LOV_PATTERN_MDT ||
+	    pattern_base == (LOV_PATTERN_RAID0 | LOV_PATTERN_COMPRESS))
+		return true;
+
+	/* raid0 could be combined with overstriping and/or parity,
+	 * not others at least for now
+	 */
+	pattern_base &= ~(LOV_PATTERN_OVERSTRIPING | LOV_PATTERN_PARITY);
+	return pattern_base == LOV_PATTERN_RAID0;
 }
 
 /* but we can set and server allows for these patterns */
 static inline bool lov_pattern_available(enum lov_pattern pattern)
 {
-	enum lov_pattern pattern_base = pattern & ~(LOV_PATTERN_F_RELEASED |
-						    LOV_PATTERN_F_MASK);
+	/* if client IO understand the pattern, it's available */
+	if (lov_pattern_supported(pattern))
+		return true;
 
-	return pattern_base == LOV_PATTERN_RAID0 ||
-	       pattern_base == (LOV_PATTERN_RAID0 | LOV_PATTERN_OVERSTRIPING) ||
-	       pattern_base == (LOV_PATTERN_RAID0 | LOV_PATTERN_PARITY) ||
-	       pattern_base == (LOV_PATTERN_RAID0 | LOV_PATTERN_COMPRESS) ||
-	       pattern_base == LOV_PATTERN_MDT;
+	/* otherwise, check if it's one of the patterns we still allow to set
+	 * in the layout but not understood by current client IO. It's for
+	 * future use, e.g. a new pattern of a new feature that is not yet
+	 * supported by current client IO.
+	 *
+	 * e.g.
+	 * if (pattern == LOV_PATTERN_NEW_FEATURE)
+	 *	return true;
+	 */
+	return false;
 }
 
 /* RELEASED and MDT patterns are not valid in many places, so rather than

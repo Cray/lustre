@@ -240,7 +240,7 @@ struct cl_object_conf {
 		struct lov_oinfo *coc_oinfo;
 	} u;
 	/**
-	 * VFS inode. This is consumed by vvp.
+	 * VFS inode. This is consumed by vvp and lov.
 	 */
 	struct inode             *coc_inode;
 	/**
@@ -437,6 +437,12 @@ struct cl_object_operations {
 	 */
 	void (*coo_req_projid_set)(const struct lu_env *env,
 				   struct cl_object *obj, __u32 *projid);
+	/**
+	 * Set the coverage of the \a io, used by CIT_EC_RD, called from
+	 * bottom to top.
+	 */
+	void (*coo_io_set_range)(const struct lu_env *env,
+				 struct cl_object *obj, struct cl_io *io);
 };
 
 /**
@@ -1333,6 +1339,10 @@ enum cl_io_type {
 	 * across all file objects
 	 */
 	CIT_LSEEK,
+	/**
+	 * Read from erasure code to recover data
+	 */
+	CIT_EC_RD,
 	CIT_OP_NR
 };
 
@@ -1656,9 +1666,13 @@ enum cl_enq_flags {
 	 */
 	CEF_LOCK_NO_EXPAND    = 0x00000100,
 	/**
+	 * do not create sub lock if read error happens on the stripe
+	 */
+	CEF_HEED_ERROR		= 0x00000200,
+	/**
 	 * mask of enq_flags.
 	 */
-	CEF_MASK         = 0x000001ff,
+	CEF_MASK		= 0x000003ff,
 };
 
 /**
@@ -1812,6 +1826,23 @@ struct cl_io {
 			int                    wr_sync;
 		} ci_wr;
 		struct cl_io_rw_common ci_rw;
+		struct cl_ec_io {
+			/* outer IO keeps track VFS read position and count */
+			struct cl_io_rw_common ec_outer;
+			/* inner IO would expand the outer IO to cover raid set
+			 */
+			struct cl_io_rw_common ec_inner;
+			/* unavailable pages, will be recovered from parity */
+			struct cl_page_list ec_page_list;
+			loff_t ec_inode_size;
+			/* set by lov_io_ec_rd_start when recovery is
+			 * impossible (err_nr > pcount); tells
+			 * vvp_io_ec_rd_end to skip generic_file_read_iter
+			 * so we don't serve zero-filled pages from the
+			 * cache.
+			 */
+			bool ec_recovery_failed;
+		} ci_ec;
 		struct cl_setattr_io {
 			struct ost_lvb		 sa_attr;
 			unsigned int		 sa_attr_flags;
@@ -1995,7 +2026,16 @@ struct cl_io {
 	/* this IO is to a parity mirror */
 			     ci_parity_io:1,
 	/* LNet route supports PCI P2P DMA */
-			     ci_p2pdma_unsupported:1;
+			     ci_p2pdma_unsupported:1,
+	/* Switch to CIT_EC_RD */
+			     ci_switch_ec_io:1,
+	/* this IO is lockless */
+			     ci_lockless:1,
+	/* Normal read tried all data mirrors, and if it is across component
+	 * which have matching parity codes, so it's possible to recover the
+	 * missing data with ec read.
+	 */
+			     ci_cross_ec:1;
 	/**
 	 * EOF for parity components, calculated based on RAID geometry.
 	 * Valid only when ci_parity_io is set.
@@ -2019,6 +2059,11 @@ struct cl_io {
 	 * Range of write intent. Valid if ci_need_write_intent is set.
 	 */
 	struct lu_extent     ci_write_intent;
+	/**
+	 * Group lock gid. Valid only when the file is group-locked.
+	 * Used for CIT_EC_RD to match the existing group lock.
+	 */
+	__u64		     ci_group_gid;
 };
 
 /**
@@ -2243,6 +2288,12 @@ struct cl_page *cl_page_alloc(const struct lu_env *env,
 			      struct cl_object *o, pgoff_t ind,
 			      struct page *vmpage,
 			      enum cl_page_type type);
+struct cl_page *cl_page_alloc_sub(const struct lu_env *env,
+				 const struct lu_env *subenv,
+				 struct cl_object *obj,
+				 struct cl_object *subobj,
+				 pgoff_t subidx, struct page *vmpage,
+				 enum cl_page_type type);
 void cl_page_get(struct cl_page *page);
 void cl_page_put(const struct lu_env *env,
 			    struct cl_page *page);
@@ -2418,6 +2469,8 @@ int cl_io_read_ahead_prep(const struct lu_env *env, struct cl_io *io,
 			  pgoff_t start, struct cl_read_ahead *ra);
 void cl_io_rw_advance(const struct lu_env *env, struct cl_io *io,
 		      size_t bytes);
+void cl_io_set_range(const struct lu_env *env, struct cl_object *obj,
+		     struct cl_io *io);
 
 /**
  * True, iff \a io is an O_APPEND write(2).

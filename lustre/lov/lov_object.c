@@ -22,11 +22,6 @@
 
 #include "lov_cl_internal.h"
 
-static inline struct lov_device *lov_object_dev(struct lov_object *obj)
-{
-	return lu2lov_dev(obj->lo_cl.co_lu.lo_dev);
-}
-
 /** \addtogroup lov
  *  @{
  */
@@ -73,10 +68,10 @@ static void lov_lsm_put(struct lov_stripe_md *lsm)
 /**
  * Lov object layout operations.
  */
-static struct cl_object *lov_sub_find(const struct lu_env *env,
-				      struct cl_device *dev,
-				      const struct lu_fid *fid,
-				      const struct cl_object_conf *conf)
+struct cl_object *lov_sub_find(const struct lu_env *env,
+			       struct cl_device *dev,
+			       const struct lu_fid *fid,
+			       const struct cl_object_conf *conf)
 {
 	struct lu_object *o;
 
@@ -1095,7 +1090,7 @@ static int lov_attr_get_composite(const struct lu_env *env,
 			continue;
 
 		CDEBUG(D_INODE, "COMP ID #%i: s=%llu m=%llu a=%llu c=%llu b=%llu\n",
-		       index - 1, lov_attr->cat_size,
+		       index, lov_attr->cat_size,
 		       lov_attr->cat_mtime, lov_attr->cat_atime,
 		       lov_attr->cat_ctime, lov_attr->cat_blocks);
 
@@ -1427,6 +1422,7 @@ static int lov_object_init(const struct lu_env *env, struct lu_object *obj,
 
 	/* no locking is necessary, as object is being created */
 	lov->lo_type = lov_type(lsm);
+	lov->lo_inode = cconf->coc_inode;
 	ops = &lov_dispatch[lov->lo_type];
 	rc = ops->llo_init(env, dev, lov, lsm, cconf, set);
 	if (rc != 0)
@@ -2325,6 +2321,155 @@ static int lov_object_flush(const struct lu_env *env, struct cl_object *obj,
 				     lock);
 }
 
+static void lov_io_set_range(const struct lu_env *env, struct cl_object *obj,
+			     struct cl_io *io)
+{
+	struct lov_io *lio = lov_env_io(env);
+	struct lov_object *lov = cl2lov(obj);
+	struct lov_layout_composite *comp = &lov->u.composite;
+	struct lov_layout_entry *lle;
+	struct lu_extent start_ext = { .e_start = io->u.ci_rw.crw_pos,
+				       .e_end = io->u.ci_rw.crw_pos + 1 };
+	struct lu_extent end_ext = {
+		.e_start = lio->lis_endpos - 1,
+		.e_end = lio->lis_endpos };
+
+	ENTRY;
+	if (lov->lo_type != LLT_COMP)
+		RETURN_EXIT;
+
+	CDEBUG(D_VFSTRACE, DFID" outer trying to read [%llu, %llu-%llu]\n",
+	       PFID(lu_object_fid(lov2lu(lov))), io->u.ci_rw.crw_pos,
+	       lio->lis_endpos, lio->lis_io_endpos);
+
+	lov_foreach_mirror_layout_entry(lov, lle,
+				&comp->lo_mirrors[lio->lis_mirror_index]) {
+		u64 offset;
+		u64 rem;
+		u64 offset_i;
+		u64 row;
+		u64 cnt;
+		u16 raid_set;
+		struct lov_stripe_md_entry *lsme = lle->lle_lsme;
+		struct ec_split_comp sc;
+
+		CDEBUG(D_INFO, DFID" extent "DEXT", comp d/p(%d/%d)\n",
+		       PFID(lu_object_fid(lov2lu(lov))),
+		       PEXT(lle->lle_extent), lsme->lsme_dstripe_count,
+		       lsme->lsme_cstripe_count);
+
+		/* set io inner range start crw_pos to the beginning of a
+		 * raid set
+		 */
+		if (lu_extent_is_overlapped(&start_ext, lle->lle_extent) &&
+		    lsme->lsme_dstripe_count != 0) {
+			ec_split_stripes(lsme->lsme_stripe_count,
+					 lsme->lsme_dstripe_count, &sc);
+			offset = start_ext.e_start - lle->lle_extent->e_start;
+			row = div64_u64(offset, (u64)lsme->lsme_stripe_size *
+						lsme->lsme_stripe_count);
+			/* offset_i is the stripe sequence number of @offset
+			 * in its owns stride
+			 */
+			offset_i = div64_u64(offset, lsme->lsme_stripe_size) %
+				   lle->lle_lsme->lsme_stripe_count;
+			/* raid_set is the raid set sequence number of
+			 * @offset_i.
+			 *
+			 * cnt is the stripe number from the component start
+			 * to the beginning of the raid set where @offset
+			 * locates.
+			 */
+			if (offset_i < sc.esc_k0 * sc.esc_n0) {
+				raid_set = offset_i / sc.esc_k0;
+				cnt = row * lsme->lsme_stripe_count +
+				      sc.esc_k0 * raid_set;
+			} else {
+				raid_set = (offset_i - sc.esc_k0 * sc.esc_n0) /
+					   sc.esc_k1;
+				cnt = row * lsme->lsme_stripe_count +
+				      sc.esc_k0 * sc.esc_n0 +
+				      sc.esc_k1 * raid_set;
+			}
+			io->u.ci_ec.ec_inner.crw_pos =
+					cnt * lsme->lsme_stripe_size +
+					lle->lle_extent->e_start;
+			CDEBUG(D_INFO, DFID
+			       " start sc(%d/%d/%d/%d), row %lld, offset_i %lld, raid_set %d, cnt %lld\n",
+			       PFID(lu_object_fid(lov2lu(lov))),
+			       sc.esc_k0, sc.esc_n0, sc.esc_k1, sc.esc_n1,
+			       row, offset_i, raid_set, cnt);
+		}
+
+		/* set io inner range end: crw_pos + crw_bytes to the end of
+		 * the raid_set, i.e. the beginning of the next raid_set
+		 */
+		if (lu_extent_is_overlapped(&end_ext, lle->lle_extent) &&
+		    lsme->lsme_dstripe_count != 0) {
+			ec_split_stripes(lsme->lsme_stripe_count,
+					 lsme->lsme_dstripe_count, &sc);
+			offset = end_ext.e_end - lle->lle_extent->e_start;
+			row = div64_u64(offset, (u64)lsme->lsme_stripe_size *
+						lsme->lsme_stripe_count);
+			/* offset_i is the stripe sequence number of @offset
+			 * in its owns stride if it's aligned with stripe size,
+			 * otherwise, it would be the sequence number of the
+			 * next stripe, i.e. it's pointing to the end of the
+			 * stripe where @offset locates
+			 */
+			offset_i = div64_u64_rem(offset,
+						 lsme->lsme_stripe_size, &rem) %
+				   lle->lle_lsme->lsme_stripe_count;
+			if (rem)
+				offset_i++;
+			/* raid_set is the raid set sequence number of
+			 * @offset_i.
+			 *
+			 * cnt is the stripe number from the component start
+			 * to the end of the raid set where @offset locates.
+			 */
+			if (offset_i <= sc.esc_k0 * sc.esc_n0) {
+				raid_set = offset_i / sc.esc_k0;
+				if (offset_i % sc.esc_k0 != 0)
+					raid_set++;
+				cnt = row * lsme->lsme_stripe_count +
+				      sc.esc_k0 * raid_set;
+			} else {
+				raid_set = (offset_i - sc.esc_k0 * sc.esc_n0) /
+					   sc.esc_k1;
+				if ((offset_i - sc.esc_k0 * sc.esc_n0) %
+				    sc.esc_k1 != 0)
+					raid_set++;
+				cnt = row * lsme->lsme_stripe_count +
+				      sc.esc_k0 * sc.esc_n0 +
+				      sc.esc_k1 * raid_set;
+			}
+			/* Record the raid-set boundary in lis_endpos; the
+			 * final crw_bytes is derived from (lis_endpos - crw_pos)
+			 * below.  If the read ends in a non-EC component (no
+			 * overlap here), lis_endpos keeps the outer end so the
+			 * full outer range is still covered.
+			 */
+			lio->lis_endpos = cnt * lsme->lsme_stripe_size +
+					  lle->lle_extent->e_start;
+			CDEBUG(D_INFO, DFID
+			       " end sc(%d/%d/%d/%d), row %lld, offset_i %lld, raid_set %d, cnt %lld\n",
+			       PFID(lu_object_fid(lov2lu(lov))),
+			       sc.esc_k0, sc.esc_n0, sc.esc_k1, sc.esc_n1,
+			       row, offset_i, raid_set, cnt);
+		}
+	}
+
+	lio->lis_pos = io->u.ci_ec.ec_inner.crw_pos;
+	lio->lis_endpos = max(lio->lis_endpos, lio->lis_pos);
+	io->u.ci_ec.ec_inner.crw_bytes = lio->lis_endpos - lio->lis_pos;
+	/* lis_io_endpos would expand to cover the whole raid set */
+	lio->lis_io_endpos = lio->lis_endpos;
+	CDEBUG(D_VFSTRACE, DFID" ec read expand to [%llu, %llu]\n",
+	       PFID(lu_object_fid(lov2lu(lov))), lio->lis_pos, lio->lis_endpos);
+	EXIT;
+}
+
 static const struct cl_object_operations lov_ops = {
 	.coo_page_init    = lov_page_init,
 	.coo_dio_pages_init = lov_dio_pages_init,
@@ -2337,7 +2482,8 @@ static const struct cl_object_operations lov_ops = {
 	.coo_layout_get   = lov_object_layout_get,
 	.coo_maxbytes     = lov_object_maxbytes,
 	.coo_fiemap       = lov_object_fiemap,
-	.coo_object_flush = lov_object_flush
+	.coo_object_flush = lov_object_flush,
+	.coo_io_set_range = lov_io_set_range,
 };
 
 static const struct lu_object_operations lov_lu_obj_ops = {

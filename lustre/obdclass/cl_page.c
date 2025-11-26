@@ -343,14 +343,19 @@ check:
 	return cl_page;
 }
 
-struct cl_page *cl_page_alloc(const struct lu_env *env, struct cl_object *o,
-			      pgoff_t ind, struct page *vmpage,
-			      enum cl_page_type type)
+struct cl_page *cl_page_alloc_sub(const struct lu_env *env,
+				  const struct lu_env *subenv,
+				  struct cl_object *o,
+				  struct cl_object *subobj,
+				  pgoff_t ind, struct page *vmpage,
+				  enum cl_page_type type)
 {
 	struct cl_page *cl_page;
 	struct cl_object *head;
 
 	ENTRY;
+	if ((subenv && !subobj) || (!subenv && subobj))
+		RETURN(ERR_PTR(-EINVAL));
 
 	cl_page = __cl_page_alloc(o);
 	if (cl_page != NULL) {
@@ -375,11 +380,21 @@ struct cl_page *cl_page_alloc(const struct lu_env *env, struct cl_object *o,
 		else
 			cl_page->cp_inode = page2inode(vmpage);
 		INIT_LIST_HEAD(&cl_page->cp_batch);
-		head = o;
+		if (subobj) {
+			/* only initialize page part from subobj if specified,
+			 * e.g lovsub->osc for parity page, whose page index
+			 * is not relative to the file, but relative to the
+			 * parity object
+			 */
+			head = subobj;
+		} else {
+			head = o;
+		}
 		cl_page->cp_page_index = ind;
 		cl_object_for_each(o, head) {
 			if (o->co_ops->coo_page_init != NULL) {
-				result = o->co_ops->coo_page_init(env, o,
+				result = o->co_ops->coo_page_init(
+							subenv ?: env, o,
 							cl_page, ind);
 				if (result != 0) {
 					__cl_page_delete(env, cl_page);
@@ -398,6 +413,14 @@ struct cl_page *cl_page_alloc(const struct lu_env *env, struct cl_object *o,
 		cl_page = ERR_PTR(-ENOMEM);
 	}
 	RETURN(cl_page);
+}
+EXPORT_SYMBOL(cl_page_alloc_sub);
+
+struct cl_page *cl_page_alloc(const struct lu_env *env, struct cl_object *o,
+			      pgoff_t ind, struct page *vmpage,
+			      enum cl_page_type type)
+{
+	return cl_page_alloc_sub(env, NULL, o, NULL, ind, vmpage, type);
 }
 
 /**

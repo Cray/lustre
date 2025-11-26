@@ -131,11 +131,15 @@ static struct lov_lock *lov_lock_sub_init(const struct lu_env *env,
 		struct lov_layout_raid0 *r0 = lov_r0(lov, index);
 
 		for (i = 0; i < r0->lo_nr; i++) {
-			if (likely(r0->lo_sub[i])) {/* spare layout */
-				if (lov_stripe_intersects(lov->lo_lsm, index, i, &ext, &start, &end) ||
-				    (is_trunc && i == lio->lis_trunc_stripe_index[index]))
-					nr++;
-			}
+			if (unlikely(!r0->lo_sub[i]))
+				continue;
+
+			/* sparse layout */
+			if (lov_stripe_intersects(lov->lo_lsm, index, i, &ext,
+						  &start, &end) ||
+			    (is_trunc &&
+			     i == lio->lis_trunc_stripe_index[index]))
+				nr++;
 		}
 	}
 	/**
@@ -160,8 +164,10 @@ static struct lov_lock *lov_lock_sub_init(const struct lu_env *env,
 			if (unlikely(!r0->lo_sub[i]))
 				continue;
 
-			if (lov_stripe_intersects(lov->lo_lsm, index, i, &ext, &start, &end) ||
-			    (is_trunc && i == lio->lis_trunc_stripe_index[index]))
+			if (lov_stripe_intersects(lov->lo_lsm, index, i, &ext,
+						  &start, &end) ||
+			    (is_trunc &&
+			     i == lio->lis_trunc_stripe_index[index]))
 				goto init_sublock;
 
 			continue;
@@ -179,6 +185,13 @@ init_sublock:
 
 			lls->sub_index = lov_comp_index(index, i);
 
+			if ((descr->cld_enq_flags & CEF_HEED_ERROR) &&
+			    (r0->lo_sub[i]->lso_status == LSS_READ_ERR)) {
+				lls->sub_initialized = 0;
+				nr++;
+				continue;
+			}
+
 			/* initialize sub lock */
 			result = lov_sublock_init(env, lock, lls);
 			if (result < 0)
@@ -195,7 +208,7 @@ init_sublock:
 	if (result != 0) {
 		for (i = 0; i < nr; ++i) {
 			if (!lovlck->lls_sub[i].sub_initialized)
-				break;
+				continue;
 
 			cl_lock_fini(env, &lovlck->lls_sub[i].sub_lock);
 		}
@@ -248,6 +261,7 @@ static int lov_lock_enqueue(const struct lu_env *env,
 			    struct cl_io *io, struct cl_sync_io *anchor)
 {
 	struct cl_lock *lock = slice->cls_lock;
+	struct lov_object *lov = cl2lov(slice->cls_obj);
 	struct lov_lock *lovlck = cl2lov_lock(slice);
 	int i;
 	int rc = 0;
@@ -258,6 +272,13 @@ static int lov_lock_enqueue(const struct lu_env *env,
 		struct lov_lock_sub     *lls = &lovlck->lls_sub[i];
 		struct lov_sublock_env  *subenv;
 
+		/* Skip sub-locks that were not initialized (e.g. stripes
+		 * in LSS_READ_ERR state when CEF_HEED_ERROR is set). They
+		 * have no underlying lock state to enqueue.
+		 */
+		if (!lls->sub_initialized)
+			continue;
+
 		subenv = lov_sublock_env_get(env, lock, lls);
 		if (IS_ERR(subenv)) {
 			rc = PTR_ERR(subenv);
@@ -266,11 +287,39 @@ static int lov_lock_enqueue(const struct lu_env *env,
 
 		rc = cl_lock_enqueue(subenv->lse_env, subenv->lse_io,
 				     &lls->sub_lock, anchor);
-		if (rc != 0)
+		if (rc != 0) {
+			/* Only tolerate lock failures for CIT_EC_RD on the EC
+			 * object itself (io->ci_obj), not on unrelated objects
+			 * like mmap buffer files. Checking cl_object_same()
+			 * prevents incorrectly marking an mmap buffer file's
+			 * stripes as LSS_READ_ERR when the buffer happens to
+			 * have an unavailable OST.
+			 */
+			if (io->ci_type == CIT_EC_RD &&
+			    cl_object_same(io->ci_obj,
+					   lock->cll_descr.cld_obj)) {
+				CDEBUG(D_INODE,
+				       DFID " ec lock fail sub %x: rc=%d\n",
+				       PFID(lu_object_fid(lov2lu(lov))),
+				       lls->sub_index, rc);
+
+				/* Mark stripe unavailable so recovery code
+				 * in lov_io_ec_rd_start() can handle it via
+				 * parity reconstruction.  Continue to enqueue
+				 * remaining sub-locks rather than aborting -
+				 * EC recovery tolerates missing stripes.
+				 */
+				cl2lovsub(lls->sub_lock.cll_descr.cld_obj)->
+					lso_status = LSS_READ_ERR;
+				rc = 0;
+				continue;
+			}
 			break;
+		}
 
 		lls->sub_is_enqueued = 1;
 	}
+
 	RETURN(rc);
 }
 
@@ -315,7 +364,19 @@ static int lov_lock_print(const struct lu_env *env, void *cookie,
 
 		sub = &lck->lls_sub[i];
 		(*p)(env, cookie, "    %d %x: ", i, sub->sub_is_enqueued);
-		cl_lock_print(env, cookie, p, &sub->sub_lock);
+		/* sub-locks that were not initialized (e.g. stripes in
+		 * LSS_READ_ERR state when CEF_HEED_ERROR is set) have an
+		 * uninitialized cll_layers list, so only their descr is
+		 * safe to print.
+		 */
+		if (sub->sub_initialized) {
+			cl_lock_print(env, cookie, p, &sub->sub_lock);
+		} else {
+			(*p)(env, cookie, "lock@%p", &sub->sub_lock);
+			cl_lock_descr_print(env, cookie, p,
+					    &sub->sub_lock.cll_descr);
+			(*p)(env, cookie, " (uninitialized)\n");
+		}
 	}
 	return 0;
 }

@@ -89,6 +89,7 @@ void cl_io_fini(const struct lu_env *env, struct cl_io *io)
 	/* sanity check for layout change */
 	switch(io->ci_type) {
 	case CIT_READ:
+	case CIT_EC_RD:
 	case CIT_WRITE:
 	case CIT_DATA_VERSION:
 	case CIT_FAULT:
@@ -205,9 +206,11 @@ EXPORT_SYMBOL(cl_io_init);
 int cl_io_rw_init(const struct lu_env *env, struct cl_io *io,
 		  enum cl_io_type iot, loff_t pos, size_t bytes)
 {
-	LINVRNT(iot == CIT_READ || iot == CIT_WRITE);
-	LINVRNT(io->ci_obj != NULL);
+	int rc;
+
 	ENTRY;
+	LINVRNT(iot == CIT_READ || iot == CIT_WRITE || iot == CIT_EC_RD);
+	LINVRNT(io->ci_obj != NULL);
 
 	LU_OBJECT_HEADER(D_VFSTRACE, env, &io->ci_obj->co_lu,
 			 "io range: %u [%llu, %llu) %u %u\n",
@@ -215,7 +218,13 @@ int cl_io_rw_init(const struct lu_env *env, struct cl_io *io,
 			 io->u.ci_rw.crw_nonblock, io->u.ci_wr.wr_append);
 	io->u.ci_rw.crw_pos    = pos;
 	io->u.ci_rw.crw_bytes  = bytes;
-	RETURN(cl_io_init(env, io, iot, io->ci_obj));
+	rc = cl_io_init(env, io, iot, io->ci_obj);
+
+	/* make the EC read covers raid set */
+	if (rc == 0 && iot == CIT_EC_RD)
+		cl_io_set_range(env, io->ci_obj, io);
+
+	RETURN(rc);
 }
 EXPORT_SYMBOL(cl_io_rw_init);
 
@@ -450,10 +459,12 @@ void cl_io_rw_advance(const struct lu_env *env, struct cl_io *io, size_t bytes)
 	ENTRY;
 
 	LINVRNT(io->ci_type == CIT_READ || io->ci_type == CIT_WRITE ||
+		io->ci_type == CIT_EC_RD ||
 		bytes == 0);
 	LINVRNT(cl_io_is_loopable(io));
 	LINVRNT(cl_io_invariant(io));
 
+	/* for EC read, ci_rw is also ec_outer */
 	io->u.ci_rw.crw_pos   += bytes;
 	io->u.ci_rw.crw_bytes -= bytes;
 
@@ -578,7 +589,8 @@ int cl_io_read_ahead_prep(const struct lu_env *env, struct cl_io *io,
 
 	LINVRNT(io->ci_type == CIT_READ ||
 		io->ci_type == CIT_FAULT ||
-		io->ci_type == CIT_WRITE);
+		io->ci_type == CIT_WRITE ||
+		io->ci_type == CIT_EC_RD);
 	LINVRNT(io->ci_state == CIS_IO_GOING || io->ci_state == CIS_LOCKED);
 	LINVRNT(cl_io_invariant(io));
 	ENTRY;
@@ -1173,6 +1185,27 @@ void cl_req_attr_set(const struct lu_env *env, struct cl_object *obj,
 	EXIT;
 }
 EXPORT_SYMBOL(cl_req_attr_set);
+
+/**
+ * cl_io_set_range() - Set the io read range for CIT_EC_RD
+ * (cl_object_operations::coo_io_set_range() bottom-to-top)
+ * @env: execution environment
+ * @obj: Object linked to IO operation (obj == cl_object_top(obj))
+ * @io: pointer to a cl_io struct
+ */
+void cl_io_set_range(const struct lu_env *env, struct cl_object *obj,
+		     struct cl_io *io)
+{
+	struct cl_object *scan;
+
+	ENTRY;
+	cl_object_for_each(scan, obj) {
+		if (scan->co_ops->coo_io_set_range != NULL)
+			scan->co_ops->coo_io_set_range(env, scan, io);
+	}
+	EXIT;
+}
+EXPORT_SYMBOL(cl_io_set_range);
 
 /**
  * cl_sync_io_init_notify() - Initialize synchronous IO wait @anchor for @nr

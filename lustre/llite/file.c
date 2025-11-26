@@ -1942,6 +1942,10 @@ void ll_io_init(struct cl_io *io, struct file *file, enum cl_io_type iot,
 	io->ci_noatime = file_is_noatime(file);
 	io->ci_async_readahead = false;
 
+	/* Store group lock info for lower layers (e.g., CIT_EC_RD locking) */
+	if (lfd->lfd_file_flags & LL_FILE_GROUP_LOCKED)
+		io->ci_group_gid = lfd->fd_grouplock.lg_gid;
+
 	/* FLR: only use non-delay I/O for read as there is only one
 	 * avaliable mirror for write.
 	 */
@@ -2076,6 +2080,7 @@ ll_file_io_generic(const struct lu_env *env, struct vvp_io_args *args,
 	unsigned int retried = 0;
 	bool dio_lock = false;
 	bool is_aio = false;
+	bool switch_ec = false;
 	size_t max_io_bytes;
 	ssize_t result = 0;
 	int retries = RETRY_ATTEMPTS;
@@ -2083,11 +2088,19 @@ ll_file_io_generic(const struct lu_env *env, struct vvp_io_args *args,
 	bool partial_io;
 	int rc2 = 0;
 	int rc = 0;
+	enum cl_io_type acct_iot; /* accounting/logical IO type */
 
 	ENTRY;
 	CDEBUG(D_VFSTRACE, DNAME": %s ppos: %llu, bytes: %zu\n",
 	       encode_fn_file(file),
 	       iot == CIT_READ ? "read" : "write", *ppos, bytes);
+
+	/* Save the original iot for accounting: a restart may change iot to
+	 * CIT_EC_RD, but the read/write statistics (ll_stats_ops_tally()),
+	 * heat tracking (ll_heat_add()) and the debug messages below key on
+	 * CIT_READ.
+	 */
+	acct_iot = iot;
 
 	max_io_bytes = min_t(size_t, PTLRPC_MAX_BRW_PAGES * OBD_MAX_RIF_DEFAULT,
 			     sbi->ll_cache->ccc_lru_max >> 2) << PAGE_SHIFT;
@@ -2130,6 +2143,8 @@ restart:
 		per_bytes = max_io_bytes;
 		partial_io = true;
 	}
+	if (switch_ec && iot == CIT_READ)
+		iot = CIT_EC_RD;
 	io = vvp_env_new_io(env);
 	ll_io_init(io, file, iot, args);
 	io->ci_dio_aio = ci_dio_aio;
@@ -2198,6 +2213,44 @@ restart:
 		rc2 = cl_sync_io_wait_recycle(env, anchor, 0, 0);
 		if (rc2 < 0)
 			rc = rc2;
+
+		/* DIO read failed on an EC file -- the BRW error arrives
+		 * after cl_io_end, so the synchronous -EAGAIN handling in
+		 * cl_io_loop cannot catch it.  Switch to CIT_EC_RD and
+		 * restart to reconstruct from parity (buffered IO).
+		 *
+		 * This only handles sync DIO (!is_aio).  For true AIO, the
+		 * completion fires externally via cl_dio_aio_end after the
+		 * syscall returns, so we cannot restart the IO from that
+		 * context.  AIO EC recovery is not yet implemented.
+		 */
+		if (rc && iot == CIT_READ && io->ci_cross_ec &&
+		    !io->ci_switch_ec_io) {
+			CDEBUG(D_VFSTRACE,
+			       "DIO read failed rc=%d, switching to CIT_EC_RD\n",
+			       rc);
+			io->ci_switch_ec_io = 1;
+			io->ci_need_restart = 1;
+			/* The wait above drained in-flight pages.  Free the
+			 * DIO aio so the buffered EC_RD restart does not
+			 * re-attach or re-wait.
+			 */
+			cl_dio_aio_free(env, ci_dio_aio);
+			ci_dio_aio = NULL;
+			io->ci_dio_aio = NULL;
+			rc2 = 0;
+			/* DIO advanced ki_pos (vvp_io_read_start) and
+			 * vvp_io_advance consumed the iov_iter.  Rewind both
+			 * and zero ci_bytes so the post-IO accounting does
+			 * not advance ppos or result for this failed DIO.
+			 */
+			iov_iter_revert(args->u.normal.via_iter, io->ci_bytes);
+			iov_iter_reexpand(args->u.normal.via_iter, bytes);
+			args->u.normal.via_iocb->ki_pos -= io->ci_bytes;
+			io->ci_bytes = 0;
+			io->ci_ndelay_tried = 0;
+			rc = 0;
+		}
 	}
 
 	if (range_locked) {
@@ -2235,16 +2288,20 @@ out:
 
 	CDEBUG(D_VFSTRACE,
 	       DNAME": %d io complete with rc: %d, result: %zd, restart: %d\n",
-	       encode_fn_file(file), iot, rc, result, io->ci_need_restart);
+	       encode_fn_file(file), acct_iot, rc, result, io->ci_need_restart);
 
 	if ((!rc || rc == -ENODATA || rc == -ENOLCK || rc == -EIOCBQUEUED) &&
 	    bytes > 0 && io->ci_need_restart && retries-- > 0) {
 		CDEBUG(D_VFSTRACE,
 		       DNAME": restart %s from ppos=%lld bytes=%zu retries=%u ret=%zd: rc = %d\n",
-		       encode_fn_file(file), iot == CIT_READ ? "read" : "write",
+		       encode_fn_file(file),
+		       acct_iot == CIT_READ ? "read" : "write",
 		       *ppos, bytes, retries, result, rc);
-		/* preserve the tried count for FLR */
+		/* preserve the tried count for FLR and the decision to
+		 * restart as an EC recovery read
+		 */
 		retried = io->ci_ndelay_tried;
+		switch_ec = io->ci_switch_ec_io;
 		dio_lock = io->ci_dio_lock;
 		goto restart;
 	}
@@ -2294,7 +2351,7 @@ out:
 		}
 	}
 
-	if (iot == CIT_READ) {
+	if (acct_iot == CIT_READ) {
 		if (result > 0) {
 			ll_stats_ops_tally(ll_i2sbi(inode),
 					   LPROC_LL_READ_BYTES, result);
@@ -2302,7 +2359,7 @@ out:
 				ll_stats_ops_tally(ll_i2sbi(inode),
 						   LPROC_LL_HIO_READ, result);
 		}
-	} else if (iot == CIT_WRITE) {
+	} else if (acct_iot == CIT_WRITE) {
 		if (result > 0) {
 			ll_stats_ops_tally(ll_i2sbi(inode),
 					   LPROC_LL_WRITE_BYTES, result);
@@ -2321,9 +2378,9 @@ out:
 		}
 	}
 
-	CDEBUG(D_VFSTRACE, "iot: %d, result: %zd\n", iot, result);
+	CDEBUG(D_VFSTRACE, "iot: %d, result: %zd\n", acct_iot, result);
 	if (result > 0)
-		ll_heat_add(inode, iot, result);
+		ll_heat_add(inode, acct_iot, result);
 
 	RETURN(result > 0 ? result : rc);
 }

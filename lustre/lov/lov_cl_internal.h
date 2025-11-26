@@ -239,6 +239,7 @@ enum lov_object_flags {
  */
 struct lov_object {
 	struct cl_object	lo_cl;
+	struct inode		*lo_inode;
 	/*
 	 * Serializes object operations with transitions between layout types.
 	 *
@@ -372,6 +373,24 @@ lov_mirror_entry(struct lov_object *lov, int i)
 				lov->u.composite.lo_mirror_count - 1);	\
 	     lre++)
 
+static inline int
+lov_mirror_index_by_id(struct lov_object *lov, __u16 mirror_id)
+{
+	struct lov_mirror_entry *lre;
+	int i = 0;
+
+	if (!lov_is_flr(lov))
+		return -EINVAL;
+
+	lov_foreach_mirror_entry(lov, lre) {
+		if (lre->lre_mirror_id == mirror_id)
+			return i;
+		i++;
+	}
+
+	return -ENOENT;
+}
+
 static inline struct lov_mirror_entry *
 lov_mirror_by_id(struct lov_object *lov, __u16 mirror_id)
 {
@@ -427,11 +446,17 @@ struct lovsub_device {
 	struct cl_device  *acid_next;
 };
 
+enum lovsub_status {
+	LSS_OK			= 0,
+	LSS_READ_ERR,
+};
+
 struct lovsub_object {
 	struct cl_object_header lso_header;
 	struct cl_object        lso_cl;
 	struct lov_object      *lso_super;
 	int                     lso_index;
+	enum lovsub_status	lso_status;
 };
 
 /* Describe the environment settings for sublocks. */
@@ -566,6 +591,9 @@ int   lov_io_init_released(const struct lu_env *env, struct cl_object *obj,
 
 struct lov_io_sub *lov_sub_get(const struct lu_env *env, struct lov_io *lio,
 			       int stripe);
+struct cl_object *lov_sub_find(const struct lu_env *env, struct cl_device *dev,
+			       const struct lu_fid *fid,
+			       const struct cl_object_conf *conf);
 
 enum {
 	CP_LOV_INDEX_EMPTY = -1U,
@@ -604,7 +632,34 @@ struct lu_object *lovsub_object_alloc(const struct lu_env *env,
 				      struct lu_device *dev);
 
 int lov_io_layout_at(struct lov_io *lio, __u64 offset);
+int lov_io_layout_at_mirror(struct lov_io *lio, __u64 offset, int mirror_index);
 bool lov_io_layout_at_confirm(struct lov_io *lio, int entry, __u64 offset);
+
+static inline int lov_parity_mirror_index_from_data(struct lov_io *lio,
+						    int data_mirror_index)
+{
+	struct lov_object *lov = lio->lis_object;
+	struct lov_layout_entry *data_lle;
+	__u16 parity_mirror_id;
+	int index;
+
+	if (data_mirror_index < 0)
+		return -EINVAL;
+
+	/* Use the data component covering the current position, matching
+	 * how the parity-to-data direction walks the mirror's components.
+	 * Fall back to the mirror's first component when the position is not
+	 * covered (e.g. when called before the io range is set up).
+	 */
+	index = lov_io_layout_at_mirror(lio, lio->lis_pos, data_mirror_index);
+	if (index < 0)
+		index = lov_mirror_entry(lov, data_mirror_index)->lre_start;
+
+	data_lle = lov_entry(lov, index);
+	parity_mirror_id = data_lle->lle_lsme->lsme_mirror_link_id;
+
+	return lov_mirror_index_by_id(lov, parity_mirror_id);
+}
 
 static inline struct lu_extent *lov_io_extent(struct lov_io *io, int i)
 {
@@ -612,11 +667,16 @@ static inline struct lu_extent *lov_io_extent(struct lov_io *io, int i)
 }
 
 /* For layout entries within @ext. */
-#define lov_foreach_io_layout(ind, lio, ext)				\
-	for (ind = lov_io_layout_at(lio, (ext)->e_start);		\
+#define lov_foreach_io_layout_mirror(ind, lio, ext, mir_idx)		\
+	for (ind = lov_io_layout_at_mirror(lio,				\
+					(ext)->e_start, mir_idx);	\
 	     ind >= 0 &&						\
 	     lu_extent_is_overlapped(lov_io_extent(lio, ind), ext);	\
-	     ind = lov_io_layout_at(lio, lov_io_extent(lio, ind)->e_end))
+	     ind = lov_io_layout_at_mirror(lio,				\
+			lov_io_extent(lio, ind)->e_end, mir_idx))
+
+#define lov_foreach_io_layout(ind, lio, ext)				\
+	lov_foreach_io_layout_mirror(ind, lio, ext, (lio)->lis_mirror_index)
 
 /*
  * Type conversions.
@@ -678,6 +738,11 @@ static inline struct lovsub_device *cl2lovsub_dev(const struct cl_device *d)
 {
 	LINVRNT(d->cd_lu_dev.ld_type == &lovsub_device_type);
 	return container_of(d, struct lovsub_device, acid_cl);
+}
+
+static inline struct lov_device *lov_object_dev(struct lov_object *obj)
+{
+	return lu2lov_dev(obj->lo_cl.co_lu.lo_dev);
 }
 
 static inline struct lu_object *lov2lu(struct lov_object *lov)
