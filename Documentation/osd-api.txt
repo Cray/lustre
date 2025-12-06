@@ -1290,8 +1290,13 @@ lov_modify_tgts).
 Appendix 2. Sample Code
 =======================
 
-Lustre currently has 2 different OSD implementations:
+Lustre currently has 3 different OSD implementations:
 - ldiskfs OSD under lustre/osd-ldiskfs
-  http://git.whamcloud.com/?p=fs/lustre-release.git;a=tree;f=lustre/osd-ldiskfs;hb=HEAD
-- ZFS OSD under lustre/zfs-osd
-  http://git.whamcloud.com/?p=fs/lustre-release.git;a=tree;f=lustre/osd-zfs;hb=HEAD
+  https://git.whamcloud.com/?p=fs/lustre-release.git;f=lustre/osd-ldiskfs;hb=HEAD
+  https://github.com/lustre/lustre-release/tree/master/lustre/osd-ldiskfs
+- ZFS OSD under lustre/osd-zfs
+  https://git.whamcloud.com/?p=fs/lustre-release.git;f=lustre/osd-zfs;hb=HEAD
+  https://github.com/lustre/lustre-release/tree/master/lustre/osd-zfs
+- Writeback Cache (RAM) OSD under lustre/osd-wbcfs
+  https://git.whamcloud.com/?p=fs/lustre-release.git;f=lustre/osd-wbcfs;hb=HEAD
+  https://github.com/lustre/lustre-release/tree/master/lustre/osd-wbcfs

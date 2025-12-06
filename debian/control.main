@@ -6,7 +6,7 @@ Uploaders: Lustre Developers <lustre-devel@lists.lustre.org>
 Standards-Version: 3.8.3
 Build-Depends: module-assistant, libreadline-dev, debhelper (>= 11), automake (>=1.7) | automake1.7 | automake1.8 | automake1.9, pkg-config, libtool, libyaml-dev, libnl-genl-3-dev, libselinux-dev, bzip2, quilt, linux-headers-generic | linux-headers-amd64 | linux-headers-arm64, rsync, libssl-dev, libpython3-dev, swig, libmount-dev, ed
 Homepage: https://wiki.whamcloud.com/
-Vcs-Git: git://git.whamcloud.com/fs/lustre-release.git
+Vcs-Git: https://github.com/lustre/lustre-release.git
 
 Package: lustre-source
 Section: admin

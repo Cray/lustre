@@ -44,7 +44,9 @@ To report bugs, please visit:
     https://jira.whamcloud.com/
 
 The official repository is hosted at:
-    https://git.whamcloud.com/
+    https://git.whamcloud.com/fs/lustre-release.git
+Mirror is available at:
+    https://github.com/lustre/lustre-release
 
 +----------+
 | Building |

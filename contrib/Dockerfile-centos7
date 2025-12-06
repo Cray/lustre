@@ -40,7 +40,7 @@ RUN yum install -y git
 
 #build and install latest e2fsprogs
 RUN /bin/bash -c \
-	"git clone git://git.whamcloud.com/tools/e2fsprogs.git e2fsprogs && \
+	"git clone https://github.com/lustre/e2fsprogs.git e2fsprogs && \
 	cd e2fsprogs && \
 	git checkout -b v1.46.2.wc5 v1.46.2.wc5 && \
 	./configure --with-root-prefix=/usr --enable-elf-shlibs \
