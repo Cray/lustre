@@ -3052,6 +3052,104 @@ struct ll_foreign_symlink_upcall_item {
  */
 #define MAX_NB_UPCALL_ITEMS 32
 
+/**
+ * The data stripes in a comp is split into smaller chunks for the purpose
+ * of ec calculations. The total number of stripes may not always be
+ * evenly divisible with by 'k' so we may need to divide it up into two
+ * different sets of k0 and k1 sized chunks.
+ *
+ * The total stripes are divided into c0 number of k0 sized chunks
+ * followed by c1 number of k1 sized chunks.
+ */
+struct ec_split_comp {
+	int esc_n0, esc_k0;
+	int esc_n1, esc_k1;
+};
+
+/*
+ * Arbitrary limit on the minimum size we will attempt to split up into
+ * smaller chunks for ec computation.
+ */
+#define EC_MIN_SPLIT_SIZE 5
+/*
+ * We have data consisting of 'total' stripes. Create a mapping where
+ * we split this into smaller chunks based on what the
+ * suggested / requested hint is.
+ * Try to keep the sizes of the different buckets as equal as possible
+ * even if it means we will sometimes use smaller bucket size
+ * than what the hint suggested.
+ *
+ * A pathological example could be a data comp with 15 stripes and
+ * we request to split this into buckets for 7,m EC encoding.
+ * For best fit this would then find a configuration of 3 buckets
+ * of size 5 and thus the chunk size is 2 less than the requested hint.
+ */
+static inline void
+ec_split_stripes(int total, int suggested, struct ec_split_comp *sc)
+{
+	int num_buckets;
+
+	/* If total is very small then just map it into a single chunk */
+	if (suggested >= total || total < EC_MIN_SPLIT_SIZE) {
+		sc->esc_k0 = total;
+		sc->esc_n0 = 1;
+		sc->esc_k1 = 0;
+		sc->esc_n1 = 0;
+		return;
+	}
+
+	/* If the total is evenly divisible by the suggested chunk size */
+	if (total % suggested == 0) {
+		sc->esc_k0 = suggested;
+		sc->esc_n0 = total / suggested;
+		sc->esc_k1 = 0;
+		sc->esc_n1 = 0;
+		return;
+	}
+
+	/* We need one extra bucket because there was a residual */
+	num_buckets = total / suggested + 1;
+
+	/*
+	 * If we can split the total evenly in the new number of buckets.
+	 * For this case we end up with num_bucket chunks that are all
+	 * suggested-1 or suggested-2 in size.
+	 */
+	if (total % num_buckets == 0) {
+		sc->esc_k0 = total / num_buckets;
+		sc->esc_n0 = num_buckets;
+		sc->esc_k1 = 0;
+		sc->esc_n1 = 0;
+		return;
+	}
+
+	/*
+	 * Split the total stripes into num_buckets chunks and with the first
+	 * block of chunks being one larger to consume the residual.
+	 *
+	 * We can describe any number as :
+	 *
+	 * total = nb * bs + r
+	 *
+	 * where
+	 * nb is number of buckets
+	 * bs is bucket size
+	 * r is the residual,  r < bs.
+	 *
+	 * This can then be rearranged as :
+	 *
+	 * total = r * (bs + 1) + (nb - r) * bs
+	 * =>
+	 * total = r * bs + r + nb * bs - r * bs
+	 * =>
+	 * total = nb * bs + r
+	 */
+	sc->esc_n0 = total % num_buckets;      /* r      */
+	sc->esc_k0 = total / num_buckets + 1;  /* bs + 1 */
+	sc->esc_n1 = num_buckets - sc->esc_n0; /* nb - r */
+	sc->esc_k1 = total / num_buckets;      /* bs     */
+}
+
 #if defined(__cplusplus)
 }
 #endif
