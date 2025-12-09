@@ -238,6 +238,7 @@ static int ll_adjust_lum(struct inode *inode, struct lov_user_md *lump,
 {
 	struct lov_comp_md_v1 *comp_v1 = (struct lov_comp_md_v1 *)lump;
 	struct lov_user_md *v1 = lump;
+	struct ll_sb_info *sbi = ll_i2sbi(inode);
 	bool need_clear_release = false;
 	bool release_checked = false;
 	bool default_offset = false;
@@ -248,6 +249,9 @@ static int ll_adjust_lum(struct inode *inode, struct lov_user_md *lump,
 	if (!lump)
 		return 0;
 
+	CDEBUG(D_LAYOUT, "ll_adjust_lum: magic=0x%x, size=%zu\n",
+	       lump->lmm_magic, size);
+
 	if (lump->lmm_magic == LOV_USER_MAGIC_COMP_V1) {
 		if (size < sizeof(*comp_v1))
 			return -ERANGE;
@@ -255,6 +259,18 @@ static int ll_adjust_lum(struct inode *inode, struct lov_user_md *lump,
 		entry_count = comp_v1->lcm_entry_count;
 		if (size < offsetof(typeof(*comp_v1), lcm_entries[entry_count]))
 			return -ERANGE;
+
+		/* Check for EC layouts when erasure coding is disabled */
+		if (!sbi->ll_enable_erasure_coding) {
+			for (i = 0; i < entry_count; i++) {
+				if (comp_v1->lcm_entries[i].lcme_flags &
+				    LCME_FL_PARITY) {
+					CDEBUG(D_LAYOUT,
+					       "Rejecting EC layout: erasure coding disabled\n");
+					return -EOPNOTSUPP;
+				}
+			}
+		}
 
 		for (i = 0; i < entry_count; i++) {
 			void *ptr = comp_v1;

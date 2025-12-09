@@ -1182,6 +1182,7 @@ load_modules_local() {
 		fi
 		load_module mgs/mgs
 		load_module mdd/mdd
+		MODOPTS_MDT=${MODOPTS_MDT:-"mdt_enable_flr_ec=1"}
 		load_module mdt/mdt
 		# don't fail if ost module doesn't exist
 		load_module ost/ost 2>/dev/null || true;
@@ -1190,6 +1191,7 @@ load_modules_local() {
 		load_module osp/osp
 	fi
 
+	MODOPTS_LLITE=${MODOPTS_LLITE:-"llite_enable_flr_ec=1"}
 	load_module llite/lustre
 	[ -d /r ] && OGDB=${OGDB:-"/r/tmp"}
 	OGDB=${OGDB:-$TMP}

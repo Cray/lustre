@@ -2770,14 +2770,32 @@ int ll_lov_setstripe_ea_info(struct inode *inode, struct dentry *dentry,
 		.it_op = IT_OPEN,
 		.it_open_flags = flags | MDS_OPEN_BY_FID,
 	};
+	struct ll_sb_info *sbi = ll_i2sbi(inode);
 	int rc;
 
 	ENTRY;
+	/* Check for EC layouts when erasure coding is disabled */
+	if (lum->lmm_magic == LOV_USER_MAGIC_COMP_V1 &&
+	    !sbi->ll_enable_erasure_coding) {
+		struct lov_comp_md_v1 *comp_v1 = (struct lov_comp_md_v1 *)lum;
+		int i;
+
+		for (i = 0; i < comp_v1->lcm_entry_count; i++) {
+			if (comp_v1->lcm_entries[i].lcme_flags &
+			    LCME_FL_PARITY) {
+				CDEBUG(D_LAYOUT,
+				       "Rejecting EC layout: erasure coding disabled\n");
+				RETURN(-EOPNOTSUPP);
+			}
+		}
+	}
+
 	if ((__swab32(lum->lmm_magic) & le32_to_cpu(LOV_MAGIC_MASK)) ==
 	    le32_to_cpu(LOV_MAGIC_MAGIC)) {
 		/* this code will only exist for big-endian systems */
 		lustre_swab_lov_user_md(lum, 0);
 	}
+	/* from here, the layout in lum is in Little Endian */
 
 	ll_inode_size_lock(inode);
 	rc = ll_intent_file_open(dentry, lum, lum_size, &oit);

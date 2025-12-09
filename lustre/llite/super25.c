@@ -396,6 +396,11 @@ static void __exit lustre_exit(void)
 	kmem_cache_destroy(quota_iter_slab);
 }
 
+unsigned int llite_enable_flr_ec = 1;
+module_param(llite_enable_flr_ec, uint, 0644);
+MODULE_PARM_DESC(llite_enable_flr_ec,
+		 "enable FLR EC connect flag, on by default");
+
 MODULE_AUTHOR("OpenSFS, Inc. <http://www.lustre.org/>");
 MODULE_DESCRIPTION("Lustre Client File System");
 MODULE_VERSION(LUSTRE_VERSION_STRING);

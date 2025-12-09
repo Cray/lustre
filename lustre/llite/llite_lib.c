@@ -229,6 +229,9 @@ static struct ll_sb_info *ll_init_sbi(struct lustre_sb_info *lsi)
 	/* setstripe is allowed for all groups by default */
 	sbi->ll_enable_setstripe_gid = -1;
 
+	/* erasure coding is disabled by default */
+	sbi->ll_enable_erasure_coding = 0;
+
 	INIT_LIST_HEAD(&sbi->ll_all_quota_list);
 
 	rc = rhashtable_init(&sbi->ll_proj_sfs_htable, &proj_sfs_cache_params);
@@ -403,6 +406,9 @@ static int client_common_fill_super(struct super_block *sb, char *md, char *dt)
 				   OBD_CONNECT2_PCCRO |
 				   OBD_CONNECT2_MIRROR_ID_FIX |
 				   OBD_CONNECT2_READDIR_OPEN;
+
+	if (llite_enable_flr_ec)
+		data->ocd_connect_flags2 |= OBD_CONNECT2_FLR_EC;
 
 #ifdef HAVE_LRU_RESIZE_SUPPORT
 	if (test_bit(LL_SBI_LRU_RESIZE, sbi->ll_flags))

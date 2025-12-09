@@ -7169,8 +7169,15 @@ static int mdt_connect_internal(const struct lu_env *env,
 	    !(data->ocd_connect_flags & OBD_CONNECT_RDONLY))
 		RETURN(-EACCES);
 
-	if (data->ocd_connect_flags & OBD_CONNECT_FLAGS2)
-		data->ocd_connect_flags2 &= MDT_CONNECT_SUPPORTED2;
+	if (data->ocd_connect_flags & OBD_CONNECT_FLAGS2) {
+		__u64 supported2 = MDT_CONNECT_SUPPORTED2;
+
+		/* Add FLR_EC to supported flags when enabled */
+		if (mdt_enable_flr_ec)
+			supported2 |= OBD_CONNECT2_FLR_EC;
+
+		data->ocd_connect_flags2 &= supported2;
+	}
 
 	data->ocd_ibits_known &= MDS_INODELOCK_FULL;
 

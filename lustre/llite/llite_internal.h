@@ -869,6 +869,7 @@ struct ll_sb_info {
 	unsigned int		 ll_checksum_set:1,
 				 ll_client_common_fill_super_succeeded:1,
 				 ll_dir_open_read:1,
+				 ll_enable_erasure_coding:1,
 				 ll_enable_statahead_fname:1,
 				 ll_inode_cache_enabled:1,
 				 ll_intent_mkdir_enabled:1,
@@ -1105,6 +1106,7 @@ struct ll_readahead_work {
 };
 
 extern struct kmem_cache *ll_file_data_slab;
+extern unsigned int llite_enable_flr_ec;
 struct lustre_handle;
 struct ll_file_data {
 	struct file			*fd_file;

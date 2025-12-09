@@ -1372,6 +1372,8 @@ static inline struct obd_device *mdt2obd_dev(const struct mdt_device *mdt)
 
 extern const struct lu_device_operations mdt_lu_ops;
 
+extern unsigned int mdt_enable_flr_ec;
+
 static inline char *mdt_obd_name(struct mdt_device *mdt)
 {
 	return mdt->mdt_lu_dev.ld_obd->obd_name;
