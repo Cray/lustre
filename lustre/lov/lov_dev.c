@@ -60,17 +60,15 @@ struct lu_kmem_descr lov_caches[] = {
 	}
 };
 
-/**
- * Lov device and device type functions.
- */
+/* LOV device and device type functions. */
 
 /**
+ * lov_key_init() - Initilize and associate key (thread)
+ * @ctx: Execution context
+ * @key: Describes Data associated with this context
+ *
  * Initilize and associate key(per context data) with
- * lu_context(execution context)
- *
- * \param[in] ctx	Execution context
- * \param[in] key	Describes Data associated with this context
- *
+ * lu_context(execution context) for thread
  */
 static void *lov_key_init(const struct lu_context *ctx,
 			  struct lu_context_key *key)
@@ -84,12 +82,10 @@ static void *lov_key_init(const struct lu_context *ctx,
 }
 
 /**
- * Release execution context and disassociate key
- *
- * \param[in] ctx	execution environment
- * \param[in] key	Key
- * \param[in] data	Data associated with this context
- *
+ * lov_key_fini() - Release execution context and disassociate key
+ * @ctx: execution environment
+ * @key: Key
+ * @data: Data associated with this context
  */
 static void lov_key_fini(const struct lu_context *ctx,
 			 struct lu_context_key *key, void *data)
@@ -105,11 +101,12 @@ struct lu_context_key lov_key = {
 };
 
 /**
+ * lov_session_key_init() - Initilize & associate key (session)
+ * @ctx: Execution context
+ * @key: Describes Data associated with this context
+ *
  * Initilize and associate key(per context data) with
  * lu_context(execution context) for a session
- *
- * \param[in] ctx	Execution context
- * \param[in] key	Describes Data associated with this context
  */
 static void *lov_session_key_init(const struct lu_context *ctx,
 				  struct lu_context_key *key)
@@ -123,11 +120,12 @@ static void *lov_session_key_init(const struct lu_context *ctx,
 }
 
 /**
- * Release execution context and disassociate key for a session
+ * lov_session_key_fini() - Release execution context
+ * @ctx: execution environment
+ * @key: Key
+ * @data: Data associated with this context
  *
- * \param[in] ctx	execution environment
- * \param[in] key	Key
- * \param[in] data	Data associated with this context
+ * Release execution context and disassociate key for a session
  */
 static void lov_session_key_fini(const struct lu_context *ctx,
 				 struct lu_context_key *key, void *data)
@@ -148,19 +146,19 @@ LU_TYPE_INIT_FINI(lov, &lov_key, &lov_session_key);
 
 
 /**
- * Add new MDC target device in LOV.
+ * lov_mdc_dev_init() - Add new MDC target device in LOV.
+ * @env: local execution environment
+ * @ld: LU device of LOV device
+ * @mdc_dev: MDC device to add
+ * @idx: MDC device index
+ * @nr: MDC device index
  *
  * This function is part of the configuration log processing. It adds new MDC
  * device to the MDC device array indexed by their indexes.
  *
- * \param[in] env	local execution environment
- * \param[in] ld	LU device of LOV device
- * \param[in] mdc_dev	MDC device to add
- * \param[in] idx	MDC device index
- * \param[in] nr	MDC device index
- *
- * \retval		0 if successful
- * \retval		Non zero value on error
+ * Return:
+ * * %0 if successful
+ * * %negative value on error
  */
 static int lov_mdc_dev_init(const struct lu_env *env, struct lov_device *ld,
 			    struct lu_device *mdc_dev, __u32 idx, __u32 nr)
@@ -179,12 +177,11 @@ static int lov_mdc_dev_init(const struct lu_env *env, struct lov_device *ld,
 }
 
 /**
- * Free Resource associated with lov device context
+ * lov_device_fini() - Free Resource associated with LOV device context
+ * @env: execution environment
+ * @d: 	LU device of LOV device
  *
- * \param[in] env	execution environment
- * \param[in] d		LU device of LOV device
- *
- * \retval		Returns NULL
+ *Returns NULL always
  */
 static struct lu_device *lov_device_fini(const struct lu_env *env,
 					 struct lu_device *d)
@@ -227,15 +224,15 @@ static struct lu_device *lov_device_fini(const struct lu_env *env,
 }
 
 /**
- * Initilize lov_device
+ * lov_device_init() - Initilize lov_device
+ * @env: execution environment
+ * @d: 	LU device of LOV device
+ * @name: Device name
+ * @next: Pointer to next lu_device
  *
- * \param[in] env	execution environment
- * \param[in] d		LU device of LOV device
- * \param[in] name	Device name
- * \param[in] next	Pointer to next lu_device
- *
- * \retval		0 if successful
- * \retval		negative value on error
+ * Return:
+ * * %0 if successful
+ * * %negative value on error
  */
 static int lov_device_init(const struct lu_env *env, struct lu_device *d,
 			   const char *name, struct lu_device *next)
@@ -288,12 +285,11 @@ out_err:
 }
 
 /**
- * Free the lov specific data created for the back end lu_device.
+ * lov_device_free() - Free LOV specific data created for the back end lu_device
+ * @env: execution environment
+ * @d: 	Backend lu_device
  *
- * \param[in] env	execution environment
- * \param[in] d		Backend lu_device
- *
- * \retval		Free data and return NULL
+ * Returns NULL always
  */
 static struct lu_device *lov_device_free(const struct lu_env *env,
 					 struct lu_device *d)
@@ -325,12 +321,10 @@ static struct lu_device *lov_device_free(const struct lu_env *env,
 }
 
 /**
- * Delete cl_object(osc) target from lov
- *
- * \param[in] env	execution environment
- * \param[in] dev	LU device of LOV device
- * \param[in] index	index of backend lu device
- *
+ * lov_cl_del_target() - Delete cl_object(osc) target from lov
+ * @env: execution environment
+ * @dev: LU device of LOV device
+ * @index: index of backend lu device
  */
 static void lov_cl_del_target(const struct lu_env *env, struct lu_device *dev,
 			      __u32 index)
@@ -378,14 +372,14 @@ static int lov_expand_targets(const struct lu_env *env, struct lov_device *dev)
 }
 
 /**
- * Add cl_object(osc) target to lov
+ * lov_cl_add_target() - Add cl_object(osc) target to lov
+ * @env: execution environment
+ * @dev: LU device of LOV device
+ * @index: index of lu backend device
  *
- * \param[in] env	execution environment
- * \param[in] dev	LU device of LOV device
- * \param[in] index	index of lu backend device
- *
- * \retval		0 if successful
- * \retval		negative value on error
+ * Return:
+ * * %0 if successful
+ * * %negative value on error
  */
 static int lov_cl_add_target(const struct lu_env *env, struct lu_device *dev,
 			     __u32 index)
@@ -430,18 +424,18 @@ out:
 }
 
 /**
- * Add new MDC target device in LOV.
+ * lov_add_mdc_target() - Add new MDC target device in LOV.
+ * @env: execution environment
+ * @d: LU device of LOV device
+ * @mdc: MDC device to add
+ * @idx: MDC device index
  *
  * This function is part of the configuration log processing. It adds new MDC
  * device to the MDC device array indexed by their indexes.
  *
- * \param[in] env	execution environment
- * \param[in] d		LU device of LOV device
- * \param[in] mdc	MDC device to add
- * \param[in] idx	MDC device index
- *
- * \retval		0 if successful
- * \retval		negative value on error
+ * Return:
+ * * %0 if successful
+ * * %negative value on error
  */
 static int lov_add_mdc_target(const struct lu_env *env, struct lu_device *d,
 			      struct obd_device *mdc, __u32 idx)
@@ -515,14 +509,12 @@ static int lov_add_mdc_target(const struct lu_env *env, struct lu_device *d,
 }
 
 /**
- * Called when lov configuration changes are needed
+ * lov_process_config() - Called when LOV configuration changes are needed
+ * @env: execution environment
+ * @d: 	LU device of LOV device
+ * @cfg: setup configuration commands and arguments
  *
- * \param[in] env	execution environment
- * \param[in] d		LU device of LOV device
- * \param[in] cfg	setup configuration commands and arguments
- *
- * \retval		Return a new lu_device on success
- * \retval		Error pointer on failure
+ * Return a new lu_device on success or Error pointer on failure
  */
 static int lov_process_config(const struct lu_env *env,
 			      struct lu_device *d, struct lustre_cfg *cfg)
@@ -588,14 +580,12 @@ static const struct lu_device_operations lov_lu_ops = {
 };
 
 /**
- * Allocate a new lov lu_device
+ * lov_device_alloc() - Allocate a new LOV lu_device
+ * @env: execution environment
+ * @t: Backend OSD device type (ldiskfs,zfs)
+ * @cfg: setup configuration commands and arguments
  *
- * \param[in] env	execution environment
- * \param[in] t		Backend OSD device type (ldiskfs,zfs)
- * \param[in] cfg	setup configuration commands and arguments
- *
- * \retval		Return a new lu_device on success
- * \retval		Error pointer on failure
+ * Return a new lu_device on success or %Error pointer on failure
  */
 static struct lu_device *lov_device_alloc(const struct lu_env *env,
 					  struct lu_device_type *t,
@@ -677,5 +667,3 @@ struct lu_device_type lov_device_type = {
 	.ldt_ops      = &lov_device_type_ops,
 	.ldt_ctx_tags = LCT_CL_THREAD
 };
-
-/** @} lov */
