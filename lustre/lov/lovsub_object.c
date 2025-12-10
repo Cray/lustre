@@ -19,13 +19,7 @@
 
 #include "lov_cl_internal.h"
 
-/** \addtogroup lov
- *  @{
- */
-
-/**
- * Lovsub object operations.
- */
+/* lovsub (LOV sub-object) operations. */
 
 static int lovsub_object_init(const struct lu_env *env, struct lu_object *obj,
 			      const struct lu_object_conf *conf)
@@ -117,9 +111,14 @@ static int lovsub_object_glimpse(const struct lu_env *env,
 }
 
 /**
+ * lovsub_req_attr_set() - Set request attributes
+ * @env: lustre environment
+ * @obj: file object
+ * @attr: attribute to set
+ *
  * Implementation of struct cl_object_operations::coo_req_attr_set() for lovsub
- * layer. Lov and lovsub are responsible only for struct obdo::o_stripe_idx
- * field, which is filled there.
+ * layer. LOV and lovsub (LOV sub-object) are responsible only for
+ * struct obdo::o_stripe_idx field, which is filled there.
  */
 static void lovsub_req_attr_set(const struct lu_env *env, struct cl_object *obj,
 				struct cl_req_attr *attr)
