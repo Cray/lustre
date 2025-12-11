@@ -65,7 +65,7 @@ as when the server's IP address has changed.
 This command must be run on the MGS node.
 Only MGS server should be started (command execution returns error
 in another cases). To start the MGS service only:
-mount -t lustre <MDT partition> -o nosvc <mount point>
+mount -t lustre <MDT partition> -o nosvc,noclient <mount point>
 Note the replace_nids command skips any invalidated records in the configuration log.
 The previous log is backed up with the suffix '.bak'.
 Failover NID must be passed after ':' symbol. More than
@@ -257,7 +257,7 @@ Set SELinux policy info on a nodemap.
 .TP
 .BI clear_conf " <device|fsname>"
 This command runs on MGS node having MGS device mounted with -o
-nosvc. It cleans up configuration files stored in the CONFIGS/ directory
+nosvc,noclient. It cleans up configuration files stored in the CONFIGS/ directory
 of any records marked SKIP. If the device name is given, then the
 specific logs for that filesystem (e.g. testfs-MDT0000) is processed.
 Otherwise, if a filesystem name is given then all configuration files for the

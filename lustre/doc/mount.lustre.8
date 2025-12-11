@@ -264,6 +264,11 @@ and not the actual MDS or OSS service.
 .BI nomgs
 Start an MDT with a co-located MGS without starting the MGS service.
 .TP
+.BI noclient
+Do not allow any client connections other than the local interface to
+the local MGS. This is helpful for the lctl replace_nids and clear_conf
+commands to prevent unwanted client connections.
+.TP
 .BI noscrub
 Do not trigger OI scrub automatically when an inconsistency is detected.
 It is still possible to start explicitly using the
