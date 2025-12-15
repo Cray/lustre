@@ -6008,8 +6008,6 @@ setupall() {
 			set_flavor_all $SEC
 		fi
 		sleep $((TIMEOUT + 5))
-	else
-		sleep 5
 	fi
 }
 
