@@ -175,6 +175,8 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %{_libdir}/pkgconfig/lnet.pc
 %exclude /etc/lnet-sysctl.conf
 %exclude %{_prefix}/lib/firewalld/*
+%exclude /etc/lustre/mount.client.params
+%exclude /etc/projid
 
 %files -n cray-lustre-cray_ari_c-%{_lnet_version}-devel
 %defattr(-,root,root)

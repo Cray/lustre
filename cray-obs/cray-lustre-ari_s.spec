@@ -157,9 +157,24 @@ do
 	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_includedir}/${target}
 done
 
-for fname in $(find libcfs/include/libcfs -type f -name \*.h)
+# include/linux/libcfs -> include/linux/libcfs
+for fname in $(find include/linux/libcfs -type f -name \*.h)
 do
-	target=$(echo ${fname} | sed -e 's:^libcfs/include/::g')
+	target=$(echo ${fname} | sed -e 's:^include/::g')
+	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_includedir}/${target}
+done
+
+# include/linux/libcfs -> include/libcfs
+for fname in $(find include/linux/libcfs -type f -name \*.h)
+do
+	target=$(echo ${fname} | sed -e 's:^include/linux/::g')
+	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_includedir}/${target}
+done
+
+# include/lustre_compat -> include/lustre_compat
+for fname in $(find include/lustre_compat/linux -type f -name \*.h)
+do
+	target=$(echo ${fname} | sed -e 's:^include/::g')
 	%{__install} -D -m 0644 ${fname} %{buildroot}/%{_includedir}/${target}
 done
 
@@ -193,7 +208,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 /sbin/mount.lustre
 %config(noreplace) /etc/sysconfig/dkms-lustre
 %if %{with server}
-/sbin/mount.lustre_tgt
+%exclude /sbin/mount.lustre_tgt
 %endif
 %{_prefix}/lib/udev
 /lib/modules/%{kversion}
@@ -239,7 +254,8 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %exclude %{_bindir}/statx
 %exclude %{_sbindir}/wirecheck
 %exclude %{_sbindir}/wiretest
-
+%exclude /etc/lustre/mount.client.params
+%exclude /etc/projid
 
 %files -n cray-lustre-cray_ari_s-%{_lnet_version}-devel
 %defattr(-,root,root)
@@ -262,6 +278,7 @@ rm -f $RPM_BUILD_ROOT%{_libdir}/liblnetconfig.la
 %files resource-agents
 %defattr(0755,root,root)
 %{_prefix}/lib/ocf/resource.d/lustre/
+%exclude %{_libdir}/lustre/mount_osd_wbcfs.so
 %endif
 
 %post

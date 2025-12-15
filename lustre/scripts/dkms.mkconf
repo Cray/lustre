@@ -221,7 +221,12 @@ if grep -q ' --enable-tests' <<< \${OPTS}; then
     module obd_test            lustre/kunit     lustre
 fi
 EOF
-if [ $pkgname != "lustre-client" ] ; then
+
+if [ $pkgname = "lustre-client" -o $pkgname = "cray-lustre-client" ] ; then
+	cat >>${filename} <<EOF
+# No Server Modules
+EOF
+else
 	cat >>${filename} <<EOF
 # Lustre server Modules
 # MODULE NAME     PATH TO MODULE    INSTALL PATH
