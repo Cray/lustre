@@ -204,7 +204,7 @@ static void ldlm_reclaim_res(struct ldlm_namespace *ns, int *count,
 
 	rc  = ldlm_run_ast_work(ns, &data.rcd_rpc_list, LDLM_WORK_REVOKE_AST);
 	if (rc == -ERESTART)
-		ldlm_reprocess_recovery_done(ns);
+		ldlm_reprocess_ns(ns);
 
 	*count -= data.rcd_added;
 	EXIT;
