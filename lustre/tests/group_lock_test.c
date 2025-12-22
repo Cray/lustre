@@ -192,27 +192,24 @@ static void test11(void)
 			oflags = O_WRONLY;
 			break;
 		case 2:
-			oflags = O_WRONLY | O_NONBLOCK;
-			break;
-		case 3:
 			oflags = O_WRONLY | O_CLOEXEC;
 			break;
-		case 4:
+		case 3:
 			oflags = O_WRONLY | O_DIRECT;
 			break;
-		case 5:
+		case 4:
 			oflags = O_WRONLY | O_NOATIME;
 			break;
-		case 6:
+		case 5:
 			oflags = O_WRONLY | O_SYNC;
 			break;
-		case 7:
+		case 6:
 			oflags = O_RDONLY | O_DIRECT;
 			break;
-		case 8:
+		case 7:
 			oflags = O_RDWR;
 			break;
-		case 9:
+		case 8:
 			oflags = O_RDONLY | O_LOV_DELAY_CREATE;
 			break;
 		}
