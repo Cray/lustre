@@ -1298,6 +1298,8 @@ void qmt_setup_lqe_gd(const struct lu_env *env, struct qmt_device *qmt,
 	bool edquot;
 	int i;
 
+	LASSERT(mutex_is_locked(&lqe->lqe_glbl_data_lock));
+
 	qunit = lqe->lqe_qunit;
 	edquot = lqe->lqe_edquot;
 
@@ -1318,9 +1320,5 @@ void qmt_setup_lqe_gd(const struct lu_env *env, struct qmt_device *qmt,
 	qmt_pool_lqes_lookup_spec(env, qmt, pool_type,
 				  lqe_qtype(lqe), &lqe->lqe_id);
 	qmt_seed_glbe(env, lgd);
-
-	lqe->lqe_glbl_data = lgd;
-	qmt_id_lock_notify(qmt, lqe);
-
 	qti_lqes_fini(env);
 }
