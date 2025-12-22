@@ -279,7 +279,6 @@ static void mdt_empty_transno(struct mdt_thread_info *info, int rc)
 
 /**
  * mdt_mfd_set_mode() - Set MDS open flags into @mfd
- *
  * @mfd: mdt_file_data object per open handle
  * @open_flags: open flags passed from client
  */
@@ -296,7 +295,6 @@ void mdt_mfd_set_mode(struct mdt_file_data *mfd, enum mds_open_flags open_flags)
 
 /**
  * mdt_prep_ma_buf_from_rep() - prep ma_lmm/ma_lmv for md_attr from reply
- *
  * @info: Common data shared by mdt-level handlers
  * @obj: metadata object
  * @ma: attributes to be evaluated for that object
@@ -1071,7 +1069,7 @@ static void mdt_object_open_unlock(struct mdt_thread_info *info,
 	RETURN_EXIT;
 }
 
-/**
+/*
  * Check release is permitted for the current HSM flags.
  */
 static bool mdt_hsm_release_allow(const struct md_attr *ma)
@@ -1829,7 +1827,7 @@ out:
 	return result;
 }
 
-/**
+/*
  * Create an orphan object use local root.
  */
 static struct mdt_object *mdt_orphan_open(struct mdt_thread_info *info,

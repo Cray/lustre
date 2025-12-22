@@ -276,19 +276,17 @@ static int mdt_lvbo_size(struct ldlm_lock *lock)
 }
 
 /**
+ * mdt_lvbo_fill() - Fill the given RPC buffer @buf with LVB data
+ * @lock: LDLM lock
+ * @lvb: RPC buffer to fill
+ * @lvblen: lvb buffer length [in,out]
+ *
+ * This function is called to fill the given RPC buffer @buf with LVB data
  * Implementation of ldlm_valblock_ops::lvbo_fill for MDT.
  *
- * This function is called to fill the given RPC buffer \a buf with LVB data
- *
- * \param[in] env		execution environment
- * \param[in] lock		LDLM lock
- * \param[in] buf		RPC buffer to fill
- * \param[in,out] lvblen	lvb buffer length
- *
- * \retval		size of LVB data written into \a buf buffer
- *			or -ERANGE when the provided @lvblen is not big enough,
- *			and the needed lvb buffer size will be returned in
- *			@lvblen
+ * Returns size of LVB data written into @lvb buffer or %-ERANGE when the
+ * provided @lvblen is not big enough, and the needed lvb buffer size will be
+ * returned in @lvblen
  */
 static int mdt_lvbo_fill(struct ldlm_lock *lock,
 			 void *lvb, int *lvblen)

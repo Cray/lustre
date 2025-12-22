@@ -115,7 +115,8 @@ void mdt_reconstruct_generic(struct mdt_thread_info *mti,
 }
 
 /**
- * Generate fake attributes for a non-existing object
+ * mdt_fake_ma() - Generate fake attributes for a non-existing object
+ * @ma: attributes to fill
  *
  * While the client was waiting for the reply, the original transaction
  * got committed and corresponding rep-ack lock got released, then another
@@ -123,8 +124,6 @@ void mdt_reconstruct_generic(struct mdt_thread_info *mti,
  * attributes back. So we fake them and set nlink=0, so the client will
  * be able to detect a non-existing object and drop it from the cache
  * immediately.
- *
- * \param[out] ma	attributes to fill
  */
 static void mdt_fake_ma(struct md_attr *ma)
 {
