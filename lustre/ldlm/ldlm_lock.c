@@ -2427,22 +2427,32 @@ static int ldlm_reprocess_res(struct cfs_hash *hs, struct cfs_hash_bd *bd,
 			      struct hlist_node *hnode, void *arg)
 {
 	struct ldlm_resource *res = cfs_hash_object(hs, hnode);
+	int intention = *(int *)arg;
 
 	/* This is only called once after recovery done. LU-8306. */
-	__ldlm_reprocess_all(res, LDLM_PROCESS_RECOVERY, 0);
+	__ldlm_reprocess_all(res, intention, 0);
 	return 0;
+}
+
+static void __ldlm_reprocess_ns(struct ldlm_namespace *ns, int intention)
+{
+	ENTRY;
+	if (ns != NULL) {
+		cfs_hash_for_each_nolock(ns->ns_rs_hash,
+					 ldlm_reprocess_res, &intention, 0);
+	}
+	EXIT;
 }
 
 /* Iterate on all resources on namespace attempting to grant waiting locks. */
 void ldlm_reprocess_recovery_done(struct ldlm_namespace *ns)
 {
-	ENTRY;
+	__ldlm_reprocess_ns(ns, LDLM_PROCESS_RECOVERY);
+}
 
-	if (ns != NULL) {
-		cfs_hash_for_each_nolock(ns->ns_rs_hash,
-					 ldlm_reprocess_res, NULL, 0);
-	}
-	EXIT;
+void ldlm_reprocess_ns(struct ldlm_namespace *ns)
+{
+	__ldlm_reprocess_ns(ns, LDLM_PROCESS_RESCAN);
 }
 
 /* Helper to call blocking AST for LDLM lock \a lock in a "cancelling" mode. */
@@ -2671,7 +2681,7 @@ int ldlm_export_cancel_locks(struct obd_export *exp)
 	if (ecl.ecl_loop > 0 &&
 	    atomic_read(&exp->exp_lock_hash->hs_count) == 0 &&
 	    exp->exp_obd->obd_stopping)
-		ldlm_reprocess_recovery_done(exp->exp_obd->obd_namespace);
+		ldlm_reprocess_ns(exp->exp_obd->obd_namespace);
 
 	lu_env_fini(&env);
 

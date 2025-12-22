@@ -2768,7 +2768,7 @@ void ldlm_revoke_export_locks(struct obd_export *exp)
 			  LDLM_WORK_REVOKE_AST);
 
 	if (rc == -ERESTART)
-		ldlm_reprocess_recovery_done(exp->exp_obd->obd_namespace);
+		ldlm_reprocess_ns(exp->exp_obd->obd_namespace);
 
 	EXIT;
 }
