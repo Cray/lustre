@@ -1357,6 +1357,27 @@ static ssize_t job_xattr_store(struct kobject *kobj, struct attribute *attr,
 	return count;
 }
 
+static ssize_t force_sync_store(struct kobject *kobj, struct attribute *attr,
+				const char *buffer, size_t count)
+{
+	struct obd_device *obd = container_of(kobj, struct obd_device,
+					      obd_kset.kobj);
+	struct mdt_device *mdt = mdt_dev(obd->obd_lu_dev);
+	struct lu_env env;
+	int rc;
+
+	rc = lu_env_init(&env, LCT_MD_THREAD);
+	if (rc)
+		GOTO(out, rc);
+
+	rc = mdt_device_sync(&env, mdt);
+
+	lu_env_fini(&env);
+out:
+	return rc == 0 ? count : rc;
+}
+LUSTRE_WO_ATTR(force_sync);
+
 LPROC_SEQ_FOPS_RO(mdt_checksum_type);
 
 LPROC_SEQ_FOPS_RO_TYPE(mdt, hash);
@@ -1445,6 +1466,7 @@ static struct attribute *mdt_attrs[] = {
 	&lustre_attr_max_mod_rpcs_in_flight.attr,
 	&lustre_attr_reply_data_req.attr,
 	&lustre_attr_enable_grant_nl_debug.attr,
+	&lustre_attr_force_sync.attr,
 	NULL,
 };
 
