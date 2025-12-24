@@ -5279,7 +5279,7 @@ test_257() {
 
 	log "Enable routing on ${ROUTERS[0]}"
 	do_node ${ROUTERS[0]} "$LNETCTL set routing 1" ||
-		error "Failed to disable routing rc = $?"
+		error "Failed to enable routing rc = $?"
 
 	log "Wait for lst to finish"
 	wait
