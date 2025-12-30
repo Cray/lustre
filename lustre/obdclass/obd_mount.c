@@ -1144,6 +1144,7 @@ static const match_table_t lmd_flags_table = {
 	{LMD_FLG_ABORT_RECOV_MDT,	"abort_recov_mdt"},
 	{LMD_FLG_ABORT_RECOV_MDT,	"abort_recovery_mdt"},
 	{LMD_FLG_NO_LOCAL_LOGS,		"nolocallogs"},
+	{LMD_FLG_NO_RCLNT,		"noclient"},
 
 	{LMD_OPT_RECOVERY_TIME_SOFT,	"recovery_time_soft=%u"},
 	{LMD_OPT_RECOVERY_TIME_HARD,	"recovery_time_hard=%u"},
@@ -1412,6 +1413,7 @@ int lmd_parse(char *options, struct lustre_mount_data *lmd)
 		case LMD_FLG_NO_PRIMNODE:
 		case LMD_FLG_MGS: /* We are an MGS */
 		case LMD_FLG_LOCAL_RECOV:
+		case LMD_FLG_NO_RCLNT:
 			set_bit(token, lmd->lmd_flags);
 			break;
 		case LMD_OPT_RECOVERY_TIME_SOFT:
