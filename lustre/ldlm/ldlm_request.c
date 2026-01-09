@@ -2550,9 +2550,12 @@ static int replay_one_lock(struct obd_import *imp, struct ldlm_lock *lock)
 	 */
 	if (ldlm_is_granted(lock))
 		flags = LDLM_FL_REPLAY | LDLM_FL_BLOCK_GRANTED;
-	else if (!list_empty(&lock->l_res_link))
+	else if (!list_empty(&lock->l_res_link)) {
 		flags = LDLM_FL_REPLAY | LDLM_FL_BLOCK_WAIT;
-	else
+		LASSERT(lock->l_resource->lr_type != LDLM_FLOCK ||
+			lock->l_req_mode != LCK_NL);
+
+	} else
 		flags = LDLM_FL_REPLAY;
 
 	req = ptlrpc_request_alloc_pack(imp, &RQF_LDLM_ENQUEUE,
