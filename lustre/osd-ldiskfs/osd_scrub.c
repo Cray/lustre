@@ -27,6 +27,7 @@
 #include <linux/xattr.h>
 #include <lustre_scrub.h>
 #include <lustre_nodemap.h>
+#include <osd.h>
 
 #include "osd_internal.h"
 #include "osd_oi.h"

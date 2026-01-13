@@ -29,6 +29,7 @@
 
 #include "osd_internal.h"
 #include "osd_oi.h"
+#include <osd.h>
 
 #ifndef HAVE_INODE_LOCK_SHARED
 #define inode_lock_shared(dir) inode_lock(dir)
@@ -302,7 +303,7 @@ static void osd_mdt_fini(struct osd_device *osd)
 		dput(omm->omm_remote_parent);
 
 	OBD_FREE_PTR(omm);
-	osd->od_ost_map = NULL;
+	osd->od_mdt_map = NULL;
 }
 
 int osd_add_to_remote_parent(const struct lu_env *env, struct osd_device *osd,
@@ -521,52 +522,6 @@ cleanup_alloc:
 	return rc;
 }
 
-static void osd_seq_free(struct osd_obj_seq *osd_seq)
-{
-	int j;
-
-	if (osd_seq->oos_dirs) {
-		for (j = 0; j < osd_seq->oos_subdir_count; j++) {
-			if (osd_seq->oos_dirs[j])
-				dput(osd_seq->oos_dirs[j]);
-		}
-		OBD_FREE_PTR_ARRAY(osd_seq->oos_dirs,
-				   osd_seq->oos_subdir_count);
-	}
-
-	if (osd_seq->oos_root)
-		dput(osd_seq->oos_root);
-
-	OBD_FREE_PTR(osd_seq);
-}
-
-static void osd_ost_fini(struct osd_device *osd)
-{
-	struct osd_obj_seq *osd_seq;
-	struct osd_obj_seq *tmp;
-	struct osd_obj_map *map = osd->od_ost_map;
-
-	ENTRY;
-
-	if (map == NULL)
-		return;
-
-	write_lock(&map->om_seq_list_lock);
-	list_for_each_entry_safe(osd_seq, tmp, &map->om_seq_list,
-				 oos_seq_list) {
-		list_del_init(&osd_seq->oos_seq_list);
-		write_unlock(&map->om_seq_list_lock);
-		osd_seq_free(osd_seq);
-		write_lock(&map->om_seq_list_lock);
-	}
-	write_unlock(&map->om_seq_list_lock);
-	if (map->om_root)
-		dput(map->om_root);
-	OBD_FREE_PTR(map);
-	osd->od_ost_map = NULL;
-	EXIT;
-}
-
 static int osd_index_backup_dir_init(const struct lu_env *env,
 				     struct osd_device *dev)
 {
@@ -613,7 +568,8 @@ int osd_obj_map_init(const struct lu_env *env, struct osd_device *dev)
 	if (!dev->od_is_ost) {
 		rc = osd_mdt_init(env, dev);
 		if (rc) {
-			osd_ost_fini(dev);
+			osd_obj_map_free(dev->od_ost_map);
+			dev->od_ost_map = NULL;
 			RETURN(rc);
 		}
 
@@ -622,7 +578,8 @@ int osd_obj_map_init(const struct lu_env *env, struct osd_device *dev)
 
 	rc = osd_index_backup_dir_init(env, dev);
 	if (rc) {
-		osd_ost_fini(dev);
+		osd_obj_map_free(dev->od_ost_map);
+		dev->od_ost_map = NULL;
 		if (mdt_init)
 			osd_mdt_fini(dev);
 	}
@@ -630,31 +587,11 @@ int osd_obj_map_init(const struct lu_env *env, struct osd_device *dev)
 	RETURN(rc);
 }
 
-static struct osd_obj_seq *osd_seq_find_locked(struct osd_obj_map *map, u64 seq)
-{
-	struct osd_obj_seq *osd_seq;
-
-	list_for_each_entry(osd_seq, &map->om_seq_list, oos_seq_list) {
-		if (osd_seq->oos_seq == seq)
-			return osd_seq;
-	}
-	return NULL;
-}
-
-static struct osd_obj_seq *osd_seq_find(struct osd_obj_map *map, u64 seq)
-{
-	struct osd_obj_seq *osd_seq;
-
-	read_lock(&map->om_seq_list_lock);
-	osd_seq = osd_seq_find_locked(map, seq);
-	read_unlock(&map->om_seq_list_lock);
-	return osd_seq;
-}
-
 void osd_obj_map_fini(struct osd_device *dev)
 {
 	osd_index_backup_dir_fini(dev);
-	osd_ost_fini(dev);
+	osd_obj_map_free(dev->od_ost_map);
+	dev->od_ost_map = NULL;
 	osd_mdt_fini(dev);
 }
 
@@ -892,21 +829,6 @@ static int osd_obj_add_entry(struct osd_thread_info *info,
 	RETURN(rc);
 }
 
-/**
- * Use %llu for legacy OST sequences, but use %llx for new
- * sequences names, so that the O/{seq}/dN/{oid} more closely
- * follows the DFID/PFID format. This makes it easier to map from
- * debug messages to objects in the future, and the legacy space
- * of FID_SEQ_OST_MDT0 will be unused in the future.
- **/
-static inline void osd_seq_name(char *seq_name, size_t name_size, u64 seq)
-{
-	snprintf(seq_name, name_size,
-		 (fid_seq_is_rsvd(seq) ||
-		  fid_seq_is_mdt0(seq)) ? "%llu" : "%llx",
-		 fid_seq_is_idif(seq) ? 0 : seq);
-}
-
 /* external locking is required */
 static int osd_seq_load_locked(struct osd_thread_info *info,
 			       struct osd_device *osd,
@@ -926,7 +848,7 @@ static int osd_seq_load_locked(struct osd_thread_info *info,
 	LASSERT(map);
 	LASSERT(map->om_root);
 
-	osd_seq_name(dir_name, sizeof(dir_name), osd_seq->oos_seq);
+	osd_obj_seq_name(dir_name, sizeof(dir_name), osd_seq->oos_seq);
 
 	seq_dir = simple_mkdir(info->oti_env, osd, map->om_root, NULL, dir_name,
 			       LMAC_NOT_IN_OI | LMAC_FID_ON_OST, 0755, NULL);
@@ -988,7 +910,7 @@ struct osd_obj_seq *osd_seq_load(struct osd_thread_info *info,
 	LASSERT(map);
 	LASSERT(map->om_root);
 
-	osd_seq = osd_seq_find(map, seq);
+	osd_seq = osd_obj_seq_find(map, seq);
 	if (likely(osd_seq != NULL))
 		RETURN(osd_seq);
 
@@ -997,7 +919,7 @@ struct osd_obj_seq *osd_seq_load(struct osd_thread_info *info,
 
 	/* Check whether the seq has been added */
 	read_lock(&map->om_seq_list_lock);
-	osd_seq = osd_seq_find_locked(map, seq);
+	osd_seq = osd_obj_seq_find_locked(map, seq);
 	if (osd_seq != NULL) {
 		read_unlock(&map->om_seq_list_lock);
 		GOTO(cleanup, rc = 0);

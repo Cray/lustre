@@ -175,23 +175,6 @@ struct osd_object {
 	struct lu_object_header *oo_header;
 };
 
-struct osd_obj_seq {
-	/* protects on-fly initialization */
-	int		 oos_subdir_count; /* subdir count for each seq */
-	struct dentry	 *oos_root;	   /* O/<seq> */
-	struct dentry	 **oos_dirs;	   /* O/<seq>/d0-dXX */
-	u64		 oos_seq;	   /* seq number */
-	struct list_head oos_seq_list;     /* list to seq_list */
-};
-
-struct osd_obj_map {
-	struct dentry	 *om_root;	  /* dentry for /O */
-	rwlock_t	 om_seq_list_lock; /* lock for seq_list */
-	struct list_head om_seq_list;      /* list head for seq */
-	int		 om_subdir_count;
-	struct mutex	 om_dir_init_mutex;
-};
-
 struct osd_mdobj {
 	struct dentry	*om_root;      /* AGENT/<index> */
 	u64		 om_index;     /* mdt index */
