@@ -7020,9 +7020,8 @@ test_90a()
 	(( MDS1_VERSION >= $(version_code 2.15.60) )) ||
 		skip "Need MDS version at least 2.15.60"
 
-	setup_quota_test || error "setup quota failed with $?"
-
-	stack_trap cleanup_quota_test
+	wait_delete_completed || error "wait_delete_completed failed"
+	sync_all_data
 
 	check_quota_no_mount
 	check_quota_no_mount -u $TSTUSR
@@ -7048,11 +7047,11 @@ test_90b()
 	(( MDS1_VERSION >= $(version_code 2.15.60) )) ||
 		skip "Need MDS version at least 2.15.60"
 
-	setup_quota_test || error "setup quota failed with $?"
-	mount_client $MOUNT2
+	wait_delete_completed || error "wait_delete_completed failed"
+	sync_all_data
 
+	mount_client $MOUNT2
 	stack_trap "umount $MOUNT2"
-	stack_trap cleanup_quota_test
 
 	check_quota_two_mounts -u $TSTUSR
 	check_quota_two_mounts "-a -u"
