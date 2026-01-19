@@ -24,7 +24,7 @@ RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
 RUN sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
 
 RUN dnf install -y gcc autoconf libtool which make patch diffutils file \
-	binutils-devel python38 python3-devel elfutils-devel e2fsprogs-devel \
+	binutils-devel python38 python3-devel elfutils-devel \
 	libselinux-devel libaio-devel dnf-plugins-core bc bison flex
 RUN yum config-manager --set-enabled powertools
 RUN yum install -y libyaml-devel libnl3-devel libmount-devel
@@ -48,8 +48,9 @@ ENV _E2GIT=${E2FSPROGS_GIT}
 RUN /bin/bash -c \
 	"git clone $_E2GIT e2fsprogs && \
 	cd e2fsprogs && \
-	git checkout -b v1.46.2.wc5 v1.46.2.wc5 && \
+	git checkout -b v1.47.3-wc2 v1.47.3-wc2 && \
 	./configure --with-root-prefix=/usr --enable-elf-shlibs \
+		--libdir=/usr/lib64 \
 		--disable-uuidd --disable-fsck \
 		--disable-e2initrd-helper \
 		--disable-libblkid --disable-libuuid \
