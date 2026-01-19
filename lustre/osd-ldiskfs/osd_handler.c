@@ -2710,10 +2710,8 @@ static void osd_init_t10_type(struct osd_device *osd)
  */
 #ifdef __LDISKFS_DIR_REC_LEN
 # define PER_OBJ_USAGE __LDISKFS_DIR_REC_LEN(20)
-#elif defined  LDISKFS_DIR_REC_LEN_WITH_DIR
-# define PER_OBJ_USAGE LDISKFS_DIR_REC_LEN(20, NULL)
 #else
-# define PER_OBJ_USAGE LDISKFS_DIR_REC_LEN(20)
+# define PER_OBJ_USAGE ldiskfs_dir_rec_len(20, NULL)
 #endif
 
 /*

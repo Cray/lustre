@@ -422,6 +422,32 @@ AC_DEFUN([LB_LDISKFS_IGET_EA_INODE], [
 ]) # LB_LDISKFS_IGET_EA_INODE
 
 #
+# LB_LDISKFS_DIR_REC_LEN_WITH_DIR
+#
+# Newer kernels (since v5.12-rc4-7-g471fbbea7ff7) have ext4_dir_rec_len() with
+# a dir (inode) argument to properly account for hashed directory entries on
+# casefolded+encrypted dirs
+#
+AC_DEFUN([LB_SRC_LDISKFS_DIR_REC_LEN_WITH_DIR], [
+	LB2_LINUX_TEST_SRC([ext4_dir_rec_len_with_dir], [
+		#include <linux/fs.h>
+		#include "$EXT4_SRC_DIR/ext4.h"
+	],[
+		unsigned int rec_len;
+		struct ext4_dir_entry_2 de = {0};
+		rec_len = ext4_dir_rec_len((__u32)0, NULL);
+		(void)rec_len;
+	],[-Werror])
+])
+AC_DEFUN([LB_LDISKFS_DIR_REC_LEN_WITH_DIR], [
+	LB2_MSG_LINUX_TEST_RESULT([if ext4_dir_rec_len takes a dir argument],
+	[ext4_dir_rec_len_with_dir], [
+		AC_DEFINE(LDISKFS_DIR_REC_LEN_WITH_DIR, 1,
+			[ext4_dir_rec_len takes a dir argument])
+	])
+]) # LB_LDISKFS_DIR_REC_LEN_WITH_DIR
+
+#
 # LDISKFS_AC_PATCH_PROGRAM
 #
 # Determine which program should be used to apply the patches to
@@ -735,6 +761,7 @@ AC_DEFUN([LB_KABI_LDISKFS], [AS_IF([test x$enable_ldiskfs != xno],[
 		LB_SRC_LDISKFS_JOURNAL_ENSURE_CREDITS
 		LB_SRC_LDISKFS_IGET_HAS_FLAGS_ARG
 		LB_SRC_LDISKFS_IGET_EA_INODE
+		LB_SRC_LDISKFS_DIR_REC_LEN_WITH_DIR
 		LB_SRC_LDISKFS_FIND_ENTRY_LOCKED_EXISTS
 		LB_SRC_LDISKFSFS_DIRHASH_WANTS_DIR
 		LB_SRC_JBD2_H_TOTAL_CREDITS
@@ -748,6 +775,7 @@ AC_DEFUN([LB_KABI_LDISKFS], [AS_IF([test x$enable_ldiskfs != xno],[
 		LB_LDISKFS_JOURNAL_ENSURE_CREDITS
 		LB_LDISKFS_IGET_HAS_FLAGS_ARG
 		LB_LDISKFS_IGET_EA_INODE
+		LB_LDISKFS_DIR_REC_LEN_WITH_DIR
 		LB_LDISKFS_FIND_ENTRY_LOCKED_EXISTS
 		LB_LDISKFSFS_DIRHASH_WANTS_DIR
 		LB_JBD2_H_TOTAL_CREDITS
