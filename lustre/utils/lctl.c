@@ -355,7 +355,8 @@ command_t lqa_cmdlist[] = {
 	 "usage: lqa destroy --fsname FSNAME --name LQANAME"},
 	{.pc_name = "list", .pc_func = lctl_lqa_list,
 	 .pc_help = "list LQAs, either all for FSNAME or the details for LQANAME\n"
-	 "usage: lqa list --fsname FSNAME [--name LQANAME]"}
+	 "usage: lqa list --fsname FSNAME [--name LQANAME]"},
+	{.pc_help = NULL }
 };
 JT_SUBCMD(lqa);
 #endif
