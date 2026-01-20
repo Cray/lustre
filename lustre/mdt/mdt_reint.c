@@ -2160,8 +2160,9 @@ static int mdd_migrate_close(struct mdt_thread_info *info,
 
 	if (rc) {
 		rc = -EAGAIN;
-		LDLM_DEBUG(lease, DFID" lease broken",
-			   PFID(mdt_object_fid(obj)));
+		if (obj)
+			LDLM_DEBUG(lease, DFID" lease broken",
+				   PFID(mdt_object_fid(obj)));
 	}
 
 	/*
@@ -2456,6 +2457,9 @@ lock_parent:
 
 	/* end lease and close file for regular file */
 	if (info->mti_spec.sp_migrate_close) {
+		/* don't close twice */
+		info->mti_spec.sp_migrate_close = 0;
+
 		/* try to hold open_sem so that nobody else can open the file */
 		if (!down_write_trylock(&sobj->mot_open_sem)) {
 			/* migrate only dentry */
@@ -2539,6 +2543,10 @@ put_parent:
 	mdt_object_put(env, pobj);
 unlock_rename:
 	mdt_rename_unlock(info, rename_lh);
+
+	/* make sure close executes even on error */
+	if (info->mti_spec.sp_migrate_close)
+		mdd_migrate_close(info, NULL);
 
 	if (rc && rc != -EALREADY)
 		CERROR("%s: migrate "DFID"/"DNAME" failed: rc = %d\n",
