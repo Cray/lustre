@@ -1958,6 +1958,7 @@ int llapi_semantic_traverse(char *path, int size, int parent,
 	struct dirent64 *dent;
 	int len, ret, d, p = -1;
 	DIR *dir = NULL;
+	int rc2 = 0;
 
 	ret = 0;
 	len = strlen(path);
@@ -2113,16 +2114,22 @@ int llapi_semantic_traverse(char *path, int size, int parent,
 					break;
 				}
 			}
-			if (sem_fini && rc == 0)
-				sem_fini(path, d, NULL, data, dent);
+			if (sem_fini && rc == 0) {
+				rc2 = sem_fini(path, d, NULL, data, dent);
+				if (rc2 < 0 && ret == 0)
+					ret = rc2;
+			}
 		}
 	}
 
 out:
 	path[len] = 0;
 
-	if (sem_fini)
-		sem_fini(path, parent, &d, data, de);
+	if (sem_fini) {
+		rc2 = sem_fini(path, parent, &d, data, de);
+		if (rc2 < 0 && ret == 0)
+			ret = rc2;
+	}
 err:
 	if (d != -1) {
 		if (dir)

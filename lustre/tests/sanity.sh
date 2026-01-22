@@ -10659,8 +10659,8 @@ test_60h() {
 		done
 		$LFS getdirstripe $DIR/$tdir-$fail_loc ||
 			error "getdirstripe $tdir-$fail_loc failed"
-		$LFS migrate -m 1 $DIR/$tdir-$fail_loc ||
-			error "migrate $tdir-$fail_loc failed"
+		$LFS migrate -m 1 "$DIR/$tdir-$fail_loc" &&
+			error "migrate $tdir-$fail_loc should fail"
 		$LFS getdirstripe $DIR/$tdir-$fail_loc ||
 			error "getdirstripe $tdir-$fail_loc failed"
 		pushd $DIR/$tdir-$fail_loc

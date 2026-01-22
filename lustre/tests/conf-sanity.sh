@@ -3022,12 +3022,15 @@ t32_test() {
 		# migrate files/dirs to remote MDT, then move them back
 		if [ "$MDS1_VERSION" -ge $(version_code 2.7.50) -a \
 		     $dne_upgrade != "no" ]; then
+			local find_dir_excludes="! -name . ! -name .lustre "
+			find_dir_excludes+="! -name .fscrypt"
+
 			$r $LCTL set_param -n	\
 				mdt.${fsname}*.enable_remote_dir=1 2>/dev/null
 
 			echo "== test migration =="
 			pushd $tmp/mnt/lustre
-			for dir in $(find ! -name .lustre ! -name . -type d); do
+			for dir in $(find . $find_dir_excludes -type d); do
 				mdt_index=$($LFS getdirstripe -i $dir)
 				stripe_cnt=$($LFS getdirstripe -c $dir)
 				if [ $mdt_index = 0 -a $stripe_cnt -le 1 ]; then
@@ -3039,7 +3042,7 @@ t32_test() {
 				fi
 			done
 
-			for dir in $(find ! -name . ! -name .lustre -type d); do
+			for dir in $(find $find_dir_excludes -type d); do
 				mdt_index=$($LFS getdirstripe -i $dir)
 				stripe_cnt=$($LFS getdirstripe -c $dir)
 				if [ $mdt_index = 1 -a $stripe_cnt -le 1 ]; then
