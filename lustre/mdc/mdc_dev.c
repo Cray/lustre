@@ -115,7 +115,7 @@ static int mdc_dom_lock_match(const struct lu_env *env, struct obd_export *exp,
 	RETURN(rc);
 }
 
-/**
+/*
  * Finds an existing lock covering a page with given index.
  * Copy of osc_obj_dlmlock_at_pgoff() but for DoM IBITS lock.
  */
@@ -167,7 +167,7 @@ again:
 	RETURN(lock);
 }
 
-/**
+/*
  * Check if page @page is covered by an extra lock or discard it.
  */
 static bool mdc_check_and_discard_cb(const struct lu_env *env, struct cl_io *io,
@@ -207,7 +207,7 @@ static bool mdc_check_and_discard_cb(const struct lu_env *env, struct cl_io *io,
 	return true;
 }
 
-/**
+/*
  * Discard pages protected by the given lock. This function traverses radix
  * tree to find all covering pages and discard them. If a page is being covered
  * by other locks, it should remain in cache.
@@ -291,7 +291,7 @@ static void mdc_lock_lockless_cancel(const struct lu_env *env,
 	osc_lock_wake_waiters(env, osc, ols);
 }
 
-/**
+/*
  * Helper for osc_dlm_blocking_ast() handling discrepancies between cl_lock
  * and ldlm_lock caches.
  */
@@ -395,6 +395,12 @@ int mdc_ldlm_blocking_ast(struct ldlm_lock *dlmlock,
 }
 
 /**
+ * mdc_lock_lvb_update() - Updates obj attributes from a LVB
+ * @env: Lustre environment
+ * @osc: pointer to the osc_object
+ * @dlmlock: LDLM lock
+ * @lvb: A pointer to struct ost_lvb. (updated object attrs)
+ *
  * Updates object attributes from a lock value block (lvb) received together
  * with the DLM lock reply from the server.
  * This can be optimized to not update attributes when lock is a result of a
@@ -507,7 +513,7 @@ static void mdc_lock_granted(const struct lu_env *env, struct osc_lock *oscl,
 	EXIT;
 }
 
-/**
+/*
  * Lock upcall function that is executed either when a reply to ENQUEUE rpc is
  * received from a server, or after mdc_enqueue_send() matched a local DLM
  * lock.
@@ -825,6 +831,12 @@ static int mdc_enqueue_send(const struct lu_env *env, struct obd_export *exp,
 }
 
 /**
+ * mdc_lock_enqueue() - initiates ldlm enqueue:
+ * @env: Lustre environment
+ * @slice: client-side lock structure
+ * @unused: Unused
+ * @anchor: This is used for to wait for the resources before getting lock.
+ *
  * Implementation of cl_lock_operations::clo_enqueue() method for osc
  * layer. This initiates ldlm enqueue:
  *
@@ -837,6 +849,10 @@ static int mdc_enqueue_send(const struct lu_env *env, struct obd_export *exp,
  * when a reply from the server is received.
  *
  * This function does not wait for the network communication to complete.
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on failure
  */
 static int mdc_lock_enqueue(const struct lu_env *env,
 			    const struct cl_lock_slice *slice,
@@ -990,11 +1006,9 @@ static int mdc_lock_init(const struct lu_env *env, struct cl_object *obj,
 	RETURN(0);
 }
 
-/**
- * IO operations.
- *
- * An implementation of cl_io_operations specific methods for MDC layer.
- *
+/*
+ * IO operations : An implementation of cl_io_operations specific methods for
+ *                 MDC layer.
  */
 static int mdc_async_upcall(void *a, int rc)
 {
@@ -1410,7 +1424,7 @@ static void mdc_build_res_name(struct osc_object *osc,
 	fid_build_reg_res_name(lu_object_fid(osc2lu(osc)), resname);
 }
 
-/**
+/*
  * Implementation of struct cl_req_operations::cro_attr_set() for MDC
  * layer. MDC is responsible for struct obdo::o_id and struct obdo::o_seq
  * fields.
