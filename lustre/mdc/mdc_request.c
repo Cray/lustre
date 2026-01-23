@@ -1362,15 +1362,21 @@ struct readpage_param {
 };
 
 /**
- * Read pages from server.
+ * do_mdc_read_folio_remote() - Read pages from server.
+ * @data: Pointer which is cast to struct readpage_param
+ * @folio0: the folio to be read
  *
- * folio_test_ in MDS_READPAGE RPC is packed in LU_PAGE_SIZE, and each folio
+ * Each page in MDS_READPAGE RPC is packed in LU_PAGE_SIZE, and each folio
  * contains a header lu_dirpage which describes the start/end hash, and whether
  * this folio is empty (contains no dir entry) or hash collide with next page.
  * After client receives reply, several pages will be integrated into dir page
  * in PAGE_SIZE (if PAGE_SIZE greater than LU_PAGE_SIZE), and the
  * lu_dirpage for this integrated folio will be adjusted.
- **/
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on failure
+ */
 static int do_mdc_read_folio_remote(void *data, struct folio *folio0)
 {
 	struct readpage_param *rp = data;
@@ -1459,19 +1465,16 @@ static inline int mdc_read_folio_remote(void *data, struct page *page0)
 #endif
 
 /**
- * Read dir page from cache first, if it can not find it, read it from
- * server and add into the cache.
+ * mdc_read_page() - Read dir page from cache first, if it can not find it,
+ *                   read it from server and add into the cache.
+ * @exp: MDC export
+ * @op_data: client MD stack parameters, transferring parameters between
+ *           different layers on client MD stack.
+ * @mrinfo: callback required for ldlm lock enqueue during read page
+ * @hash_offset: the hash offset of the page to be read
+ * @pfolio: returned folio, NULL on failure [out]
  *
- * \param[in] exp	MDC export
- * \param[in] op_data	client MD stack parameters, transfering parameters
- *                      between different layers on client MD stack.
- * \param[in] mrinfo	callback required for ldlm lock enqueue during
- *                      read page
- * \param[in] hash_offset the hash offset of the page to be read
- * \param[in] ppage	the page to be read
- *
- * retval		= 0 get the page successfully
- *                      errno(<0) get the page failed
+ * Returns: %0 get the page successfully or %errno(<0) get the page failed
  */
 static int mdc_read_page(struct obd_export *exp, struct md_op_data *op_data,
 			 struct md_readdir_info *mrinfo, __u64 hash_offset,
@@ -1816,13 +1819,15 @@ out:
 }
 
 /**
- * Send hsm_ct_register to MDS
+ * mdc_ioc_hsm_ct_register() - Send hsm_ct_register to MDS
+ * @imp: import
+ * @archive_count: if in bitmap format, it is the bitmap, else it is the count
+ *                 of archive_ids
+ * @archives: if in bitmap format, it is NULL, else it is archive_id lists
  *
- * \param[in]	imp		import
- * \param[in]	archive_count	if in bitmap format, it is the bitmap,
- *				else it is the count of archive_ids
- * \param[in]	archives	if in bitmap format, it is NULL,
- *				else it is archive_id lists
+ * Return:
+ * * %0 on success
+ * * %negative on failure
  */
 static int mdc_ioc_hsm_ct_register(struct obd_import *imp, __u32 archive_count,
 				   __u32 *archives)
@@ -2567,9 +2572,14 @@ static int mdc_ioc_hsm_ct_start(struct obd_export *exp,
 }
 
 /**
- * Send a message to any listening copytools
- * @param val KUC message (kuc_hdr + hsm_action_list)
- * @param len total length of message
+ * mdc_hsm_copytool_send() - Send a message to any listening copytools
+ * @uuid: client UUID
+ * @len: total length of message
+ * @val: KUC message (kuc_hdr + hsm_action_list)
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on failure
  */
 static int mdc_hsm_copytool_send(const struct obd_uuid *uuid,
 				 size_t len, void *val)
@@ -2604,10 +2614,15 @@ static int mdc_hsm_copytool_send(const struct obd_uuid *uuid,
 }
 
 /**
- * callback function passed to kuc for re-registering each HSM copytool
- * running on MDC, after MDT shutdown/recovery.
- * @param data copytool registration data
- * @param cb_arg callback argument (obd_import)
+ * mdc_hsm_ct_reregister() - callback function passed to KUC for re-registering
+ *                           each HSM copytool running on MDC, after MDT
+ *                           shutdown/recovery.
+ * @data: copytool registration data
+ * @cb_arg: callback argument (obd_import)
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on failure
  */
 static int mdc_hsm_ct_reregister(void *data, void *cb_arg)
 {
@@ -2657,9 +2672,15 @@ static int mdc_kuc_reregister_thread(void *data)
 }
 
 /**
- * Re-establish all kuc contexts with MDT
- * after MDT shutdown/recovery.
+ * mdc_kuc_reregister() - Re-establish all KUC contexts with MDT after MDT
+ *                        shutdown/recovery.
+ * @imp: pointer to the obd_import struct whose KUC is being reestablished
+ *
  * This is done in background.
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on failure
  */
 static int mdc_kuc_reregister(struct obd_import *imp)
 {
@@ -2984,9 +3005,11 @@ static struct obd_uuid *mdc_get_uuid(struct obd_export *exp)
 }
 
 /**
- * Determine whether the lock can be canceled before replaying it during
- * recovery, non zero value will be return if the lock can be canceled,
- * or zero returned for not
+ * mdc_cancel_weight() - Determine whether the lock can be canceled before
+ *                       replaying it during recovery
+ * @lock: lock to check
+ *
+ * Return: 1 if the lock can be canceled, 0 otherwise
  */
 static int mdc_cancel_weight(struct ldlm_lock *lock)
 {
