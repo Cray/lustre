@@ -931,19 +931,22 @@ int ll_set_default_mdsize(struct ll_sb_info *sbi, int lmmsize)
 static void client_common_put_super(struct super_block *sb)
 {
 	struct ll_sb_info *sbi = ll_s2sbi(sb);
+	struct obd_export *dt_exp = sbi->ll_dt_exp;
+	struct obd_export *md_exp = sbi->ll_md_exp;
+
 	ENTRY;
+
+	ll_debugfs_unregister_super(sb);
+	sbi->ll_dt_exp = NULL;
+	sbi->ll_md_exp = NULL;
 
 	cl_sb_fini(sb);
 
-	obd_fid_fini(sbi->ll_dt_exp->exp_obd);
-	obd_disconnect(sbi->ll_dt_exp);
-	sbi->ll_dt_exp = NULL;
+	obd_fid_fini(dt_exp->exp_obd);
+	obd_disconnect(dt_exp);
 
-	ll_debugfs_unregister_super(sb);
-
-	obd_fid_fini(sbi->ll_md_exp->exp_obd);
-	obd_disconnect(sbi->ll_md_exp);
-	sbi->ll_md_exp = NULL;
+	obd_fid_fini(md_exp->exp_obd);
+	obd_disconnect(md_exp);
 
 	EXIT;
 }
