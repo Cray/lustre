@@ -2921,7 +2921,8 @@ static loff_t ll_dir_seek(struct file *file, loff_t offset, int origin)
 	loff_t ret = -EINVAL;
 
 	ENTRY;
-	ll_inode_lock(inode);
+
+	inode_lock(inode);
 	switch (origin) {
 	case SEEK_SET:
 		break;
@@ -2964,7 +2965,7 @@ static loff_t ll_dir_seek(struct file *file, loff_t offset, int origin)
 	GOTO(out, ret);
 
 out:
-	ll_inode_unlock(inode);
+	inode_unlock(inode);
 	return ret;
 }
 

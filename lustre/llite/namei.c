@@ -1121,9 +1121,6 @@ static struct dentry *ll_lookup_nd(struct inode *parent, struct dentry *dentry,
 	struct lookup_intent *itp, it = { .it_op = IT_GETATTR };
 	struct dentry *de = NULL;
 
-	/* VFS has locked the inode before calling this */
-	ll_set_inode_lock_owner(parent);
-
 	CDEBUG(D_VFSTRACE, "VFS Op:name=%pd, dir="DFID"(%p), flags=%u\n",
 	       dentry, PFID(ll_inode2fid(parent)), parent, flags);
 
@@ -1135,7 +1132,7 @@ static struct dentry *ll_lookup_nd(struct inode *parent, struct dentry *dentry,
 	if ((flags & LOOKUP_CREATE) && !(flags & LOOKUP_OPEN) &&
 	    (inode_permission(&nop_mnt_idmap,
 			      parent, MAY_WRITE | MAY_EXEC) == 0))
-		goto clear;
+		goto out;
 
 	if (flags & (LOOKUP_PARENT|LOOKUP_OPEN|LOOKUP_CREATE))
 		itp = NULL;
@@ -1147,9 +1144,7 @@ static struct dentry *ll_lookup_nd(struct inode *parent, struct dentry *dentry,
 	if (itp != NULL)
 		ll_intent_release(itp);
 
-clear:
-	ll_clear_inode_lock_owner(parent);
-
+out:
 	return de;
 }
 
@@ -1196,8 +1191,6 @@ static int ll_atomic_open(struct inode *dir, struct dentry *dentry,
 	int rc = 0;
 
 	ENTRY;
-	/* VFS has locked the inode before calling this */
-	ll_set_inode_lock_owner(dir);
 
 	CDEBUG(D_VFSTRACE,
 	       "VFS Op:name=%pd, dir="DFID"(%p), file %p, open_flags %x, mode %x opened %d\n",
@@ -1218,7 +1211,7 @@ static int ll_atomic_open(struct inode *dir, struct dentry *dentry,
 		 * Either way it's a valid race to just return -ENOENT here.
 		 */
 		if (!(open_flags & O_CREAT))
-			GOTO(clear, rc = -ENOENT);
+			GOTO(out, rc = -ENOENT);
 
 		/* Otherwise we just unhash it to be rehashed afresh via
 		 * lookup if necessary
@@ -1228,7 +1221,7 @@ static int ll_atomic_open(struct inode *dir, struct dentry *dentry,
 
 	OBD_ALLOC(it, sizeof(*it));
 	if (!it)
-		GOTO(clear, rc = -ENOMEM);
+		GOTO(out, rc = -ENOMEM);
 
 	it->it_op = IT_OPEN;
 	if (open_flags & O_CREAT) {
@@ -1398,9 +1391,7 @@ out_release:
 	ll_intent_release(it);
 out_free:
 	OBD_FREE(it, sizeof(*it));
-clear:
-	ll_clear_inode_lock_owner(dir);
-
+out:
 	RETURN(rc);
 }
 
@@ -1912,9 +1903,6 @@ static int ll_mknod(struct mnt_idmap *map, struct inode *dir,
 
 	ENTRY;
 
-	/* VFS has locked the inode before calling this */
-	ll_set_inode_lock_owner(dir);
-
 	CDEBUG(D_VFSTRACE, "VFS Op:name=%pd, dir="DFID"(%p) mode %o dev %x\n",
 	       dchild, PFID(ll_inode2fid(dir)), dir, mode, rdev);
 
@@ -1943,7 +1931,6 @@ static int ll_mknod(struct mnt_idmap *map, struct inode *dir,
 	if (!err)
 		ll_stats_ops_tally(ll_i2sbi(dir), LPROC_LL_MKNOD,
 				   ktime_us_delta(ktime_get(), kstart));
-	ll_clear_inode_lock_owner(dir);
 
 	RETURN(err);
 }
@@ -1956,9 +1943,6 @@ static int ll_create_nd(struct mnt_idmap *map, struct inode *dir,
 {
 	ktime_t kstart = ktime_get();
 	int rc;
-
-	/* VFS has locked the inode before calling this */
-	ll_set_inode_lock_owner(dir);
 
 	CFS_FAIL_TIMEOUT(OBD_FAIL_LLITE_CREATE_FILE_PAUSE, cfs_fail_val);
 
@@ -1978,8 +1962,6 @@ static int ll_create_nd(struct mnt_idmap *map, struct inode *dir,
 		ll_stats_ops_tally(ll_i2sbi(dir), LPROC_LL_CREATE,
 				   ktime_us_delta(ktime_get(), kstart));
 
-	ll_clear_inode_lock_owner(dir);
-
 	return rc;
 }
 
@@ -1992,9 +1974,6 @@ static int ll_symlink(struct mnt_idmap *map, struct inode *dir,
 	int err;
 
 	ENTRY;
-
-	/* VFS has locked the inode before calling this */
-	ll_set_inode_lock_owner(dir);
 
 	CDEBUG(D_VFSTRACE, "VFS Op:name=%pd, dir="DFID"(%p), target=%.*s\n",
 	       dchild, PFID(ll_inode2fid(dir)), dir, 3000, oldpath);
@@ -2015,8 +1994,6 @@ static int ll_symlink(struct mnt_idmap *map, struct inode *dir,
 				   ktime_us_delta(ktime_get(), kstart));
 
 out:
-	ll_clear_inode_lock_owner(dir);
-
 	RETURN(err);
 }
 
@@ -2032,9 +2009,6 @@ static int ll_link(struct dentry *old_dentry, struct inode *dir,
 	int err;
 
 	ENTRY;
-	/* VFS has locked the inodes before calling this */
-	ll_set_inode_lock_owner(src);
-	ll_set_inode_lock_owner(dir);
 
 	CDEBUG(D_VFSTRACE,
 	       "VFS Op: inode="DFID"(%p), dir="DFID"(%p), target=%pd\n",
@@ -2043,28 +2017,25 @@ static int ll_link(struct dentry *old_dentry, struct inode *dir,
 
 	err = llcrypt_prepare_link(old_dentry, dir, new_dentry);
 	if (err)
-		GOTO(clear, err);
+		GOTO(out, err);
 
 	op_data = ll_prep_md_op_data(NULL, src, dir, name->name, name->len,
 				     0, LUSTRE_OPC_ANY, NULL);
 	if (IS_ERR(op_data))
-		GOTO(clear, err = PTR_ERR(op_data));
+		GOTO(out, err = PTR_ERR(op_data));
 
 	err = md_link(sbi->ll_md_exp, op_data, &request);
 	ll_finish_md_op_data(op_data);
 	if (err)
-		GOTO(out, err);
+		GOTO(out_put, err);
 
 	ll_update_times(request, dir);
 	ll_stats_ops_tally(sbi, LPROC_LL_LINK,
 			   ktime_us_delta(ktime_get(), kstart));
 	EXIT;
-out:
+out_put:
 	ptlrpc_req_put(request);
-clear:
-	ll_clear_inode_lock_owner(src);
-	ll_clear_inode_lock_owner(dir);
-
+out:
 	RETURN(err);
 }
 
@@ -2084,9 +2055,6 @@ static inline int do_mkdir(struct inode *dir, struct dentry *dchild,
 	int rc;
 
 	ENTRY;
-
-	/* VFS has locked the inode before calling this */
-	ll_set_inode_lock_owner(dir);
 
 	CDEBUG(D_VFSTRACE, "VFS Op:name=%pd, dir="DFID"(%p)\n",
 	       dchild, PFID(ll_inode2fid(dir)), dir);
@@ -2144,8 +2112,6 @@ out_tally:
 		ll_stats_ops_tally(sbi, LPROC_LL_MKDIR,
 				   ktime_us_delta(ktime_get(), kstart));
 
-	ll_clear_inode_lock_owner(dir);
-
 	RETURN(rc);
 }
 
@@ -2181,10 +2147,6 @@ static int ll_rmdir(struct inode *dir, struct dentry *dchild)
 	int rc;
 
 	ENTRY;
-
-	/* VFS has locked the inodes before calling this */
-	ll_set_inode_lock_owner(dir);
-	ll_set_inode_lock_owner(dchild->d_inode);
 
 	CDEBUG(D_VFSTRACE, "VFS Op:name=%pd, dir="DFID"(%p)\n",
 	       dchild, PFID(ll_inode2fid(dir)), dir);
@@ -2230,9 +2192,6 @@ static int ll_rmdir(struct inode *dir, struct dentry *dchild)
 
 	ptlrpc_req_put(request);
 out:
-	ll_clear_inode_lock_owner(dir);
-	ll_clear_inode_lock_owner(dchild->d_inode);
-
 	RETURN(rc);
 }
 
@@ -2279,10 +2238,6 @@ static int ll_unlink(struct inode *dir, struct dentry *dchild)
 
 	ENTRY;
 
-	/* VFS has locked the inodes before calling this */
-	ll_set_inode_lock_owner(dir);
-	ll_set_inode_lock_owner(dchild->d_inode);
-
 	CDEBUG(D_VFSTRACE, "VFS Op:name=%pd, dir="DFID"(%p)\n",
 	       dchild, PFID(ll_inode2fid(dir)), dir);
 
@@ -2291,16 +2246,16 @@ static int ll_unlink(struct inode *dir, struct dentry *dchild)
 	 * just check it as vfs_unlink does.
 	 */
 	if (unlikely(d_mountpoint(dchild)))
-		GOTO(clear, rc = -EBUSY);
+		GOTO(out, rc = -EBUSY);
 
 	/* some foreign file/dir may not be allowed to be unlinked */
 	if (!ll_foreign_is_removable(dchild, false))
-		GOTO(clear, rc = -EPERM);
+		GOTO(out, rc = -EPERM);
 
 	op_data = ll_prep_md_op_data(NULL, dir, NULL, name->name, name->len, 0,
 				     LUSTRE_OPC_ANY, NULL);
 	if (IS_ERR(op_data))
-		GOTO(clear, rc = PTR_ERR(op_data));
+		GOTO(out, rc = PTR_ERR(op_data));
 
 	op_data->op_fid3 = *ll_inode2fid(dchild->d_inode);
 	/* notify lower layer if inode has dirty pages */
@@ -2313,7 +2268,7 @@ static int ll_unlink(struct inode *dir, struct dentry *dchild)
 	rc = md_unlink(ll_i2sbi(dir)->ll_md_exp, op_data, &request);
 	ll_finish_md_op_data(op_data);
 	if (rc)
-		GOTO(out, rc);
+		GOTO(out_put, rc);
 
 	/*
 	 * The server puts attributes in on the last unlink, use them to update
@@ -2328,14 +2283,12 @@ static int ll_unlink(struct inode *dir, struct dentry *dchild)
 
 	ll_update_times(request, dir);
 
-out:
+out_put:
 	ptlrpc_req_put(request);
 	if (!rc)
 		ll_stats_ops_tally(ll_i2sbi(dir), LPROC_LL_UNLINK,
 				   ktime_us_delta(ktime_get(), kstart));
-clear:
-	ll_clear_inode_lock_owner(dir);
-	ll_clear_inode_lock_owner(dchild->d_inode);
+out:
 	RETURN(rc);
 }
 
@@ -2356,12 +2309,6 @@ static int ll_rename(struct mnt_idmap *map,
 	int err;
 
 	ENTRY;
-
-	/* VFS has locked the inodes before calling this */
-	ll_set_inode_lock_owner(src);
-	ll_set_inode_lock_owner(tgt);
-	if (tgt_dchild->d_inode)
-		ll_set_inode_lock_owner(tgt_dchild->d_inode);
 
 #if defined(HAVE_USER_NAMESPACE_ARG) || defined(HAVE_IOPS_RENAME_WITH_FLAGS)
 	if (flags)
@@ -2443,10 +2390,6 @@ static int ll_rename(struct mnt_idmap *map,
 				   ktime_us_delta(ktime_get(), kstart));
 	}
 out:
-	ll_clear_inode_lock_owner(src);
-	ll_clear_inode_lock_owner(tgt);
-	if (tgt_dchild->d_inode)
-		ll_clear_inode_lock_owner(tgt_dchild->d_inode);
 	RETURN(err);
 }
 

@@ -282,13 +282,6 @@ struct cl_layout {
 	bool		cl_is_rdonly;
 };
 
-enum coo_inode_opc {
-	COIO_INODE_LOCK,
-	COIO_INODE_UNLOCK,
-	COIO_SIZE_LOCK,
-	COIO_SIZE_UNLOCK,
-};
-
 /**
  * Operations implemented for each cl object layer.
  *
