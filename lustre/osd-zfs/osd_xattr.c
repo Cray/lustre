@@ -169,21 +169,22 @@ out_rele:
 }
 
 /**
- * Copy an extended attribute into the buffer provided, or compute
- * the required buffer size if \a buf is NULL.
+ * osd_xattr_get_internal() - Copy an extended attribute into the buffer
+ *                            provided, or compute the required buffer size if
+ *                            @buf is NULL.
+ * @env: execution environment
+ * @obj: object for which to retrieve xattr
+ * @buf: buffer to store xattr value in [out]
+ * @name: name of xattr to copy
+ * @sizep: bytes used or required to store xattr [out]
  *
- * On success, the number of bytes used or required is stored in \a sizep.
+ * On success, the number of bytes used or required is stored in @sizep.
  *
  * Note that no locking is done here.
  *
- * \param[in] env      execution environment
- * \param[in] obj      object for which to retrieve xattr
- * \param[out] buf     buffer to store xattr value in
- * \param[in] name     name of xattr to copy
- * \param[out] sizep   bytes used or required to store xattr
- *
- * \retval 0           on success
- * \retval negative    negated errno on failure
+ * Return:
+ * * %0 on success
+ * * %negative negated errno on failure
  */
 int osd_xattr_get_internal(const struct lu_env *env, struct osd_object *obj,
 			   struct lu_buf *buf, const char *name, int *sizep)
@@ -203,16 +204,16 @@ int osd_xattr_get_internal(const struct lu_env *env, struct osd_object *obj,
 }
 
 /**
- * Copy LMA extended attribute into provided buffer
+ * osd_xattr_get_lma() - Copy LMA extended attribute into provided buffer
+ * @env: execution environment
+ * @obj: object for which to retrieve xattr
+ * @buf: buffer to store xattr value in [out]
  *
  * Note that no locking is done here.
  *
- * \param[in] env      execution environment
- * \param[in] obj      object for which to retrieve xattr
- * \param[out] buf     buffer to store xattr value in
- *
- * \retval 0           on success
- * \retval negative    negated errno on failure
+ * Return:
+ * * %0 on success
+ * * %negative negated errno on failure
  */
 int osd_xattr_get_lma(const struct lu_env *env, struct osd_object *obj,
 		      struct lu_buf *buf)

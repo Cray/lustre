@@ -531,24 +531,25 @@ static inline struct folio *kmem_to_folio(void *addr, u32 *pgno)
 }
 
 /**
- * Prepare buffers for read.
+ * osd_bufs_get_read() - Prepare buffers for read.
+ * @env: Lustre environment
+ * @obj: OSD object
+ * @off: offset in bytes
+ * @len: the number of bytes to access
+ * @lnb: array of local niobufs pointing to the buffers with data [out]
+ * @maxlnb: maximum number of @lnb slots available
  *
- * The function maps the range described by \a off and \a len to \a lnb array.
+ * The function maps the range described by @off and @len to @lnb array.
  * dmu_buf_hold_array_by_bonus() finds/creates appropriate ARC buffers, then
- * we fill \a lnb array with the pages storing ARC buffers. Notice the current
- * implementationt passes TRUE to dmu_buf_hold_array_by_bonus() to fill ARC
- * buffers with actual data, I/O is done in the conext of osd_bufs_get_read().
+ * we fill @lnb array with the pages storing ARC buffers. Notice the current
+ * implementation passes TRUE to dmu_buf_hold_array_by_bonus() to fill ARC
+ * buffers with actual data, I/O is done in the context of osd_bufs_get_read().
  * A better implementation would just return the buffers (potentially unfilled)
  * and subsequent osd_read_prep() would do I/O for many ranges concurrently.
  *
- * \param[in] env	environment
- * \param[in] obj	object
- * \param[in] off	offset in bytes
- * \param[in] len	the number of bytes to access
- * \param[out] lnb	array of local niobufs pointing to the buffers with data
- *
- * \retval		0 for success
- * \retval		negative error number of failure
+ * Return:
+ * * %positive number of local niobufs filled on success
+ * * %negative error number on failure
  */
 static int osd_bufs_get_read(const struct lu_env *env, struct osd_object *obj,
 			     loff_t off, ssize_t len, struct niobuf_local *lnb,
@@ -982,10 +983,17 @@ retry:
 }
 
 /**
- * Policy to grow ZFS block size by write pattern.
+ * osd_grow_blocksize() - Policy to grow ZFS block size by write pattern.
+ * @obj: OSD object to grow
+ * @oh: Transaction handle
+ *
  * For sequential write, it grows block size gradually until it reaches the
- * maximum blocksize the dataset can support. Otherwise, it will pick a
+ * maximum blocksize the dataset can support. Otherwise, it will pick
  * a block size by the writing region of this I/O.
+ *
+ * Return:
+ * * %0 on success
+ * * %negative on error
  */
 static int osd_grow_blocksize(struct osd_object *obj, struct osd_thandle *oh)
 {
