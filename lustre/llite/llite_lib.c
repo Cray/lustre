@@ -1325,6 +1325,7 @@ static int super_setup_bdi_name(struct super_block *sb, char *fmt, ...)
 }
 #endif /* !HAVE_SUPER_SETUP_BDI_NAME */
 
+#if defined HAVE_SHRINKER_COUNT || defined HAVE_S_SHRINK_AS_A_POINTER
 static unsigned long ll_count_objects(struct shrinker *shrink,
 				      struct shrink_control *sc)
 {
@@ -1344,6 +1345,7 @@ static unsigned long ll_count_objects(struct shrinker *shrink,
 
 	return total_objects;
 }
+#endif
 
 int ll_fill_super(struct super_block *sb)
 {
@@ -1491,7 +1493,7 @@ int ll_fill_super(struct super_block *sb)
 #ifdef HAVE_S_SHRINK_AS_A_POINTER
 	sbi->ll_count_objects = sb->s_shrink->count_objects;
 	sb->s_shrink->count_objects = ll_count_objects;
-#else
+#elif defined HAVE_SHRINKER_COUNT
 	sbi->ll_count_objects = sb->s_shrink.count_objects;
 	sb->s_shrink.count_objects = ll_count_objects;
 #endif

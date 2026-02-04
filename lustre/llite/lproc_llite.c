@@ -1587,10 +1587,14 @@ static ssize_t max_shrink_show(struct kobject *kobj,
 				     struct attribute *attr,
 				     char *buf)
 {
+#if defined HAVE_SHRINKER_COUNT || defined HAVE_S_SHRINK_AS_A_POINTER
 	struct ll_sb_info *sbi = container_of(kobj, struct ll_sb_info,
 					      ll_kset.kobj);
 
 	return snprintf(buf, PAGE_SIZE, "%u\n", sbi->ll_max_shrink);
+#else
+	return snprintf(buf, PAGE_SIZE, "%u\n", -1);
+#endif
 }
 
 static ssize_t max_shrink_store(struct kobject *kobj,

@@ -905,7 +905,7 @@ static int ll_readpages(const struct lu_env *env, struct cl_io *io,
 {
 	int ret = 0;
 	__u64 kms;
-	struct ll_readahead_state ras = { 0 };
+	struct ll_readahead_state ras = { };
 	struct ra_io_arg *ria;
 
 	ENTRY;
