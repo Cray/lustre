@@ -2340,6 +2340,7 @@ AC_DEFUN([LC_FSCRYPT_PREPARE_READDIR], [
 #
 AC_DEFUN([LC_SRC_SET_POSIX_ACL_USER_NS], [
 	LB2_LINUX_TEST_SRC([set_posix_acl_user_ns], [
+		#include <linux/fs.h>
 		#include <linux/posix_acl.h>
 	],[
 		set_posix_acl((struct user_namespace *)NULL, (struct inode*)NULL, 0, NULL);
@@ -3310,6 +3311,7 @@ AC_DEFUN([LC_IOP_GET_INODE_ACL], [
 #
 AC_DEFUN([LC_SRC_HAVE_POSIX_ACL_TYPE], [
 	LB2_LINUX_TEST_SRC([posix_acl_type], [
+		#include <linux/fs.h>
 		#include <linux/posix_acl_xattr.h>
 	],[
 		posix_acl_type(NULL);
