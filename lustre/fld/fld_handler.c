@@ -116,8 +116,8 @@ int fld_update_from_controller(const struct lu_env *env,
 	struct fld_thread_info *info;
 	struct lu_seq_range *range;
 	struct lu_seq_range_array *lsra;
-	u32 index;
-	struct ptlrpc_request *req;
+	u32 index = 0;
+	struct ptlrpc_request *req = NULL;
 	int rc;
 	int i;
 
