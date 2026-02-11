@@ -111,20 +111,16 @@ const struct super_operations lustre_super_operations = {
 
 /**
  * lustre_fill_super() - set up the superblock with lustre info
- *
  * @sb: setup superblock struct with lustre info
- * @lmd2_data: data Mount options provided during mount
- * (e.g. -o flock,abort_recov)
- * @silent:
+ * @fc: Pointer to struct fs_context
  *
  * This is the entry point for the mount call into Lustre.
  * This is called when a client is mounted, and this is
  * where we start setting things up.
  *
  * Returns:
- * * %0  Success
- * * <0 Error
- *
+ * * %0 Success
+ * * %negative Error
  */
 static int lustre_fill_super(struct super_block *sb, struct fs_context *fc)
 {

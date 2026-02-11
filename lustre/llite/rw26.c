@@ -93,9 +93,9 @@ static void ll_invalidate_folio(struct folio *folio, size_t offset, size_t len)
  * as a result of explicit truncate, or when inode is removed from memory
  * (as a result of final iput(), umount, or memory pressure induced icache
  * shrinking).
- *
  * @vmpage: pointer to struct page (single page)
  * @offset: Starting offset in bytes
+ * @length: Length to release
  *
  * [0, offset] bytes of the page remain valid (this is for a case of not-page
  * aligned truncate). Lustre leaves partially truncated page in the cache,
