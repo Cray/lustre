@@ -11,7 +11,9 @@
 
 #include <linux/kprobes.h>
 #include <linux/memcontrol.h>
+#include <lustre_compat/linux/mm.h>
 #include <lustre_compat/linux/security.h>
+#include <lustre_compat/linux/vmalloc.h>
 #include <lustre_compat/linux/workqueue.h>
 
 #include <linux/libcfs/libcfs.h>
@@ -121,6 +123,18 @@ void compat_security_file_free(struct file *file)
 EXPORT_SYMBOL(compat_security_file_free);
 #endif
 
+#if !defined(HAVE_ACCOUNT_PAGE_DIRTIED_EXPORT) && defined(HAVE_ACCOUNT_PAGE_DIRTIED)
+static unsigned int (*__account_page_dirtied)(struct page *page,
+					       struct address_space *mapping);
+
+unsigned int compat_account_page_dirtied(struct page *page,
+					 struct address_space *mapping)
+{
+	return __account_page_dirtied(page, mapping);
+}
+EXPORT_SYMBOL(compat_account_page_dirtied);
+#endif
+
 int lustre_symbols_init(void)
 {
 	int rc;
@@ -152,6 +166,11 @@ int lustre_symbols_init(void)
 
 	__folio_memcg_unlock = cfs_kallsyms_lookup_name("folio_memcg_unlock");
 	if (!__folio_memcg_unlock)
+		return -EINVAL;
+#endif
+#if !defined(HAVE_ACCOUNT_PAGE_DIRTIED_EXPORT) && defined(HAVE_ACCOUNT_PAGE_DIRTIED)
+	__account_page_dirtied = cfs_kallsyms_lookup_name("account_page_dirtied");
+	if (!__account_page_dirtied)
 		return -EINVAL;
 #endif
 #ifdef CONFIG_SECURITY

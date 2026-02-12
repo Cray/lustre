@@ -638,26 +638,6 @@ AC_DEFUN([LC_BIO_ENDIO_USES_ONE_ARG], [
 ]) # LC_BIO_ENDIO_USES_ONE_ARG
 
 #
-# LC_ACCOUNT_PAGE_DIRTIED_3ARGS
-#
-# 4.2 [to 4.5] kernel page dirtied takes 3 arguments
-#
-AC_DEFUN([LC_SRC_ACCOUNT_PAGE_DIRTIED_3ARGS], [
-	LB2_LINUX_TEST_SRC([account_page_dirtied_3a], [
-		#include <linux/mm.h>
-	],[
-		account_page_dirtied(NULL, NULL, NULL);
-	])
-])
-AC_DEFUN([LC_ACCOUNT_PAGE_DIRTIED_3ARGS], [
-	LB2_MSG_LINUX_TEST_RESULT([if 'account_page_dirtied' with 3 args exists],
-	[account_page_dirtied_3a], [
-		AC_DEFINE(HAVE_ACCOUNT_PAGE_DIRTIED_3ARGS, 1,
-			[account_page_dirtied takes three arguments])
-	])
-]) # LC_ACCOUNT_PAGE_DIRTIED_3ARGS
-
-#
 # LC_HAVE_CRYPTO_ALLOC_SKCIPHER
 #
 # Kernel version 4.12 commit 7a7ffe65c8c5
@@ -2408,6 +2388,27 @@ AC_DEFUN([LC_HAVE_USER_NAMESPACE_ARG], [
 			['inode_operations' members have user namespace argument])
 	])
 ]) # LC_HAVE_USER_NAMESPACE_ARG
+
+#
+# LC_HAVE_ACCOUNT_PAGE_DIRTIED
+#
+# kernel v5.13-57-g6e1cae881a06
+#	mm/writeback: move __set_page_dirty() to core mm
+# The function account_page_dirtied() no longer exist.
+#
+AC_DEFUN([LC_SRC_HAVE_ACCOUNT_PAGE_DIRTIED], [
+	LB2_LINUX_TEST_SRC([account_page_dirtied], [
+		#include <linux/mm.h>
+	],[
+		account_page_dirtied(NULL, NULL);
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_ACCOUNT_PAGE_DIRTIED], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'account_page_dirtied' is defined],
+	[account_page_dirtied], [
+		AC_DEFINE(HAVE_ACCOUNT_PAGE_DIRTIED, 1, [account_page_dirtied() is defined])
+	])
+]) # LC_HAVE_ACCOUNT_PAGE_DIRTIED
 
 #
 # LC_HAVE_FILEATTR_GET
@@ -4413,7 +4414,6 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	# 4.2
 	LC_SRC_BIO_ENDIO_USES_ONE_ARG
 	LC_SRC_SYMLINK_OPS_USE_NAMEIDATA
-	LC_SRC_ACCOUNT_PAGE_DIRTIED_3ARGS
 	LC_SRC_HAVE_CRYPTO_ALLOC_SKCIPHER
 
 	# 4.3
@@ -4542,6 +4542,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_HAVE_USER_NAMESPACE_ARG
 
 	# 5.13
+	LC_SRC_HAVE_ACCOUNT_PAGE_DIRTIED
 	LC_SRC_HAVE_COPY_PAGE_FROM_ITER_ATOMIC
 	LC_SRC_HAVE_FILEATTR_GET
 
@@ -4693,7 +4694,6 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	# 4.2
 	LC_BIO_ENDIO_USES_ONE_ARG
 	LC_SYMLINK_OPS_USE_NAMEIDATA
-	LC_ACCOUNT_PAGE_DIRTIED_3ARGS
 	LC_HAVE_CRYPTO_ALLOC_SKCIPHER
 
 	# 4.3
@@ -4828,6 +4828,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_HAVE_USER_NAMESPACE_ARG
 
 	# 5.13
+	LC_HAVE_ACCOUNT_PAGE_DIRTIED
 	LC_HAVE_FILEATTR_GET
 	LC_HAVE_COPY_PAGE_FROM_ITER_ATOMIC
 

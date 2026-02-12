@@ -21,7 +21,6 @@
 #include <obd.h>
 #include "llite_internal.h"
 #include "vvp_internal.h"
-#include <linux/kallsyms.h>
 
 /*
  * Vvp device and device type functions.
@@ -245,9 +244,6 @@ struct lu_device_type vvp_device_type = {
 	.ldt_ctx_tags = LCT_CL_THREAD
 };
 
-unsigned int (*vvp_account_page_dirtied)(struct page *page,
-					 struct address_space *mapping);
-
 /**
  * vvp_global_init() - init global resources required by the VVP layer
  *
@@ -268,22 +264,7 @@ int vvp_global_init(void)
 
 	rc = lu_device_type_init(&vvp_device_type);
 	if (rc != 0)
-		goto out_kmem;
-
-#ifndef HAVE_ACCOUNT_PAGE_DIRTIED_EXPORT
-#ifdef HAVE_KALLSYMS_LOOKUP_NAME
-	/*
-	 * Kernel v5.2-5678-gac1c3e4 no longer exports account_page_dirtied
-	 */
-	vvp_account_page_dirtied = (void *)
-		cfs_kallsyms_lookup_name("account_page_dirtied");
-#endif
-#endif
-
-	return 0;
-
-out_kmem:
-	lu_kmem_fini(vvp_caches);
+		lu_kmem_fini(vvp_caches);
 
 	return rc;
 }

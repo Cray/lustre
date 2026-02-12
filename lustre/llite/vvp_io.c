@@ -20,6 +20,7 @@
 
 #include <obd.h>
 #include <linux/pagevec.h>
+#include <lustre_compat/linux/mm.h>
 #include <linux/memcontrol.h>
 #include <linux/falloc.h>
 
@@ -972,27 +973,6 @@ static int vvp_io_commit_sync(const struct lu_env *env, struct cl_io *io,
 	RETURN(bytes > 0 ? bytes : rc);
 }
 
-/*
- * Kernels 4.2 - 4.5 pass memcg argument to account_page_dirtied()
- * Kernel v5.2-5678-gac1c3e4 no longer exports account_page_dirtied
- */
-static inline void ll_account_page_dirtied(struct page *page,
-					   struct address_space *mapping)
-{
-#ifdef HAVE_ACCOUNT_PAGE_DIRTIED_3ARGS
-	struct mem_cgroup *memcg = mem_cgroup_begin_page_stat(page);
-
-	account_page_dirtied(page, mapping, memcg);
-	mem_cgroup_end_page_stat(memcg);
-#elif defined(HAVE_ACCOUNT_PAGE_DIRTIED_EXPORT)
-	account_page_dirtied(page, mapping);
-#else
-	vvp_account_page_dirtied(page, mapping);
-#endif
-	__xa_set_mark(&mapping->i_pages, folio_index_page(page),
-		      PAGECACHE_TAG_DIRTY);
-}
-
 /* Taken from kernel set_page_dirty, __set_page_dirty_nobuffers
  * Last change to this area: b93b016313b3ba8003c3b8bb71f569af91f19fc7
  *
@@ -1006,18 +986,16 @@ static void vvp_set_batch_dirty(struct folio_batch *fbatch)
 {
 	struct page *page = fbatch_at_pg(fbatch, 0, 0);
 	int count = folio_batch_count(fbatch);
-	int i;
-#if !defined(HAVE_FOLIO_BATCH) || !defined(HAVE_FILEMAP_GET_FOLIOS) ||	\
-	defined(HAVE_KALLSYMS_LOOKUP_NAME)
-	int pg, npgs;
-#endif
-#ifdef HAVE_KALLSYMS_LOOKUP_NAME
+#ifdef HAVE_ACCOUNT_PAGE_DIRTIED
 	struct address_space *mapping = page->mapping;
 	unsigned long flags;
 	unsigned long skip_pages = 0;
-	int pgno;
+	int pgno, pg, npgs;
 	int dirtied = 0;
+#elif !defined(HAVE_FOLIO_BATCH) || !defined(HAVE_FILEMAP_GET_FOLIOS)
+	int pg, npgs;
 #endif
+	int i;
 
 	ENTRY;
 
@@ -1032,25 +1010,21 @@ static void vvp_set_batch_dirty(struct folio_batch *fbatch)
 	 * we can't do page dirtying in batch (taking the xarray lock only once)
 	 * so we just fall back to a looped call to __set_page_dirty_nobuffers
 	 */
-#ifndef HAVE_ACCOUNT_PAGE_DIRTIED_EXPORT
-	if (!vvp_account_page_dirtied) {
-		for (i = 0; i < count; i++) {
+#ifndef HAVE_ACCOUNT_PAGE_DIRTIED
+	for (i = 0; i < count; i++) {
 #if defined(HAVE_FOLIO_BATCH) && defined(HAVE_FILEMAP_GET_FOLIOS)
-			filemap_dirty_folio(page->mapping, fbatch->folios[i]);
+		filemap_dirty_folio(page->mapping, fbatch->folios[i]);
 #else
-			npgs = fbatch_at_npgs(fbatch, i);
-			for (pg = 0; pg < npgs; pg++) {
-				page = fbatch_at_pg(fbatch, i, pg);
-				__set_page_dirty_nobuffers(page);
-			}
-#endif
+		npgs = fbatch_at_npgs(fbatch, i);
+		for (pg = 0; pg < npgs; pg++) {
+			page = fbatch_at_pg(fbatch, i, pg);
+			__set_page_dirty_nobuffers(page);
 		}
-		EXIT;
-	}
 #endif
-
+	}
+	EXIT;
+#else
 	/* account_page_dirtied is available directly or via kallsyms */
-#ifdef HAVE_KALLSYMS_LOOKUP_NAME
 	for (pgno = i = 0; i < count; i++) {
 		npgs = fbatch_at_npgs(fbatch, i);
 		for (pg = 0; pg < npgs; pg++) {
@@ -1095,7 +1069,9 @@ static void vvp_set_batch_dirty(struct folio_batch *fbatch)
 				 "all pages must have the same mapping.  page %px, mapping %px, first mapping %px\n",
 				 page, page->mapping, mapping);
 			WARN_ON_ONCE(!PagePrivate(page) && !PageUptodate(page));
-			ll_account_page_dirtied(page, mapping);
+			compat_account_page_dirtied(page, mapping);
+			__xa_set_mark(&mapping->i_pages, folio_index_page(page),
+				      PAGECACHE_TAG_DIRTY);
 			dirtied++;
 			folio_memcg_unlock_page(page);
 		}
