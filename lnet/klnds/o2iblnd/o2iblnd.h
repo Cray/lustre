@@ -18,28 +18,8 @@
 #undef CONFIG_INFINIBAND_VIRT_DMA
 #endif
 
-#if defined(NEED_LOCKDEP_IS_HELD_DISCARD_CONST) \
- && defined(CONFIG_LOCKDEP) \
- && defined(lockdep_is_held)
-#undef lockdep_is_held
-	#define lockdep_is_held(lock) \
-		lock_is_held((struct lockdep_map *)&(lock)->dep_map)
-#endif
-
 #ifdef HAVE_OFED_COMPAT_RDMA
 #include <linux/compat-2.6.h>
-
-#ifdef LINUX_3_17_COMPAT_H
-#undef NEED_KTIME_GET_REAL_NS
-#endif
-
-#define HAVE_NLA_PUT_U64_64BIT 1
-#define HAVE_NLA_PARSE_6_PARAMS 1
-#define HAVE_NETLINK_EXTACK 1
-
-/* MOFED has its own bitmap_alloc backport */
-#define HAVE_BITMAP_ALLOC 1
-
 #endif
 
 #include <linux/kthread.h>

@@ -21,8 +21,7 @@
 #define CFS_FAIL_TEST_PING_MD		0xe003
 #define CFS_FAIL_RTR_HEALTH_INC		0xe004
 
-#include <lustre_compat/linux/generic-radix-tree.h>
-#include <lustre_compat/linux/hash.h>
+#include <linux/hash.h>
 #include <linux/netdevice.h>
 #include <linux/libcfs/libcfs_debug.h>
 #include <linux/libcfs/libcfs_private.h>
@@ -514,8 +513,8 @@ lnet_nid2peerhash(struct lnet_nid *nid)
 	int i;
 
 	for (i = 0; i < 4; i++)
-		h = cfs_hash_32(nid->nid_addr[i]^h, 32);
-	return cfs_hash_32(LNET_NID_NET(nid) ^ h, LNET_PEER_HASH_BITS);
+		h = hash_32(nid->nid_addr[i]^h, 32);
+	return hash_32(LNET_NID_NET(nid) ^ h, LNET_PEER_HASH_BITS);
 }
 
 static inline struct list_head *

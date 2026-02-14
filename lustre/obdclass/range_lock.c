@@ -16,9 +16,7 @@
  * Author: Bobi Jam <bobijam.xu@intel.com>
  */
 
-#ifdef HAVE_SCHED_HEADERS
 #include <linux/sched/signal.h>
-#endif
 #include <linux/interval_tree_generic.h>
 #include <uapi/linux/lustre/lustre_user.h>
 #include <linux/libcfs/libcfs_debug.h>

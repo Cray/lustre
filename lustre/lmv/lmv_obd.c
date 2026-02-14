@@ -25,8 +25,7 @@
 #include <linux/seq_file.h>
 #include <linux/namei.h>
 #include <linux/glob.h>
-
-#include <lustre_compat/linux/stringhash.h>
+#include <linux/stringhash.h>
 
 #include <obd_support.h>
 #include <lustre_lib.h>

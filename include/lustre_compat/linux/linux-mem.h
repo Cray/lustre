@@ -20,33 +20,10 @@
 #include <linux/vmalloc.h>
 #include <linux/pagemap.h>
 #include <linux/slab.h>
-#ifdef HAVE_MM_INLINE
-# include <linux/mm_inline.h>
-#endif
 #include <linux/sched.h>
-#ifdef HAVE_SCHED_HEADERS
 #include <linux/sched/mm.h>
-#endif
 
-unsigned long cfs_totalram_pages(void);
-
-#ifndef HAVE_BITMAP_ALLOC
-static inline unsigned long *bitmap_alloc(unsigned int nbits, gfp_t flags)
-{
-	return kmalloc_array(BITS_TO_LONGS(nbits), sizeof(unsigned long),
-			     flags);
-}
-
-static inline unsigned long *bitmap_zalloc(unsigned int nbits, gfp_t flags)
-{
-	return bitmap_alloc(nbits, flags | __GFP_ZERO);
-}
-
-static inline void bitmap_free(const unsigned long *bitmap)
-{
-	kfree(bitmap);
-}
-#endif /* !HAVE_BITMAP_ALLOC */
+unsigned long compat_totalram_pages(void);
 
 #ifndef HAVE_MMAP_LOCK
 static inline void mmap_write_lock(struct mm_struct *mm)

@@ -2934,6 +2934,12 @@ ptlrpc_server_request_incoming(struct ptlrpc_service_part *svcpt)
 	return !list_empty(&svcpt->scp_req_incoming);
 }
 
+/* We perfer lifo queuing, but kernel doesn't provide that yet. */
+#ifndef wait_event_idle_exclusive_lifo
+#define wait_event_idle_exclusive_lifo wait_event_idle_exclusive
+#define wait_event_idle_exclusive_lifo_timeout wait_event_idle_exclusive_timeout
+#endif
+
 static __attribute__((__noinline__)) int
 ptlrpc_wait_event(struct ptlrpc_service_part *svcpt,
 		  struct ptlrpc_thread *thread)

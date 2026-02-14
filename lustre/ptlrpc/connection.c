@@ -14,7 +14,7 @@
 #define DEBUG_SUBSYSTEM S_RPC
 
 #include <linux/delay.h>
-#include <lustre_compat/linux/rhashtable.h>
+#include <linux/rhashtable.h>
 #include <obd_support.h>
 #include <obd_class.h>
 #include <lustre_net.h>
@@ -35,8 +35,8 @@ static u32 lnet_process_id_hash(const void *data, u32 len, u32 seed)
 {
 	const struct lnet_processid *lpi = data;
 
-	seed = cfs_hash_32(seed ^ lpi->pid, 32);
-	seed = cfs_hash_32(nidhash(&lpi->nid) ^ seed, 32);
+	seed = hash_32(seed ^ lpi->pid, 32);
+	seed = hash_32(nidhash(&lpi->nid) ^ seed, 32);
 	return seed;
 }
 

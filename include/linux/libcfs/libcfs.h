@@ -18,15 +18,11 @@
 #include <linux/module.h>
 #include <linux/workqueue.h>
 #include <linux/sched.h>
-#ifdef HAVE_SCHED_HEADERS
 #include <linux/sched/signal.h>
-#endif
 
 #include <lustre_compat/linux/linux-misc.h>
 #include <lustre_compat/linux/linux-mem.h>
 #include <lustre_compat/linux/timer.h>
-#include <lustre_compat/linux/wait_bit.h>
-#include <lustre_compat/linux/wait.h>
 #include <lustre_compat/linux/fortify-string.h>
 
 #include <uapi/linux/lnet/libcfs_ioctl.h>
@@ -76,9 +72,9 @@ int debugfs_doint(const struct ctl_table *table, int write,
 #if BITS_PER_LONG == 32
 /* limit to lowmem on 32-bit systems */
 #define NUM_CACHEPAGES \
-	min(cfs_totalram_pages(), 1UL << (30 - PAGE_SHIFT) * 3 / 4)
+	min(compat_totalram_pages(), 1UL << (30 - PAGE_SHIFT) * 3 / 4)
 #else
-#define NUM_CACHEPAGES cfs_totalram_pages()
+#define NUM_CACHEPAGES compat_totalram_pages()
 #endif
 
 #define wait_var_event_warning(var, condition, format, ...)		\

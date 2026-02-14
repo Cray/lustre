@@ -1378,14 +1378,12 @@ cfs_percpt_number(void *vars)
 EXPORT_SYMBOL(cfs_percpt_number);
 
 #ifdef CONFIG_HOTPLUG_CPU
-#ifdef HAVE_HOTPLUG_STATE_MACHINE
 static enum cpuhp_state lustre_cpu_online;
 
 static int cfs_cpu_online(unsigned int cpu)
 {
 	return 0;
 }
-#endif
 
 static int cfs_cpu_dead(unsigned int cpu)
 {
@@ -1399,36 +1397,6 @@ static int cfs_cpu_dead(unsigned int cpu)
 	       cpu);
 	return 0;
 }
-
-#ifndef HAVE_HOTPLUG_STATE_MACHINE
-static int cfs_cpu_notify(struct notifier_block *self, unsigned long action,
-			  void *hcpu)
-{
-	int cpu = (unsigned long)hcpu;
-
-	switch (action) {
-	case CPU_DEAD:
-	case CPU_DEAD_FROZEN:
-	case CPU_ONLINE:
-	case CPU_ONLINE_FROZEN:
-	default:
-		if (action != CPU_DEAD && action != CPU_DEAD_FROZEN) {
-			CDEBUG(D_INFO, "CPU changed [cpu %u action %lx]\n",
-			       cpu, action);
-			break;
-		}
-
-		cfs_cpu_dead(cpu);
-	}
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block cfs_cpu_notifier = {
-	.notifier_call	= cfs_cpu_notify,
-	.priority	= 0
-};
-#endif /* !HAVE_HOTPLUG_STATE_MACHINE */
 #endif /* CONFIG_HOTPLUG_CPU */
 
 void cfs_cpu_fini(void)
@@ -1437,14 +1405,10 @@ void cfs_cpu_fini(void)
 		cfs_cpt_table_free(cfs_cpt_tab);
 
 #ifdef CONFIG_HOTPLUG_CPU
-#ifdef HAVE_HOTPLUG_STATE_MACHINE
 	if (lustre_cpu_online > 0)
 		cpuhp_remove_state_nocalls(lustre_cpu_online);
 	cpuhp_remove_state_nocalls(CPUHP_BP_PREPARE_DYN);
-#else
-	unregister_hotcpu_notifier(&cfs_cpu_notifier);
-#endif /* !HAVE_HOTPLUG_STATE_MACHINE */
-#endif /* CONFIG_HOTPLUG_CPU */
+#endif
 }
 
 int cfs_cpu_init(void)
@@ -1454,7 +1418,6 @@ int cfs_cpu_init(void)
 	LASSERT(!cfs_cpt_tab);
 
 #ifdef CONFIG_HOTPLUG_CPU
-#ifdef HAVE_HOTPLUG_STATE_MACHINE
 	ret = cpuhp_setup_state_nocalls(CPUHP_BP_PREPARE_DYN,
 					"fs/lustre/cfe:dead", NULL,
 					cfs_cpu_dead);
@@ -1468,11 +1431,7 @@ int cfs_cpu_init(void)
 		goto failed_cpu_online;
 
 	lustre_cpu_online = ret;
-#else
-	register_hotcpu_notifier(&cfs_cpu_notifier);
-#endif /* !HAVE_HOTPLUG_STATE_MACHINE */
-#endif /* CONFIG_HOTPLUG_CPU */
-
+#endif
 	cpus_read_lock();
 	if (*cpu_pattern) {
 		cfs_cpt_tab = cfs_cpt_table_create_pattern(cpu_pattern);
@@ -1505,16 +1464,13 @@ failed_alloc_table:
 	if (!IS_ERR_OR_NULL(cfs_cpt_tab))
 		cfs_cpt_table_free(cfs_cpt_tab);
 
+	ret = -EINVAL;
 #ifdef CONFIG_HOTPLUG_CPU
-#ifdef HAVE_HOTPLUG_STATE_MACHINE
 	if (lustre_cpu_online > 0)
 		cpuhp_remove_state_nocalls(lustre_cpu_online);
 failed_cpu_online:
 	cpuhp_remove_state_nocalls(CPUHP_BP_PREPARE_DYN);
 failed_cpu_dead:
-#else
-	unregister_hotcpu_notifier(&cfs_cpu_notifier);
-#endif /* !HAVE_HOTPLUG_STATE_MACHINE */
-#endif /* CONFIG_HOTPLUG_CPU */
+#endif
 	return ret;
 }

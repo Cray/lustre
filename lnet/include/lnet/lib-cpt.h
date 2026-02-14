@@ -65,7 +65,7 @@
 #ifndef __LIBCFS_CPU_H__
 #define __LIBCFS_CPU_H__
 
-#include <lustre_compat/linux/cpu.h>
+#include <linux/cpu.h>
 #include <linux/cpuset.h>
 #include <linux/slab.h>
 #include <linux/topology.h>

@@ -11,9 +11,7 @@
 #define DEBUG_SUBSYSTEM S_LNET
 
 #include <linux/sched.h>
-#ifdef HAVE_SCHED_HEADERS
 #include <linux/sched/signal.h>
-#endif
 #include <linux/uaccess.h>
 #include <linux/libcfs/libcfs.h>
 #include <lnet/udsp.h>

@@ -167,7 +167,7 @@ int encrypt_page_pools_seq_show(struct seq_file *m, void *v)
 		"max waitqueue depth:     %u\n"
 		"max wait time ms:        %lld\n"
 		"out of mem:              %lu\n",
-		cfs_totalram_pages(), PTRS_PER_PAGE,
+		compat_totalram_pages(), PTRS_PER_PAGE,
 		pool->opp_max_objects,
 		pool->opp_max_ptr_pages,
 		pool->opp_total_objects,
@@ -201,7 +201,7 @@ int page_pools_seq_show(struct seq_file *m, void *v)
 
 	seq_printf(m, "physical_pages: %lu\n"
 		      "pools:\n",
-		      cfs_totalram_pages());
+		      compat_totalram_pages());
 
 	for (pool_order = 0; pool_order < pools_count; pool_order++) {
 		pool = page_pools[pool_order];
@@ -1044,7 +1044,7 @@ static inline void pool_ptrs_free(struct obd_page_pool *pool)
 int obd_pool_init(void)
 {
 	struct obd_page_pool *pool;
-	int pool_max_pages = cfs_totalram_pages() / POOLS_COUNT;
+	int pool_max_pages = compat_totalram_pages() / POOLS_COUNT;
 	struct dentry *parent;
 	int pool_order = 0;
 	int to_revert;
@@ -1055,7 +1055,7 @@ int obd_pool_init(void)
 	if (pool_max_memory_mb == 0 && enc_pool_max_memory_mb > 0)
 		pool_max_memory_mb = enc_pool_max_memory_mb;
 	if (pool_max_memory_mb > 0 &&
-		pool_max_memory_mb <= PAGES_TO_MiB(cfs_totalram_pages()))
+		pool_max_memory_mb <= PAGES_TO_MiB(compat_totalram_pages()))
 		pool_max_pages = MiB_TO_PAGES(pool_max_memory_mb);
 
 	OBD_ALLOC(page_pools, POOLS_COUNT * sizeof(*page_pools));

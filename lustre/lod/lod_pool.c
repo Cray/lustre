@@ -35,8 +35,8 @@
 
 #define DEBUG_SUBSYSTEM S_LOV
 
-#include <lustre_compat/linux/stringhash.h>
-#include <lustre_compat/linux/rhashtable.h>
+#include <linux/stringhash.h>
+#include <linux/rhashtable.h>
 
 #include <obd.h>
 

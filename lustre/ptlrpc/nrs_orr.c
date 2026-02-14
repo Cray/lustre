@@ -350,8 +350,8 @@ static u32 nrs_orr_hashfn(const void *data, u32 len, u32 seed)
 {
 	const struct nrs_orr_key *key = data;
 
-	seed = cfs_hash_32(seed ^ key->ok_fid.f_oid, 32);
-	seed ^= cfs_hash_64(key->ok_fid.f_seq, 32);
+	seed = hash_32(seed ^ key->ok_fid.f_oid, 32);
+	seed ^= hash_64(key->ok_fid.f_seq, 32);
 	return seed;
 }
 

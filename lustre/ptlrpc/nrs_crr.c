@@ -79,7 +79,7 @@ static u32 nrs_crrn_hashfn(const void *data, u32 len, u32 seed)
 {
 	const struct lnet_nid *nid = data;
 
-	return cfs_hash_32(nidhash(nid) ^ seed, 32);
+	return hash_32(nidhash(nid) ^ seed, 32);
 }
 
 static int nrs_crrn_cmpfn(struct rhashtable_compare_arg *arg, const void *obj)

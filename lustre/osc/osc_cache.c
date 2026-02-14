@@ -1644,6 +1644,22 @@ out:
 	return rc;
 }
 
+#define __wait_event_idle_exclusive_timeout_cmd(wq_head, condition,	\
+						timeout, cmd1, cmd2)	\
+	___wait_event(wq_head, ___wait_cond_timeout(condition),		\
+		      TASK_IDLE, 1, timeout,				\
+		      cmd1; __ret = schedule_timeout(__ret); cmd2)
+
+#define wait_event_idle_exclusive_timeout_cmd(wq_head, condition, timeout,\
+					      cmd1, cmd2)		\
+({									\
+	long __ret = timeout;						\
+	if (!___wait_cond_timeout(condition))				\
+		__ret = __wait_event_idle_exclusive_timeout_cmd(	\
+			wq_head, condition, timeout, cmd1, cmd2);	\
+	__ret;								\
+})
+
 /* Following two inlines exist to pass code fragments
  * to wait_event_idle_exclusive_timeout_cmd().  Passing
  * code fragments as macro args can look confusing, so

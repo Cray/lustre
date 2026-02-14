@@ -24,7 +24,7 @@ MODULE_PARM_DESC(hash_lqs_cur_bits, "the current bits of lqe hash");
 static unsigned
 lqe64_hash_hash(struct cfs_hash *hs, const void *key, const unsigned int bits)
 {
-	return cfs_hash_64(*((__u64 *)key), bits);
+	return hash_64(*((__u64 *)key), bits);
 }
 
 static void *lqe64_hash_key(struct hlist_node *hnode)

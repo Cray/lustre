@@ -91,29 +91,6 @@ static inline bool iov_iter_is_aligned(const struct iov_iter *i,
 }
 #endif /* HAVE_IOV_ITER_IS_ALIGNED */
 
-#ifndef HAVE_KERNEL_PARAM_LOCK
-static inline void kernel_param_unlock(struct module *mod)
-{
-	__kernel_param_unlock();
-}
-
-static inline void kernel_param_lock(struct module *mod)
-{
-	__kernel_param_lock();
-}
-#endif /* ! HAVE_KERNEL_PARAM_LOCK */
-
-#ifndef HAVE_MATCH_WILDCARD
-bool match_wildcard(const char *pattern, const char *str);
-#endif /* !HAVE_MATCH_WILDCARD */
-
-#ifndef HAVE_KREF_READ
-static inline int kref_read(const struct kref *kref)
-{
-	return atomic_read(&kref->refcount);
-}
-#endif /* HAVE_KREF_READ */
-
 int cfs_arch_init(void);
 void cfs_arch_exit(void);
 
@@ -259,15 +236,6 @@ rb_find_add(struct rb_node *node, struct rb_root *tree,
 	       sizeof(*(obj)) - offsetof(typeof(*(obj)), member));	\
 })
 #endif /* memset_startat() */
-
-#ifndef HAVE_STRSCPY
-static inline ssize_t strscpy(char *s1, const char *s2, size_t sz)
-{
-	ssize_t len = strlcpy(s1, s2, sz);
-
-	return (len >= sz) ? -E2BIG : len;
-}
-#endif
 
 #ifndef HAVE_KOBJ_TYPE_DEFAULT_GROUPS
 #define default_groups			default_attrs

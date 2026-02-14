@@ -117,8 +117,8 @@ static DEFINE_SPINLOCK(waiting_locks_spinlock); /* BH lock (timer) */
  * All access to it should be under waiting_locks_spinlock.
  */
 static LIST_HEAD(waiting_locks_list);
-static void waiting_locks_callback(TIMER_DATA_TYPE unused);
-static CFS_DEFINE_TIMER(waiting_locks_timer, waiting_locks_callback, 0, 0);
+static void waiting_locks_callback(struct timer_list *unused);
+static DEFINE_TIMER(waiting_locks_timer, waiting_locks_callback);
 
 enum elt_state {
 	ELT_STOPPED,
@@ -318,7 +318,7 @@ static int ldlm_lock_busy(struct ldlm_lock *lock)
 }
 
 /* This is called from within a timer interrupt and cannot schedule */
-static void waiting_locks_callback(TIMER_DATA_TYPE unused)
+static void waiting_locks_callback(struct timer_list *unused)
 {
 	struct ldlm_lock *lock;
 	int need_dump = 0;
@@ -3063,7 +3063,7 @@ static unsigned
 ldlm_export_lock_hash(struct cfs_hash *hs, const void *key,
 		      const unsigned int bits)
 {
-	return cfs_hash_64(((struct lustre_handle *)key)->cookie, bits);
+	return hash_64(((struct lustre_handle *)key)->cookie, bits);
 }
 
 static void *

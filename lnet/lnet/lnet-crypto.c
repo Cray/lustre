@@ -12,18 +12,6 @@
 #include <lnet/lnet_crypto.h>
 #include "adler.h"
 
-#ifndef HAVE_CRYPTO_HASH_HELPERS
-static inline const char *crypto_ahash_alg_name(struct crypto_ahash *tfm)
-{
-	return crypto_tfm_alg_name(crypto_ahash_tfm(tfm));
-}
-
-static inline const char *crypto_ahash_driver_name(struct crypto_ahash *tfm)
-{
-	return crypto_tfm_alg_driver_name(crypto_ahash_tfm(tfm));
-}
-#endif
-
 /**
  *  Array of hash algorithm speed in MByte per second
  */

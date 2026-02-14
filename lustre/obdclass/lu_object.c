@@ -25,9 +25,8 @@
 #include <linux/processor.h>
 #include <linux/random.h>
 #include <lustre_compat/linux/shrinker.h>
-#include <lustre_compat/linux/rhashtable.h>
+#include <linux/rhashtable.h>
 
-#include <lustre_compat/linux/linux-mem.h>
 #include <obd_class.h>
 #include <obd_support.h>
 #include <lustre_disk.h>
@@ -98,8 +97,8 @@ u32 lu_fid_hash(const void *data, u32 len, u32 seed)
 {
 	const struct lu_fid *fid = data;
 
-	seed = cfs_hash_32(seed ^ fid->f_oid, 32);
-	seed ^= cfs_hash_64(fid->f_seq, 32);
+	seed = hash_32(seed ^ fid->f_oid, 32);
+	seed ^= hash_64(fid->f_seq, 32);
 	return seed;
 }
 EXPORT_SYMBOL(lu_fid_hash);
@@ -1086,7 +1085,7 @@ static void lu_htable_limits(struct lu_device *top)
 	 *
 	 * Size of lu_object is (arbitrary) taken as 1K (together with inode).
 	 */
-	cache_size = cfs_totalram_pages();
+	cache_size = compat_totalram_pages();
 
 #if BITS_PER_LONG == 32
 	/* limit hashtable size for lowmem systems to low RAM */

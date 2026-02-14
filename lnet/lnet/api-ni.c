@@ -11,14 +11,11 @@
 #define DEBUG_SUBSYSTEM S_LNET
 
 #include <linux/ctype.h>
-#include <lustre_compat/linux/generic-radix-tree.h>
 #include <linux/log2.h>
 #include <linux/ktime.h>
 #include <linux/moduleparam.h>
 #include <linux/uaccess.h>
-#ifdef HAVE_SCHED_HEADERS
 #include <linux/sched/signal.h>
-#endif
 #include <net/genetlink.h>
 
 #include <linux/libcfs/libcfs.h>
@@ -1581,8 +1578,8 @@ lnet_nid_cpt_hash(struct lnet_nid *nid, unsigned int number)
 		return lnet_nid4_cpt_hash(lnet_nid_to_nid4(nid), number);
 
 	for (i = 0; i < 4; i++)
-		h = cfs_hash_32(nid->nid_addr[i]^h, 32);
-	val = cfs_hash_32(LNET_NID_NET(nid) ^ h, LNET_CPT_BITS);
+		h = hash_32(nid->nid_addr[i]^h, 32);
+	val = hash_32(LNET_NID_NET(nid) ^ h, LNET_CPT_BITS);
 	if (val < number)
 		return val;
 	return (unsigned int)(h + val + (val >> 1)) % number;
@@ -5208,17 +5205,11 @@ static int lnet_cpt_of_nid_show_done(struct netlink_callback *cb)
 static int lnet_cpt_of_nid_show_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	struct lnet_genl_nid_cpt_list *lgncl;
 	int msg_len = genlmsg_len(gnlh);
 	struct nlattr *params, *top;
 	int rem, rc = 0;
-
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 
 	mutex_lock(&the_lnet.ln_api_mutex);
 	if (the_lnet.ln_state != LNET_STATE_RUNNING) {
@@ -5322,18 +5313,12 @@ static int lnet_cpt_of_nid_show_dump(struct sk_buff *msg,
 				     struct netlink_callback *cb)
 {
 	struct lnet_genl_nid_cpt_list *lgncl;
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	int seq = cb->nlh->nlmsg_seq;
 	int idx;
 	int rc = 0;
 	bool need_hdr = true;
-
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 
 	mutex_lock(&the_lnet.ln_api_mutex);
 	if (the_lnet.ln_state != LNET_STATE_RUNNING) {
@@ -5395,26 +5380,8 @@ static int lnet_cpt_of_nid_show_dump(struct sk_buff *msg,
 send_error:
 	mutex_unlock(&the_lnet.ln_api_mutex);
 
-	return lnet_nl_send_error(cb->skb, portid, seq, rc);
+	return rc;
 }
-
-#ifndef HAVE_NETLINK_CALLBACK_START
-static int lnet_old_cpt_of_nid_show_dump(struct sk_buff *msg,
-					 struct netlink_callback *cb)
-{
-	if (!cb->args[0]) {
-		int rc = lnet_cpt_of_nid_show_start(cb);
-
-		if (rc < 0)
-			return lnet_nl_send_error(cb->skb,
-						  NETLINK_CB(cb->skb).portid,
-						  cb->nlh->nlmsg_seq,
-						  rc);
-	}
-
-	return lnet_cpt_of_nid_show_dump(msg, cb);
-}
-#endif
 
 /* This is the keys for the UDSP info which is used by many
  * Netlink commands.
@@ -5747,17 +5714,12 @@ static int lnet_net_show_done(struct netlink_callback *cb)
 static int lnet_net_show_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	struct lnet_genl_net_list *nlist;
 	int msg_len = genlmsg_len(gnlh);
 	struct nlattr *params, *top;
 	int rem, rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (the_lnet.ln_refcount == 0) {
 		NL_SET_ERR_MSG(extack, "LNet stack down");
 		return -ENETDOWN;
@@ -5843,10 +5805,8 @@ static int lnet_net_show_dump(struct sk_buff *msg,
 			      struct netlink_callback *cb)
 {
 	struct lnet_genl_net_list *nlist = lnet_net_dump_ctx(cb);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	bool found = false, started = false;
 	const struct lnet_lnd *lnd = NULL;
@@ -5856,9 +5816,6 @@ static int lnet_net_show_dump(struct sk_buff *msg,
 	void *hdr = NULL;
 	bool export_backup = cb->nlh->nlmsg_flags & NLM_F_DUMP_FILTERED;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	lnet_net_lock(LNET_LOCK_EX);
 
 	list_for_each_entry(net, &the_lnet.ln_nets, net_list) {
@@ -6201,26 +6158,8 @@ skip_msg_stats:
 net_unlock:
 	lnet_net_unlock(LNET_LOCK_EX);
 
-	return lnet_nl_send_error(cb->skb, portid, seq, rc);
+	return rc;
 }
-
-#ifndef HAVE_NETLINK_CALLBACK_START
-static int lnet_old_net_show_dump(struct sk_buff *msg,
-				   struct netlink_callback *cb)
-{
-	if (!cb->args[0]) {
-		int rc = lnet_net_show_start(cb);
-
-		if (rc < 0)
-			return lnet_nl_send_error(cb->skb,
-						  NETLINK_CB(cb->skb).portid,
-						  cb->nlh->nlmsg_seq,
-						  rc);
-	}
-
-	return lnet_net_show_dump(msg, cb);
-}
-#endif
 
 static int lnet_genl_parse_tunables(struct nlattr *settings,
 				    struct lnet_ioctl_config_lnd_tunables *tun)
@@ -7183,17 +7122,12 @@ failed_alloc:
 static int lnet_route_show_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	unsigned long len = ROUTER_MSG_MIN_SIZE;
 	struct lnet_genl_route_list *rlist;
 	int msg_len = genlmsg_len(gnlh);
 	int rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (the_lnet.ln_refcount == 0 ||
 	    the_lnet.ln_state != LNET_STATE_RUNNING) {
 		NL_SET_ERR_MSG(extack, "Network is down");
@@ -7387,18 +7321,13 @@ static int lnet_route_show_dump(struct sk_buff *msg,
 {
 	struct lnet_genl_route_list *rlist = lnet_route_dump_ctx(cb);
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	int seq = cb->nlh->nlmsg_seq;
 	int idx = rlist->lgrl_index;
 	int msg_len = genlmsg_len(gnlh);
 	int rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (!rlist->lgrl_count) {
 		NL_SET_ERR_MSG(extack, "No routes found");
 		GOTO(send_error, rc = msg_len ? -ENOENT : 0);
@@ -7457,26 +7386,8 @@ static int lnet_route_show_dump(struct sk_buff *msg,
 	}
 	rlist->lgrl_index = idx;
 send_error:
-	return lnet_nl_send_error(cb->skb, portid, seq, rc);
+	return rc;
 };
-
-#ifndef HAVE_NETLINK_CALLBACK_START
-static int lnet_old_route_show_dump(struct sk_buff *msg,
-				    struct netlink_callback *cb)
-{
-	if (!cb->args[0]) {
-		int rc = lnet_route_show_start(cb);
-
-		if (rc < 0)
-			return lnet_nl_send_error(cb->skb,
-						  NETLINK_CB(cb->skb).portid,
-						  cb->nlh->nlmsg_seq,
-						  rc);
-	}
-
-	return lnet_route_show_dump(msg, cb);
-}
-#endif /* !HAVE_NETLINK_CALLBACK_START */
 
 /** LNet peer handling */
 struct lnet_genl_processid_list {
@@ -7508,16 +7419,11 @@ static int lnet_peer_ni_show_done(struct netlink_callback *cb)
 static int lnet_peer_ni_show_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	struct lnet_genl_processid_list *plist;
 	int msg_len = genlmsg_len(gnlh);
 	int rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	mutex_lock(&the_lnet.ln_api_mutex);
 	if (the_lnet.ln_state != LNET_STATE_RUNNING) {
 		NL_SET_ERR_MSG(extack, "Network is down");
@@ -7804,18 +7710,13 @@ static int lnet_peer_ni_show_dump(struct sk_buff *msg,
 {
 	struct lnet_genl_processid_list *plist = lnet_peer_dump_ctx(cb);
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	int seq = cb->nlh->nlmsg_seq;
 	int idx = plist->lgpl_index;
 	int msg_len = genlmsg_len(gnlh);
 	int rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (!plist->lgpl_count) {
 		NL_SET_ERR_MSG(extack, "No peers found");
 		GOTO(send_error, rc = msg_len ? -ENOENT : 0);
@@ -8089,26 +7990,8 @@ skip_msg_stats:
 unlock_api_mutex:
 	mutex_unlock(&the_lnet.ln_api_mutex);
 send_error:
-	return lnet_nl_send_error(cb->skb, portid, seq, rc);
+	return rc;
 };
-
-#ifndef HAVE_NETLINK_CALLBACK_START
-static int lnet_old_peer_ni_show_dump(struct sk_buff *msg,
-				      struct netlink_callback *cb)
-{
-	if (!cb->args[0]) {
-		int rc = lnet_peer_ni_show_start(cb);
-
-		if (rc < 0)
-			return lnet_nl_send_error(cb->skb,
-						  NETLINK_CB(cb->skb).portid,
-						  cb->nlh->nlmsg_seq,
-						  rc);
-	}
-
-	return lnet_peer_ni_show_dump(msg, cb);
-}
-#endif
 
 static int lnet_route_cmd(struct sk_buff *skb, struct genl_info *info)
 {
@@ -8373,17 +8256,12 @@ static int lnet_ping_show_done(struct netlink_callback *cb)
 static int lnet_ping_show_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	struct lnet_genl_ping_list *plist;
 	int msg_len = genlmsg_len(gnlh);
 	struct nlattr *params, *top;
 	int rem, rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (the_lnet.ln_refcount == 0) {
 		NL_SET_ERR_MSG(extack, "Network is down");
 		return -ENETDOWN;
@@ -8567,17 +8445,12 @@ static int lnet_ping_show_dump(struct sk_buff *msg,
 			       struct netlink_callback *cb)
 {
 	struct lnet_genl_ping_list *plist = lnet_ping_dump_ctx(cb);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	int seq = cb->nlh->nlmsg_seq;
 	int idx = plist->lgpl_index;
 	int rc = 0, i = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (!plist->lgpl_index) {
 		const struct ln_key_list *all[] = {
 			&ping_props_list, &ping_peer_ni_list, NULL
@@ -8727,26 +8600,8 @@ cant_reach:
 
 	plist->lgpl_index = idx;
 send_error:
-	return lnet_nl_send_error(cb->skb, portid, seq, rc);
+	return rc;
 }
-
-#ifndef HAVE_NETLINK_CALLBACK_START
-static int lnet_old_ping_show_dump(struct sk_buff *msg,
-				   struct netlink_callback *cb)
-{
-	if (!cb->args[0]) {
-		int rc = lnet_ping_show_start(cb);
-
-		if (rc < 0)
-			return lnet_nl_send_error(cb->skb,
-						  NETLINK_CB(cb->skb).portid,
-						  cb->nlh->nlmsg_seq,
-						  rc);
-	}
-
-	return lnet_ping_show_dump(msg, cb);
-}
-#endif
 
 static const struct ln_key_list discover_err_props_list = {
 	.lkl_maxattr			= LNET_ERR_ATTR_MAX,
@@ -9033,17 +8888,12 @@ report_err:
 static int lnet_peer_dist_show_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	struct lnet_genl_processid_list *plist;
 	int msg_len = genlmsg_len(gnlh);
 	struct nlattr *params, *top;
 	int rem, rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	mutex_lock(&the_lnet.ln_api_mutex);
 	if (the_lnet.ln_state != LNET_STATE_RUNNING) {
 		NL_SET_ERR_MSG(extack, "Network is down");
@@ -9145,17 +8995,12 @@ static int lnet_peer_dist_show_dump(struct sk_buff *msg,
 				    struct netlink_callback *cb)
 {
 	struct lnet_genl_processid_list *plist = lnet_peer_dump_ctx(cb);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	int seq = cb->nlh->nlmsg_seq;
 	int idx = plist->lgpl_index;
 	int rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (!idx) {
 		const struct ln_key_list *all[] = {
 			&peer_dist_props_list, NULL
@@ -9211,39 +9056,18 @@ static int lnet_peer_dist_show_dump(struct sk_buff *msg,
 
 	plist->lgpl_index = idx;
 send_error:
-	return lnet_nl_send_error(cb->skb, portid, seq, rc);
+	return rc;
 }
-
-#ifndef HAVE_NETLINK_CALLBACK_START
-static int lnet_old_peer_dist_show_dump(struct sk_buff *msg,
-					struct netlink_callback *cb)
-{
-	if (!cb->args[0]) {
-		int rc = lnet_peer_dist_show_start(cb);
-
-		if (rc < 0)
-			return lnet_nl_send_error(cb->skb,
-						  NETLINK_CB(cb->skb).portid,
-						  cb->nlh->nlmsg_seq,
-						  rc);
-	}
-
-	return lnet_peer_dist_show_dump(msg, cb);
-}
-#endif
 
 static int lnet_peer_fail_cmd(struct sk_buff *skb, struct genl_info *info)
 {
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
 	struct genlmsghdr *gnlh = nlmsg_data(nlh);
 	struct nlattr *params = genlmsg_data(gnlh);
-	struct netlink_ext_ack *extack = NULL;
+	struct netlink_ext_ack *extack = info->extack;
 	int msg_len, rem, rc = 0;
 	struct nlattr *attr;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = info->extack;
-#endif
 	msg_len = genlmsg_len(gnlh);
 	if (!msg_len) {
 		GENL_SET_ERR_MSG(info, "no configuration");
@@ -9359,7 +9183,7 @@ static int lnet_debug_recovery_show_done(struct netlink_callback *cb)
 static int lnet_debug_recovery_show_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-	struct netlink_ext_ack *extack = NULL;
+	struct netlink_ext_ack *extack = cb->extack;
 	struct nlattr *params;
 	struct nlattr *entry;
 	struct lnet_genl_debug_recovery_list *drlist;
@@ -9369,9 +9193,6 @@ static int lnet_debug_recovery_show_start(struct netlink_callback *cb)
 	int msg_len;
 
 	ENTRY;
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	msg_len = genlmsg_len(gnlh);
 	if (!msg_len) {
 		NL_SET_ERR_MSG(extack, "No configuration");
@@ -9473,9 +9294,7 @@ static int lnet_debug_recovery_show_dump(struct sk_buff *msg,
 					 struct netlink_callback *cb)
 {
 	struct lnet_genl_debug_recovery_list *drlist;
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	int seq = cb->nlh->nlmsg_seq;
 	int rc = 0;
@@ -9483,9 +9302,6 @@ static int lnet_debug_recovery_show_dump(struct sk_buff *msg,
 	int idx;
 
 	ENTRY;
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	drlist = lnet_debug_recovery_dump_ctx(cb);
 	if (!drlist->lgdrl_count) {
 		NL_SET_ERR_MSG(extack, "No NIDs in recovery");
@@ -9563,26 +9379,8 @@ static int lnet_debug_recovery_show_dump(struct sk_buff *msg,
 
 	drlist->lgdrl_index = idx;
 send_error:
-	RETURN(lnet_nl_send_error(cb->skb, portid, seq, rc));
+	RETURN(rc);
 }
-
-#ifndef HAVE_NETLINK_CALLBACK_START
-static int lnet_old_debug_recovery_show_dump(struct sk_buff *msg,
-					     struct netlink_callback *cb)
-{
-	if (!cb->args[0]) {
-		int rc = lnet_debug_recovery_show_start(cb);
-
-		if (rc < 0)
-			return lnet_nl_send_error(cb->skb,
-						  NETLINK_CB(cb->skb).portid,
-						  cb->nlh->nlmsg_seq,
-						  rc);
-	}
-
-	return lnet_debug_recovery_show_dump(msg, cb);
-}
-#endif
 
 static inline struct lnet_genl_fault_rule_list *
 lnet_fault_dump_ctx(struct netlink_callback *cb)
@@ -9607,7 +9405,7 @@ static int lnet_fault_show_done(struct netlink_callback *cb)
 static int lnet_fault_show_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-	struct netlink_ext_ack *extack = NULL;
+	struct netlink_ext_ack *extack = cb->extack;
 	struct nlattr *params = genlmsg_data(gnlh);
 	struct lnet_genl_fault_rule_list *rlist;
 	int msg_len, rem, rc = 0;
@@ -9615,9 +9413,6 @@ static int lnet_fault_show_start(struct netlink_callback *cb)
 	s64 opc = 0;
 
 	ENTRY;
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	msg_len = genlmsg_len(gnlh);
 	if (!msg_len) {
 		NL_SET_ERR_MSG(extack, "no configuration");
@@ -9756,18 +9551,13 @@ static int lnet_fault_show_dump(struct sk_buff *msg,
 				struct netlink_callback *cb)
 {
 	struct lnet_genl_fault_rule_list *rlist = lnet_fault_dump_ctx(cb);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	int seq = cb->nlh->nlmsg_seq;
 	int idx, rc = 0;
 	u32 opc;
 
 	ENTRY;
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (!rlist->lgfrl_count) {
 		NL_SET_ERR_MSG(extack, "No routes found");
 		GOTO(send_error, rc = -ENOENT);
@@ -9859,41 +9649,21 @@ static int lnet_fault_show_dump(struct sk_buff *msg,
 	}
 	rlist->lgfrl_index = idx;
 send_error:
-	return lnet_nl_send_error(cb->skb, portid, seq, rc);
+	return rc;
 }
-
-#ifndef HAVE_NETLINK_CALLBACK_START
-int lnet_old_fault_show_dump(struct sk_buff *msg, struct netlink_callback *cb)
-{
-	if (!cb->args[0]) {
-		int rc = lnet_fault_show_start(cb);
-
-		if (rc < 0)
-			return lnet_nl_send_error(cb->skb,
-						  NETLINK_CB(cb->skb).portid,
-						  cb->nlh->nlmsg_seq,
-						  rc);
-	}
-
-	return lnet_fault_show_dump(msg, cb);
-}
-#endif
 
 static int lnet_fault_cmd(struct sk_buff *skb, struct genl_info *info)
 {
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
 	struct genlmsghdr *gnlh = nlmsg_data(nlh);
 	struct nlattr *params = genlmsg_data(gnlh);
-	struct netlink_ext_ack *extack = NULL;
+	struct netlink_ext_ack *extack = info->extack;
 	struct lnet_fault_large_attr fattr;
 	int msg_len, rem, rc = 0;
 	struct nlattr *entry;
 	s64 opc = 0;
 
 	ENTRY;
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	extack = info->extack;
-#endif
 	msg_len = genlmsg_len(gnlh);
 	if (!msg_len) {
 		GENL_SET_ERR_MSG(info, "no configuration");
@@ -10047,15 +9817,12 @@ static int lnet_routing_cmd(struct sk_buff *skb, struct genl_info *info)
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
 	struct genlmsghdr *gnlh = nlmsg_data(nlh);
 	struct nlattr *params = genlmsg_data(gnlh);
-	struct netlink_ext_ack *extack = NULL;
+	struct netlink_ext_ack *extack = info->extack;
 	int msg_len, rem, rc = 0;
 	struct nlattr *entry;
 	bool enable = false;
 
 	ENTRY;
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	extack = info->extack;
-#endif
 	msg_len = genlmsg_len(gnlh);
 	if (!msg_len) {
 		GENL_SET_ERR_MSG(info, "no configuration");
@@ -10100,15 +9867,12 @@ static int lnet_buffers_cmd(struct sk_buff *skb, struct genl_info *info)
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
 	struct genlmsghdr *gnlh = nlmsg_data(nlh);
 	struct nlattr *params = genlmsg_data(gnlh);
-	struct netlink_ext_ack *extack = NULL;
+	struct netlink_ext_ack *extack = info->extack;
 	int msg_len, rem, rc = 0;
 	struct nlattr *entry;
 	int tiny, small, large;
 
 	ENTRY;
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	extack = info->extack;
-#endif
 	msg_len = genlmsg_len(gnlh);
 	if (!msg_len) {
 		GENL_SET_ERR_MSG(info, "no configuration");
@@ -10164,15 +9928,12 @@ static int lnet_numa_cmd(struct sk_buff *skb, struct genl_info *info)
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
 	struct genlmsghdr *gnlh = nlmsg_data(nlh);
 	struct nlattr *params = genlmsg_data(gnlh);
-	struct netlink_ext_ack *extack = NULL;
+	struct netlink_ext_ack *extack = info->extack;
 	int msg_len, rem, rc = 0;
 	struct nlattr *entry;
 	int range = 0; /* default range */
 
 	ENTRY;
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	extack = info->extack;
-#endif
 	msg_len = genlmsg_len(gnlh);
 	if (!msg_len) {
 		GENL_SET_ERR_MSG(info, "no configuration");
@@ -10233,69 +9994,45 @@ static const struct genl_ops lnet_genl_ops[] = {
 	{
 		.cmd		= LNET_CMD_NETS,
 		.flags		= GENL_ADMIN_PERM,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lnet_net_show_start,
 		.dumpit		= lnet_net_show_dump,
-#else
-		.dumpit		= lnet_old_net_show_dump,
-#endif
 		.done		= lnet_net_show_done,
 		.doit		= lnet_net_cmd,
 	},
 	{
 		.cmd		= LNET_CMD_PEERS,
 		.flags		= GENL_ADMIN_PERM,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lnet_peer_ni_show_start,
 		.dumpit		= lnet_peer_ni_show_dump,
-#else
-		.dumpit		= lnet_old_peer_ni_show_dump,
-#endif
 		.done		= lnet_peer_ni_show_done,
 		.doit		= lnet_peer_ni_cmd,
 	},
 	{
 		.cmd		= LNET_CMD_ROUTES,
 		.flags		= GENL_ADMIN_PERM,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lnet_route_show_start,
 		.dumpit		= lnet_route_show_dump,
-#else
-		.dumpit		= lnet_old_route_show_dump,
-#endif
 		.done		= lnet_route_show_done,
 		.doit		= lnet_route_cmd,
 	},
 	{
 		.cmd		= LNET_CMD_PING,
 		.flags		= GENL_ADMIN_PERM,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lnet_ping_show_start,
 		.dumpit		= lnet_ping_show_dump,
-#else
-		.dumpit		= lnet_old_ping_show_dump,
-#endif
 		.done		= lnet_ping_show_done,
 		.doit		= lnet_ping_cmd,
 	},
 	{
 		.cmd		= LNET_CMD_CPT_OF_NID,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lnet_cpt_of_nid_show_start,
 		.dumpit		= lnet_cpt_of_nid_show_dump,
-#else
-		.dumpit		= lnet_old_cpt_of_nid_show_dump,
-#endif
 		.done		= lnet_cpt_of_nid_show_done,
 	},
 	{
 		.cmd		= LNET_CMD_PEER_DIST,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lnet_peer_dist_show_start,
 		.dumpit		= lnet_peer_dist_show_dump,
-#else
-		.dumpit		= lnet_old_peer_dist_show_dump,
-#endif
 		.done		= lnet_peer_dist_show_done,
 	},
 	{
@@ -10306,23 +10043,15 @@ static const struct genl_ops lnet_genl_ops[] = {
 	{
 		.cmd		= LNET_CMD_DBG_RECOV,
 		.flags		= GENL_ADMIN_PERM,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lnet_debug_recovery_show_start,
 		.dumpit		= lnet_debug_recovery_show_dump,
-#else
-		.dumpit		= lnet_old_debug_recovery_show_dump,
-#endif
 		.done		= lnet_debug_recovery_show_done,
 	},
 	{
 		.cmd		= LNET_CMD_FAULT,
 		.flags		= GENL_ADMIN_PERM,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lnet_fault_show_start,
 		.dumpit		= lnet_fault_show_dump,
-#else
-		.dumpit		= lnet_old_fault_show_dump,
-#endif
 		.done		= lnet_fault_show_done,
 		.doit		= lnet_fault_cmd,
 	},

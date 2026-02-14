@@ -127,7 +127,7 @@
  *  Even so, the MDT and OST resources are also in different LDLM namespaces.
  */
 
-#include <lustre_compat/linux/hash.h>
+#include <linux/hash.h>
 
 #include <lu_object.h>
 #include <uapi/linux/lustre/lustre_fid.h>
@@ -759,7 +759,7 @@ static inline __u32 fid_hash(const struct lu_fid *f, int bits)
 	 * All objects with same id and different versions will belong to same
 	 * collisions list.
 	 */
-	return cfs_hash_long(fid_flatten64(f), bits);
+	return hash_long(fid_flatten64(f), bits);
 }
 
 u32 lu_fid_hash(const void *data, u32 len, u32 seed);

@@ -212,7 +212,7 @@ static u32 nodemap_sha_hashfn(const void *data, u32 len, u32 seed)
 
 	/* Combine the hash of each 64-bit chunk */
 	for (i = 0; i < SHA256_DIGEST_SIZE / sizeof(u64); i++)
-		seed ^= cfs_hash_64(chunks[i], 32);
+		seed ^= hash_64(chunks[i], 32);
 
 	return seed;
 }

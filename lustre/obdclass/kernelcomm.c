@@ -18,7 +18,6 @@
 
 #define DEBUG_SUBSYSTEM S_CLASS
 
-#include <lustre_compat/linux/generic-radix-tree.h>
 #include <linux/file.h>
 #include <linux/glob.h>
 #include <linux/types.h>
@@ -91,16 +90,11 @@ device_dump_ctx(struct netlink_callback *cb)
 static int lustre_device_list_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	struct genl_dev_list *glist;
 	unsigned long len = 0;
 	int msg_len, rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	OBD_ALLOC(glist, sizeof(*glist));
 	if (!glist)
 		return -ENOMEM;
@@ -176,17 +170,12 @@ static int lustre_device_list_dump(struct sk_buff *msg,
 	struct genl_dev_list *glist = device_dump_ctx(cb);
 	struct obd_device *filter = glist->gdl_target;
 	struct obd_device *obd = NULL;
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	int seq = cb->nlh->nlmsg_seq;
 	unsigned long idx = 0;
 	int rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (glist->gdl_start == 0) {
 		const struct ln_key_list *all[] = {
 			&device_list, NULL
@@ -262,28 +251,8 @@ static int lustre_device_list_dump(struct sk_buff *msg,
 
 	glist->gdl_start = idx + 1;
 send_err:
-	rc = lnet_nl_send_error(cb->skb, portid, seq, rc);
-
 	return rc < 0 ? rc : msg->len;
 }
-
-#ifndef HAVE_NETLINK_CALLBACK_START
-int lustre_old_device_list_dump(struct sk_buff *msg,
-				struct netlink_callback *cb)
-{
-	if (!cb->args[0]) {
-		int rc = lustre_device_list_start(cb);
-
-		if (rc < 0)
-			return lnet_nl_send_error(cb->skb,
-						  NETLINK_CB(cb->skb).portid,
-						  cb->nlh->nlmsg_seq,
-						  rc);
-	}
-
-	return lustre_device_list_dump(msg, cb);
-}
-#endif
 
 static int lustre_device_done(struct netlink_callback *cb)
 {
@@ -333,9 +302,7 @@ static int lustre_targets_done(struct netlink_callback *cb)
 static int lustre_targets_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int msg_len = genlmsg_len(gnlh);
 	struct genl_tgts_list *tlist;
 	unsigned long idx = 0;
@@ -515,17 +482,12 @@ static int lustre_targets_dump(struct sk_buff *msg,
 {
 	struct genl_tgts_list *tlist = target_dump_ctx(cb);
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	int seq = cb->nlh->nlmsg_seq;
 	int idx = tlist->gol_index;
 	int rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (!idx) {
 		const struct ln_key_list *all[] = {
 			&tgt_keys, &tgt_prop_keys, NULL
@@ -592,23 +554,8 @@ skip_details:
 
 	tlist->gol_index = idx;
 send_error:
-	return lnet_nl_send_error(cb->skb, portid, seq, rc);
+	return rc;
 }
-
-#ifndef HAVE_NETLINK_CALLBACK_START
-int lustre_old_targets_dump(struct sk_buff *msg,
-			    struct netlink_callback *cb)
-{
-	if (!cb->args[0]) {
-		int rc = lustre_targets_start(cb);
-
-		if (rc < 0)
-			return rc;
-	}
-
-	return lustre_targets_dump(msg, cb);
-}
-#endif
 
 static struct ln_key_list stats_params = {
 	.lkl_maxattr	= LUSTRE_PARAM_ATTR_MAX,
@@ -742,16 +689,11 @@ static int lustre_stats_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
 	unsigned long len = STATS_MSG_MIN_SIZE;
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	struct lustre_stats_list *slist;
 	int msg_len = genlmsg_len(gnlh);
 	int rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 #ifndef HAVE_GENL_DUMPIT_INFO
 	cb->args[1] = (unsigned long)&service_info;
 #endif
@@ -850,9 +792,7 @@ int lustre_stats_dump(struct sk_buff *msg, struct netlink_callback *cb)
 	const struct cfs_genl_dumpit_info *info = lnet_genl_dumpit_info(cb);
 	struct lustre_stats_list *slist = stats_dump_ctx(cb);
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	struct lprocfs_stats *prev = NULL;
 	int seq = cb->nlh->nlmsg_seq;
@@ -860,9 +800,6 @@ int lustre_stats_dump(struct sk_buff *msg, struct netlink_callback *cb)
 	int count, i, rc = 0;
 	bool started = true;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	while (idx < slist->gfl_count) {
 		struct lprocfs_stats **tmp, *stats;
 		struct nlattr *dataset = NULL;
@@ -1050,25 +987,6 @@ out_cancel:
 }
 EXPORT_SYMBOL(lustre_stats_dump);
 
-#ifndef HAVE_NETLINK_CALLBACK_START
-int lustre_old_stats_dump(struct sk_buff *msg, struct netlink_callback *cb)
-{
-	struct lustre_stats_list *slist = stats_dump_ctx(cb);
-
-	if (!slist) {
-		int rc = lustre_stats_start(cb);
-
-		if (rc < 0)
-			return lnet_nl_send_error(cb->skb,
-						  NETLINK_CB(cb->skb).portid,
-						  cb->nlh->nlmsg_seq,
-						  rc);
-	}
-
-	return lustre_stats_dump(msg, cb);
-}
-#endif
-
 static int lustre_stats_cmd(struct sk_buff *skb, struct genl_info *info)
 {
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
@@ -1148,32 +1066,20 @@ static const struct genl_multicast_group lustre_mcast_grps[] = {
 static const struct genl_ops lustre_genl_ops[] = {
 	{
 		.cmd		= LUSTRE_CMD_DEVICES,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lustre_device_list_start,
 		.dumpit		= lustre_device_list_dump,
-#else
-		.dumpit		= lustre_old_device_list_dump,
-#endif
 		.done		= lustre_device_done,
 	},
 	{
 		.cmd		= LUSTRE_CMD_TARGETS,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lustre_targets_start,
 		.dumpit		= lustre_targets_dump,
-#else
-		.dumpit		= lustre_old_targets_dump,
-#endif
 		.done		= lustre_targets_done,
 	},
 	{
 		.cmd		= LUSTRE_CMD_STATS,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lustre_stats_start,
 		.dumpit		= lustre_stats_dump,
-#else
-		.dumpit		= lustre_old_stats_dump,
-#endif
 		.done		= lustre_stats_done,
 		.doit		= lustre_stats_cmd,
 	},

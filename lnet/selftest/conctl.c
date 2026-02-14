@@ -15,7 +15,6 @@
  * Author: Liang Zhen <liangzhen@clusterfs.com>
  */
 
-#include <lustre_compat/linux/generic-radix-tree.h>
 #include <lustre_compat/net/linux-net.h>
 #include <linux/libcfs/libcfs.h>
 #include <lnet/lib-lnet.h>
@@ -793,9 +792,7 @@ static int lst_sessions_show_dump(struct sk_buff *msg,
 	const struct ln_key_list *all[] = {
 		&lst_session_keys, NULL
 	};
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	int seq = cb->nlh->nlmsg_seq;
 	unsigned int node_count = 0;
@@ -804,9 +801,6 @@ static int lst_sessions_show_dump(struct sk_buff *msg,
 	int rc = 0;
 	void *hdr;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (console_session.ses_state != LST_SESSION_ACTIVE) {
 		NL_SET_ERR_MSG(extack, "session is not active");
 		GOTO(out_unlock, rc = -ESRCH);
@@ -847,7 +841,7 @@ static int lst_sessions_show_dump(struct sk_buff *msg,
 		    node_count);
 	genlmsg_end(msg, hdr);
 out_unlock:
-	return lnet_nl_send_error(cb->skb, portid, seq, rc);
+	return rc;
 }
 
 static int lst_sessions_cmd(struct sk_buff *skb, struct genl_info *info)
@@ -1069,9 +1063,7 @@ static int lst_groups_show_done(struct netlink_callback *cb)
 static int lst_groups_show_start(struct netlink_callback *cb)
 {
 	struct genlmsghdr *gnlh = nlmsg_data(cb->nlh);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	struct nlattr *params = genlmsg_data(gnlh);
 	struct lst_genl_group_list *glist;
 	int msg_len = genlmsg_len(gnlh);
@@ -1110,9 +1102,6 @@ static int lst_groups_show_start(struct netlink_callback *cb)
 		GOTO(report_err, rc);
 	}
 	glist->lggl_verbose = true;
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 
 	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		NL_SET_ERR_MSG(extack, "no configuration");
@@ -1240,16 +1229,11 @@ static int lst_groups_show_dump(struct sk_buff *msg,
 				struct netlink_callback *cb)
 {
 	struct lst_genl_group_list *glist = lst_group_dump_ctx(cb);
-#ifdef HAVE_NL_PARSE_WITH_EXT_ACK
-	struct netlink_ext_ack *extack = NULL;
-#endif
+	struct netlink_ext_ack *extack = cb->extack;
 	int portid = NETLINK_CB(cb->skb).portid;
 	int seq = cb->nlh->nlmsg_seq;
 	int idx = 0, rc = 0;
 
-#ifdef HAVE_NL_DUMP_WITH_EXT_ACK
-	extack = cb->extack;
-#endif
 	if (!glist->lggl_index) {
 		const struct ln_key_list *all[] = {
 			&lst_group_keys, &lst_group_nodelist_keys, NULL
@@ -1318,26 +1302,8 @@ skip_details:
 	}
 	glist->lggl_index = idx;
 send_error:
-	return lnet_nl_send_error(cb->skb, portid, seq, rc);
+	return rc;
 }
-
-#ifndef HAVE_NETLINK_CALLBACK_START
-static int lst_old_groups_show_dump(struct sk_buff *msg,
-				    struct netlink_callback *cb)
-{
-	if (!cb->args[0]) {
-		int rc = lst_groups_show_start(cb);
-
-		if (rc < 0)
-			return lnet_nl_send_error(cb->skb,
-						  NETLINK_CB(cb->skb).portid,
-						  cb->nlh->nlmsg_seq,
-						  rc);
-	}
-
-	return lst_groups_show_dump(msg, cb);
-}
-#endif
 
 static const struct genl_multicast_group lst_mcast_grps[] = {
 	{ .name = "sessions",		},
@@ -1352,12 +1318,8 @@ static const struct genl_ops lst_genl_ops[] = {
 	},
 	{
 		.cmd		= LNET_SELFTEST_CMD_GROUPS,
-#ifdef HAVE_NETLINK_CALLBACK_START
 		.start		= lst_groups_show_start,
 		.dumpit		= lst_groups_show_dump,
-#else
-		.dumpit		= lst_old_groups_show_dump,
-#endif
 		.done		= lst_groups_show_done,
 	},
 };

@@ -29,23 +29,6 @@
 #include <linux/time.h>
 #include <asm/div64.h>
 
-#ifdef HAVE_NEW_DEFINE_TIMER
-# ifndef TIMER_DATA_TYPE
-# define TIMER_DATA_TYPE struct timer_list *
-# endif
-
-#define CFS_DEFINE_TIMER(_name, _function, _expires, _data) \
-	DEFINE_TIMER((_name), (_function))
-#else
-# ifndef TIMER_DATA_TYPE
-# define TIMER_DATA_TYPE unsigned long
-# endif
-
-#define CFS_DEFINE_TIMER(_name, _function, _expires, _data) \
-	DEFINE_TIMER((_name), (_function), (_expires), (_data))
-#endif
-
-#ifdef HAVE_TIMER_SETUP
 #ifndef timer_container_of
 #define timer_container_of(var, callback_timer, timer_fieldname)	\
 	container_of(callback_timer, typeof(*var), timer_fieldname)
@@ -56,12 +39,5 @@
 #define cfs_timer_setup(timer, callback, data, flags) \
 	timer_setup((timer), (callback), (flags))
 #define cfs_timer_cb_arg(var, timer_fieldname) (&(var)->timer_fieldname)
-#else
-#define cfs_timer_cb_arg_t unsigned long
-#define cfs_from_timer(var, data, timer_fieldname) (typeof(var))(data)
-#define cfs_timer_setup(timer, callback, data, flags) \
-	setup_timer((timer), (callback), (data))
-#define cfs_timer_cb_arg(var, timer_fieldname) (cfs_timer_cb_arg_t)(var)
-#endif
 
 #endif /* __LIBCFS_LINUX_LINUX_TIME_H__ */

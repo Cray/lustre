@@ -11,10 +11,6 @@ libcfs_dir := $(dir $(lastword $(MAKEFILE_LIST)))
 
 libcfs-compat-objs :=
 
-COMPAT_SCHED := @top_srcdir@/lustre_compat/kernel/sched/
-include $(libcfs_dir)/../../lustre_compat/kernel/sched/Makefile
-libcfs-compat-objs += $(patsubst %,$(COMPAT_SCHED)%,$(sched_objs))
-
 COMPAT_FSCRYPT := @top_srcdir@/lustre_compat/fs/crypto/
 include $(libcfs_dir)/../../lustre_compat/fs/crypto/Makefile
 @LLCRYPT_TRUE@libcfs-compat-objs += $(patsubst %,$(COMPAT_FSCRYPT)%,$(fscrypt_objs))
@@ -22,10 +18,6 @@ include $(libcfs_dir)/../../lustre_compat/fs/crypto/Makefile
 COMPAT_MM := @top_srcdir@/lustre_compat/mm/
 include $(libcfs_dir)/../../lustre_compat/mm/Makefile
 libcfs-compat-objs += $(patsubst %,$(COMPAT_MM)%,$(mm_objs))
-
-COMPAT_LIB := @top_srcdir@/lustre_compat/lib/
-include $(libcfs_dir)/../../lustre_compat/lib/Makefile
-libcfs-compat-objs += $(patsubst %,$(COMPAT_LIB)%,$(lib_objs))
 
 COMPAT_MODULE := @top_srcdir@/lustre_compat/
 include $(libcfs_dir)/../../lustre_compat/Makefile
