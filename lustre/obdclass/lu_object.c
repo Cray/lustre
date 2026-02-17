@@ -1464,8 +1464,6 @@ int lu_context_key_register(struct lu_context_key *key)
 	LASSERT(key->lct_init != NULL);
 	LASSERT(key->lct_fini != NULL);
 	LASSERT(key->lct_tags != 0);
-	LASSERT(key->lct_owner != NULL);
-
 	result = -ENFILE;
 	atomic_set(&key->lct_used, 1);
 	for (i = 0; i < ARRAY_SIZE(lu_keys); ++i) {
@@ -1473,8 +1471,11 @@ int lu_context_key_register(struct lu_context_key *key)
 			continue;
 		key->lct_index = i;
 
+#ifdef MODULE
+		LASSERT(key->lct_owner);
 		if (strncmp("osd_", module_name(key->lct_owner), 4) == 0)
 			CFS_RACE_WAIT(OBD_FAIL_OBD_SETUP);
+#endif
 
 		if (cmpxchg(&lu_keys[i], NULL, key) != NULL)
 			continue;
@@ -1504,11 +1505,13 @@ static void key_fini(struct lu_context *ctx, int index)
 		if (atomic_dec_and_test(&key->lct_used))
 			wake_up_var(&key->lct_used);
 
-		LASSERT(key->lct_owner != NULL);
+#ifdef MODULE
+		LASSERT(key->lct_owner);
 		if ((ctx->lc_tags & LCT_NOREF) == 0) {
 			LINVRNT(module_refcount(key->lct_owner) > 0);
 			module_put(key->lct_owner);
 		}
+#endif
 		ctx->lc_value[index] = NULL;
 	}
 }
@@ -1725,12 +1728,14 @@ static int keys_fill(struct lu_context *ctx)
 			LINVRNT(key->lct_init != NULL);
 			LINVRNT(key->lct_index == i);
 
-			LASSERT(key->lct_owner != NULL);
+#ifdef MODULE
+			LASSERT(key->lct_owner);
 			if (!(ctx->lc_tags & LCT_NOREF) &&
 			    try_module_get(key->lct_owner) == 0) {
 				/* module is unloading, skip this key */
 				continue;
 			}
+#endif
 
 			value = key->lct_init(ctx, key);
 			if (unlikely(IS_ERR(value))) {
