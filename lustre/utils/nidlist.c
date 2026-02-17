@@ -268,7 +268,7 @@ static void nl_strxcat(char *s, char **nids, int len, const int max_len)
 		int n = strtoul(&addr[o], NULL, 10);
 
 		if (i == 0)
-			snprintf(s + strlen(s), max_len, "%s[%s", base,
+			snprintf(s + strlen(s), max_len - strlen(s), "%s[%s", base,
 				 &addr[o]);
 		else if (i < len) {
 			if (n == lastn + 1) {
@@ -295,7 +295,7 @@ static void nl_strxcat(char *s, char **nids, int len, const int max_len)
 					 "-%s", savedn);
 				free(savedn);
 			}
-			strncat(s, "]", max_len - strlen(s));
+			strncat(s, "]", max_len - strlen(s) - 1);
 			if (lnet)
 				snprintf(s + strlen(s), max_len - strlen(s),
 					 "@%s", lnet);
@@ -320,7 +320,7 @@ char *nl_xstring(NIDList nl, char *sep)
 	s[0] = '\0';
 	for (i = 0; i < nl->count; i++) {
 		if (i > 0)
-			strncat(s, sep, len);
+			strncat(s, sep, len - strlen(s) - 1);
 		for (j = i + 1; j < nl->count; j++) {
 			if (nl_cmp_lnet(nl->nids[i], nl->nids[j]) != 0)
 				break;
@@ -331,7 +331,7 @@ char *nl_xstring(NIDList nl, char *sep)
 		if (j - i > 1)
 			nl_strxcat(s, &nl->nids[i], j - i, len);
 		else
-			strncat(s, nl->nids[i], len);
+			strncat(s, nl->nids[i], len - strlen(s) - 1);
 		i += j - i - 1;
 	}
 	return s;
