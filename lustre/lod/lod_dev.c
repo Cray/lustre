@@ -2127,10 +2127,6 @@ static int lod_init0(const struct lu_env *env, struct lod_device *lod,
 	if (rc)
 		GOTO(out_disconnect, rc);
 
-	rc = lod_procfs_init(lod);
-	if (rc)
-		GOTO(out_pools, rc);
-
 	spin_lock_init(&lod->lod_lock);
 	spin_lock_init(&lod->lod_connects_lock);
 	lu_tgt_descs_init(&lod->lod_mdt_descs, true);
@@ -2139,9 +2135,15 @@ static int lod_init0(const struct lu_env *env, struct lod_device *lod,
 	lu_qos_rr_init(&lod->lod_ost_descs.ltd_qos.lq_rr);
 	lod->lod_dist_txn_check_space = 1;
 
+	rc = lod_procfs_init(lod);
+	if (rc)
+		GOTO(out_desc, rc);
+
 	RETURN(0);
 
-out_pools:
+out_desc:
+	lod_fini_tgt(env, lod, &lod->lod_ost_descs);
+	lod_fini_tgt(env, lod, &lod->lod_mdt_descs);
 	lod_pools_fini(lod);
 out_disconnect:
 	obd_disconnect(lod->lod_child_exp);
