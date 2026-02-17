@@ -1090,6 +1090,7 @@ static int osp_init0(const struct lu_env *env, struct osp_device *osp,
 		RETURN(-ENODEV);
 	}
 	osp->opd_obd = obd;
+	osp->opd_dt_dev.dd_lu_dev.ld_obd = obd;
 
 	src = lustre_cfg_string(cfg, 0);
 	if (src == NULL)
