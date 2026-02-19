@@ -1907,7 +1907,7 @@ static ssize_t osd_declare_write(const struct lu_env *env, struct dt_object *dt,
 		 * to improve concurrent writes.
 		 * XXX: locking?
 		 */
-		if (obj->oo_prealloc_writes == 0)
+		if (!obj->oo_prealloc_writes && osd_extents_enabled(sb, inode))
 			obj->oo_prealloc_writes = 1;
 	} else {
 		pos = _pos;
