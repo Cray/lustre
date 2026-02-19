@@ -1081,16 +1081,16 @@ int __mdt_stripe_get(struct mdt_thread_info *info, struct mdt_object *o,
 
 got:
 		if (strcmp(name, XATTR_NAME_LOV) == 0) {
+			if (info->mti_big_lov_used) {
+				LASSERT(info->mti_big_lovsize >= rc);
+				ma->ma_lmm = info->mti_big_lov;
+			}
 			/* NOT return LOV EA with hole to old client. */
 			if (unlikely(le32_to_cpu(ma->ma_lmm->lmm_pattern) &
 				     LOV_PATTERN_F_HOLE) &&
 			    !(exp_connect_flags(info->mti_exp) &
 			      OBD_CONNECT_LFSCK)) {
 				return -EIO;
-			}
-			if (info->mti_big_lov_used) {
-				LASSERT(info->mti_big_lovsize >= rc);
-				ma->ma_lmm = info->mti_big_lov;
 			}
 			ma->ma_lmm_size = rc;
 			ma->ma_valid |= MA_LOV;
