@@ -113,6 +113,8 @@ struct lod_device {
 
 	/* maximum EA size underlied OSD may have */
 	unsigned int	      lod_osd_max_easize;
+	/* maximum number of mirrors allowed */
+	unsigned int	      lod_mirror_count_max;
 	/* maximum size of MDT stripe for Data-on-MDT files. */
 	unsigned int          lod_dom_stripesize_max_kb;
 	/* current DOM default stripe size adjusted by threshold */

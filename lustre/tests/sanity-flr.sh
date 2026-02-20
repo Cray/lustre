@@ -303,7 +303,7 @@ verify_flr_state()
 test_0a() {
 	local td=$DIR/$tdir
 	local tf=$td/$tfile
-	local mirror_count=16 # LUSTRE_MIRROR_COUNT_MAX
+	local mirror_count=16 # LUSTRE_MIRROR_COUNT_DEF
 	local mirror_cmd="$LFS mirror create"
 	local id
 	local ids
@@ -502,7 +502,7 @@ run_test 0c "lfs mirror create composite layout mirrors"
 test_0d() {
 	local td=$DIR/$tdir
 	local tf=$td/$tfile
-	local mirror_count=16 # LUSTRE_MIRROR_COUNT_MAX
+	local mirror_count=16 # LUSTRE_MIRROR_COUNT_DEF
 	local mirror_cmd="$LFS mirror extend"
 	local ids
 	local i
@@ -910,7 +910,7 @@ run_test 0m "mirror extend with -N= option"
 
 test_1() {
 	local tf=$DIR/$tfile
-	local mirror_count=16 # LUSTRE_MIRROR_COUNT_MAX
+	local mirror_count=16 # LUSTRE_MIRROR_COUNT_DEF
 	local mirror_create_cmd="$LFS mirror create"
 	local stripes[0]=$OSTCOUNT
 
@@ -926,7 +926,7 @@ test_1() {
 	$mirror_create_cmd $tf || error "create mirrored file $tf failed"
 	verify_mirror_count $tf $mirror_count
 
-	# can't create mirrors exceeding LUSTRE_MIRROR_COUNT_MAX
+	# can't create mirrors exceeding LUSTRE_MIRROR_COUNT_DEF
 	$LFS mirror extend -N $tf &&
 		error "Creating the $((mirror_count+1))th mirror succeeded"
 
@@ -1160,6 +1160,35 @@ test_22() {
 	rm -f $tmpfile
 }
 run_test 22 "no glimpse to OSTs for READ_ONLY files"
+
+test_28() {
+	(( $MDS1_VERSION >= $(version_code 2.17.51) )) ||
+		skip "Need MDS >= 2.17.51 for mirror_count_max"
+
+	local tf=$DIR/$tfile
+	local max=256
+	local mdts=$(mdts_nodes)
+
+	local saved=($(do_facet mds1 $LCTL get_param -n \
+		       lod.$FSNAME-MDT0000-mdtlov.mirror_count_max))
+	stack_trap "do_nodes $mdts $LCTL set_param \
+		lod.$FSNAME-*-mdtlov.mirror_count_max=$saved"
+
+	(( ONLY_REPEAT_ITER  < 500 )) || skip "enough iterations"
+
+	do_nodes $mdts $LCTL set_param \
+		lod.$FSNAME-*-mdtlov.mirror_count_max=$max ||
+		error "failed to set mirror_count_max=$max"
+
+	$LFS setstripe -N$max -c 1 $tf || {
+		$LFS df; $LFS df -i
+		error "failed to create file with $max mirrors"
+	}
+	(( ONLY_REPEAT_ITER % 100 != 99 )) || wait_delete_completed
+
+	verify_mirror_count $tf $max
+}
+run_test 28 "create file with 256 mirrors when mirror_count_max=256"
 
 test_31() {
 	local tf=$DIR/$tfile

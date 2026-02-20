@@ -2361,6 +2361,13 @@ recheck:
 	if (mirror_count != le16_to_cpu(comp_v1->lcm_mirror_count) + 1)
 		RETURN(-EINVAL);
 
+	if (!is_from_disk && mirror_count > d->lod_mirror_count_max) {
+		CDEBUG(D_LAYOUT, "mirror count %u exceeds max %u for "DFID"\n",
+		       mirror_count, d->lod_mirror_count_max,
+		       PFID(lu_object_fid(&lo->ldo_obj.do_lu)));
+		RETURN(-EINVAL);
+	}
+
 	RETURN(0);
 }
 

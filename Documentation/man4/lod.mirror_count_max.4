@@ -1,0 +1,72 @@
+.TH LOD.MIRROR_COUNT_MAX 4 2026-02-20 Lustre "Lustre Kernel Interfaces"
+.SH NAME
+lod.mirror_count_max \- maximum number of mirrors allowed per file
+.SH SYNOPSIS
+.SY
+.BI "lctl get_param lod." FSNAME "*.mirror_count_max"
+.SY
+.BI "lctl set_param lod." FSNAME "*.mirror_count_max=" NUM_MIRRORS
+.YS
+.SS PROPERTIES
+.TP
+.B Perms
+.br
+.BR 644 " | " -rw-r--r--
+.TP
+.B Scope
+.br
+Per-MDT
+.TP
+.B Config
+.br
+Always present on MDS nodes
+.TP
+.B Default
+.br
+.RB lod.*.mirror_count_max= 16
+.TP
+.B Limits
+.br
+.RB lod.*.mirror_count_max= 0
+.br
+.RB lod.*.mirror_count_max= 256
+.SH DESCRIPTION
+.B mirror_count_max
+controls the maximum number of mirrors that the MDS allows to be created
+on a single file via
+.BR "lfs mirror create" .
+.PP
+The default limit of 16 mirrors matches the previous hard-coded maximum.
+This limit is somewhat arbitrary and is not imposed by any on-disk format
+restriction.  In practice, the number of layout components in a single
+file is limited to about 512 single-stripe components due to the maximum
+.B trusted.lov
+xattr size of 65536 bytes (VFS
+.BR XATTR_SIZE_MAX ),
+so 256 mirrors is a realistic upper limit today if the stripe count or
+component count is more than 1.
+.PP
+The 
+.I NUM_MIRRORS
+parameter accepts values from 0 (disables FLR mirroring) to
+.B LUSTRE_MIRROR_COUNT_MAX
+(currently 256).
+.SH EXAMPLES
+Increase the mirror limit to 256 on all MDTs for the
+.B testfs
+filesystem:
+.EX
+.RB "mds# " "lctl set_param lod.testfs-*.mirror_count_max=256"
+.EE
+.SH AVAILABILITY
+.B mirror_count_max
+is part of the
+.BR lustre (7)
+filesystem package since release 2.18.0.
+.\" Added in commit 2.17.51.xxx
+.SH SEE ALSO
+.BR lfs-mirror-create (1),
+.BR lfs-mirror-extend (1),
+.BR lfs-setstripe (1),
+.BR lctl-get_param (8),
+.BR lctl-set_param (8)

@@ -588,10 +588,18 @@ struct ll_futimes_3 {
 };
 
 /*
- * Arbitrary upper bound on mirrors per file. This does not reflect a limit in
- * the layout format, nor does it limit the mirror IDs assigned to a component.
+ * Default number of mirrors for layout creation.
+ * Maximum number of mirrors currently supported.  This limit is
+ * somewhat arbitrary and is not imposed by any on-disk format
+ * restriction.  In practice, the number of layout components in a
+ * single file is limited to about 512 single-stripe components
+ * due to the current maximum trusted.lov xattr size of 65536 bytes
+ * (VFS XATTR_SIZE_MAX), so 256 mirrors is a realistic upper
+ * limit today if the stripe count or component count is more
+ * than 1.
  */
-#define LUSTRE_MIRROR_COUNT_MAX		16
+#define LUSTRE_MIRROR_COUNT_DEF		16
+#define LUSTRE_MIRROR_COUNT_MAX		256
 
 /* Lease types for use as arg and return of LL_IOC_{GET,SET}_LEASE ioctl. */
 enum ll_lease_mode {

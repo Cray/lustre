@@ -275,6 +275,37 @@ static ssize_t max_stripecount_store(struct kobject *kobj,
 
 LUSTRE_RW_ATTR(max_stripecount);
 
+static ssize_t mirror_count_max_show(struct kobject *kobj,
+				     struct attribute *attr, char *buf)
+{
+	struct dt_device *dt = container_of(kobj, struct dt_device, dd_kobj);
+	struct lod_device *lod = dt2lod_dev(dt);
+
+	return scnprintf(buf, PAGE_SIZE, "%u\n", lod->lod_mirror_count_max);
+}
+
+static
+ssize_t mirror_count_max_store(struct kobject *kobj, struct attribute *attr,
+			       const char *buffer, size_t count)
+{
+	struct dt_device *dt = container_of(kobj, struct dt_device, dd_kobj);
+	struct lod_device *lod = dt2lod_dev(dt);
+	long val;
+	int rc;
+
+	rc = kstrtol(buffer, 0, &val);
+	if (rc)
+		return rc;
+
+	if (val < 0 || val > LUSTRE_MIRROR_COUNT_MAX)
+		return -ERANGE;
+
+	lod->lod_mirror_count_max = val;
+
+	return count;
+}
+LUSTRE_RW_ATTR(mirror_count_max);
+
 static ssize_t max_mdt_stripecount_show(struct kobject *kobj,
 					struct attribute *attr, char *buf)
 {
@@ -1351,17 +1382,14 @@ static const struct file_operations lod_debugfs_target_fops = {
 };
 
 static struct attribute *lod_attrs[] = {
+	&lustre_attr_dist_txn_check_space.attr,
 	&lustre_attr_dom_stripesize.attr,
 	&lustre_attr_dom_stripesize_max_kb.attr,
 	&lustre_attr_dom_stripesize_cur_kb.attr,
 	&lustre_attr_dom_threshold_free_mb.attr,
-	&lustre_attr_stripesize.attr,
-	&lustre_attr_stripeoffset.attr,
-	&lustre_attr_stripecount.attr,
 	&lustre_attr_max_stripecount.attr,
 	&lustre_attr_max_mdt_stripecount.attr,
 	&lustre_attr_max_stripes_per_mdt.attr,
-	&lustre_attr_stripetype.attr,
 	&lustre_attr_activeobd.attr,
 	&lustre_attr_desc_uuid.attr,
 	&lustre_attr_lmv_failout.attr,
@@ -1377,7 +1405,11 @@ static struct attribute *lod_attrs[] = {
 	&lustre_attr_mdt_qos_prio_free.attr,
 	&lustre_attr_mdt_qos_threshold_rr.attr,
 	&lustre_attr_mdt_hash.attr,
-	&lustre_attr_dist_txn_check_space.attr,
+	&lustre_attr_mirror_count_max.attr,
+	&lustre_attr_stripecount.attr,
+	&lustre_attr_stripeoffset.attr,
+	&lustre_attr_stripesize.attr,
+	&lustre_attr_stripetype.attr,
 	NULL,
 };
 

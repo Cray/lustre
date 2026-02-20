@@ -3432,7 +3432,8 @@ static int lod_declare_layout_merge(const struct lu_env *env,
 
 	/* 'lcm_mirror_count + 1' is the current # of mirrors the file has */
 	mirror_count = le16_to_cpu(cur_lcm->lcm_mirror_count) + 1;
-	if (mirror_count + 1 > LUSTRE_MIRROR_COUNT_MAX)
+	if (mirror_count + 1 >
+	    lu2lod_dev(lo->ldo_obj.do_lu.lo_dev)->lod_mirror_count_max)
 		RETURN(-ERANGE);
 
 	/* size of new layout */

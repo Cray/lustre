@@ -2117,6 +2117,7 @@ static int lod_init0(const struct lu_env *env, struct lod_device *lod,
 	dt_conf_get(env, &lod->lod_dt_dev, &ddp);
 	lod->lod_osd_max_easize = ddp.ddp_max_ea_size;
 	lod->lod_dom_stripesize_max_kb = (1ULL << 10); /* 1Mb is default */
+	lod->lod_mirror_count_max = LUSTRE_MIRROR_COUNT_DEF;
 	lod->lod_max_stripecount = 0;
 	lod->lod_max_stripes_per_mdt = LMV_MAX_STRIPES_PER_MDT;
 
