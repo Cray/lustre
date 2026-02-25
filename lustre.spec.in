@@ -285,7 +285,7 @@ BuildRequires: rpm-build >= 4.14.3
 # End: KMP buildreqs
 #
 # need to provide a /usr/lib/${uname -r)/build dir
-BuildRequires: kernel >= 3.10
+BuildRequires: kernel >= 4.18
 #
 # RHEL w/KABI
 %if "%{_vendor}" == "redhat"
@@ -331,9 +331,7 @@ BuildRequires: pkgconfig(libselinux) openssl-devel
 %if "%{_vendor}" == "redhat" || "%{_vendor}" == "fedora" || 0%{?openEuler}
 # selinux is used by default
 BuildRequires: pkgconfig(libselinux)
-%if 0%{?rhel} > 7 || 0%{?fedora} > 33 || 0%{?rhel} < 1
 Suggests: bash-completion
-%endif
 %if "%{_vendor}" == "redhat" || "%{_vendor}" == "fedora"
 BuildRequires: redhat-rpm-config
 %endif
@@ -352,26 +350,7 @@ BuildRequires: openEuler-rpm-config
 Userspace tools and files for the Lustre file system.
 
 %if %{with lustre_modules}
-%if 0%{?rhel} == 7
-# until we have achieved full kABI compatibility we need to
-# restrict the kernel range that can be used to the kernel
-# version from the RHEL minor release
-# this is supposed to be done for kmods automatically but
-# RHBZ#1467319 seems to be getting in the way
-# this is true for el7.0 through el7.4
-%define preamble %{expand:%(
-TMPFILE=`mktemp`
-cat %{SOURCE1} > $TMPFILE
-kver=%{kernel_version}
-linuxversion=${kver%%%%-*}
-linuxrelease=${kver##*-}
-kabiminor=${linuxrelease%%%%.*}
-echo "Requires:       kernel < $linuxversion-$((kabiminor+1)), kernel >= $linuxversion-$((kabiminor))" >> $TMPFILE
-echo $TMPFILE
-)}
-%else
 %define preamble %{SOURCE1}
-%endif
 %kernel_module_package -n %{name} -p %preamble -f %SOURCE2 %{_flavor}
 
 %if %{with ldiskfs}
@@ -512,12 +491,9 @@ Requires: python3 >= 3.6.0
 %endif
 Requires: attr, rsync, lsof, /usr/bin/getconf
 Requires: /usr/sbin/getenforce, acl, /usr/bin/killall, /usr/bin/ping, bc
-# Of the supported targets, only rhel7 doesn't support Recommends.
-%if 0%{?rhel} > 7 || 0%{?fedora} > 33 || 0%{?rhel} < 1
 Recommends: perl, dbench, iozone, vmtouch
 # Either of these is sufficient
 Suggests: pdsh, clush
-%endif
 %if %{with mpi}
 %if "%{mpi_name}" == "mpich"
 BuildRequires: mpich-devel
@@ -631,9 +607,7 @@ This package includes:
 %package -n %{lustre_name}-iokit
 Summary: Collection of benchmark tools for a cluster with the Lustre file system
 Requires: sg3_utils
-%if 0%{?rhel} > 7 || 0%{?fedora} > 33 || 0%{?rhel} < 1
 Recommends: perl
-%endif
 
 %description -n %{lustre_name}-iokit
 This package includes five tools:
