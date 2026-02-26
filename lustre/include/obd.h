@@ -55,6 +55,8 @@
 #include <lustre_intent.h>
 #include <lvfs.h>
 
+extern unsigned long osc_max_dirty_mb_default;
+
 #define MAX_OBD_DEVICES 8192
 
 struct osc_async_rc {
@@ -1338,8 +1340,13 @@ static inline void client_adjust_max_dirty(struct client_obd *cli)
 {
 	 /* initializing */
 	if (cli->cl_dirty_max_pages <= 0) {
-		cli->cl_dirty_max_pages =
-			(OSC_MAX_DIRTY_DEFAULT * 1024 * 1024) >> PAGE_SHIFT;
+		unsigned long pages = MiB_TO_PAGES(osc_max_dirty_mb_default);
+
+		if (pages > MiB_TO_PAGES(OSC_MAX_DIRTY_MB_MAX))
+			pages = MiB_TO_PAGES(OSC_MAX_DIRTY_MB_MAX);
+		if (pages > cfs_totalram_pages() / 4)
+			pages = cfs_totalram_pages() / 4;
+		cli->cl_dirty_max_pages = pages;
 	} else {
 		unsigned long dirty_max = cli->cl_max_rpcs_in_flight *
 					  cli->cl_max_pages_per_rpc;

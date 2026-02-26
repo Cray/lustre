@@ -82,6 +82,11 @@ unsigned int obd_timeout_set;
 EXPORT_SYMBOL(obd_timeout_set);
 unsigned int ldlm_timeout_set;
 EXPORT_SYMBOL(ldlm_timeout_set);
+/* default is 2G per osc */
+unsigned long osc_max_dirty_mb_default = OSC_MAX_DIRTY_DEFAULT;
+module_param(osc_max_dirty_mb_default, ulong, 0444);
+MODULE_PARM_DESC(osc_max_dirty_mb_default, "default osc.*.max_dirty_mb value");
+EXPORT_SYMBOL(osc_max_dirty_mb_default);
 /* bulk transfer timeout, give up after 100s by default */
 unsigned int bulk_timeout = 100; /* seconds */
 EXPORT_SYMBOL(bulk_timeout);
