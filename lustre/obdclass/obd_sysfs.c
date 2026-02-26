@@ -145,35 +145,15 @@ LUSTRE_RO_ATTR(memused_max);
 static ssize_t max_dirty_mb_show(struct kobject *kobj, struct attribute *attr,
 				 char *buf)
 {
-	return sprintf(buf, "%lu\n",
-		       obd_max_dirty_pages / (1 << (20 - PAGE_SHIFT)));
+	return obd_max_dirty_mb_show(buf);
 }
 
 static ssize_t max_dirty_mb_store(struct kobject *kobj, struct attribute *attr,
 				  const char *buffer, size_t count)
 {
-	unsigned long val;
-	int rc;
+	ssize_t rc = obd_max_dirty_mb_set(buffer);
 
-	rc = kstrtoul(buffer, 10, &val);
-	if (rc)
-		return rc;
-
-	val *= 1 << (20 - PAGE_SHIFT); /* convert to pages */
-
-	if (val > ((cfs_totalram_pages() / 10) * 9)) {
-		/* Somebody wants to assign too much memory to dirty pages */
-		return -EINVAL;
-	}
-
-	if (val < 4 << (20 - PAGE_SHIFT)) {
-		/* Less than 4 Mb for dirty cache is also bad */
-		return -EINVAL;
-	}
-
-	obd_max_dirty_pages = val;
-
-	return count;
+	return (rc < 0) ? rc : count;
 }
 LUSTRE_RW_ATTR(max_dirty_mb);
 
