@@ -74,6 +74,12 @@
 #include <obd_cksum.h>
 #include "llite_internal.h"
 
+/* unset default is 50% of ram */
+unsigned long max_cached_mb;
+module_param(max_cached_mb, ulong, 0444);
+MODULE_PARM_DESC(max_cached_mb, "initial max_cached_mb value");
+EXPORT_SYMBOL(max_cached_mb);
+
 struct kmem_cache *ll_file_data_slab;
 
 #ifndef log2
@@ -119,7 +125,10 @@ static struct ll_sb_info *ll_init_sbi(struct lustre_sb_info *lsi)
 
 	si_meminfo(&si);
 	pages = si.totalram - si.totalhigh;
-	lru_page_max = pages / 2;
+	if (max_cached_mb)
+		lru_page_max = MiB_TO_PAGES(max_cached_mb);
+	else
+		lru_page_max = pages / 2;
 
 	sbi->ll_ra_info.ra_async_max_active = ll_get_ra_async_max_active();
 	sbi->ll_ra_info.ll_readahead_wq =
