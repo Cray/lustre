@@ -702,13 +702,13 @@ static void osc_announce_cached(struct client_obd *cli, struct obdo *oa,
 		       cli->cl_dirty_max_pages);
 		oa->o_undirty = 0;
 	} else if (unlikely(atomic_long_read(&obd_dirty_pages) >
-			    (long)(obd_max_dirty_pages + 1))) {
+			    (long)(obd_max_dirty_pages() + 1))) {
 		/* The atomic_read() allowing the atomic_inc() are
 		 * not covered by a lock thus they may safely race and trip
 		 * this CERROR() unless we add in a small fudge factor (+1). */
 		CERROR("%s: dirty %ld > system dirty_max %ld\n",
 		       cli_name(cli), atomic_long_read(&obd_dirty_pages),
-		       obd_max_dirty_pages);
+		       obd_max_dirty_pages());
 		oa->o_undirty = 0;
 	} else if (unlikely(cli->cl_dirty_max_pages - cli->cl_dirty_pages >
 			    0x7fffffff)) {

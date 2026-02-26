@@ -64,8 +64,11 @@ unsigned int obd_dump_on_eviction;
 EXPORT_SYMBOL(obd_dump_on_eviction);
 unsigned int obd_lbug_on_eviction;
 EXPORT_SYMBOL(obd_lbug_on_eviction);
-unsigned long obd_max_dirty_pages;
-EXPORT_SYMBOL(obd_max_dirty_pages);
+unsigned long max_dirty_mb;
+static int max_dirty_mb_set(const char *val, const struct kernel_param *kp);
+static int max_dirty_mb_get(char *buffer, const struct kernel_param *kp);
+module_param_call(max_dirty_mb, max_dirty_mb_set, max_dirty_mb_get, NULL, 0644);
+MODULE_PARM_DESC(max_dirty_mb, "default max_dirty_mb value");
 atomic_long_t obd_dirty_pages;
 EXPORT_SYMBOL(obd_dirty_pages);
 unsigned int obd_timeout = OBD_TIMEOUT_DEFAULT;   /* seconds */
@@ -96,6 +99,51 @@ EXPORT_SYMBOL(at_extra);
 
 struct percpu_counter obd_memory;
 EXPORT_SYMBOL(obd_memory);
+
+unsigned long obd_max_dirty_pages(void)
+{
+	return MiB_TO_PAGES(max_dirty_mb);
+}
+EXPORT_SYMBOL(obd_max_dirty_pages);
+
+int obd_max_dirty_mb_set(const char *val)
+{
+	int rc;
+	unsigned long npages;
+	unsigned long mb;
+
+	rc = kstrtoul(val, 10, &mb);
+	if (rc)
+		return rc;
+
+	npages = MiB_TO_PAGES(mb);
+
+	/* Do not exceed 90% of ram */
+	if (npages > ((cfs_totalram_pages() / 10) * 9))
+		return -EINVAL;
+
+	/* Less than 4 Mb for dirty cache is also bad */
+	if (npages < MiB_TO_PAGES(4))
+		return -EINVAL;
+
+	max_dirty_mb = mb;
+
+	return 0;
+}
+
+int obd_max_dirty_mb_show(char *buffer)
+{
+	return scnprintf(buffer, PAGE_SIZE, "%lu\n", max_dirty_mb);
+}
+
+static int max_dirty_mb_set(const char *val, const struct kernel_param *kp)
+{
+	return obd_max_dirty_mb_set(val);
+}
+static int max_dirty_mb_get(char *buffer, const struct kernel_param *kp)
+{
+	return obd_max_dirty_mb_show(buffer);
+}
 
 static int obdclass_oom_handler(struct notifier_block *self,
 				unsigned long notused, void *nfreed)
@@ -703,10 +751,12 @@ static int __init obdclass_init(void)
 	/* Default the dirty page cache cap to 1/2 of system memory.
 	 * For clients with less memory, a larger fraction is needed
 	 * for other purposes (mostly for BGL). */
-	if (cfs_totalram_pages() <= 512 << (20 - PAGE_SHIFT))
-		obd_max_dirty_pages = cfs_totalram_pages() / 4;
-	else
-		obd_max_dirty_pages = cfs_totalram_pages() / 2;
+	if (max_dirty_mb == 0) {
+		if (cfs_totalram_pages() <= 512 << (20 - PAGE_SHIFT))
+			max_dirty_mb = PAGES_TO_MiB(cfs_totalram_pages() / 4);
+		else
+			max_dirty_mb = PAGES_TO_MiB(cfs_totalram_pages() / 2);
+	}
 
 	err = obd_init_caches();
 	if (err)
