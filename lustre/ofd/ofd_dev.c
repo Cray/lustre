@@ -3161,10 +3161,6 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
 	if (test_bit(LMD_FLG_LOCAL_RECOV, lmd_flags))
 		m->ofd_lut.lut_local_recovery = 1;
 
-	rc = ofd_tunables_init(m);
-	if (rc)
-		GOTO(err_fini_lut, rc);
-
 	tgd->tgd_reserved_pcnt = 0;
 
 	m->ofd_brw_size = m->ofd_lut.lut_dt_conf.ddp_brw_size;
@@ -3176,7 +3172,7 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
 
 	rc = ofd_fs_setup(env, m, obd);
 	if (rc)
-		GOTO(err_fini_proc, rc);
+		GOTO(err_fini_lut, rc);
 
 	fid.f_seq = FID_SEQ_LOCAL_NAME;
 	fid.f_oid = 1;
@@ -3204,10 +3200,16 @@ static int ofd_init0(const struct lu_env *env, struct ofd_device *m,
 	if (rc)
 		GOTO(err_stop_inconsistency, rc);
 
+	rc = ofd_tunables_init(m);
+	if (rc)
+		GOTO(err_stop_repair, rc);
+
 	tgt_adapt_sptlrpc_conf(&m->ofd_lut);
 
 	RETURN(0);
 
+err_stop_repair:
+	ofd_id_repair_stop_thread(m);
 err_stop_inconsistency:
 	ofd_stop_inconsistency_verification_thread(m);
 err_fini_nm:
@@ -3218,8 +3220,6 @@ err_fini_los:
 	m->ofd_los = NULL;
 err_fini_fs:
 	ofd_fs_cleanup(env, m);
-err_fini_proc:
-	ofd_procfs_fini(m);
 err_fini_lut:
 	tgt_fini(env, &m->ofd_lut);
 err_free_ns:
