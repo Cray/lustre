@@ -1236,6 +1236,7 @@ static struct lu_device *lmv_device_alloc(const struct lu_env *env,
 	obd = class_name2obd(lustre_cfg_string(lcfg, 0));
 	LASSERT(obd);
 	lmv = &obd->u.lmv;
+	obd->obd_lu_dev = lu;
 
 	if (LUSTRE_CFG_BUFLEN(lcfg, 1) < 1) {
 		CERROR("LMV setup requires a descriptor\n");
@@ -1273,11 +1274,6 @@ static struct lu_device *lmv_device_alloc(const struct lu_env *env,
 		}
 	}
 
-	rc = lmv_tunables_init(obd);
-	if (rc)
-		CWARN("%s: error adding LMV sysfs/debugfs files: rc = %d\n",
-		      obd->obd_name, rc);
-
 	rc = fld_client_init(&lmv->lmv_fld, obd->obd_name,
 			     LUSTRE_CLI_FLD_HASH_DHT);
 	if (rc)
@@ -1304,6 +1300,11 @@ static struct lu_device *lmv_device_alloc(const struct lu_env *env,
 	strcpy(pat->qep_name, "_temporary.*");
 
 	list_add_tail(&pat->qep_list, &lmv->lmv_qos_exclude_list);
+
+	rc = lmv_tunables_init(obd);
+	if (rc)
+		CWARN("%s: error adding LMV sysfs/debugfs files: rc = %d\n",
+		      obd->obd_name, rc);
 
 	RETURN(lu);
 
@@ -1426,6 +1427,8 @@ static int lmv_statfs(const struct lu_env *env, struct obd_export *exp,
 
 	ENTRY;
 
+	if (lmv->lmv_mdt_count == 0)
+		return -ENODATA;
 	OBD_ALLOC(temp, sizeof(*temp));
 	if (temp == NULL)
 		RETURN(-ENOMEM);
