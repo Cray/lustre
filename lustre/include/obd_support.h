@@ -47,7 +47,6 @@ extern unsigned int at_history;
 extern unsigned int at_unhealthy_factor;
 extern int at_early_margin;
 extern int at_extra;
-extern unsigned long obd_max_dirty_pages;
 extern atomic_long_t obd_dirty_pages;
 extern char obd_jobid_var[];
 extern bool obd_enable_health_write;
@@ -1027,6 +1026,10 @@ static inline int lustre_to_lma_flags(__u32 la_flags)
 		((la_flags & LUSTRE_ENCRYPT_FL) ? LMAI_ENCRYPT : 0));
 }
 #endif /* HAVE_SERVER_SUPPORT */
+
+unsigned long obd_max_dirty_pages(void);
+int obd_max_dirty_mb_set(const char *val);
+int obd_max_dirty_mb_show(char *buffer);
 
 /* Convert wire LUSTRE_*_FL to corresponding client local VFS S_* values
  * for the client inode i_flags.  The LUSTRE_*_FL are the Lustre wire

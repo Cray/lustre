@@ -1334,7 +1334,7 @@ static int osc_completion(const struct lu_env *env, struct osc_object *osc,
 	       "left: %ld, waiters: %d }" fmt "\n",			\
 	       cli_name(__tmp),						\
 	       __tmp->cl_dirty_pages, __tmp->cl_dirty_max_pages,	\
-	       atomic_long_read(&obd_dirty_pages), obd_max_dirty_pages,	\
+	       atomic_long_read(&obd_dirty_pages), obd_max_dirty_pages(), \
 	       __tmp->cl_lost_grant, __tmp->cl_avail_grant,		\
 	       __tmp->cl_dirty_grant,					\
 	       __tmp->cl_reserved_grant, __tmp->cl_w_in_flight,		\
@@ -1495,7 +1495,7 @@ static int osc_enter_cache_try(struct client_obd *cli,
 
 	if (cli->cl_dirty_pages < cli->cl_dirty_max_pages) {
 		if (atomic_long_add_return(1, &obd_dirty_pages) <=
-		    obd_max_dirty_pages) {
+		    obd_max_dirty_pages()) {
 			osc_consume_write_grant(cli, &oap->oap_brw_page);
 			rc = 1;
 			goto out;
