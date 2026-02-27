@@ -35872,7 +35872,6 @@ test_819b() {
 }
 run_test 819b "too big niobuf in write"
 
-
 function test_820_start_ost() {
 	sleep 5
 
@@ -36804,6 +36803,26 @@ test_910()
 		error "rmmod failed (may trigger a failure in a later test)"
 }
 run_test 910 "Test the erasure_coding module"
+
+test_911()
+{
+	local lfs_cmdlist="hsm mirror pcc"
+	local lctl_cmdlist="barrier llog nodemap"
+	local cmd
+
+	for cmd in $lfs_cmdlist; do
+		! $LFS $cmd --list-commands | grep -E "setstripe|find" ||
+			error "lfs $cmd --list-commands not limiting output"
+	done
+
+	(( $MGS_VERSION >= $(version_code 2.17.50) )) ||
+		skip "Need MGS version at least 2.17.50"
+	for cmd in $lctl_cmdlist; do
+		! do_facet mgs $LCTL $cmd --list-commands | grep -E "====" ||
+			error "lctl $cmd --list-commands not limiting output"
+	done
+}
+run_test 911 "Check lfs/lctl --list-commands"
 
 test_920()
 {
