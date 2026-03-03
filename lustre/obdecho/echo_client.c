@@ -1827,6 +1827,7 @@ static void echo_ucred_init(struct lu_env *env)
 	ucred->uc_rbac_pool_quota_ops = 1;
 	ucred->uc_rbac_lqa_quota_ops = 1;
 	ucred->uc_rbac_projid_set = 1;
+	ucred->uc_rbac_foreign_ops = 1;
 }
 
 static void echo_ucred_fini(struct lu_env *env)

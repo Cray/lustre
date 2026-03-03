@@ -181,9 +181,6 @@ static void ucred_set_rbac_roles(struct mdt_thread_info *info,
 	uc->uc_rbac_file_perms = !!(rbac & NODEMAP_RBAC_FILE_PERMS);
 	uc->uc_rbac_dne_ops = !!(rbac & NODEMAP_RBAC_DNE_OPS);
 	uc->uc_rbac_quota_ops = !!(rbac & NODEMAP_RBAC_QUOTA_OPS);
-	uc->uc_rbac_pool_quota_ops = !!(rbac & NODEMAP_RBAC_POOL_QUOTA_OPS);
-	uc->uc_rbac_lqa_quota_ops = !!(rbac & NODEMAP_RBAC_LQA_QUOTA_OPS);
-	uc->uc_rbac_projid_set = !!(rbac & NODEMAP_RBAC_PROJID_SET);
 	uc->uc_rbac_byfid_ops = !!(rbac & NODEMAP_RBAC_BYFID_OPS);
 	uc->uc_rbac_chlg_ops = !!(rbac & NODEMAP_RBAC_CHLG_OPS);
 	uc->uc_rbac_fscrypt_admin = !!(rbac & NODEMAP_RBAC_FSCRYPT_ADMIN);
@@ -192,6 +189,10 @@ static void ucred_set_rbac_roles(struct mdt_thread_info *info,
 		!!(rbac & NODEMAP_RBAC_IGN_ROOT_PRJQUOTA);
 	uc->uc_rbac_hsm_ops = !!(rbac & NODEMAP_RBAC_HSM_OPS);
 	uc->uc_rbac_local_admin = !!(rbac & NODEMAP_RBAC_LOCAL_ADMIN);
+	uc->uc_rbac_pool_quota_ops = !!(rbac & NODEMAP_RBAC_POOL_QUOTA_OPS);
+	uc->uc_rbac_lqa_quota_ops = !!(rbac & NODEMAP_RBAC_LQA_QUOTA_OPS);
+	uc->uc_rbac_projid_set = !!(rbac & NODEMAP_RBAC_PROJID_SET);
+	uc->uc_rbac_foreign_ops = !!(rbac & NODEMAP_RBAC_FOREIGN_OPS);
 }
 
 static int new_init_ucred(struct mdt_thread_info *info, ucred_init_type_t type,
@@ -634,8 +635,7 @@ static int old_init_ucred_common(struct mdt_thread_info *info,
 
 	uc->uc_valid = UCRED_OLD;
 
-	EXIT;
-	return 0;
+	RETURN(0);
 }
 
 static int old_init_ucred(struct mdt_thread_info *info,

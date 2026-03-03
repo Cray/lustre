@@ -275,6 +275,7 @@ struct mdt_device {
 				   mdt_enable_dir_migration:1,
 				   mdt_enable_dir_restripe:1,
 				   mdt_enable_dir_auto_split:1,
+				   mdt_enable_foreign_dir:1,
 				   mdt_enable_parallel_rename_dir:1,
 				   mdt_enable_parallel_rename_file:1,
 				   mdt_enable_parallel_rename_crossdir:1,
@@ -301,6 +302,8 @@ struct mdt_device {
 				   /* user with this gid can change projid */
 	gid_t			   mdt_enable_chprojid_gid;
 	kernel_cap_t		   mdt_enable_cap_mask;
+				   /* user with gid can create foreign dirs */
+	gid_t			   mdt_enable_foreign_dir_gid;
 				   /* user with this gid can pin/unpin file */
 	gid_t			   mdt_enable_pin_gid;
 

@@ -535,9 +535,9 @@ static int mdt_create(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 
 	ENTRY;
 	DEBUG_REQ(D_INODE, mdt_info_req(info),
-		  "Create ("DNAME"->"DFID") in "DFID,
-		  encode_fn_luname(&rr->rr_name), PFID(rr->rr_fid2),
-		  PFID(rr->rr_fid1));
+		  "%s: create ("DNAME"->"DFID") in parent "DFID,
+		  mdt_obd_name(info->mti_mdt), encode_fn_luname(&rr->rr_name),
+		  PFID(rr->rr_fid2), PFID(rr->rr_fid1));
 
 	if (!fid_is_md_operative(rr->rr_fid1))
 		RETURN(-EPERM);
@@ -550,6 +550,7 @@ static int mdt_create(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 	    !(spec->sp_cr_flags & MDS_OPEN_DEFAULT_LMV)) {
 		const struct lmv_user_md *lum = spec->u.sp_ea.eadata;
 		struct obd_export *exp = mdt_info_req(info)->rq_export;
+		bool is_foreign = false;
 
 		/* Only new clients can create remote dir( >= 2.4) and
 		 * striped dir(>= 2.6), old client will return -ENOTSUPP
@@ -557,7 +558,11 @@ static int mdt_create(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 		if (!mdt_is_dne_client(exp))
 			RETURN(-ENOTSUPP);
 
-		if (le32_to_cpu(lum->lum_stripe_count) > 1) {
+		if (le32_to_cpu(lum->lum_magic) == LMV_MAGIC_FOREIGN) {
+			is_foreign = true;
+			if (!mdt->mdt_enable_foreign_dir)
+				RETURN(-EPERM);
+		} else if (le32_to_cpu(lum->lum_stripe_count) > 1) {
 			if (!mdt_is_striped_client(exp))
 				RETURN(-ENOTSUPP);
 
@@ -575,10 +580,16 @@ static int mdt_create(struct mdt_thread_info *info, struct mdt_lock_handle *lhc)
 		/* we want rbac roles to have precedence over any other
 		 * permission or capability checks
 		 */
-		if (!uc->uc_rbac_dne_ops ||
-		    mdt_enable_gid_deny(uc, CAP_SYS_ADMIN,
-					mdt->mdt_enable_remote_dir_gid))
+		if (is_foreign) {
+			if (!uc->uc_rbac_foreign_ops ||
+			    mdt_enable_gid_deny(uc, CAP_SYS_ADMIN,
+					     mdt->mdt_enable_foreign_dir_gid))
+				RETURN(-EPERM);
+		} else if (!uc->uc_rbac_dne_ops ||
+			   mdt_enable_gid_deny(uc, CAP_SYS_ADMIN,
+					      mdt->mdt_enable_remote_dir_gid)) {
 			RETURN(-EPERM);
+		}
 
 		/* restripe if later found dir exists, MDS_OPEN_CREAT means
 		 * this is create only, don't try restripe.

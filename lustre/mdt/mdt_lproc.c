@@ -717,6 +717,7 @@ static ssize_t name##_store(struct kobject *kobj, struct attribute *attr,\
 LUSTRE_RW_ATTR(name)
 
 MDT_ENABLE_GID_LUSTRE_RW_ATTR(enable_chprojid_gid);
+MDT_ENABLE_GID_LUSTRE_RW_ATTR(enable_foreign_dir_gid);
 MDT_ENABLE_GID_LUSTRE_RW_ATTR(enable_pin_gid);
 MDT_ENABLE_GID_LUSTRE_RW_ATTR(enable_remote_dir_gid);
 
@@ -752,6 +753,7 @@ LUSTRE_RW_ATTR(name)
 MDT_BOOL_RW_ATTR(readonly);
 MDT_BOOL_RW_ATTR(evict_tgt_nids);
 MDT_BOOL_RW_ATTR(dom_read_open);
+MDT_BOOL_RW_ATTR(enable_foreign_dir);
 MDT_BOOL_RW_ATTR(enable_remote_dir);
 MDT_BOOL_RW_ATTR(enable_remote_rename);
 MDT_BOOL_RW_ATTR(enable_parallel_rename_dir);
@@ -1404,6 +1406,8 @@ static struct attribute *mdt_attrs[] = {
 	&lustre_attr_enable_dir_auto_split.attr,
 	&lustre_attr_enable_dmv_implicit_inherit.attr,
 	&lustre_attr_enable_dmv_xattr.attr,
+	&lustre_attr_enable_foreign_dir.attr,
+	&lustre_attr_enable_foreign_dir_gid.attr,
 	&lustre_attr_enable_parallel_rename_dir.attr,
 	&lustre_attr_enable_parallel_rename_file.attr,
 	&lustre_attr_enable_parallel_rename_crossdir.attr,

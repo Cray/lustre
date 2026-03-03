@@ -2922,9 +2922,8 @@ test_27Ia() {
 run_test 27Ia "check that root dir pool is dropped with conflict parent dir settings"
 
 test_27J() {
-	(( $MDS1_VERSION > $(version_code 2.12.51) )) ||
-		skip "Need MDS version newer than 2.12.51"
-
+	(( $MDS1_VERSION >= $(version_code v2_12_53-14-g6a20bdcc60) )) ||
+		skip "Need MDS >= 2.12.53.15 for foreign layouts"
 
 	test_mkdir $DIR/$tdir
 	local uuid1=$(cat /proc/sys/kernel/random/uuid)
@@ -2955,7 +2954,7 @@ test_27J() {
 		grep "lov_foreign_size: 73" ||
 		error "$DIR/$tdir/$tfile: invalid LOV EA foreign size"
 	parse_foreign_file -f $DIR/$tdir/$tfile |
-		grep "lov_foreign_type: 1" ||
+		grep "lov_foreign_type:.*1$" ||
 		error "$DIR/$tdir/$tfile: invalid LOV EA foreign type"
 	parse_foreign_file -f $DIR/$tdir/$tfile |
 		grep "lov_foreign_flags: 0x0000DA08" ||
@@ -3027,19 +3026,20 @@ test_27J() {
 
 	#remove foreign file
 	rm $DIR/$tdir/${tfile}.new ||
-		error "$DIR/$tdir/${tfile}.new: remove of foreign file has failed"
+		error "$DIR/$tdir/${tfile}.new: remove foreign file has failed"
 	rm $DIR/$tdir/${tfile}2.new ||
-		error "$DIR/$tdir/${tfile}2.new: remove of foreign file has failed"
+		error "$DIR/$tdir/${tfile}2.new: remove foreign file has failed"
 }
 run_test 27J "basic ops on file with foreign LOV"
 
 test_27K() {
-	[[ $MDS1_VERSION -le $(version_code 2.12.49) ]] &&
-		skip "Need MDS version newer than 2.12.49"
+	(( $MDS1_VERSION >= $(version_code v2_12_53-15-gfdad38781c) )) ||
+		skip "Need MDS >= 2.12.53.15 for foreign LVM directory"
 
 	test_mkdir $DIR/$tdir
 	local uuid1=$(cat /proc/sys/kernel/random/uuid)
 	local uuid2=$(cat /proc/sys/kernel/random/uuid)
+	local foreign_magic="lmv_foreign_magic:.*cd50cd0"
 
 	# create foreign dir (raw way)
 	! $LFS setdirstripe --flags 0xda08 $DIR/$tdir/$tdir ||
@@ -3057,15 +3057,14 @@ test_27K() {
 		error "create_foreign_dir FAILED"
 
 	# verify foreign dir (raw way)
-	parse_foreign_dir -d $DIR/$tdir/$tdir |
-		grep "lmv_foreign_magic:.*0xcd50cd0" ||
+	parse_foreign_dir -d $DIR/$tdir/$tdir | grep "$foreign_magic" ||
 		error "$DIR/$tdir/$tfile: invalid LMV EA magic"
 	parse_foreign_dir -d $DIR/$tdir/$tdir | grep "lmv_xattr_size:.*89$" ||
 		error "$DIR/$tdir/$tdir: invalid LMV EA size"
-	parse_foreign_dir -d $DIR/$tdir/$tdir | grep "lmv_foreign_type: 1$" ||
+	parse_foreign_dir -d $DIR/$tdir/$tdir | grep "lmv_foreign_type:.*1$" ||
 		error "$DIR/$tdir/$tdir: invalid LMV EA type"
 	parse_foreign_dir -d $DIR/$tdir/$tdir |
-		grep "lmv_foreign_flags: 55813$" ||
+			grep -E "lmv_foreign_flags: (55813|0xda05)$" ||
 		error "$DIR/$tdir/$tdir: invalid LMV EA flags"
 	local lmv=$(parse_foreign_dir -d $DIR/$tdir/$tdir |
 		grep "lmv_foreign_value: 0x" |
@@ -3098,7 +3097,8 @@ test_27K() {
 		error "$DIR/$tdir/${tdir}2: invalid LMV EA value"
 
 	# file create in dir should fail
-	touch $DIR/$tdir/$tdir/$tfile && error "$DIR/$tdir: file create should fail"
+	touch $DIR/$tdir/$tdir/$tfile &&
+		error "$DIR/$tdir: file create should fail"
 	touch $DIR/$tdir/${tdir}2/$tfile &&
 		error "$DIR/${tdir}2: file create should fail"
 
@@ -3122,11 +3122,108 @@ test_27K() {
 
 	#remove foreign dir
 	rmdir $DIR/$tdir/${tdir}.new ||
-		error "$DIR/$tdir/${tdir}.new: remove of foreign dir has failed"
+		error "$DIR/$tdir/${tdir}.new: remove of foreign dir failed"
 	rmdir $DIR/$tdir/${tdir}2.new ||
-		error "$DIR/$tdir/${tdir}2.new: remove of foreign dir has failed"
+		error "$DIR/$tdir/${tdir}2.new: remove of foreign dir failed"
 }
 run_test 27K "basic ops on dir with foreign LMV"
+
+test_27Ke() {
+	(( $MDS1_VERSION >= $(version_code 2.17.51.24) )) ||
+		skip "need MDS >= 2.17.51.24 for enable_foreign_dir"
+
+	local param=mdt.$FSNAME-*.enable_foreign_dir
+	local param_gid=${param}_gid
+	local foreign_old=($(do_facet mds1 $LCTL get_param -n $param))
+	local foreign_gid_old=($(do_facet mds1 $LCTL get_param -n $param_gid))
+	local foreign_magic="lmv_foreign_magic:.*cd50cd0"
+	local uuid1=$(sysctl -n kernel.random.uuid)
+	local testdir=$DIR/$tdir
+	local mdts=$(mdts_nodes)
+
+	mkdir_on_mdt0 -o 0777 $testdir
+
+	stack_trap "do_nodes $mdts \
+		$LCTL set_param $param=$foreign_old $param_gid=$foreign_gid_old"
+	start_full_debug_logging
+	stack_trap stop_full_debug_logging
+
+	# test with enable_foreign_dir=0: it should fail for all users
+	do_nodes $mdts "$LCTL set_param $param=0" || error "setting $param=0"
+
+	create_foreign_dir -d $testdir/$tdir-0 -x $uuid1 -t 1 &&
+		error "$tdir-0 foreign_dir worked as root with $param=0"
+	[[ ! -e $testdir/$tdir-0 ]] || error "$tdir-0 was created for root"
+	$RUNAS create_foreign_dir -d $testdir/$tdir-0u -x $uuid1 -t 1 &&
+		error "$tdir-0u foreign_dir worked as user with $param=0"
+	[[ ! -e $testdir/$tdir-0u ]] || error "$tdir-0u was created for user"
+
+	# test with enable_foreign_dir=1: _gid=0, OK for root, not others
+	do_nodes $mdts "$LCTL set_param $param=1 $param_gid=0" ||
+		error "setting $param=1, $param_gid=0"
+
+	create_foreign_dir -d $testdir/$tdir-gid0 -x $uuid1 -t 1 ||
+		error "$tdir-gid0 foreign_dir failed for root with _gid=0"
+	parse_foreign_dir -d $testdir/$tdir-gid0 | grep "$foreign_magic" ||
+		error "$tdir-gid0: invalid LMV EA magic"
+	$RUNAS create_foreign_dir -d $testdir/$tdir-gid0u -x $uuid1 -t 1 &&
+		error "$tdir-gid0u foreign_dir worked for user GID=$RUNAS_GID"
+	[[ ! -e $testdir/$tdir-gid0u ]] ||
+		error "$tdir-gid0u created for non-root user"
+
+	# test with enable_foreign_dir=1: _gid=$RUNAS_GID, OK for root,RUNAS_GID
+	do_nodes $mdts "$LCTL set_param $param_gid=$RUNAS_GID" ||
+		error "setting $param_gid=$RUNAS_GID"
+
+	create_foreign_dir -d $testdir/$tdir-gidRG -x $uuid1 -t 1 ||
+		error "$tdir-gidRG foreign_dir failed for root GID=$RUNAS_GID"
+	parse_foreign_dir -d $testdir/$tdir-gidRG | grep "$foreign_magic" ||
+		error "$tdir-gidRG: invalid LMV EA magic"
+	$RUNAS create_foreign_dir -d $testdir/$tdir-gidRGu -x $uuid1 -t 1 ||
+		error "$tdir-gidRGu foreign_dir failed for user GID=$RUNAS_GID"
+	parse_foreign_dir -d $testdir/$tdir-gidRGu | grep "$foreign_magic" ||
+		error "$tdir-gidRGu: invalid LMV EA magic"
+
+	# test with wrong primary GID (no secondary groups) should fail
+	local runas="$RUNAS -u $TSTUSR2 -g $TSTUSR2"
+	$runas create_foreign_dir -d $testdir/$tdir-gidRGn -x $uuid1 -t 1 &&
+		error "$tdir-gidRGn foreign_dir worked with GID!=$RUNAS_GID"
+	[[ ! -e $testdir/$tdir-gidRGn ]] ||
+		error "$tdir-gidRGn created for non-root user GID!=$RUNAS_GID"
+
+	# test with wrong primary, but correct secondary GID should work
+	local tst_gids=$(do_facet mds1 id -G $TSTUSR | tr ' ' ',')
+	local new_gids="$tst_gids,$RUNAS_ID"
+	local runas="$RUNAS -u $TSTUSR -g $TSTUSR -G$new_gids"
+
+	stack_trap "do_nodes $mdts usermod -G $tst_gids $TSTUSR"
+	do_nodes $mdts usermod -a -G $RUNAS_ID $TSTUSR ||
+		error "can't add $TSTUSR to group $RUNAS_ID"
+
+	echo "using $TSTUSR with secondary groups $new_gids"
+	do_nodes $mdts "grep ':$RUNAS_ID:' /etc/group"
+	do_nodes $mdts "id $TSTUSR"
+	do_nodes $mdts "$L_GETIDENTITY -d $(id -u $TSTUSR)"
+
+	$runas create_foreign_dir -d $testdir/$tdir-gidRGs -x $uuid1 -t 1 ||
+		error "$tdir-gidRGs foreign_dir failed with secondary GID"
+	parse_foreign_dir -d $testdir/$tdir-gidRGs | grep "$foreign_magic" ||
+		error "$tdir-gidRGs: invalid LMV EA magic"
+
+	# test with enable_foreign_dir=1: _gid=-1, OK for everyone
+	do_nodes $mdts "$LCTL set_param $param_gid=-1" ||
+		error "setting $param_gid=-1"
+
+	create_foreign_dir -d $testdir/$tdir-gid-1 -x $uuid1 -t 1 ||
+		error "$tdir-gid-1 foreign_dir failed as root with _gid=-1"
+	parse_foreign_dir -d $testdir/$tdir-gid-1 | grep "$foreign_magic" ||
+		error "$tdir-gid-1: invalid LMV EA magic"
+	$RUNAS create_foreign_dir -d $testdir/$tdir-gid-1u -x $uuid1 -t 1 ||
+		error "$tdir-gid-1u foreign_dir failed as user with _gid=-1"
+	parse_foreign_dir -d $testdir/$tdir-gid-1u | grep "$foreign_magic"||
+		error "$tdir-gid-1u: invalid LMV EA magic"
+}
+run_test 27Ke "test enable_foreign_dir and enable_foreign_dir_gid"
 
 test_27L() {
 	remote_mds_nodsh && skip "remote MDS with nodsh"
@@ -29528,7 +29625,7 @@ test_300ne()
 
 	do_nodes $mdts "grep ':$RUNAS_ID:' /etc/group"
 	do_nodes $mdts "id $TSTUSR"
-	do_nodes $mdts "$L_GETIDENTITY -d $TSTUSR"
+	do_nodes $mdts "$L_GETIDENTITY -d $(id -u $TSTUSR)"
 
 	# mkdir _gid=N with explicit setstripe, should work for secondary group
 	$runas $LFS mkdir -i 1 $DIR/$tdir/secondary_dir ||

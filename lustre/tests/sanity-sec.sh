@@ -7347,24 +7347,26 @@ test_64a() {
 	local lqa_quota=""
 	local rbac
 
-	(( MDS1_VERSION >= $(version_code 2.15.54) )) ||
-		skip "Need MDS >= 2.15.54 for role-based controls"
+	(( MDS1_VERSION >= $(version_code v2_15_54-111-g971e025f5f) )) ||
+		skip "Need MDS >= 2.15.54.111 for role-based controls"
 
-	(( MDS1_VERSION >= $(version_code 2.16.50) )) &&
+	(( MDS1_VERSION >= $(version_code v2_16_50-98-g3b04d6ac1d) )) &&
 		srv_uc="server_upcall"
 
-	(( MDS1_VERSION >= $(version_code 2.16.52) )) &&
+	(( MDS1_VERSION >= $(version_code v2_16_52-135-gf7495bc57f) )) &&
 		local_admin="local_admin"
 
-	(( MDS1_VERSION >= $(version_code 2.16.57) )) &&
+	(( MDS1_VERSION >= $(version_code v2_16_57-139-g8b2d38ee74) )) &&
 		pool_quota="pool_quota_ops"
 
-	(( MDS1_VERSION >= $(version_code 2.17.50) )) &&
+	(( MDS1_VERSION >= $(version_code v2_17_52-1-gedcf58d579) )) &&
 		lqa_quota="lqa_quota_ops"
 
-	local projid_set=""
-	(( MDS1_VERSION >= $(version_code 2.17.50) )) &&
+	(( MDS1_VERSION >= $(version_code 2.17.52) )) &&
 		projid_set="projid_set"
+
+	(( MDS1_VERSION >= $(version_code 2.17.52) )) &&
+		foreign_ops="foreign_ops"
 
 	stack_trap cleanup_local_client_nodemap EXIT
 	mkdir -p $DIR/$tdir || error "mkdir $DIR/$tdir failed"
@@ -7383,6 +7385,7 @@ test_64a() {
 		    $pool_quota \
 		    $lqa_quota \
 		    $projid_set \
+		    $foreign_ops \
 		    ;
 	do
 		[[ "$rbac" =~ "$role" ]] ||
@@ -7623,16 +7626,16 @@ test_64c() {
 	local srv_uc=""
 	local rbac
 
-	(( MDS1_VERSION >= $(version_code 2.15.54) )) ||
-		skip "Need MDS >= 2.15.54 for role-based controls"
+	(( MDS1_VERSION >= $(version_code v2_15_54-111-g971e025f5f) )) ||
+		skip "Need MDS >= 2.15.54.111 for role-based controls"
 
-	(( MDS1_VERSION >= $(version_code 2.16.50) )) &&
+	(( MDS1_VERSION >= $(version_code v2_16_50-98-g3b04d6ac1d) )) &&
 		srv_uc="server_upcall"
 
-	(( MDS1_VERSION >= $(version_code 2.16.57) )) &&
+	(( MDS1_VERSION >= $(version_code v2_16_57-139-g8b2d38ee74) )) &&
 		pool_quota="pool_quota_ops"
 
-	(( MDS1_VERSION >= $(version_code 2.17.50) )) &&
+	(( MDS1_VERSION >= $(version_code v2_17_52-1-gedcf58d579) )) &&
 		lqa_quota="lqa_quota_ops"
 
 	stack_trap cleanup_local_client_nodemap EXIT
@@ -8617,8 +8620,8 @@ test_64j() {
 	local srv_uc=""
 	local rbac
 
-	(( MDS1_VERSION >= $(version_code 2.17.50) )) ||
-		skip "Need MDS >= 2.17.50 for this test"
+	(( MDS1_VERSION >= $(version_code 2.17.52) )) ||
+		skip "Need MDS >= 2.17.50 for projid_set RBAC role"
 
 	(( MDS1_VERSION >= $(version_code v2_16_50-98-g3b04d6ac1d) )) &&
 		srv_uc="server_upcall"
@@ -8769,6 +8772,81 @@ test_64j() {
 		error "expected dir projid $projid, got $dir_projid (3)"
 }
 run_test 64j "Nodemap enforces projid_set RBAC role"
+
+test_64k() {
+	(( MDS1_VERSION >= $(version_code 2.17.52-4) )) ||
+		skip "Need MDS >= 2.17.52.4 for foreign_ops RBAC role"
+
+	local param=mdt.$FSNAME-*.enable_foreign_dir
+	local param_gid=${param}_gid
+	local foreign_old=($(do_facet mds1 $LCTL get_param -n $param))
+	local foreign_gid_old=($(do_facet mds1 $LCTL get_param -n $param_gid))
+	local foreign_magic="lmv_foreign_magic:.*cd50cd0"
+	local uuid1=$(sysctl -n kernel.random.uuid)
+	local testdir=$DIR/$tdir
+	local srv_uc=""
+	local rbac
+	local prop
+
+	(( MDS1_VERSION >= $(version_code v2_16_50-98-g3b04d6ac1d) )) &&
+		srv_uc="server_upcall"
+
+	stack_trap cleanup_local_client_nodemap
+	setup_local_client_nodemap "c0" 1 1
+
+	mkdir_on_mdt0 -o 777 $testdir
+
+	# enable foreign directory ops for everyone (should be the default)
+	# assume basic foreign_dir create is working due to sanity test_27Ke
+	do_facet mds1 "$LCTL set_param $param=1 $param_gid=-1" ||
+		error "setting $param=1 $param_gid=-1"
+	stack_trap "do_facet mds1 \
+		$LCTL set_param $param=$foreign_old $param_gid=$foreign_gid_old"
+
+	# test with RBAC foreign_ops *disabled* should *fail* for everyone
+	rbac=${srv_uc:-"none"}
+	do_facet mgs "$LCTL nodemap_modify --name c0 --property rbac=$rbac" ||
+		error "disabling rbac=$rbac failed"
+	wait_nm_sync c0 rbac
+	prop=$(do_facet mds1 "$LCTL nodemap_info --name c0 --property rbac")
+	[[ "$prop" =~ $rbac ]] || error "$prop, missing $rbac"
+
+	create_foreign_dir -d $testdir/$tdir-0 -x "$uuid1" -t 1 &&
+		error "foreign_dir succeeded for root with rbac=$rbac"
+	[[ ! -e $testdir/$tdir-0 ]] ||
+		error "$tdir-0 created for root with rbac=$rbac"
+	$RUNAS create_foreign_dir -d $testdir/$tdir-gid-0u -x $uuid1 -t 1 &&
+		error "foreign_dir succeeded for user with rbac=$rbac"
+	[[ ! -e $testdir/$tdir-0u ]] ||
+		error "$tdir-0u created for user with rbac=$rbac"
+
+	# test with RBAC foreign_ops *enabled*, should *work* for everyone
+	rbac="foreign_ops"
+	[[ -z "$srv_uc" ]] || rbac+=",$srv_uc"
+	do_facet mgs "$LCTL nodemap_modify --name c0 --property rbac=$rbac" ||
+		error "enabling rbac=$rbac failed"
+	wait_nm_sync c0 rbac
+	prop=$(do_facet mds1 "$LCTL nodemap_info --name c0 --property rbac")
+	[[ "$prop" =~ "foreign_ops" ]] || error "$prop, missing 'foreign_ops'"
+
+	create_foreign_dir -d $testdir/$tdir-1 -x "$uuid1" -t 1 ||
+		error "foreign_dir failed for root with rbac=$rbac"
+	parse_foreign_dir -d $testdir/$tdir-1 | grep "$foreign_magic" ||
+		error "$testdir/$tdir-1: invalid LMV EA magic for -1"
+	$RUNAS create_foreign_dir -d $testdir/$tdir-gid-1u -x $uuid1 -t 1 ||
+		error "foreign_dir failed for user with rbac=$rbac"
+	parse_foreign_dir -d $testdir/$tdir-gid-1u | grep "$foreign_magic" ||
+		error "$testdir/$tdir-gid-1u: invalid LMV EA magic for -gid-1u"
+
+	# test with foreign_ops *enabled*, globally *disabled* should *fail*
+	do_facet mds1 "$LCTL set_param $param=0" || error "setting $param=0"
+
+	create_foreign_dir -d $testdir/$tdir-gd -x "$uuid1" -t 1 &&
+		error "foreign_dir succeeded for root with $param=0 rbac=$rbac"
+	[[ ! -e $testdir/$tdir-gd ]] ||
+		error "$tdir-gd created for root with $param=0 rbac=$rbac"
+}
+run_test 64k "Nodemap enforces foreign_ops RBAC roles"
 
 look_for_files() {
 	local pattern=$1

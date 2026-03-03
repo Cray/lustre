@@ -12474,6 +12474,7 @@ function restore_opencache()
 # LU-13417: XXX lots of tests assume the directory to be created under MDT0,
 # created on MDT0, use this function to create directory on specific MDT
 # explicitly, and set default LMV to create subdirs on the same MDT too.
+# It is better to make subtests run on arbitrary MDTs, but is more work.
 mkdir_on_mdt() {
 	local mdt
 	local mode

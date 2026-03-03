@@ -124,17 +124,25 @@ int main(int argc, char **argv)
 			break;
 
 		case 'G':
-			if (!optarg || !isdigit(optarg[0])) {
-				fprintf(stderr,
-					"Provided parameter '%s' for option '-G' is bad\n",
-					optarg);
-				Usage_and_abort(name);
-				break;
-			}
 			num_supp = 0;
 			while ((grp = strsep(&optarg, ",")) != NULL) {
-				printf("adding supp group %d\n", atoi(grp));
-				supp_groups[num_supp++] = atoi(grp);
+				gid_t supp_gid;
+
+				if (isdigit(*grp)) {
+					supp_gid = atoi(grp);
+				} else {
+					struct group *gr = getgrnam(optarg);
+
+					if (!gr) {
+						fprintf(stderr,
+							"getgrname %s failed\n",
+							grp);
+						Usage_and_abort(name);
+					}
+					supp_gid = (gid_t)gr->gr_gid;
+				}
+				printf("adding supp group %d\n", supp_gid);
+				supp_groups[num_supp++] = supp_gid;
 				if (num_supp >= NGROUPS_MAX)
 					break;
 			}

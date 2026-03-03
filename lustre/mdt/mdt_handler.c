@@ -6580,6 +6580,8 @@ static int mdt_init0(const struct lu_env *env, struct mdt_device *m,
 	m->mdt_enable_dir_migration = 1;
 	m->mdt_enable_dir_restripe = 0;
 	m->mdt_enable_dir_auto_split = 0;
+	m->mdt_enable_foreign_dir = 1;
+	m->mdt_enable_foreign_dir_gid = -1;
 	m->mdt_enable_parallel_rename_dir = 1;
 	m->mdt_enable_parallel_rename_file = 1;
 	m->mdt_enable_parallel_rename_crossdir = 1;
@@ -7334,6 +7336,7 @@ static int mdt_ctxt_add_dirty_flag(struct lu_env *env,
 	mdt_ucred(info)->uc_rbac_pool_quota_ops = 1;
 	mdt_ucred(info)->uc_rbac_lqa_quota_ops = 1;
 	mdt_ucred(info)->uc_rbac_projid_set = 1;
+	mdt_ucred(info)->uc_rbac_foreign_ops = 1;
 	rc = mdt_add_dirty_flag(info, mfd->mfd_object, &info->mti_attr);
 
 	lu_context_exit(&ses);

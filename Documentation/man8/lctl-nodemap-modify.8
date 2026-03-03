@@ -137,41 +137,81 @@ Existing clients remain operational until a remount is attempted.
 .TP
 .B rbac
 Property available on regular nodemaps but also on the default nodemap.
-Defaults to all, which means all roles are allowed. Other possible values
-(multiple can be specified, comma separated) are:
-.EX
-- byfid_ops, to allow operations by FID (e.g. 'lfs rmfid').
-- chlg_ops, to allow access to Lustre Changelogs.
-- dne_ops, to allow operations related to DNE (e.g. 'lfs mkdir').
-- file_perms, to allow modifications of file permissions and owners.
-.EE
-- fscrypt_admin, to allow fscrypt related admin tasks
-(create or modify protectors/policies). Note that even without this role,
+Defaults to
+.RB ' all ',
+which means all roles are allowed.
+Other possible values (multiple can be specified, comma separated) are:
+.br
+.RB - byfid_ops ,
+allow operations by FID (e.g.
+.BR lfs-rmfid (1),
+.BR lfs-fid2path (1)).
+.br
+.RB - chlg_ops ,
+allow use of Changelogs (e.g.
+.BR lfs-changelog (1)).
+.br
+.RB - dne_ops ,
+allow client DNE operations (e.g.
+.BR lfs-setdirstripe (1)).
+.br
+.RB - file_perms ,
+allow changing file permissions and owners (e.g.
+.BR chmod (1),
+.BR chown (1)).
+.br
+.RB - fscrypt_admin ,
+allow fscrypt related admin tasks (create or modify protectors/policies).
+Note that even without this role,
 it is still possible to lock or unlock encrypted directories,
 as these operations only need read access to fscrypt metadata.
 .br
-- hsm_ops, to control whether clients can carry out HSM actions.
+.RB - foreign_ops ,
+create foreign dirs (e.g.
+.RB ' "lfs setdirstripe --foreign" ').
 .br
-- ignore_root_prjquota, so that project quota is not enforced for the root user.
+.RB - hsm_ops ,
+allow client HSM operations (e.g.
+.BR lfs-hsm (1)).
 .br
-- local_admin, to allow mapped root to perform admin operations on files, unless
-it is squashed. This role is not available on the default nodemap, as there are
-no possible id mappings or offsets on the default nodemap.
+.RB - ignore_root_prjquota ,
+project quota not enforced for root user.
 .br
-- projid_set, to allow setting project ID on files and directories.
+.RB - local_admin ,
+allow mapped root file operations, unless squashed (e.g.
+.BR chown (1),
+.BR chgrp (1)).
+Unavailable on default nodemap, as there are id mappings or offsets
+possible on the default nodemap.
 .br
-- quota_ops, to allow UID/GID/ProjID quota modifications.
+.RB - quota_ops ,
+allow UID/GID/ProjID quota changes (e.g.
+.BR lfs-setquota (1)).
 .br
-- pool_quota_ops, to allow pool quota modifications.
+.RB - lqa_quota_ops ,
+to allow LQA quota modifications (e.g.
+.BR lctl-lqa "(8), '" "lfs setquota --lqa" ').
 .br
-- lqa_quota_ops, to allow LQA quota modifications.
+.RB - pool_quota_ops ,
+allow pool quota changes (e.g.
+.RB ' "lfs setquota --pool" ').
 .br
-- server_upcall, to define which identity upcall to use. If set, identity upcall
-is defined by server side tunable. If not set, identity upcall is forced to
-INTERNAL, so that servers trust supplementary groups as provided by clients.
+.RB - projid_set ,
+to allow setting project ID on files and directories (e.g..
+.BR lfs-project (1),
+.BR chattr (1)).
 .br
-Apart from all, any role not explicitly specified is forbidden.
-And to forbid all roles, use 'none' value.
+.RB - server_upcall ,
+to define which identity upcall to use (see
+.BR mdt.identity_upcall (4)).
+If set, identity upcall is defined by server side tunable.
+If not set, identity upcall is forced to INTERNAL,
+so that servers trust supplementary groups as provided by clients.
+.br
+Apart from
+.RB ' all ',
+any role not explicitly specified is forbidden.  To forbid all roles, use
+.RB ' none '.
 .TP
 .B gssonly_identification
 If set to 1, clients for this nodemap are no longer identified based on their
@@ -207,6 +247,9 @@ filesystem package since release 2.6.0
 .\" Added in commit v2_5_56_0-13-g4642f30970
 .SH SEE ALSO
 .BR lustre (7),
+.BR mdt.enable_foreign_dir (4),
+.BR mdt.enable_remote_dir (4),
+.BR mdt.identity_upcall (4),
 .BR lctl-nodemap-activate (8),
 .BR lctl-nodemap-add-idmap (8),
 .BR lctl-nodemap-add-offset (8),

@@ -33,19 +33,20 @@ static const struct nodemap_rbac_name {
 	enum nodemap_rbac_roles nrn_mode;
 	const char	       *nrn_name;
 } nodemap_rbac_names[] = {
-	{ NODEMAP_RBAC_FILE_PERMS,	"file_perms"	},
-	{ NODEMAP_RBAC_DNE_OPS,		"dne_ops"	},
-	{ NODEMAP_RBAC_QUOTA_OPS,	"quota_ops"	},
-	{ NODEMAP_RBAC_BYFID_OPS,	"byfid_ops"	},
-	{ NODEMAP_RBAC_CHLG_OPS,	"chlg_ops"	},
-	{ NODEMAP_RBAC_FSCRYPT_ADMIN,   "fscrypt_admin"	},
-	{ NODEMAP_RBAC_SERVER_UPCALL,	"server_upcall"	},
-	{ NODEMAP_RBAC_IGN_ROOT_PRJQUOTA,	"ignore_root_prjquota"	},
-	{ NODEMAP_RBAC_HSM_OPS,		"hsm_ops"	},
-	{ NODEMAP_RBAC_LOCAL_ADMIN,	"local_admin"	},
-	{ NODEMAP_RBAC_POOL_QUOTA_OPS,	"pool_quota_ops"	},
-	{ NODEMAP_RBAC_LQA_QUOTA_OPS,	"lqa_quota_ops"	},
-	{ NODEMAP_RBAC_PROJID_SET,	"projid_set"	},
+	{ NODEMAP_RBAC_FILE_PERMS,	"file_perms"		 },
+	{ NODEMAP_RBAC_DNE_OPS,		"dne_ops"		 },
+	{ NODEMAP_RBAC_QUOTA_OPS,	"quota_ops"		 },
+	{ NODEMAP_RBAC_BYFID_OPS,	"byfid_ops"		 },
+	{ NODEMAP_RBAC_CHLG_OPS,	"chlg_ops"		 },
+	{ NODEMAP_RBAC_FSCRYPT_ADMIN,   "fscrypt_admin"		 },
+	{ NODEMAP_RBAC_SERVER_UPCALL,	"server_upcall"		 },
+	{ NODEMAP_RBAC_IGN_ROOT_PRJQUOTA, "ignore_root_prjquota" },
+	{ NODEMAP_RBAC_HSM_OPS,		"hsm_ops"		 },
+	{ NODEMAP_RBAC_LOCAL_ADMIN,	"local_admin"		 },
+	{ NODEMAP_RBAC_POOL_QUOTA_OPS,	"pool_quota_ops"	 },
+	{ NODEMAP_RBAC_LQA_QUOTA_OPS,	"lqa_quota_ops"		 },
+	{ NODEMAP_RBAC_PROJID_SET,	"projid_set"		 },
+	{ NODEMAP_RBAC_FOREIGN_OPS,	"foreign_ops"		 },
 };
 
 static const struct nodemap_captype_name {
