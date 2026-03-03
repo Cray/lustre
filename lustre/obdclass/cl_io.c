@@ -1321,7 +1321,7 @@ static void cl_sub_dio_end(const struct lu_env *env, struct cl_sync_io *anchor)
 		if (!sdio->csd_write && sdio->csd_bytes > 0)
 			ret = ll_dio_user_copy(sdio);
 		ll_free_dio_buffer(cdp);
-		/* handle the freeing here rather than in cl_sub_dio_free
+		/* handle freeing here rather than in cl_sub_dio_free
 		 * because we have the unmodified iovec pointer
 		 */
 		csd_dup_free(&sdio->csd_dup);
@@ -1491,15 +1491,16 @@ int ll_allocate_dio_buffer(struct cl_dio_pages *cdp, size_t io_size)
 	if (cdp->cdp_pages == NULL)
 		GOTO(out, result = -ENOMEM);
 
+	if (CFS_FAIL_CHECK(OBD_FAIL_LLITE_DIO_BUFFER_ALLOC))
+		GOTO(out, result = -ENOMEM);
+
 	result = obd_pool_get_pages_array(cdp->cdp_pages, cdp->cdp_page_count);
 	if (result)
 		GOTO(out, result);
 
 out:
-	if (result) {
-		if (cdp->cdp_pages)
-			ll_free_dio_buffer(cdp);
-	}
+	if (result)
+		ll_free_dio_buffer(cdp);
 
 	if (result == 0)
 		result = cdp->cdp_page_count;
@@ -1510,6 +1511,9 @@ EXPORT_SYMBOL(ll_allocate_dio_buffer);
 
 void ll_free_dio_buffer(struct cl_dio_pages *cdp)
 {
+	if (!cdp->cdp_pages)
+		return;
+
 	obd_pool_put_pages_array(cdp->cdp_pages, cdp->cdp_page_count);
 
 #ifdef HAVE_DIO_ITER
@@ -1517,6 +1521,7 @@ void ll_free_dio_buffer(struct cl_dio_pages *cdp)
 #else
 	OBD_FREE_PTR_ARRAY_LARGE(cdp->cdp_pages, cdp->cdp_page_count);
 #endif
+	cdp->cdp_pages = NULL;
 }
 EXPORT_SYMBOL(ll_free_dio_buffer);
 
