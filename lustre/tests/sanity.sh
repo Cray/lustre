@@ -34218,7 +34218,7 @@ test_906() {
 }
 run_test 906 "Simple test for io_uring I/O engine via fio"
 
-test_907() {
+test_907a() {
 	local max_pages=$($LCTL get_param -n osc.*.max_pages_per_rpc | head -n1)
 
 	# set stripe size to max rpc size
@@ -34234,7 +34234,37 @@ test_907() {
 
 	rm $DIR/$tfile || error "rm failed"
 }
-run_test 907 "write rpc error during unlink"
+run_test 907a "write rpc error during unlink"
+
+test_907b() {
+	local ppr=$($LCTL get_param -n mdc.*-MDT0000-*.max_pages_per_rpc | \
+		    head -n1)
+	local bs=$((ppr * PAGE_SIZE / 16))
+
+	mount_client $DIR2 || error "mount_client on $MOUNT2 failed"
+	stack_trap "umount $DIR2" EXIT
+
+	$LFS setstripe -E $((ppr * PAGE_SIZE)) -L mdt -E -1  -c 1 -i 0 \
+	     $DIR/$tfile
+	dd bs=1M count=2 if=/dev/zero of=$DIR/$tfile
+
+	#define OBD_FAIL_OST_EROFS               0x216
+	# fail_val is 2 to return ENOENT from write RPC
+	do_facet mds1 $LCTL set_param fail_loc=0x80000216 fail_val=2
+
+	# write full mdt component and one block
+	dd conv=notrunc bs=$bs count=17 if=/dev/zero of=$DIR/$tfile
+	sleep 0.5
+
+	# open the file by another client to prevent
+	# mdt_dom_discard_data being called from mdt_reint_unlink()
+	$MULTIOP $DIR2/$tfile oO_RDONLY:_c &
+	MULTIPID=$!
+	rm $DIR/$tfile
+	kill -USR1 $MULTIPID
+	wait
+}
+run_test 907b "write mdt rpc error during unlink"
 
 test_909() {
 	(( $MDS1_VERSION >= $(version_code 2.16.1) )) ||
