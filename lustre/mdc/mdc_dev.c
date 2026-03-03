@@ -1192,6 +1192,13 @@ static int mdc_io_fsync_start(const struct lu_env *env,
 	 */
 	result = osc_cache_writeback_range(env, osc, 0, CL_PAGE_EOF, 0,
 					   fio->fi_mode == CL_FSYNC_DISCARD);
+	if (result < 0 && fio->fi_mode == CL_FSYNC_DISCARD) {
+		CDEBUG(D_CACHE,
+		       "%s: ignore error %d on discarding "DFID":[%lu-%lu]\n",
+		       cli_name(osc_cli(osc)), result, PFID(fio->fi_fid),
+		       (pgoff_t)0, CL_PAGE_EOF >> PAGE_SHIFT);
+		result = 0;
+	}
 	if (result > 0) {
 		fio->fi_nr_written += result;
 		result = 0;
