@@ -982,6 +982,11 @@ struct osc_extent {
 	__u32			oe_layout_version;
 };
 
+static inline char *cli_name(struct client_obd *cli)
+{
+	return cli->cl_import->imp_obd->obd_name;
+}
+
 /** @} osc */
 
 #endif /* LUSTRE_OSC_H */

@@ -136,11 +136,6 @@ static inline unsigned long rpcs_in_flight(struct client_obd *cli)
 	return cli->cl_r_in_flight + cli->cl_w_in_flight;
 }
 
-static inline char *cli_name(struct client_obd *cli)
-{
-	return cli->cl_import->imp_obd->obd_name;
-}
-
 static inline char list_empty_marker(struct list_head *list)
 {
 	return list_empty(list) ? '-' : '+';
