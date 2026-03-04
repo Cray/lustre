@@ -121,7 +121,7 @@ int osc_io_submit(const struct lu_env *env, struct cl_io *io,
 	unsigned int ppc_bits; /* pages per chunk bits */
 	unsigned int ppc;
 	bool sync_queue = false;
-	bool dio = false;
+	bool transient = false;
 
 	LASSERT(qin->pl_nr > 0);
 
@@ -140,9 +140,14 @@ int osc_io_submit(const struct lu_env *env, struct cl_io *io,
 		brw_flags |= OBD_BRW_NDELAY;
 
 	page = cl_page_list_first(qin);
+	/*
+	 * Transient pages must not be passed to cl_page_prep() and already
+	 * have their async flags set by osc_prep_async_page().  DIO does not
+	 * reach this path, it uses osc_dio_submit().
+	 */
 	if (page->cp_type == CPT_TRANSIENT) {
 		brw_flags |= OBD_BRW_NOCACHE;
-		dio = true;
+		transient = true;
 	}
 	if (lnet_is_rdma_only_page(page->cp_vmpage))
 		brw_flags |= OBD_BRW_RDMA_ONLY;
@@ -167,7 +172,7 @@ int osc_io_submit(const struct lu_env *env, struct cl_io *io,
 			break;
 		}
 
-		if (!dio) {
+		if (!transient) {
 			result = cl_page_prep(env, top_io, page, crt);
 			if (result != 0) {
 				LASSERT(result < 0);
@@ -183,9 +188,9 @@ int osc_io_submit(const struct lu_env *env, struct cl_io *io,
 			}
 		}
 
-		if (!dio)
-			oap->oap_async_flags = ASYNC_URGENT|ASYNC_READY|
-						ASYNC_COUNT_STABLE;
+		if (!transient)
+			oap->oap_async_flags = ASYNC_URGENT | ASYNC_READY |
+					       ASYNC_COUNT_STABLE;
 
 		osc_page_submit(env, opg, crt, brw_flags);
 		list_add_tail(&oap->oap_pending_item, &list);
