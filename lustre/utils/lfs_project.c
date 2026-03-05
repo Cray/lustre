@@ -216,8 +216,7 @@ project_set_one(const char *pathname, struct project_handle_control *phc)
 		lp.project_xflags = fsx.fsx_xflags;
 		lp.project_id = fsx.fsx_projid;
 		lp.project_type = LU_PROJECT_SET;
-		strncpy(lp.project_name, bname, NAME_MAX);
-		lp.project_name[NAME_MAX] = '\0';
+		strncpy(lp.project_name, bname, sizeof(lp.project_name));
 		ret = ioctl(fd, LL_IOC_PROJECT, &lp);
 	}
 out:
@@ -255,8 +254,7 @@ project_clear_one(const char *pathname, struct project_handle_control *phc)
 		lp.project_xflags = fsx.fsx_xflags;
 		lp.project_id = fsx.fsx_projid;
 		lp.project_type = LU_PROJECT_SET;
-		strncpy(lp.project_name, bname, NAME_MAX);
-		lp.project_name[NAME_MAX] = '\0';
+		strncpy(lp.project_name, bname, sizeof(lp.project_name));
 		ret = ioctl(fd, LL_IOC_PROJECT, &lp);
 	}
 	if (ret)
