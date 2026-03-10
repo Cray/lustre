@@ -5167,6 +5167,7 @@ static int osd_xattr_set(const struct lu_env *env, struct dt_object *dt,
 				     sizeof(*lma), XATTR_REPLACE);
 		if (rc != 0)
 			RETURN(rc);
+		obj->oo_lmv_updated = 1;
 	} else if (strcmp(name, XATTR_NAME_LINK) == 0) {
 		LASSERT(!osd->od_is_ost);
 
@@ -5519,6 +5520,23 @@ static int osd_otable_it_attr_get(const struct lu_env *env,
 	return 0;
 }
 
+static bool osd_check_stale(struct dt_object *dt)
+{
+	struct osd_object *obj = osd_dt_obj(dt);
+
+	return (obj->oo_lmv_updated == 1);
+}
+
+static bool osd_change_stale(struct dt_object *dt, bool val)
+{
+	struct osd_object *obj = osd_dt_obj(dt);
+	bool stale = (obj->oo_lmv_updated == 1);
+
+	obj->oo_lmv_updated = val;
+
+	return stale;
+}
+
 static const struct dt_object_operations osd_obj_ops = {
 	.do_attr_get		= osd_attr_get,
 	.do_declare_attr_set	= osd_declare_attr_set,
@@ -5540,6 +5558,8 @@ static const struct dt_object_operations osd_obj_ops = {
 	.do_xattr_del		= osd_xattr_del,
 	.do_xattr_list		= osd_xattr_list,
 	.do_object_sync		= osd_object_sync,
+	.do_check_stale		= osd_check_stale,
+	.do_change_stale	= osd_change_stale,
 };
 
 static const struct dt_object_operations osd_obj_otable_it_ops = {
