@@ -294,7 +294,7 @@ command_t llog_cmdlist[] = {
 	{ .pc_name = "print", .pc_func = jt_llog_print,
 	  .pc_help = "print the content of a configuration log\n"
 	 "usage: llog print {LOGNAME|FID} [--start INDEX] [--end INDEX]\n"
-	 "		    [--raw]"},
+	 "                  [--raw]"},
 	{ .pc_name = "cancel", .pc_func = jt_llog_cancel,
 	  .pc_help = "cancel one record in specified log.\n"
 	 "usage:llog cancel {LOGNAME|FID} --log_idx INDEX"},
@@ -779,7 +779,7 @@ command_t cmdlist[] = {
 	 "print all effective log records by default, or within given range.\n"
 	 "With --raw option skipped records are printed as well.\n"
 	 "usage: llog_print {LOGNAME|FID} [--start INDEX] [--end INDEX]\n"
-	 "		    [--raw]"},
+	 "                  [--raw]"},
 	{"llog_cancel", jt_llog_cancel, 0,
 	 "cancel one record in specified log.\n"
 	 "usage:llog_cancel {LOGNAME|FID} --log_idx INDEX"},
