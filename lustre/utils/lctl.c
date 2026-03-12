@@ -914,7 +914,7 @@ command_t cmdlist[] = {
 	{"getobjversion", jt_get_obj_version, 0,
 	 "get the version of an object on servers\n"
 	 "usage: getobjversion <fid>\n"
-	 "	 getobjversion -i <id> -g <group>"},
+	 "       getobjversion -i <id> -g <group>"},
 	{ 0, 0, 0, NULL }
 };
 
