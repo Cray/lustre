@@ -482,13 +482,14 @@ command_t cmdlist[] = {
 	 "                 PARAM1 [PARAM2 ...]\n"},
 	{"set_param", jt_lcfg_setparam, 0, "set the Lustre or LNET parameter\n"
 	 "set the value of the Lustre or LNET parameter at the specified path.\n"
-	 "usage: set_param [--client|-C[FSNAME]] [--delete|-d] [--no-name|-n]\n"
-	 "		   [--file|-F YAML_PARAM FILE] [--module|-o] [--permanent|-P]\n"
+	 "usage: set_param [--client|-C[FSNAME]] [--delete|-d]\n"
+	 "                 [--file|-F YAML_PARAM_FILE] [--no-name|-n] [--module|-o]\n"
+	 "                 [--permanent|-P]"
 #ifdef HAVE_LIBPTHREAD
 	 " [--thread|-t[THREAD_COUNT]]"
 #endif
 	 "\n"
-	 "		 PARAM1=VALUE1 [PARAM2=VALUE2 ...]\n"},
+	 "                 PARAM1=VALUE1 [PARAM2=VALUE2 ...]\n"},
 	{"apply_yaml", jt_lcfg_applyyaml, 0, "alias for 'set_param -F'\n"
 	 "usage: apply_yaml YAML_PARAM_FILE\n"},
 	{"list_param", jt_lcfg_listparam, 0,
