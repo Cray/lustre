@@ -5241,6 +5241,8 @@ static int ll_file_flock(struct file *file, int cmd,
 				rc = rc2;
 			}
 		}
+		if (rc == -ESHUTDOWN && file_lock->C_FLC_TYPE == F_UNLCK)
+			rc = 0;
 		OBD_FREE_PTR(cb_data);
 		cb_data = NULL;
 	}
