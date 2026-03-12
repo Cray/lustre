@@ -316,23 +316,23 @@ command_t lfsck_cmdlist[] = {
 	{ .pc_name = "start", .pc_func = jt_lfsck_start,
 	  .pc_help = "Start online Lustre File System Check.\n"
 	 "usage: lfsck start [--device|-M {MDT,OST}_DEVICE]\n"
-	 "		     [--all|-A] [--create-ostobj|-c [on | off]]\n"
-	 "		     [--create-mdtobj|-C [on | off]]\n"
-	 "		     [--delay-create-ostobj|-d [on | off]]\n"
-	 "		     [--error|-e {continue | abort}] [--help|-h]\n"
-	 "		     [--dryrun|-n [on | off]] [--orphan|-o]\n"
-	 "		     [--reset|-r] [--speed|-s SPEED_LIMIT]\n"
-	 "		     [--type|-t {all|default|scrub|layout|namespace}]\n"
-	 "		     [--window-size|-w SIZE]"},
+	 "                   [--all|-A] [--create-ostobj|-c [on | off]]\n"
+	 "                   [--create-mdtobj|-C [on | off]]\n"
+	 "                   [--delay-create-ostobj|-d [on | off]]\n"
+	 "                   [--error|-e {continue | abort}] [--help|-h]\n"
+	 "                   [--dryrun|-n [on | off]] [--orphan|-o]\n"
+	 "                   [--reset|-r] [--speed|-s SPEED_LIMIT]\n"
+	 "                   [--type|-t {all|default|scrub|layout|namespace}]\n"
+	 "                   [--window-size|-w SIZE]"},
 	{ .pc_name = "stop", .pc_func = jt_lfsck_stop,
 	  .pc_help = "Stop online Lustre File System Check.\n"
 	 "usage: lfsck stop [--device|-M {MDT,OST}_DEVICE]\n"
-	 "		    [--all|-A] [--help|-h]"},
+	 "                  [--all|-A] [--help|-h]"},
 	{ .pc_name = "query", .pc_func = jt_lfsck_query,
 	  .pc_help = "Get Lustre File System Check global status.\n"
 	 "usage: lfsck query [--device|-M MDT_DEVICE] [--help|-h]\n"
-	 "		     [--type|-t {all|default|scrub|layout|namespace}]\n"
-	 "		     [--wait|-w]"},
+	 "                   [--type|-t {all|default|scrub|layout|namespace}]\n"
+	 "                   [--wait|-w]"},
 	{ .pc_help = NULL }
 };
 JT_SUBCMD(lfsck);
@@ -749,21 +749,21 @@ command_t cmdlist[] = {
 	{"==== LFSCK ====", NULL, 0, "LFSCK"},
 	{"lfsck_start", jt_lfsck_start, 0, "start LFSCK\n"
 	 "usage: lfsck_start [--device|-M [MDT,OST]_device]\n"
-	 "		     [--all|-A] [--create-ostobj|-c [on | off]]\n"
-	 "		     [--create-mdtobj|-C [on | off]]\n"
-	 "		     [--delay-create-ostobj|-d [on | off]]\n"
-	 "		     [--error|-e {continue | abort}] [--help|-h]\n"
-	 "		     [--dryrun|-n [on | off]] [--orphan|-o]\n"
-	 "		     [--reset|-r] [--speed|-s speed_limit]\n"
-	 "		     [--type|-t lfsck_type[,lfsck_type...]]\n"
-	 "		     [--window-size|-w size]"},
+	 "                   [--all|-A] [--create-ostobj|-c [on | off]]\n"
+	 "                   [--create-mdtobj|-C [on | off]]\n"
+	 "                   [--delay-create-ostobj|-d [on | off]]\n"
+	 "                   [--error|-e {continue | abort}] [--help|-h]\n"
+	 "                   [--dryrun|-n [on | off]] [--orphan|-o]\n"
+	 "                   [--reset|-r] [--speed|-s speed_limit]\n"
+	 "                   [--type|-t lfsck_type[,lfsck_type...]]\n"
+	 "                   [--window-size|-w size]"},
 	{"lfsck_stop", jt_lfsck_stop, 0, "stop lfsck(s)\n"
 	 "usage: lfsck_stop [--device|-M [MDT,OST]_device]\n"
-	 "		    [--all|-A] [--help|-h]"},
+	 "                  [--all|-A] [--help|-h]"},
 	{"lfsck_query", jt_lfsck_query, 0, "check lfsck(s) status\n"
 	 "usage: lfsck_query [--device|-M MDT_device] [--help|-h]\n"
-	 "		     [--type|-t lfsck_type[,lfsck_type...]]\n"
-	 "		     [--wait|-w]"},
+	 "                   [--type|-t lfsck_type[,lfsck_type...]]\n"
+	 "                   [--wait|-w]"},
 	{"lfsck", jt_lfsck, lfsck_cmdlist, ""},
 
 	/* Llog operations */
