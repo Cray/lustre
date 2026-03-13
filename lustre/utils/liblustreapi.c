@@ -1908,13 +1908,10 @@ static void lov_dump_user_lmm_header(struct lov_user_md *lum, char *path,
 		if (verbose & ~VERBOSE_PATTERN)
 			llapi_printf(LLAPI_MSG_NORMAL, "%s%spattern:       ",
 				     space, prefix);
-		if (lov_pattern_available(lum->lmm_pattern))
-			llapi_printf(LLAPI_MSG_NORMAL, "%s",
-				     llapi_lov_pattern_string(lum->lmm_pattern,
-							buf, sizeof(buf)) ?:
-							"overflow");
-		else
-			llapi_printf(LLAPI_MSG_NORMAL, "%x", lum->lmm_pattern);
+		llapi_printf(LLAPI_MSG_NORMAL, "%s",
+			     llapi_lov_pattern_string(lum->lmm_pattern,
+						      buf, sizeof(buf)) ?:
+						      "overflow");
 		separator = (!yaml && is_dir) ? " " : "\n";
 	}
 

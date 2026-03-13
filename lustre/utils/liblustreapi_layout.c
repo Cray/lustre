@@ -2033,13 +2033,13 @@ static struct {
 	enum lov_pattern	 llpn_pattern;
 	const char		*llpn_pattern_name;
 } lov_pattern_names[] = {
+	{ LOV_PATTERN_BAD,		"bad" },
 	{ LOV_PATTERN_RAID0,		"raid0" },
 	{ LOV_PATTERN_RAID1,		"raid1" },
 	{ LOV_PATTERN_PARITY,		"parity" },
 	{ LOV_PATTERN_MDT,		"mdt" },
 	{ LOV_PATTERN_OVERSTRIPING,	"overstriped" },  /* getstripe */
 	{ LOV_PATTERN_OVERSTRIPING,	"overstriping" }, /* setstripe compat */
-	{ LOV_PATTERN_BAD,		"bad" },
 	{ LOV_PATTERN_FOREIGN,		"foreign" },
 	{ LOV_PATTERN_COMPRESS,		"compress" },
 	{ LOV_PATTERN_F_HOLE,		"hole" },

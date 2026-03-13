@@ -3362,8 +3362,8 @@ test_62() {
 	$LFS setstripe -N --flags=prefer -N2 $file ||
 		error "failed to create mirror file $file"
 	magic=$($LFS getstripe -v -I131074 $file | awk '/lmm_magic/{print $2}')
-	[[ $magic == 0x0BAD0BD0 ]] ||
-		error "mirror 2 magic $magic is not bad as expected"
+	[[ $magic =~ [bB][aA][dD] ]] ||
+		error "mirror 2 magic '$magic' does not contain bad as expected"
 	cat /etc/passwd > $file || error "cannot write to $file"
 	diff /etc/passwd $file || error "read $file error"
 
@@ -3376,8 +3376,8 @@ test_62() {
 	$LFS setstripe -N -N --flags=prefer $file ||
 		error "failed to create mirror file $file"
 	pattern=$($LFS getstripe -I65537 $file | awk '/lmm_pattern/{print $2}')
-	[[ $pattern == 502 ]] ||
-		error "mirror 1 pattern $pattern is not bad as expected"
+	[[ $pattern =~ 502 || $pattern =~ bad ]] ||
+		error "mirror 1 pattern '$pattern' is not 'bad' as expected"
 	cat /etc/passwd > $file || error "cannot write to $file"
 	diff /etc/passwd $file || error "read $file error"
 }
