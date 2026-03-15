@@ -13,6 +13,7 @@ LIBMAN = 					\
 	llapi_changelog_recv.3			\
 	llapi_changelog_set_xflags.3		\
 	llapi_changelog_start.3			\
+	llapi_changelog_start_user.3		\
 	llapi_create_volatile_param.3		\
 	llapi_fd2parent.3			\
 	llapi_fid_parse.3			\
