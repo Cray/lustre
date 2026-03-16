@@ -148,8 +148,9 @@ struct page *ll_get_dir_page(struct inode *dir, struct md_op_data *op_data,
 	struct md_readdir_info mrinfo = {
 					.mr_blocking_ast = ll_md_blocking_ast };
 	struct page *page;
-	unsigned long idx = hash_x_index(offset, hash64);
 	int rc;
+#ifdef HAVE_PAGECACHE_GET_PAGE
+	unsigned long idx = hash_x_index(offset, hash64);
 
 	/* check page first */
 	page = pagecache_get_page(dir->i_mapping, idx,
@@ -162,6 +163,7 @@ struct page *ll_get_dir_page(struct inode *dir, struct md_op_data *op_data,
 			RETURN(page);
 		put_page(page);
 	}
+#endif
 
 	rc = md_read_page(ll_i2mdexp(dir), op_data, &mrinfo, offset, &page);
 	if (rc != 0)
