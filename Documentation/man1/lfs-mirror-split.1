@@ -1,4 +1,4 @@
-.TH LFS-MIRROR-SPLIT 1 2024-08-20 Lustre "Lustre User Utilities"
+.TH LFS-MIRROR-SPLIT 1 2026-08-20 Lustre "Lustre User Utilities"
 .SH NAME
 lfs-mirror-split \- split a specified mirror from an existing mirrored file
 .SH SYNOPSIS
@@ -12,6 +12,7 @@ lfs-mirror-split \- split a specified mirror from an existing mirrored file
 .B --pool
 .IR POOL }
 .RB [ --destroy | -d ]
+.RB [ --no-warn ]
 .RB [ -f
 .IR NEW_FILE ]
 .I MIRRORED_FILE
@@ -32,11 +33,36 @@ If
 .I NEW_FILE
 option is specified,
 then the layout of the split mirror will be stored into the named file.
-.p
+.P
 If
 .I MIRRORED_FILE
 has only one mirror existing after split,
 it will be converted to a regular non-mirrored file.
+.P
+If the split target is a data mirror that has an associated erasure coding (EC)
+parity mirror, the MDS will atomically split (or destroy) the parity mirror
+along with the data mirror in a single operation. Splitting the last data
+mirror out of
+.I MIRRORED_FILE
+is refused, since a file left holding parity mirrors alone cannot be
+read; so is a split that would remove every mirror. A lone data and parity
+mirror pair therefore cannot be taken apart by splitting the data mirror;
+destroy the parity mirror instead, with
+.B -d
+or
+.BR "lfs mirror delete" ,
+to turn the file back into a plain data file. A parity mirror can only be
+destroyed, never moved to a file of its own: both a plain
+.B --mirror-id
+.I MIRROR_ID
+split and one with
+.BI -f " NEW_FILE"
+are refused, since a file holding only a parity mirror cannot be read.
+Destroying a parity mirror prints a warning when it takes away the last
+redundant copy of the file, since the data mirror it protected is then left
+alone. No warning is printed while another data mirror remains, and
+.B --no-warn
+suppresses it entirely.
 .P
 If the original
 .I MIRRORED_FILE
@@ -64,9 +90,23 @@ This option is mandatory on encrypted files when the encryption key is not
 available. Otherwise operation results in
 .BR -ENOKEY .
 .TP
+.B --no-warn
+Do not print the warning issued when the operation removes the last redundant
+copy of the file.
+.TP
 .BI -f " NEW_FILE"
 This option indicates the layout of the split mirror will be stored into
 .IR NEW_FILE .
+If the split mirror is an EC data mirror, both the data and its associated
+parity mirror will be moved to
+.IR NEW_FILE .
+This option is refused for an EC parity mirror, since
+.I NEW_FILE
+would then hold only parity and could not be read; use
+.B -d
+or
+.B lfs mirror delete
+to remove it instead.
 .P
 This option cannot be used on encrypted files when the encryption key is not
 available. It will result in
@@ -107,6 +147,25 @@ Split a mirror on pool lustre-nvme out of /mnt/lustre/file1 and destroy it:
 .RS
 .EX
 .B # lfs mirror split --pool lustre-nvme -d /mnt/lustre/file1
+.EE
+.RE
+.PP
+Split the data mirror with ID 1 out of an EC mirrored file that has another
+data mirror as well, and destroy it. The parity mirror associated with mirror 1
+is also destroyed automatically:
+.RS
+.EX
+.B # lfs mirror split --mirror-id 1 -d /mnt/lustre/ecfile
+.EE
+.RE
+.PP
+Destroy the parity mirror with ID 2 of an EC mirrored file. A warning is
+printed if this leaves its data mirror without a redundant copy; pass
+.B --no-warn
+to suppress it:
+.RS
+.EX
+.B # lfs mirror split --mirror-id 2 -d /mnt/lustre/ecfile
 .EE
 .RE
 .SH AVAILABILITY

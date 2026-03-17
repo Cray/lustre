@@ -1,4 +1,4 @@
-.TH LFS-MIRROR-DELETE 1 2024-08-20 Lustre "Lustre User Utilities"
+.TH LFS-MIRROR-DELETE 1 2026-08-05 Lustre "Lustre User Utilities"
 .SH NAME
 lfs-mirror-delete \- delete a specified mirror from an existing mirrored file
 .SH SYNOPSIS
@@ -11,6 +11,7 @@ lfs-mirror-delete \- delete a specified mirror from an existing mirrored file
 |
 .B --pool
 .IR POOL }
+.RB [ --no-warn ]
 .I MIRRORED_FILE
 .YS
 .SH DESCRIPTION
@@ -28,10 +29,24 @@ If
 has only one mirror existing after split,
 it will be converted to a regular non-mirrored file.
 .P
+If the deleted mirror is a data mirror that has an associated erasure coding
+(EC) parity mirror, the MDS deletes the parity mirror along with the data
+mirror in a single operation. Deleting the last data mirror is refused, since
+a file left holding parity mirrors alone cannot be read. When deleting a
+parity mirror directly, a warning is printed when it takes away the last
+redundant copy of the file, since the data mirror it protected is then left
+alone. No warning is printed while another data mirror remains, and
+.B --no-warn
+suppresses it entirely.
+.P
 If the original
 .I MIRRORED_FILE
 is not a mirrored file, then the command will return an error.
 .SH OPTIONS
+.TP
+.B --no-warn
+Do not print the warning issued when the operation removes the last redundant
+copy of the file.
 .TP
 .BI --mirror-id " MIRROR_ID"
 The numerical unique identifier for a mirror. The mirror ID is unique within a
@@ -65,6 +80,14 @@ Split a mirror on pool ssd out of /mnt/lustre/file1 and destroy it:
 .RS
 .EX
 .B # lfs mirror delete --pool ssd /mnt/lustre/file1
+.EE
+.RE
+.PP
+Delete the data mirror with ID 1 out of an EC mirrored file that has another
+data mirror as well. Its associated parity mirror is deleted along with it:
+.RS
+.EX
+.B # lfs mirror delete --mirror-id 1 /mnt/lustre/ecfile
 .EE
 .RE
 .SH AVAILABILITY

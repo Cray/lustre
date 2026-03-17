@@ -3753,10 +3753,13 @@ static int lod_declare_layout_purge(const struct lu_env *env,
 
 	/* from now on, @buf contains cpu endian data */
 
-	if (comp_v1->lcm_mirror_count != 0) {
-		CERROR("%s: can only purge one mirror from "DFID"\n",
-		       lod2obd(d)->obd_name, PFID(lu_object_fid(&dt->do_lu)));
-		RETURN(-EINVAL);
+	/* Allow purging a single mirror, or a data + parity mirror pair */
+	if (comp_v1->lcm_mirror_count > 1) {
+		rc = -EINVAL;
+		CERROR("%s: cannot purge %u mirrors at once from "DFID": rc = %d\n",
+		       lod2obd(d)->obd_name, comp_v1->lcm_mirror_count + 1,
+		       PFID(lu_object_fid(&dt->do_lu)), rc);
+		RETURN(rc);
 	}
 
 	/* delcare sub objects deletion in the mirror stored in @buf */

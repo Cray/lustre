@@ -2514,6 +2514,46 @@ test_44e() {
 }
 run_test 44e "basic FLR SOM tests + disable SOM"
 
+test_44f() {
+	local tf=$DIR/$tdir/$tfile
+	local count=40
+	local nofile=30
+	local files
+	local i
+
+	mkdir -p $DIR/$tdir || error "create directory failed"
+	stack_trap "rm -rf $DIR/$tdir"
+
+	for ((i = 0; i < count; i++)); do
+		$LFS mirror create -N -c1 -N -c1 $tf.$i ||
+			error "create mirrored file $tf.$i failed"
+	done
+	files=$(seq -f "$tf.%.0f" 0 $((count - 1)))
+
+	# The victim file descriptor was only closed for 'lfs mirror delete',
+	# which reuses the descriptor of the file being split, so every other
+	# split leaked one. Splitting a batch of files in a single command
+	# then ran out of descriptors partway through.
+	(ulimit -n $nofile; $LFS mirror split --mirror-id 2 $files) ||
+		error "mirror split of $count files failed"
+
+	for ((i = 0; i < count; i++)); do
+		verify_mirror_count $tf.$i 1
+		[[ -f $tf.$i.mirror~2 ]] ||
+			error "split of $tf.$i created no victim file"
+	done
+
+	# A split that cannot create its victim file must report the failure
+	# rather than returning success, and must leave the source alone.
+	$LFS mirror create -N -c1 -N -c1 $tf.src ||
+		error "create mirrored file $tf.src failed"
+	touch $tf.victim || error "create $tf.victim failed"
+	$LFS mirror split --mirror-id 2 -f $tf.victim $tf.src &&
+		error "split onto an existing victim file should fail"
+	verify_mirror_count $tf.src 2
+}
+run_test 44f "lfs mirror split does not leak the victim file descriptor"
+
 test_45() {
 	[ $OSTCOUNT -lt 2 ] && skip "needs >= 2 OSTs"
 

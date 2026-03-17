@@ -254,6 +254,41 @@ check_parity_read() {
 	fi
 }
 
+#
+# Classify the mirrors of an EC file into the globals ec_parity_id (carries the
+# parity flag), ec_data_id (the data mirror linked to it via
+# lcme_mirror_link_id) and ec_plain_id (a mirror with no link). Any of them is
+# empty if the file has no such mirror.
+#
+identify_ec_mirrors() {
+	local tf=$1
+	local id flags link
+
+	ec_data_id=""
+	ec_parity_id=""
+	ec_plain_id=""
+
+	for id in $($LFS getstripe $tf | awk '/lcme_mirror_id:/ {print $2}' |
+		    sort -u); do
+		flags=$($LFS getstripe --mirror-id=$id $tf |
+			awk '/lcme_flags:/ {print $2; exit}')
+		if [[ $flags =~ "parity" ]]; then
+			ec_parity_id=$id
+			continue
+		fi
+		link=$($LFS getstripe -v $tf | awk -v m=$id '
+			/lcme_mirror_id:/ { cur = $2 }
+			/lcme_mirror_link_id:/ {
+				if (cur == m) { print $2; exit }
+			}')
+		if [[ -n $link && $link != 0x0 ]]; then
+			ec_data_id=$id
+		else
+			ec_plain_id=$id
+		fi
+	done
+}
+
 test_1a() {
 	enable_ec
 	local tf=$DIR/$tfile
@@ -1937,61 +1972,38 @@ test_7b() {
 	enable_ec
 
 	local tf=$DIR/$tfile
-	local ids
+	local victim=$DIR/$tfile.victim
 
-	# Create file with EC
+	stack_trap "rm -f $tf $victim"
+
 	$LFS setstripe -E -1 -c 4 --ec 4+2 $tf ||
 		error "setstripe failed"
+	verify_mirror_count $tf 2
+
+	identify_ec_mirrors $tf
+	[[ -n $ec_data_id && -n $ec_parity_id ]] ||
+		error "failed to identify data/parity mirrors"
+
+	# A parity mirror holds no file data, so a file left holding only one
+	# cannot be read.  Splitting a parity mirror into a file of its own is
+	# refused, both with an explicit victim and with the default
+	# '<file>.mirror~ID' name.  Its contents are still reachable with
+	# 'lfs mirror read -N ID', and 'lfs mirror delete' removes it.
+	$LFS mirror split --mirror-id $ec_parity_id -f $victim $tf &&
+		error "split of a parity mirror to a file should be refused"
+	[[ ! -e $victim ]] ||
+		error "refused split left victim file '$victim' behind"
+
+	$LFS mirror split --mirror-id $ec_parity_id $tf &&
+		error "split of a parity mirror should be refused"
+	[[ ! -e $tf.mirror~$ec_parity_id ]] ||
+		error "refused split left a victim file behind"
 
 	verify_mirror_count $tf 2
 
-	# Get mirror IDs
-	ids=($($LFS getstripe $tf | awk '/lcme_mirror_id:/ {print $2}' |
-		sort -u | tr '\n' ' '))
-
-	(( ${#ids[@]} == 2 )) ||
-		error "expected 2 mirrors, got ${#ids[@]}"
-
-	# Determine which mirror is parity (has LCME_FL_PARITY flag)
-	local data_mirror_id=${ids[0]}
-	local parity_mirror_id=${ids[1]}
-	local flags=$($LFS getstripe --mirror-id=${ids[1]} $tf |
-		      awk '/lcme_flags:/ {print $2; exit}')
-
-	if [[ ! $flags =~ "parity" ]]; then
-		# First mirror is parity, swap them
-		data_mirror_id=${ids[1]}
-		parity_mirror_id=${ids[0]}
-	fi
-
-	# Verify we identified them correctly
-	flags=$($LFS getstripe --mirror-id=$parity_mirror_id $tf |
-		awk '/lcme_flags:/ {print $2; exit}')
-	[[ $flags =~ "parity" ]] ||
-		error "mirror $parity_mirror_id should be parity mirror"
-
-	# Try to split parity mirror without -d (should fail)
-	$LFS mirror split --mirror-id $parity_mirror_id $tf 2>&1 |
-		grep -q "parity mirror" ||
-		error "split without -d should fail for parity mirror"
-
-	# Verify mirror count unchanged
-	verify_mirror_count $tf 2
-
-	# Split parity mirror with -d (should succeed)
-	$LFS mirror split --mirror-id $parity_mirror_id -d $tf ||
-		error "split -d should succeed for parity mirror"
-
-	# Verify only data mirror remains
-	verify_mirror_count $tf 1
-
-	# Verify remaining mirror is the data mirror
-	local remaining_id=$($LFS getstripe $tf |
-			     awk '/lcme_mirror_id:/ {print $2; exit}')
-	(( remaining_id == data_mirror_id )) ||
-		error "remaining mirror should be data mirror"
+	return 0
 }
-run_test 7b "mirror split -d works for parity mirrors, regular split fails"
+run_test 7b "mirror split of a parity mirror to a file is refused"
 
 test_7c() {
 	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
@@ -2080,6 +2092,375 @@ test_7d() {
 	verify_mirror_count $tf 2
 }
 run_test 7d "mirror split -d works with mixed regular and EC mirrors"
+
+test_7e() {
+	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
+
+	enable_ec
+
+	local tf=$DIR/$tfile
+
+	# Build a 3-mirror file: a plain mirror plus an EC data+parity pair, so
+	# co-splitting the data mirror (which drags its parity along) still
+	# leaves a mirror behind and does not trip the empty-file guard.
+	$LFS mirror create -N -E -1 -c 2 \
+			   -N -E -1 -c 2 --ec 2+2 $tf ||
+		error "mirror create failed"
+	verify_mirror_count $tf 3
+
+	identify_ec_mirrors $tf
+	[[ -n $ec_data_id && -n $ec_parity_id && -n $ec_plain_id ]] ||
+		error "failed to identify data/parity/plain mirrors"
+
+	local plain_id=$ec_plain_id
+
+	# Splitting the EC data mirror must co-split its parity mirror
+	# automatically, leaving only the plain mirror behind.
+	$LFS mirror split --mirror-id $ec_data_id -d $tf ||
+		error "split -d of EC data mirror failed"
+
+	verify_mirror_count $tf 1
+	local remaining_id=$($LFS getstripe $tf |
+			     awk '/lcme_mirror_id:/ {print $2; exit}')
+	(( remaining_id == plain_id )) ||
+		error "expected plain mirror $plain_id, got $remaining_id"
+
+	# A lone data+parity pair cannot be split apart with -d: removing the
+	# data mirror would co-split the parity and empty the file, so the MDS
+	# must refuse it and leave the file untouched.
+	local tf2=$DIR/$tfile.pair
+	$LFS setstripe -E -1 -c 2 --ec 2+2 $tf2 ||
+		error "setstripe failed"
+	verify_mirror_count $tf2 2
+
+	identify_ec_mirrors $tf2
+	[[ -n $ec_data_id && -n $ec_parity_id ]] ||
+		error "failed to identify data/parity mirrors of $tf2"
+
+	$LFS mirror split --mirror-id $ec_data_id -d $tf2 &&
+		error "splitting a lone data+parity pair should be refused"
+	verify_mirror_count $tf2 2
+}
+run_test 7e "split data mirror -d co-splits its EC parity mirror"
+
+test_7f() {
+	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
+
+	enable_ec
+
+	local tf=$DIR/$tfile
+
+	stack_trap "rm -f $tf"
+
+	$LFS setstripe -E -1 -c 4 --ec 4+2 $tf ||
+		error "setstripe failed"
+	verify_mirror_count $tf 2
+
+	identify_ec_mirrors $tf
+	[[ -n $ec_data_id && -n $ec_parity_id ]] ||
+		error "failed to identify data/parity mirrors"
+
+	# Removing the parity mirror is allowed, and warns while naming the
+	# data mirror that is losing EC protection.
+	local expect="parity mirror $ec_parity_id .* data mirror $ec_data_id"
+	local out
+
+	out=$($LFS mirror delete --mirror-id $ec_parity_id $tf 2>&1) ||
+		error "mirror delete of parity mirror $ec_parity_id failed"
+	echo "$out" | grep -q "$expect" ||
+		error "expected warning naming data mirror $ec_data_id: $out"
+
+	verify_mirror_count $tf 1
+
+	local remaining_id=$($LFS getstripe $tf |
+			     awk '/lcme_mirror_id:/ {print $2; exit}')
+	(( remaining_id == ec_data_id )) ||
+		error "expected data mirror $ec_data_id, got $remaining_id"
+
+	# The data mirror left behind is no longer protected, so its link to
+	# the removed parity mirror must be gone.
+	local link=$($LFS getstripe -v --mirror-id=$ec_data_id $tf |
+		     awk '/lcme_mirror_link_id:/ {print $2; exit}')
+	(( ${link:-0} == 0 )) ||
+		error "data mirror $ec_data_id still links to '$link'"
+
+	# Removing the parity of a file that keeps another data mirror takes
+	# away no redundancy, so it must not warn.
+	local tf2=$DIR/$tfile.redundant
+
+	stack_trap "rm -f $tf2"
+
+	$LFS mirror create -N -E -1 -c 2 \
+			   -N -E -1 -c 2 --ec 2+2 $tf2 ||
+		error "mirror create failed"
+	verify_mirror_count $tf2 3
+
+	identify_ec_mirrors $tf2
+	[[ -n $ec_parity_id ]] || error "failed to identify parity mirror"
+
+	out=$($LFS mirror delete --mirror-id $ec_parity_id $tf2 2>&1) ||
+		error "mirror delete of parity mirror failed"
+	echo "$out" | grep -qi "warning" &&
+		error "warned though a data mirror remains: $out"
+	verify_mirror_count $tf2 2
+}
+run_test 7f "mirror delete of a parity mirror warns only if redundancy lost"
+
+test_7g() {
+	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
+
+	enable_ec
+
+	local tf=$DIR/$tfile
+	local victim=$DIR/$tfile.victim
+
+	stack_trap "rm -f $tf $victim"
+
+	# Build a 3-mirror file: a plain mirror plus an EC data+parity pair,
+	# so co-splitting the data mirror to the victim (which drags its
+	# parity along) still leaves a mirror behind on the source.
+	$LFS mirror create -N -E -1 -c 2 \
+			   -N -E -1 -c 2 --ec 2+2 $tf ||
+		error "mirror create failed"
+	verify_mirror_count $tf 3
+
+	dd if=/dev/urandom of=$tf bs=1M count=2 || error "write failed"
+	$LFS mirror resync $tf || error "mirror resync failed"
+	local sum=$(md5sum $tf | awk '{print $1}')
+
+	identify_ec_mirrors $tf
+	[[ -n $ec_data_id && -n $ec_parity_id && -n $ec_plain_id ]] ||
+		error "failed to identify data/parity/plain mirrors"
+
+	local data_id=$ec_data_id
+	local parity_id=$ec_parity_id
+	local plain_id=$ec_plain_id
+
+	# Splitting the EC data mirror to a victim must move both the data
+	# mirror and its parity mirror to the victim, making the victim a
+	# standalone read-only 2-mirror EC file.
+	$LFS mirror split --mirror-id $data_id -f $victim $tf ||
+		error "split -f of EC data mirror failed"
+
+	# Source keeps only the plain mirror.
+	verify_mirror_count $tf 1
+	local remaining_id=$($LFS getstripe $tf |
+			     awk '/lcme_mirror_id:/ {print $2; exit}')
+	(( remaining_id == plain_id )) ||
+		error "expected plain mirror $plain_id, got $remaining_id"
+
+	# Victim holds exactly the data+parity pair.
+	verify_mirror_count $victim 2
+	local victim_parity_flags=$($LFS getstripe --mirror-id=$parity_id \
+				    $victim |
+				    awk '/lcme_flags:/ {print $2; exit}')
+	[[ $victim_parity_flags =~ "parity" ]] ||
+		error "mirror $parity_id in victim should keep the parity flag"
+
+	local victim_flags=$($LFS getstripe -v $victim |
+			     awk '/lcm_flags:/ {print $2; exit}')
+	[[ $victim_flags =~ "ro" ]] ||
+		error "victim should be read-only, got flags '$victim_flags'"
+
+	# The data<->parity link must survive the split.
+	local vlink=$($LFS getstripe -v $victim | awk -v m=$data_id '
+		/lcme_mirror_id:/ { cur = $2 }
+		/lcme_mirror_link_id:/ { if (cur == m) { print $2; exit } }')
+	(( vlink == parity_id )) ||
+		error "victim data mirror links to '$vlink', not $parity_id"
+
+	local vsum=$(md5sum $victim | awk '{print $1}')
+	[[ $vsum == $sum ]] ||
+		error "victim content differs from source ($vsum != $sum)"
+
+	# A lone data+parity pair cannot be co-split to a victim: moving both
+	# mirrors would empty the source, so the MDS must refuse it and leave
+	# the file untouched.
+	local tf2=$DIR/$tfile.pair
+	local victim2=$DIR/$tfile.victim2
+
+	stack_trap "rm -f $tf2 $victim2"
+	$LFS setstripe -E -1 -c 2 --ec 2+2 $tf2 ||
+		error "setstripe failed"
+	verify_mirror_count $tf2 2
+
+	identify_ec_mirrors $tf2
+	[[ -n $ec_data_id && -n $ec_parity_id ]] ||
+		error "failed to identify data/parity mirrors of $tf2"
+
+	local out
+	out=$($LFS mirror split --mirror-id $ec_data_id -f $victim2 $tf2 \
+	      2>&1) &&
+		error "co-splitting a lone data+parity pair should be refused"
+	verify_mirror_count $tf2 2
+	echo "$out" | grep -q "only data mirror" ||
+		error "refusal should name the only data mirror, got: $out"
+	[[ ! -e $victim2 ]] ||
+		error "refused split left victim file '$victim2' behind"
+}
+run_test 7g "split data mirror -f co-splits its EC parity mirror to victim"
+
+test_7h() {
+	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
+
+	enable_ec
+
+	local tf=$DIR/$tfile
+	local victim=$DIR/$tfile.victim
+
+	stack_trap "rm -f $tf $victim"
+
+	# Build a plain mirror plus an EC data+parity pair, so the plain
+	# mirror stays in-sync and the split is not resynced away first.
+	$LFS mirror create -N -E -1 -c 2 \
+			   -N -E -1 -c 2 --ec 2+2 $tf ||
+		error "mirror create failed"
+	verify_mirror_count $tf 3
+
+	dd if=/dev/urandom of=$tf bs=1M count=2 || error "write failed"
+	$LFS mirror resync $tf || error "mirror resync failed"
+
+	identify_ec_mirrors $tf
+	[[ -n $ec_data_id && -n $ec_parity_id && -n $ec_plain_id ]] ||
+		error "failed to identify data/parity/plain mirrors"
+
+	local data_id=$ec_data_id
+	local parity_id=$ec_parity_id
+
+	# Mark only the EC data mirror stale, leaving its parity in-sync.
+	$LFS setstripe --comp-set --mirror-id $data_id --comp-flags=stale \
+		$tf || error "failed to mark data mirror $data_id stale"
+	$LFS getstripe --mirror-id=$data_id $tf | grep -q "stale" ||
+		error "data mirror $data_id should be stale"
+
+	# The victim's data mirror is its only copy of the file, so the split
+	# must clear its stale flag.  Its parity was computed from a different
+	# version of that data, so the parity is the one that must be marked
+	# stale for `lfs mirror resync` to rebuild it.
+	$LFS mirror split --mirror-id $data_id -f $victim $tf ||
+		error "split of stale EC data mirror failed"
+
+	verify_mirror_count $victim 2
+
+	local dflags=$($LFS getstripe --mirror-id=$data_id $victim |
+		       awk '/lcme_flags:/ {print $2; exit}')
+	[[ ! $dflags =~ "stale" ]] ||
+		error "victim data mirror $data_id is stale: '$dflags'"
+
+	local pflags=$($LFS getstripe --mirror-id=$parity_id $victim |
+		       awk '/lcme_flags:/ {print $2; exit}')
+	[[ $pflags =~ "stale" ]] ||
+		error "victim parity mirror $parity_id not stale: '$pflags'"
+
+	# A victim left with a stale data mirror is unusable: it reads back as
+	# a 0-length file, and `lfs mirror resync` cannot repair it because
+	# the only non-stale mirror is the parity one.
+	$LFS mirror resync $victim || error "resync of victim failed"
+
+	$LFS getstripe $victim | grep -q "stale" &&
+		error "victim still has a stale mirror after resync"
+
+	# Both mirrors in-sync on the source must leave both in-sync on the
+	# victim: there is nothing for the split to invalidate.
+	local tf2=$DIR/$tfile.sync
+	local victim2=$DIR/$tfile.victim2
+
+	stack_trap "rm -f $tf2 $victim2"
+	$LFS mirror create -N -E -1 -c 2 \
+			   -N -E -1 -c 2 --ec 2+2 $tf2 ||
+		error "mirror create failed"
+	dd if=/dev/urandom of=$tf2 bs=1M count=2 || error "write failed"
+	$LFS mirror resync $tf2 || error "mirror resync failed"
+
+	identify_ec_mirrors $tf2
+	[[ -n $ec_data_id && -n $ec_parity_id ]] ||
+		error "failed to identify data/parity mirrors of $tf2"
+
+	$LFS mirror split --mirror-id $ec_data_id -f $victim2 $tf2 ||
+		error "split of in-sync EC data mirror failed"
+
+	$LFS getstripe $victim2 | grep -q "stale" &&
+		error "in-sync split should not mark any victim mirror stale"
+
+	return 0
+}
+run_test 7h "split of a stale EC data mirror leaves a usable victim"
+
+test_7i() {
+	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
+
+	enable_ec
+
+	local tf=$DIR/$tfile
+	local tf2=$DIR/$tfile.pair
+	local sum new
+
+	stack_trap "rm -f $tf $tf2"
+
+	# A parity mirror holds no copy of the file data, so it must not count
+	# as the good copy that lets a split skip the last-good-copy resync.
+
+	# Splitting the only in-sync data mirror while the other data mirror
+	# is stale: the in-sync parity keeps the layout from looking all-stale,
+	# so nothing downstream refuses the split and the file is destroyed
+	# unless the resync runs first.
+	$LFS mirror create -N -E -1 -c 2 \
+			   -N -E -1 -c 2 --ec 2+2 $tf ||
+		error "mirror create failed"
+	dd if=/dev/urandom of=$tf bs=1M count=2 || error "write failed"
+	$LFS mirror resync $tf || error "mirror resync failed"
+	sum=$(md5sum $tf | awk '{print $1}')
+
+	identify_ec_mirrors $tf
+	[[ -n $ec_data_id && -n $ec_parity_id && -n $ec_plain_id ]] ||
+		error "failed to identify data/parity/plain mirrors"
+
+	$LFS setstripe --comp-set --mirror-id $ec_data_id \
+		--comp-flags=stale $tf ||
+		error "failed to mark EC data mirror $ec_data_id stale"
+
+	$LFS mirror split --mirror-id $ec_plain_id -d $tf ||
+		error "split of the last good copy failed"
+
+	new=$(md5sum $tf 2>/dev/null | awk '{print $1}')
+	[[ $new == $sum ]] ||
+		error "source content lost after split ('$new' != '$sum')"
+
+	$LFS getstripe $tf | grep -q "stale" &&
+		error "source left with a stale mirror after split"
+
+	# Co-splitting the only in-sync data mirror drags its parity along, so
+	# the parity left behind cannot stand in for the resync either.
+	$LFS mirror create -N -E -1 -c 2 --ec 2+2 \
+			   -N -E -1 -c 2 $tf2 ||
+		error "mirror create failed"
+	dd if=/dev/urandom of=$tf2 bs=1M count=2 || error "write failed"
+	$LFS mirror resync $tf2 || error "mirror resync failed"
+	sum=$(md5sum $tf2 | awk '{print $1}')
+
+	identify_ec_mirrors $tf2
+	[[ -n $ec_data_id && -n $ec_parity_id && -n $ec_plain_id ]] ||
+		error "failed to identify mirrors of $tf2"
+
+	$LFS setstripe --comp-set --mirror-id $ec_plain_id \
+		--comp-flags=stale $tf2 ||
+		error "failed to mark plain mirror $ec_plain_id stale"
+
+	$LFS mirror split --mirror-id $ec_data_id -d $tf2 ||
+		error "co-split of the last good copy failed"
+
+	verify_mirror_count $tf2 1
+
+	new=$(md5sum $tf2 2>/dev/null | awk '{print $1}')
+	[[ $new == $sum ]] ||
+		error "source content lost after co-split ('$new' != '$sum')"
+
+	$LFS getstripe $tf2 | grep -q "stale" &&
+		error "source left with a stale mirror after co-split"
+
+	return 0
+}
+run_test 7i "split resyncs when only parity mirrors are non-stale"
 
 test_10() {
 	local tf=${DIR}/${tdir}/$tfile

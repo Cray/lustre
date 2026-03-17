@@ -283,7 +283,7 @@ command_t mirror_cmdlist[] = {
 	  .pc_help = "Delete a mirror from a file.\n"
 	"usage: lfs mirror delete {--mirror-id <mirror_id> |\n"
 	"\t		  --component-id|--comp-id|-I COMP_ID |\n"
-	"\t		  -p <pool>} MIRRORED_FILE ...\n"
+	"\t		  -p <pool>} [--no-warn] MIRRORED_FILE ...\n"
 	},
 	{ .pc_name = "extend", .pc_func = lfs_mirror_extend,
 	  .pc_help = "Extend a mirrored file.\n"
@@ -298,7 +298,7 @@ command_t mirror_cmdlist[] = {
 	  .pc_help = "Split a mirrored file.\n"
 	"usage: lfs mirror split {--mirror-id MIRROR_ID |\n"
 	"\t		--component-id|-I COMP_ID|-p POOL} [--destroy|-d]\n"
-	"\t		[-f NEW_FILE] MIRRORED_FILE ...\n" },
+	"\t		[--no-warn] [-f NEW_FILE] MIRRORED_FILE ...\n" },
 	{ .pc_name = "read", .pc_func = lfs_mirror_read,
 	  .pc_help = "Read the content of a specified mirror of a file.\n"
 		"usage: lfs mirror read --mirror-id|-N MIRROR_ID\n"
@@ -1826,6 +1826,8 @@ struct mirror_args {
  * @MF_COMP_ID:   specified component id instead of mirror id
  * @MF_COMP_POOL: specified component pool instead of mirror id
  * @MF_FOREIGN:   specified foreign component instead of mirror id
+ * @MF_NO_WARN:   do not warn when the operation removes the last
+ *	          redundant copy of the file
  *
  * Flags for extending a mirrored file.
  */
@@ -1835,6 +1837,7 @@ enum mirror_flags {
 	MF_COMP_ID	= 0x04,
 	MF_COMP_POOL	= 0x08,
 	MF_FOREIGN	= 0x10,
+	MF_NO_WARN	= 0x20,
 };
 
 /**
@@ -2478,6 +2481,7 @@ static int find_mirror_id_by_pool(struct llapi_layout *layout, void *cbdata)
 struct parity_check_cbdata {
 	uint32_t	mirror_id;
 	bool		is_parity;
+	uint16_t	link_id;
 };
 
 static int check_parity_mirror(struct llapi_layout *layout, void *cbdata)
@@ -2494,6 +2498,10 @@ static int check_parity_mirror(struct llapi_layout *layout, void *cbdata)
 		return LLAPI_LAYOUT_ITER_CONT;
 
 	rc = llapi_layout_comp_flags_get(layout, &flags);
+	if (rc < 0)
+		return rc;
+
+	rc = llapi_layout_comp_mirror_link_id_get(layout, &d->link_id);
 	if (rc < 0)
 		return rc;
 
@@ -2527,6 +2535,30 @@ static bool is_parity_mirror(struct llapi_layout *layout, uint32_t mirror_id)
 	return d.is_parity;
 }
 
+/**
+ * parity_mirror_link() - Find the data mirror a parity mirror protects.
+ * @layout:    Layout to check.
+ * @mirror_id: Mirror ID to check.
+ *
+ * Return: mirror id of the data mirror @mirror_id protects, or
+ * LLAPI_MIRROR_LINK_NONE if @mirror_id is not a parity mirror, or is one
+ * whose link has been cleared because the data mirror is gone.
+ */
+static uint16_t parity_mirror_link(struct llapi_layout *layout,
+				   uint32_t mirror_id)
+{
+	struct parity_check_cbdata d = {
+		.mirror_id = mirror_id,
+		.is_parity = false,
+		.link_id = LLAPI_MIRROR_LINK_NONE,
+	};
+
+	if (llapi_layout_comp_iterate(layout, check_parity_mirror, &d) < 0)
+		return LLAPI_MIRROR_LINK_NONE;
+
+	return d.is_parity ? d.link_id : LLAPI_MIRROR_LINK_NONE;
+}
+
 static int find_comp_id_by_pool(struct llapi_layout *layout, void *cbdata)
 {
 	char buf[LOV_MAXPOOLNAME + 1];
@@ -2551,6 +2583,7 @@ static int find_comp_id_by_pool(struct llapi_layout *layout, void *cbdata)
 struct collect_ids_data {
 	__u16	*cid_ids;
 	int	cid_count;
+	int	cid_size;
 	__u16	cid_exclude;
 };
 
@@ -2572,6 +2605,8 @@ static int collect_mirror_id(struct llapi_layout *layout, void *cbdata)
 			if (id == cid->cid_ids[i])
 				return LLAPI_LAYOUT_ITER_CONT;
 		}
+		if (cid->cid_count >= cid->cid_size)
+			return -EOVERFLOW;
 		cid->cid_ids[cid->cid_count] = id;
 		cid->cid_count++;
 	}
@@ -2592,17 +2627,22 @@ static int collect_mirror_id(struct llapi_layout *layout, void *cbdata)
 static inline
 bool last_non_stale_mirror(__u16 mirror_id, struct llapi_layout *layout)
 {
-	__u16 mirror_ids[128] = { 0 };
+	__u16 mirror_ids[LUSTRE_MIRROR_COUNT_MAX] = { 0 };
 	struct collect_ids_data cid = {	.cid_ids = mirror_ids,
 					.cid_count = 0,
+					.cid_size = ARRAY_SIZE(mirror_ids),
 					.cid_exclude = mirror_id, };
 	int i;
 
-	llapi_layout_comp_iterate(layout, collect_mirror_id, &cid);
+	if (llapi_layout_comp_iterate(layout, collect_mirror_id, &cid) < 0)
+		return true;
 
 	for (i = 0; i < cid.cid_count; i++) {
 		struct llapi_resync_comp comp_array[1024] = { { 0 } };
 		int comp_size = 0;
+
+		if (is_parity_mirror(layout, mirror_ids[i]))
+			continue;
 
 		comp_size = llapi_mirror_find_stale(layout, comp_array,
 						    ARRAY_SIZE(comp_array),
@@ -2612,6 +2652,101 @@ bool last_non_stale_mirror(__u16 mirror_id, struct llapi_layout *layout)
 	}
 
 	return true;
+}
+
+/**
+ * data_mirror_remains() - Check a data mirror survives splitting @mirror_id.
+ * @layout:    Mirror component list.
+ * @mirror_id: Mirror id to be split out.
+ *
+ * A parity mirror holds erasure coding parity, not file data, so a file left
+ * with parity mirrors alone cannot serve reads.
+ *
+ * Return: true if some mirror other than @mirror_id can hold data.
+ */
+static bool data_mirror_remains(struct llapi_layout *layout, __u16 mirror_id)
+{
+	__u16 mirror_ids[LUSTRE_MIRROR_COUNT_MAX] = { 0 };
+	struct collect_ids_data cid = { .cid_ids = mirror_ids,
+					.cid_count = 0,
+					.cid_size = ARRAY_SIZE(mirror_ids),
+					.cid_exclude = mirror_id, };
+	int i;
+
+	if (llapi_layout_comp_iterate(layout, collect_mirror_id, &cid) < 0)
+		return false;
+
+	for (i = 0; i < cid.cid_count; i++)
+		if (!is_parity_mirror(layout, mirror_ids[i]))
+			return true;
+
+	return false;
+}
+
+/**
+ * file_stays_redundant() - Will a redundant copy survive the removal?
+ * @layout:    Mirror component list, as it is before the removal.
+ * @mirror_id: Mirror id being split out or deleted, never 0.
+ *
+ * A file is still redundant if two or more data mirrors remain, or if a
+ * single remaining data mirror is still protected by a parity mirror that
+ * also remains.  Splitting a data mirror co-splits the parity mirror linked
+ * to it, so that parity leaves too and does not count as remaining.
+ *
+ * Stale mirrors count as redundancy: staleness is transient and repaired by
+ * 'lfs mirror resync', so it must not decide whether a warning is printed.
+ *
+ * The co-split arm is defensive: the only caller asks about a parity mirror,
+ * so it is not reached today.
+ *
+ * Return: true if the file keeps a redundant copy of its data.
+ */
+static bool file_stays_redundant(struct llapi_layout *layout, __u16 mirror_id)
+{
+	__u16 mirror_ids[LUSTRE_MIRROR_COUNT_MAX] = { 0 };
+	struct collect_ids_data cid = { .cid_ids = mirror_ids,
+					.cid_count = 0,
+					.cid_size = ARRAY_SIZE(mirror_ids),
+					.cid_exclude = mirror_id, };
+	__u16 cosplit = LLAPI_MIRROR_LINK_NONE;
+	__u16 lone_data = LLAPI_MIRROR_LINK_NONE;
+	int data_count = 0;
+	int i;
+
+	if (llapi_layout_comp_iterate(layout, collect_mirror_id, &cid) < 0)
+		return false;
+
+	/* A data mirror co-splits its parity mirror, so both are removed. */
+	if (mirror_id != LLAPI_MIRROR_LINK_NONE &&
+	    !is_parity_mirror(layout, mirror_id)) {
+		for (i = 0; i < cid.cid_count; i++) {
+			if (parity_mirror_link(layout, mirror_ids[i]) ==
+			    mirror_id) {
+				cosplit = mirror_ids[i];
+				break;
+			}
+		}
+	}
+
+	for (i = 0; i < cid.cid_count; i++) {
+		if (mirror_ids[i] == cosplit ||
+		    is_parity_mirror(layout, mirror_ids[i]))
+			continue;
+		data_count++;
+		lone_data = mirror_ids[i];
+	}
+
+	if (data_count > 1)
+		return true;
+	if (data_count == 0)
+		return false;
+
+	for (i = 0; i < cid.cid_count; i++)
+		if (mirror_ids[i] != cosplit &&
+		    parity_mirror_link(layout, mirror_ids[i]) == lone_data)
+			return true;
+
+	return false;
 }
 
 static int mirror_split(const char *fname, __u32 id, const char *pool,
@@ -2624,10 +2759,19 @@ static int mirror_split(const char *fname, __u32 id, const char *pool,
 	char *ptr;
 	struct ll_ioc_lease *data;
 	uint16_t mirror_count;
+	uint16_t link_id;
 	__u32 mirror_id;
 	int mdt_index;
 	int fd, fdv;
-	bool purge = true; /* delete mirror by setting fdv=fd */
+	/* @purge covers only a 'mirror delete'-style split: no victim file and
+	 * MF_DESTROY.  That one passes fdv=fd instead of opening one, so fdv
+	 * must not be closed.  Every other split has an fdv of its own that
+	 * has to be closed, including 'mirror split --mirror-id ID FILE',
+	 * which has no victim file either but opens FILE.mirror~ID (the path
+	 * sanity-flr test_44f exercises).  An old MDS that rejects fd==fdv
+	 * clears @purge and retries through the volatile-file path.
+	 */
+	bool purge = !victim_file && (mflags & MF_DESTROY);
 	bool is_encrypted;
 	int rc;
 
@@ -2650,6 +2794,7 @@ static int mirror_split(const char *fname, __u32 id, const char *pool,
 	rc = llapi_layout_sanity(layout, false, true);
 	if (rc) {
 		llapi_layout_sanity_perror(rc);
+		rc = -EINVAL;
 		goto free_layout;
 	}
 
@@ -2664,6 +2809,7 @@ static int mirror_split(const char *fname, __u32 id, const char *pool,
 		fprintf(stderr,
 			"error %s: file '%s' has %d component, cannot split\n",
 			progname, fname, mirror_count);
+		rc = -EINVAL;
 		goto free_layout;
 	}
 
@@ -2688,39 +2834,58 @@ static int mirror_split(const char *fname, __u32 id, const char *pool,
 			progname, fname);
 		goto free_layout;
 	} else if (rc == LLAPI_LAYOUT_ITER_CONT) {
-		if (mflags & MF_COMP_POOL) {
+		/* the iteration ran to the end without finding the mirror */
+		if (mflags & MF_COMP_POOL)
 			fprintf(stderr,
 				"error %s: file '%s' does not contain mirror with pool '%s'\n",
 				progname, fname, pool);
-			goto free_layout;
-		} else if (mflags & MF_COMP_ID) {
+		else if (mflags & MF_COMP_ID)
 			fprintf(stderr,
 				"error %s: file '%s' does not contain mirror with comp-id %u\n",
 				progname, fname, id);
-			goto free_layout;
-		} else if (mflags & MF_FOREIGN) {
+		else if (mflags & MF_FOREIGN)
 			fprintf(stderr,
 				"error %s: file '%s' does not contain foreign component\n",
 				progname, fname);
-			goto free_layout;
-		} else {
+		else
 			fprintf(stderr,
 				"error %s: file '%s' does not contain mirror with id %u\n",
 				progname, fname, id);
-			goto free_layout;
-		}
+		rc = -EINVAL;
+		goto free_layout;
 	}
 
-	/* Check if this is a parity mirror */
-	if (is_parity_mirror(layout, mirror_id)) {
-		/* Parity mirrors can only be split with -d (destroy) */
-		if (!(mflags & MF_DESTROY)) {
-			fprintf(stderr,
-				"error %s: mirror %u is a parity mirror and can only be destroyed with -d flag\n",
-				progname, mirror_id);
-			rc = -EINVAL;
-			goto free_layout;
-		}
+	/* A parity mirror holds erasure coding parity, not file data, so a
+	 * file left holding only a parity mirror cannot be read.  Refuse to
+	 * split one into a file of its own: 'lfs mirror read -N ID' extracts
+	 * its contents, and 'lfs mirror delete' removes it.
+	 */
+	if (!purge && is_parity_mirror(layout, mirror_id)) {
+		fprintf(stderr,
+			"error %s: cannot split parity mirror %u from '%s': a file containing only a parity mirror cannot be read, use 'lfs mirror delete' to remove it\n",
+			progname, mirror_id, fname);
+		rc = -EINVAL;
+		goto free_layout;
+	}
+
+	/* Resolve the data mirror this parity mirror protects, while the
+	 * layout still describes the file as it is.  Whether that is worth
+	 * warning about is decided once the split has actually happened.
+	 * A parity mirror whose link has been cleared protects nothing.
+	 */
+	link_id = parity_mirror_link(layout, mirror_id);
+
+	/* The MDS refuses a split that leaves the file without a data mirror:
+	 * the parity mirrors left behind cannot serve reads. Fail early here
+	 * so no victim file is created that the split can never populate.
+	 */
+	if (!is_parity_mirror(layout, mirror_id) &&
+	    !data_mirror_remains(layout, mirror_id)) {
+		fprintf(stderr,
+			"error %s: cannot split mirror %u from '%s': it is the only data mirror, and a file left with parity mirrors alone cannot be read\n",
+			progname, mirror_id, fname);
+		rc = -EINVAL;
+		goto free_layout;
 	}
 
 	if (!victim_file && mflags & MF_DESTROY)
@@ -2736,6 +2901,7 @@ static int mirror_split(const char *fname, __u32 id, const char *pool,
 		fprintf(stderr,
 			"error %s: open file '%s' failed: %s\n",
 			progname, fname, strerror(errno));
+		rc = -errno;
 		goto free_layout;
 	}
 
@@ -2801,7 +2967,8 @@ again:
 						      rnumber, fd);
 					if (rc < 0 ||
 					    rc >= sizeof(file_path)) {
-						fdv = -ENAMETOOLONG;
+						rc = -ENAMETOOLONG;
+						fdv = rc;
 						break;
 					}
 
@@ -2830,6 +2997,8 @@ again:
 			snprintf(victim, sizeof(victim), "%s.mirror~%u",
 				 fname, mirror_id);
 			fdv = open(victim, flags, S_IRUSR | S_IWUSR);
+			if (fdv < 0)
+				rc = -errno;
 		}
 	} else {
 		/* user specified victim file */
@@ -2841,12 +3010,14 @@ again:
 			goto close_fd;
 		}
 		fdv = open(victim_file, flags, S_IRUSR | S_IWUSR);
+		if (fdv < 0)
+			rc = -errno;
 	}
 
 	if (fdv < 0) {
 		fprintf(stderr,
 			"error %s: create victim file failed: %s\n",
-			progname, strerror(errno));
+			progname, strerror(-rc));
 		goto close_fd;
 	}
 
@@ -2876,8 +3047,8 @@ again:
 		if ((rc == -EINVAL || rc == -EBUSY) && purge) {
 			/* could be old MDS which prohibit fd==fdv */
 			purge = false;
+			free(data);
 			goto again;
-
 		}
 		if (rc == 0) /* lost lease lock */
 			rc = -EBUSY;
@@ -2886,6 +3057,13 @@ again:
 			progname, fname, strerror(-rc));
 	} else {
 		rc = 0;
+
+		if (link_id != LLAPI_MIRROR_LINK_NONE &&
+		    !(mflags & MF_NO_WARN) &&
+		    !file_stays_redundant(layout, mirror_id))
+			fprintf(stderr,
+				"%s: warning: removing parity mirror %u leaves data mirror %u without a redundant copy\n",
+				progname, mirror_id, link_id);
 	}
 	free(data);
 
@@ -4034,6 +4212,7 @@ enum {
 	LFS_COMP_SET_OPT,
 	LFS_COMP_ADD_OPT,
 	LFS_COMP_NO_VERIFY_OPT,
+	LFS_NO_WARN_OPT,
 	LFS_EC_STRIPE_COUNT_OPT,
 	LFS_EC_EXPERT_OPT,
 	LFS_PROJID_OPT,
@@ -4579,6 +4758,8 @@ static int lfs_setstripe_internal(int argc, char **argv,
 						.has_arg = no_argument},
 	{ .val = LFS_COMP_NO_VERIFY_OPT,
 			.name = "no-verify",	.has_arg = no_argument},
+	{ .val = LFS_NO_WARN_OPT,
+			.name = "no-warn",	.has_arg = no_argument},
 	{ .val = LFS_LAYOUT_FLAGS_OPT,
 			.name = "flags",	.has_arg = required_argument},
 	{ .val = LFS_LAYOUT_FOREIGN_OPT,
@@ -4740,6 +4921,9 @@ static int lfs_setstripe_internal(int argc, char **argv,
 			break;
 		case LFS_COMP_NO_VERIFY_OPT:
 			mirror_flags |= MF_NO_VERIFY;
+			break;
+		case LFS_NO_WARN_OPT:
+			mirror_flags |= MF_NO_WARN;
 			break;
 		case LFS_MIRROR_ID_OPT: {
 			unsigned long int id;
@@ -4950,8 +5134,8 @@ static int lfs_setstripe_internal(int argc, char **argv,
 				if (opc == SO_MIRROR_SPLIT) {
 					if (has_m_file) {
 						fprintf(stderr,
-						      "%s %s: -d cannot used with -f\n",
-							progname, argv[0]);
+						      "%s: -d cannot be used with -f\n",
+							progname);
 						goto usage_error;
 					}
 					mirror_flags |= MF_DESTROY;
@@ -5089,6 +5273,12 @@ static int lfs_setstripe_internal(int argc, char **argv,
 				fprintf(stderr,
 					"error: %s: invalid option: %s\n",
 					progname, argv[optopt + 1]);
+				goto usage_error;
+			}
+			if (mirror_flags & MF_DESTROY) {
+				fprintf(stderr,
+					"%s: -f cannot be used with -d\n",
+					progname);
 				goto usage_error;
 			}
 			if (opc == SO_MIRROR_EXTEND) {
@@ -5734,6 +5924,15 @@ create_mirror:
 		}
 	}
 
+	if (mirror_flags & MF_NO_WARN && opc != SO_MIRROR_SPLIT &&
+	    opc != SO_MIRROR_DELETE) {
+		fprintf(stderr,
+			"error: %s: --no-warn is valid only for lfs mirror split and lfs mirror delete commands\n",
+			progname);
+		result = -EINVAL;
+		goto error;
+	}
+
 	if (comp_set && !comp_id && !lsa.lsa_pool_name && !mirror_id) {
 		fprintf(stderr,
 			"%s %s: --component-set doesn't have component-id or mirror-id set\n",
@@ -6174,13 +6373,17 @@ create_mirror:
 			}
 
 			/* If the mirror is the only non-stale mirror,
-			 * do resync before mirror_split().
+			 * do resync before mirror_split().  Skip it when no
+			 * data mirror would remain: mirror_split() refuses
+			 * that split, and resyncing first would recompute
+			 * parity over the whole file only for it to fail.
 			 */
 			result = 0;
 			if (!layout)
 				layout = layout_get_by_name_or_fid(template ?:
 						fname, fname, 0, O_RDONLY);
-			if (last_non_stale_mirror(mirror_id, layout)) {
+			if (data_mirror_remains(layout, mirror_id) &&
+			    last_non_stale_mirror(mirror_id, layout)) {
 				struct ll_ioc_lease *ioc = NULL;
 
 				ioc = calloc(1, sizeof(*ioc) +
@@ -15610,11 +15813,13 @@ close_fd:
 	return rc;
 }
 
-static inline int get_other_mirror_ids(int fd, __u16 *ids, __u16 exclude_id)
+static inline int get_other_mirror_ids(int fd, __u16 *ids, int size,
+				       __u16 exclude_id)
 {
 	struct llapi_layout *layout;
 	struct collect_ids_data cid = {	.cid_ids = ids,
 					.cid_count = 0,
+					.cid_size = size,
 					.cid_exclude = exclude_id, };
 	int rc;
 
@@ -15644,7 +15849,7 @@ static inline int lfs_mirror_copy(int argc, char **argv)
 {
 	int rc = CMD_HELP;
 	__u16 read_mirror_id = 0;
-	__u16 ids[128] = { 0 };
+	__u16 ids[LUSTRE_MIRROR_COUNT_MAX] = { 0 };
 	int count = 0;
 	struct llapi_layout *layout = NULL;
 	struct llapi_resync_comp comp_array[1024] = { { 0 } };
@@ -15751,7 +15956,8 @@ static inline int lfs_mirror_copy(int argc, char **argv)
 
 	/* write to all other mirrors */
 	if (ids[0] == (__u16)-1) {
-		count = get_other_mirror_ids(fd, ids, read_mirror_id);
+		count = get_other_mirror_ids(fd, ids, ARRAY_SIZE(ids),
+					     read_mirror_id);
 		if (count <= 0) {
 			rc = count;
 			fprintf(stderr,
@@ -16771,9 +16977,10 @@ next_mirror:
  * @ecs_size:    Capacity of the @ecs array.
  *
  * Walks @layout and collects the ids of every EC parity component
- * (LCME_FL_PARITY) that is eligible for verification. NOSYNC components are
- * skipped silently; STALE parity components are treated as an error since
- * their on-disk parities cannot be meaningfully compared against the data.
+ * (LCME_FL_PARITY) that is eligible for verification. NOSYNC components and
+ * components with no data component to pair with are skipped silently; STALE
+ * parity components are treated as an error since their on-disk parities
+ * cannot be meaningfully compared against the data.
  *
  * Return: number of EC parity components written to @ecs on success, or a
  * negative errno on failure.
@@ -16797,6 +17004,7 @@ static inline int lfs_mirror_prepare_ec(struct llapi_layout *layout, __u32 *ecs,
 	rc = 0;
 	while (rc == 0) {
 		uint32_t id, flags;
+		uint16_t link_id;
 
 		rc = llapi_layout_comp_flags_get(layout, &flags);
 		if (rc < 0) {
@@ -16811,6 +17019,20 @@ static inline int lfs_mirror_prepare_ec(struct llapi_layout *layout, __u32 *ecs,
 
 		/* Skip nosync components - they are intentionally kept stale */
 		if (flags & LCME_FL_NOSYNC)
+			goto next;
+
+		/* Skip a parity component with no data mirror to pair with:
+		 * its link is cleared, so there is nothing to verify against.
+		 */
+		rc = llapi_layout_comp_mirror_link_id_get(layout, &link_id);
+		if (rc < 0) {
+			fprintf(stderr,
+				"%s: Failed to get mirror link id.\n",
+				progname);
+			goto error;
+		}
+
+		if (link_id == LLAPI_MIRROR_LINK_NONE)
 			goto next;
 
 		rc = llapi_layout_comp_id_get(layout, &id);

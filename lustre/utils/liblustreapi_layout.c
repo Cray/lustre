@@ -5715,10 +5715,20 @@ int llapi_ec_resync_many_params(int fd, struct llapi_layout *layout,
 		data_comp = __llapi_layout_find_data_comp_by_parity(layout,
 								    ec_comp);
 		if (!data_comp) {
-			rc = -ENOENT;
-			llapi_error(LLAPI_MSG_ERROR, rc,
-			      "cannot find data comp");
-			goto out;
+			/* A parity comp with no data comp has nothing to
+			 * resync from, whether its link was cleared or it
+			 * still names a mirror that is gone: a split done by
+			 * an MDS without this fix leaves the link behind.
+			 * Skip it instead of failing every other stale comp
+			 * of the file along with it, but do not report it as
+			 * synced: LL_LEASE_RESYNC_DONE would clear
+			 * LCME_FL_STALE from parity that nothing recomputed.
+			 */
+			llapi_err_noerrno(LLAPI_MSG_WARN,
+			      "no data comp for ec comp 0x%08x, link id %u",
+			      ec_comp->llc_id, ec_comp->llc_mirror_link_id);
+			comp_array[i].lrc_synced = false;
+			continue;
 		}
 
 		rc = llapi_ec_check_comp_match(data_comp, ec_comp);
@@ -5786,11 +5796,15 @@ int llapi_ec_verify_comps(int fd, struct llapi_layout *layout, __u32 *ecs,
 		data_comp = __llapi_layout_find_data_comp_by_parity(layout,
 								    ec_comp);
 		if (!data_comp) {
-			rc = -ENOENT;
-			llapi_error(
-				LLAPI_MSG_ERROR, rc,
-				"ec component does not have a matching data component");
-			goto out;
+			/* A parity comp with no data comp has nothing to
+			 * verify against, whether its link was cleared or it
+			 * still names a mirror that is gone. Skip it rather
+			 * than failing the whole file.
+			 */
+			llapi_err_noerrno(LLAPI_MSG_WARN,
+			      "no data comp for ec comp 0x%08x, link id %u",
+			      ec_comp->llc_id, ec_comp->llc_mirror_link_id);
+			continue;
 		}
 
 		rc = llapi_ec_check_comp_match(data_comp, ec_comp);

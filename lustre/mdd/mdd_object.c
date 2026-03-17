@@ -1812,19 +1812,87 @@ stop:
 	RETURN(rc);
 }
 
+/* Data and parity mirrors of an EC layout are joined by a bidirectional link:
+ * each component's lcme_mirror_link_id holds the mirror id of its counterpart
+ * (resolved by lod_bind_data_parity()).  These helpers read and clear that
+ * link in the on-disk (little-endian) layout.
+ */
+static inline __u16 mdd_lcme_link_id(const struct lov_comp_md_entry_v1 *entry)
+{
+	return lcme_timestamp_id_unpack(le64_to_cpu(entry->lcme_time_and_id));
+}
+
+static inline void mdd_lcme_clear_link_id(struct lov_comp_md_entry_v1 *entry)
+{
+	__u64 tai = le64_to_cpu(entry->lcme_time_and_id);
+
+	entry->lcme_time_and_id = cpu_to_le64(
+		lcme_timestamp_and_id_pack(lcme_timestamp_time_unpack(tai), 0));
+}
+
 /**
- * mdd_split_ea() - Extract the mirror with specified mirror id, and store the
- * splitted mirror layout to @buf.
+ * mdd_ec_pair_linked() - Checks that @link_id and @mirror_id form an EC pair.
+ * @comp_v1: mirrored layout
+ * @comp_cnt: number of components in @comp_v1
+ * @link_id: mirror id claimed as the parity counterpart of @mirror_id
+ * @mirror_id: mirror id of the mirror being split
+ *
+ * A link that fails this test is stale: an MDS without the link clearing
+ * below leaves one behind whenever it splits a mirror, and
+ * lod_declare_layout_merge() hands out mirror ids as max + 1, so the id can
+ * be reused.  Co-splitting on a stale link would drag an unrelated mirror
+ * into the victim, or count a mirror that does not exist and understate
+ * lcm_mirror_count in the remaining layout.
+ *
+ * Return:
+ * * %true if @link_id names an EC mirror in @comp_v1 that links to @mirror_id.
+ * * %false otherwise
+ */
+static bool mdd_ec_pair_linked(const struct lov_comp_md_v1 *comp_v1,
+			       __u16 comp_cnt, __u16 link_id, __u16 mirror_id)
+{
+	const struct lov_comp_md_entry_v1 *entry;
+	bool found = false;
+	int i;
+
+	for (i = 0; i < comp_cnt; i++) {
+		entry = &comp_v1->lcm_entries[i];
+		if (mirror_id_of(le32_to_cpu(entry->lcme_id)) != link_id)
+			continue;
+		if (!(le32_to_cpu(entry->lcme_flags) & LCME_FL_PARITY))
+			return false;
+		if (mdd_lcme_link_id(entry) != mirror_id)
+			return false;
+		found = true;
+	}
+
+	return found;
+}
+
+/**
+ * mdd_split_ea() - Extract a mirror, and its EC parity mirror, from a layout.
+ * @obj: object the layout belongs to, for error reporting
  * @comp_v1: mirrored layout
  * @mirror_id: the mirror with mirror_id to be extracted
- * @buf: store the layout excluding the extracted mirror, caller free the buffer
- * we allocated in this function [out]
+ * @buf: store the layout excluding the extracted mirrors, caller free the
+ * buffer we allocated in this function [out]
  * @buf_vic: store the extracted layout, caller free the buffer we allocated in
  * this function [out]
  *
- * Return 0 on success or %negative on error
+ * A data mirror joined to an EC parity mirror is extracted together with it,
+ * so @buf_vic can hold two mirrors.  Splitting a parity mirror directly never
+ * drags its data mirror along.  Links naming a mirror that ended up on the
+ * other side are cleared in both layouts.  The victim keeps only
+ * LCME_FL_INIT and LCME_FL_PARITY, and its parity mirror is marked
+ * LCME_FL_STALE unless the pair was in sync on the source.
+ *
+ * Return:
+ * * %0 on success
+ * * %-EINVAL if the split would leave no mirror, or no data mirror, behind
+ * * %-ENOMEM if a layout buffer could not be allocated
  */
-static int mdd_split_ea(struct lov_comp_md_v1 *comp_v1, __u16 mirror_id,
+static int mdd_split_ea(struct mdd_object *obj,
+			struct lov_comp_md_v1 *comp_v1, __u16 mirror_id,
 			struct lu_buf *buf, struct lu_buf *buf_vic)
 {
 	struct lov_comp_md_v1 *comp_rem;
@@ -1833,8 +1901,19 @@ static int mdd_split_ea(struct lov_comp_md_v1 *comp_v1, __u16 mirror_id,
 	struct lov_comp_md_entry_v1 *entry_rem;
 	struct lov_comp_md_entry_v1 *entry_vic;
 	__u16 mirror_cnt;
-	__u16 comp_cnt, count = 0;
+	__u16 comp_cnt, vic_comp_cnt = 0;
+	__u16 parity_id = 0;
+	__u16 mirrors_split = 1;
+	__u16 link_id = 0;
+	__u32 vic_flag_mask = LCME_FL_INIT | LCME_FL_PARITY;
+	bool target_found = false;
+	bool target_is_parity = false;
+	bool target_stale = false;
+	bool parity_stale = false;
+	bool data_remains = false;
+	bool vic_parity_stale = false;
 	int lmm_size, lmm_size_vic = 0;
+	int rc;
 	int i, j, k;
 	int offset, offset_rem, offset_vic;
 
@@ -1845,20 +1924,77 @@ static int mdd_split_ea(struct lov_comp_md_v1 *comp_v1, __u16 mirror_id,
 	comp_cnt = le16_to_cpu(comp_v1->lcm_entry_count);
 	lmm_size = le32_to_cpu(comp_v1->lcm_size);
 
+	/* Locate the target mirror and read its EC pairing. */
 	for (i = 0; i < comp_cnt; i++) {
 		entry = &comp_v1->lcm_entries[i];
-		if (mirror_id_of(le32_to_cpu(entry->lcme_id)) == mirror_id) {
-			count++;
-			lmm_size_vic += sizeof(*entry);
-			lmm_size_vic += le32_to_cpu(entry->lcme_size);
-		} else if (count > 0) {
-			/* find the specified mirror */
-			break;
-		}
+		if (mirror_id_of(le32_to_cpu(entry->lcme_id)) != mirror_id)
+			continue;
+		target_found = true;
+		if (le32_to_cpu(entry->lcme_flags) & LCME_FL_PARITY)
+			target_is_parity = true;
+		if (!link_id)
+			link_id = mdd_lcme_link_id(entry);
+	}
+	if (!target_found)
+		return -EINVAL;
+
+	/* Splitting a data mirror co-splits its paired parity mirror so the
+	 * parity is never stranded without data.  Splitting a parity mirror
+	 * directly never drags its data mirror along.
+	 */
+	if (!target_is_parity && link_id &&
+	    mdd_ec_pair_linked(comp_v1, comp_cnt, link_id, mirror_id)) {
+		parity_id = link_id;
+		mirrors_split = 2;
 	}
 
-	if (count == 0)
-		return -EINVAL;
+	for (i = 0; i < comp_cnt; i++) {
+		__u16 mid;
+
+		entry = &comp_v1->lcm_entries[i];
+		mid = mirror_id_of(le32_to_cpu(entry->lcme_id));
+		if (mid == mirror_id || (parity_id && mid == parity_id)) {
+			vic_comp_cnt++;
+			if (le32_to_cpu(entry->lcme_flags) & LCME_FL_STALE) {
+				if (mid == mirror_id)
+					target_stale = true;
+				else
+					parity_stale = true;
+			}
+			lmm_size_vic += sizeof(*entry);
+			lmm_size_vic += le32_to_cpu(entry->lcme_size);
+			continue;
+		}
+
+		if (!(le32_to_cpu(entry->lcme_flags) & LCME_FL_PARITY))
+			data_remains = true;
+	}
+
+	if (mirrors_split >= mirror_cnt) {
+		rc = -EINVAL;
+		CERROR("%s: cannot split all %u mirrors of "DFID": rc = %d\n",
+		       mdd_obj_dev_name(obj), mirror_cnt,
+		       PFID(mdd_object_fid(obj)), rc);
+		return rc;
+	}
+
+	if (!data_remains) {
+		rc = -EINVAL;
+		CERROR("%s: cannot split the only data mirror %u of "DFID": rc = %d\n",
+		       mdd_obj_dev_name(obj), mirror_id,
+		       PFID(mdd_object_fid(obj)), rc);
+		return rc;
+	}
+
+	/* The victim's data mirror is its only copy, so it defines the file
+	 * content and must be in-sync: a stale one leaves the victim unusable,
+	 * since lod_parse_striping() rejects an all-stale layout with -EPERM
+	 * and an in-sync parity mirror as the primary gives -EUCLEAN.  The
+	 * parity matches that data only if the pair was fully in-sync on the
+	 * source, so mark it stale otherwise and let `lfs mirror resync`
+	 * rebuild it.
+	 */
+	vic_parity_stale = target_stale || parity_stale;
 
 	lu_buf_alloc(buf, lmm_size - lmm_size_vic);
 	if (!buf->lb_buf)
@@ -1874,46 +2010,74 @@ static int mdd_split_ea(struct lov_comp_md_v1 *comp_v1, __u16 mirror_id,
 	comp_vic = (struct lov_comp_md_v1 *)buf_vic->lb_buf;
 
 	memcpy(comp_rem, comp_v1, sizeof(*comp_v1));
-	comp_rem->lcm_mirror_count = cpu_to_le16(mirror_cnt - 2);
-	comp_rem->lcm_entry_count = cpu_to_le32(comp_cnt - count);
+	comp_rem->lcm_mirror_count = cpu_to_le16(mirror_cnt - 1 - mirrors_split);
+	comp_rem->lcm_entry_count = cpu_to_le16(comp_cnt - vic_comp_cnt);
 	comp_rem->lcm_size = cpu_to_le32(lmm_size - lmm_size_vic);
 	if (!comp_rem->lcm_mirror_count)
-		comp_rem->lcm_flags = cpu_to_le16(comp_rem->lcm_flags &
-						  ~LCM_FL_FLR_MASK);
+		comp_rem->lcm_flags = cpu_to_le16(
+			le16_to_cpu(comp_rem->lcm_flags) & ~LCM_FL_FLR_MASK);
 
 	memset(comp_vic, 0, sizeof(*comp_v1));
 	comp_vic->lcm_magic = cpu_to_le32(LOV_MAGIC_COMP_V1);
-	comp_vic->lcm_mirror_count = 0;
-	comp_vic->lcm_entry_count = cpu_to_le32(count);
+	if (parity_id) {
+		/* victim has data + parity mirrors: FLR with 2 mirrors */
+		comp_vic->lcm_mirror_count = cpu_to_le16(1);
+		comp_vic->lcm_flags = cpu_to_le16(LCM_FL_RDONLY);
+	} else {
+		comp_vic->lcm_mirror_count = 0;
+		comp_vic->lcm_flags = 0;
+	}
+	comp_vic->lcm_entry_count = cpu_to_le16(vic_comp_cnt);
 	comp_vic->lcm_size = cpu_to_le32(lmm_size_vic + sizeof(*comp_vic));
-	comp_vic->lcm_flags = cpu_to_le16(comp_vic->lcm_flags &
-					  ~LCM_FL_FLR_MASK);
-	comp_vic->lcm_layout_gen = 0;
+	/* The victim inherits the source's objects, which carry the source's
+	 * layout version in their filter_fid.  Starting the victim's layout
+	 * generation from zero would make every designated-mirror write it
+	 * later issues (`lfs mirror resync`) look older than its own objects,
+	 * and ofd_verify_layout_version() would reject them with -ESTALE.
+	 */
+	comp_vic->lcm_layout_gen = comp_v1->lcm_layout_gen;
 
 	offset = sizeof(*comp_v1) + sizeof(*entry) * comp_cnt;
 	offset_rem = sizeof(*comp_rem) +
-		     sizeof(*entry_rem) * (comp_cnt - count);
-	offset_vic = sizeof(*comp_vic) + sizeof(*entry_vic) * count;
+		     sizeof(*entry_rem) * (comp_cnt - vic_comp_cnt);
+	offset_vic = sizeof(*comp_vic) + sizeof(*entry_vic) * vic_comp_cnt;
 	for (i = j = k = 0; i < comp_cnt; i++) {
 		struct lov_mds_md *lmm, *lmm_dst;
 		bool vic = false;
+		__u16 mid;
 
 		entry = &comp_v1->lcm_entries[i];
 		entry_vic = &comp_vic->lcm_entries[j];
 		entry_rem = &comp_rem->lcm_entries[k];
 
-		if (mirror_id_of(le32_to_cpu(entry->lcme_id)) == mirror_id)
+		mid = mirror_id_of(le32_to_cpu(entry->lcme_id));
+		if (mid == mirror_id || (parity_id && mid == parity_id))
 			vic = true;
 
 		/* copy component entry */
 		if (vic) {
 			memcpy(entry_vic, entry, sizeof(*entry));
-			entry_vic->lcme_flags &= cpu_to_le32(LCME_FL_INIT);
+			entry_vic->lcme_flags &= cpu_to_le32(vic_flag_mask);
+			if (vic_parity_stale && parity_id && mid == parity_id)
+				entry_vic->lcme_flags |=
+					cpu_to_le32(LCME_FL_STALE);
 			entry_vic->lcme_offset = cpu_to_le32(offset_vic);
+			/* If the paired mirror stays behind (a direct parity
+			 * split, or a data mirror whose link is stale) the
+			 * link to it now dangles -- drop it.
+			 */
+			if (!parity_id)
+				mdd_lcme_clear_link_id(entry_vic);
 			j++;
 		} else {
+			__u16 lid;
+
 			memcpy(entry_rem, entry, sizeof(*entry));
 			entry_rem->lcme_offset = cpu_to_le32(offset_rem);
+			/* Drop links pointing at a mirror that was split out */
+			lid = mdd_lcme_link_id(entry_rem);
+			if (lid == mirror_id || (parity_id && lid == parity_id))
+				mdd_lcme_clear_link_id(entry_rem);
 			k++;
 		}
 
@@ -1988,7 +2152,7 @@ retry:
 	 */
 	memset(buf, 0, sizeof(*buf));
 	memset(buf_vic, 0, sizeof(*buf_vic));
-	rc = mdd_split_ea(lcm, mrd->mrd_mirror_id, buf, buf_vic);
+	rc = mdd_split_ea(obj, lcm, mrd->mrd_mirror_id, buf, buf_vic);
 	if (rc < 0)
 		GOTO(stop, rc);
 	/**
