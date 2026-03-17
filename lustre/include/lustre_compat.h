@@ -604,7 +604,12 @@ static inline bool is_root_inode(struct inode *inode)
 }
 #endif
 
-#ifndef HAVE_IOV_ITER_GET_PAGES_ALLOC2
+#if defined(HAVE_DIRECTIO_ITER) || defined(HAVE_IOV_ITER_RW) || \
+	defined(HAVE_DIRECTIO_2ARGS)
+#define HAVE_DIO_ITER 1
+#endif
+
+#if defined(HAVE_DIO_ITER) && !defined(HAVE_IOV_ITER_GET_PAGES_ALLOC2)
 static inline ssize_t iov_iter_get_pages_alloc2(struct iov_iter *i,
 					        struct page ***pages,
 					        size_t maxsize, size_t *start)
