@@ -261,8 +261,14 @@ void qsd_upd_schedule(struct qsd_qtype_info *qqi, struct lquota_entry *lqe,
 
 	write_unlock(&qsd->qsd_lock);
 
-	if (need_to_trigger_reint)
+	if (need_to_trigger_reint) {
+		if (global)
+			qqi->qqi_glb_uptodate = 0;
+		else
+			qqi->qqi_slv_uptodate = 0;
+
 		qsd_start_reint_thread(qqi);
+	}
 
 	EXIT;
 }
@@ -493,8 +499,17 @@ static bool qsd_job_pending(struct qsd_instance *qsd, struct list_head *upd,
 			continue;
 
 		if (qqi->qqi_last_version_update_time + QSD_WB_INTERVAL <
-		    ktime_get_seconds() && !list_empty(&qqi->qqi_deferred_glb))
-			*uptodate = false;
+		    ktime_get_seconds()) {
+			if (!list_empty(&qqi->qqi_deferred_glb)) {
+				qqi->qqi_glb_uptodate = 0;
+				*uptodate = false;
+			}
+
+			if (!list_empty(&qqi->qqi_deferred_slv)) {
+				qqi->qqi_slv_uptodate = 0;
+				*uptodate = false;
+			}
+		}
 
 		if ((!qqi->qqi_glb_uptodate || !qqi->qqi_slv_uptodate) &&
 		     !qqi->qqi_reint)
