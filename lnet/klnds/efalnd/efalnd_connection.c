@@ -430,12 +430,12 @@ kefalnd_init_conn_data_qps(struct kefa_conn *conn,
 	if (nqps > EFALND_MAX_PEER_QPS)
 		return -EOPNOTSUPP;
 
-	conn->nqps = nqps;
-
 	LIBCFS_CPT_ALLOC_GFP(conn->data_qps, lnet_cpt_table(), efa_dev->cpt,
 			     nqps * sizeof(*conn->data_qps), GFP_ATOMIC);
 	if (!conn->data_qps)
 		return -ENOMEM;
+
+	conn->nqps = nqps;
 
 	for (i = 0; i < nqps; i++) {
 		conn->data_qps[i].qp_num = data_qps[i].qp_num;
