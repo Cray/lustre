@@ -43,6 +43,7 @@
 #include <linux/fs.h>
 #include <linux/file.h>
 #include <linux/list.h>
+#include <linux/namei.h>
 
 #include <linux/sysctl.h>
 #include <linux/debugfs.h>
@@ -734,7 +735,7 @@ static void lnet_insert_debugfs_links(
 				       symlinks->target);
 }
 
-#ifndef HAVE_D_HASH_AND_LOOKUP
+#if !defined HAVE_D_HASH_AND_LOOKUP && !defined HAVE_TRY_LOOKUP_NOPERM
 /**
  * d_hash_and_lookup - hash the qstr then search for a dentry
  * @dir: Directory to search in
@@ -766,7 +767,7 @@ void lnet_remove_debugfs(const struct ctl_table *table)
 					      strlen(table->procname));
 		struct dentry *dentry;
 
-		dentry = d_hash_and_lookup(lnet_debugfs_root, &dname);
+		dentry = try_lookup_noperm(&dname, lnet_debugfs_root);
 		debugfs_remove(dentry);
 	}
 }

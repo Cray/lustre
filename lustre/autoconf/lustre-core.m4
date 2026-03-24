@@ -3565,6 +3565,30 @@ AC_DEFUN([LC_DQUOT_TRANSFER_WITH_USER_NS], [
 ]) # LC_DQUOT_TRANSFER_WITH_USER_NS
 
 #
+# LC_HAVE_FILEMAP_GET_FOLIOS
+#
+# Linux commit v5.19-rc3-342-gbe0ced5e9cb8
+#  filemap: Add filemap_get_folios()
+#
+AC_DEFUN([LC_SRC_HAVE_FILEMAP_GET_FOLIOS], [
+	LB2_LINUX_TEST_SRC([filemap_get_folios], [
+		#include <linux/pagemap.h>
+	],[
+		struct address_space *m = NULL;
+		pgoff_t start = 0;
+		struct folio_batch *fbatch = NULL;
+		(void)filemap_get_folios(m, &start, ULONG_MAX, fbatch);
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_FILEMAP_GET_FOLIOS], [
+	AC_MSG_CHECKING([if filemap_get_folios() exists])
+	LB2_LINUX_TEST_RESULT([filemap_get_folios], [
+		AC_DEFINE(HAVE_FILEMAP_GET_FOLIOS, 1,
+			[filemap_get_folios() exists])
+	])
+]) # LC_HAVE_FILEMAP_GET_FOLIOS
+
+#
 # LC_HAVE_ADDRESS_SPACE_OPERATIONS_MIGRATE_FOLIO
 #
 # Linux commit v5.19-rc3-392-g5490da4f06d1
@@ -4276,6 +4300,27 @@ AC_DEFUN([LC_HAVE_INODE_GET_CTIME], [
 ]) # LC_HAVE_INODE_GET_CTIME
 
 #
+# LC_HAVE_COPY_FOLIO_FROM_ITER_ATOMIC
+#
+# Kernel 6.6 commit v6.5-rc3-3-g1b0306981e0f
+# iov_iter: replace iov_iter_copy_from_user_atomic() with iterator-advancing variant
+#
+AC_DEFUN([LC_SRC_HAVE_COPY_FOLIO_FROM_ITER_ATOMIC], [
+	LB2_LINUX_TEST_SRC([copy_folio_from_iter_atomic], [
+		#include <linux/uio.h>
+	],[
+		copy_folio_from_iter_atomic(NULL, 0, 0, NULL);
+	])
+])
+AC_DEFUN([LC_HAVE_COPY_FOLIO_FROM_ITER_ATOMIC], [
+	LB2_MSG_LINUX_TEST_RESULT([if have copy_folio_from_iter_atomic],
+	[copy_folio_from_iter_atomic], [
+		AC_DEFINE(HAVE_COPY_FOLIO_FROM_ITER_ATOMIC, 1,
+			['copy_folio_from_iter_atomic' exists])
+	])
+]) # LC_HAVE_COPY_FOLIO_FROM_ITER_ATOMIC
+
+#
 # LC_HAVE_MMAP_WRITE_TRYLOCK
 #
 # linux kernel v6.5-rc4-110-gcf95e337cb63
@@ -4925,6 +4970,38 @@ AC_DEFUN([LC_HAVE_IOPS_MKDIR_RETURNS_DENTRY], [
 ]) # LC_HAVE_IOPS_MKDIR_RETURNS_DENTRY
 
 #
+# LC_HAVE_TRY_LOOKUP_NOPERM
+#
+# Linux commit v6.15-rc1-5-g06c567403ae5
+#   Use try_lookup_noperm() instead of d_hash_and_lookup() outside of VFS
+#
+AC_DEFUN([LC_SRC_HAVE_TRY_LOOKUP_NOPERM], [
+	LB2_LINUX_TEST_SRC([try_lookup_noperm], [
+		#include <linux/namei.h>
+	],[
+		const char *up = "..";
+		struct dentry *from = NULL;
+		struct dentry *dentry = try_lookup_noperm(&QSTR(up), from);
+
+		(void) dentry;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_TRY_LOOKUP_NOPERM], [
+	LB2_MSG_LINUX_TEST_RESULT([if try_lookup_noperm() is available],
+	[try_lookup_noperm], [
+		AC_DEFINE(HAVE_TRY_LOOKUP_NOPERM, 1,
+			[try_lookup_noperm() is available])
+	], [
+		AC_DEFINE([try_lookup_noperm(name, dentry)],
+			  [d_hash_and_lookup((dentry), (name))],
+			  [try_lookup_noperm() was d_hash_and_lookup()])
+		AC_DEFINE([lookup_noperm(qstr, dentry)],
+			  [lookup_one_len((qstr)->name, (dentry), (qstr)->len)],
+			  [lookup_noperm() was lookup_one_len()])
+	])
+]) # LC_HAVE_TRY_LOOKUP_NOPERM
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -5161,6 +5238,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	# 6.0
 	LC_SRC_HAVE_NO_LLSEEK
 	LC_SRC_DQUOT_TRANSFER_WITH_USER_NS
+	LC_SRC_HAVE_FILEMAP_GET_FOLIOS
 	LC_SRC_HAVE_ADDRESS_SPACE_OPERATIONS_MIGRATE_FOLIO
 	LC_SRC_REGISTER_SHRINKER_FORMAT_NAMED
 	LC_SRC_HAVE_VFS_SETXATTR_NON_CONST_VALUE
@@ -5201,6 +5279,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	# 6.6
 	LC_SRC_HAVE_FLUSH___WORKQUEUE
 	LC_SRC_HAVE_INODE_GET_CTIME
+	LC_SRC_HAVE_COPY_FOLIO_FROM_ITER_ATOMIC
 	LC_SRC_HAVE_MMAP_WRITE_TRYLOCK
 	LC_SRC_HAVE_GENERIC_FILEATTR_HAS_MASK_ARG
 
@@ -5242,6 +5321,9 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_HAVE_WAIT_ON_PAGE_LOCKED
 	LC_SRC_HAVE_HRTIMER_SETUP
 	LC_SRC_HAVE_IOPS_MKDIR_RETURNS_DENTRY
+
+	# 6.16
+	LC_SRC_HAVE_TRY_LOOKUP_NOPERM
 ])
 
 AC_DEFUN([LC_PROG_LINUX_RESULTS], [
@@ -5492,6 +5574,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	# 6.0
 	LC_HAVE_NO_LLSEEK
 	LC_DQUOT_TRANSFER_WITH_USER_NS
+	LC_HAVE_FILEMAP_GET_FOLIOS
 	LC_HAVE_ADDRESS_SPACE_OPERATIONS_MIGRATE_FOLIO
 	LC_REGISTER_SHRINKER_FORMAT_NAMED
 	LC_HAVE_VFS_SETXATTR_NON_CONST_VALUE
@@ -5531,6 +5614,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	# 6.6
 	LC_HAVE_FLUSH___WORKQUEUE
 	LC_HAVE_INODE_GET_CTIME
+	LC_HAVE_COPY_FOLIO_FROM_ITER_ATOMIC
 	LC_HAVE_MMAP_WRITE_TRYLOCK
 	LC_HAVE_GENERIC_FILEATTR_HAS_MASK_ARG
 
@@ -5572,6 +5656,9 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_HAVE_WAIT_ON_PAGE_LOCKED
 	LC_HAVE_HRTIMER_SETUP
 	LC_HAVE_IOPS_MKDIR_RETURNS_DENTRY
+
+	# 6.16
+	LC_HAVE_TRY_LOOKUP_NOPERM
 ])
 
 #

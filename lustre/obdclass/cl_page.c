@@ -1054,11 +1054,15 @@ void cl_page_completion(const struct lu_env *env,
 	cl_page->cp_sync_io = NULL;
 
 	if (likely(ioret == 0)) {
-		if (anchor->csi_highest_success < cl_page->cp_vmpage->index)
-			anchor->csi_highest_success = cl_page->cp_vmpage->index;
+		if (anchor->csi_highest_success <
+		    folio_index_page(cl_page->cp_vmpage))
+			anchor->csi_highest_success =
+				folio_index_page(cl_page->cp_vmpage);
 	} else {
-		if (anchor->csi_lowest_failed > cl_page->cp_vmpage->index)
-			anchor->csi_lowest_failed = cl_page->cp_vmpage->index;
+		if (anchor->csi_lowest_failed >
+		    folio_index_page(cl_page->cp_vmpage))
+			anchor->csi_lowest_failed =
+				folio_index_page(cl_page->cp_vmpage);
 	}
 
 	cl_sync_io_note(env, anchor, ioret);

@@ -1214,7 +1214,7 @@ static struct dentry *pcc_lookup(struct dentry *base, char *pathname)
 
 		/* look up the current component */
 		inode_lock(parent->d_inode);
-		child = lookup_one_len(component, parent, strlen(component));
+		child = lookup_noperm(&QSTR(component), parent);
 		inode_unlock(parent->d_inode);
 
 		/* repair the path string: put '/' back in place of the NUL */
@@ -2164,7 +2164,7 @@ pcc_mkdir(struct dentry *base, const char *name, umode_t mode)
 	struct inode *dir = base->d_inode;
 
 	inode_lock(dir);
-	dentry = lookup_one_len(name, base, strlen(name));
+	dentry = lookup_noperm(&QSTR(name), base);
 	if (IS_ERR(dentry))
 		goto out;
 
@@ -2215,7 +2215,7 @@ pcc_create(struct dentry *base, const char *name, umode_t mode)
 	struct inode *dir = base->d_inode;
 
 	inode_lock(dir);
-	dentry = lookup_one_len(name, base, strlen(name));
+	dentry = lookup_noperm(&QSTR(name), base);
 	if (IS_ERR(dentry))
 		goto out;
 

@@ -1969,7 +1969,7 @@ static int osd_ios_lf_fill(void *buf,
 		RETURN(0);
 
 	scrub->os_lf_scanned++;
-	child = osd_lookup_one_len(dev, name, parent, namelen);
+	child = osd_lookup_noperm(dev, &QSTR_LEN(name, namelen), parent);
 	if (IS_ERR(child)) {
 		rc = PTR_ERR(child);
 		CDEBUG(D_LFSCK, "%s: cannot lookup child '%.*s': rc = %d\n",
@@ -2045,7 +2045,8 @@ static int osd_ios_varfid_fill(void *buf,
 	if (name[0] == '.')
 		RETURN(0);
 
-	child = osd_lookup_one_len(dev, name, fill_buf->oifb_dentry, namelen);
+	child = osd_lookup_noperm(dev, &QSTR_LEN(name, namelen),
+				  fill_buf->oifb_dentry);
 	if (IS_ERR(child))
 		RETURN(PTR_ERR(child));
 
@@ -2094,7 +2095,8 @@ static int osd_ios_dl_fill(void *buf,
 	if (map->olm_name == NULL)
 		RETURN(0);
 
-	child = osd_lookup_one_len(dev, name, fill_buf->oifb_dentry, namelen);
+	child = osd_lookup_noperm(dev, &QSTR_LEN(name, namelen),
+				  fill_buf->oifb_dentry);
 	if (IS_ERR(child))
 		RETURN(PTR_ERR(child));
 
@@ -2129,7 +2131,8 @@ static int osd_ios_uld_fill(void *buf,
 	if (name[0] != '[')
 		RETURN(0);
 
-	child = osd_lookup_one_len(dev, name, fill_buf->oifb_dentry, namelen);
+	child = osd_lookup_noperm(dev, &QSTR_LEN(name, namelen),
+				  fill_buf->oifb_dentry);
 	if (IS_ERR(child))
 		RETURN(PTR_ERR(child));
 
@@ -2180,7 +2183,8 @@ static int osd_ios_root_fill(void *buf,
 	if (map->olm_name == NULL)
 		RETURN(0);
 
-	child = osd_lookup_one_len(dev, name, fill_buf->oifb_dentry, namelen);
+	child = osd_lookup_noperm(dev, &QSTR_LEN(name, namelen),
+				  fill_buf->oifb_dentry);
 	if (IS_ERR(child))
 		RETURN(PTR_ERR(child));
 	else if (!child->d_inode)
@@ -2266,8 +2270,7 @@ osd_ios_ROOT_scan(struct osd_thread_info *info, struct osd_device *dev,
 	spin_lock(&scrub->os_lock);
 	scrub->os_convert_igif = 1;
 	spin_unlock(&scrub->os_lock);
-	child = osd_lookup_one_len_unlocked(dev, dot_lustre_name, dentry,
-					    strlen(dot_lustre_name));
+	child = osd_lookup_noperm_unlocked(dev, &QSTR(dot_lustre_name), dentry);
 	if (IS_ERR(child)) {
 		if (PTR_ERR(child) != -ENOENT)
 			RETURN(PTR_ERR(child));
@@ -2341,8 +2344,7 @@ osd_ios_OBJECTS_scan(struct osd_thread_info *info, struct osd_device *dev,
 			RETURN(rc);
 	}
 
-	child = osd_lookup_one_len_unlocked(dev, ADMIN_USR, dentry,
-					    strlen(ADMIN_USR));
+	child = osd_lookup_noperm_unlocked(dev, &QSTR(ADMIN_USR), dentry);
 	if (IS_ERR(child)) {
 		rc = PTR_ERR(child);
 	} else {
@@ -2357,8 +2359,7 @@ osd_ios_OBJECTS_scan(struct osd_thread_info *info, struct osd_device *dev,
 	if (rc != 0 && rc != -ENOENT)
 		GOTO(out, rc);
 
-	child = osd_lookup_one_len_unlocked(dev, ADMIN_GRP, dentry,
-					    strlen(ADMIN_GRP));
+	child = osd_lookup_noperm_unlocked(dev, &QSTR(ADMIN_GRP), dentry);
 	if (IS_ERR(child))
 		GOTO(out, rc = PTR_ERR(child));
 
@@ -2422,9 +2423,9 @@ static void osd_initial_OI_scrub(struct osd_thread_info *info,
 			continue;
 		}
 
-		child = osd_lookup_one_len_unlocked(dev, map->olm_name,
-						    osd_sb(dev)->s_root,
-						    map->olm_namelen);
+		child = osd_lookup_noperm_unlocked(dev, &QSTR_LEN(map->olm_name,
+						   map->olm_namelen),
+						   osd_sb(dev)->s_root);
 		if (PTR_ERR(child) == -ENOENT ||
 		    (!IS_ERR(child) && !child->d_inode))
 			osd_scrub_refresh_mapping(info, dev, &map->olm_fid,
