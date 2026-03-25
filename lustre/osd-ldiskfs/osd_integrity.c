@@ -298,7 +298,7 @@ static void bio_integrity_fault_inject(struct bio *bio)
 
 #if IS_ENABLED(CONFIG_BLK_DEV_INTEGRITY)
 static int bio_dif_compare(__u16 *expected_guard_buf, void *bio_prot_buf,
-			   unsigned int sectors, int tuple_size)
+			   unsigned int sectors, int metadata_size)
 {
 	__be16 *expected_guard;
 	__be16 *bio_guard;
@@ -311,11 +311,11 @@ static int bio_dif_compare(__u16 *expected_guard_buf, void *bio_prot_buf,
 			CERROR(
 			       "unexpected guard tags on sector %d expected guard %u, bio guard %u, sectors %u, tuple size %d\n",
 			       i, *expected_guard, *bio_guard, sectors,
-			       tuple_size);
+			       metadata_size);
 			return -EIO;
 		}
 		expected_guard++;
-		bio_prot_buf += tuple_size;
+		bio_prot_buf += metadata_size;
 	}
 	return 0;
 }
@@ -350,14 +350,14 @@ static int osd_bio_integrity_compare(struct bio *bio, struct block_device *bdev,
 		sectors = bv->bv_len / sector_size;
 		if (lnb->lnb_guard_rpc) {
 			rc = bio_dif_compare(expected_guard, bio_prot_buf,
-					     sectors, bi->tuple_size);
+					     sectors, get_metadata_size(bi));
 			if (rc)
 				return rc;
 		}
 
 		sector += sectors;
-		bio_prot_buf += sectors * bi->tuple_size;
-		total += sectors * bi->tuple_size;
+		bio_prot_buf += sectors * get_metadata_size(bi);
+		total += sectors * get_metadata_size(bi);
 		LASSERT(total <= bip_size(bio->bi_integrity));
 		index++;
 		lnb = NULL;
