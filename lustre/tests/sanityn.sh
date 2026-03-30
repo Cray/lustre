@@ -6828,6 +6828,64 @@ test_117() {
 }
 run_test 117 "no CP AST for intent once a blocked lock is granted"
 
+test_120() {
+	[ "$ost1_FSTYPE" == ldiskfs ] || skip "osd-ldiskfs specific test"
+
+	local WCE=$(do_facet ost1 lctl get_param "osd-*.$FSNAME-OST0000.writethrough_cache_enable")
+
+	# the issue reproduces without the osd cache as well but we would need to
+	# add the page to the page cache via partial truncate and avoid
+	# invalidation by keeping a reference to this page, let's use WCE=1 instead
+	do_facet ost1 lctl set_param "osd-*.$FSNAME-OST0000.writethrough_cache_enable=1"
+
+	rm -f $DIR1/$tfile
+	$LFS setstripe $DIR1/$tfile -i 0 -c 1
+	dd if=/dev/zero of=$DIR1/$tfile bs=4k count=1 oflag=direct
+
+	# lock the page and pause before attempting to take osd_read_lock
+	# and osd_trunc_lock
+	do_facet ost1 $LCTL set_param fail_loc=0x80000227 fail_val=5
+	$MULTIOP $DIR1/$tfile oO_WRONLY:O_SYNC:G123w4096g123c &
+	sleep 1
+	# possibly deadlock now via reverse locking
+	# ofd_write_lock -> lock_page or osd_trunc_lock -> lock_page
+	$MULTIOP $DIR2/$tfile oO_WRONLY:G123T4094g123c
+
+	wait
+
+	do_facet ost1 lctl set_param $WCE
+}
+run_test 120 "write vs truncate does not deadlock under group lock"
+
+test_121() {
+	rm -f $DIR/$tfile
+	$LFS setstripe -E 64K -E 128K -E -1 $DIR/$tfile ||
+		error "setstripe $DIR/$tfile failed"
+
+	yes | dd bs=20k count=1 of=$DIR/$tfile conv=notrunc ||
+		error "1st dd failed"
+
+#define OBD_FAIL_LLITE_TRUNC_PAUSE		    0x1436
+	lctl set_param fail_loc=0x80001436
+	truncate $DIR/$tfile 51200 &
+	local PID=$!
+
+	sleep 1
+
+	yes | dd bs=20k count=1 of=$DIR2/$tfile conv=notrunc oflag=append ||
+		error "2nd dd failed"
+
+	wait $PID || error "trunc failed"
+
+	local size=$(stat -c "%s" $DIR2/$tfile)
+	hexdump $DIR/$tfile
+
+	(( $size == 71680 )) || error "wrong size $size"
+
+	return 0
+}
+run_test 121 "trunc append race"
+
 test_200() {
 	remote_ost_nodsh && skip "remote OST with nodsh" && return
 
@@ -6882,35 +6940,6 @@ test_200() {
 }
 run_test 200 "service remains healthy while able to process request"
 
-test_120() {
-	[ "$ost1_FSTYPE" == ldiskfs ] || skip "osd-ldiskfs specific test"
-
-	local WCE=$(do_facet ost1 lctl get_param "osd-*.$FSNAME-OST0000.writethrough_cache_enable")
-
-	# the issue reproduces without the osd cache as well but we would need to
-	# add the page to the page cache via partial truncate and avoid
-	# invalidation by keeping a reference to this page, let's use WCE=1 instead
-	do_facet ost1 lctl set_param "osd-*.$FSNAME-OST0000.writethrough_cache_enable=1"
-
-	rm -f $DIR1/$tfile
-	$LFS setstripe $DIR1/$tfile -i 0 -c 1
-	dd if=/dev/zero of=$DIR1/$tfile bs=4k count=1 oflag=direct
-
-	# lock the page and pause before attempting to take osd_read_lock
-	# and osd_trunc_lock
-	do_facet ost1 $LCTL set_param fail_loc=0x80000227 fail_val=5
-	$MULTIOP $DIR1/$tfile oO_WRONLY:O_SYNC:G123w4096g123c &
-	sleep 1
-	# possibly deadlock now via reverse locking
-	# ofd_write_lock -> lock_page or osd_trunc_lock -> lock_page
-	$MULTIOP $DIR2/$tfile oO_WRONLY:G123T4094g123c
-
-	wait
-
-	do_facet ost1 lctl set_param $WCE
-}
-run_test 120 "write vs truncate does not deadlock under group lock"
-
 log "cleanup: ======================================================"
 
 # kill and wait in each test only guarentee script finish, but command in script
@@ -6918,35 +6947,6 @@ log "cleanup: ======================================================"
 # otherwise umount below will fail
 [ "$(mount | grep $MOUNT2)" ] && wait_update $HOSTNAME "fuser -m $MOUNT2" "" ||
 	true
-
-test_121() {
-	rm -f $DIR/$tfile
-	$LFS setstripe -E 64K -E 128K -E -1 $DIR/$tfile ||
-		error "setstripe $DIR/$tfile failed"
-
-	yes | dd bs=20k count=1 of=$DIR/$tfile conv=notrunc ||
-		error "1st dd failed"
-
-#define OBD_FAIL_LLITE_TRUNC_PAUSE		    0x1436
-	lctl set_param fail_loc=0x80001436
-	truncate $DIR/$tfile 51200 &
-	local PID=$!
-
-	sleep 1
-
-	yes | dd bs=20k count=1 of=$DIR2/$tfile conv=notrunc oflag=append ||
-		error "2nd dd failed"
-
-	wait $PID || error "trunc failed"
-
-	local size=$(stat -c "%s" $DIR2/$tfile)
-	hexdump $DIR/$tfile
-
-	(( $size == 71680 )) || error "wrong size $size"
-
-	return 0
-}
-run_test 121 "trunc append race"
 
 complete_test $SECONDS
 rm -f $SAMPLE_FILE
