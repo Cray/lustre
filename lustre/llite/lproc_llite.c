@@ -1447,6 +1447,9 @@ static ssize_t max_easize_show(struct kobject *kobj,
 	unsigned int ealen;
 	int rc;
 
+	if (sbi->ll_client_common_fill_super_succeeded == 0)
+		return -ENODATA;
+
 	rc = ll_get_max_mdsize(sbi, &ealen);
 	if (rc)
 		return rc;
