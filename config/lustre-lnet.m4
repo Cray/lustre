@@ -108,8 +108,8 @@ case $with_o2ib in
 			# but I don't know how far we should be retro-compatible.
 
 			if test -n "$O2IBDIR_PATH"; then
-				if test -d $O2IBDIR_PATH/${target_cpu}/${LINUXRELEASE}; then
-					O2IBDIR_PATH=$O2IBDIR_PATH/${target_cpu}/${LINUXRELEASE}
+				if test -d $O2IBDIR_PATH/$(uname -m)/${LINUXRELEASE}; then
+					O2IBDIR_PATH=$O2IBDIR_PATH/$(uname -m)/${LINUXRELEASE}
 				fi
 				EXT_O2IBPATHS=$(find $O2IBDIR_PATH -name rdma_cm.h |
 					sed -e 's/\/include\/rdma\/rdma_cm.h//')
