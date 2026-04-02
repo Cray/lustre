@@ -71,7 +71,13 @@ if [[ "$mds1_FSTYPE" == "zfs" ]]; then
 	[[ "$SLOW" == "no" ]] && EXCEPT_SLOW="$EXCEPT_SLOW 51b"
 fi
 
-if [[ "$ost1_FSTYPE" = "zfs" ]]; then
+# Janitor is very slow for some different subtests than Autotest
+if [[ "$HOSTNAME" =~ "oleg" ]]; then
+	# minutes runtime: 60  32  21
+	EXCEPT_SLOW+="    51c 51e 834"
+fi
+
+if [[ "$ost1_FSTYPE" == "zfs" ]]; then
 	always_except LU-1941 130b 130c 130d 130e 130f 130g
 fi
 
@@ -6604,14 +6610,11 @@ test_51a() {	# was test_51
 run_test 51a "special situations: split htree with empty entry =="
 
 cleanup_print_lfs_df () {
-	trap 0
 	$LFS df
 	$LFS df -i
 }
 
 test_51b() {
-	[ $PARALLEL == "yes" ] && skip "skip parallel run"
-
 	local dir=$DIR/$tdir
 	local nrdirs=$((65536 + 100))
 
@@ -6622,29 +6625,34 @@ test_51b() {
 
 	$LFS df
 	$LFS df -i
-	local mdtidx=$(printf "%04x" $($LFS getstripe -m $dir))
-	local numfree=$(lctl get_param -n mdc.$FSNAME-MDT$mdtidx*.filesfree)
-	[[ $numfree -lt $nrdirs ]] &&
-		skip "not enough free inodes ($numfree) on MDT$mdtidx"
+	local mdtname=$(mdtname_from_index $($LFS getstripe -m $dir))
+	local nproc=2 #$((lctl get_param -n mdc.$mdtname*.max_rpcs_in_flight/2))
+	local numfree=$($LCTL get_param -n mdc.$mdtname*.filesfree)
+	(( $numfree >= $nrdirs )) ||
+		skip "not enough free inodes ($numfree) on $mdtname"
 
 	# need to check free space for the directories as well
-	local blkfree=$(lctl get_param -n mdc.$FSNAME-MDT$mdtidx*.kbytesavail)
+	local blkfree=$($LCTL get_param -n mdc.$mdtname*.kbytesavail)
 	numfree=$(( blkfree / $(fs_inode_ksize) ))
-	[[ $numfree -lt $nrdirs ]] && skip "not enough blocks ($numfree)"
+	# round $nrdirs to an even multiple of the number of processes
+	nrdirs=$((nrdirs / nproc * nproc))
+	(( $numfree >= $nrdirs )) || skip "not enough blocks ($numfree)"
 
-	trap cleanup_print_lfs_df EXIT
+	stack_trap cleanup_print_lfs_df
 
 	# create files
-	createmany -d $dir/d $nrdirs || {
-		unlinkmany -d $dir/d $nrdirs
-		error "failed to create $nrdirs subdirs in MDT$mdtidx:$dir"
-	}
+	local nrdirs_pp=$((nrdirs / nproc))
+	for ((i = 0; i < $nproc; i++)); do
+		stack_trap "unlinkmany -d $dir/d.$i. $nrdirs_pp || true"
+		createmany -d $dir/d.$i. $nrdirs_pp &
+	done
+	wait || error "failed to create $nrdirs subdirs in $mdtname:/$dir"
 
 	# really created :
-	nrdirs=$(ls -U $dir | wc -l)
+	nrdirs=$(find $dir -maxdepth 1 | wc -l)
 
-	# unlink all but 100 subdirectories, then check it still works
-	local left=100
+	# unlink all but ~100 subdirectories, then check it still works
+	local left=$((100 / nproc * nproc))
 	local delete=$((nrdirs - left))
 
 	$LFS df
@@ -6653,23 +6661,27 @@ test_51b() {
 	# for ldiskfs the nlink count should be 1, but this is OSD specific
 	# and so this is listed for informational purposes only
 	echo "nlink before: $(stat -c %h $dir), created before: $nrdirs"
-	unlinkmany -d $dir/d $delete ||
-		error "unlink of first $delete subdirs failed"
+	local delete_pp=$((delete / nproc))
+	for ((i = 0; i < $nproc; i++)); do
+		unlinkmany -d $dir/d.$i. $delete_pp &
+	done
+	wait || error "unlink of first $delete subdirs failed"
 
 	echo "nlink between: $(stat -c %h $dir)"
 	local found=$(ls -U $dir | wc -l)
-	[ $found -ne $left ] &&
+	(( $found == $left )) ||
 		error "can't find subdirs: found only $found, expected $left"
 
-	unlinkmany -d $dir/d $delete $left ||
-		error "unlink of second $left subdirs failed"
+	local left_pp=$((left / nproc))
+	for ((i = 0; i < $nproc; i++)); do
+		unlinkmany -d $dir/d.$i. $delete_pp $left_pp &
+	done
+	wait || error "unlink of second $left subdirs failed"
 	# regardless of whether the backing filesystem tracks nlink accurately
 	# or not, the nlink count shouldn't be more than "." and ".." here
 	local after=$(stat -c %h $dir)
-	[[ $after -gt 2 ]] && error "nlink after: $after > 2" ||
+	(( $after > 2 )) && error "nlink after: $after > 2" ||
 		echo "nlink after: $after"
-
-	cleanup_print_lfs_df
 }
 run_test 51b "exceed 64k subdirectory nlink limit on create, verify unlink"
 
@@ -6677,22 +6689,30 @@ test_51c() {
 	(( MDSCOUNT > 1 )) || skip "needs >= 2 MDTs"
 	local dir=$DIR/$tdir-c2
 	local nrdirs=$((65536 * 2 + 2000))
+	local nproc=$MDSCOUNT
 	local mdtidx
 
-	trap cleanup_print_lfs_df EXIT
+	stack_trap cleanup_print_lfs_df
 
 	$LFS mkdir -c 2 -H fnv_1a_64 $dir
-	while read mtdidx rest; do
-		local mdtname=$FSNAME-MDT$(printf "%04x" $mdtidx)
+	while read mdtidx rest; do
+		local mdtname=$(mdtname_from_index $mdtidx)
 		local numfree=$(lctl get_param -n mdc.$mdtname*.filesfree)
 		local blkfree=$(lctl get_param -n mdc.$mdtname*.kbytesavail)
 
-		(( numfree < nrdirs / 2 || blkfree / $(fs_inode_ksize) < nrdirs / 2 )) &&
-			skip "not enough inodes or blocks for mdt$mdtidx"
-	done < <( $LFS getdirstripe $dir | awk '{ if ($2 ~ /\[0x.*:0x.*:0x.*\]/) {  print $1; } }' )
+		((numfree > nrdirs/2 && blkfree/$(fs_inode_ksize) > nrdirs/2))||
+			skip "not enough inodes or blocks for $mdtname"
+	done < <($LFS getdirstripe $dir |
+		 awk '{ if ($2 ~ /\[0x.*:0x.*:0x.*\]/) {  print $1; } }' )
 
-	createmany -d $dir/d $nrdirs ||
-		error "failed to create $nrdirs subdirs in $dir"
+	# round $nrdirs to an even multiple of the number of processes
+	nrdirs=$((nrdirs / nproc * nproc))
+	local nrdirs_pp=$((nrdirs / nproc))
+	for ((i = 0; i < $nproc; i++)); do
+		stack_trap "unlinkmany -d $dir/d.$i. $nrdirs_pp || true"
+		createmany -d $dir/d.$i. $nrdirs_pp &
+	done
+	wait || error "failed to create $nrdirs subdirs in $dir"
 	# nlink for the striped dir should be either 1
 	# (ldiskfs, nlink is overflowed at least in one stripe)
 	# or $ndirs + 2
@@ -6700,9 +6720,11 @@ test_51c() {
 	(( nlinks == 1 || nlinks == nrdirs + 2 )) ||
 		error "Wrong nlink count of $nlinks"
 
-	unlinkmany -d $dir/d $nrdirs || error "Removal of the subdirs failed"
-	rmdir $dir || error "rmdir failed"
-	cleanup_print_lfs_df
+	for ((i = 0; i < $nproc; i++)); do
+		unlinkmany -d $dir/d.$i. $nrdirs_pp &
+	done
+	wait || error "Removal of $nrdirs subdirs failed"
+	rmdir $dir && echo "removed emtpy $dir" || error "rmdir failed"
 }
 run_test 51c "exceed 64k subdirectory count per dir stripe, verify nlink count"
 
