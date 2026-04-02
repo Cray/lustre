@@ -9773,7 +9773,7 @@ test_56acc() {
 }
 run_test 56acc "check parsing error for lfs find -perm"
 
-test_56ba() {
+test_56Ba() { # was test_56ba
 	[ $MDS1_VERSION -lt $(version_code 2.10.50) ] &&
 		skip "Need MDS version at least 2.10.50"
 
@@ -9836,9 +9836,9 @@ test_56ba() {
 	rm -rf $dir
 
 }
-run_test 56ba "test lfs find --component-end, -start, -count, and -flags"
+run_test 56Ba "test lfs find --component-end, -start, -count, and -flags"
 
-test_56ca() {
+test_56Ca() { # was (also) test_56ca
 	[[ $MDS1_VERSION -ge $(version_code 2.10.57) ]] ||
 		skip "Need MDS version at least 2.10.57"
 
@@ -9910,9 +9910,9 @@ test_56ca() {
 	nfiles=$($cmd | wc -l)
 	[[ $nfiles = 30 ]] || error "$cmd: $nfiles != 30 files"
 }
-run_test 56ca "check lfs find --mirror-count|-N and --mirror-state"
+run_test 56Ca "check lfs find --mirror-count|-N and --mirror-state"
 
-test_56da() { # LU-14179
+test_56Da() { # was test_56da, LU-14179
 	local path=$DIR/$tdir
 
 	test_mkdir $path
@@ -9942,9 +9942,9 @@ test_56da() { # LU-14179
 
 	rm -rf $DIR/$tdir
 }
-run_test 56da "test lfs find with long paths"
+run_test 56Da "test lfs find with long paths"
 
-test_56db() {
+test_56Db() { # was test_56db
 	local mdts=$($LFS df -m | grep -c MDT)
 	local osts=$($LFS df -m | grep -c OST)
 
@@ -9955,9 +9955,9 @@ test_56db() {
 	(( osts == 0 )) ||
 		error "lfs df -m showed $osts OSTs, not 0"
 }
-run_test 56db "test 'lfs df -m' only shows MDT devices"
+run_test 56Db "test 'lfs df -m' only shows MDT devices"
 
-test_56dc() {
+test_56Dc() { # was test_56dc
 	local mdts=$($LFS df -o | grep -c MDT)
 	local osts=$($LFS df -o | grep -c OST)
 
@@ -9968,9 +9968,9 @@ test_56dc() {
 	(( mdts == 0 )) ||
 		error "lfs df -o showed $mdts MDTs, not 0"
 }
-run_test 56dc "test 'lfs df -o' only shows OST devices"
+run_test 56Dc "test 'lfs df -o' only shows OST devices"
 
-test_56dd() {
+test_56Dd() { # was test_56dd
 	local dir=$DIR/d$(basetest $testnum)g.$TESTSUITE
 
 	setup_56 $dir $NUMFILES $NUMDIRS
@@ -9988,7 +9988,7 @@ test_56dd() {
 			error "${#lfscount[@]} != ${#findcount[@]}"
 	done
 }
-run_test 56dd "test lfs find with mindepth argument"
+run_test 56Dd "test lfs find with mindepth argument"
 
 test_56ea() { #LU-10378
 	local path=$DIR/$tdir
