@@ -96,12 +96,13 @@ case $SECTION in
 	1|8)
 	SYNOPSIS=$(cat <<EOF
 .SY "${NAME//_/ }"
-
+...
 .YS
 EOF
 	)
 	printf -v OPTIONS "\n.SH OPTIONS\n"
 	printf -v EXAMPLES "\n.SH EXAMPLES\n"
+	printf -v SEE_ALSO ".RB lfs (1),\n.RB lctl (8)"
 	;;
 	2|3)
 	SYNOPSIS=$(cat <<EOF
@@ -115,6 +116,7 @@ EOF
 	printf -v EXIT_STATUS "\n.SH EXIT_STATUS\n"
 	printf -v RETURN_VALUE "\n.SH RETURN_VALUE\n"
 	printf -v ERRORS "\n.SH ERRORS\n"
+	printf -v SEE_ALSO ".RB liblustreapi (3)\n"
 	;;
 	4)
 	if (( PARAM )); then
@@ -131,23 +133,22 @@ EOF
 		}
 		NAMEDESC=$(git grep "PARM_DESC.${PARAM##*.}," |
 			   sed -e 's/.*, \"//' -e 's/\");$//')
-		param_modules=$(lctl find_param $opts ${NAME//./[.]?[^.]*[.]} |
-				awk '{print ".B "$1}')
 		printf -v FILES "\n.SH MODULES
 This parameter is in the following modules:
 .EX
-$param_modules
+$(lctl find_param $opts ${NAME//./[.]?[^.]*[.]} | awk '{print ".B "$1}')
 .EE"
 		# actual path
-		param_path=($(readlink -f $(lctl find_param ${opts} --path $NAME)))
-		PARAM=$(lctl get_param $PARAM 2> /dev/null)
-		printf -v SYNOPSIS ".SY \"lctl set_param\"
+		DEFAULT=($(lctl get_param -n $PARAM))
+		printf -v SYNOPSIS ".SY \"lctl get_param $PARAM\"
+.SY
+.RI \"lctl set_param $PARAM=\" $DEFAULT
 .YS
 .SS PROPERTIES
 .TP
-.B Perms
-.BR $(stat -c "%a | %A" $param_path)
+.B Access Permissions
 .br
+.BR $(stat -c "%a \" | \" %A" $(lctl find_param ${opts} --path $NAME | head -1))
 [
 .PP
 param resets upon write
@@ -155,20 +156,34 @@ param resets upon write
 ]
 .TP
 .B Scope
+.br
 Per-Device | Global
 .TP
 .B Config
-always present | present if ...
 .br
-[
+Always present on (client | MDS | OSS) | present if ...
 .TP
 .B Default
-.RB param= DEFAULT
 .br
-]"
+.RB $PARAM= $DEFAULT
+.br
+.TP
+.B Valid Range
+.br
+.RB $PARAM= MINIMUM_VALUE
+.br
+.RB $PARAM= MAXIMUM_VALUE
+"
 	fi
 
-	printf -v EXAMPLES "\n.SH EXAMPLES\n.EX\n$PARAM\n.EE"
+	EXAMPLE=".RB \"mds# \" \"lctl set_param $(lctl get_param $PARAM 2> /dev/null)\""
+	printf -v EXAMPLES "\n.SH EXAMPLES\n.EX\n$EXAMPLE\n.EE"
+	DIRS=(lustre/ lnet/ libcfs/)
+	OPTS="--reverse --pretty='format:%(describe:abbrev=10,tags=true)'"
+	COMMIT=($(git log -S ${PARAM#*.} $OPTS -- "${DIRS[@]}"))
+	R=($(sed -e 's/[a-z]*//g' -e 's/_/ /g' -e 's/[-~][0-9-]*//' <<<$COMMIT))
+	RELEASE=${R[0]}.$((R[1]+1)).0
+	printf -v SEE_ALSO ".BR lctl-get_param (8),\n.BR lctl-set_param (8)\n"
 	;;
 esac
 
@@ -185,9 +200,10 @@ $OPTIONS$EXIT_STATUS$RETURN_VALUE$ERRORS$ENVIRONMENT$FILES$ATTRIBUTES$VERSIONS$H
 .B $NAME
 is part of the
 .BR lustre (7)
-filesystem package.
-.\" commit #
+filesystem package since release $RELEASE.
+.\" Added in commit $COMMIT
 .SH SEE ALSO
+$SEE_ALSO
 EOF
 
 echo "Generated man page: $OUTPUT"

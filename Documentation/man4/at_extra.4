@@ -1,27 +1,45 @@
-.TH AT_EXTRA 4 2025-10-09 Lustre "Lustre Kernel Interfaces"
+.TH AT_EXTRA 4 2026-03-31 Lustre "Lustre Kernel Interfaces"
 .SH NAME
-at_extra \- How much extra time to give with each early reply (in seconds)
+at_extra \- how many extra seconds to extend RPC timeout under load
 .SH SYNOPSIS
-.SY "lctl set_param"
+.SY
+.BI "lctl get_param at_extra"
+.SY
+.BI "lctl set_param at_extra=" EXTRA_SECONDS
 .YS
 .SS PROPERTIES
 .TP
-.B Perms
-.BR 644 " | " -rw-r--r--.
+.B Access Permissions
+.br
+.BR 644 " | " -rw-r--r--
 .TP
 .B Scope
+.br
 Global
 .TP
+.br
 .B Config
-always present
+.br
+Always present
 .TP
 .B Default
-.B at_extra=30
+.br
+.RB at_extra= 30
+.TP
+.B Valid Range
+.br
+.RB at_extra= 5
+.br
+.RB at_extra= at_max
 .SH DESCRIPTION
 .B at_extra
-is the incremental amount of time that a server requests for every time there is
-an early reply. The server does not know how much time the RPC will take, so it
-asks for a fixed value. The default provides a balance between sending too many
+is the incremental number of seconds that a server requests to extend the
+RPC timeout for a request the service queue that is about to time out.
+The server does not know how much time the RPC will take to complete,
+so the client will extend the RPC timeout by
+.I EXTRA_SECONDS
+each time it gets an early reply on an RPC.
+The default provides a balance between sending too many
 early replies for the same RPC and overestimating the actual completion time.
 .PP
 When a server finds a queued request about to time out and needs to send an
@@ -38,16 +56,17 @@ This parameter is in the following modules:
 .B at_extra
 .EE
 .SH EXAMPLES
-If there are many early replies, increasing at_extra will reduce network load:
+If there are many early replies,
+increase the extra margin to 15s for all nodes in the filesystem:
 .EX
-lctl set_param -P at_extra=90
+.RB mgs# " lctl set_param -P at_extra=15"
 .EE
 .SH AVAILABILITY
 .B at_extra
 is part of the
 .BR lustre (7)
-filesystem package.
-.\" commit #
+filesystem package since release 1.6.4.
+.\" commit 1.6.0-1416-gde3c3fdf25
 .SH SEE ALSO
 .BR at_early_margin (4),
 .BR at_history (4),

@@ -1,99 +1,147 @@
-.\"
-.\" dump_on_eviction.4 -- Lustre subsystem-specific eviction logging control
-.\"
-.TH DUMP_ON_EVICTION 4 "2025-12-21" "Lustre" "Lustre Kernel Parameters"
+.TH DUMP_ON_EVICTION 4 2026-03-31 "Lustre" "Lustre Kernel Parameters"
 .SH NAME
-dump_on_eviction, lbug_on_eviction \- configure subsystem-specific logging and crash behavior on eviction events in Lustre
+dump_on_eviction, lbug_on_eviction \- configure subsystem log and crash events
 .SH SYNOPSIS
-.nf
-lctl set_param dump_on_eviction=\fIsubsystem_list\fR
-lctl set_param lbug_on_eviction=\fIhex_mask\fR
-
-lctl get_param dump_on_eviction
-dump_on_eviction=\fIsubsystem_list\fR
-lctl get_param lbug_on_eviction
-lbug_on_eviction=\fIsubsystem_list\fR
-.fi
+.SY
+.B lctl set_param dump_on_eviction=
+.RI { SUBSYSTEM_LIST | HEX_MASK }
+.SY
+.B lctl set_param lbug_on_eviction=
+.RI { SUBSYSTEM_LIST | HEX_MASK }
+.SY
+.B lctl get_param dump_on_eviction
+.SY
+.B lctl get_param lbug_on_eviction
+.YS
+.SS PROPERTIES
+.TP
+.RB Access Permissions
+.br
+.BR 644 " | " -rw--r--r--
+.TP
+.B Scope
+.br
+Global
+.TP
+.B Config
+.br
+Always present
+.B
+.TP
+.B Default
+.br
+.RB dump_on_eviction= 0
+.br
+.RB lbug_on_eviction= 0
 .SH DESCRIPTION
-The \fBdump_on_eviction\fR and \fBlbug_on_eviction\fR parameters control the behavior of the Lustre filesystem when eviction events occur. Eviction refers to the forced removal of a client, lock, or recovery context from the system due to timeout or other failure conditions.
-
-These parameters allow fine-grained control over whether Lustre dump log with detailed diagnostic information (\fBdump_on_eviction\fR) or triggers an immediate kernel crash (\fBlbug_on_eviction\fR) upon eviction events in specific subsystems.
-
+The
+.B dump_on_eviction
+and
+.B lbug_on_eviction
+parameters control the behavior of the Lustre filesystem when client
+eviction events occur.
+Eviction refers to the forced removal of a client, lock, or recovery
+context from the system due to timeout or other failure conditions.
 .PP
-Both parameters accept either a comma/space/plus-separated list of subsystem names or a numeric bitmask (hexadecimal, decimal, octal). The values are applied using:
-.nf
-lctl set_param dump_on_eviction=\fIsubsystem_list\fR
-lctl set_param lbug_on_eviction=\fIbit_mask\fR
-.fi
-
+These parameters allow fine-grained control over whether Lustre dumps
+a debugging log file with detailed diagnostic information
+.RB ( dump_on_eviction )
+or triggers an immediate kernel crash
+.RB ( lbug_on_eviction )
+upon eviction events in specific subsystems.
+.PP
+The
+.I SUBSYSTEM_LIST
+parameter can be either a comma, space, or plus-separated list of
+subsystem names, or a
+.I HEX_MASK
+(hexadecimal or decimal number).
 .PP
 The value of output setting uses space-separated list.
-.nf
-lctl get_param dump_on_eviction
+.EX
+.RB client# "lctl get_param dump_on_eviction"
 dump_on_eviction=ldlm stale
-.fi
-
+.EE
 .PP
 The following subsystems are supported:
-
 .TP
-\fB1\fR (0x01)
-Special alias for enabling all subsystems except pinger, this is old behavior: \fBllite\fR, \fBldlm\fR, \fBstale\fR. Equivalent to mask \fB0x0E\fR.
-
+.BR 1 " (0x01)"
+Special alias for enabling all subsystems except pinger, this is old behavior:
+.BR llite ", " ldlm ", " stale ". Equivalent to mask " 0x0E .
 .TP
-\fBllite\fR (0x02)
-Client eviction during reconnect, the server informs the client that it has been evicted. This affects the client-side, but server could be a client to another server.
-
+.BR llite "(0x02)"
+Client eviction during reconnect, the server informs the client that it has
+been evicted. This affects the client-side, but server could be a client to
+another server.
 .TP
-\fBldlm\fR (0x04)
-Eviction by LDLM (Distributed Lock Manager) due to lock callback timer expired, server side event.
-
+.BR ldlm " (0x04)"
+Eviction by LDLM (Distributed Lock Manager) due to lock callback timer expired,
+server side event.
 .TP
-\fBstale\fR (0x08)
-Eviction triggered by stale recovery state — e.g., when a client fails to reconnect within recovery timeout and its state is considered abandoned by the MDS/OSS, server side.
-
+.BR stale " (0x08)"
+Eviction triggered by stale recovery state — e.g., when a client fails to
+reconnect within recovery timeout and its state is considered abandoned by
+the MDS/OSS, server side.
 .TP
-\fBpinger\fR (0x10)
-Eviction of a client due to failure at pinger heartbeats — the server did not receive a request from the client during the waiting time. Previously, pinger evictions did not trigger logging or crashes; this subsystem enables diagnostic behavior.
-
+.BR pinger " (0x10)"
+Eviction of a client due to failure at pinger heartbeats —
+the server did not receive a request from the client during the waiting time.
+Previously, pinger evictions did not trigger logging or crashes;
+this subsystem enables diagnostic behavior.
 .PP
-The parameter \fBlbug_on_eviction\fR accepts a numeric mask (e.g., \fB0x14\fR) or comma/space/plus-separated list of subsystem names (e.g., \fBldlm+stale\fR), and will trigger an immediate kernel crash (\fBLBUG()\fR) when any matching eviction occurs.
-
-The parameter \fBdump_on_eviction\fR behaves similarly but only triggers dumpint of Lustre log  without crashing the system. This is useful for debugging production systems where crashes are undesirable.
-
+The
+.B lbug_on_eviction
+parameter will trigger an immediate kernel crash (
+.BR LBUG() )
+when any matching eviction event occurs.
+Typically this is only used to capture a crashdump of the full kernel
+memory in order to perform in-depth debugging activity.
+.PP
+The parameter
+.B dump_on_eviction
+behaves similarly but only dumps the Lustre debug log without crashing
+the system. This is useful for debugging production systems where crashes
+are undesirable.
 .SH EXAMPLES
-
-.B Use lbug_on_eviction carefully, as it crash a server. Pinger and ldlm evictions often occur due to network problems.
-
-.TP
+.B Use lbug_on_eviction carefully, as it will crash a server on errors.
+Pinger and ldlm evictions often occur due to network problems.
+.PP
 Enable logging for LDLM and stale recovery evictions (no crash):
-.nf
-lctl set_param dump_on_eviction=ldlm+stale
-.fi
-
-.TP
-Trigger kernel crash on pinger eviction:
-.nf
-lctl set_param lbug_on_eviction=pinger
-.fi
-
-.TP
+.EX
+.RB oss3# " lctl set_param dump_on_eviction=ldlm+stale"
+.EE
+.PP
+Trigger kernel crash on client eviction:
+.EX
+.RB client# " lctl set_param lbug_on_eviction=llite"
+.EE
+.PP
 Enable logging and crashes for all eviction types:
-.nf
-lctl set_param dump_on_eviction=llite,ldlm,stale,pinger
-lctl set_param lbug_on_eviction=0x1E
-.fi
-
-.TP
+.EX
+.RB mds1# " lctl set_param dump_on_eviction=ldlm,stale,pinger"
+.RB oss3# " lctl set_param lbug_on_eviction=0x1E"
+.EE
+.PP
 Disable all eviction logging (default behavior):
-.nf
-lctl set_param dump_on_eviction=0
-lctl set_param lbug_on_eviction=0
-.fi
-
+.EX
+.RB # " lctl set_param dump_on_eviction=0"
+.RB # " lctl set_param lbug_on_eviction=0"
+.EE
+.SH AVAILABILITY
+The
+.B dump_on_eviction
+and
+.B lbug_on_eviction
+parameters are part of the
+.BR lustre (7)
+filesystem since release 2.12.0,
+.\" Added in commit v2_11_55_0-22-g97381ffc92
+but the ability to specify
+.I SUBSYSTEM_LIST
+or
+.I HEX_MASK
+is only available since release 2.18.0.
+.\" Added in commit v2_17_50-86-g4e402a4bca
 .SH SEE ALSO
-.BR lctl (8),
-
-.SH HISTORY
-This feature was introduced in Lustre 2.17 to provide diagnostic control over eviction events.
-
+.BR lctl-get_param (8),
+.BR lctl-set_param (8)

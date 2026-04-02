@@ -1,34 +1,57 @@
-.TH AT_MIN 4 2025-10-09 Lustre "Lustre Kernel Interfaces"
+.TH AT_MIN 4 2026-03-31 Lustre "Lustre Kernel Interfaces"
 .SH NAME
-at_min \- Adaptive timeout minimum (sec)
+at_min \- minimum seconds for RPC adaptive timeout estimate
 .SH SYNOPSIS
+.SY
+.BI "lctl get_param *." FSNAME "*.at_min"
+.SY
+.BI "lctl get_param at_min"
+.SY
+.BI "lctl set_param *." FSNAME "*.at_min=" TIMEOUT_MIN_SECONDS
+.SY
+.BI "lctl set_param at_min=" TIMEOUT_MIN_SECONDS
+.YS
 .SS PROPERTIES
 .TP
-.B Perms
-.BR 644 " | " -rw-r--r--.
+.B Access Permissions
+.br
+.BR 644 " | " -rw-r--r--
 .TP
 .B Scope
-Global
+.br
+Global and per import and target device
 .TP
 .B Config
-always present
+.br
+Always present
 .TP
 .B Default
-.B at_min = 5
+.br
+.RB at_min= 5
+.TP
+.B Valid Range
+.br
+.RB at_min= 1
+.br
+.RB at_min= at_max
 .SH DESCRIPTION
+The
 .B at_min
-is the minimum processing time that a server will report.
-Ideally, at_min should be left at its default value.
-Clients base their timeouts on this value,
-but they do not use this value directly.
+parameter sets the lower limit on the service time estimate to
+.IR TIMEOUT_MIN_SECONDS .
+Together with
+.BR at_max (4),
+this sets the range within which client RPC timeouts are estimated.
+The client will always wait at least
+.B at_min
+seconds for an RPC to timeout before it resends it.
+This avoids aggressively resending an RPC when a server is busy and the
+client has not received any RPC replies recently with an updated service time.
 .PP
 If, for some reason (usually due to temporary network outages or sudden spikes
 in load immediately after mount),
 the adaptive timeout value is too short and clients time out their RPCs,
-you can increase the at_min value to compensate for this.
-.PP
-Adaptive timeouts are used to determine appropriate waiting times before the
-client will resend an RPC.
+you can increase the minimum value to compensate for this.
 .PP
 It is preferred to set
 .B at_min
@@ -40,28 +63,29 @@ client mounts two separate filesystems with different at_min tunable settings.
 This parameter is in the following modules:
 .EX
 .B at_min
+.B mdc.*.at_min
+.B mdt.*.at_min
+.B mgc.*.at_min
+.B mgs.*.at_min
+.B obdfilter.at_min
+.B osc.at_min
 .EE
 .SH EXAMPLES
+Permanently increase the minimum timeout on nodes of the testfs filesystem:
 .EX
-at_min=5
+.RB mgs# " lctl set_param -P *.testfs*.at_min=15"
 .EE
 .SH AVAILABILITY
 .B at_min
 is part of the
 .BR lustre (7)
-filesystem package.
-.\" commit #
+filesystem package since release 1.6.4,
+.\" commit 1.6.0-1416-gde3c3fdf25
+but the per-subsystem tunables are only present since release 2.16.0.
+.\" commit v2_15_58-111-g0f2bc318d7
 .SH SEE ALSO
 .BR at_early_margin (4),
 .BR at_extra (4),
 .BR at_history (4),
 .BR at_max (4),
-.BR ldlm_enqueue_min (4),
-.BR lmv.target_obds.at_min (4),
-.BR lov.target_obds.at_min (4),
-.BR mdc.at_min (4),
-.BR mdt.at_min (4),
-.BR mgc.at_min (4),
-.BR mgs.at_min (4),
-.BR obdfilter.at_min (4),
-.BR osc.at_min (4)
+.BR ldlm_enqueue_min (4)

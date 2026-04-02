@@ -1,17 +1,20 @@
-.TH CPU_PARTITION_DISTANCE 4 2025-09-15 Lustre "Lustre Kernel Interfaces"
+.TH CPU_PARTITION_DISTANCE 4 2026-03-31 Lustre "Lustre Kernel Interfaces"
 .SH NAME
-cpu_partition_distance \-
+cpu_partition_distance \- show NUMA distance between CPTs
 .SH SYNOPSIS
 .SS PROPERTIES
 .TP
-.B Perms
-.BR 444 " | " -r--r--r--.
+.B Access Permissions
+.br
+.BR 444 " | " -r--r--r--
 .TP
 .B Scope
+.br
 Global
 .TP
 .B Config
-always present
+.br
+Always present
 .SH DESCRIPTION
 .B cpu_partition_distance
 shows the maximum NUMA distance between all source nodes to all destination
@@ -44,6 +47,7 @@ This parameter is in the following modules:
 For a system with 4 partitions:
 .RS
 .EX
+.RB # " lctl get_param cpu_partition_distance"
 cpu_partition_distance=
 0	: 0:10 1:12 2:10 3:11
 1	: 0:12 1:10 2:14 3:10
@@ -55,7 +59,10 @@ cpu_partition_distance=
 .B cpu_partition_distance
 is part of the
 .BR lustre (7)
-filesystem package.
-.\" commit #
+filesystem package since release 2.10.0.
+.\" Added in commit v2_9_52_0-6-gdef25e9c7e
 .SH SEE ALSO
-.BR cpu_partition_table (4)
+.BR cpu_npartitions (4),
+.BR cpu_partition_distance (4),
+.BR cpu_partition_table (4),
+.BR numa (7)

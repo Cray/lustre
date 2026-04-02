@@ -1,110 +1,135 @@
-.TH CPU_PATTERN 4 2025-10-18 Lustre "Lustre Kernel Interfaces"
+.TH CPU_PATTERN 4 2026-03-31 Lustre "Lustre Kernel Interfaces"
 .SH NAME
 cpu_pattern \- CPU partitions pattern
 cpu_npartitions \- number of CPU partitions
 .SH SYNOPSIS
+.SY "lctl get_param cpu_pattern"
+.SY "lctl get_param cpu_npartitions"
+.YS
 .SS PROPERTIES
 .TP
-.B Perms
-.BR 444 " | " -r--r--r--.
-.BR 444 " | " -r--r--r--.
+.RB Access Permissions
+.br
+.BR 444 " | " -r--r--r--
 .TP
 .B Scope
-Glabal
+.br
+Global
 .TP
 .B Config
-always present
+.br
+Always present
 .SH DESCRIPTION
+The
 .B cpu_pattern
 and
 .B cpu_npartitions
-are used to configure the CPU partition table.
-If no pattern is specifified then there will be a partition for every 4 cores
-in the system.
-This is a module option that can only be set during module initialization using
-the
-.B cpu_pattern
-and
-.B cpu_npartitions
-options in
-.BR /etc/modprobe.d/lustre.conf .
+are module options used to configure the Lustre CPU Partition Table (CPT),
+which is a virtual grouping of CPU cores that controls where Lustre runs
+service threads in each running system.
+The CPT configuration can (and should) be different for different
+client and server CPU platforms, though need not be expicitly set.
+In many cases, the automatic CPT configuration provides adequate performance,
+but for optimal performance across a large number of nodes with similar
+hardware, it may be desirable to explicitly specify the CPT configuration.
 .PP
-A user can specify CPU partitions by string pattern with the following
-behaviors:
+The CPU partition numbering always starts from 0 and is sequential up
+to the maximum partition number.
+There are two modes for CPT configuration, namely
+.B NUMA
+mode configures the CPT with the same core layout as the NUMA nodes, and
+.B SMP
+mode configures the CPT with one partition for every 4 cores in the system.
+.PP
+These module options can
+.B only
+be set during module initialization using lines of the form:
 .RS
 .EX
-cpu_pattern="0[CORE0, CORE1, ...] 1[CORE2, CORE3, ...] ..."
+.BI "options libcfs cpu_npartitions=" NUM_PARTITIONS
+.BI "options libcfs cpu_pattern=""" CPU_PATTERN """"
 .EE
 .RE
-This pattern allows you to specify a set of CPU cores for each partition. The
-cores do not have to be contiguous and do not need to contain all available
-cores. However, cores in a CPT should be in the same NUMA node, according to
-.BR numactl (8) " -s" .
-.RS
-.EX
-cpu_npartitions=N
-.EE
-.RE
-This pattern allows you to specify the number of CPU partitions. The cores
-will be evenly split into the specified number of partitions. This is overridden
-by the
+in the
+.BR /etc/modprobe.d/lustre.conf
+file, see
+.BR modprobe.d (5)
+for details on setting module options.
+.PP
+The resulting CPT core mappings can be read from the
+.B cpu_parition_table
+after the
+.B libcfs
+module has been loaded.
+.PP
+The simplest form of CPT configuration is to just set the number of partitions:
+.TP
+.BI cpu_npartitions= NUM_PARTITIONS
+All cores will be evenly distributed across the specified number of partitions.
+This is overridden by the
 .B cpu_pattern="N"
 option, but can otherwise be combined with other patterns.
-.RS
-.EX
-cpu_pattern="N 0[NODE0, NODE1, ...] 1[NODE2, NODE3, ...] ..."
-.EE
-.RE
-This pattern allows you to specify a set of NUMA nodes for each partition. The
-nodes do not have to be contiguous and do not need to contain all available
-nodes.
-.RS
-.EX
-cpu_pattern="C[INDEX0, INDEX1, ...]"
-.EE
-.RE
+.PP
+An administrator can explicitly map CPU cores into specific partitions with
+different behaviors by setting
+.I CPU_PATTERN
+according to the following templates.
+.TP
+.BI "cpu_pattern=""0[" CORE0 , CORE1 ", ...] 1[" CORE2 , CORE3 ", ...] ..."""
+This pattern allows you to specify a set of CPU cores for each partition.
+The cores do not need to be contiguous and need not list all available cores.
+However, cores in a single CPT should be in the same NUMA node, according to
+.BR numactl (8) " -s"
+in order to efficiently share memory pages and tasks between threads.
+.TP
+.BI "cpu_pattern=""N 0[" NODE0 , NODE1 ", ...] 1[" NODE2 , NODE3 ", ...] ..."""
+This pattern allows you to specify a set of NUMA nodes for each partition.
+The nodes do not have to be contiguous and need not contain all available nodes.
+All CPU cores in the respective NUMA nodes will be mapped into those CPTs.
+.TP
+.BI "cpu_pattern=""C[" INDEX0 , INDEX1 ", ...]"""
 This pattern allows you to exclude a set of cores from each partition.
-The CPT is first initialized, using npartitions, NUMA
-nodes, or the default layout.
-Then cores are removed from each partition that match the specified indeces.
-.RS
-.EX
-cpu_pattern="X[CORE0, CORE1, ...]"
-.EE
-.RE
+The CPT is first initialized, using
+.BR cpu_npartitions ,
+NUMA nodes, or the default layout.
+Then cores are removed from each partition that match the specified
+.IR INDEX
+numbers, which are CPU core numbers relative to the start of each NUMA node.
+.TP
+.BI "cpu_pattern=""X[" CORE0 , CORE1 ", ...]"""
 This pattern allows you to exclude a set of cores from the CPT that they
-belong to. The CPT is first initialized, using npartitions, NUMA nodes,
-or the default layout.
-.SS CPU partition
-The CPU partition is virtual processing unit. It can present 1-N cores,
-or 1-N NUMA nodes, in other words, CPU partition is a pool of processors.
-The ID of a CPU partition always starts from 0.
-.SS CPU Partition Table (CPT)
-A CPT is a set of CPU partitions. There are two modes for CPT:
-.B CFS_CPU_MODE_NUMA
-and
-.BR CFS_CPU_MODE_SMP.
+belong to. The CPT is first initialized, using
+.BR cpu_npartitions
+, NUMA nodes, or the default layout.
+Then the absolute CPU cores given by each
+.I CORE
+number are removed from their respective CPT.
 .SH MODULES
 This parameter is in the following modules:
 .EX
-.B /etc/modprobe.d/lustre.conf
+.B cpu_pattern
 .EE
 .SH EXAMPLES
 The default pattern for the CPT will put 4 cores in each partitions:
 .RS
 .EX
-options libcfs cpu_pattern=
-cpu_partition_table=0	: 0 1 2 3
+.B options libcfs cpu_pattern=
+.RB # " lctl get_param cpu_partition_table"
+cpu_partition_table=
+0	: 0 1 2 3
 1	: 4 5 6 7
 2	: 8 9 10 11
 3	: 12 13 14 15
 .EE
 .RE
-The modifying the npartitions for the CPT will split the cores evenly:
+The modifying the partition count for the CPT will split the cores as evenly
+as possible:
 .RS
 .EX
-options libcfs cpu_npartitions=3
-cpu_partition_table=0	: 0 1 2 3 4 5
+.B options libcfs cpu_npartitions=3
+.RB # " lctl get_param cpu_partition_table"
+cpu_partition_table=
+0	: 0 1 2 3 4 5
 1	: 6 7 8 9 10
 2	: 11 12 13 14 15
 .EE
@@ -112,8 +137,10 @@ cpu_partition_table=0	: 0 1 2 3 4 5
 Use a default mapping of the CPT to the NUMA node layout that has 4 nodes:
 .RS
 .EX
-options libcfs cpu_pattern=N
-cpu_partition_table=0	: 0 1 2 3
+.B options libcfs cpu_pattern=N
+.RB # " lctl get_param cpu_partition_table"
+cpu_partition_table=
+0	: 0 1 2 3
 1	: 4 5 6 7
 2	: 8 9 10 11
 3	: 12 13 14 15
@@ -122,28 +149,34 @@ cpu_partition_table=0	: 0 1 2 3
 Put several NUMA nodes into one partition:
 .RS
 .EX
-options libcfs cpu_pattern=N 0[0,1] 1[2-3]
-cpu_partition_table=0	: 0 1 2 3 4 5 6 7
+.B options libcfs cpu_pattern=N 0[0,1] 1[2-3]
+.RB # " lctl get_param cpu_partition_table"
+cpu_partition_table=
+0	: 0 1 2 3 4 5 6 7
 1	: 8 9 10 11 12 13 14 15
 .EE
 .RE
 Exclude the first two cores from each partition:
 .RS
 .EX
-options libcfs cpu_pattern=C[0,1]
-cpu_partition_table=0	: 2 3
+.B options libcfs cpu_pattern=C[0,1]
+.RB # " lctl get_param cpu_partition_table"
+cpu_partition_table=
+0	: 2 3
 1	: 6 7
 2	: 10 11
 3	: 14 15
 .EE
 .RE
-Exclude cores 0 and 10 to reseerve them for non-Lustre tasks:
+Exclude core 0 to reserve it for non-Lustre tasks:
 .RS
 .EX
-options libcfs cpu_pattern=X[0,10]
-options libcfs cpu_npartitions=3
-cpu_partition_table=0	: 1 2 3 4 5
-1	: 6 7 8 9
+.B options libcfs cpu_pattern=X[0]
+.B options libcfs cpu_npartitions=3
+.RB # " lctl get_param cpu_partition_table"
+cpu_partition_table=
+0	: 1 2 3 4 5
+1	: 6 7 8 9 10
 2	: 11 12 13 14 15
 .EE
 .RE
@@ -151,10 +184,12 @@ cpu_partition_table=0	: 1 2 3 4 5
 .B cpu_pattern
 is part of the
 .BR lustre (7)
-filesystem package.
-.\" commit #
+filesystem package since release 2.10.0.
+.\" commit v2_9_52_0-6-gdef25e9c7e
 .SH SEE ALSO
-.BR cpu_npartitions (4),
 .BR cpu_partition_distance (4),
 .BR cpu_partition_table (4),
-.BR numa (7)
+.BR modprobe.d (5),
+.BR numa (7),
+.BR lctl-get_param (8),
+.BR numactl (8)

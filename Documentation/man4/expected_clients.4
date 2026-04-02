@@ -6,14 +6,14 @@ epected_clients \- approximate total number of clients mountpoints
 .YS
 .SS PROPERTIES
 .TP
-.B Perms
-.BR 644 " | " -rw-r--r--.
+.B Access Permissions
+.BR 644 " | " -rw-r--r--
 .TP
 .B Scope
 Global
 .TP
 .B Config
-always present
+Always present on the serveR
 .TP
 .B Initial default
 .B expected_clients=1
@@ -38,14 +38,14 @@ This parameter is in the following modules:
 .SH EXAMPLES
 Configure the system to expect about 1000 clients to connect:
 .EX
-lctl set_param -P expected_clients=1000
+.RB mgs# "lctl set_param -P expected_clients=1000"
 .EE
 .SH AVAILABILITY
 .B expected_clients
 is part of the
 .BR lustre (7)
 filesystem package since release 2.18.0.
-.\" commit #
+.\" commit v2_17_50-225-g671e757102
 .SH SEE ALSO
 .BR at_max (4),
 .BR conns_per_peer (4)

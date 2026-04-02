@@ -1,30 +1,55 @@
-.TH AT_MAX 4 2025-10-09 Lustre "Lustre Kernel Interfaces"
+.TH AT_MAX 4 2026-03-31 Lustre "Lustre Kernel Interfaces"
 .SH NAME
-at_max \- Adaptive timeout maximum (sec)
+at_max \- maximum seconds for RPC adaptive timeout estimate
 .SH SYNOPSIS
+.SY
+.BI "lctl get_param *." FSNAME "*.at_max"
+.SY
+.BI "lctl get_param at_max"
+.SY
+.BI "lctl set_param *." FSNAME "*.at_max=" TIMEOUT_MAX_SECONDS
+.SY
+.BI "lctl set_param at_max=" TIMEOUT_MAX_SECONDS
+.YS
 .SS PROPERTIES
 .TP
-.B Perms
-.BR 644 " | " -rw-r--r--.
+.B Access Permissions
+.BR 644 " | " -rw-r--r--
 .TP
 .B Scope
-Global
+.br
+Global and per import and target device
 .TP
+.br
 .B Config
-always present
+.br
+Always present
 .TP
 .B Default
-.B at_max=600
+.br
+.RB at_max= 600
+.TP
+.B Valid Range
+.br
+.RB at_max= at_min
+.br
+.RB at_max= 3600
 .SH DESCRIPTION
+The
 .B at_max
-is an upper limit on the service time estimate. If
+parameter sets the upper limit on the service time estimate to
+.IR TIMEOUT_MAX_SECONDS .
+Together with
+.BR at_min (4),
+this sets the range within which client RPC timeouts are estimated. If
 .B at_max
 is reached, then the RPC timeout will not increase further even if RPCs
 take longer to complete under heavy load.
-Adaptive timeouts are used to determine appropriate waiting times.
 This includes the rolling maximum RPC and network delays over the past
 .BR at_history (4)
 seconds.
+Clients base their timeouts on this value,
+but they do not use this value directly.
 .PP
 Setting
 .B at_max
@@ -48,28 +73,29 @@ single client mounts two separate filesystems with different at_max settings.
 This parameter is in the following modules:
 .EX
 .B at_max
+.B mdc.*.at_max
+.B mdt.*.at_max
+.B mgc.*.at_max
+.B mgs.*.at_max
+.B obdfilter.*.at_max
+.B osc.*.at_max
 .EE
 .SH EXAMPLES
+Permanently increase the maximum timeout on nodes of the testfs filesystem:
 .EX
-at_max=600
+.RB mgs# " lctl set_param -P *.testfs*.at_max=900"
 .EE
 .SH AVAILABILITY
 .B at_max
 is part of the
 .BR lustre (7)
-filesystem package.
-.\" commit #
+filesystem package since release 1.6.4,
+.\" commit 1.6.0-1416-gde3c3fdf25
+but the per-subsystem tunables are only present since release 2.16.0.
+.\" commit v2_15_58-111-g0f2bc318d7
 .SH SEE ALSO
 .BR at_early_margin (4),
 .BR at_extra (4),
 .BR at_history (4),
 .BR at_min (4),
-.BR ldlm_enqueue_min (4),
-.BR lmv.target_obds.at_max (4),
-.BR lov.target_obds.at_max (4),
-.BR mdc.at_max (4),
-.BR mdt.at_max (4),
-.BR mgc.at_max (4),
-.BR mgs.at_max (4),
-.BR obdfilter.at_max (4),
-.BR osc.at_max (4)
+.BR ldlm_enqueue_min (4)

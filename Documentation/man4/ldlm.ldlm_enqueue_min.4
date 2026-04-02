@@ -1,20 +1,38 @@
-.TH LDLM.LDLM_ENQUEUE_MIN 4 2025-10-09 Lustre "Lustre Kernel Interfaces"
+.TH LDLM.LDLM_ENQUEUE_MIN 4 2026-03-31 Lustre "Lustre Kernel Interfaces"
 .SH NAME
 ldlm.ldlm_enqueue_min \- lock enqueue timeout minimum
 .SH SYNOPSIS
+.SY
+.B "lctl get_param ldlm.ldlm_enqueue_min"
+.SY
+.B "lctl get_param osc." FSNAME "-*.ldlm_enqueue_min"
+.SY
+.BI "lctl set_param ldlm.ldlm_enqueue_min=" TIMEOUT_SECONDS
+.SY
+.BI "lctl set_param osc." FSNAME "-*.ldlm_enqueue_min=" TIMEOUT_SECONDS
+.YS
 .SS PROPERTIES
 .TP
-.B Perms
-.BR 644 " | " -rw-r--r--.
+.B Access Permissions
+.BR 644 " | " -rw-r--r--
 .TP
 .B Scope
+.br
 Global
 .TP
 .B Config
-always present
+.br
+Always present
 .TP
 .B Default
-.B ldlm.ldlm_enqueue_min=100
+.br
+.RB ldlm.ldlm_enqueue_min= 100
+.TP
+.B Valid Range
+.br
+.RB ldlm.ldlm_enqueue_min= 10
+.br
+.RB ldlm.ldlm_enqueue_min= 900 | at_max
 .SH DESCRIPTION
 .B ldlm_enqueue_min
 is the minimum lock enqueue time.
@@ -30,26 +48,33 @@ increase (similar to adaptive timeouts).
 It is preferred to set
 .B ldlm_enqueue_min
 as a per-target tunable with
-.BI *. FSNAME *.ldlm_enqueue_min
-instead of the global parameter. This avoids issues if a client mounts multiple
-filesystems with different
+.BI osc. FSNAME -*.ldlm_enqueue_min
+instead of the global parameter.
+This avoids issues if a client mounts multiple filesystems with different
 .B ldlm_enqueue_min
 tunable settings.
 .SH MODULES
 This parameter is in the following modules:
 .EX
 .B ldlm.ldlm_enqueue_min
+.br
+.B osc.*.ldlm_enqueue_min
 .EE
 .SH EXAMPLES
+Set the minimum enqueue timeout to 50s for the
+.B testfs
+filesystem:
 .EX
-.B ldlm.ldlm_enqueue_min=100
+.RB mgs# "lctl set_param -P *.testfs*.ldlm_enqueue_min=50"
 .EE
 .SH AVAILABILITY
 .B ldlm_enqueue_min
 is part of the
 .BR lustre (7)
-filesystem package.
-.\" commit #
+filesystem package since release 1.6.4,
+.\" commit 1.6.0-1416-gde3c3fdf25
+but the per-subsystem tunables are only present since release 2.18.0.
+.\" commit v2_17_51-8-gb1da541f7a
 .SH SEE ALSO
 .BR at_early_margin (4),
 .BR at_extra (4),

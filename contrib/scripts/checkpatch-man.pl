@@ -532,7 +532,7 @@ sub process {
 
 # check for shared object link
 		if ($line =~ /^\.so (.*\/)?(.*\.([1-8]))$/) {
-			if (! -e "Documentation/man3/$2") {
+			if (! -e "Documentation/man$3/$2") {
 				ERROR("SHARED_OBJECT_PATH",
 				      "The file that .so is referencing '$2' is not a valid man page\n" . $herecurr);
 			}
@@ -765,9 +765,11 @@ sub process {
 Missing 'release X.X.0' and/or 'commit X.X.X*' for the SUBJECT of this man page.
 If different than the SUBJECT release, options should have the release of when they were added in this section.
 To find the appropriate versions, the following command will give a reasonable result:
-git describe \$(git log -S 'SUBJECT' FILE | awk '/^commit /{print \$2}'|tail -1)
-where SUBJECT is the user command or function that this page describes (the SUBJECT for lctl-list_param.1 would be 'list_param', include the single quotes),
-and where FILE is the file path to where the function for the SUBJECT is likely found (lustre/utils/lfs.c, lustre/utils/liblustreapi*.c, ...)
+git describe \$(git log -S SUBJECT --pretty=format:\%(describe) FILE | tail -1)
+where SUBJECT is the user command or function that this page describes
+(the SUBJECT for lctl-list_param.1 would be 'list_param'),
+and where FILE is the file path to where the function for the SUBJECT is likely
+found (lustre/utils/lfs.c, lustre/utils/liblustreapi*.c, ...)
 Generated result:
 $versions
 EOM
@@ -914,7 +916,7 @@ EOM
 				} else {
 					foreach my $subject (split(", ", $subjectline)) {
 						$subject =~ s/\-/ /;
-						if ($line =~ /$subject/ && $line !~ /^\.B [clientmgods]*[#\$]/) {
+						if ($line =~ /$subject/ && $line !~ /^\.[R]*B [\"clientmgods]*[#\$]/) {
 							CHK("EXAMPLES_FORMAT_USER_INPUT",
 							    "If this line is user input, it should be bold (.B) and prefaced with either '#'/'\$' for root/non-root users respectively\n" . $herecurr);
 						}
@@ -936,7 +938,7 @@ EOM
 				$avail_has_release = 1;
 				if ($1 !~ /0/) {
 					CHK("AVAILABILITY_FORMAT_RELEASE",
-					    "The release version usually ends with .0 as it is the first release after the commit version (commit 2.4.8 -> release 2.5.0)\n" . $herecurr);
+					    "The release version usually ends with .0 as it is the first release after the commit version (commit 2.4.58 -> release 2.5.0)\n" . $herecurr);
 				}
 			}
 			if ($line =~ /commit v?\d+.\d+.\d+/) {

@@ -1,6 +1,6 @@
-.TH FZAP_BLOCKSHIFT 4 2026-03-20 "Lustre" "Lustre Tunable"
+.TH OSD-ZFS.FZAP_BLOCKSHIFT 4 2026-03-20 "Lustre" "Lustre Tunable"
 .SH NAME
-fzap_blockshift \- control ZFS FatZAP leaf block size for ZFS OSDs.
+osd-zfs.fzap_blockshift \- control ZFS OSD FatZAP leaf block size
 .SH SYNOPSIS
 .SY "lctl set_param"
 .BI osd-zfs. FSNAME -*.fzap_blockshift= SHIFT_BITS
@@ -8,10 +8,36 @@ fzap_blockshift \- control ZFS FatZAP leaf block size for ZFS OSDs.
 .SY "lctl get_param"
 .BI osd-zfs. FSNAME -*.fzap_blockshift
 .YS
+.SS PROPERTIES
+.TP
+.B Access Permissions
+.br
+.BR 644 | -rw-r--r--
+.TP
+.B Scope
+.br
+Per-MDT and OST device.
+.TP
+.B Config
+.br
+.B osd-zfs.*.fzap_blockshift
+is always present for MDT and OST devices.
+.TP
+.B Default
+.br
+.RB fzap_blockshift= 13
+.TP
+.B Valid Range
+.br
+.RB fzap_blockshift= 9
+.br
+.RB fzap_blockshift= 24
 .SH DESCRIPTION
 .B fzap_blockshift
 controls the leaf block size used when creating ZFS FatZAP objects
 (directories, OI tables, and indexes) on a per-OSD basis.
+This can be useful to optimize the directory performance to match
+the ZFS VDEV geometry and underlying storage technology.
 .PP
 .I SHIFT_BITS
 is the number of bits to shift, not the block size in bytes.
@@ -22,7 +48,7 @@ to 13 (2^13 = 8192), not 8192 or 8K.
 The value of 13 or 14 (8K or 16K blocks) provides a reasonable middle ground
 for most pool layouts. Smaller values can reduce per-directory overhead
 but may increase parity overhead depending on the pool topology.
-.SH POOL TOPOLOGY CONSIDERATIONS
+.SS POOL TOPOLOGY CONSIDERATIONS
 The optimal value for
 .B fzap_blockshift
 depends heavily on the pool layout or geometry:
@@ -62,31 +88,49 @@ Valid values range from
 .B SPA_MINBLOCKSHIFT (9 = 512B)
 to
 .B SPA_MAXBLOCKSHIFT (24 = 16MiB).
-The actual value depends on the pool's ashift setting, which can be verified with:
+The actual value depends on the pool's ashift setting,
+which can be verified with:
 .PP
 .B zdb -e -C <poolname> | grep -i ashift
-.SH DEFAULT
-.B 13
-(8KiB leaf blocks)
+.SH MODULES
+This parameter is present in the following modules:
+.B osd-zfs.*.fzap_blockshift
 .SH EXAMPLES
+.PP
+Set fzap_blockshift to 14 (16KiB) for all local ZFS OSDs:
+.EX
+.RB oss# " lctl set_param osd-zfs.*.fzap_blockshift=14"
+.EE
+.PP
+Set fzap_blockshift to 16 (64KiB) for a specific OST:
+.EX
+.RB oss# " lctl set_param osd-zfs.testfs-OST0000.fzap_blockshift=16"
+.EE
+.PP
+Permanently set fzap_blockshift to 12 (4KiB) for all MDTs in a filesystem:
+.EX
+.RB mds# " lctl set_param -P osd-zfs.testfs-MDT*.fzap_blockshift=12"
+.EE
 .TP
-Set fzap_blockshift to 14 (16KiB) for all ZFS OSDs:
-.B lctl set_param osd-zfs.*.fzap_blockshift=14
+Permanently set fzap_blockshift across reboots for all ZFS OSTs in a filesystem:
+.EX
+.RB mgs# " lctl set_param -P osd-zfs.testfs-OST*.fzap_blockshift=15"
+.EE
 .TP
-Set fzap_blockshift to 13 (8KiB) for a specific OST:
-.B lctl set_param osd-zfs.testfs-OST0000.fzap_blockshift=13
-.TP
-Set fzap_blockshift to 15 (32KiB) for all MDTs in a filesystem:
-.B lctl set_param osd-zfs.testfs-MDT*.fzap_blockshift=15
-.TP
-Persist the setting across reboots for all ZFS OSDs:
-.B lctl set_param -P osd-zfs.*.fzap_blockshift=13
-.TP
-Read the current value of all ZFS OSDs:
-.B lctl get_param osd-zfs.*.fzap_blockshift
+Read the current value of all local ZFS OSDs:
+.EX
+.RB oss# " lctl get_param osd-zfs.*.fzap_blockshift"
+.EE
+.SH AVAILABILITY
+The
+.B fzap_blockshift
+parameter is part of the
+.BR lustre (7)
+filesystem package since release 2.18.0.
+.\" Added in commit v2_17_51-27-gab735e9962
 .SH SEE ALSO
-.BR lustre (7),
 .BR zfs (4),
+.BR lustre (7),
 .BR lctl (8),
 .BR lctl-get_param (8),
 .BR lctl-set_param (8),
