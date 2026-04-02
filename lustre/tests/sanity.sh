@@ -12330,22 +12330,23 @@ test_77d() { # bug 10889
 run_test 77d "checksum error on OST direct write, read"
 
 test_77f() { # bug 10889
-	[ $PARALLEL == "yes" ] && skip "skip parallel run"
+	[[ $PARALLEL == "yes" ]] && skip "skip parallel run"
 	$GSS && skip_env "could not run with gss"
 
+	stack_trap "$LCTL set_param $($LCTL get_param -b osc.*.resend_count)"
+	$LCTL set_param osc.*.resend_count=1
 	set_checksums 1
-	stack_trap "rm -f $DIR/$tfile"
+	stack_trap "set_checksum_type $ORIG_CSUM_TYPE"
+	stack_trap "rm -f $DIR/$tfile.*"
 	for algo in $CKSUM_TYPES; do
 		cancel_lru_locks osc
 		set_checksum_type $algo
 		#define OBD_FAIL_OSC_CHECKSUM_SEND       0x409
 		$LCTL set_param fail_loc=0x409
-		$DIRECTIO write $DIR/$tfile 0 $F77SZ $((1024 * 1024)) &&
+		$DIRECTIO write $DIR/$tfile.$algo 0 $F77SZ $((1024 * 1024)) &&
 			error "direct write succeeded"
 		$LCTL set_param fail_loc=0
 	done
-	set_checksum_type $ORIG_CSUM_TYPE
-	set_checksums 0
 }
 run_test 77f "repeat checksum error on write (expect error)"
 
@@ -14095,8 +14096,8 @@ test_103e() {
 	local fileacl
 	local saved_debug=$($LCTL get_param -n debug)
 
-	(( $MDS1_VERSION >= $(version_code 2.14.52) )) ||
-		skip "MDS needs to be at least 2.14.52"
+	(( $MDS1_VERSION >= $(version_code v2_14_50-1-gf3d03bc38a) )) ||
+		skip "MDS needs to be at least 2.14.50.1"
 
 	large_xattr_enabled || skip_env "ea_inode feature disabled"
 
@@ -14109,10 +14110,13 @@ test_103e() {
 	stack_trap "$LCTL set_param debug=\"$saved_debug\"" EXIT
 	stack_trap "$LCTL get_param mdc.*-mdc*.stats" EXIT
 
-	# add a large number of default ACLs (expect 8000+ for 2.13+)
-	for U in {2..7000}; do
-		setfacl -d -m user:$U:rwx $DIR/$tdir ||
-			error "Able to add just $U default ACLs"
+	# add large number of default ACLs in $incr batches (8000+ for 2.13+)
+	local incr=100
+	for ((range=0; range < 7000/incr; range++)); do
+		for ((U = range * incr + 2; U < (range+1) * incr; U++)); do
+			echo "user:$U:rwx"
+		done | setfacl -d -M /dev/stdin $DIR/$tdir ||
+			error "Cannot add $U default ACLs"
 	done
 	numacl=$(getfacl $DIR/$tdir |& grep -c "default:user")
 	echo "$numacl default ACLs created"
@@ -14133,11 +14137,13 @@ test_103e() {
 	fileacl=$(getfacl $DIR/$tdir/$tfile |& grep -c "user:")
 	(( $fileacl == $numacl )) ||
 		error "failed to add new ACL: $fileacl != $numacl as expected"
-	# adds more ACLs to a file to reach their maximum at 8000+
+	# add more ACLs in $incr batches to reach their maximum at 8000+
 	numacl=0
-	for U in {20000..25000}; do
-		setfacl -m user:$U:rwx $DIR/$tdir/$tfile || break
-		numacl=$((numacl + 1))
+	for ((range = 20000/incr; range < 25/incr; range++)); do
+		for ((U = range * incr; U < (range+1) * incr; U++)); do
+			echo "user:$U:rwx"
+		done | setfacl -M /dev/stdin $DIR/$tdir/$tfile || break
+		numacl=$((numacl + incr))
 	done
 	echo "Added $numacl more ACLs to the file"
 	fileacl=$(getfacl $DIR/$tdir/$tfile |& grep -c "user:")
@@ -28739,6 +28745,8 @@ test_275() {
 run_test 275 "Read on a canceled duplicate lock"
 
 test_276() {
+	(( $OST1_VERSION > $(version_code v2_10_58_0-52-g4f40429775) )) ||
+		skip "need OSS > 2.10.58.52 to avoid statfs race"
 	remote_ost_nodsh && skip "remote OST with nodsh"
 	local pid
 
@@ -28747,7 +28755,10 @@ test_276() {
 		done) & pid=\\\$!; echo \\\$pid > $TMP/sanity_276_pid" &
 	pid=$!
 
-	for LOOP in $(seq 20); do
+	local end=$(($SECONDS + 120))
+	[[ "$SLOW" == "yes" ]] && $((end += 600))
+
+	while (($SECONDS < end)); do
 		stop ost1
 		start ost1 $(ostdevname 1) $OST_MOUNT_OPTS
 	done
