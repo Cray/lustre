@@ -530,6 +530,31 @@ AC_DEFUN([LB_JBD2_H_TOTAL_CREDITS], [
 ]) # LB_JBD2_H_TOTAL_CREDITS
 
 #
+# LB_HAVE_SYSFS_EMIT
+#
+# Linux v5.9-rc5-23-g2efc459d06f16
+# sysfs: Add sysfs_emit and sysfs_emit_at to format sysfs output
+#
+AC_DEFUN([LB_SRC_HAVE_SYSFS_EMIT], [
+	LB2_LINUX_TEST_SRC([sysfs_emit], [
+		#include <linux/sysfs.h>
+	],[
+		static char buf[PAGE_SIZE];
+		(void)sysfs_emit(buf, "%s", "Nothing");
+	],[-Werror],[],[])
+])
+AC_DEFUN([LB_HAVE_SYSFS_EMIT], [
+	LB2_MSG_LINUX_TEST_RESULT([if sysfs_emit() is available],
+	[sysfs_emit], [
+		AC_DEFINE(HAVE_SYSFS_EMIT, 1, [sysfs_emit() is available])
+	],[
+		AC_DEFINE([sysfs_emit(buf, fmt, ...)],
+			  [scnprintf(buf, PAGE_SIZE, fmt, __VA_ARGS__)],
+			  [function sysfs_emit() unavailable])
+	])
+]) # LB_HAVE_SYSFS_EMIT
+
+#
 # LB_EXT4_INC_DEC_COUNT_2ARGS
 #
 # Linux v5.9-rc7-8-g15ed2851b0f4
@@ -696,6 +721,7 @@ AC_DEFUN([LB_KABI_LDISKFS], [AS_IF([test x$enable_ldiskfs != xno],[
 		LB_SRC_LDISKFS_FIND_ENTRY_LOCKED_EXISTS
 		LB_SRC_LDISKFSFS_DIRHASH_WANTS_DIR
 		LB_SRC_JBD2_H_TOTAL_CREDITS
+		LB_SRC_HAVE_SYSFS_EMIT
 		LB_SRC_JBD2_JOURNAL_GET_MAX_TXN_BUFS
 		LB2_SRC_CHECK_CONFIG_IM([FS_ENCRYPTION])
 		LB2_SRC_CHECK_CONFIG_IM([FS_VERITY])
@@ -710,6 +736,7 @@ AC_DEFUN([LB_KABI_LDISKFS], [AS_IF([test x$enable_ldiskfs != xno],[
 		LB_LDISKFS_FIND_ENTRY_LOCKED_EXISTS
 		LB_LDISKFSFS_DIRHASH_WANTS_DIR
 		LB_JBD2_H_TOTAL_CREDITS
+		LB_HAVE_SYSFS_EMIT
 		LB_JBD2_JOURNAL_GET_MAX_TXN_BUFS
 		LB2_TEST_CHECK_CONFIG_IM([FS_ENCRYPTION], [
 			EXT4_CRYPTO=],[
