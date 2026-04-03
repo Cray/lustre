@@ -1820,8 +1820,12 @@ static int osc_enter_cache(const struct lu_env *env, struct client_obd *cli,
 	} else if (remain == 0) {
 		OSC_DUMP_GRANT(D_CACHE, cli,
 			       "timeout, fall back to sync i/o");
+		spin_unlock(&cli->cl_loi_list_lock);
+		osc_object_lock(osc);
 		osc_extent_tree_dump(D_CACHE, osc);
+		osc_object_unlock(osc);
 		/* fall back to synchronous I/O */
+		RETURN(rc);
 	} else {
 		OSC_DUMP_GRANT(D_CACHE, cli,
 			       "no grant space, fall back to sync i/o");
@@ -3462,7 +3466,6 @@ repeat:
 	if (result == 0 && prio == IO_PRIO_DIRTY_EXCEEDED &&
 	    !active_ext_check && atomic_read(&obj->oo_nr_ios) &&
 	    obj->oo_npages > 0) {
-		osc_extent_tree_dump(D_CACHE, obj);
 		active_ext_check = true;
 		GOTO(repeat, result);
 	}
