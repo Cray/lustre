@@ -1692,8 +1692,8 @@ struct inode *ll_inode_from_resource_lock(struct ldlm_lock *lock)
 			inode = igrab(lock->l_resource->lr_lvb_inode);
 		} else {
 			inode = lock->l_resource->lr_lvb_inode;
-			LDLM_DEBUG_LIMIT(inode->i_state & I_FREEING ?  D_INFO :
-					 D_WARNING, lock,
+			LDLM_DEBUG_LIMIT(inode_state_read(inode) &
+					 I_FREEING ?  D_INFO : D_WARNING, lock,
 					 "lr_lvb_inode %p is bogus: magic %08x",
 					 lock->l_resource->lr_lvb_inode,
 					 lli->lli_inode_magic);
@@ -1737,7 +1737,7 @@ static struct inode *ll_iget_anon_dir(struct super_block *sb,
 	}
 
 	lli = ll_i2info(inode);
-	if (inode->i_state & I_NEW) {
+	if (inode_state_read(inode) & I_NEW) {
 		inode->i_mode = (inode->i_mode & ~S_IFMT) |
 				(body->mbo_mode & S_IFMT);
 		LASSERTF(S_ISDIR(inode->i_mode), "Not slave inode "DFID"\n",
@@ -3200,7 +3200,8 @@ void ll_truncate_inode_pages_final(struct inode *inode)
 #endif
 		CWARN("%s: inode="DFID"(%p) nrpages=%lu state %#lx, lli_flags %#lx, see https://jira.whamcloud.com/browse/LU-118\n",
 		      ll_i2sbi(inode)->ll_fsname, PFID(ll_inode2fid(inode)),
-		      inode, nrpages, (unsigned long)inode->i_state,
+		      inode, nrpages,
+		      (unsigned long)inode_state_read(inode),
 		      ll_i2info(inode)->lli_flags);
 #ifdef HAVE_XARRAY_SUPPORT
 		rcu_read_lock();

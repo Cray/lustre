@@ -48,7 +48,6 @@
 #ifdef HAVE_LINUX_FILELOCK_HEADER
 #include <linux/filelock.h>
 #endif
-
 #include <uapi/linux/lustre/lustre_ioctl.h>
 #include <lustre_swab.h>
 #include <libcfs/linux/linux-misc.h>
