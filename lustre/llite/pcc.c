@@ -88,6 +88,7 @@
 
 #include <linux/file.h>
 #include <lustre_compat/linux/fs.h>
+#include <lustre_compat/linux/dcache.h>
 #ifdef HAVE_FILEATTR_GET
 #include <linux/fileattr.h>
 #endif
@@ -3382,7 +3383,7 @@ pcc_create(struct dentry *base, const char *name, umode_t mode)
 	if (d_is_positive(dentry))
 		goto out;
 
-	rc = vfs_create(&nop_mnt_idmap, dir, dentry, mode, false);
+	rc = vfs_create(&nop_mnt_idmap, dentry, mode, NULL);
 	if (rc) {
 		dput(dentry);
 		dentry = ERR_PTR(rc);

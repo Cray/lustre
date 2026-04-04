@@ -34,6 +34,49 @@
 #define nop_mnt_idmap   init_user_ns
 #endif
 
+#if !defined(HAVE_VFS_CREATE_DELEGATE)
+#if !defined(HAVE_USER_NAMESPACE_ARG) && !defined(HAVE_MNT_IDMAP_ARG)
+#define vfs_create(ns, de, mode, di)	\
+	vfs_create(d_inode((de)->d_parent), (de), (mode), !!(di))
+#else
+#define vfs_create(ns, de, mode, di) \
+	vfs_create((ns), d_inode((de)->d_parent), (de), (mode), !!(di))
+#endif
+#endif /* HAVE_VFS_CREATE_DELEGATE */
+
+#ifdef HAVE_VFS_MKDIR_DELEGATE
+#define VFS_MKDIR_DELEGATE(id, inode, dentry, mode) \
+	vfs_mkdir((id), (inode), (dentry), (mode), NULL)
+#else
+#define VFS_MKDIR_DELEGATE(id, inode, dentry, mode) \
+	vfs_mkdir((id), (inode), (dentry), (mode))
+#endif /* HAVE_VFS_MKDIR_DELEGATE */
+
+#ifdef HAVE_IOPS_MKDIR_RETURNS_DENTRY
+#define ll_vfs_mkdir(id, inode, dentry, mode)	\
+	VFS_MKDIR_DELEGATE((id), (inode), (dentry), (mode))
+#else
+#define ll_vfs_mkdir(i, inode, dentry, mode) ({				\
+	int rc = VFS_MKDIR_DELEGATE((i), (inode), (dentry), (mode));	\
+	if (rc) {							\
+		dput((dentry));						\
+		dentry = ERR_PTR(rc);					\
+	}								\
+	(dentry);							\
+})
+#endif /* HAVE_IOPS_MKDIR_RETURNS_DENTRY */
+
+static inline int ll_vfs_getattr(struct path *path, struct kstat *st,
+				 u32 request_mask, unsigned int flags)
+{
+#ifdef AT_GETATTR_NOSEC /* added in v6.7-rc1-1-g8a924db2d7b5 */
+	if (flags & AT_GETATTR_NOSEC)
+		return vfs_getattr_nosec(path, st, request_mask, flags);
+#endif /* AT_GETATTR_NOSEC */
+
+	return vfs_getattr(path, st, request_mask, flags);
+}
+
 #ifndef HAVE_INODE_JUST_DROP
 static inline int inode_just_drop(struct inode *inode)
 {
@@ -44,6 +87,11 @@ static inline int inode_generic_drop(struct inode *inode)
 {
 	return generic_drop_inode(inode);
 }
+#endif
+
+#ifndef HAVE_ILOOKUP5_NOWAIT_ISNEW
+#define ilookup5_nowait(sb, hash, fn, data, isnew) \
+	ilookup5_nowait((sb), (hash), (fn), (data))
 #endif
 
 #endif /* __LIBCFS_LINUX_CFS_FS_H__ */

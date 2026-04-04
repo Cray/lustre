@@ -117,7 +117,7 @@ struct inode *ll_iget(struct super_block *sb, ino_t hash,
 	if (inode == NULL)
 		RETURN(ERR_PTR(-ENOMEM));
 
-	if (inode->i_state & I_NEW) {
+	if (inode_state_read(inode) & I_NEW) {
 		rc = ll_read_inode2(inode, md);
 		if (rc == 0 && S_ISREG(inode->i_mode) &&
 		    ll_i2info(inode)->lli_clob == NULL)
@@ -141,7 +141,7 @@ struct inode *ll_iget(struct super_block *sb, ino_t hash,
 	} else if (is_bad_inode(inode)) {
 		iput(inode);
 		inode = ERR_PTR(-ESTALE);
-	} else if (!(inode->i_state & (I_FREEING | I_CLEAR))) {
+	} else if (!(inode_state_read(inode) & (I_FREEING | I_CLEAR))) {
 		rc = ll_update_inode(inode, md);
 		CDEBUG(D_VFSTRACE, "got inode: "DFID"(%p): rc = %d\n",
 		       PFID(&md->body->mbo_fid1), inode, rc);
@@ -234,6 +234,7 @@ static void ll_lock_cancel_bits(struct ldlm_lock *lock,
 {
 	struct inode *inode = ll_inode_from_resource_lock(lock);
 	struct ll_inode_info *lli;
+	bool is_new __maybe_unused;
 	int rc;
 
 	ENTRY;
@@ -246,7 +247,8 @@ static void ll_lock_cancel_bits(struct ldlm_lock *lock,
 		if (lock->l_resource->lr_lvb_inode)
 			LDLM_DEBUG(lock,
 				   "can't take inode for the lock (%sevicted)",
-				   lock->l_resource->lr_lvb_inode->i_state &
+				   inode_state_read(
+					lock->l_resource->lr_lvb_inode) &
 				   I_FREEING ? "" : "not ");
 		RETURN_EXIT;
 	}
@@ -380,7 +382,8 @@ static void ll_lock_cancel_bits(struct ldlm_lock *lock,
 			 */
 			master_inode = ilookup5_nowait(inode->i_sb, hash,
 							ll_test_inode_by_fid,
-							(void *)&lli->lli_pfid);
+							(void *)&lli->lli_pfid,
+							&is_new);
 			if (master_inode) {
 				ll_prune_negative_children(master_inode);
 				iput(master_inode);

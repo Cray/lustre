@@ -159,8 +159,8 @@ out:
 EXPORT_SYMBOL(choose_ipv4_src);
 
 static struct socket *
-lnet_sock_create(int interface, struct sockaddr *remaddr, int local_port,
-		 struct net *ns, struct sockaddr *addr)
+lnet_sock_create(int interface, struct sockaddr_unsized *remaddr,
+		 int local_port, struct net *ns, struct sockaddr *addr)
 {
 	struct socket *sock;
 	int rc;
@@ -301,7 +301,7 @@ retry:
 		}
 #endif /* IS_ENABLED(CONFIG_IPV6) */
 		}
-		rc = kernel_bind(sock, (struct sockaddr *)&locaddr,
+		rc = kernel_bind(sock, (struct sockaddr_unsized *)&locaddr,
 				 sizeof(locaddr));
 		if (rc == -EADDRINUSE) {
 			CDEBUG(D_NET, "Port %d already in use\n", local_port);
@@ -417,7 +417,7 @@ lnet_sock_listen(int local_port, int backlog, struct net *ns,
 
 struct socket *
 lnet_sock_connect(int interface, int local_port,
-		  struct sockaddr *peeraddr,
+		  struct sockaddr_unsized *peeraddr,
 		  struct net *ns)
 {
 	struct socket *sock;

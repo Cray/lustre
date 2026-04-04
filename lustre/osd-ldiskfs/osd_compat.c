@@ -21,7 +21,7 @@
 #include <linux/fs.h>
 /* XATTR_{REPLACE,CREATE} */
 #include <linux/xattr.h>
-
+#include <lustre_compat/linux/dcache.h>
 /*
  * struct OBD_{ALLOC,FREE}*()
  */

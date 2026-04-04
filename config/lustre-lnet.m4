@@ -1343,6 +1343,33 @@ AC_DEFUN([LN_CONFIG_SENDPAGE_OK], [
 	])
 ]) # LN_CONFIG_SENDPAGE_OK
 
+#
+## LN_HAVE_STRUCT_SOCKADDR_UNSIZED
+#
+# Linux commit v6.18-rc3-603-gbf33247a90d3e
+#   net: Add struct sockaddr_unsized for sockaddr of unknown length
+#
+AC_DEFUN([LN_SRC_HAVE_STRUCT_SOCKADDR_UNSIZED],[
+	LB2_LINUX_TEST_SRC([struct_sockaddr_unsized], [
+		#include <linux/socket.h>
+		#include <linux/net.h>
+	],[
+		struct sockaddr_unsized *addr = NULL;
+
+		(void)kernel_bind(NULL, addr, 0);
+	],[-Werror])
+])
+AC_DEFUN([LN_HAVE_STRUCT_SOCKADDR_UNSIZED],[
+	LB2_MSG_LINUX_TEST_RESULT([if struct sockaddr_unsized exists],
+	[struct_sockaddr_unsized], [
+		AC_DEFINE(HAVE_STRUCT_SOCKADDR_UNSIZED, 1,
+			  [struct sockaddr_unsized exists])
+	], [
+		AC_DEFINE([sockaddr_unsized], [sockaddr],
+			  [struct sockaddr_unsized does not exist])
+	])
+]) # LN_HAVE_STRUCT_SOCKADDR_UNSIZED
+
 AC_DEFUN([LN_PROG_LINUX_SRC], [
 	LN_CONFIG_O2IB_SRC
 	# 4.x
@@ -1363,6 +1390,8 @@ AC_DEFUN([LN_PROG_LINUX_SRC], [
 	LN_SRC_CONFIG_SENDPAGE_OK
 	# 6.15
 	LN_SRC_HAVE_NETDEV_LOCK_OPS
+	# 6.19
+	LN_SRC_HAVE_STRUCT_SOCKADDR_UNSIZED
 ])
 
 AC_DEFUN([LN_PROG_LINUX_RESULTS], [
@@ -1385,6 +1414,8 @@ AC_DEFUN([LN_PROG_LINUX_RESULTS], [
 	LN_CONFIG_SENDPAGE_OK
 	# 6.15
 	LN_HAVE_NETDEV_LOCK_OPS
+	# 6.19
+	LN_HAVE_STRUCT_SOCKADDR_UNSIZED
 ])
 
 #

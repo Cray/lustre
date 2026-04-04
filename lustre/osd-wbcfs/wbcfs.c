@@ -1053,11 +1053,16 @@ static const struct address_space_operations memfs_aops = {
 	.write_end	= memfs_write_end,
 };
 
+static void memfs_kill_super(struct super_block *sb)
+{
+	kill_anon_super(sb);
+}
+
 static struct file_system_type memfs_fstype = {
 	.owner			= THIS_MODULE,
 	.name			= "wbcfs",
 	.init_fs_context	= memfs_init_fs_context,
-	.kill_sb		= kill_litter_super,
+	.kill_sb		= memfs_kill_super,
 	.fs_flags		= FS_USERNS_MOUNT,
 };
 

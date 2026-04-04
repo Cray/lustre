@@ -98,21 +98,6 @@ static inline struct bio *cfs_bio_alloc(struct block_device *bdev,
 #define vfs_unlink(ns, dir, de) vfs_unlink(dir, de, NULL)
 #endif
 
-static inline int ll_vfs_getattr(struct path *path, struct kstat *st,
-				 u32 request_mask, unsigned int flags)
-{
-	int rc;
-
-#ifdef AT_GETATTR_NOSEC /* added in v6.7-rc1-1-g8a924db2d7b5 */
-	if (flags & AT_GETATTR_NOSEC)
-		rc = vfs_getattr_nosec(path, st, request_mask, flags);
-	else
-#endif /* AT_GETATTR_NOSEC */
-		rc = vfs_getattr(path, st, request_mask, flags);
-
-	return rc;
-}
-
 #ifdef HAVE_U64_CAPABILITY
 #define ll_capability_u32(kcap) \
 	((kcap).val & 0xFFFFFFFF)
@@ -300,7 +285,6 @@ static inline void ll_security_release_secctx(char *secdata, u32 seclen,
 	posix_acl_update_mode(inode, mode, acl)
 #define notify_change(ns, de, attr, inode)	notify_change(de, attr, inode)
 #define inode_owner_or_capable(ns, inode)	inode_owner_or_capable(inode)
-#define vfs_create(ns, dir, de, mode, ex)	vfs_create(dir, de, mode, ex)
 #define vfs_mkdir(ns, dir, de, mode)		vfs_mkdir(dir, de, mode)
 #define ll_set_acl(ns, inode, acl, type)	ll_set_acl(inode, acl, type)
 #endif
@@ -310,27 +294,5 @@ static inline void ll_security_release_secctx(char *secdata, u32 seclen,
 #else /* !HAVE_RADIX_TREE_REPLACE_SLOT_3ARGS */
 # define radix_tree_rcu
 #endif /* HAVE_RADIX_TREE_REPLACE_SLOT_3ARGS */
-
-#ifdef HAVE_IOPS_MKDIR_RETURNS_DENTRY
-#define ll_vfs_mkdir(id, inode, dentry, mode)	\
-	vfs_mkdir((id), (inode), (dentry), (mode))
-#else
-#define ll_vfs_mkdir(i, inode, dentry, mode) ({				\
-	int rc = vfs_mkdir((i), (inode), (dentry), (mode));		\
-	if (rc) {							\
-		dput((dentry));						\
-		dentry = ERR_PTR(rc);					\
-	}								\
-	(dentry);							\
-})
-#endif
-
-#ifndef QSTR
-#define QSTR(name) QSTR_LEN((name), strlen((name)))
-#endif
-
-#ifndef QSTR_LEN
-#define QSTR_LEN(name, len) ((struct qstr)QSTR_INIT((name), (len)))
-#endif
 
 #endif /* _LUSTRE_COMPAT_H */

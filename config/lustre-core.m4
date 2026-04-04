@@ -3500,6 +3500,115 @@ AC_DEFUN([LC_HAVE_FILE__F_PATH],[
 ]) # LC_HAVE_FILE__F_PATH
 
 #
+## LC_HAVE_VFS_MKDIR_DELEGATE
+#
+# Linux commit v6.18-rc1-6-ge12d203b8c880
+#   vfs: allow mkdir to wait for delegation break on parent
+#
+AC_DEFUN([LC_SRC_HAVE_VFS_MKDIR_DELEGATE],[
+	LB2_LINUX_TEST_SRC([vfs_mkdir_delegate], [
+		#include <linux/fs.h>
+	],[
+		struct mnt_idmap *idmap = NULL;
+		struct inode *dir = NULL;
+		struct dentry *dentry = NULL;
+		umode_t mode = 0;
+		struct delegated_inode *di = NULL;
+		struct dentry *result = vfs_mkdir(idmap, dir, dentry, mode, di);
+
+		(void)result;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_VFS_MKDIR_DELEGATE],[
+	LB2_MSG_LINUX_TEST_RESULT([if vfs_mkdir() takes delegate],
+	[vfs_mkdir_delegate], [
+		AC_DEFINE(HAVE_VFS_MKDIR_DELEGATE, 1,
+			  [vfs_mkdir() takes delegate])
+	])
+]) # LC_HAVE_VFS_MKDIR_DELEGATE
+
+#
+## LC_HAVE_INODE_STATE_READ
+#
+# Linux commit v6.18-rc1-7-gd8753f788ab49
+#   fs: provide accessors for ->i_state
+#
+AC_DEFUN([LC_SRC_HAVE_INODE_STATE_READ],[
+	LB2_LINUX_TEST_SRC([inode_state_read], [
+		#include <linux/fs.h>
+	],[
+		struct inode *inode = NULL;
+		enum inode_state_flags_enum state = inode_state_read(inode);
+
+		(void)state;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_INODE_STATE_READ],[
+	LB2_MSG_LINUX_TEST_RESULT([if inode_state_read() exists],
+	[inode_state_read], [
+		AC_DEFINE(HAVE_INODE_STATE_READ, 1,
+			  [inode_state_read() exists])
+	], [
+		AC_DEFINE([inode_state_read(inode)], [((inode)->i_state)],
+			  [inode_state_read() does not exist, provide one])
+	])
+]) # LC_HAVE_INODE_STATE_READ
+
+#
+## LC_HAVE_VFS_CREATE_DELEGATE
+#
+# Linux commit v6.18-rc1-10-gc826229c6a82f
+#   vfs: make vfs_create break delegations on parent directory
+#
+AC_DEFUN([LC_SRC_HAVE_VFS_CREATE_DELEGATE],[
+	LB2_LINUX_TEST_SRC([vfs_create_delegate], [
+		#include <linux/fs.h>
+	],[
+		struct mnt_idmap *idmap = NULL;
+		struct dentry *dentry = NULL;
+		umode_t mode = 0;
+		struct delegated_inode *di = NULL;
+		int rc = vfs_create(idmap, dentry, mode, di);
+		(void)rc;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_VFS_CREATE_DELEGATE],[
+	LB2_MSG_LINUX_TEST_RESULT([if vfs_create() takes delegate],
+	[vfs_create_delegate], [
+		AC_DEFINE(HAVE_VFS_CREATE_DELEGATE, 1,
+			  [vfs_create() takes delegate])
+	])
+]) # LC_HAVE_VFS_CREATE_DELEGATE
+
+#
+## LC_HAVE_ILOOKUP5_NOWAIT_ISNEW
+#
+# Linux commit v6.18-rc1-20-ga27628f436343
+#   fs: rework I_NEW handling to operate without fences
+#
+AC_DEFUN([LC_SRC_HAVE_ILOOKUP5_NOWAIT_ISNEW],[
+	LB2_LINUX_TEST_SRC([ilookup5_nowait_isnew], [
+		#include <linux/fs.h>
+
+		static int test(struct inode *inode, void *data) { return 0; }
+	],[
+		struct super_block *sb = NULL;
+		bool isnew;
+		struct inode *node = ilookup5_nowait(sb, 0, test, NULL, &isnew);
+
+		(void)node;
+		(void)isnew;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_ILOOKUP5_NOWAIT_ISNEW],[
+	LB2_MSG_LINUX_TEST_RESULT([if ilookup5_nowait() takes isnew],
+	[ilookup5_nowait_isnew], [
+		AC_DEFINE(HAVE_ILOOKUP5_NOWAIT_ISNEW, 1,
+			  [ilookup5_nowait() takes isnew])
+	])
+]) # LC_HAVE_ILOOKUP5_NOWAIT_ISNEW
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -3698,6 +3807,12 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_HAVE_MEMDESC_FLAGS_T
 	LC_SRC_HAVE_DENTRY__D_NAME
 	LC_SRC_HAVE_FILE__F_PATH
+
+	# 6.19
+	LC_SRC_HAVE_VFS_MKDIR_DELEGATE
+	LC_SRC_HAVE_INODE_STATE_READ
+	LC_SRC_HAVE_VFS_CREATE_DELEGATE
+	LC_SRC_HAVE_ILOOKUP5_NOWAIT_ISNEW
 ])
 
 AC_DEFUN([LC_PROG_LINUX_RESULTS], [
@@ -3909,6 +4024,12 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_HAVE_MEMDESC_FLAGS_T
 	LC_HAVE_DENTRY__D_NAME
 	LC_HAVE_FILE__F_PATH
+
+	# 6.19
+	LC_HAVE_VFS_MKDIR_DELEGATE
+	LC_HAVE_INODE_STATE_READ
+	LC_HAVE_VFS_CREATE_DELEGATE
+	LC_HAVE_ILOOKUP5_NOWAIT_ISNEW
 ])
 
 #

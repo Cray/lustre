@@ -1075,7 +1075,7 @@ static int check_gssd_socket(void)
 
 	/* Try to connect to the socket */
 	while (tries++ < 6) {
-		err = kernel_connect(sock, (struct sockaddr *)&sstorage,
+		err = kernel_connect(sock, (struct sockaddr_unsized *)&sstorage,
 				     sizeof(sstorage), 0);
 		if (!err)
 			break;

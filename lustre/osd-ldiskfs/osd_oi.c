@@ -18,6 +18,7 @@
 #define DEBUG_SUBSYSTEM S_OSD
 
 #include <linux/module.h>
+#include <lustre_compat/linux/dcache.h>
 
 /*
  * struct OBD_{ALLOC,FREE}*()

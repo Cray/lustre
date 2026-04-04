@@ -310,7 +310,7 @@ lnet_connect(struct lnet_nid *peer_nid, int interface,
 	     --port) {
 		/* Iterate through reserved ports. */
 		sock = lnet_sock_connect(interface, port,
-					 (struct sockaddr *)&destaddr, ns);
+					 (struct sockaddr_unsized *)&destaddr, ns);
 		if (IS_ERR(sock)) {
 			rc = PTR_ERR(sock);
 			if (rc == -EADDRINUSE || rc == -EADDRNOTAVAIL)
