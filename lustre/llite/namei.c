@@ -2161,7 +2161,7 @@ static int ll_link(struct dentry *old_dentry, struct inode *dir,
 		   struct dentry *new_dentry)
 {
 	struct inode *src = old_dentry->d_inode;
-	struct qstr *name = &new_dentry->d_name;
+	const struct qstr *name = &new_dentry->d_name;
 	struct ll_sb_info *sbi = ll_i2sbi(dir);
 	struct ptlrpc_request *request = NULL;
 	struct md_op_data *op_data;
@@ -2297,7 +2297,7 @@ static int ll_mkdir(struct inode *dir, struct dentry *dchild, umode_t mode)
 
 static int ll_rmdir(struct inode *dir, struct dentry *dchild)
 {
-	struct qstr *name = &dchild->d_name;
+	const struct qstr *name = &dchild->d_name;
 	struct ptlrpc_request *request = NULL;
 	struct md_op_data *op_data;
 	ktime_t kstart = ktime_get();
@@ -2386,7 +2386,7 @@ int ll_rmdir_entry(struct inode *dir, char *name, int namelen)
 
 static int ll_unlink(struct inode *dir, struct dentry *dchild)
 {
-	struct qstr *name = &dchild->d_name;
+	const struct qstr *name = &dchild->d_name;
 	struct ptlrpc_request *request = NULL;
 	struct md_op_data *op_data;
 	struct mdt_body *body;

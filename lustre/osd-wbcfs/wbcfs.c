@@ -994,7 +994,7 @@ static const struct super_operations memfs_ops = {
 	.destroy_inode	= memfs_destroy_inode,
 	.statfs		= memfs_statfs,
 	.evict_inode	= memfs_evict_inode,
-	.drop_inode	= generic_delete_inode,
+	.drop_inode	= inode_just_drop,
 	.put_super	= memfs_put_super,
 };
 

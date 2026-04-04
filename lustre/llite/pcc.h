@@ -88,12 +88,12 @@ struct pcc_match_rule {
 };
 
 struct pcc_matcher {
-	__u32		 pm_uid;
-	__u32		 pm_gid;
-	__u32		 pm_projid;
-	__u64		 pm_size;
-	__u64		 pm_mtime;
-	struct qstr	*pm_name;
+	__u32			 pm_uid;
+	__u32			 pm_gid;
+	__u32			 pm_projid;
+	__u64			 pm_size;
+	__u64			 pm_mtime;
+	const struct qstr	*pm_name;
 };
 
 enum pcc_dataset_flags {

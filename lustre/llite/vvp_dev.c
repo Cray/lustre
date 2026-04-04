@@ -414,7 +414,7 @@ static struct page *vvp_pgcache_current(struct vvp_seq_private *priv)
 }
 
 #define seq_page_flag(seq, page, flag, has_flags) do {                  \
-	if (test_bit(PG_##flag, &(page)->flags)) {                      \
+	if (test_bit(PG_##flag, &PAGE_FLAGS(page))) {                   \
 		seq_printf(seq, "%s"#flag, has_flags ? "|" : "");       \
 		has_flags = 1;                                          \
 	}                                                               \

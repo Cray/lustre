@@ -70,7 +70,7 @@ static int ll_drop_inode(struct inode *inode)
 	if (!sbi->ll_inode_cache_enabled)
 		return 1;
 
-	drop = generic_drop_inode(inode);
+	drop = inode_generic_drop(inode);
 	if (!drop)
 		drop = llcrypt_drop_inode(inode);
 

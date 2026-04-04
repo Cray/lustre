@@ -3057,7 +3057,8 @@ static void osd_invalidate_partial_page(struct inode *inode, loff_t offset)
 
 	rc = osd_jbd_invalidate_page(LDISKFS_SB(inode->i_sb)->s_journal,
 				     page, 0, PAGE_SIZE);
-	LASSERTF(rc == 0, "  last page %lu %s%s rc=%d\n", page->index,
+	LASSERTF(rc == 0, "  last page %lu %s%s rc=%d\n",
+		 folio_index_page(page),
 		 PageChecked(page) ? "C" : "", PageDirty(page) ? "D" : "", rc);
 	unlock_page(page);
 	put_page(page);

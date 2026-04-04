@@ -558,7 +558,8 @@ static inline bool ll_xattr_suffix_is_seclabel(const char *suffix)
 		!strcmp(suffix, XATTR_SMACK_SUFFIX);
 }
 
-int ll_dentry_init_security(struct dentry *dentry, int mode, struct qstr *name,
+int ll_dentry_init_security(struct dentry *dentry, int mode,
+			    const struct qstr *name,
 			    const char **secctx_name, __u32 *secctx_name_size,
 			    void **secctx, __u32 *secctx_size,
 			    int *secctx_slot);

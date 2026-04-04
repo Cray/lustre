@@ -3398,6 +3398,108 @@ AC_DEFUN([LC_HAVE_NETIF_GET_FLAGS],[
 ]) # LC_HAVE_NETIF_GET_FLAGS
 
 #
+# LC_HAVE_INODE_JUST_DROP
+#
+# Linux commit v6.17-rc1-37-gf99b3917789d
+#   fs: rename generic_delete_inode() and generic_drop_inode()
+#
+AC_DEFUN([LC_SRC_HAVE_INODE_JUST_DROP],[
+	LB2_LINUX_TEST_SRC([inode_just_drop], [
+		#include <linux/fs.h>
+	],[
+		(void)inode_just_drop((struct inode *)NULL);
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_INODE_JUST_DROP],[
+	LB2_MSG_LINUX_TEST_RESULT([if netif_get_flags exists],
+	[inode_just_drop], [
+		AC_DEFINE(HAVE_INODE_JUST_DROP, 1, [inode_just_drop() exists])
+	])
+]) # LC_HAVE_INODE_JUST_DROP
+
+#
+# LC_HAVE_MEMDESC_FLAGS_T
+#
+# Linux commit v6.17-rc4-147-g53fbef56e07d
+#   mm: introduce memdesc_flags_t
+#
+AC_DEFUN([LC_SRC_HAVE_MEMDESC_FLAGS_T],[
+	LB2_LINUX_TEST_SRC([page_flags_is_memdesc_flags_t], [
+		#include <linux/mm_types.h>
+	],[
+		struct page *page = NULL;
+
+		unsigned long flags = page->flags.f;
+		(void)flags;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_MEMDESC_FLAGS_T],[
+	LB2_MSG_LINUX_TEST_RESULT([if page->flags is struct],
+	[page_flags_is_memdesc_flags_t], [
+		AC_DEFINE(HAVE_MEMDESC_FLAGS_T, 1, [page->flags is struct])
+		AC_DEFINE([PAGE_FLAGS(page)], [((page)->flags.f)],
+			  [struct page.flags as unsigned long])
+	], [
+		AC_DEFINE([PAGE_FLAGS(page)], [((page)->flags)],
+			  [struct page.flags as unsigned long])
+	])
+]) # LC_HAVE_MEMDESC_FLAGS_T
+
+#
+# LC_HAVE_DENTRY__D_NAME
+#
+# Linux commit v6.17-rc4-6-g180a9cc3fd6a
+#   make it easier to catch those who try to modify ->d_name
+#
+AC_DEFUN([LC_SRC_HAVE_DENTRY__D_NAME],[
+	LB2_LINUX_TEST_SRC([dentry_member__d_name], [
+		#include <linux/dcache.h>
+	],[
+		struct dentry *dentry = NULL;
+
+		dentry->__d_name.hash = 0;
+		(void)dentry;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_DENTRY__D_NAME],[
+	LB2_MSG_LINUX_TEST_RESULT([if dentry->__d_name exists],
+	[dentry_member__d_name], [
+		AC_DEFINE(HAVE_DENTRY__D_NAME, 1, [dentry->__d_name exists])
+	], [
+		AC_DEFINE([__d_name], [d_name],
+			  [dentry->__d_name is not available use d_name])
+	])
+]) # LC_HAVE_DENTRY__D_NAME
+
+# v6.17-rc4-90-g2f7d98f10b8f
+#   Have cc(1) catch attempts to modify ->f_path
+#
+# LC_HAVE_FILE__F_PATH
+#
+# Linux commit v6.17-rc4-6-g180a9cc3fd6a
+#   make it easier to catch those who try to modify ->d_name
+#
+AC_DEFUN([LC_SRC_HAVE_FILE__F_PATH],[
+	LB2_LINUX_TEST_SRC([file_member__f_path], [
+		#include <linux/dcache.h>
+	],[
+		struct dentry *dentry = NULL;
+
+		dentry->__d_name.hash = 0;
+		(void)dentry;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_FILE__F_PATH],[
+	LB2_MSG_LINUX_TEST_RESULT([if file->__f_path exists],
+	[file_member__f_path], [
+		AC_DEFINE(HAVE_FILE__F_PATH, 1, [file->__f_path exists])
+	], [
+		AC_DEFINE([__f_path], [f_path],
+			  [file->__f_path is not available use f_path])
+	])
+]) # LC_HAVE_FILE__F_PATH
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -3552,7 +3654,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	# 6.9
 	LC_SRC_HAVE_STRUCT_FILE_LOCK_CORE
 
-	# 6.10
+	# 6.11
 	LC_SRC_HAVE_CSUM_TYPE_BLK_INTEGRITY
 
 	# 6.11
@@ -3590,6 +3692,12 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_HAVE_WRITE_BEGIN_KIOCB
 	LC_SRC_FS_STRUCT_HAS_SEQLOCK
 	LC_SRC_HAVE_NETIF_GET_FLAGS
+
+	# 6.18
+	LC_SRC_HAVE_INODE_JUST_DROP
+	LC_SRC_HAVE_MEMDESC_FLAGS_T
+	LC_SRC_HAVE_DENTRY__D_NAME
+	LC_SRC_HAVE_FILE__F_PATH
 ])
 
 AC_DEFUN([LC_PROG_LINUX_RESULTS], [
@@ -3757,7 +3865,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	# 6.9
 	LC_HAVE_STRUCT_FILE_LOCK_CORE
 
-	# 6.10
+	# 6.11
 	LC_HAVE_CSUM_TYPE_BLK_INTEGRITY
 
 	# 6.11
@@ -3795,6 +3903,12 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_HAVE_WRITE_BEGIN_KIOCB
 	LC_FS_STRUCT_HAS_SEQLOCK
 	LC_HAVE_NETIF_GET_FLAGS
+
+	# 6.18
+	LC_HAVE_INODE_JUST_DROP
+	LC_HAVE_MEMDESC_FLAGS_T
+	LC_HAVE_DENTRY__D_NAME
+	LC_HAVE_FILE__F_PATH
 ])
 
 #

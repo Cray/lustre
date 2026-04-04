@@ -34,4 +34,16 @@
 #define nop_mnt_idmap   init_user_ns
 #endif
 
+#ifndef HAVE_INODE_JUST_DROP
+static inline int inode_just_drop(struct inode *inode)
+{
+	return generic_delete_inode(inode);
+}
+
+static inline int inode_generic_drop(struct inode *inode)
+{
+	return generic_drop_inode(inode);
+}
+#endif
+
 #endif /* __LIBCFS_LINUX_CFS_FS_H__ */
