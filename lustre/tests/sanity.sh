@@ -9647,7 +9647,7 @@ test_56z() { # LU-4824
 }
 run_test 56z "lfs find should continue after an error"
 
-test_56aa() { # LU-5937
+test_56Aa() { # was test_56aa, LU-5937
 	[ $MDSCOUNT -lt 2 ] && skip_env "needs >= 2 MDTs"
 
 	local dir=$DIR/$tdir
@@ -9656,11 +9656,11 @@ test_56aa() { # LU-5937
 	$LFS setdirstripe -c$MDSCOUNT $dir/striped_dir
 
 	createmany -o $dir/striped_dir/${tfile}- 1024
-	local dirs=$($LFS find --size +8k $dir/)
+	local dirs=$($LFS find --size +7k $dir/)
 
 	[ -n "$dirs" ] || error "lfs find --size wrong under striped dir"
 }
-run_test 56aa "lfs find --size under striped dir"
+run_test 56Aa "lfs find --size under striped dir"
 
 test_56ab() { # LU-10705
 	test_mkdir $DIR/$tdir
