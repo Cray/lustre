@@ -7246,6 +7246,20 @@ test_121() {
 }
 run_test 121 "trunc append race"
 
+test_125() {
+	local d1=$DIR1/$tdir
+	local d2=$DIR2/$tdir
+
+	mkdir $d1; cd $d1
+	mkdir foo foo/bar foo/baz
+	cd foo/bar
+
+	( cd $d2; mv foo/bar .; mv foo bar; )
+
+	mv ../baz foo/bag || true
+}
+run_test 125 "rename lockup test"
+
 test_200() {
 	remote_ost_nodsh && skip "remote OST with nodsh" && return
 
