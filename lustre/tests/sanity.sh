@@ -7588,20 +7588,26 @@ test_56ob() {
 
 		local cmd="$LFS find $dir -mtime $count${age:0:1}"
 		local nums=$($cmd | wc -l)
-		[ $nums -eq $expected ] ||
+		(( $nums == $expected )) || {
+			$LFS find $dir -ls
 			error "'$cmd' wrong: found $nums, expected $expected"
+		}
 
 		cmd="$LFS find $dir -atime $count${age:0:1}"
 		nums=$($cmd | wc -l)
-		[ $nums -eq $expected ] ||
+		(( $nums == $expected )) || {
+			$LFS find $dir -ls
 			error "'$cmd' wrong: found $nums, expected $expected"
+		}
 	done
 
 	sleep 2
 	cmd="$LFS find $dir -ctime +1s -type f"
 	nums=$($cmd | wc -l)
-	(( $nums == $count * 2 + 1)) ||
+	(( $nums == $count * 2 + 1)) || {
+		$LFS find $dir -ls
 		error "'$cmd' wrong: found $nums, expected $((count * 2 + 1))"
+	}
 }
 run_test 56ob "check lfs find -atime -mtime -ctime with units"
 
