@@ -41,6 +41,7 @@ always_except LU-9693  42a 42c
 always_except LU-6493  42b
 always_except LU-16515 118c 118d
 always_except LU-18032 119i
+always_except LUS-13174 233b
 
 if $SHARED_KEY; then
 	always_except LU-14181 64e 64f
