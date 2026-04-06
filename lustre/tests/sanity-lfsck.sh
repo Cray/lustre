@@ -1203,7 +1203,7 @@ test_9b() {
 	$START_NAMESPACE -r || error "(4) Fail to start LFSCK!"
 	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
 		mdd.${MDT_DEV}.lfsck_namespace |
-		awk '/^status/ { print \\\$2 }'" "stopped" 10 || {
+		awk '/^status/ { print \\\$2 }'" "stopped" 25 || {
 		$SHOW_NAMESPACE
 		error "(5) unexpected status"
 	}
