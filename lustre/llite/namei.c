@@ -594,6 +594,12 @@ static struct dentry *ll_find_alias(struct inode *inode, struct dentry *dentry)
 			 memcmp(alias->d_name.name, dentry->d_name.name,
 				dentry->d_name.len) == 0)
 			invalid_alias = alias;
+		else if (S_ISDIR(inode->i_mode) && !is_root_inode(inode))
+			/* We have to leave only one dir alias to avoid
+			 * deadlocks during renames with only one exception
+			 * for the ROOT inode access via .lustre/fid/<ROOT_FID>
+			 */
+			invalid_alias = alias;
 		spin_unlock(&alias->d_lock);
 
 		if (invalid_alias)
@@ -610,6 +616,18 @@ static struct dentry *ll_find_alias(struct inode *inode, struct dentry *dentry)
 	return alias;
 }
 
+/* d_ancestor is not exported by the kernel, so we have this */
+static struct dentry *ll_d_ancestor(struct dentry *p1, struct dentry *p2)
+{
+	struct dentry *p;
+
+	for (p = p2; !IS_ROOT(p); p = p->d_parent) {
+		if (p->d_parent == p1)
+			return p;
+	}
+	return NULL;
+}
+
 /*
  * Similar to d_splice_alias(), but lustre treats invalid alias
  * similar to DCACHE_DISCONNECTED, and tries to use it anyway.
@@ -621,7 +639,22 @@ struct dentry *ll_splice_alias(struct inode *inode, struct dentry *de)
 	if (inode) {
 		new = ll_find_alias(inode, de);
 		if (new) {
+			struct dentry *old_parent;
+
+			write_seqlock(&rename_lock);
+			if (ll_d_ancestor(new, de)) {
+				write_sequnlock(&rename_lock);
+				CWARN("%s: cannot reuse a dir alias \"%pd\" due to a potential deadlock, rc = -ELOOP\n",
+					ll_i2sbi(inode)->ll_fsname, new);
+				dput(new);
+				iput(inode);
+				return ERR_PTR(-ELOOP);
+			}
+			write_sequnlock(&rename_lock);
+
+			old_parent = dget(new->d_parent);
 			d_move(new, de);
+			dput(old_parent);
 			iput(inode);
 			CDEBUG(D_DENTRY,
 			       "Reuse dentry %p inode %p refc %d flags %#x\n",
