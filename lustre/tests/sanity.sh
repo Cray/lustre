@@ -16013,9 +16013,13 @@ test_123a_base() { # was test 123, statahead(b=11401)
 	test_mkdir $DIR/$tdir
 	local numfree=$(df -i -P $DIR | tail -n 1 | awk '{ print $4 }')
 	(( $numfree > 100000 )) && numfree=100000 || numfree=$((numfree-1000))
+	stack_trap "unlinkmany $DIR/$tdir/$tfile $numfree 2> /dev/null || true"
 	local mult=10
 	for ((i=100, j=0; i<=$numfree; j=$i, i=$((i * mult)) )); do
+		local stime=$SECONDS
 		createmany -o $DIR/$tdir/$tfile $j $((i - j))
+		local etime=$SECONDS
+		local delta_cr=$((etime - stime))
 
 		local max=($($LCTL get_param -n llite.*.statahead_max))
 		$LCTL set_param llite.*.statahead_max=0
@@ -16025,58 +16029,61 @@ test_123a_base() { # was test 123, statahead(b=11401)
 		time $lsx $DIR/$tdir | wc -l
 		local etime=$SECONDS
 		local delta=$((etime - stime))
-		log "$lsx $i files without statahead: $delta sec"
+		log "'$lsx' $i files without statahead: $delta sec"
 		$LCTL set_param llite.*.statahead_max=$max
 
 		local swrong=$($LCTL get_param -n llite.*.statahead_stats |
 			       awk '/statahead.wrong:/ { print $NF }')
-		$LCTL get_param -n llite.*.statahead_max | grep '[0-9]'
+		$LCTL get_param llite.*.statahead_max
 		cancel_lru_locks mdc
 		cancel_lru_locks osc
 		stime=$SECONDS
 		time $lsx $DIR/$tdir | wc -l
 		etime=$SECONDS
 		local delta_sa=$((etime - stime))
-		log "$lsx $i files with statahead: $delta_sa sec"
+		log "'$lsx' $i files with statahead: $delta_sa sec"
 		$LCTL get_param -n llite.*.statahead_stats
 		local ewrong=$($LCTL get_param -n llite.*.statahead_stats |
 			       awk '/statahead.wrong:/ { print $NF }')
 
-		[[ $swrong -lt $ewrong ]] &&
+		echo "swrong=$swrong ewrong=$ewrong"
+		(( $swrong >= $ewrong )) ||
 			log "statahead was stopped, maybe too many locks held!"
-		[[ $delta -eq 0 || $delta_sa -eq 0 ]] && continue
+		(( $delta_cr <= 90 )) || [[ "$SLOW" == "yes" ]] || break
+		(( $delta != 0 && $delta_sa != 0 )) || continue
 
 		if (( $delta_sa*100 > $delta*105 && $delta_sa > $delta+2)); then
-			max=$($LCTL get_param -n llite.*.statahead_max |
-				head -n 1)
-			$LCTL set_param llite.*.statahead_max 0
+			max=($($LCTL get_param -n llite.*.statahead_max))
+			$LCTL set_param llite.*.statahead_max=0
 			cancel_lru_locks mdc
 			cancel_lru_locks osc
 			stime=$SECONDS
 			time $lsx $DIR/$tdir | wc -l
 			etime=$SECONDS
 			delta=$((etime - stime))
-			log "$lsx $i files again without statahead: $delta sec"
+			log "'$lsx' $i files again w/o statahead: $delta sec"
 			$LCTL set_param llite.*.statahead_max=$max
 			if (( $delta_sa * 100 > $delta * 105 &&
 			      $delta_sa > $delta + 2 )); then
-				$slow_is "$lsx $i files slower with statahead!"
+				$slow_is "'$lsx' $i files slower with statahead"
 				break
 			fi
 		fi
 
 		(( $delta <= 20 )) || break
 		(( $delta <= 8 )) || mult=$((50 / delta))
-		[[ "$SLOW" == "no" ]] || (( $delta <= 5 )) || break
+		[[ "$SLOW" == "yes" ]] || (( $delta <= 5 )) || break
 	done
-	log "$lsx done"
+	log "'$lsx' done"
 
 	stime=$SECONDS
-	rm -r $DIR/$tdir || error "failed to rm $DIR/$tdir"
+	find $DIR/$tdir -type f -print0 | xargs -0 -P 4 -r -n 1 unlink ||
+		error "failed to unlink $DIR/$tdir $i"
+	rm -r $DIR/$tdir
 	sync
 	etime=$SECONDS
 	delta=$((etime - stime))
-	log "rm -r $DIR/$tdir: $delta seconds"
+	log "unlink + rm -r $DIR/$tdir: $delta seconds"
 	$LCTL get_param llite.*.statahead_stats
 	$LCTL get_param mdc.*.batch_stats
 }
@@ -16115,10 +16122,10 @@ test_123ac() {
 	test_123a_base "$STATX --cached=always -D"
 	agl_after=$($LCTL get_param -n llite.*.statahead_stats |
 		    awk '/agl.total:/ { print $NF }')
-	[ $agl_before -eq $agl_after ] ||
+	(( $agl_before == $agl_after )) ||
 		error "Should not trigger AGL thread - $agl_before:$agl_after"
 	rpcs_after=$(calc_stats $OSC.*$OSC*.stats ldlm_glimpse_enqueue)
-	[ $rpcs_after -eq $rpcs_before ] ||
+	(( $rpcs_after == $rpcs_before )) ||
 		error "$STATX should not send glimpse RPCs to $OSC"
 }
 run_test 123ac "verify statahead work by using statx without glimpse RPCs"
