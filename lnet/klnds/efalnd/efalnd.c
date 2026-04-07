@@ -2926,20 +2926,20 @@ kefalnd_base_startup(void)
 	/* take a reference count until we clear all module resources */
 	if (!try_module_get(THIS_MODULE)) {
 		rc = -ENETDOWN;
-		goto failed;
+		goto err;
 	}
 
 	memset(&kefalnd, 0, sizeof(kefalnd));
 	INIT_LIST_HEAD(&kefalnd.efa_ni_list);
 	rc = rhashtable_init(&kefalnd.peer_ni, &peer_ni_params);
 	if (rc)
-		goto failed;
+		goto err_module;
 
 	/* allocate a shceduler per NUMA node (cpt) */
 	kefalnd.scheds = cfs_percpt_alloc(lnet_cpt_table(), sizeof(*sched));
 	if (!kefalnd.scheds) {
 		rc = -ENOMEM;
-		goto hash_failed;
+		goto err_hash;
 	}
 
 	cfs_percpt_for_each(sched, i, kefalnd.scheds) {
@@ -2966,7 +2966,7 @@ kefalnd_base_startup(void)
 	kefalnd.cm_daemons = cfs_percpt_alloc(lnet_cpt_table(), sizeof(*cm_daemon));
 	if (!kefalnd.cm_daemons) {
 		rc = -ENOMEM;
-		goto hash_failed;
+		goto err_sched;
 	}
 
 	cfs_percpt_for_each(cm_daemon, i, kefalnd.cm_daemons) {
@@ -2984,12 +2984,13 @@ kefalnd_base_startup(void)
 	kefalnd.shutdown = false;
 	return 0;
 
-hash_failed:
+err_sched:
+	cfs_percpt_free(kefalnd.scheds);
+err_hash:
 	rhashtable_destroy(&kefalnd.peer_ni);
-failed:
-	if (kefalnd.scheds)
-		cfs_percpt_free(kefalnd.scheds);
-
+err_module:
+	module_put(THIS_MODULE);
+err:
 	return rc;
 }
 
