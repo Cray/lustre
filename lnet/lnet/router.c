@@ -1685,7 +1685,9 @@ lnet_rtrpools_enable(void)
 		 * time. */
 		rc = lnet_rtrpools_alloc(1);
 	else
-		rc = lnet_rtrpools_adjust_helper(0, 0, 0);
+		rc = lnet_rtrpools_adjust_helper(tiny_router_buffers,
+						 small_router_buffers,
+						 large_router_buffers);
 
 	if (rc)
 		return rc;
@@ -1714,10 +1716,6 @@ lnet_rtrpools_disable(void)
 	the_lnet.ln_routing = LNET_ROUTING_STOPPING;
 	the_lnet.ln_ping_target->pb_info.pi_features |=
 		LNET_PING_FEAT_RTE_DISABLED;
-
-	tiny_router_buffers = 0;
-	small_router_buffers = 0;
-	large_router_buffers = 0;
 	lnet_net_unlock(LNET_LOCK_EX);
 	LCONSOLE_INFO("Message forwarding will stop in %ds to %ds\n",
 		      alive_router_check_interval + router_ping_timeout,
