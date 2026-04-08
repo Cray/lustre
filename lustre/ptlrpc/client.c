@@ -1296,8 +1296,7 @@ static int ptlrpc_import_delay_req(struct obd_import *imp,
 	if (req->rq_ctx_init || req->rq_ctx_fini) {
 		/* always allow ctx init/fini rpc go through */
 	} else if (imp->imp_state == LUSTRE_IMP_NEW) {
-		DEBUG_REQ(D_ERROR, req, "Uninitialized import %p %s",
-			  imp, obd2cli_tgt(imp->imp_obd));
+		DEBUG_REQ(D_ERROR, req, "Uninitialized import");
 		*status = -EIO;
 	} else if (imp->imp_state == LUSTRE_IMP_CLOSED) {
 		unsigned int opc = lustre_msg_get_opc(req->rq_reqmsg);
@@ -1307,8 +1306,7 @@ static int ptlrpc_import_delay_req(struct obd_import *imp,
 		 * race with umount
 		 */
 		DEBUG_REQ((opc == OBD_PING || opc == OST_STATFS) ?
-			  D_HA : D_ERROR, req, "IMP_CLOSED %p %s",
-			  imp, obd2cli_tgt(imp->imp_obd));
+			  D_HA : D_ERROR, req, "IMP_CLOSED");
 		*status = -EIO;
 	} else if (ptlrpc_send_limit_expired(req)) {
 		/* probably doesn't need to be a D_ERROR afterinitial testing */

@@ -554,9 +554,6 @@ int ldlm_lock_change_resource(struct ldlm_namespace *ns, struct ldlm_lock *lock,
 	while (1) {
 		oldres = rcu_dereference(lock->l_resource);
 
-		if (ldlm_is_fail_loc2(lock))
-			CFS_BUSY_RACE(OBD_FAIL_MDS_GRANT_BLOCKED_LOCK);
-
 		if (oldres == newres)
 			break;
 
@@ -2278,8 +2275,6 @@ ldlm_work_cp_ast_lock(struct ptlrpc_request_set *rqset, void *opaq)
 		RETURN(-ENOENT);
 
 	lock = list_first_entry(arg->list, struct ldlm_lock, l_cp_ast);
-
-	CFS_FAIL_TIMEOUT(OBD_FAIL_MDS_GRANT_BLOCKED_LOCK, 2);
 
 	/* It's possible to receive a completion AST before we've set
 	 * the l_completion_ast pointer: either because the AST arrived
