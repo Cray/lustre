@@ -3078,11 +3078,10 @@ kiblnd_dev_failover(struct kib_dev *dev, struct net *ns)
 		dev->ibd_failed_failover = 0;
 
 		if (set_fatal) {
-			rcu_read_lock();
-			netdev = dev_get_by_name_rcu(ns, dev->ibd_ifname);
+			netdev = dev_get_by_name(ns, dev->ibd_ifname);
 			if (netdev && (lnet_get_link_status(netdev) == 1))
 				kiblnd_set_ni_fatal_on(dev->ibd_hdev, 0);
-			rcu_read_unlock();
+			dev_put(netdev);
 		}
 	}
 
@@ -3797,16 +3796,15 @@ kiblnd_startup(struct lnet_ni *ni)
 	if (ibdev->ibd_hdev->ibh_state == IBLND_DEV_PORT_DOWN)
 		kiblnd_set_ni_fatal_on(ibdev->ibd_hdev, 1);
 
-	rcu_read_lock();
-	netdev = dev_get_by_name_rcu(ni->ni_net_ns, net->ibn_dev->ibd_ifname);
+	netdev = dev_get_by_name(ni->ni_net_ns, net->ibn_dev->ibd_ifname);
+
 	if (netdev &&
 	    ((netdev->reg_state == NETREG_UNREGISTERING) ||
 	     (netdev->operstate != IF_OPER_UP) ||
 	    (lnet_get_link_status(netdev) == 0))) {
 		kiblnd_set_ni_fatal_on(ibdev->ibd_hdev, 1);
 	}
-	rcu_read_unlock();
-
+	dev_put(netdev);
 	write_unlock_irqrestore(&kiblnd_data.kib_global_lock, flags);
 
 	net->ibn_init = IBLND_INIT_ALL;
