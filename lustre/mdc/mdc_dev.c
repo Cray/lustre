@@ -1543,7 +1543,7 @@ static int mdc_object_fiemap(const struct lu_env *env, struct cl_object *obj,
 	struct osc_object *osc = cl2osc(obj);
 	struct obd_export *exp = osc_export(osc);
 	struct lustre_handle lockh;
-	enum ldlm_mode mode = LCK_MINMODE;
+	enum ldlm_mode mode = LCK_MODE_MIN;
 	struct ptlrpc_request *req;
 	struct fiemap *repbuf;
 	struct ll_fiemap_info_key *rq_fmkey;

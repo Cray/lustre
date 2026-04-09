@@ -377,7 +377,7 @@ reprocess:
 				/* client receives cancelled lock as granted
 				 * with l_granted_mode == 0
 				 */
-				LASSERT(lock->l_granted_mode == LCK_MINMODE);
+				LASSERT(lock->l_granted_mode == LCK_MODE_MIN);
 				lock->l_flags |= LDLM_FL_AST_SENT;
 				ldlm_resource_unlink_lock(lock);
 				ldlm_add_ast_work_item(lock, NULL, &rpc_list);
@@ -884,7 +884,7 @@ granted:
 
 	args = lock->l_ast_data;
 
-	if (lock->l_granted_mode == LCK_MINMODE) {
+	if (lock->l_granted_mode == LCK_MODE_MIN) {
 		ldlm_flock_destroy(lock, args->fa_mode, LDLM_FL_WAIT_NOREPROC);
 		lock->l_ast_data = NULL;
 		unlock_res_and_lock(lock);
@@ -968,13 +968,13 @@ ldlm_flock_completion_ast_async(struct ldlm_lock *lock, __u64 flags, void *data)
 			LDLM_DEBUG(lock,
 				   "client-side lock is already granted in a race");
 			LASSERT(lock->l_granted_mode == lock->l_req_mode);
-			LASSERT(lock->l_granted_mode != LCK_MINMODE);
+			LASSERT(lock->l_granted_mode != LCK_MODE_MIN);
 			GOTO(out, rc = 0);
 		}
 
 		if (args->fa_flags & FA_FL_CANCELED ||
 		    ((flags & LDLM_FL_BLOCKED_MASK) == 0 &&
-		     lock->l_granted_mode == LCK_MINMODE)) {
+		     lock->l_granted_mode == LCK_MODE_MIN)) {
 			LDLM_DEBUG(lock, "client-side granted canceled lock");
 			ldlm_flock_destroy(lock, args->fa_mode,
 					   LDLM_FL_WAIT_NOREPROC);
