@@ -3346,6 +3346,7 @@ static int osd_scan_lastid_seq(const struct lu_env *env, struct osd_device *dev,
 	__u64 lastid;
 	__u64 lastid_known;
 	loff_t offset = 0;
+	char name[32];
 	int index;
 	int rc;
 
@@ -3359,12 +3360,18 @@ static int osd_scan_lastid_seq(const struct lu_env *env, struct osd_device *dev,
 	if (!S_ISDIR(inode->i_mode))
 		GOTO(out, rc = 0);
 
-	rc = kstrtoull(oie->oie_dirent->oied_name, 16, &seq);
+	if (oie->oie_dirent->oied_namelen >= sizeof(name))
+		GOTO(out, rc = -EIO);
+
+	memcpy(name, oie->oie_dirent->oied_name, oie->oie_dirent->oied_namelen);
+	name[oie->oie_dirent->oied_namelen] = '\0';
+
+	rc = kstrtoull(name, 16, &seq);
 	if (rc)
 		GOTO(out, rc);
 
 	if (seq < 0x1F) {
-		rc = kstrtoull(oie->oie_dirent->oied_name, 10, &seq);
+		rc = kstrtoull(name, 10, &seq);
 		if (rc)
 			GOTO(out, rc);
 	}
@@ -3404,8 +3411,7 @@ static int osd_scan_lastid_seq(const struct lu_env *env, struct osd_device *dev,
 			 lma);
 	if (rc && rc != -ENODATA) {
 		CDEBUG(D_LFSCK, "%s: failed to get the xattr %s for O/%s/%s\n",
-		       osd_name(dev), XATTR_NAME_LMA,
-		       oie->oie_dirent->oied_name, LASTID);
+		       osd_name(dev), XATTR_NAME_LMA, name, LASTID);
 		GOTO(out, rc);
 	}
 
@@ -3471,6 +3477,7 @@ static int osd_scan_O_seq(const struct lu_env *env, struct osd_device *dev,
 	struct inode *inode;
 	struct osd_inode_id id;
 	struct lu_fid *fids;
+	char name[32];
 	__u64 seq;
 	int rc;
 
@@ -3484,12 +3491,18 @@ static int osd_scan_O_seq(const struct lu_env *env, struct osd_device *dev,
 	if (!S_ISDIR(inode->i_mode))
 		GOTO(out, rc = 0);
 
-	rc = kstrtoull(oie->oie_dirent->oied_name, 16, &seq);
+	if (oie->oie_dirent->oied_namelen >= sizeof(name))
+		GOTO(out, rc = -EIO);
+
+	memcpy(name, oie->oie_dirent->oied_name, oie->oie_dirent->oied_namelen);
+	name[oie->oie_dirent->oied_namelen] = '\0';
+
+	rc = kstrtoull(name, 16, &seq);
 	if (rc)
 		GOTO(out, rc);
 
 	if (seq < 0x1F) {
-		rc = kstrtoull(oie->oie_dirent->oied_name, 10, &seq);
+		rc = kstrtoull(name, 10, &seq);
 		if (rc)
 			GOTO(out, rc);
 	}
