@@ -361,6 +361,12 @@ static int parse_opts_early(int argc, char *const argv[], struct mkfs_opts *mop)
 		case 'h':
 			usage(stdout);
 			return 1;
+		case 'q':
+			verbose--;
+			break;
+		case 'v':
+			verbose++;
+			break;
 		case 'V':
 			version++;
 			fprintf(stdout, "%s %s\n", progname,
@@ -543,7 +549,7 @@ static int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
 			ldd->ldd_flags |= LDD_F_UPDATE;
 			break;
 		case 'q':
-			verbose--;
+			/* Already handled in parse_opts_early() */
 			break;
 		case 'R':
 			replace = 1;
@@ -572,8 +578,6 @@ static int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
 			mop->mo_flags |= MO_NOHOSTID_CHECK;
 			break;
 		case 'v':
-			verbose++;
-			break;
 		case 'V':
 			/* Already handled in parse_opts_early() */
 			break;
@@ -872,7 +876,7 @@ int main(int argc, char *const argv[])
 		ret = osd_mountdata_reset(&mop, mountdata_arg);
 		if (ret != 0)
 			goto out;
-		if (verbose >= 0)
+		if (verbose > 0)
 			print_ldd("Updated values", &mop);
 		goto write;
 	}
@@ -992,7 +996,7 @@ int main(int argc, char *const argv[])
 		goto out;
 	}
 
-	if (verbose >= 0)
+	if (verbose > 0)
 		print_ldd("Permanent disk data", &mop);
 
 	if (print_only) {
@@ -1113,7 +1117,7 @@ out:
 		return 1;
 
 	if (ret != 0)
-		verrprint("%s: exiting with %d (%s)\n",
-			  progname, ret, strerror(ret));
+		fprintf(stderr, "%s: exiting with %d (%s)\n",
+			progname, ret, strerror(ret));
 	return ret;
 }

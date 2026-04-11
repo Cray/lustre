@@ -46,9 +46,6 @@
 
 #include "mount_utils.h"
 
-#define vprint(fmt, arg...) if (verbose > 0) printf(fmt, ##arg)
-#define verrprint(fmt, arg...) if (verbose >= 0) fprintf(stderr, fmt, ##arg)
-
 #ifdef HAVE_SERVER_SUPPORT
 static struct module_backfs_ops *backfs_ops[LDD_MT_LAST];
 #endif

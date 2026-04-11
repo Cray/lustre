@@ -46,7 +46,6 @@ extern int verbose;
 extern int failover;
 
 #define vprint(fmt, arg...) if (verbose > 0) printf(fmt, ##arg)
-#define verrprint(fmt, arg...) if (verbose >= 0) fprintf(stderr, fmt, ##arg)
 
 /* mo_flags */
 #define MO_IS_LOOP		0x01
