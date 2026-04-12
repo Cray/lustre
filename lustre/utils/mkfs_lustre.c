@@ -193,6 +193,7 @@ static void print_ldd(char *str, struct mkfs_opts *mop)
 	struct lustre_disk_data *ldd = &mop->mo_ldd;
 
 	printf("\n   %s:\n", str);
+	printf("Device:     %s\n", mop->mo_device);
 	printf("Target:     %s\n", ldd->ldd_svname);
 	if (ldd->ldd_svindex == INDEX_UNASSIGNED)
 		printf("Index:      unassigned\n");
@@ -343,6 +344,7 @@ static int erase_param(const char *const buf, const char *const param,
 static int parse_opts_early(int argc, char *const argv[], struct mkfs_opts *mop)
 {
 	int opt;
+	int i;
 
 	/* If no argument is given, bail out */
 	if (argc < 2) {
@@ -353,7 +355,26 @@ static int parse_opts_early(int argc, char *const argv[], struct mkfs_opts *mop)
 	while ((opt = getopt_long(argc, argv, short_opts, long_opts,
 				  NULL)) != EOF) {
 		switch (opt) {
-#ifdef TUNEFS
+#ifndef TUNEFS
+		case 'b': {
+			i = 0;
+
+			do {
+				if (strcmp(optarg, mt_str(i)) == 0) {
+					mop->mo_ldd.ldd_mount_type = i;
+					break;
+				}
+			} while (++i < LDD_MT_LAST);
+
+			if (i == LDD_MT_LAST) {
+				fprintf(stderr,
+					"%s: invalid backend filesystem type %s\n",
+					progname, optarg);
+				return 1;
+			}
+			break;
+		}
+#else
 		case 'e':
 			erase_all++;
 			break;
@@ -388,9 +409,29 @@ static int parse_opts_early(int argc, char *const argv[], struct mkfs_opts *mop)
 	/* The device or pool/filesystem name */
 	strscpy(mop->mo_device, argv[optind], sizeof(mop->mo_device));
 
-	/* Followed by optional vdevs */
-	if (optind < argc - 1)
-		mop->mo_pool_vdevs = (char **)&argv[optind + 1];
+	if (optind < argc - 1) {
+#ifndef TUNEFS
+		/* Followed by optional vdevs */
+		if (mop->mo_ldd.ldd_mount_type == LDD_MT_ZFS) {
+			mop->mo_pool_vdevs = (char **)&argv[optind + 1];
+		} else
+#endif
+		{
+#ifndef TUNEFS
+			fprintf(stderr,
+				"%s: Only one device is allowed for backfstype %s, but multiple devices are specified:",
+				progname, mt_str(mop->mo_ldd.ldd_mount_type));
+#else
+			fprintf(stderr,
+				"%s: Only one device is allowed, but multiple devices are specified:",
+				progname);
+#endif
+			for (i = optind; i < argc; i++)
+				fprintf(stderr, " %s", argv[i]);
+			fprintf(stderr, "\n");
+			return EINVAL;
+		}
+	}
 
 	return 0;
 }
@@ -582,24 +623,9 @@ static int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
 			/* Already handled in parse_opts_early() */
 			break;
 #ifndef TUNEFS
-		case 'b': {
-			int i = 0;
-
-			do {
-				if (strcmp(optarg, mt_str(i)) == 0) {
-					ldd->ldd_mount_type = i;
-					break;
-				}
-			} while (++i < LDD_MT_LAST);
-
-			if (i == LDD_MT_LAST) {
-				fprintf(stderr,
-					"%s: invalid backend filesystem type %s\n",
-					progname, optarg);
-				return 1;
-			}
+		case 'b':
+			/* Already handled in parse_opts_early() */
 			break;
-		}
 		case 'c':
 			if (IS_MDT(ldd)) {
 				int stripe_count = atol(optarg);

@@ -10310,8 +10310,7 @@ test_115() {
 
 	local ostdev=$(ostdevname 1)
 
-	local opts="$(mkfs_opts ost1 $ostdev) \
-		--reformat $ostdev $ostdev"
+	local opts="$(mkfs_opts ost1 $ostdev) --reformat $ostdev"
 	add ost1 $opts || error "add ost1 failed with new params"
 	start mds1  $mdsdev $MDS_MOUNT_OPTS || error "start MDS failed"
 	start_ost || error "start OSS failed"
