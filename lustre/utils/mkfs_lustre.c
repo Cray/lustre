@@ -805,6 +805,9 @@ static int parse_opts(int argc, char *const argv[], struct mkfs_opts *mop,
 int main(int argc, char *const argv[])
 {
 	struct mkfs_opts mop;
+#ifdef TUNEFS
+	struct mkfs_opts prev_mop;
+#endif
 	struct lustre_disk_data *ldd = &mop.mo_ldd;
 	char *mountopts = NULL;
 	char wanted_mountopts[512] = "";
@@ -879,6 +882,8 @@ int main(int argc, char *const argv[])
 	if (verbose > 0)
 		print_ldd("Read previous values", &mop);
 
+	memcpy(&prev_mop, &mop, sizeof(prev_mop));
+
 	/*
 	 * For the right semantics, if '-e'/'--erase-params' is specified,
 	 * it must be picked out and all old parameters should be erased
@@ -912,6 +917,14 @@ int main(int argc, char *const argv[])
 		fprintf(stderr,
 			"Failed to read previous Lustre data from %s (%s)\n",
 			mop.mo_device, strerror(ret2));
+		goto out;
+	}
+
+	/* Don't write anything when there is no change */
+	if (memcmp(&prev_mop, &mop, sizeof(prev_mop)) == 0) {
+		if (verbose > 0)
+			fprintf(stdout,
+				"exiting because there is no change.\n");
 		goto out;
 	}
 #endif
