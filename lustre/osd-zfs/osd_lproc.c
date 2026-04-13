@@ -436,7 +436,7 @@ static struct ldebugfs_vars ldebugfs_osd_obd_vars[] = {
 	{ 0 }
 };
 
-KOBJ_ATTRIBUTE_GROUPS(zfs); /* creates zfs_groups from zfs_attrs */
+ATTRIBUTE_GROUPS(zfs); /* creates zfs_groups from zfs_attrs */
 
 int osd_procfs_init(struct osd_device *osd, const char *name)
 {
@@ -456,7 +456,7 @@ int osd_procfs_init(struct osd_device *osd, const char *name)
 	/* put reference taken by class_search_type */
 	kobject_put(&type->typ_kobj);
 
-	osd->od_dt_dev.dd_ktype.default_groups = KOBJ_ATTR_GROUPS(zfs);
+	osd->od_dt_dev.dd_ktype.default_groups = zfs_groups;
 	rc = dt_tunables_init(&osd->od_dt_dev, type, name,
 			      ldebugfs_osd_obd_vars);
 	if (rc) {

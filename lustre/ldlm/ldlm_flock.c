@@ -33,17 +33,19 @@
 
 #define DEBUG_SUBSYSTEM S_LDLM
 
-#include <linux/list.h>
+#include <linux/interval_tree_generic.h>
 #ifdef HAVE_LINUX_FILELOCK_HEADER
 #include <linux/filelock.h>
 #endif
+#include <linux/list.h>
+
 #include <lustre_dlm.h>
 #include <obd_support.h>
 #include <obd_class.h>
 #include <lustre_lib.h>
+#include <lustre_compat.h>
 
 #include "ldlm_internal.h"
-#include <linux/interval_tree_generic.h>
 
 #define START(node) ((node)->l_policy_data.l_flock.start)
 #define LAST(node) ((node)->l_policy_data.l_flock.end)

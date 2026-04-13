@@ -891,7 +891,7 @@ static struct attribute *ldiskfs_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(ldiskfs); /* creates ldiskfs_groups from ldiskfs_attrs */
+ATTRIBUTE_GROUPS(ldiskfs); /* creates ldiskfs_groups from ldiskfs_attrs */
 
 int osd_procfs_init(struct osd_device *osd, const char *name)
 {
@@ -913,7 +913,7 @@ int osd_procfs_init(struct osd_device *osd, const char *name)
 	/* put reference taken by class_search_type */
 	kobject_put(&type->typ_kobj);
 
-	osd->od_dt_dev.dd_ktype.default_groups = KOBJ_ATTR_GROUPS(ldiskfs);
+	osd->od_dt_dev.dd_ktype.default_groups = ldiskfs_groups;
 	rc = dt_tunables_init(&osd->od_dt_dev, type, name,
 			      ldebugfs_osd_obd_vars);
 	if (rc) {

@@ -1325,7 +1325,7 @@ static struct attribute *osp_obd_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(osp_obd); /* creates osp_obd_groups from osp_obd_attrs */
+ATTRIBUTE_GROUPS(osp_obd); /* creates osp_obd_groups from osp_obd_attrs */
 
 static struct attribute *osp_md_attrs[] = {
 	/* First two for compatiability reasons */
@@ -1346,7 +1346,7 @@ static struct attribute *osp_md_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(osp_md); /* creates osp_md_groups from osp_md_attrs */
+ATTRIBUTE_GROUPS(osp_md); /* creates osp_md_groups from osp_md_attrs */
 
 void osp_tunables_fini(struct osp_device *osp)
 {
@@ -1381,12 +1381,10 @@ void osp_tunables_init(struct osp_device *osp)
 	int rc;
 
 	if (osp->opd_connect_mdt) {
-		osp->opd_dt_dev.dd_ktype.default_groups =
-			KOBJ_ATTR_GROUPS(osp_md);
+		osp->opd_dt_dev.dd_ktype.default_groups = osp_md_groups;
 		obd->obd_debugfs_vars = ldebugfs_osp_md_vars;
 	} else {
-		osp->opd_dt_dev.dd_ktype.default_groups =
-			KOBJ_ATTR_GROUPS(osp_obd);
+		osp->opd_dt_dev.dd_ktype.default_groups = osp_obd_groups;
 		obd->obd_debugfs_vars = ldebugfs_osp_obd_vars;
 	}
 

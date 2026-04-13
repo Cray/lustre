@@ -76,10 +76,10 @@
 #include <linux/mutex.h>
 #include <linux/radix-tree.h>
 #include <linux/spinlock.h>
+#include <lustre_compat/linux/string.h>
 #include <linux/wait.h>
 #include <linux/pagevec.h>
 
-#include <lustre_compat/linux/linux-misc.h>
 #include <lu_object.h>
 #include <lustre_dlm.h>
 #include <lustre_compat.h>

@@ -28,6 +28,7 @@
 
 #include "mdt_internal.h"
 #include <uapi/linux/lnet/nidstr.h>
+#include <lustre_compat.h>
 #include <lustre_nodemap.h>
 
 typedef enum ucred_init_type {

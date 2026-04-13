@@ -16,6 +16,7 @@
 #define DEBUG_SUBSYSTEM S_SEC
 #include <linux/init.h>
 #include <linux/module.h>
+#include <linux/atomic.h>
 #include <linux/slab.h>
 #include <linux/dcache.h>
 #include <linux/fs.h>
@@ -25,7 +26,7 @@
 #include <linux/key-type.h>
 #include <linux/mutex.h>
 #include <linux/list.h>
-#include <asm/atomic.h>
+#include <lustre_compat/linux/timer.h>
 
 #include <obd.h>
 #include <obd_class.h>

@@ -495,13 +495,13 @@ static struct attribute *lmv_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(lmv); /* creates lmv_groups */
+ATTRIBUTE_GROUPS(lmv); /* creates lmv_groups */
 
 int lmv_tunables_init(struct obd_device *obd)
 {
 	int rc;
 
-	obd->obd_ktype.default_groups = KOBJ_ATTR_GROUPS(lmv);
+	obd->obd_ktype.default_groups = lmv_groups;
 	obd->obd_debugfs_vars = ldebugfs_lmv_obd_vars;
 	rc = lprocfs_obd_setup(obd, false);
 	if (rc)

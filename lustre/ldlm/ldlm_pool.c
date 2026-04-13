@@ -771,7 +771,7 @@ static struct attribute *ldlm_pl_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(ldlm_pl);
+ATTRIBUTE_GROUPS(ldlm_pl);
 
 static void ldlm_pl_release(struct kobject *kobj)
 {
@@ -781,7 +781,7 @@ static void ldlm_pl_release(struct kobject *kobj)
 }
 
 static struct kobj_type ldlm_pl_ktype = {
-	.default_groups = KOBJ_ATTR_GROUPS(ldlm_pl),
+	.default_groups = ldlm_pl_groups,
 	.sysfs_ops	= &lustre_sysfs_ops,
 	.release	= ldlm_pl_release,
 };

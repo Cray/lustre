@@ -16,7 +16,7 @@
 #define DEBUG_SUBSYSTEM S_SEC
 
 #include <lustre_compat/linux/shrinker.h>
-#include <lustre_compat/linux/linux-mem.h>
+#include <lustre_compat/linux/mm.h>
 
 #include <obd.h>
 #include <obd_class.h>
@@ -25,6 +25,8 @@
 #include <lustre_import.h>
 #include <lustre_dlm.h>
 #include <lustre_sec.h>
+
+#include <lustre_compat.h>
 
 /* We have a pool for every power of 2 number of pages. Each pool must
  * be able to provide at least one object of PTLRPC_MAX_BRW_SIZE.

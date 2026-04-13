@@ -754,10 +754,10 @@ static void ldlm_ns_release(struct kobject *kobj)
 	complete(&ns->ns_kobj_unregister);
 }
 
-KOBJ_ATTRIBUTE_GROUPS(ldlm_ns);
+ATTRIBUTE_GROUPS(ldlm_ns);
 
 static struct kobj_type ldlm_ns_ktype = {
-	.default_groups = KOBJ_ATTR_GROUPS(ldlm_ns),
+	.default_groups = ldlm_ns_groups,
 	.sysfs_ops	= &lustre_sysfs_ops,
 	.release	= ldlm_ns_release,
 };

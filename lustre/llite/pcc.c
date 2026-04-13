@@ -86,15 +86,16 @@
 
 #define DEBUG_SUBSYSTEM S_LLITE
 
-#include "pcc.h"
-#include <linux/namei.h>
 #include <linux/file.h>
-#include <lustre_compat.h>
-#include "llite_internal.h"
-
+#include <lustre_compat/linux/fs.h>
 #ifdef HAVE_FILEATTR_GET
 #include <linux/fileattr.h>
 #endif
+#include <linux/namei.h>
+#include <linux/mount.h>
+
+#include "llite_internal.h"
+#include "pcc.h"
 
 struct kmem_cache *pcc_inode_slab;
 

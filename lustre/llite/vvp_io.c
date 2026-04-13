@@ -27,7 +27,6 @@
 #include "llite_internal.h"
 #include "vvp_internal.h"
 #include <lustre_compat.h>
-#include <lustre_compat/linux/linux-misc.h>
 
 static struct vvp_io *cl2vvp_io(const struct lu_env *env,
 				const struct cl_io_slice *slice)

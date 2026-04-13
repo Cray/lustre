@@ -20,7 +20,7 @@
 #include <lustre_dlm.h>
 #include <lustre_quota.h>
 #include <linux/init.h>
-#include <linux/fs.h>
+#include <lustre_compat/linux/fs.h>
 #include <linux/random.h>
 #include <lprocfs_status.h>
 #include "llite_internal.h"

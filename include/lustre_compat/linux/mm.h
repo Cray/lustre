@@ -5,6 +5,8 @@
 
 #include <linux/mm.h>
 
+unsigned long compat_totalram_pages(void);
+
 #ifndef HAVE_ACCOUNT_PAGE_DIRTIED_EXPORT
 unsigned int compat_account_page_dirtied(struct page *page,
 					 struct address_space *mapping);

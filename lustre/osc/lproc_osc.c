@@ -938,14 +938,14 @@ static struct attribute *osc_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(osc); /* creates osc_groups */
+ATTRIBUTE_GROUPS(osc); /* creates osc_groups */
 
 int osc_tunables_init(struct obd_device *obd)
 {
 	int rc;
 
 	obd->obd_debugfs_vars = ldebugfs_osc_obd_vars;
-	obd->obd_ktype.default_groups = KOBJ_ATTR_GROUPS(osc);
+	obd->obd_ktype.default_groups = osc_groups;
 	rc = lprocfs_obd_setup(obd, false);
 	if (rc)
 		return rc;

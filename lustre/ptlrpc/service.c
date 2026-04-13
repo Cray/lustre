@@ -13,17 +13,19 @@
 
 #define DEBUG_SUBSYSTEM S_RPC
 
+#include <linux/delay.h>
 #include <linux/fs_struct.h>
 #include <linux/kthread.h>
 #include <linux/ratelimit.h>
+#include <lustre_compat/linux/timer.h>
 
 #include <obd_support.h>
 #include <obd_class.h>
 #include <lustre_net.h>
 #include <lu_object.h>
 #include <uapi/linux/lnet/lnet-types.h>
+
 #include "ptlrpc_internal.h"
-#include <linux/delay.h>
 
 /* The following are visible and mutable through /sys/module/ptlrpc */
 int test_req_buffer_pressure = 0;

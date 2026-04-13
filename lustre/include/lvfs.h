@@ -21,7 +21,6 @@
 #include <linux/fs.h>
 #include <linux/mutex.h>
 #include <linux/namei.h>
-#include <lustre_compat.h>
 
 #define OBD_RUN_CTXT_MAGIC	0xC0FFEEAA
 #define OBD_CTXT_DEBUG		/* development-only debugging */

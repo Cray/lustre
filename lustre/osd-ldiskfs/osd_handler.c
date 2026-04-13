@@ -27,7 +27,7 @@
 /* prerequisite for linux/xattr.h */
 #include <linux/types.h>
 /* prerequisite for linux/xattr.h */
-#include <linux/fs.h>
+#include <lustre_compat/linux/fs.h>
 /* XATTR_{REPLACE,CREATE} */
 #include <linux/xattr.h>
 #include <linux/workqueue.h>

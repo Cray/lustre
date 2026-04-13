@@ -26,7 +26,9 @@
 #include <linux/version.h>
 #include <linux/delay.h>
 #include <linux/file.h>
+#include <lustre_compat/linux/fs.h>
 #include <linux/fsmap.h>
+#include <linux/mount.h>
 #include <linux/uaccess.h>
 
 #include <llog_swab.h>

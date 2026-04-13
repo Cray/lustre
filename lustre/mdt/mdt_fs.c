@@ -15,8 +15,7 @@
 
 #define DEBUG_SUBSYSTEM S_MDS
 
-#include <linux/fs.h>
-#include <lustre_compat/linux/linux-fs.h>
+#include <lustre_compat/linux/fs.h>
 #include "mdt_internal.h"
 
 static const struct file_operations mdt_open_files_seq_fops = {

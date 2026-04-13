@@ -17,8 +17,8 @@
 #define DEBUG_SUBSYSTEM S_CLASS
 
 #include <linux/pid_namespace.h>
+#include <lustre_compat/linux/rbtree.h>
 #include <linux/workqueue.h>
-#include <lustre_compat.h>
 #include <cfs_hash.h>
 #include <obd_class.h>
 #include <lustre_log.h>

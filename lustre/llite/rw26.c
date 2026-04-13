@@ -24,11 +24,11 @@
 #include <linux/unistd.h>
 #include <linux/writeback.h>
 #include <linux/migrate.h>
+#include <lustre_compat/linux/uio.h>
 
 #define DEBUG_SUBSYSTEM S_LLITE
 
 #include "llite_internal.h"
-#include <lustre_compat.h>
 
 #ifdef HAVE_INVALIDATE_FOLIO
 /**

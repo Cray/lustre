@@ -257,7 +257,7 @@ static struct attribute *mgs_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(mgs); /* creates mgs_groups from mgs_attrs */
+ATTRIBUTE_GROUPS(mgs); /* creates mgs_groups from mgs_attrs */
 
 int lproc_mgs_setup(struct mgs_device *mgs, const char *osd_name)
 {
@@ -269,7 +269,7 @@ int lproc_mgs_setup(struct mgs_device *mgs, const char *osd_name)
 	int rc;
 
 	obd->obd_debugfs_vars = ldebugfs_mgs_obd_vars;
-	obd->obd_ktype.default_groups = KOBJ_ATTR_GROUPS(mgs);
+	obd->obd_ktype.default_groups = mgs_groups;
 	rc = lprocfs_obd_setup(obd, true);
 	if (rc != 0)
 		GOTO(out, rc);

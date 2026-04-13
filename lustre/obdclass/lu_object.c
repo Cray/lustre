@@ -33,6 +33,8 @@
 #include <lustre_fid.h>
 #include <lu_object.h>
 
+#include <lustre_compat.h>
+
 struct lu_site_bkt_data {
 	/**
 	 * LRU list, updated on each access to object. Protected by

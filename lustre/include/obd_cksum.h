@@ -14,11 +14,11 @@
 #ifndef __OBD_CKSUM
 #define __OBD_CKSUM
 
+#include <lustre_compat/linux/folio.h>
 #include <linux/libcfs/libcfs_debug.h>
 #include <linux/libcfs/libcfs_private.h>
 #include <lnet/lnet_crypto.h>
 #include <uapi/linux/lustre/lustre_idl.h>
-#include <lustre_compat.h>
 
 int obd_t10_cksum_speed(const char *obd_name,
 			enum cksum_types cksum_type);

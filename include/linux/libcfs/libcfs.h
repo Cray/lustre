@@ -20,11 +20,6 @@
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 
-#include <lustre_compat/linux/linux-misc.h>
-#include <lustre_compat/linux/linux-mem.h>
-#include <lustre_compat/linux/timer.h>
-#include <lustre_compat/linux/fortify-string.h>
-
 #include <uapi/linux/lnet/libcfs_ioctl.h>
 #include <linux/libcfs/libcfs_debug.h>
 #include <linux/libcfs/libcfs_private.h>
@@ -90,6 +85,23 @@ do {									\
 					 format, ## __VA_ARGS__)	\
 		);							\
 } while (0)
+
+#ifndef container_of_safe
+/**
+ * container_of_safe - cast a member of a structure out to the containing structure
+ * @ptr:        the pointer to the member.
+ * @type:       the type of the container struct this is embedded in.
+ * @member:     the name of the member within the struct.
+ *
+ * If IS_ERR_OR_NULL(ptr), ptr is returned unchanged.
+ *
+ * Note: Copied from Linux 5.6, with BUILD_BUG_ON_MSG section removed.
+ */
+#define container_of_safe(ptr, type, member) ({				\
+	void *__mptr = (void *)(ptr);					\
+	IS_ERR_OR_NULL(__mptr) ? ERR_CAST(__mptr) :			\
+		((type *)(__mptr - offsetof(type, member))); })
+#endif
 
 #define FLEXIBLE_OBJECT \
 	"Struct contains a flexible member, the size of object is checked" \

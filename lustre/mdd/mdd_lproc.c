@@ -789,7 +789,7 @@ static struct attribute *mdd_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(mdd); /* creates mdd_groups */
+ATTRIBUTE_GROUPS(mdd); /* creates mdd_groups */
 
 static void mdd_sysfs_release(struct kobject *kobj)
 {
@@ -822,7 +822,7 @@ int mdd_procfs_init(struct mdd_device *mdd, const char *name)
 	/* put reference taken by class_search_type */
 	kobject_put(&type->typ_kobj);
 
-	mdd->mdd_ktype.default_groups = KOBJ_ATTR_GROUPS(mdd);
+	mdd->mdd_ktype.default_groups = mdd_groups;
 	mdd->mdd_ktype.release = mdd_sysfs_release;
 	mdd->mdd_ktype.sysfs_ops = &lustre_sysfs_ops;
 

@@ -769,13 +769,13 @@ static struct attribute *mdc_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(mdc); /* creates mdc_groups */
+ATTRIBUTE_GROUPS(mdc); /* creates mdc_groups */
 
 int mdc_tunables_init(struct obd_device *obd)
 {
 	int rc;
 
-	obd->obd_ktype.default_groups = KOBJ_ATTR_GROUPS(mdc);
+	obd->obd_ktype.default_groups = mdc_groups;
 	obd->obd_debugfs_vars = ldebugfs_mdc_obd_vars;
 
 	rc = lprocfs_obd_setup(obd, false);

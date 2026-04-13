@@ -13,7 +13,7 @@
  * Directory code for lustre client.
  */
 
-#include <linux/fs.h>
+#include <lustre_compat/linux/fs.h>
 #include <linux/pagemap.h>
 #include <linux/mm.h>
 #include <linux/version.h>

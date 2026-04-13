@@ -1,29 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 
 /*
- * Copyright (c) 2008, 2010, Oracle and/or its affiliates. All rights reserved.
- * Use is subject to license terms.
- *
- * Copyright (c) 2011, 2014, Intel Corporation.
- */
-
-/*
  * This file is part of Lustre, http://www.lustre.org/
  *
  * Basic library routines.
  */
 
-#ifndef __LIBCFS_LINUX_CFS_MEM_H__
-#define __LIBCFS_LINUX_CFS_MEM_H__
+#ifndef __LIBCFS_LINUX_MMAP_LOCK_H__
+#define __LIBCFS_LINUX_MMAP_LOCK_H__
 
-#include <linux/mm.h>
-#include <linux/vmalloc.h>
-#include <linux/pagemap.h>
-#include <linux/slab.h>
-#include <linux/sched.h>
-#include <linux/sched/mm.h>
-
-unsigned long compat_totalram_pages(void);
+#include <linux/mmap_lock.h>
 
 #ifndef HAVE_MMAP_LOCK
 static inline void mmap_write_lock(struct mm_struct *mm)
@@ -65,8 +51,4 @@ static inline bool mmap_write_trylock(struct mm_struct *mm)
  #endif /* HAVE_MMAP_WRITE_TRYLOCK */
 #endif
 
-#ifndef HAVE_KFREE_SENSITIVE
-#define kfree_sensitive(x)      kzfree(x)
-#endif
-
-#endif /* __LINUX_CFS_MEM_H__ */
+#endif /* __LIBCFS_LINUX_MMAP_LOCK_H__ */

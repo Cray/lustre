@@ -14,6 +14,7 @@
 #define DEBUG_SUBSYSTEM S_LLITE
 
 #include <linux/version.h>
+#include <lustre_compat/linux/sysfs.h>
 #include <linux/user_namespace.h>
 #include <linux/uidgid.h>
 
@@ -2651,7 +2652,7 @@ static struct attribute *llite_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(llite); /* creates llite_groups */
+ATTRIBUTE_GROUPS(llite); /* creates llite_groups */
 
 static void sbi_kobj_release(struct kobject *kobj)
 {
@@ -2661,7 +2662,7 @@ static void sbi_kobj_release(struct kobject *kobj)
 }
 
 static struct kobj_type sbi_ktype = {
-	.default_groups = KOBJ_ATTR_GROUPS(llite),
+	.default_groups = llite_groups,
 	.sysfs_ops      = &lustre_sysfs_ops,
 	.release        = sbi_kobj_release,
 };

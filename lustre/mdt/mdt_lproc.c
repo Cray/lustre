@@ -1451,7 +1451,7 @@ static struct attribute *mdt_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(mdt); /* creates mdt_groups from mdt_attrs */
+ATTRIBUTE_GROUPS(mdt); /* creates mdt_groups from mdt_attrs */
 
 LDEBUGFS_SEQ_FOPS_RO_TYPE(mdt, recovery_status);
 LDEBUGFS_SEQ_FOPS_RO_TYPE(mdt, recovery_stale_clients);
@@ -1616,7 +1616,7 @@ int mdt_tunables_init(struct mdt_device *mdt, const char *name)
 	ENTRY;
 	LASSERT(name != NULL);
 
-	obd->obd_ktype.default_groups = KOBJ_ATTR_GROUPS(mdt);
+	obd->obd_ktype.default_groups = mdt_groups;
 	obd->obd_debugfs_vars = ldebugfs_mdt_obd_vars;
 	rc = lprocfs_obd_setup(obd, true);
 	if (rc) {

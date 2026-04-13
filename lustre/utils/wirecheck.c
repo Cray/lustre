@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <linux/posix_acl_xattr.h>
 #include <linux/lustre/lustre_idl.h>
 #include <linux/lustre/lgss.h>
 #ifndef HAVE_NATIVE_LINUX_CLIENT
@@ -2333,22 +2334,6 @@ check_getinfo_fid2path(void)
 #endif
 	printf("#endif /* HAVE_FID2PATH_ANON_UNIONS */\n");
 }
-
-/* We don't control the definitions of posix_acl_xattr_{entry,header}
- * and so we shouldn't have used them in our wire protocol. But it's
- * too late now and so we emit checks against the *fixed* definitions
- * below. See LU-5607. */
-
-struct posix_acl_xattr_entry {
-	__u16			e_tag;
-	__u16			e_perm;
-	__u32			e_id;
-};
-
-struct posix_acl_xattr_header {
-	__u32			a_version;
-	struct posix_acl_xattr_entry	a_entries[];
-};
 
 static void
 check_posix_acl_xattr_entry(void)

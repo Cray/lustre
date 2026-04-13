@@ -15,11 +15,14 @@
 #define __OBD_H
 
 #include <linux/fs.h>
+#include <lustre_compat/linux/folio.h>
 #include <linux/posix_acl.h>
 #include <linux/kobject.h>
+#include <lustre_compat/linux/mm.h>
 #include <linux/spinlock.h>
 #include <linux/sysfs.h>
 #include <lustre_compat/linux/xarray.h>
+#include <lustre_compat/linux/linux-misc.h>
 
 #include <uapi/linux/lustre/lustre_idl.h>
 #include <lustre_lib.h>

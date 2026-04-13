@@ -19,10 +19,12 @@
 #define DEBUG_SUBSYSTEM S_CLASS
 
 #include <linux/list.h>
+#include <lustre_compat/linux/uio.h>
 
 #include <obd_class.h>
 #include <obd_support.h>
 #include <cl_object.h>
+
 #include "cl_internal.h"
 
 static void __cl_page_delete(const struct lu_env *env, struct cl_page *pg);

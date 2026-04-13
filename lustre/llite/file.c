@@ -19,6 +19,7 @@
 #include <lustre_dlm.h>
 #include <linux/pagemap.h>
 #include <linux/file.h>
+#include <linux/mount.h>
 #include <linux/sched.h>
 #include <linux/user_namespace.h>
 #include <linux/capability.h>
@@ -29,7 +30,7 @@
 #ifdef HAVE_LINUX_FILELOCK_HEADER
 #include <linux/filelock.h>
 #endif
-#include <lustre_compat/linux/linux-misc.h>
+#include <lustre_compat/linux/uio.h>
 
 #include <uapi/linux/lustre/lustre_ioctl.h>
 #include <lustre_kernelcomm.h>

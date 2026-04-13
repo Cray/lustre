@@ -19,7 +19,8 @@
 #ifndef _RANGE_LOCK_H
 #define _RANGE_LOCK_H
 
-#include <lustre_compat/linux/linux-misc.h>
+#include <linux/spinlock.h>
+#include <linux/rbtree.h>
 
 #define RL_FMT "[%llu, %llu]"
 #define RL_PARA(range)					\

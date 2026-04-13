@@ -20,6 +20,7 @@
 #define DEBUG_SUBSYSTEM S_MDS
 
 #include <linux/kthread.h>
+#include <lustre_compat/linux/timer.h>
 
 #include <lustre_obdo.h>
 

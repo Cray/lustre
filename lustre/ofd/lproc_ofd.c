@@ -1244,7 +1244,7 @@ static struct attribute *ofd_attrs[] = {
 	NULL,
 };
 
-KOBJ_ATTRIBUTE_GROUPS(ofd); /* creates ofd_groups from ofd_attrs */
+ATTRIBUTE_GROUPS(ofd); /* creates ofd_groups from ofd_attrs */
 
 /**
  * ofd_tunables_init() - Initialize all needed procfs entries for OFD device.
@@ -1263,7 +1263,7 @@ int ofd_tunables_init(struct ofd_device *ofd)
 	/* lprocfs must be setup before the ofd so state can be safely added
 	 * to /proc incrementally as the ofd is setup
 	 */
-	obd->obd_ktype.default_groups = KOBJ_ATTR_GROUPS(ofd);
+	obd->obd_ktype.default_groups = ofd_groups;
 	obd->obd_debugfs_vars = ldebugfs_ofd_obd_vars;
 	rc = lprocfs_obd_setup(obd, false);
 	if (rc) {
