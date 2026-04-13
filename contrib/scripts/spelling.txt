@@ -1,8 +1,10 @@
 # The format of each line is:
 # mistake||correction
+# in alphabetical order.
 #
 ALWAYS_EXCEPT||always_except
 alloca||malloc
+CDEBUG\((D_ERROR|D_WARNING|D_CONSOLE|[a-z])||CDEBUG does not rate-limit console messages, use CDEBUG_LIMIT
 cfs_get_random_bytes||get_random_bytes
 cfs_hash_bd_t||struct cfs_hash_bd
 cfs_hash_bucket_t||struct cfs_hash_bucket
@@ -55,9 +57,11 @@ from_timer||cfs_from_timer
 ft_nob||ft_bytes
 f_dentry||f_path.dentry
 [^_]get_seconds||ktime_get_real_seconds
+GPL[vV]3||Using GPLv3 is usually wrong
 HZ||cfs_time_seconds
 it_flags||it_open_flags
 kmem_cache_alloc.*GFP_ZERO||kmem_cache_zalloc
+LASSERT||Try to replace assertions with error handling
 LCK_MINMODE||LCK_MODE_MIN
 LCK_MAXMODE||LCK_MODE_END
 LDEBUGFS_SEQ_FOPS_.*||create Documentation/man4/ page for this parameter

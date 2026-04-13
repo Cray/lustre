@@ -1,13 +1,14 @@
 # The format of each line is:
 # mistake||correction
+# in alphabetical order.
 #
 ALWAYS_EXCEPT||always_except
 alloca||malloc
 comma_list.*osts_nodes||osts_nodes
 comma_list.*mdts_nodes||mdts_nodes
 sprintf||snprintf
-strcat||strncat
-strcpy||strncpy
+strcat||strlcat
+strcpy||strlcpy
 /bin/bash||/usr/bin/bash
 /bin/sh||/usr/bin/bash
 version_code.*2.1[8-9]||version 2.17.x should be used
