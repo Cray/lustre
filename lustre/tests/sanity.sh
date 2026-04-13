@@ -108,7 +108,7 @@ if [[ "$FSTYPE" = "wbcfs" ]]; then
 	always_except LU-18813 25b 26a 26c 26d 26e 26f 27ga 27Q
 	always_except LU-18813 28  32e 32f 32g 32h 32m 32n  32o
 	always_except LU-18813 32p 48a 54a 54c 54d 56l 56m  56n  56rd
-	always_except LU-18813 56xb 56eb 56eg 56eh 56ei 133a 140 170b
+	always_except LU-18813 56xb 56Eb 56eg 56eh 56ei 133a 140 170b
 	always_except LU-18813 162a 226a
 	# Truncate operation is not supported yet.
 	always_except LU-18813 27p 27q 34a
@@ -10060,7 +10060,7 @@ test_56Eab() {
 }
 run_test 56Eab "test lfs find -ls function"
 
-test_56eb() {
+test_56Eb() {
 	local dir=$DIR/$tdir
 	local subdir_1=$dir/subdir_1
 
@@ -10084,17 +10084,17 @@ test_56eb() {
 		grep "^$dir/file_link_2 has no stripe info$" ||
 		error "symlink should not have stripe info"
 }
-run_test 56eb "check lfs getstripe on symlink"
+run_test 56Eb "check lfs getstripe on symlink"
 
-test_56ebb() {
+test_56Ebb() {
 
 	mkdir $DIR/$tdir
 	mkfifo $DIR/$tdir/$tfile-fifo
 	$LFS getdirstripe -r $DIR/$tdir || error "$LFS getdirstripe -r: $DIR"
 }
-run_test 56ebb "check $LFS getdirstripe for FIFO file"
+run_test 56Ebb "check $LFS getdirstripe for FIFO file"
 
-test_56ec() {
+test_56Ec() {
 	[[ $OSTCOUNT -lt 2 ]] && skip_env "needs >= 2 OSTs"
 	local dir=$DIR/$tdir
 	local srcfile=$dir/srcfile
@@ -10118,10 +10118,10 @@ test_56ec() {
 		error "setstripe did not set OST index correctly"
 	fi
 }
-run_test 56ec "check lfs getstripe,setstripe --hex --yaml"
+run_test 56Ec "check lfs getstripe,setstripe --hex --yaml"
 
 # LU-15565
-test_56ed() {
+test_56Ed() {
 	local new=$DIR/$tdir/$tfile-layout-new
 	local old=$DIR/$tdir/$tfile-layout-old
 
@@ -10247,9 +10247,9 @@ PFL_LAYOUT_OLD
 		error "failed to parse new YAML layout"
 
 }
-run_test 56ed "verify new YAML format is valid and back-compatible"
+run_test 56Ed "verify new YAML format is valid and back-compatible"
 
-test_56eda() {
+test_56Eda() {
 	local dir=$DIR/$tdir
 	local subdir=$dir/subdir
 	local file1=$dir/$tfile
@@ -10275,9 +10275,9 @@ test_56eda() {
 	(( $nfiles == 1 )) ||
 		error "lfs find --links expected 1 directory, got $nfiles"
 }
-run_test 56eda "check lfs find --links"
+run_test 56Eda "check lfs find --links"
 
-test_56edb() {
+test_56Edb() {
 	[[ $MDSCOUNT -lt 2 ]] && skip_env "needs >= 2 MDTs"
 
 	local dir=$DIR/$tdir
@@ -10294,7 +10294,7 @@ test_56edb() {
 	(( $nfiles == 1 )) ||
 		error "lfs find --links expected 1 directory, got $nfiles"
 }
-run_test 56edb "check lfs find --links for directory striped on multiple MDTs"
+run_test 56Edb "check lfs find --links for directory striped on multiple MDTs"
 
 test_56ef() {
 	local dir=$DIR/$tdir
