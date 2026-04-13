@@ -111,6 +111,7 @@ SERVER_MANFILES =				\
 	lshowmount.8				\
 	mkfs.lustre.8				\
 	mount.lustre_tgt.8			\
+	l_adsidentity.8				\
 	tunefs.lustre.8
 
 if MANPAGES

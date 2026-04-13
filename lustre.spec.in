@@ -1059,6 +1059,7 @@ echo '%{_libdir}/lustre/tests/lutf/*' >>lustre-tests.files
 %config(noreplace) %{_sysconfdir}/ldev.conf
 %endif
 %config(noreplace) %{_sysconfdir}/lnet-sysctl.conf
+%{_sysconfdir}/lustre/*
 %config(noreplace) %{_sysconfdir}/lnet.conf
 %config(noreplace) %{_sysconfdir}/modprobe.d/ko2iblnd.conf
 %config(noreplace) %{_sysconfdir}/projid
