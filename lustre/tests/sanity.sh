@@ -36462,27 +36462,33 @@ test_907() {
 run_test 907 "write rpc error during unlink"
 
 test_908a() {
-	(( MDS1_VERSION >= $(version_code 2.16.0) )) ||
-		skip "need MDS >= 2.16.0 for llog timestamps"
-	[[ "$mds1_FSTYPE" == ldiskfs ]] || skip "ldiskfs only test"
+	local patch_ver=$(version_code v2_16_50-161-ge33d196b93)
+	(( $MGS_VERSION >= $patch_ver )) ||
+		skip "need MGS >= 2.16.50.161 for llog change timestamps"
+	[[ $(facet_fstype mgs) == ldiskfs ]] || skip "ldiskfs only test"
 
-	local dev=$(mdsdevname 1)
-	local cmd="debugfs -c -R \\\"stat CONFIGS/params\\\" $dev"
+	local format_ver=($(do_facet mgs $LCTL llog_print --raw params |
+			    awk '/version/ { print $10 }'))
+        (( $(version_code $format_ver) > $patch_ver )) ||
+                skip "MGS configured with version $format_ver need 2.16.50.161"
 
-	# ctime_mds value is in hex
-	local base_time=`date -d "24 hours ago" +%s`
-	local ctime_mds=$(do_facet mds1 "$cmd" |&
+	local dev=$(facet_device mgs)
+	local cmd="debugfs -c -R 'stat CONFIGS/params' $dev"
+
+	# ctime: value from debugfs is in hex
+	local base_time=$(date -d "24 hours ago" +%s)
+	local ctime_mgs=$(do_facet mgs "$cmd" |&
 			  awk -F'[: ]' '/ctime:/ { print $4 }')
-	ctime_mds=$((ctime_mds))
-	echo "ctime_mds=$ctime_mds, base_time=$base_time"
-	(( "$ctime_mds" > "$base_time" )) ||
-		error "invalid ctime $ctime_mds <= $base_time"
+	ctime_mgs=$((ctime_mgs))
+	echo "ctime_mgs=$ctime_mgs, base_time=$base_time"
+	(( "$ctime_mgs" > "$base_time" )) ||
+		error "invalid ctime $ctime_mgs <= $base_time"
 }
 run_test 908a "llog created with valid ctime"
 
 test_908b() {
-	(( MDS1_VERSION >= $(version_code 2.16.0) )) ||
-		skip "need MDS >= 2.16.0 for llog timestamps"
+	(( MDS1_VERSION >= $(version_code v2_16_50-161-ge33d196b93) )) ||
+		skip "need MDS >= 2.16.50.161 for llog write timestamps"
 	[[ "$mds1_FSTYPE" == ldiskfs ]] || skip "ldiskfs only test"
 
 	local dev=$(mdsdevname 1)
@@ -36500,9 +36506,9 @@ test_908b() {
 
 	changelog_deregister || error "changelog_deregister failed"
 
-	local cmd="debugfs -c -R \\\"stat changelog_catalog\\\" $dev"
+	local cmd="debugfs -c -R 'stat changelog_catalog' $dev"
 
-	# ctime_mdt value is in hex
+	# ctime: and mtime: values from debugfs are in hex
 	local ctime_mds=$(do_facet mds1 "$cmd" |&
 			  awk -F'[: ]' '/ctime:/ { print $4 }')
 	ctime_mds=$((ctime_mds))
