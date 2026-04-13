@@ -3245,6 +3245,11 @@ static ssize_t lock_reclaim_threshold_mb_store(struct kobject *kobj,
 	}
 	watermark = value >> 20;
 
+	if (ldlm_lock_limit_mb != 0 && watermark > ldlm_lock_limit_mb) {
+		CERROR("lock_reclaim_threshold_mb must be smaller than lock_limit_mb.\n");
+		return -EINVAL;
+	}
+
 	ldlm_reclaim_threshold_mb = watermark;
 	if (watermark != 0) {
 		watermark <<= 20;
@@ -3280,11 +3285,6 @@ static ssize_t lock_limit_mb_store(struct kobject *kobj,
 		return -EINVAL;
 	}
 	watermark = value >> 20;
-
-	if (ldlm_lock_limit_mb != 0 && watermark > ldlm_lock_limit_mb) {
-		CERROR("lock_reclaim_threshold_mb must be smaller than lock_limit_mb.\n");
-		return -EINVAL;
-	}
 
 	if (ldlm_reclaim_threshold_mb != 0 &&
 	    watermark < ldlm_reclaim_threshold_mb) {
