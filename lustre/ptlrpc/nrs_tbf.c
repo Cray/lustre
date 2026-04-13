@@ -200,7 +200,7 @@ next_field:
 static DEFINE_PER_CPU(char [TBF_PRINT_KEY_BUF_SIZE], nrs_tbf_print_bufs);
 static char *nrs_tbf_cli2str(struct nrs_tbf_client *cli)
 {
-	char *buf = this_cpu_ptr(nrs_tbf_print_bufs);
+	char *buf = raw_cpu_ptr(nrs_tbf_print_bufs);
 
 	nrs_tbf_cli2str_r(cli, buf, TBF_PRINT_KEY_BUF_SIZE);
 
