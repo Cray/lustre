@@ -9990,7 +9990,7 @@ test_56Dd() { # was test_56dd
 }
 run_test 56Dd "test lfs find with mindepth argument"
 
-test_56ea() { #LU-10378
+test_56Ea() { #LU-10378
 	local path=$DIR/$tdir
 	local pool=$TESTNAME
 
@@ -10029,9 +10029,9 @@ test_56ea() { #LU-10378
 	[[ "${esc_printf}" == '\ % \Q %Q' ]] ||
 		error "Escape/format codes don't match"
 }
-run_test 56ea "test lfs find -printf option"
+run_test 56Ea "test lfs find -printf option"
 
-test_56eaa() {
+test_56Eaa() {
 	local lfs_find=($($LFS find $DIR -printf "%i %u %g %M %p\n" | sort -n))
 	local normal_find=($(find $DIR -printf "%i %u %g %M %p\n" | sort -n))
 
@@ -10045,9 +10045,9 @@ test_56eaa() {
 		fi
 	done
 }
-run_test 56eaa "test lfs find -printf added functions"
+run_test 56Eaa "test lfs find -printf added functions"
 
-test_56eab() {
+test_56Eab() {
 	touch $DIR/$tfile
 	local lfs_ls=($($LFS find $DIR -name $tfile -ls))
 	local find_ls=($(find $DIR -name $tfile -ls))
@@ -10058,7 +10058,7 @@ test_56eab() {
 			error "expected '${lfs_ls[i]}' but got '${find_ls[i]}'"
 	done
 }
-run_test 56eab "test lfs find -ls function"
+run_test 56Eab "test lfs find -ls function"
 
 test_56eb() {
 	local dir=$DIR/$tdir
