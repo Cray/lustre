@@ -1,0 +1,61 @@
+.TH LCTL-LQA-LIST 8 2026-05-29 "Lustre" "Lustre Configuration Utilities"
+.SH NAME
+lctl-lqa-list \- list Lustre Quota ID Aggregates or display LQA details
+.SH SYNOPSIS
+.SY "lctl lqa list"
+.BI --fsname " FSNAME"
+.RB [ --name
+.IR " LQANAME" ]
+.YS
+.SH DESCRIPTION
+List Lustre Quota ID Aggregates (LQAs) in the filesystem named
+.IR FSNAME ,
+or display detailed information about a specific LQA.
+The
+.B lctl lqa list
+command must be run on the MDS0 node by the root user.
+.P
+When called with only the
+.B --fsname
+parameter, the command lists all LQAs in the specified filesystem.
+.P
+When called with both
+.B --fsname
+and
+.B --name
+parameters, the command displays detailed information about
+.IR LQANAME ,
+including all quota ID ranges stored in that LQA.
+.SH OPTIONS
+.TP
+.B --fsname \fIFSNAME\fR
+The name of the Lustre filesystem. This parameter is required.
+.TP
+.B --name \fILQANAME\fR
+The name of a specific LQA. If provided, detailed information about this
+LQA is displayed. If not provided, all LQAs in the filesystem are listed.
+.SH EXAMPLES
+List all LQAs in a filesystem:
+.EX
+mds0# lctl lqa list --fsname lfs02
+.EE
+.PP
+Display the ranges inside LQA:
+.EX
+mds0# lctl lqa list --fsname lfs02 --name tenant1
+.EE
+.PP
+This will show all ProjID ranges allocated to tenant1.
+.SH AVAILABILITY
+.B lctl-lqa-list
+is part of the
+.BR lustre (7)
+filesystem package since release 2.18.0
+.\" Added in commit v2_17_50-20-gbce5cb03fb
+.SH SEE ALSO
+.BR lustre (7),
+.BR lctl (8),
+.BR lctl-lqa-add (8),
+.BR lctl-lqa-destroy (8),
+.BR lctl-lqa-new (8),
+.BR lctl-lqa-remove (8)

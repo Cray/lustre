@@ -1,0 +1,102 @@
+.TH LCTL-LQA 8 2026-05-29 "Lustre" "Lustre Configuration Utilities"
+.SH NAME
+lctl-lqa \- manage Lustre Quota ID Aggregates
+.SH SYNOPSIS
+.SY "lctl lqa new"
+.BI --fsname " FSNAME"
+.BI --name " LQANAME"
+.SY "lctl lqa add"
+.BI --fsname " FSNAME"
+.BI --name " LQANAME"
+.BI --range " START-END"
+.SY "lctl lqa remove"
+.BI --fsname " FSNAME"
+.BI --name " LQANAME"
+.BI --range " START-END"
+.SY "lctl lqa destroy"
+.BI --fsname " FSNAME"
+.BI --name " LQANAME"
+.SY "lctl lqa list"
+.BI --fsname " FSNAME"
+.RB [ --name
+.IR " LQANAME"]
+.YS
+.SH DESCRIPTION
+The
+.B lctl lqa
+commands are used to manage Lustre Quota ID Aggregates (LQAs) on a Lustre
+filesystem. An LQA is a quota aggregation mechanism that enables an extra level
+of administrative control over quota enforcement. LQAs are particularly useful
+for multitenancy use-cases where filesystem administrators need to delegate
+quota management to tenant administrators.
+.P
+An LQA allows setting quota limits on ranges of Project IDs (ProjIDs), User IDs
+(UIDs), or Group IDs (GIDs). The range quota is independent from quotas on
+individual IDs within that range. When both a range quota (LQA) and individual
+ID quotas exist, whichever limit is reached first is enforced. This enables a
+multi-level quota hierarchy where:
+.RS
+.IP \(bu 2
+Filesystem administrators set aggregate quotas on ID ranges (LQAs)
+.IP \(bu 2
+Tenant administrators can then manage individual ID quotas within their
+assigned range
+.IP \(bu 2
+The aggregate limit acts as a hard cap on total usage for all IDs in the range
+.RE
+.P
+All LQA commands must be run on the MDS0 node by the root user,
+with a local client mountpoint for the
+.BR lfs-setquota (1)
+commands.
+.SS COMMANDS
+.TP
+.BR lctl-lqa-new (8)
+Create a new Lustre Quota ID Aggregate (LQA).
+.TP
+.BR lctl-lqa-add (8)
+Add a range of quota IDs to an existing LQA.
+.TP
+.BR lctl-lqa-remove (8)
+Remove a range of quota IDs from an existing LQA.
+.TP
+.BR lctl-lqa-destroy (8)
+Destroy an existing LQA.
+.TP
+.BR lctl-lqa-list (8)
+List all LQAs in a filesystem or display details of a specific LQA.
+.SH EXAMPLES
+Multitenancy use case:
+In a multitenancy environment, the filesystem administrator creates an LQA for
+each tenant with a range of ProjIDs allocated to that tenant. For example:
+.RS
+.EX
+.RB mds0# " lctl lqa new --fsname lfs02 --name tenant1"
+.RB mds0# " lctl lqa add --fsname lfs02 --name tenant1 --range 100000-199999"
+.RB mds0# " lfs setquota -P --lqa tenant1 -b 900G -B 1T /mnt/lfs02"
+.RB mds0# " lfs quota -P --lqa tenant1 /mnt/lfs02"
+.EE
+.RE
+.P
+The tenant administrator can then set individual ProjID quotas within the
+[100000-199999] range. The aggregate limit is configured with
+.BR "lfs setquota --lqa" .
+Use
+.B lfs quota --lqa
+to review the current LQA limit and usage.
+.SH AVAILABILITY
+.B lctl-lqa
+is part of the
+.BR lustre (7)
+filesystem package since release 2.18.0
+.\" Added in commit v2_17_50-20-gbce5cb03fb
+.SH SEE ALSO
+.BR lfs-quota (1),
+.BR lfs-setquota (1),
+.BR lustre (7),
+.BR lctl (8),
+.BR lctl-lqa-add (8),
+.BR lctl-lqa-destroy (8),
+.BR lctl-lqa-list (8),
+.BR lctl-lqa-new (8),
+.BR lctl-lqa-remove (8)

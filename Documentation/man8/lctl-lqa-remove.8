@@ -1,0 +1,63 @@
+.TH LCTL-LQA-REMOVE 8 2026-05-29 "Lustre" "Lustre Configuration Utilities"
+.SH NAME
+lctl-lqa-remove \- remove a range of quota IDs from a Lustre Quota ID Aggregate
+.SH SYNOPSIS
+.SY "lctl lqa remove"
+.BI --fsname " FSNAME"
+.BI --name " LQANAME"
+.BI --range " START-END"
+.YS
+.SH DESCRIPTION
+Remove a range of quota IDs from an existing Lustre Quota ID Aggregate
+(LQA) with the name
+.I LQANAME
+in the filesystem named
+.IR FSNAME .
+The
+.B lctl lqa remove
+command must be run on the MDS0 node by the root user.
+.P
+The
+.B --range
+parameter specifies a range of quota IDs (ProjIDs, UIDs, or GIDs) to
+remove from the LQA in the format
+.B START-END
+where both
+.I START
+and
+.I END
+are numeric quota IDs. For example,
+.B --range 100000-149999
+removes all quota IDs from 100000 to 149999 (inclusive) from the LQA.
+.P
+Only the specified range is removed. Other ranges in the same LQA remain
+unchanged. If the specified range does not exist in the LQA, the command
+will fail with an error.
+.P
+.B NOTE:
+Removing a range from an LQA does not automatically remove individual ID
+quotas that were set within that range. Administrators should ensure that
+individual quotas are cleaned up separately if needed.
+.SH EXAMPLES
+Remove a portion of a tenant's ProjID range:
+.EX
+mds0# lctl lqa remove --fsname lfs02 --name tenant1 --range 150000-159999
+.EE
+.PP
+Remove an entire range from an LQA:
+.EX
+mds0# lctl lqa remove --fsname lfs02 --name tenant1 --range 100000-149999
+.EE
+.SH AVAILABILITY
+.B lctl-lqa-remove
+is part of the
+.BR lustre (7)
+filesystem package since release 2.18.0
+.\" Added in commit v2_17_50-20-gbce5cb03fb
+.SH SEE ALSO
+.BR lustre (7),
+.BR lctl (8),
+.BR lctl-lqa-add (8),
+.BR lctl-lqa-destroy (8),
+.BR lctl-lqa-list (8),
+.BR lctl-lqa-new (8)

@@ -1,0 +1,55 @@
+.TH LCTL-LQA-DESTROY 8 2026-05-29 "Lustre" "Lustre Configuration Utilities"
+.SH NAME
+lctl-lqa-destroy \- destroy a Lustre Quota ID Aggregate
+.SH SYNOPSIS
+.SY "lctl lqa destroy"
+.BI --fsname " FSNAME"
+.BI --name " LQANAME"
+.YS
+.SH DESCRIPTION
+Destroy an existing Lustre Quota ID Aggregate (LQA) with the name
+.I LQANAME
+in the filesystem named
+.IR FSNAME .
+The
+.B lctl lqa destroy
+command must be run on the MDS0 node by the root user.
+.P
+When an LQA is destroyed, all quota ID ranges stored in that LQA are
+removed, and the LQA itself is deleted from the filesystem. This operation
+cannot be undone, so ensure that the LQA is no longer needed before
+destroying it.
+.P
+.B WARNING:
+Destroying an LQA will remove the aggregate quota enforcement for all IDs
+in the range. However, individual ID quotas that were set within the range
+will remain in effect. Administrators should clean up individual quotas
+separately if needed.
+.P
+In a multitenancy environment, destroying a tenant's LQA will remove the
+aggregate quota limit for that tenant, potentially allowing them to exceed
+their intended allocation through individual ID quotas. Ensure this is the
+intended action before proceeding.
+.SH EXAMPLES
+Destroy a tenant's LQA (use with caution):
+.EX
+mds0# lctl lqa destroy --fsname lfs02 --name tenant1
+.EE
+.PP
+This will remove the aggregate quota enforcement for the tenant. Individual
+ID quotas within the range will remain in effect. To fully clean up,
+administrators should also remove individual ID quotas that were set within
+the tenant's range.
+.SH AVAILABILITY
+.B lctl-lqa-destroy
+is part of the
+.BR lustre (7)
+filesystem package since release 2.18.0
+.\" Added in commit v2_17_50-20-gbce5cb03fb
+.SH SEE ALSO
+.BR lustre (7),
+.BR lctl (8),
+.BR lctl-lqa-add (8),
+.BR lctl-lqa-list (8),
+.BR lctl-lqa-new (8),
+.BR lctl-lqa-remove (8)

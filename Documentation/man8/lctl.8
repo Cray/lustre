@@ -67,7 +67,7 @@ Output the build version of the utility itself.
 .TP
 .BR exit ", " quit
 Quit an interactive session.
-.SH BASH COMPLETION
+.SS BASH COMPLETION
 The
 .B lctl
 command supports
@@ -92,7 +92,7 @@ command-line option, for example generating a list of OBD devices for the
 option, or a list of OST pools for the
 .B pool_*
 commands.
-.SH COMMANDS
+.SS COMMANDS
 .SS System Configuration
 The on-line tool set for displaying, modifying, backup, or removal of Lustre
 system configuration.
@@ -157,7 +157,7 @@ Show all the local Lustre OBDs.  See
 .BR lctl-device_list (8).
 .SS Device Operations
 .TP
-.BI conf_param " \fR[" "-d\fR] " DEVICE \fR| FSNAME . PARAMETER = VALUE
+.BI conf_param "\fR [" "-d\fR] " DEVICE \fR| FSNAME . PARAMETER = VALUE
 Set a permanent configuration parameter for any device via the MGS. This
 command must be run on the MGS node.
 .IP
@@ -171,12 +171,14 @@ parameter changes to all relevant targets, including those added in the future.
 See
 .BR lctl-set_param (8)
 for details.
-
 For example, replace:
-    lctl conf_param testfs-OST0000.osc.max_rpcs_in_flight=16
+.EX
+.RB mgs# " lctl conf_param testfs-OST0000.osc.max_rpcs_in_flight=16"
+.EE
 with:
-    lctl set_param -P osc.testfs-*.max_rpcs_in_flight=16
-
+.EX
+.RB mgs# " lctl set_param -P osc.testfs-*.max_rpcs_in_flight=16"
+.EE
 Update any scripts or procedures to use set_param in place of conf_param.
 Use conf_param -d to remove existing conf_param settings; set_param -P
 does not remove them.
@@ -332,16 +334,24 @@ See also:
 .TP
 .BR lctl-lfsck-start (8)
 Start LFSCK on the specified MDT or OST device with specified parameters.
-.TP
-.BR lctl-lfsck-stop (8)
-Stop LFSCK on the specified MDT or OST device.
-.TP
-.BR lctl-lfsck-query (8)
-Get the LFSCK global status via the specified MDT device.
 .SS Barrier
 The tools set for write (modify) barrier on all MDTs. For detail, please see:
 .TP
 .BR lctl-barrier (8)
+.SS LQA
+Lustre Quota ID Aggregate (LQA) management commands for managing quota ID ranges
+in a Lustre filesystem. LQAs are quota pools containing red-black trees that
+store quota ID ranges and verify whether an incoming ID belongs to the current
+LQA.
+.P
+See
+.BR lctl-lqa (8)
+for command syntax and examples. Aggregate limits for an LQA are configured
+via
+.BR lfs-setquota (1)
+with the
+.B --lqa
+option.
 .SS Snapshot
 ZFS backend based snapshot tools set. The tool loads system configuration
 from the file
@@ -355,8 +365,8 @@ for other purpose.
 .P
 The format is:
 .EX
-.IB "HOST " foreign/- "LABEL DEVICE"\c
-.RI [ JOURNAL_PATH "]\c
+.IB "HOST " foreign/- "LABEL DEVICE"\
+.RI [ JOURNAL_PATH "]\
 .B /- \c
 .RI [ RAIDTAB ]
 .EE
@@ -365,7 +375,7 @@ The format of
 .I LABEL
 is:
 .EX
-.IB FSNAME -\c
+.IB FSNAME -\
 .RI { ROLE }{ INDEX "} or {" ROLE }{ INDEX }
 .EE
 .P
@@ -474,6 +484,12 @@ filesystem package since release 0.5.0
 .BR lctl-llog_catlist (8),
 .BR lctl-llog_info (8),
 .BR lctl-llog_print (8),
+.BR lctl-lqa (8),
+.BR lctl-lqa-add (8),
+.BR lctl-lqa-destroy (8),
+.BR lctl-lqa-list (8),
+.BR lctl-lqa-new (8),
+.BR lctl-lqa-remove (8),
 .BR lctl-network (8),
 .BR lctl-nodemap-activate (8),
 .BR lctl-nodemap-add (8),

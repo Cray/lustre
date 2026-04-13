@@ -1,0 +1,73 @@
+.TH LCTL-LQA-ADD 8 2026-05-29 "Lustre" "Lustre Configuration Utilities"
+.SH NAME
+lctl-lqa-add \- add a range of quota IDs to a Lustre Quota ID Aggregate
+.SH SYNOPSIS
+.SY "lctl lqa add"
+.BI --fsname " FSNAME"
+.BI --name " LQANAME"
+.BI --range " START-END"
+.YS
+.SH DESCRIPTION
+Add a range of quota IDs to an existing Lustre Quota ID Aggregate (LQA)
+with the name
+.I LQANAME
+to the filesystem named
+.IR FSNAME .
+The
+.B lctl lqa add
+command must be run on the MDS0 node by the root user.
+.P
+The
+.B --range
+parameter specifies a range of quota IDs (ProjIDs, UIDs, or GIDs) to add
+to the LQA in the format
+.B START-END
+where both
+.I START
+and
+.I END
+are numeric quota IDs. For example,
+.B --range 100000-199999
+adds all quota IDs from 100000 to 199999 (inclusive) to the LQA.
+.P
+Multiple ranges can be added to the same LQA by running the command
+multiple times with different
+.B --range
+values. This allows creating non-contiguous ranges within a single LQA.
+.P
+Once a range is added to an LQA, the filesystem administrator can set
+an aggregate quota limit on that LQA. Tenant administrators can then set
+individual ID quotas within the range. The aggregate limit acts as a hard
+cap: if the sum of all individual ID usage exceeds the aggregate limit,
+further allocations will be denied with EDQUOT (quota exceeded) error.
+.SH EXAMPLES
+Add a range to a tenant LQA. Use lfs setquota to enforce project quotas for
+IDs within this LQA:
+.EX
+mds0# lctl lqa add --fsname lfs02 --name tenant1 --range 100000-199999
+.EE
+.PP
+Add another non-contiguous range to the same LQA:
+.EX
+mds0# lctl lqa add --fsname lfs02 --name tenant1 --range 300000-399999
+.EE
+.PP
+After adding ranges, the filesystem administrator can set aggregate quotas
+on the LQA using
+.BR lfs-setquota (1)
+with the LQA name. Tenant administrators can then set individual ID quotas
+within the range.
+.SH AVAILABILITY
+.B lctl-lqa-add
+is part of the
+.BR lustre (7)
+filesystem package since release 2.18.0
+.\" Added in commit v2_17_50-20-gbce5cb03fb
+.SH SEE ALSO
+.BR lfs-setquota (1),
+.BR lustre (7),
+.BR lctl (8),
+.BR lctl-lqa-destroy (8),
+.BR lctl-lqa-list (8),
+.BR lctl-lqa-new (8),
+.BR lctl-lqa-remove (8)

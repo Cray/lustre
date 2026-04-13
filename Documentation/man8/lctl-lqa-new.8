@@ -1,0 +1,71 @@
+.TH LCTL-LQA-NEW 8 2026-05-29 "Lustre" "Lustre Configuration Utilities"
+.SH NAME
+lctl-lqa-new \- create a new Lustre Quota ID Aggregate
+.SH SYNOPSIS
+.SY "lctl lqa new"
+.BI --fsname " FSNAME"
+.BI --name " LQANAME"
+.YS
+.SH DESCRIPTION
+Create a new Lustre Quota ID Aggregate (LQA) with the name
+.I LQANAME
+in the filesystem named
+.IR FSNAME .
+The
+.B lctl lqa new
+command must be run on the MDS0 node by the root user.
+.P
+An LQA is a quota aggregation mechanism that enables two levels of
+administrative control. It allows setting quota limits on ranges of Project
+IDs (ProjIDs), User IDs (UIDs), or Group IDs (GIDs). The range quota is
+independent from quotas on individual IDs within that range. When both a
+range quota (LQA) and individual ID quotas exist, whichever limit is reached
+first is enforced.
+.P
+LQAs are particularly useful for multitenancy use-cases where:
+.RS
+.IP \(bu 2
+Filesystem administrators set aggregate quotas on ID ranges (LQAs)
+.IP \(bu 2
+Tenant administrators can manage individual ID quotas within their assigned
+range
+.IP \(bu 2
+The aggregate limit acts as a hard cap on total usage for all IDs in the range
+.RE
+.P
+.B LQANAME
+must consist only of uppercase and lowercase letters, digits, and underscores.
+The maximum length is 15 characters.
+.P
+After creating the LQA and adding ranges, set the aggregate limit with
+.BR "lfs setquota --lqa" .
+For example, use
+.BR "lfs setquota -P --lqa LQANAME"
+to set project aggregate limits for the LQA.
+.SH EXAMPLES
+Create an LQA for a tenant in a multitenancy environment:
+.EX
+mds0# lctl lqa new --fsname lfs02 --name tenant1
+mds0# lctl lqa add --fsname lfs02 --name tenant1 --range 100000-199999
+mds0# lfs setquota -P --lqa tenant1 -b 900G -B 1T /mnt/lfs02
+.EE
+.PP
+After creating the LQA, use
+.B lctl lqa add
+to add ID ranges and
+.BR lfs-setquota (1)
+to set the aggregate limit.
+.SH AVAILABILITY
+.B lctl-lqa-new
+is part of the
+.BR lustre (7)
+filesystem package since release 2.18.0
+.\" Added in commit v2_17_50-20-gbce5cb03fb
+.SH SEE ALSO
+.BR lfs-setquota (1),
+.BR lustre (7),
+.BR lctl (8),
+.BR lctl-lqa-add (8),
+.BR lctl-lqa-destroy (8),
+.BR lctl-lqa-list (8),
+.BR lctl-lqa-remove (8)
