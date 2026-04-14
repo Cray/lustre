@@ -5884,7 +5884,7 @@ cleanup_81d() {
 
 test_81d() {
 	local setattr_pid
-	local mdts=$(comma_list $(mdts_nodes))
+	local mdts=$(mdts_nodes)
 
 	do_nodes $mdts "$LCTL set_param mdt.*.md_stats=clear > /dev/null"
 

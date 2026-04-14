@@ -938,7 +938,7 @@ run_test 17p "symlink overwrite directory error message"
 test_17q() {
 	(( $MDS1_VERSION >= $(version_code 2.14.0-ddn212) )) ||
 		skip "Need MDS >= 2.14.0-ddn212 for symlink xattr"
-	local mdts=$(comma_list $(mdts_nodes))
+	local mdts=$(mdts_nodes)
 
 	ln -s foo $DIR/$tfile
 	setfattr -h -n trusted.test -v "$(head -200 /etc/services)" $DIR/$tfile ||
@@ -29952,11 +29952,10 @@ test_300t() {
 }
 run_test 300t "test max_mdt_stripecount"
 
-mdts=$(comma_list $(mdts_nodes))
 max_stripes_per_mdt=$(do_facet mds1 $LCTL get_param -n \
 		      lod.$FSNAME-MDT0000-mdtlov.max_stripes_per_mdt || echo 0)
 ((max_stripes_per_mdt == 0)) ||
-	do_nodes $mdts $LCTL set_param -n \
+	do_nodes $(mdts_nodes) $LCTL set_param -n \
 	lod.$FSNAME-MDT*.max_stripes_per_mdt=$LMV_MAX_STRIPES_PER_MDT
 # 300u family tests MDT overstriping
 test_300ua() {
@@ -30101,7 +30100,7 @@ test_300ud() {
 		skip "skipped for MDS that doesn't support metadata overstripe"
 	(( MDSCOUNT > 1 )) || skip "needs >= 2 MDTs"
 
-	local mdts=$(comma_list $(mdts_nodes))
+	local mdts=$(mdts_nodes)
 	local timeout=100
 
 	local restripe_status
@@ -30150,7 +30149,7 @@ test_300ue() {
 		skip "skipped for MDS that doesn't support metadata overstripe"
 	(( MDSCOUNT > 1 )) || skip "needs >= 2 MDTs"
 
-	local mdts=$(comma_list $(mdts_nodes))
+	local mdts=$(mdts_nodes)
 	local timeout=100
 
 	local restripe_status
@@ -30277,7 +30276,7 @@ test_300uh() {
 		skip "skipped for MDS that doesn't support metadata overstripe"
 	(( MDSCOUNT > 1 )) || skip "needs >= 2 MDTs"
 
-	local mdts=$(comma_list $(mdts_nodes))
+	local mdts=$(mdts_nodes)
 	local val=$(do_facet mds1 $LCTL get_param -n \
 		    lod.$FSNAME-MDT0000-mdtlov.max_stripes_per_mdt)
 
@@ -30342,7 +30341,7 @@ test_300uj() {
 run_test 300uj "overstriped dir with -C -N sanity test"
 
 (( max_stripes_per_mdt == 0 )) ||
-	do_nodes $mdts $LCTL set_param -n \
+	do_nodes $(mdts_nodes) $LCTL set_param -n \
 		lod.$FSNAME-MDT*.max_stripes_per_mdt=$max_stripes_per_mdt
 
 prepare_remote_file() {
@@ -30788,7 +30787,7 @@ test_319() {
 run_test 319 "lost lease lock on migrate error"
 
 test_350() {
-	local mdts=$(comma_list $(mdts_nodes))
+	local mdts=$(mdts_nodes)
 
 	mkdir $DIR/$tdir || error "mkdir $DIR/$tdir failed"
 	stack_trap "rm -r $DIR/$tdir"
@@ -33127,6 +33126,7 @@ run_test 413i "check default layout inheritance"
 test_413j()
 {
 	(( $MDSCOUNT > 1 )) || skip_env "needs >= 2 MDTs"
+	local mdts=$(mdts_nodes)
 
 	mkdir -p $DIR/$tdir || error "mkdir $tdir failed"
 	$LFS setdirstripe -D -c2 --max-inherit=2 $DIR/$tdir ||
@@ -33147,18 +33147,15 @@ test_413j()
 	(( MDS1_VERSION >= $(version_code 2.15.58) )) || return 0
 
 	# do not allow remove dmv by setfattr -x
-	do_nodes $(comma_list $(mdts_nodes)) \
-		"$LCTL set_param -n mdt.*MDT*.enable_dmv_xattr=0"
+	do_nodes $mdts "$LCTL set_param -n mdt.*MDT*.enable_dmv_xattr=0"
 	setfattr -x trusted.dmv $DIR/$tdir/sub || error "setfattr sub failed"
 	getfattr -n trusted.dmv $DIR/$tdir/sub || error "default LMV deleted"
 
 	# allow remove dmv by setfattr -x
-	do_nodes $(comma_list $(mdts_nodes)) \
-		"$LCTL set_param -n mdt.*MDT*.enable_dmv_xattr=1"
+	do_nodes $mdts "$LCTL set_param -n mdt.*MDT*.enable_dmv_xattr=1"
 	setfattr -x trusted.dmv $DIR/$tdir/sub || error "setfattr sub failed"
 	getfattr -n trusted.dmv $DIR/$tdir/sub && error "default LMV exists"
-	do_nodes $(comma_list $(mdts_nodes)) \
-		"$LCTL set_param -n mdt.*MDT*.enable_dmv_xattr=0"
+	do_nodes $mdts "$LCTL set_param -n mdt.*MDT*.enable_dmv_xattr=0"
 }
 run_test 413j "set default LMV by setxattr"
 
