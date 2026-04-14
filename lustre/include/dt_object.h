@@ -1919,7 +1919,7 @@ struct local_oid_storage {
 	struct list_head  los_list;
 
 	/* how many handle's reference this los has */
-	atomic_t	  los_refcount;
+	refcount_t	  los_refcount;
 	struct dt_device *los_dev;
 	struct dt_object *los_obj;
 
