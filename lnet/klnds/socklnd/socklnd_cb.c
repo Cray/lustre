@@ -2003,7 +2003,7 @@ ksocknal_connect(struct ksock_conn_cb *conn_cb)
 			lnet_connect_console_error(
 				rc, &peer_ni->ksnp_id.nid,
 				(struct sockaddr *)&conn_cb->ksnr_addr);
-			goto failed;
+			goto failed_nolock;
 		}
 
 		net = (struct ksock_net *)(peer_ni->ksnp_ni->ni_data);
@@ -2014,7 +2014,7 @@ ksocknal_connect(struct ksock_conn_cb *conn_cb)
 				    type == SOCKLND_CONN_CONTROL);
 		if (IS_ERR(sock)) {
 			rc = PTR_ERR(sock);
-			goto failed;
+			goto failed_nolock;
 		}
 
 		rc = ksocknal_create_conn(peer_ni->ksnp_ni, conn_cb, sock,
@@ -2023,7 +2023,7 @@ ksocknal_connect(struct ksock_conn_cb *conn_cb)
 			lnet_connect_console_error(
 				rc, &peer_ni->ksnp_id.nid,
 				(struct sockaddr *)&conn_cb->ksnr_addr);
-			goto failed;
+			goto failed_nolock;
 		} else if (rc > 0) {
 			/* A +ve RC means I have to retry because I lost the connection
 			 * race or I have to renegotiate protocol version
@@ -2060,7 +2060,6 @@ ksocknal_connect(struct ksock_conn_cb *conn_cb)
 			/* If don't have at least one connection of each
 			 * type, fail
 			 */
-			write_unlock_bh(&ksocknal_data.ksnd_global_lock);
 			goto failed;
 		}
 		retry_later = false;
@@ -2090,8 +2089,9 @@ ksocknal_connect(struct ksock_conn_cb *conn_cb)
 	write_unlock_bh(&ksocknal_data.ksnd_global_lock);
 	return retry_later;
 
- failed:
+ failed_nolock:
 	write_lock_bh(&ksocknal_data.ksnd_global_lock);
+ failed:
 
 	conn_cb->ksnr_scheduled = 0;
 	conn_cb->ksnr_connecting = 0;
