@@ -701,7 +701,7 @@ struct local_oid_storage *dt_los_find(struct ls_device *ls, __u64 seq)
 
 	list_for_each_entry(los, &ls->ls_los_list, los_list) {
 		if (los->los_seq == seq) {
-			atomic_inc(&los->los_refcount);
+			refcount_inc(&los->los_refcount);
 			ret = los;
 			break;
 		}
@@ -714,7 +714,7 @@ void dt_los_put(struct local_oid_storage *los)
 	/* should never happen, only local_oid_storage_fini should
 	 * drop refcount to zero
 	 */
-	LASSERT(!atomic_dec_and_test(&los->los_refcount));
+	LASSERT(!refcount_dec_and_test(&los->los_refcount));
 }
 
 /* after Lustre 2.3 release there may be old file to store last generated FID
@@ -842,7 +842,7 @@ int local_oid_storage_init(const struct lu_env *env, struct dt_device *dev,
 	if (*los == NULL)
 		GOTO(out, rc = -ENOMEM);
 
-	atomic_set(&(*los)->los_refcount, 1);
+	refcount_set(&(*los)->los_refcount, 1);
 	mutex_init(&(*los)->los_id_lock);
 	(*los)->los_dev = &ls->ls_top_dev;
 	kref_get(&ls->ls_refcount);
@@ -959,7 +959,7 @@ void local_oid_storage_fini(const struct lu_env *env,
 	/* Take the mutex before decreasing the reference to avoid race
 	 * conditions as described in LU-4721. */
 	mutex_lock(&ls->ls_los_mutex);
-	if (!atomic_dec_and_test(&los->los_refcount)) {
+	if (!refcount_dec_and_test(&los->los_refcount)) {
 		mutex_unlock(&ls->ls_los_mutex);
 		return;
 	}
