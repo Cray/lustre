@@ -1745,11 +1745,7 @@ static int after_reply(struct ptlrpc_request *req)
 			 * rq_replay_list, ptlrpc_free_committed() will call
 			 * it later, see LU-3618 for details
 			 */
-			spin_unlock(&imp->imp_lock);
 			req->rq_commit_cb(req);
-			atomic_inc(&imp->imp_waiting);
-			spin_lock(&imp->imp_lock);
-			atomic_dec(&imp->imp_waiting);
 		}
 
 		/*
@@ -2912,6 +2908,7 @@ void ptlrpc_req_put_with_imp_lock(struct ptlrpc_request *request)
 	assert_spin_locked(&request->rq_import->imp_lock);
 	(void)__ptlrpc_req_put(request, 1);
 }
+EXPORT_SYMBOL(ptlrpc_req_put_with_imp_lock);
 
 /**
  * ptlrpc_req_put() - Drops one reference count for a request.
@@ -3043,9 +3040,8 @@ void ptlrpc_request_committed(struct ptlrpc_request *req, int force)
 {
 	struct obd_import *imp = req->rq_import;
 
-	spin_lock(&imp->imp_lock);
+	assert_spin_locked(&imp->imp_lock);
 	if (list_empty(&req->rq_replay_list)) {
-		spin_unlock(&imp->imp_lock);
 		return;
 	}
 
@@ -3054,8 +3050,6 @@ void ptlrpc_request_committed(struct ptlrpc_request *req, int force)
 			imp->imp_replay_cursor = req->rq_replay_list.next;
 		ptlrpc_free_request(req);
 	}
-
-	spin_unlock(&imp->imp_lock);
 }
 EXPORT_SYMBOL(ptlrpc_request_committed);
 

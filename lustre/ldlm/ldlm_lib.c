@@ -1649,8 +1649,7 @@ dont_check_exports:
 			CWARN("Connect with zero transno!\n");
 
 		if (has_transno && transno > 0 &&
-		    transno < target->obd_next_recovery_transno &&
-		    transno > target->obd_last_committed) {
+		    transno < target->obd_next_recovery_transno) {
 			/* Another way is to use cmpxchg() to be lock-free. */
 			spin_lock(&target->obd_recovery_task_lock);
 			if (transno < target->obd_next_recovery_transno)
@@ -3221,6 +3220,11 @@ int target_queue_recovery_request(struct ptlrpc_request *req,
 	    !is_req_replayed_by_update(req)) {
 		/* Processing the queue right now, don't re-add. */
 		LASSERT(list_empty(&req->rq_list));
+		spin_unlock(&obd->obd_recovery_task_lock);
+		RETURN(1);
+	} else if (transno < obd->obd_last_committed &&
+		   lustre_msg_get_opc(req->rq_reqmsg) == LDLM_ENQUEUE) {
+		/* Processing open request */
 		spin_unlock(&obd->obd_recovery_task_lock);
 		RETURN(1);
 	}
