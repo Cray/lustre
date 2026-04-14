@@ -5319,6 +5319,7 @@ test_dom() {
 	cancel_lru_locks osc
 	cancel_lru_locks mdc
 	sync; sync_all_data || true
+	wait_delete_completed
 
 	dd_failed=false
 
@@ -5339,6 +5340,7 @@ test_dom() {
 	cancel_lru_locks osc
 	cancel_lru_locks mdc
 	sync; sync_all_data || true
+	wait_delete_completed
 
 	dd_failed=false
 
@@ -5354,9 +5356,9 @@ test_dom() {
 
 	rm -fr $DIR/$tdir
 	rm -fr $DIR/$tdir_dom
+	wait_delete_completed
 
-	$LFS setquota -u $TSTUSR -b 0 -B 0 -i 0 -I 0 $DIR ||
-		error "reset usr quota failed"
+	resetquota -$qtype $qid
 }
 
 test_63() {
