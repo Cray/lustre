@@ -76,5 +76,7 @@ $UNLINKMANY $DIR2/lockdir/lockfile 1 $(($COUNT * 1000)) || true
 trap 0
 kill $CR_PID || true
 kill $ST_PID || true
+wait $CR_PID || true
+wait $ST_PID || true
 
 rm -rf $LOCKDIR
