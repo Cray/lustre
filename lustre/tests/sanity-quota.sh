@@ -88,7 +88,7 @@ lustre_fail() {
 
 	case $fail_node in
 	mds_ost|mdt_ost|mds_oss) nodes="$(tgts_nodes)";;
-	mds|mdt) nodes="$(comma_list $(mdts_nodes))";;
+	mds|mdt) nodes="$(mdts_nodes)";;
 	ost) nodes="$(osts_nodes)";;
 	esac
 

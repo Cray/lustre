@@ -2886,7 +2886,7 @@ test_136() {
 	[[ "$MDS1_VERSION" -ge $(version_code 2.12.52) ]] ||
 		skip "Need MDS version at least 2.12.52"
 
-	local mdts=$(comma_list $(mdts_nodes))
+	local mdts=$(mdts_nodes)
 	local MDT0=$(facet_svc $SINGLEMDS)
 
 	local clog=$(do_facet mds1 $LCTL --device $MDT0 changelog_register -n)

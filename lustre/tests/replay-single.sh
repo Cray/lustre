@@ -5335,10 +5335,8 @@ test_201() {
 
 	# delay DISCONNECT for 8 seconds, on all OSTs and MDTs
 #define OBD_FAIL_OST_DISCONNECT_DELAY	 0x245
-	do_nodes $(comma_list $(mdts_nodes)) "$LCTL set_param \
-					      fail_loc=0x245 fail_val=8"
-	do_nodes $(comma_list $(osts_nodes)) "$LCTL set_param \
-					      fail_loc=0x245 fail_val=8"
+	do_nodes $(mdts_nodes) "$LCTL set_param fail_loc=0x245 fail_val=8"
+	do_nodes $(osts_nodes) "$LCTL set_param fail_loc=0x245 fail_val=8"
 
 	local start_time=$SECONDS
 

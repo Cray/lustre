@@ -138,24 +138,22 @@ wait_all_targets_blocked() {
 	# wait to simulate blocked wait, so that we can know the status
 	local timeout=${4:-600}
 	local lfsck_query="$LCTL lfsck_query -t $com -M $FSNAME-MDT0000"
+	local mdts=$(mdts_nodes)
+	local osts=$(osts_nodes)
 
 	wait_update_facet --quiet mds1 \
 		"$lfsck_query | awk '/^${com}_mdts_$status/ { print \\\$2 }'" \
 		"$MDSCOUNT" $timeout || {
-		local mdts=$(comma_list $(mdts_nodes))
 		local count=$(do_facet mds1 "$lfsck_query" |
 			      awk "/^${com}_mdts_${status}/ { print \$2 }")
 
 		do_facet mds1 "$lfsck_query"
 		echo "==== MDT LOGS ===="
-		do_nodes $mdts "$LCTL get_param mdd.*.lfsck_$com"
-		do_nodes $mdts "$LCTL get_param osd*.*.oi_scrub"
+		do_nodes $mdts "$LCTL get_param mdd.*.lfsck_$com osd*.*.oi_scrub"
 		if [[ "$com" == "layout" ]]; then
-			local osts=$(comma_list $(osts_nodes))
 			echo "==== OST LOGS ===="
 
-			do_nodes $osts "$LCTL get_param obdfilter.*.lfsck_$com"
-			do_nodes $osts "$LCTL get_param osd*.*.oi_scrub"
+			do_nodes $osts "$LCTL get_param obdfilter.*.lfsck_$com osd*.*.oi_scrub"
 		fi
 
 

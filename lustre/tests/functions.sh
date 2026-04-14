@@ -1104,7 +1104,7 @@ run_rr_alloc() {
 	(( create_count <= max_create_count )) ||
 		create_count=$((max_create_count / 2))
 
-	local mdts=$(comma_list $(mdts_nodes))
+	local mdts=$(mdts_nodes)
 
 	do_nodes $mdts "$LCTL set_param lod.*.qos_threshold_rr=100 \
 		osp.*.create_count=$create_count"

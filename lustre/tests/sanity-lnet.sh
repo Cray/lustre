@@ -5850,10 +5850,10 @@ test_311() {
 	dd if=/dev/zero of=$DIR/$tdir/$tfile bs=1M count=1 oflag=direct ||
 		error "dd write failed"
 
-	local list=$(comma_list $(osts_nodes))
+	local osts=$(osts_nodes)
 
 #define CFS_KFI_FAIL_WAIT_SEND_COMP1 0xF115
-	do_nodes $list $LCTL set_param fail_loc=0x8000F115
+	do_nodes $osts $LCTL set_param fail_loc=0x8000F115
 	dd if=$DIR/$tdir/$tfile of=/dev/null bs=1M count=1 ||
 		error "dd read failed"
 
@@ -5872,16 +5872,16 @@ test_312() {
 
 	mkdir -p $DIR/$tdir || error "mkdir failed"
 
-	local list=$(comma_list $(osts_nodes))
+	local osts=$(osts_nodes)
 
 #define CFS_KFI_FAIL_WAIT_SEND_COMP3 0xF117
-	do_nodes $list $LCTL set_param fail_loc=0x8000F117
+	do_nodes $osts $LCTL set_param fail_loc=0x8000F117
 	dd if=/dev/zero of=$DIR/$tdir/$tfile bs=1M count=1 oflag=direct ||
 		error "dd write failed"
 
 	local tfile2="$DIR/$tdir/testfile2"
 
-	do_nodes $list $LCTL set_param fail_loc=0x8000F117
+	do_nodes $osts $LCTL set_param fail_loc=0x8000F117
 	dd if=$DIR/$tdir/$tfile of=$tfile2 bs=1M count=1 oflag=direct ||
 		error "dd read failed"
 

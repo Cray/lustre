@@ -3222,7 +3222,7 @@ check_times_61() {
 test_61a() { # LU-14508
 	local file=$DIR/$tdir/$tfile
 	local old_diff=($(do_facet mds1 "$LCTL get_param -n mdd.*.atime_diff"))
-	local mdts=$(comma_list $(mdts_nodes))
+	local mdts=$(mdts_nodes)
 	local -a tim
 	local nap=5
 

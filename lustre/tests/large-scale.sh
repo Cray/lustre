@@ -37,7 +37,7 @@ test_3a() {
 	local -a nodes=(${CLIENTS//,/ })
 	# INCREMENT is a number of clients a half of clients by default
 	local increment=${INCREMENT:-$(( CLIENTCOUNT / 2 ))}
-	local num=$increment
+	local num
 	local LOG=$TMP/${TESTSUITE}_$tfile
 	local var=${SINGLEMDS}_svc
 	local procfile="*.${!var}.recovery_status"
@@ -46,22 +46,21 @@ test_3a() {
 	local nthreads=${THREADS_PER_CLIENT:-3}
 	local IFree=$(inodes_available)
 	local pid
-	local list
 	local -a res
 	local dir=$DIR/d0.$TESTNAME
 
-	[ $IFree -gt $nfiles ] || nfiles=$IFree
+	(( $IFree > $nfiles )) || nfiles=$IFree
 
 	mkdir -p $dir
 	chmod 0777 $dir
 
-	while [ $num -le $CLIENTCOUNT ]; do
-		list=$(comma_list "${nodes[@]:0:$num}")
+	for (( num = $increment; num <= $CLIENTCOUNT; num += $increment )); do
+		local nodes=$(comma_list "${nodes[@]:0:$num}")
 
-		generate_machine_file $list $MACHINEFILE ||
+		generate_machine_file $nodes $MACHINEFILE ||
 			error "can not generate machinefile"
 
-		for i in $(seq $iters); do
+		for ((i = 1; i <= $iters; i++)); do
 			mdsrate_cleanup $num $MACHINEFILE $nfiles $dir 'f%%d' \
 				--ignore
 
@@ -93,15 +92,12 @@ test_3a() {
 			echo "RECOVERY TIME: NFILES=$nfiles number of clients: $num $duration"
 			wait $pid
 		done
-		num=$((num + increment))
 	done
 
 	mdsrate_cleanup $num $MACHINEFILE $nfiles $dir 'f%%d' --ignore
 
-	i=0
-	while [ $i -lt ${#res[@]} ]; do
+	for ((i = 0; $i < ${#res[@]}; i += 2 )); do
 		echo "RECOVERY TIME: NFILES=$nfiles number of clients: ${res[i]}  ${res[i+1]}"
-		i=$((i+2))
 	done
 }
 
