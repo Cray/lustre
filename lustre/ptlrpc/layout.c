@@ -2273,8 +2273,10 @@ swabber_dumper_helper(struct req_capsule *pill,
 	}
 	/* For the non-array cases, the process of swab/dump/swab only
 	 * needs to be done once. (n = 1)
+	 * For MINIMUM_SIZE fields, preserve actual wire buffer length
+	 * so rmf_swab_len can detect the struct version.
 	 */
-	if (!array)
+	if (!array && !(field->rmf_flags & RMF_F_MINIMUM_SIZE))
 		len = field->rmf_size;
 	for (p = value, i = 0, n = len / field->rmf_size;
 	     i < n;
