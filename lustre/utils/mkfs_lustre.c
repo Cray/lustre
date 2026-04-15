@@ -1043,7 +1043,7 @@ int main(int argc, char *const argv[])
 		goto out;
 	}
 
-	if (check_mtab_entry(mop.mo_device, mop.mo_device, NULL, NULL)) {
+	if (check_mtab_entry(mop.mo_device, NULL, NULL, NULL)) {
 		fprintf(stderr, "%s: is currently mounted, exiting without any change\n",
 			mop.mo_device);
 		return EEXIST;

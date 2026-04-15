@@ -173,8 +173,10 @@ char *strscpy(char *dst, char *src, int buflen)
  * For Lustre client mounts, extract and compare the filesystem name part
  * (after ":/" in the mount source) to handle cases where hostnames differ
  * but refer to the same filesystem.
+ *
+ * Return true if sources match, false otherwise.
  */
-static int compare_lustre_sources(const char *src1, const char *src2)
+static bool compare_lustre_sources(const char *src1, const char *src2)
 {
 	const char *fs1, *fs2;
 
@@ -201,10 +203,12 @@ int check_mtab_entry(char *spec1, char *spec2, char *mtpt, char *type)
 		return 0;
 
 	while ((mnt = getmntent(fp)) != NULL) {
-		if ((compare_lustre_sources(mnt->mnt_fsname, spec1) ||
-		     compare_lustre_sources(mnt->mnt_fsname, spec2)) &&
-		    (!mtpt || strcmp(mnt->mnt_dir, mtpt) == 0) &&
-		    (!type || strcmp(mnt->mnt_type, type) == 0)) {
+		if (type && strcmp(mnt->mnt_type, type) != 0)
+			continue;
+		if (mtpt && strcmp(mnt->mnt_dir, mtpt) != 0)
+			continue;
+		if (compare_lustre_sources(mnt->mnt_fsname, spec1) ||
+		    (spec2 && compare_lustre_sources(mnt->mnt_fsname, spec2))) {
 			endmntent(fp);
 			return EEXIST;
 		}
