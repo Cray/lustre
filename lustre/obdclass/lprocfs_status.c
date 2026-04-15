@@ -848,6 +848,7 @@ static const char *const obd_connect_names[] = {
 	"flr_immediate_mirror",	      /* 0x20000000000 */
 	"no_append",		      /* 0x40000000000 */
 	"flr_ec_wr",		      /* 0x80000000000 */
+	"perfstats",		     /* 0x100000000000 */
 	NULL
 };
 

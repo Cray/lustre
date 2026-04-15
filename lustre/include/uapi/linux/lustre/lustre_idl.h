@@ -855,6 +855,7 @@ struct ptlrpc_body_v2 {
 #define OBD_CONNECT2_FLR_IMMED_MIRROR 0x20000000000ULL /* client writes mirror*/
 #define OBD_CONNECT2_NO_APPEND        0x40000000000ULL /* O_APPEND locking fix*/
 #define OBD_CONNECT2_FLR_EC_WR        0x80000000000ULL /* write EC support */
+#define OBD_CONNECT2_PERFSTATS	     0x100000000000ULL /* perf stats in statfs*/
 /* XXX README XXX README XXX README XXX README XXX README XXX README XXX
  * Please DO NOT add OBD_CONNECT flags before first ensuring that this value
  * is not in use by some other branch/patch.
