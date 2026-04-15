@@ -1012,7 +1012,7 @@ libcfs_strnid(struct lnet_nid *nid, const char *str)
 		nf = libcfs_str2net_internal(sep + 1, &net);
 		if (nf == NULL)
 			return -EINVAL;
-	} else {
+	} else /* assume @tcp0 if NID does not specify @nettype */ {
 		sep = str + strlen(str);
 		net = LNET_MKNET(SOCKLND, 0);
 		nf = libcfs_lnd2netstrfns(SOCKLND);

@@ -937,6 +937,7 @@ int main(int argc, char *const argv[])
 	bool client;
 	size_t maxopt_len;
 	size_t g_pagesize;
+	char *fstype = "lustre";
 
 	progname = strrchr(argv[0], '/');
 	progname = progname ? progname + 1 : argv[0];
@@ -990,9 +991,15 @@ int main(int argc, char *const argv[])
 		goto out_options;
 	}
 
+	/* Prefer filesystem type given on mount command line
+	 * so it appears correctly in the /proc/mounts output.
+	 */
+	if (strstr(argv[0], "mount.lustre_tgt"))
+		fstype = "lustre_tgt";
+
 	if (!mop.mo_force) {
 		rc = check_mtab_entry(mop.mo_usource, mop.mo_source,
-				      mop.mo_target, "lustre");
+				      mop.mo_target, fstype);
 		if (rc && !(flags & MS_REMOUNT)) {
 			fprintf(stderr,
 				"%s: according to %s %s is already mounted on %s\n",
@@ -1080,7 +1087,7 @@ int main(int argc, char *const argv[])
 	 * and convert_hostname() has replaced the hostname with an IP address.
 	 */
 	if (client && !strstr(options, "mgsname=") &&
-	    strchr(mop.mo_usource, '@')) {
+	    isalpha(mop.mo_usource[0])) {
 		char *end = strpbrk(mop.mo_usource, ",:");
 
 		if (end && strncmp(mop.mo_usource, mop.mo_source,
@@ -1099,7 +1106,7 @@ int main(int argc, char *const argv[])
 	}
 
 	/*
-	 * In Linux 2.4, the target device doesn't get passed to any of our
+	 * Since Linux 2.4, the target device doesn't get passed to any of our
 	 * functions.  So we'll stick it on the end of the options.
 	 */
 	rc = append_option(options, maxopt_len, "device=", mop.mo_source);
@@ -1120,15 +1127,6 @@ int main(int argc, char *const argv[])
 #endif
 
 	if (!mop.mo_fake) {
-		char *fstype;
-
-		/* Prefer filesystem type given on mount command line
-		 * so it appears correctly in the /proc/mounts output.
-		 */
-		if (strstr(argv[0], "mount.lustre_tgt"))
-			fstype = "lustre_tgt";
-		else
-			fstype = "lustre";
 		/*
 		 * flags and target get to lustre_get_sb(), but not
 		 * lustre_fill_super().  Lustre ignores the flags, but mount
@@ -1147,6 +1145,7 @@ int main(int argc, char *const argv[])
 						mop.mo_retry - i);
 				}
 
+#if LUSTRE_VERSION_CODE > OBD_OCD_VERSION(2, 18, 53, 0)
 				/* Pre-2.13 Lustre without 'lustre_tgt' type?
 				 * Try with 'lustre' instead.  Eventually this
 				 * can be removed (e.g. 2.18 or whenever).
@@ -1157,6 +1156,7 @@ int main(int argc, char *const argv[])
 					i--;
 					continue;
 				}
+#endif
 
 				if (mop.mo_retry) {
 					int limit = i / 2 > 5 ? i / 2 : 5;
@@ -1187,38 +1187,38 @@ int main(int argc, char *const argv[])
 
 		fprintf(stderr, "%s: mount %s at %s failed: %s\n", progname,
 			mop.mo_usource, mop.mo_target, strerror(errno));
-		if (errno == EBUSY)
+		if (errno == EBUSY || errno == EINPROGRESS)
 			fprintf(stderr,
-				"Is the backend filesystem mounted?\n Check /etc/mtab and /proc/mounts\n");
-		if (errno == ENODEV)
+				"Is the backend filesystem mounted?\n Check /proc/mounts\n");
+		else if (errno == ENODEV)
 			fprintf(stderr,
 				"Are the lustre modules loaded?\n Check /etc/modprobe.conf and /proc/filesystems\n");
-		if (errno == ENOTBLK)
+		else if (errno == ENOTBLK)
 			fprintf(stderr, "Do you need -o loop?\n");
-		if (errno == ENOMEDIUM)
+		else if (errno == ENOMEDIUM)
 			fprintf(stderr,
 				"This filesystem needs at least 1 OST\n");
-		if (errno == ENOENT) {
+		else if (errno == ENOENT) {
 			fprintf(stderr, "Is the MGS specification correct?\n");
 			fprintf(stderr, "Is the filesystem name correct?\n");
 			fprintf(stderr,
 				"If upgrading, is the copied client log valid? (see upgrade docs)\n");
 		}
-		if (errno == EALREADY)
+		else if (errno == EALREADY)
 			fprintf(stderr,
 				"The target service is already running. (%s)\n",
 				mop.mo_usource);
-		if (errno == ENXIO)
+		else if (errno == ENXIO)
 			fprintf(stderr,
 				"The target service failed to start (bad config log?) (%s).  See /var/log/messages.\n",
 				mop.mo_usource);
-		if (errno == EIO)
+		else if (errno == EIO)
 			fprintf(stderr, "Is the MGS running?\n");
-		if (errno == EADDRINUSE)
+		else if (errno == EADDRINUSE)
 			fprintf(stderr,
 				"The target service's index is already in use. (%s)\n",
 				mop.mo_usource);
-		if (errno == EINVAL) {
+		else if (errno == EINVAL) {
 			fprintf(stderr, "This may have multiple causes.\n");
 			if (cli)
 				fprintf(stderr,
@@ -1249,7 +1249,7 @@ int main(int argc, char *const argv[])
 		 * '/etc/lustre/mount.params' or '/etc/lustre/FSNAME.params'
 		 * and are set here.
 		 */
-		if (strstr(mop.mo_usource, ":/") != NULL) {
+		if (client) {
 			update_utab_entry(&mop);
 			rc = set_client_params(mop.mo_fsname);
 		}

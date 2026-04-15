@@ -33,35 +33,65 @@ or
 .B lustre_tgt
 filesystem type is used. Lustre clients and targets are stopped by using the
 .BR umount (8)
-command. When mounted, Lustre clients will have parameters set according to
-what is described in
-.BR /etc/lustre/mount.client.params ,
-and/or the
-.BI /etc/lustre/mount. FSNAME .params
-file, with lines of the same style as
-.BR lctl-set_param (8),
-with lines of the form
-.IR PARAM = VALUE .
+command.
 .P
 There are two forms for the device option passed to the
 .I mount
 command, depending on whether a client or a target service is started:
 .TP
-.IR MGSNAME :/ FSNAME [/ SUBDIR ]
+.IB MGSNAME :/ FSNAME\fR[ / SUBDIR \fR]
 mounts the Lustre client filesystem named
 .I FSNAME
 (optionally starting at subdirectory
 .I SUBDIR
-within the filesystem, if specified) on the client at the directory
-.IR CLIENT_MOUNTPOINT ,
+within the filesystem, if specified)
 by contacting the Management Service at
 .IR MGSNAME .
-The format for
-.I MGSNAME
-is defined below. A client filesystem will typically be listed in
+.TP
+.I CLIENT_MOUNTPOINT
+is the directory where the client filesystem will be mounted and accessed.
+A client filesystem will typically be listed in
 .BR fstab (5)
 for automatic mount at boot time, is usable like any local filesystem, and
 provides a full POSIX-compilant interface.
+.TP
+.IB MGSNAME := MGSNODE\fR[ : MGSNODE \fR]
+The
+.I MGSNAME
+may be a colon-separated list of
+.I MGSNODE
+servers where the MGS service may run. Multiple
+.I MGSNODE
+values can be specified if the MGS service is configured for High Availability
+and may be running on any one of the nodes.
+.TP
+.IB MGSNODE := MGSNID\fR[ , MGSNID \fR]
+Each
+.I MGSNODE
+may specify a comma-separated list of NIDs,
+if there are different LNet interfaces for the same
+.IR MGSNODE .
+.TP
+.IB MGSNID := HOST @ NETTYPE \c
+.RI [ NET_NUMBER ]
+Each
+.I MGSNID
+contains a hostname that can be resolved via the
+.BR hosts (5)
+name service in
+.BR nsswitch.conf (5),
+or a numeric IP, IB, or other address that does not need resolution.
+The
+.BI @ NETTYPE
+is the LNet network type, such as
+.BR @tcp ", " @o2ib 
+or other supported LND type,
+.B @tcp0
+if unspecified.  The optional
+.I NET_NUMBER
+is the network number for that
+.IR NETTYPE ,
+or 0 if unspecified.
 .TP
 .I BLOCK_DEVICE
 specifies the physical disk or ZFS dataset uses to start the target service
@@ -79,31 +109,34 @@ option. Care should be taken if there is a device-level backup of
 the target filesystem, which would have a duplicate label and UUID if it is
 not changed with
 .BR tune2fs (8)
-or similar. The mounted target service filesystem at
-.I MOUNTPOINT
-is only useful for
+or similar.
+.TP
+.I SERVER_MOUNTPOINT
+is the directory where the target filesystem will be mounted,
+but is only useful for
 .BR df (1)
-operations to show the current space usage, and appears in
+to show the current space usage, and
+.BR ioctl (3)
+for block device operations such as
+.BR resize2fs (8)
+or
+.BR fstrim (8).
+It appears in
 .BR /proc/mounts
-to show the device is in use.
+to show that
+.I BLOCK_DEVICE
+is in use.
+.PP
+After successful mount, Lustre clients may have additional parameters set
+according to those listed in
+.BR /etc/lustre/mount.client.params ,
+and/or the
+.BI /etc/lustre/mount. FSNAME .params
+files, with lines in the same style as command-line arguments to
+.BR lctl-set_param (8),
+with the form
+.IR PARAM = VALUE .
 .SH OPTIONS
-.TP
-.IB MGSNAME := MGSNODE [: MGSNODE ]
-The
-.I MGSNAME
-may be a colon-separated list of
-.I MGSNODE
-names where the MGS service may run. Multiple
-.I MGSNODE
-values can be specified if the MGS service is configures for HA failover
-and may be running on any one of the nodes.
-.TP
-.IB MGSNODE := MGSNID [, MGSNID ]
-Each
-.I MGSNODE
-may specify a comma-separated list of NIDs, if there are different
-LNet interfaces for the same
-.IR MGSNODE .
 .TP
 .BI mgssec= FLAVOR
 Specifies the encryption flavour for the initial network RPC connection to
@@ -343,6 +376,57 @@ The default soft recovery timeout is set to 300 seconds (5 minutes).
 The server will be allowed to incrementally extend its timeout up to a hard
 maximum of 'timeout' seconds.
 The default hard recovery timeout is set to 900 seconds (15 minutes).
+.SH COMMAND-LINE OPTIONS
+Some command-line options for
+.B mount.lustre
+itself may passed from the
+.BR mount (8)
+command-line, but are mostly only available for debugging if the
+.BR mount.lustre (8)
+command is run directly.
+These are separate from the mountpoint options passed to
+.BR mount (2)
+for the mountpoint itself, which are listed in the
+.B OPTIONS
+section.
+.TP
+.BR -f ", " --fake
+Fake filesystem mount, setting client-specific parameters and adding it to
+.B /etc/fstab
+without actually calling the
+.BR mount (2)
+system call.  Together with the
+.B -v
+option this will show what mount options would be set for the filesystem.
+.TP
+.BR --force
+Force mounting the filesystem even if it appears to already be mounted.
+.TP
+.BR -h ", " --help
+Print usage message and exit.
+.TP
+.BR -n ", " --nomtab
+Do not update the
+.B /etc/fstab
+file after the mount has successfully completed.
+.TP
+.BR -o ", " --options
+Specify the list of
+.B OPTIONS
+to pass to the kernel for
+.IR MOUNTPOINT .
+These are normally passed from the
+.BR mount
+command, but can be specified directly for debugging purposes.
+.TP
+.BR -v ", " --verbose
+Print extra information during mounting.  This will be passed on from
+.BR mount .
+.TP
+.BR -V ", " --version
+Print the build version of the
+.BR mount.lustre
+binary and exit.
 .SH BUGS
 Not very many mount options can be changed with
 .BR "-o remount" .
@@ -355,7 +439,7 @@ The Management Service is running on a node reachable via NID
 .BR cfs21@tcp0 :
 .RS
 .EX
-.B # mount -t lustre cfs21@tcp0:/testfs /mnt/myfilesystem
+.RB client# " mount -t lustre cfs21@tcp0:/testfs /mnt/myfilesystem"
 .EE
 .RE
 .PP
@@ -364,7 +448,7 @@ Like above example, but mount subdirectory
 as fileset:
 .RS
 .EX
-.B # mount -t lustre cfs21@tcp0:/testfs/dir /mnt/myfilesystem
+.RB client# " mount -t lustre cfs21@tcp0:/testfs/dir /mnt/myfilesystem"
 .EE
 .RE
 .PP
@@ -373,14 +457,15 @@ nodes
 .B mgs1
 and
 .BR mgs2 ,
-which are two different hosts separated by a colon and
-served as a failover pair. Lustre tries the first one, and if that fails, it
-tries the second one. On each service node, the comma-separated NIDs refer to
+are two different hosts separated by a colon and served as a failover pair,
+and have both TCP and IB addresses.
+Lustre tries the first one, and if that fails, it tries the second one.
+On each service node, the comma-separated NIDs refer to
 different interfaces on the same host, and the Lustre client chooses the best
 one for communication based on which network interfaces are available locally:
 .RS
 .EX
-.B # mount -t lustre mgs1@tcp0,mgs1ib@o2ib0:mgs2@tcp0,mgs2ib@o2ib0:/testfs /mnt/fs
+.RB client# " mount -t lustre mgs1@tcp0,mgs1ib@o2ib0:mgs2@tcp0,mgs2ib@o2ib0:/testfs /mnt/fs"
 .EE
 .RE
 .PP
@@ -390,7 +475,7 @@ on mountpoint
 .BR /mnt/test/mdt :
 .RS
 .EX
-.B # mount -t lustre_tgt /dev/sda1 /mnt/test/mdt
+.RB mds# " mount -t lustre_tgt /dev/sda1 /mnt/test/mdt"
 .EE
 .RE
 .PP
@@ -400,20 +485,20 @@ service (by using the disk label), but aborts the Lustre client recovery
 process for the case that clients are known to be unavailable:
 .RS
 .EX
-.B # mount -t lustre_tgt -L testfs-MDT0000 -o abort_recov /mnt/test/mdt
+.RB mds# " mount -t lustre_tgt -L testfs-MDT0000 -o abort_recov /mnt/test/mdt"
 .EE
 .RE
 .PP
 Mount a client filesystem with a custom MGS name for display purposes.
 The network type
 .B @o2ib
-will be automatically appended to
-.B mgs-cluster
+will be automatically appended to the MGS hostname
+.B cfs-mgs
 in
 .BR /proc/mounts :
 .RS
 .EX
-.B # mount -t lustre -o mgsname=cfs21@o2ib 10.0.0.2,10.0.0.4@o2ib:/testfs /mnt/myfs
+.RB client# " mount -t lustre -o mgsname=cfs-mgs@o2ib 10.0.0.2@o2ib,10.0.0.4@o2ib:/testfs /myfs"
 .EE
 .RE
 .PP
@@ -425,7 +510,7 @@ will be appended to the list of mount options for display in
 .BR /proc/mounts :
 .RS
 .EX
-.B # mount -t lustre cfs21@o2ib:/testfs /mnt/myfilesystem
+.RB client# " mount -t lustre test-mgs@o2ib:/testfs /mnt/myfs"
 .EE
 .RE
 .SH AVAILABILITY
@@ -436,15 +521,15 @@ are part of the
 .BR lustre (7)
 filesystem package.
 .B mount.lustre
-was added in release 0.10.0
+was added in release 0.10.0, and
 .\" Added in commit 0.9.1
 .B mount.lustre_tgt
-was added in release 2.13.0
+was added in release 2.13.0.
 .\" Added in commit v2_12_58-71-g510aea4a37
 .SH SEE ALSO
 .BR lfs (1),
 .BR lustre (7),
-.BR lctl (8),
+.BR lctl-set_param (8),
 .BR mkfs.lustre (8),
 .BR mount (8),
 .BR tunefs.lustre (8)
