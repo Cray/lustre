@@ -17684,8 +17684,8 @@ test_127e() {
 run_test 127e "client IO latency histograms by size"
 
 test_127f() {
-	(( $OST1_VERSION >= $(version_code 2.16.58.105) )) ||
-		skip "need OST > 2.16.58.105 for OST IO latency stats"
+	(( $OST1_VERSION >= $(version_code v2_17_50-123-gc688e33f11) )) ||
+		skip "need OST > 2.17.50.123 for OST IO latency stats"
 	[[ $(facet_fstype ost1) == ldiskfs ]] || skip "ldiskfs only"
 
 	test_127_io_latency_test ost1 osd-*.$FSNAME-OST0000.io_latency_stats
