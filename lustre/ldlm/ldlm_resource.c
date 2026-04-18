@@ -549,6 +549,14 @@ static ssize_t lock_cache_policy_store(struct kobject *kobj,
 	spin_lock(&ns->ns_lock);
 	switch (policy) {
 	case LDLM_LOCK_CACHE_LRU:
+		/*
+		 * Demote all privileged locks to the normal LRU list so the
+		 * LRU policy can see them, and keep the state consistent.
+		 */
+		if (ns->ns_lock_cache_ops &&
+		    ns->ns_lock_cache_ops->llco_try_batch_demote_locks)
+			ns->ns_lock_cache_ops->
+				llco_try_batch_demote_locks(ns, INT_MAX);
 		ns->ns_lock_cache_policy = policy;
 		ns->ns_lock_cache_ops = &ldlm_lru_cache_ops;
 		break;

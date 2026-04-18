@@ -17187,29 +17187,35 @@ test_124g_run() {
 	local lru_size=$3
 	local policy="$4"
 	local -n ref_enq_res=$5
-	local dummy_nr=$lru_size
+	local cold_nr=$lru_size
 	local nr=$(( lru_size / 4 ))
 
+	# clear the existing cache state before switching policy
+	cancel_lru_locks mdc
+	sleep 2
+	local nsdir="ldlm.namespaces.*-MDT0000-mdc-*"
+	$LCTL set_param $nsdir.lock_cache_policy="$policy" ||
+		error "failed to set lock_cache_policy to $policy"
+
 	mkdir_on_mdt0 "$base_dir"
-	mkdir_on_mdt0 "$base_dir"/dummy
-	createmany -i0 -o "$base_dir"/dummy/f $dummy_nr ||
-		error "failed to create $dummy_nr files in $base_dir/dummy"
+	mkdir_on_mdt0 "$base_dir"/cold
+	createmany -i0 -o "$base_dir"/cold/f $cold_nr ||
+		error "failed to create $cold_nr files in $base_dir/cold"
 	createmany -i0 -o "$base_dir"/f $nr ||
 		error "failed to create $nr files"
 
 	# record existing enqueue stats
-	local nsdir="ldlm.namespaces.*-MDT0000-mdc-*"
-	$LCTL set_param $nsdir.lock_cache_policy="$policy" ||
-		error "failed to set lock_cache_policy to $policy"
 	cancel_lru_locks mdc
-	sleep 5
+	sleep 2
 	$LCTL get_param $nsdir.lock_unused_count
 
 	local nsservdir="mdt.*-MDT0000.exports.'$client_nid'.ldlm_stats"
-	local res=$(do_facet mds1 $LCTL get_param "$nsservdir")
 	# res format as:
 	# 	ldlm_enqueue              1022 samples [reqs]
-	local o_enq=$(echo "$res" | awk '/ldlm_enqueue/ {print $2}')
+	local o_enq=$(do_facet mds1 $LCTL get_param "$nsservdir" |\
+		      awk '/ldlm_enqueue/ {print $2}') ||
+		error "o_enq failed to get ldlm_enqueue count"
+	local prev_enq=$o_enq
 
 	do_facet mds1 $LCTL get_param "$nsservdir"
 	echo "start stat & ls ops..."
@@ -17220,31 +17226,42 @@ test_124g_run() {
 			done
 		done
 
-		ls -l "$base_dir"/dummy > /dev/null
-		# test only
-		priv_cnt=$($LCTL get_param -n $nsdir.lock_unused_priv_count)
-		res=$(do_facet mds1 $LCTL get_param "$nsservdir")
-		local temp_enq=$(echo "$res" | awk '/ldlm_enqueue/ {print $2}')
-		echo "round$i done, priv_cnt=$priv_cnt, temp_enq=$temp_enq"
+		local before_priv_cnt=$($LCTL get_param -n $nsdir.lock_unused_priv_count)
+		ls -l "$base_dir"/cold > /dev/null
+		# facilitate debugging output
+		local priv_cnt=$($LCTL get_param -n $nsdir.lock_unused_priv_count)
+		local temp_enq=$(do_facet mds1 $LCTL get_param "$nsservdir" |\
+				     awk '/ldlm_enqueue/ {print $2}') ||
+			error "temp_enq failed to get ldlm_enqueue count"
+		echo "round$i done, before_priv_cnt=$before_priv_cnt, priv_cnt=$priv_cnt, inc_enq=$((temp_enq - prev_enq))"
+		prev_enq=$temp_enq
 	done
 
-	res=$(do_facet mds1 $LCTL get_param "$nsservdir")
-	local n_enq=$(echo "$res" | awk '/ldlm_enqueue/ {print $2}')
+	local n_enq=$(do_facet mds1 $LCTL get_param "$nsservdir" |\
+		      awk '/ldlm_enqueue/ {print $2}') ||
+		error "n_enq failed to get ldlm_enqueue count"
 	ref_enq_res=$(( n_enq - o_enq ))
-	echo "base_dir=$base_dir, priv=$priv_thres"
+	echo "base_dir=$base_dir, policy=$policy"
 	echo "o_enq=$o_enq, n_enq=$n_enq, ref_enq_res=$ref_enq_res"
-	rm -rf $DIR/$tdir/* || error "fail to remove files"
+
+	rm -rf "$base_dir"; wait_delete_completed
 }
 
 test_124g() {
 	[[ $PARALLEL != "yes" ]] || skip "skip parallel run"
-	(( $MDS1_VERSION >= $(version_code 2.17.50) )) ||
-		skip "Need MDS version with at least 2.17.50"
+	(( $MDS1_VERSION >= $(version_code 2.17.50.63) )) ||
+		skip "Need MDS with LFRU support (LU-11509, >= 2.17.50.63)"
+
+	# limit debug output to avoid overwhelming the test output
+	local saved_debug=$($LCTL get_param -n debug)
+	stack_trap "$LCTL set_param debug=\"$saved_debug\""
+	$LCTL set_param debug=trace+info+warning+dlmtrace+error+reada+iotrace
 
 	local nsdir="ldlm.namespaces.*-MDT0000-mdc-*"
 	local lru_size=$(default_lru_size)
 	lru_resize_disable mdc $lru_size
-	stack_trap "$LCTL set_param $nsdir.lock_cache_policy=LFRU"
+	local saved_policy=$($LCTL get_param -n $nsdir.lock_cache_policy)
+	stack_trap "$LCTL set_param $nsdir.lock_cache_policy=$saved_policy"
 
 	local cli_nid="0@lo"
 	if remote_mds; then
@@ -17258,9 +17275,19 @@ test_124g() {
 	# test with lru
 	test_124g_run "$cli_nid" "$DIR/$tdir" $lru_size "LRU" enq_priv_disable
 
-	echo ">> lfru_enable=$enq_priv_enabled, disable=$enq_priv_disable"
-	(( $enq_priv_enabled <= $enq_priv_disable )) ||
-		error "enable $enq_priv_enabled > disable $enq_priv_disable"
+	# We may observe a small percentage of variance in the enqueue count
+	# even when LFRU is functioning correctly, due to additional threads'
+	# execution triggered by the `stat` and `ls -l`` commands (e.g.,
+	# statehead operations).
+	# A small tolerance band can be allowed if needed in the future.
+	local tolerance_pct=0
+	local max_allowed=$(( enq_priv_disable * (100 + tolerance_pct) / 100 ))
+	echo ">> lfru_enqueue=$enq_priv_enabled," \
+	     "lru_enqueue=$enq_priv_disable," \
+	     "tolerance=${tolerance_pct}%," \
+	     "max_allowed=$max_allowed"
+	(( enq_priv_enabled <= max_allowed )) ||
+	     error "lfru enqueue $enq_priv_enabled > lru $max_allowed"
 }
 run_test 124g "LFRU performance test"
 
