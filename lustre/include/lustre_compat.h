@@ -877,4 +877,36 @@ static inline int inode_generic_drop(struct inode *inode)
 	ilookup5_nowait((sb), (hash), (fn), (data))
 #endif
 
+#ifndef blk_queue_rot
+#define blk_queue_rot(q)	(!blk_queue_nonrot((q)))
+#endif
+
+#ifndef HAVE_POSIX_ACL_TO_XATTR_ALLOC_BUFFER
+static inline void *
+compat_posix_acl_to_xattr(struct user_namespace *user_ns,
+			  const struct posix_acl *acl,
+			  size_t *sizep, gfp_t gfp)
+{
+	size_t acl_sz = posix_acl_xattr_size(acl->a_count);
+	void *value = NULL;
+	int rc;
+
+	*sizep = acl_sz;
+	if (acl_sz > 0)
+		value = kmalloc(acl_sz, gfp);
+	if (!value)
+		return NULL;
+
+	rc = posix_acl_to_xattr(user_ns, acl, value, acl_sz);
+	if (rc < 0) {
+		kfree(value);
+		return NULL;
+	}
+
+	return value;
+}
+#define posix_acl_to_xattr(ns, acl, sz, gfp) \
+	compat_posix_acl_to_xattr((ns), (acl), (sz), (gfp))
+#endif
+
 #endif /* _LUSTRE_COMPAT_H */

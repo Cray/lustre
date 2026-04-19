@@ -5669,6 +5669,36 @@ AC_DEFUN([LC_HAVE_ILOOKUP5_NOWAIT_ISNEW],[
 ]) # LC_HAVE_ILOOKUP5_NOWAIT_ISNEW
 
 #
+# LC_HAVE_POSIX_ACL_TO_XATTR_ALLOC_BUFFER
+#
+# Linux commit v6.19-rc1-31-g6cbfdf89470ef
+#  posix_acl: make posix_acl_to_xattr() alloc the buffer
+#
+AC_DEFUN([LC_SRC_HAVE_POSIX_ACL_TO_XATTR_ALLOC_BUFFER],[
+	LB2_LINUX_TEST_SRC([posix_acl_to_xattr], [
+		#include <linux/posix_acl_xattr.h>
+	],[
+		struct posix_acl *acl = NULL;
+		size_t acl_sz;
+		void *value = posix_acl_to_xattr(&init_user_ns, acl, &acl_sz,
+						 GFP_NOFS);
+
+		(void)value;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_POSIX_ACL_TO_XATTR_ALLOC_BUFFER],[
+	LB2_MSG_LINUX_TEST_RESULT([if posix_acl_to_xattr() returns allocated buffer],
+	[posix_acl_to_xattr], [
+		AC_DEFINE(HAVE_POSIX_ACL_TO_XATTR_ALLOC_BUFFER, 1,
+			  [posix_acl_to_xattr() returns allocated buffer])
+	], [
+		AC_DEFINE([old_posix_acl_to_xattr(ns, acl, buf, sz)],
+			  [posix_acl_to_xattr(ns, acl, buf, sz)],
+			  [real->posix_acl_to_xattr() ])
+	])
+]) # LC_HAVE_POSIX_ACL_TO_XATTR_ALLOC_BUFFER
+
+#
 # LC_PROG_LINUX
 #
 # Lustre linux kernel checks
@@ -6020,6 +6050,9 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 
 	# kernel patch to extend integrity interface
 	LC_SRC_BIO_INTEGRITY_PREP_FN
+
+	# 7.0
+	LC_SRC_HAVE_POSIX_ACL_TO_XATTR_ALLOC_BUFFER
 ])
 
 AC_DEFUN([LC_PROG_LINUX_RESULTS], [
@@ -6388,6 +6421,9 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 
 	# kernel patch to extend integrity interface
 	LC_BIO_INTEGRITY_PREP_FN
+
+	# 7.0
+	LC_HAVE_POSIX_ACL_TO_XATTR_ALLOC_BUFFER
 ])
 
 #
