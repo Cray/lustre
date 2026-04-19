@@ -31,6 +31,8 @@
 #include <lustre_compat/linux/shrinker.h>
 #include <lustre_compat/linux/xarray.h>
 #include <lustre_compat/linux/folio.h>
+#include <lustre_compat/linux/blkdev.h>
+#include <lustre_compat/linux/posix_acl_xattr.h>
 #include <obd_support.h>
 
 #ifdef HAVE_4ARGS_VFS_SYMLINK

@@ -8570,7 +8570,7 @@ static int osd_mount(const struct lu_env *env,
 	if (test_bit(LMD_FLG_NOSCRUB, &lmd_flags))
 		o->od_scrub.os_scrub.os_auto_scrub_interval = AS_NEVER;
 
-	if (blk_queue_nonrot(bdev_get_queue(osd_sb(o)->s_bdev))) {
+	if (!blk_queue_rot(bdev_get_queue(osd_sb(o)->s_bdev))) {
 		/* do not use pagecache with flash-backed storage */
 		o->od_writethrough_cache = 0;
 		o->od_read_cache = 0;
@@ -8670,7 +8670,7 @@ static int osd_device_init0(const struct lu_env *env,
 
 	/* Can only check block device after mount */
 	o->od_nonrotational =
-		blk_queue_nonrot(bdev_get_queue(osd_sb(o)->s_bdev));
+		!blk_queue_rot(bdev_get_queue(osd_sb(o)->s_bdev));
 
 	osd_init_t10_type(o);
 	if (o->od_t10_type != OSD_T10_TYPE_UNKNOWN) {

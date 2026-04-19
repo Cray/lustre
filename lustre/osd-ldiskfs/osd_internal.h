@@ -806,6 +806,8 @@ static inline int __osd_acl_get(struct inode *inode, const char *name,
 {
 	struct posix_acl *acl;
 	int acl_type, error;
+	size_t acl_sz;
+	void *value = NULL;
 
 	acl_type = posix_acl_type(name);
 	if (acl_type < 0)
@@ -821,7 +823,18 @@ static inline int __osd_acl_get(struct inode *inode, const char *name,
 	if (!acl)
 		return -ENODATA;
 
-	error = posix_acl_to_xattr(&init_user_ns, acl, buf, len);
+	value = posix_acl_to_xattr(&init_user_ns, acl, &acl_sz, GFP_NOFS);
+	/* caller just wanted the required acl size */
+	if (!buf || !len)
+		GOTO(out, error = acl_sz);
+	if (IS_ERR_OR_NULL(value))
+		GOTO(out, error = -ENOMEM);
+	if (acl_sz > len)
+		GOTO(out, error = -ERANGE);
+	error = acl_sz;
+	memcpy(buf, value, acl_sz);
+out:
+	kfree(value);
 	posix_acl_release(acl);
 
 	return error;
