@@ -1067,7 +1067,6 @@ static int yaml_netlink_parse_msg_error(struct nlmsgerr *errmsg,
 		}
 #endif /* HAVE_USRSPC_NLMSGERR */
 		parser->error = YAML_READER_ERROR;
-		data = parser->read_handler_data;
 		data->errmsg = errstr;
 		data->error = errmsg->error;
 		data->complete = true;
