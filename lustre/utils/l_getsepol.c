@@ -27,6 +27,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <getopt.h>
+#include <assert.h>
 
 #include <openssl/evp.h>
 
@@ -293,6 +294,98 @@ static int get_opts(int argc, char *const argv[])
 	free(data); \
 })
 
+/* Find policy with highest version */
+static int find_policy_with_highest_ver(const char *base_pol_path,
+					char *pol_bin_path,
+					size_t pol_bin_path_len,
+					int *policyver,
+					time_t *policymtime)
+{
+	char *policy_dir = NULL;
+	size_t policy_dir_len;
+	char *policy_file = NULL;
+	size_t policy_file_len;
+	char pol_bin_file[PATH_MAX + 1];
+	DIR *dp = NULL;
+	struct dirent *de;
+	struct stat st;
+	char *name, *end, *p;
+	char max_ver_name[PATH_MAX + 1];
+	int ver, max_ver = 0;
+	time_t max_ver_pol_mtime = 0;
+
+	/* Get dir of selinux_binary_policy_path. */
+	policy_dir = dirname(pol_bin_path);
+	policy_dir_len = strlen(policy_dir);
+
+	/*
+	 * Get filename of selinux_binary_policy_path.
+	 * Use snprintf instead of strncpy to avoid a
+	 * -Werror=stringop-truncation compilation warning.
+	 */
+	snprintf(pol_bin_file, sizeof(pol_bin_file), "%s",
+		 base_pol_path);
+	policy_file = basename(pol_bin_file);
+	policy_file_len = strlen(policy_file);
+
+	/* We append '.' to policy_file. Now it's like 'policy.'. */
+	policy_file[policy_file_len] = '.';
+	policy_file_len++;
+	policy_file[policy_file_len] = '\0';
+
+	/* Open policy_dir. */
+	dp = opendir(policy_dir);
+	if (!dp) {
+		errlog("failed to open %s: %s\n", policy_dir, strerror(errno));
+		return -errno;
+	}
+
+	/* Scan policy_dir. */
+	while ((de = readdir(dp)) != NULL) {
+		name = de->d_name;
+
+		/* Skip entries that don't match the policy file prefix. */
+		if (strncmp(name, policy_file, policy_file_len) != 0)
+			continue;
+
+		/* Found, get version. */
+		p = name + policy_file_len;
+		ver = (int)strtol(p, &end, 10);
+
+		/* Skip files not ending with '.NN' (e.g. backups) */
+		if (end == p || *end != '\0')
+			continue;
+
+		if (ver > max_ver) {
+			if (fstatat(dirfd(dp), name, &st, 0) != 0) {
+				errlog("failed to stat %s: %s\n",
+				       name, strerror(errno));
+				continue;
+			}
+
+			/* Update max_ver, etc. */
+			max_ver = ver;
+			max_ver_pol_mtime = st.st_mtime;
+			snprintf(max_ver_name, sizeof(max_ver_name),
+				 "%s", name); /* Avoid compile warn */
+		}
+	}
+	closedir(dp);
+
+	if (max_ver == 0) {
+		errlog("can't stat %s.*: %s\n",
+		       selinux_binary_policy_path(), strerror(errno));
+		return -ENOENT;
+	}
+
+	snprintf(pol_bin_path + policy_dir_len,
+		 pol_bin_path_len - policy_dir_len, "/%s", max_ver_name);
+	*policyver = max_ver;
+	*policymtime = max_ver_pol_mtime;
+
+	return 0;
+}
+
 /*
  * Calculate SELinux status information.
  * String that represents SELinux status info has the following format:
@@ -311,8 +404,8 @@ int main(int argc, char **argv)
 {
 	int policyver = 0;
 	char pol_bin_path[PATH_MAX + 1];
-	struct stat st;
 	time_t policymtime = 0;
+	struct stat st;
 	int enforce;
 	int is_selinux;
 	char *policy_type = NULL;
@@ -339,33 +432,12 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	/* Max version of loaded policy */
+	/* Policy format version reported by the running kernel */
 	policyver = security_policyvers();
 	if (policyver < 0) {
 		errlog("unknown policy version: %s\n", strerror(errno));
 		rc = -errno;
 		goto out;
-	}
-
-	while (policymtime == 0) {
-		/* Path of binary policy file */
-		snprintf(pol_bin_path, sizeof(pol_bin_path), "%s.%d",
-			 selinux_binary_policy_path(), policyver);
-
-		/* Stat binary policy file */
-		if (stat(pol_bin_path, &st)) {
-			if (policyver > 0) {
-				policyver--;
-			} else {
-				errlog("can't stat %s.*: %s\n",
-				       selinux_binary_policy_path(),
-				       strerror(errno));
-				rc = -errno;
-				goto out;
-			}
-		} else {
-			policymtime = st.st_mtime;
-		}
 	}
 
 	/* Determine if SELinux is in permissive or enforcing mode */
@@ -374,6 +446,35 @@ int main(int argc, char **argv)
 		errlog("can't getenforce: %s\n", strerror(errno));
 		rc = -errno;
 		goto out;
+	}
+
+	/* Find the on-disk policy.N file for both mtime (change detection)
+	 * and hashing.  Always using the on-disk file ensures all l_getsepol
+	 * clients in a nodemap produce an identical hash string.
+	 * Note: /sys/fs/selinux/policy also exports the loaded policy binary,
+	 * but it is a re-serialization of the kernel's in-memory policydb,
+	 * not a verbatim copy of the file, so its hash may differ.
+	 *
+	 * Search security_policyvers() first, then fall back to the highest
+	 * version found on disk, to handle distros where the on-disk policy
+	 * version exceeds what security_policyvers() reports (e.g. RHEL/Rocky
+	 * 10.1: policy.35 on disk, security_policyvers()=33).
+	 */
+	const char *base_pol_path = selinux_binary_policy_path();
+
+	/* First, search policy with security_policyvers(). */
+	snprintf(pol_bin_path, sizeof(pol_bin_path), "%s.%d",
+		 base_pol_path, policyver);
+
+	if (stat(pol_bin_path, &st) == 0) {
+		policymtime = st.st_mtime;
+	} else {
+		/* Not found. Search for policy file with highest version. */
+		rc = find_policy_with_highest_ver(base_pol_path, pol_bin_path,
+						  sizeof(pol_bin_path),
+						  &policyver, &policymtime);
+		if (rc < 0)
+			goto out;
 	}
 
 	if (ref_pol_mtime == policymtime && ref_selinux_mode == enforce) {
