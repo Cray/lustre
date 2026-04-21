@@ -100,15 +100,33 @@ stop_mdt() {
 start_mds() {
 	local mdscount=$MDSCOUNT
 	local num
+	local wait_clients=true
 
-	[[ "$1" == "--mdscount" ]] && mdscount=$2 && shift 2
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+			--mdscount)
+				mdscount=$2
+				shift 2
+				;;
+			--no-client-wait)
+				wait_clients=false
+				shift
+				;;
+			*)
+				break
+				;;
+		esac
+	done
 
 	for ((num=1; num <= mdscount; num++)); do
 		start_mdt $num "$@" || return 94
 	done
-	for ((num=1; num <= mdscount; num++)); do
-		wait_clients_import_state ${CLIENTS:-$HOSTNAME} mds${num} FULL
-	done
+
+	if $wait_clients; then
+		for ((num=1; num <= mdscount; num++ )); do
+			wait_clients_import_state ${CLIENTS:-$HOSTNAME} mds${num} FULL
+		done
+	fi
 }
 
 start_mgsmds() {

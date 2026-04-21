@@ -5525,7 +5525,7 @@ test_57a() { # bug 22656
 	[ "$ost1_FSTYPE" == zfs ] && import_zpool ost1
 	do_facet ost1 "$TUNEFS --failnode=$NID `ostdevname 1`" ||
 		error "tunefs failed"
-	start_mgsmds
+	start_mgsmds --no-client-wait
 	start_ost && error "OST registration from failnode should fail"
 	cleanup
 }
