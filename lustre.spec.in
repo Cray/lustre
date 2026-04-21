@@ -28,7 +28,7 @@
 %global enable_multi_lnds 1
 %endif
 
-# LUTF Turn off brp-python-precompile script as we don't want the python files
+# Turn off brp-python-precompile script as we don't want the python files
 # to be compiled on installation
 %global __os_install_post %(echo '%{__os_install_post}' | sed -e 's!/usr/lib[^[:space:]]*/brp-python-bytecompile[[:space:]].*$!!g')
 
@@ -422,9 +422,6 @@ Requires: (%{lustre_name}-dkms or %{requires_kmod_name} >= %{requires_release_ma
 Requires: %{requires_kmod_name} = %{requires_kmod_version}
 %endif
 Requires: %{requires_kmod_tests_name} >= %{requires_release_major_minor}
-%endif
-%if %{with lustre_tests_lutf}
-Requires: python3 >= 3.6.0
 %endif
 Requires: attr, acl, e2fsprogs, rsync, perl, pdsh, lsof, /usr/bin/getconf
 %if %{with mpi}
@@ -861,13 +858,6 @@ echo '%{_sbindir}/wiretest' >>lustre-tests.files
 if [ -n "$MPI_BIN" ]; then
 	echo "$MPI_BIN/*" >>lustre-tests.files
 fi
-%if %{with lustre_tests_lutf}
-echo '%{_libdir}/lustre/tests/lutf/*' >>lustre-tests.files
-%endif
-%endif
-
-%if %{with lustre_tests_lutf}
-echo '%{_libdir}/lustre/tests/lutf/*' >>lustre-tests.files
 %endif
 
 %files devel -f lustre-devel.files

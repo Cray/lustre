@@ -5910,8 +5910,6 @@ lustre/scripts/Makefile
 lustre/scripts/systemd/Makefile
 lustre/tests/Makefile
 lustre/tests/mpi/Makefile
-lustre/tests/lutf/Makefile
-lustre/tests/lutf/src/Makefile
 lustre/tests/kernel/Makefile
 lustre/tests/kernel/autoMakefile
 lustre/utils/Makefile
