@@ -6297,8 +6297,6 @@ lustre/scripts/systemd/Makefile
 lustre/tests/Makefile
 lustre/tests/mpi/Makefile
 lustre/tests/iabf/Makefile
-lustre/tests/lutf/Makefile
-lustre/tests/lutf/src/Makefile
 lustre/kunit/Makefile
 lustre/kunit/autoMakefile
 lustre/utils/Makefile
