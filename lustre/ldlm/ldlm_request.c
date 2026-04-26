@@ -1273,7 +1273,8 @@ int ldlm_cli_convert_req(struct ldlm_lock *lock, __u32 *flags, __u64 new_bits)
  * \retval LDLM_FL_CANCELING otherwise;
  * \retval LDLM_FL_BL_AST if there is a need for a separate CANCEL RPC.
  */
-static __u64 ldlm_cli_cancel_local(struct ldlm_lock *lock)
+static __u64 ldlm_cli_cancel_local(struct ldlm_lock *lock,
+				   bool delay_blast_cancel)
 {
 	__u64 rc = LDLM_FL_LOCAL_ONLY;
 
@@ -1301,7 +1302,9 @@ static __u64 ldlm_cli_cancel_local(struct ldlm_lock *lock)
 			       "not sending request (at caller's instruction)\n");
 			rc = LDLM_FL_LOCAL_ONLY;
 		}
-		ldlm_lock_cancel(lock);
+		/* delay BLAST lock destroy */
+		if (!((rc == LDLM_FL_BL_AST) && delay_blast_cancel))
+			ldlm_lock_cancel(lock);
 	} else {
 		if (ns_is_client(ldlm_lock_to_ns(lock))) {
 			LDLM_ERROR(lock, "Trying to cancel local lock");
@@ -1659,7 +1662,7 @@ int ldlm_cli_cancel(const struct lustre_handle *lockh,
 		CFS_FAIL_TIMEOUT(OBD_FAIL_LDLM_LOCAL_CANCEL_PAUSE,
 				 cfs_fail_val);
 
-	rc = ldlm_cli_cancel_local(lock);
+	rc = ldlm_cli_cancel_local(lock, false);
 	if (rc == LDLM_FL_LOCAL_ONLY || flags & LCF_LOCAL) {
 		ldlm_lock_put(lock);
 		RETURN(0);
@@ -1699,10 +1702,10 @@ int ldlm_cli_cancel_list_local(struct list_head *cancels, int count,
 {
 	LIST_HEAD(head);
 	struct ldlm_lock *lock, *next;
-	int left = 0, bl_ast = 0;
+	int left = count;
+	bool drop_bl_ast = !(cancel_flags & LCF_BL_AST);
 	__u64 rc;
 
-	left = count;
 	list_for_each_entry_safe(lock, next, cancels, l_bl_ast) {
 		if (left-- == 0)
 			break;
@@ -1711,32 +1714,33 @@ int ldlm_cli_cancel_list_local(struct list_head *cancels, int count,
 			rc = LDLM_FL_LOCAL_ONLY;
 			ldlm_lock_cancel(lock);
 		} else {
-			rc = ldlm_cli_cancel_local(lock);
+			rc = ldlm_cli_cancel_local(lock, drop_bl_ast);
 		}
 		/*
-		 * Until we have compound requests and can send LDLM_CANCEL
-		 * requests batched with generic RPCs, we need to send cancels
-		 * with the LDLM_FL_BL_AST flag in a separate RPC from
-		 * the one being generated now.
+		 * ELC RPC cannot be HP, so LDLM_FL_BL_AST locks should not be
+		 * packed together with others. Those who can (i.e. CANCELs)
+		 * pass LCF_BL_AST flag.
+		 *
+		 * At the same time, there is no need to send a separate CANCEL
+		 * right here anymore, lock can be just skipped:
+		 * - we have checked for BL_AST atomically with setting BL_DONE
+		 * in ldlm_cli_cancel_local, thus, new BLAST RPCs will just
+		 * return EINIVAL;
+		 * - previously came BL AST RPCs, issue separate CANCEL RPCs
+		 * from ldlm_cli_cancel() after LU-16285. Lock destroy in
+		 * ldlm_cli_cancel_local above is delayed to let ldlm_cli_cancel
+		 * to find the lock.
 		 */
-		if (!(cancel_flags & LCF_BL_AST) && (rc == LDLM_FL_BL_AST)) {
-			LDLM_DEBUG(lock, "Cancel lock separately");
-			list_move(&lock->l_bl_ast, &head);
-			bl_ast++;
-			continue;
-		}
-		if (rc == LDLM_FL_LOCAL_ONLY) {
+		if ((rc == LDLM_FL_LOCAL_ONLY) ||
+		    (rc == LDLM_FL_BL_AST && drop_bl_ast)) {
 			/* CANCEL RPC should not be sent to server. */
+			if (rc == LDLM_FL_BL_AST)
+				LDLM_DEBUG(lock, "BL_AST came for the lock, skip it");
 			list_del_init(&lock->l_bl_ast);
 			ldlm_lock_put(lock);
 			count--;
 		}
 	}
-	if (bl_ast > 0) {
-		count -= bl_ast;
-		ldlm_cli_cancel_list(&head, bl_ast, NULL, NULL, cancel_flags);
-	}
-
 	RETURN(count);
 }
 
