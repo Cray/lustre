@@ -31,7 +31,9 @@ build_test_filter
 DIRECTIO=${DIRECTIO:-$LUSTRE/tests/directio}
 ORIG_PWD=${PWD}
 TSTID=${TSTID:-"$(id -u $TSTUSR)"}
+TSTGID=${TSTGID:-"$(id -g $TSTUSR)"}
 TSTID2=${TSTID2:-"$(id -u $TSTUSR2)"}
+TSTGID2=${TSTGID2:-"$(id -g $TSTUSR2)"}
 TSTPRJID=${TSTPRJID:-1000}
 TSTPRJID2=${TSTPRJID2:-1001}
 BLK_SZ=1024
@@ -95,6 +97,7 @@ lustre_fail() {
 
 RUNAS="runas -u $TSTID -g $TSTID"
 RUNAS2="runas -u $TSTID2 -g $TSTID2"
+RUNAS3="runas -u $TSTID -g $TSTGID"
 
 FAIL_ON_ERROR=false
 
@@ -5300,14 +5303,14 @@ test_dom() {
 		error "set $qid quota failed"
 
 	for ((i = 0; i < $((LIMIT/2048)); i++)); do
-		$RUNAS $DD of=$DIR/$tdir_dom/$tfile-$i count=1 oflag=sync ||
+		$RUNAS3 $DD of=$DIR/$tdir_dom/$tfile-$i count=1 oflag=sync ||
 								dd_failed=true
 	done
 
 	$dd_failed && quota_error $qtype $qid "write failed, expect succeed"
 
 	for ((i = $((LIMIT/2048)); i < $((LIMIT/1024 + 10)); i++)); do
-		$RUNAS $DD of=$DIR/$tdir_dom/$tfile-$i count=1 oflag=sync ||
+		$RUNAS3 $DD of=$DIR/$tdir_dom/$tfile-$i count=1 oflag=sync ||
 								dd_failed=true
 	done
 
@@ -5323,11 +5326,11 @@ test_dom() {
 
 	dd_failed=false
 
-	$RUNAS $DD of=$DIR/$tdir/file count=$((LIMIT/2048)) oflag=sync ||
+	$RUNAS3 $DD of=$DIR/$tdir/file count=$((LIMIT/2048)) oflag=sync ||
 		quota_error $qtype $qid "write failed, expect succeed"
 
 	for ((i = 0; i < $((LIMIT/2048 + 10)); i++)); do
-		$RUNAS $DD of=$DIR/$tdir_dom/$tfile-$i count=1 oflag=sync ||
+		$RUNAS3 $DD of=$DIR/$tdir_dom/$tfile-$i count=1 oflag=sync ||
 								dd_failed=true
 	done
 
@@ -5345,13 +5348,13 @@ test_dom() {
 	dd_failed=false
 
 	for ((i = 0; i < $((LIMIT/2048)); i++)); do
-		$RUNAS $DD of=$DIR/$tdir_dom/$tfile-$i count=1 oflag=sync ||
+		$RUNAS3 $DD of=$DIR/$tdir_dom/$tfile-$i count=1 oflag=sync ||
 								dd_failed=true
 	done
 
 	$dd_failed && quota_error $qtype $qid "write failed, expect succeed"
 
-	$RUNAS $DD of=$DIR/$tdir/file count=$((LIMIT/2048 + 10)) oflag=sync &&
+	$RUNAS3 $DD of=$DIR/$tdir/file count=$((LIMIT/2048 + 10)) oflag=sync &&
 		quota_error $qtype $qid "write succeed, expect EDQUOT"
 
 	rm -fr $DIR/$tdir
