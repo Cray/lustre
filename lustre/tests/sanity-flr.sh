@@ -4648,6 +4648,38 @@ test_210b() {
 }
 run_test 210b "handle broken mirrored lovea (unlink)"
 
+test_210c() {
+	local tf=$DIR/$tfile
+
+	(( $CLIENT_VERSION >= $(version_code 2.16.1) )) ||
+		skip "client needs > 2.16.1 to avoid foreign layout LASSERT"
+
+#define OBD_FAIL_LOV_INVALID_OSTIDX2		    0x1442
+	do_facet mds1 "$LCTL set_param fail_loc=0x1442"
+	$LFS setstripe -E4M -c2 -E8M -c2 -E -1 -c2 $tf ||
+		error "Can't set PFL layout"
+	$LFS getstripe -v $tf | grep -3 lmm_objects
+	dd if=/dev/zero of=$tf bs=1M count=10 && error "can dd"
+	rm $tf || error "can't stat"
+}
+run_test 210c "write to a file with foreign component"
+
+test_210d() {
+	local tf=$DIR/$tfile
+
+	(( $CLIENT_VERSION >= $(version_code 2.16.1) )) ||
+		skip "client needs > 2.16.1 to avoid foreign layout LASSERT"
+
+#define OBD_FAIL_LOV_INVALID_OSTIDX2		    0x1442
+	do_facet mds1 "$LCTL set_param fail_loc=0x1442"
+	$LFS setstripe -E4M -c2 -E8M -c2 -E -1 -c2 $tf ||
+		error "Can't set PFL layout"
+	$LFS getstripe -v $tf | grep -3 lmm_objects
+	$TRUNCATE $tf 1048576 && error "can truncate"
+	rm $tf || error "can't stat"
+}
+run_test 210d "truncate a file with foreign component"
+
 # LU-18468
 test_211() {
 	local tf=$DIR/$tfile

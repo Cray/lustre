@@ -2122,7 +2122,8 @@ int lov_io_layout_at(struct lov_io *lio, __u64 offset)
 	for (i = start_index; i <= end_index; i++) {
 		struct lov_layout_entry *lle = lov_entry(lov, i);
 
-		LASSERT(!lsme_is_foreign(lle->lle_lsme));
+		if (lsme_is_foreign(lle->lle_lsme))
+			continue;
 
 		if ((offset >= lle->lle_extent->e_start &&
 		     offset < lle->lle_extent->e_end) ||
