@@ -836,7 +836,10 @@ static int lod_gen_component_ea(const struct lu_env *env,
 		objs[i].l_ost_idx = cpu_to_le32(ost_idx);
 
 		/* simulation of broken LOVEA */
-		if (CFS_FAIL_CHECK(OBD_FAIL_LOV_INVALID_OSTIDX) &&
+		if (CFS_FAIL_CHECK(OBD_FAIL_LOV_INVALID_OSTIDX2) && !comp_idx) {
+			objs[i].l_ost_idx =
+				cpu_to_le32(lod->lod_ost_descs.ltd_tgts_size+1);
+		} else if (CFS_FAIL_CHECK(OBD_FAIL_LOV_INVALID_OSTIDX) &&
 		    comp_idx == 0 && i == 0 && lo->ldo_mirror_count > 1) {
 			objs[i].l_ost_idx = cpu_to_le32(0xffffffff);
 		}
