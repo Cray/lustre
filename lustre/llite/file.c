@@ -6780,6 +6780,34 @@ const struct file_operations *ll_select_file_operations(struct ll_sb_info *sbi)
 	return fops;
 }
 
+static int ll_update_layout_gen(struct lu_env *env,
+				struct ll_inode_info *lli,
+				struct ldlm_lock *lock,
+				__u32 *gen)
+{
+	struct cl_layout cl = {
+		.cl_layout_gen = 0,
+		.cl_buf = { NULL, },
+	};
+	int rc;
+
+	LASSERT(lock != NULL);
+	LASSERT(ldlm_has_layout(lock));
+
+	rc = cl_object_layout_get(env, lli->lli_clob, &cl);
+	if (rc < 0)
+		return rc;
+
+	CDEBUG(D_VFSTRACE, DFID": layout version change: %u -> %u\n",
+	       PFID(&lli->lli_fid), ll_layout_version_get(lli),
+	       cl.cl_layout_gen);
+	ll_layout_version_set(lli, cl.cl_layout_gen);
+
+	if (gen)
+		*gen = cl.cl_layout_gen;
+	return 0;
+}
+
 int ll_layout_conf(struct inode *inode, const struct cl_object_conf *conf)
 {
 	struct ll_inode_info *lli = ll_i2info(inode);
@@ -6796,37 +6824,27 @@ int ll_layout_conf(struct inode *inode, const struct cl_object_conf *conf)
 	if (IS_ERR(env))
 		RETURN(PTR_ERR(env));
 
-	rc = cl_conf_set(env, lli->lli_clob, conf);
+	rc = cl_conf_set(env, obj, conf);
 	if (rc < 0)
 		GOTO(out, rc);
 
 	if (conf->coc_opc == OBJECT_CONF_SET) {
-		struct ldlm_lock *lock = conf->coc_lock;
-		struct cl_layout cl = {
-			.cl_layout_gen = 0,
-		};
-
-		LASSERT(lock != NULL);
-		LASSERT(ldlm_has_layout(lock));
+		rc = ll_update_layout_gen(env, lli, conf->coc_lock, NULL);
 
 		/* it can only be allowed to match after layout is
 		 * applied to inode otherwise false layout would be
 		 * seen. Applying layout shoud happen before dropping
 		 * the intent lock.
+		 * Whereas we do not use LVB_READY for layout locks - not
+		 * setting it in enqueue_fini nor trying to wait in
+		 * md_lock_match() for a such having LVB_READY, this flag cannot
+		 * be re-used here as LAYOUT bit can appear together with the DOM
+		 * bit, which already use LVB_READY. Thus, use LAYOUT_READY.
 		 */
-		ldlm_lock_allow_match(lock);
-
-		rc = cl_object_layout_get(env, obj, &cl);
-		if (rc < 0)
-			GOTO(out, rc);
-
-		CDEBUG(D_VFSTRACE,
-		       DFID": layout version change: %u -> %u\n",
-		       PFID(&lli->lli_fid), ll_layout_version_get(lli),
-		       cl.cl_layout_gen);
-		ll_layout_version_set(lli, cl.cl_layout_gen);
+		lock_res_and_lock(conf->coc_lock);
+		ldlm_set_layout_ready(conf->coc_lock);
+		unlock_res_and_lock(conf->coc_lock);
 	}
-
 out:
 	cl_env_put(env, &refcheck);
 
@@ -6908,14 +6926,16 @@ out:
  * in this function.
  */
 static int ll_layout_lock_set(struct lustre_handle *lockh, enum ldlm_mode mode,
-			      struct inode *inode, bool try)
+			      struct inode *inode, __u32 *gen, bool try)
 {
 	struct ll_inode_info *lli = ll_i2info(inode);
 	struct ll_sb_info    *sbi = ll_i2sbi(inode);
 	struct ldlm_lock *lock;
 	struct cl_object_conf conf;
+	struct lu_env *env;
+	__u16 refcheck;
 	int rc = 0;
-	bool lvb_ready;
+	bool layout_ready;
 	bool wait_layout = false;
 
 	ENTRY;
@@ -6923,6 +6943,10 @@ static int ll_layout_lock_set(struct lustre_handle *lockh, enum ldlm_mode mode,
 
 	lock = ldlm_handle2lock(lockh);
 	LASSERT(lock != NULL);
+
+	env = cl_env_get(&refcheck);
+	if (IS_ERR(env))
+		GOTO(out, rc = PTR_ERR(env));
 
 	if (!ldlm_has_layout(lock))
 		GOTO(out, rc = -EAGAIN);
@@ -6934,14 +6958,14 @@ static int ll_layout_lock_set(struct lustre_handle *lockh, enum ldlm_mode mode,
 	md_set_lock_data(sbi->ll_md_exp, lockh, inode, NULL);
 
 	lock_res_and_lock(lock);
-	lvb_ready = ldlm_is_lvb_ready(lock);
+	layout_ready = ldlm_is_layout_ready(lock);
 	unlock_res_and_lock(lock);
 
-	/* checking lvb_ready is racy but this is okay. The worst case is
+	/* checking layout_ready is racy but this is okay. The worst case is
 	 * that multi processes may configure the file on the same time.
 	 */
-	if (lvb_ready)
-		GOTO(out, rc = 0);
+	if (layout_ready)
+		GOTO(out, rc);
 
 	rc = ll_layout_fetch(inode, lock);
 	if (rc < 0)
@@ -6967,6 +6991,15 @@ static int ll_layout_lock_set(struct lustre_handle *lockh, enum ldlm_mode mode,
 	wait_layout = rc == -EBUSY;
 	EXIT;
 out:
+	if (rc == 0) {
+		/* gen must be not GEN_NONE, thus get it while lock is taken.
+		 * However, lli_layout_gen is just a copy, and could be lost
+		 * due to ll_clear_inode() or cancelling another layout lock. */
+		*gen = ll_layout_version_get(lli);
+		if (*gen == CL_LAYOUT_GEN_NONE)
+			rc = ll_update_layout_gen(env, lli, lock, gen);
+	}
+
 	ldlm_lock_put(lock);
 	ldlm_lock_decref(lockh, mode);
 
@@ -6987,13 +7020,7 @@ out:
 	}
 
 	if (rc == -ERESTARTSYS) {
-		__u16 refcheck;
-		struct lu_env *env;
 		struct cl_object *obj = lli->lli_clob;
-
-		env = cl_env_get(&refcheck);
-		if (IS_ERR(env))
-			RETURN(PTR_ERR(env));
 
 		CDEBUG(D_INODE, "prune without lock "DFID"\n",
 				PFID(lu_object_fid(&obj->co_lu)));
@@ -7001,10 +7028,10 @@ out:
 		trunc_sem_down_write(&lli->lli_trunc_sem);
 		cl_object_prune(env, obj);
 		trunc_sem_up_write(&lli->lli_trunc_sem);
-		cl_env_put(env, &refcheck);
 
 		rc = -EAGAIN;
 	}
+	cl_env_put(env, &refcheck);
 
 	RETURN(rc);
 }
@@ -7108,7 +7135,7 @@ int ll_layout_refresh(struct inode *inode, __u32 *gen)
 				       LCK_CR | LCK_CW | LCK_PR |
 				       LCK_PW | LCK_EX);
 		if (mode != 0) { /* hit cached lock */
-			rc = ll_layout_lock_set(&lockh, mode, inode, try);
+			rc = ll_layout_lock_set(&lockh, mode, inode, gen, try);
 			try = false;
 			if (rc == -EAGAIN)
 				continue;
@@ -7121,9 +7148,6 @@ int ll_layout_refresh(struct inode *inode, __u32 *gen)
 			break;
 	}
 	mutex_unlock(&lli->lli_layout_mutex);
-
-	if (rc == 0)
-		*gen = ll_layout_version_get(lli);
 
 	RETURN(rc);
 }

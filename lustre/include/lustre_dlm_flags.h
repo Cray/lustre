@@ -378,6 +378,12 @@
 #define ldlm_set_lvb_cached(_l)         LDLM_SET_FLAG((_l), 1ULL << 59)
 #define ldlm_clear_lvb_cached(_l)       LDLM_CLEAR_FLAG((_l), 1ULL << 59)
 
+/* Layout data is ready */
+#define LDLM_FL_LAYOUT_READY            0x1000000000000000ULL /* bit  60 */
+#define ldlm_is_layout_ready(_l)        LDLM_TEST_FLAG((_l), 1ULL << 60)
+#define ldlm_set_layout_ready(_l)       LDLM_SET_FLAG((_l), 1ULL << 60)
+#define ldlm_clear_layout_ready(_l)     LDLM_CLEAR_FLAG((_l), 1ULL << 60)
+
 /** l_flags bits marked as "ast" bits */
 #define LDLM_FL_AST_MASK                (LDLM_FL_FLOCK_DEADLOCK		|\
 					 LDLM_FL_DISCARD_DATA)

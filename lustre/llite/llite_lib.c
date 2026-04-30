@@ -1318,7 +1318,6 @@ void ll_lli_init(struct ll_inode_info *lli)
 	lli->lli_open_fd_exec_count = 0;
 	mutex_init(&lli->lli_och_mutex);
 	spin_lock_init(&lli->lli_agl_lock);
-	spin_lock_init(&lli->lli_layout_lock);
 	ll_layout_version_set(lli, CL_LAYOUT_GEN_NONE);
 	lli->lli_clob = NULL;
 

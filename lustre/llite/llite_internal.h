@@ -327,9 +327,8 @@ struct ll_inode_info {
 
 	/* mutex to request for layout lock exclusively. */
 	struct mutex			lli_layout_mutex;
-	/* Layout version, protected by lli_layout_lock */
-	__u32				lli_layout_gen;
-	spinlock_t			lli_layout_lock;
+	/* Layout version */
+	atomic_t			lli_layout_gen;
 
 	struct rw_semaphore		lli_xattrs_list_rwsem;
 	struct mutex			lli_xattrs_enq_lock;
@@ -492,20 +491,12 @@ static inline void lli_replace_acl(struct ll_inode_info *lli,
 
 static inline __u32 ll_layout_version_get(struct ll_inode_info *lli)
 {
-	__u32 gen;
-
-	spin_lock(&lli->lli_layout_lock);
-	gen = lli->lli_layout_gen;
-	spin_unlock(&lli->lli_layout_lock);
-
-	return gen;
+	return atomic_read(&lli->lli_layout_gen);
 }
 
 static inline void ll_layout_version_set(struct ll_inode_info *lli, __u32 gen)
 {
-	spin_lock(&lli->lli_layout_lock);
-	lli->lli_layout_gen = gen;
-	spin_unlock(&lli->lli_layout_lock);
+	atomic_set(&lli->lli_layout_gen, gen);
 }
 
 enum ll_file_internal_flags {
