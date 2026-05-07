@@ -416,6 +416,17 @@ reprocess:
 	else {
 		lockmode_verify(mode);
 
+		if (intention != LDLM_PROCESS_ENQUEUE) {
+			lock = list_first_entry(&res->lr_granted,
+						struct ldlm_lock, l_res_link);
+
+			if (lock->l_granted_mode == LCK_PW &&
+			    lock->l_policy_data.l_flock.start == 0 &&
+			    lock->l_policy_data.l_flock.end == OFFSET_MAX) {
+				RETURN(LDLM_ITER_STOP);
+			}
+		}
+
 		/* This loop determines if there are existing locks
 		 * that conflict with the new lock request, and collects
 		 * overlapping locks for same owner.
