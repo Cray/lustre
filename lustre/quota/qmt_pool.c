@@ -50,12 +50,6 @@ static inline void qmt_stop_pool_recalc(struct qmt_pool_info *qpi);
  * Static helper functions not used outside the scope of this file
  */
 
-static inline void qpi_putref_locked(struct qmt_pool_info *pool)
-{
-	LASSERT(atomic_read(&pool->qpi_ref) > 1);
-	atomic_dec(&pool->qpi_ref);
-}
-
 /* some procfs helpers */
 static int qpi_state_seq_show(struct seq_file *m, void *data)
 {
