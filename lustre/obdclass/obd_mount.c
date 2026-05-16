@@ -1535,7 +1535,7 @@ int lmd_parse(char *options, struct lustre_mount_data *lmd)
 		} else {
 			/* We found a known server option. Filter out
 			 * the result out of the options string. The
-			 * reset will be stored in lmd_opts.
+			 * rest will be stored in lmd_opts.
 			 */
 			char *tmp = strstr(options, s1);
 
@@ -1588,17 +1588,18 @@ int lmd_parse(char *options, struct lustre_mount_data *lmd)
 								    time_min);
 			break;
 		case LMD_OPT_MGSNODE:
+			s2 = opts;
 			/* Assume the next mount opt is the first
 			 * invalid NID we get to.
 			 */
 			rc = lmd_parse_mgs(lmd, args->from, &opts);
 			if (rc < 0)
 				GOTO(invalid, rc);
+			/* Remove extra NIDs from options string */
+			if (strlen(s2) != strlen(opts)) {
+				char *tmp = strstr(options, s2);
 
-			if (strcmp(options, opts) != 0) {
-				s2 = strstr(options, opts);
-				if (s2)
-					options = s2;
+				memmove(tmp, opts, strlen(opts) + 1);
 			}
 			break;
 		case LMD_OPT_MGSSEC:
