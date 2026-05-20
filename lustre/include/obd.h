@@ -630,7 +630,8 @@ struct obd_device {
 		obd_dynamic_nids:1,	/* Allow dynamic NIDs on device */
 		obd_read_only:1,	/* device is read-only */
 		obd_need_scrub:1,	/* device need scrub */
-		obd_reply_data_req:1;	/* Pin req in reply_data */
+		obd_reply_data_req:1,	/* Pin req in reply_data */
+		obd_enable_grant_nl_debug:1; /* LUS-12988 debug */
 #ifdef HAVE_SERVER_SUPPORT
 	/* no committed-transno notification */
 	unsigned long			obd_no_transno:1;
