@@ -1525,6 +1525,7 @@ LUSTRE_RO_ATTR(instance);
 
 LUSTRE_RO_ATTR(num_exports);
 LUSTRE_RW_ATTR(grant_check_threshold);
+LUSTRE_RW_ATTR(enable_grant_nl_debug);
 
 static struct attribute *mdt_attrs[] = {
 	&lustre_attr_tot_dirty.attr,
@@ -1569,6 +1570,7 @@ static struct attribute *mdt_attrs[] = {
 	&lustre_attr_checksum_t10pi_enforce.attr,
 	&lustre_attr_enable_remote_subdir_mount.attr,
 	&lustre_attr_reply_data_req.attr,
+	&lustre_attr_enable_grant_nl_debug.attr,
 	NULL,
 };
 

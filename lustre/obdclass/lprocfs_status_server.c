@@ -1121,4 +1121,32 @@ ssize_t instance_show(struct kobject *kobj, struct attribute *attr,
 }
 EXPORT_SYMBOL(instance_show);
 
+ssize_t enable_grant_nl_debug_show(struct kobject *kobj, struct attribute *attr,
+				   char *buf)
+{
+	struct obd_device *obd = container_of(kobj, struct obd_device,
+					      obd_kset.kobj);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", obd->obd_enable_grant_nl_debug);
+}
+EXPORT_SYMBOL(enable_grant_nl_debug_show);
+
+ssize_t enable_grant_nl_debug_store(struct kobject *kobj,
+				    struct attribute *attr,
+				    const char *buffer, size_t count)
+{
+	struct obd_device *obd = container_of(kobj, struct obd_device,
+					      obd_kset.kobj);
+	unsigned int val;
+	int rc;
+
+	rc = kstrtouint(buffer, 0, &val);
+	if (rc)
+		return rc;
+
+	obd->obd_enable_grant_nl_debug = !!val;
+	return count;
+}
+EXPORT_SYMBOL(enable_grant_nl_debug_store);
+
 #endif /* CONFIG_PROC_FS*/

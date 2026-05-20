@@ -889,6 +889,11 @@ ssize_t recovery_time_hard_store(struct kobject *kobj,
 				 const char *buffer, size_t count);
 ssize_t instance_show(struct kobject *kobj, struct attribute *attr,
 		      char *buf);
+ssize_t enable_grant_nl_debug_show(struct kobject *kobj, struct attribute *attr,
+				   char *buf);
+ssize_t enable_grant_nl_debug_store(struct kobject *kobj,
+				    struct attribute *attr,
+				    const char *buffer, size_t count);
 #endif
 /* lproc_status.c */
 int lprocfs_obd_max_pages_per_rpc_seq_show(struct seq_file *m, void *data);
