@@ -1387,6 +1387,7 @@ LUSTRE_OBD_UINT_PARAM_ATTR(at_min);
 LUSTRE_OBD_UINT_PARAM_ATTR(at_max);
 LUSTRE_OBD_UINT_PARAM_ATTR(at_history);
 LUSTRE_OBD_UINT_PARAM_ATTR(at_unhealthy_factor);
+LUSTRE_OBD_UINT_PARAM_ATTR(enable_grant_nl_debug);
 
 static struct attribute *mdt_attrs[] = {
 	&lustre_attr_at_min.attr,
@@ -1443,6 +1444,7 @@ static struct attribute *mdt_attrs[] = {
 	&lustre_attr_checksum_t10pi_enforce.attr,
 	&lustre_attr_max_mod_rpcs_in_flight.attr,
 	&lustre_attr_reply_data_req.attr,
+	&lustre_attr_enable_grant_nl_debug.attr,
 	NULL,
 };
 

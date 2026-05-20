@@ -1773,6 +1773,7 @@ enum ldlm_error ldlm_lock_enqueue(const struct lu_env *env,
 {
 	struct ldlm_lock *lock = *lockp;
 	struct ldlm_resource *res;
+	struct obd_device *obd;
 	int local = ns_is_client(ns);
 	enum ldlm_error rc = ELDLM_OK;
 #ifdef HAVE_SERVER_SUPPORT
@@ -1815,7 +1816,9 @@ enum ldlm_error ldlm_lock_enqueue(const struct lu_env *env,
 		}
 	}
 
+	obd = ldlm_res_to_ns(lock->l_resource)->ns_obd;
 	if (*flags & LDLM_FL_RESENT) {
+
 		/* Reconstruct LDLM_FL_SRV_ENQ_MASK @flags for reply.
 		 * Set LOCK_CHANGED always.
 		 * Check if the lock is granted for BLOCK_GRANTED.
@@ -1825,8 +1828,18 @@ enum ldlm_error ldlm_lock_enqueue(const struct lu_env *env,
 		*flags |= LDLM_FL_LOCK_CHANGED;
 		if (!ldlm_is_granted(lock))
 			*flags |= LDLM_FL_BLOCK_GRANTED;
+
+		rc = ELDLM_OK;
+		if (obd->obd_enable_grant_nl_debug) {
+			LASSERT(lock->l_req_mode != LCK_NL ||
+				!(*flags & LDLM_FL_BLOCK_GRANTED));
+		} else if (lock->l_req_mode == LCK_NL &&
+			   (*flags & LDLM_FL_BLOCK_GRANTED)) {
+			LDLM_ERROR(lock, "not granted LCK_NL");
+			rc = -EINPROGRESS;
+		}
 		*flags |= lock->l_flags & LDLM_FL_NO_TIMEOUT;
-		RETURN(ELDLM_OK);
+		RETURN(rc);
 	}
 
 #ifdef HAVE_SERVER_SUPPORT
@@ -1912,6 +1925,10 @@ enum ldlm_error ldlm_lock_enqueue(const struct lu_env *env,
 	}
 
 	rc = ldlm_lock_enqueue_helper(lock, flags);
+	if (obd->obd_enable_grant_nl_debug) {
+		LASSERT(lock->l_req_mode != LCK_NL ||
+			!(*flags & LDLM_FL_BLOCK_GRANTED));
+	}
 	GOTO(out, rc);
 #else
 	} else {
