@@ -483,12 +483,13 @@ enum scrub_param {
 };
 
 #ifdef __KERNEL__
-/* v6.2-rc5-72-g5e6a51787fef kernel APIs need type to be guid_t */
-#define uuid_le        guid_t
+#define sfid_t		guid_t
+#else
+#define sfid_t		uuid_le
 #endif
 
 struct scrub_file {
-	uuid_le	sf_uuid;		    /* 128-bit uuid for volume */
+	sfid_t	sf_uuid;		    /* 128-bit uuid for volume */
 	__u64	sf_flags;		    /* see 'enum scrub_flags' */
 	__u32	sf_magic;		    /* SCRUB_MAGIC_V1/V2 */
 	__u16	sf_status;		    /* see 'enum scrub_status' */

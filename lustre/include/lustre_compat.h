@@ -804,9 +804,9 @@ static inline struct page *wbe_folio_page(struct folio *folio)
 #endif
 
 #ifndef HAVE_PAGE_PRIVATE_2
-#define PagePrivate2(page)	test_bit(PG_private_2, &((page)->flags))
-#define SetPagePrivate2(page)	set_bit(PG_private_2, &((page)->flags))
-#define ClearPagePrivate2(page)	clear_bit(PG_private_2, &((page)->flags))
+#define PagePrivate2(page)	test_bit(PG_private_2, &PAGE_FLAGS(page))
+#define SetPagePrivate2(page)	set_bit(PG_private_2, &PAGE_FLAGS(page))
+#define ClearPagePrivate2(page)	clear_bit(PG_private_2, &PAGE_FLAGS(page))
 #endif
 
 #ifdef HAVE_FOLIO_MAPCOUNT
@@ -841,6 +841,18 @@ static inline int folio_mapcount_page(struct page *page)
 
 #ifndef QSTR_LEN
 #define QSTR_LEN(name, len) ((struct qstr)QSTR_INIT((name), (len)))
+#endif
+
+#ifndef HAVE_INODE_JUST_DROP
+static inline int inode_just_drop(struct inode *inode)
+{
+	return generic_delete_inode(inode);
+}
+
+static inline int inode_generic_drop(struct inode *inode)
+{
+	return generic_drop_inode(inode);
+}
 #endif
 
 #endif /* _LUSTRE_COMPAT_H */

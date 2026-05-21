@@ -1763,7 +1763,7 @@ enum {
 /* file is first dirent under @dir */
 static int is_first_dirent(struct inode *dir, struct dentry *dentry)
 {
-	struct qstr *target = &dentry->d_name;
+	const struct qstr *target = &dentry->d_name;
 	struct md_op_data *op_data;
 	int dot_de;
 	struct page *page = NULL;
@@ -2183,7 +2183,7 @@ sa_pattern_fname_detect(struct inode *dir, struct dentry *dchild)
 {
 	struct ll_inode_info *lli = ll_i2info(dir);
 	struct ll_sb_info *sbi = ll_i2sbi(dir);
-	struct qstr *dname = &dchild->d_name;
+	const struct qstr *dname = &dchild->d_name;
 	const unsigned char *name = dname->name;
 	bool rc = false;
 	int i;
@@ -2341,7 +2341,7 @@ static int start_statahead_thread(struct inode *dir, struct dentry *dentry,
 	sai->sai_pid = current->pid;
 
 	if (lli->lli_sa_pattern & LSA_PATTERN_FNAME) {
-		struct qstr *dname = &dentry->d_name;
+		const struct qstr *dname = &dentry->d_name;
 		const unsigned char *name = dname->name;
 		long num;
 		int i;
@@ -2766,7 +2766,7 @@ void ll_statahead_enter(struct inode *dir, struct dentry *dchild)
 {
 	struct ll_inode_info *lli = ll_i2info(dir);
 	struct ll_sb_info *sbi = ll_i2sbi(dir);
-	struct qstr *dname = &dchild->d_name;
+	const struct qstr *dname = &dchild->d_name;
 
 	if (sbi->ll_sa_max == 0)
 		return;

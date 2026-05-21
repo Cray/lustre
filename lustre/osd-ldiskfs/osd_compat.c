@@ -689,9 +689,9 @@ static int osd_obj_update_entry(struct osd_thread_info *info,
 
 	child = &info->oti_child_dentry;
 	child->d_parent = dir;
-	child->d_name.hash = 0;
-	child->d_name.name = name;
-	child->d_name.len = strlen(name);
+	child->__d_name.hash = 0;
+	child->__d_name.name = name;
+	child->__d_name.len = strlen(name);
 
 	dquot_initialize(parent);
 	if (!locked)
@@ -821,9 +821,9 @@ int osd_obj_del_entry(struct osd_thread_info *info, struct osd_device *osd,
 	LASSERT(th->h_transaction != NULL);
 
 	child = &info->oti_child_dentry;
-	child->d_name.hash = 0;
-	child->d_name.name = name;
-	child->d_name.len = namelen;
+	child->__d_name.hash = 0;
+	child->__d_name.name = name;
+	child->__d_name.len = namelen;
 	child->d_parent = dird;
 	child->d_inode = NULL;
 
@@ -874,9 +874,9 @@ static int osd_obj_add_entry(struct osd_thread_info *info,
 	inode->i_mode = S_IFREG; /* for type in ldiskfs dir entry */
 
 	child = &info->oti_child_dentry;
-	child->d_name.hash = 0;
-	child->d_name.name = name;
-	child->d_name.len = strlen(name);
+	child->__d_name.hash = 0;
+	child->__d_name.name = name;
+	child->__d_name.len = strlen(name);
 	child->d_parent = dir;
 	child->d_inode = inode;
 
@@ -1069,10 +1069,10 @@ int osd_obj_map_lookup(struct osd_thread_info *info, struct osd_device *dev,
 
 	child = &info->oti_child_dentry;
 	child->d_parent = d_seq;
-	child->d_name.hash = 0;
-	child->d_name.name = name;
+	child->__d_name.hash = 0;
+	child->__d_name.name = name;
 	/* XXX: we can use rc from sprintf() instead of strlen() */
-	child->d_name.len = strlen(name);
+	child->__d_name.len = strlen(name);
 
 	dir = d_seq->d_inode;
 	inode_lock_shared(dir);
@@ -1232,8 +1232,8 @@ int osd_obj_map_recover(struct osd_thread_info *info,
 			RETURN(PTR_ERR(osd_seq));
 
 		tgt_parent = osd_seq->oos_root;
-		tgt_child->d_name.name = "LAST_ID";
-		tgt_child->d_name.len = strlen("LAST_ID");
+		tgt_child->__d_name.name = "LAST_ID";
+		tgt_child->__d_name.len = strlen("LAST_ID");
 	} else {
 		fid_to_ostid(fid, ostid);
 		osd_seq = osd_seq_load(info, osd, ostid_seq(ostid));
@@ -1243,13 +1243,13 @@ int osd_obj_map_recover(struct osd_thread_info *info,
 		dirn = ostid_id(ostid) & (osd_seq->oos_subdir_count - 1);
 		tgt_parent = osd_seq->oos_dirs[dirn];
 		osd_oid_name(name, sizeof(name), fid, ostid_id(ostid));
-		tgt_child->d_name.name = name;
-		tgt_child->d_name.len = strlen(name);
+		tgt_child->__d_name.name = name;
+		tgt_child->__d_name.len = strlen(name);
 	}
 	LASSERT(tgt_parent != NULL);
 
 	dir = tgt_parent->d_inode;
-	tgt_child->d_name.hash = 0;
+	tgt_child->__d_name.hash = 0;
 	tgt_child->d_parent = tgt_parent;
 	tgt_child->d_inode = inode;
 
