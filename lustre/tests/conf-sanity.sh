@@ -12318,6 +12318,7 @@ run_test 160 "MGC updates failnodes from all participants"
 
 test_161() {
 	setup
+	stack_trap "cleanup"
 
 	local custom_mgsname="test-mgs-custom"
 
@@ -12348,22 +12349,35 @@ test_161() {
 	# automatically generate mgsname and show "test-mgs@tcp:/lustre" in
 	# mount, df, and /proc/mounts output
 
-	# Extract IP and network type from MGSNID
-	local mgs_ip=$(echo $MGSNID | cut -d'@' -f1)
-	local mgs_nettype=$(echo $MGSNID | cut -d'@' -f2 | cut -d',' -f1)
-	local test_hostname="test-mgs-auto"
+	# Extract IP from MGSNID and ensure NETTYPE is set
+	local mgs_ip=${MGSNID%%@*}
+	local mgs_nettype=${NETTYPE:-tcp}
+	local test_hostname=""
 
-	# Check if hostname is already resolvable before adding to /etc/hosts
-	if getent hosts $test_hostname >/dev/null 2>&1 ||
-		ping -c1 -W1 $test_hostname >/dev/null 2>&1; then
-		echo "Hostname $test_hostname is already resolvable"
-	else
+	# Check if MGS hostname already resolvable before adding to /etc/hosts
+	if getent hosts $mgs_ip; then
+		local mgs_host=$(getent hosts $mgs_ip | awk '{ print $2 }')
+
+		ping -c1 -W1 $mgs_host >/dev/null 2>&1 &&
+			echo "Hostname $mgs_host is already resolvable" &&
+			test_hostname=$mgs_host
+	fi
+	if [[ -z "$test_hostname" ]]; then
+		[[ -w /etc/hosts ]] || skip_env "/etc/hosts is not writeable"
+
 		echo "Add temp hostname to /etc/hosts: $mgs_ip $test_hostname"
 		local tmphosts=$(mktemp)
-		cp -a /etc/hosts $tmphosts
-		echo "$mgs_ip $test_hostname" >> /etc/hosts
+
+		cp -av /etc/hosts $tmphosts ||
+			skip_env "cannot backup /etc/hosts to $tmphosts"
+
+		test_hostname="test-mgs-auto"
+		echo "$mgs_ip $test_hostname" >> /etc/hosts ||
+			skip_env "unable to add '$test_hostname' to /etc/hosts"
 		# Ensure temp hostname is removed even if test fails
-		stack_trap "cat $tmphosts >/etc/hosts; rm -f $tmphosts" EXIT
+		stack_trap "cat $tmphosts >/etc/hosts; rm -f $tmphosts"
+		ping -c1 -W1 $mgs_host >/dev/null 2>&1 ||
+			skip_env "temp hostname $mgs_host cannot be resolved"
 	fi
 
 	# Mount using the hostname to trigger automatic mgsname generation
@@ -12386,7 +12400,6 @@ test_161() {
 	# Verify hostname also appears in mount output
 	mount | grep "$test_hostname@$mgs_nettype:/$FSNAME.*$MOUNT" ||
 		error "hostname not found in mount output"
-	cleanup
 }
 run_test 161 "test '-o mgsname' option"
 
