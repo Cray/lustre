@@ -4947,6 +4947,9 @@ retry:
 	if (IS_ERR(handle))
 		GOTO(out, rc = PTR_ERR(handle));
 
+	/* bypass quota during migration */
+	handle->th_ignore_quota = 1;
+
 	if (spec->sp_migrate_nsonly)
 		rc = mdd_declare_migrate_update(env, spobj, tpobj, sobj, sname,
 						tname, attr, spattr, tpattr,

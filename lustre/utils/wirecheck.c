@@ -2751,6 +2751,7 @@ static void check_object_update(void)
 	CHECK_CVALUE_X(UPDATE_FL_SYNC);
 	CHECK_CVALUE_X(UPDATE_FL_COMMITTED);
 	CHECK_CVALUE_X(UPDATE_FL_NOLOG);
+	CHECK_CVALUE_X(UPDATE_FL_IGNORE_QUOTA);
 }
 
 static void check_object_update_request(void)
