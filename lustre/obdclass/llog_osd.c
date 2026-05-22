@@ -1679,8 +1679,11 @@ static int llog_osd_declare_create(const struct lu_env *env,
 	if (res->lgh_ctxt->loc_flags & LLOG_CTXT_FLAG_NORMAL_FID) {
 		struct llog_thread_info *lgi = llog_info(env);
 
-		lgi->lgi_attr.la_valid = LA_MODE | LA_SIZE;
+		lgi->lgi_attr.la_valid = LA_MODE | LA_SIZE | LA_TYPE | LA_UID |
+			LA_GID;
 		lgi->lgi_attr.la_size = 0;
+		lgi->lgi_attr.la_uid = 0;
+		lgi->lgi_attr.la_gid = 0;
 		lgi->lgi_attr.la_mode = S_IFREG | S_IRUGO | S_IWUSR;
 		lgi->lgi_dof.dof_type = dt_mode_to_dft(S_IFREG);
 
@@ -1760,8 +1763,11 @@ static int llog_osd_create(const struct lu_env *env, struct llog_handle *res,
 	if (res->lgh_ctxt->loc_flags & LLOG_CTXT_FLAG_NORMAL_FID) {
 		struct llog_thread_info *lgi = llog_info(env);
 
-		lgi->lgi_attr.la_valid = LA_MODE | LA_SIZE | LA_TYPE;
+		lgi->lgi_attr.la_valid = LA_MODE | LA_SIZE | LA_TYPE | LA_UID |
+			LA_GID;
 		lgi->lgi_attr.la_size = 0;
+		lgi->lgi_attr.la_uid = 0;
+		lgi->lgi_attr.la_gid = 0;
 		lgi->lgi_attr.la_mode = S_IFREG | S_IRUGO | S_IWUSR;
 		lgi->lgi_dof.dof_type = dt_mode_to_dft(S_IFREG);
 
