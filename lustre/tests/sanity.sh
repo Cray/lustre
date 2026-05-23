@@ -3,7 +3,7 @@
 # Run select tests by setting ONLY, or as arguments to the script.
 # Skip specific tests by setting EXCEPT.
 #
-# e.g. ONLY="22 23" or ONLY="`seq 32 39`" or EXCEPT="31"
+# e.g. ONLY="22 23" or ONLY="$(seq 32 39)" or EXCEPT="31"
 set -e
 
 ONLY=${ONLY:-"$*"}
@@ -85,7 +85,6 @@ fi
 # LU-16904 skip tests for PFL layout until fixed
 if [[ "${sanity_STRIPEPARAMS:-$fs_STRIPEPARAMS}" =~ "-E" ]]; then
 	SKIP27D+=" -s 16 -s 20" # LU-20622
-	always_except LU-18713 27M
 	always_except LU-17748 34h
 	always_except LU-20617 44f
 	always_except LU-16928 56wb
@@ -2022,8 +2021,11 @@ run_test 27ga "$LFS getstripe with missing file (should return error)"
 test_27i() {
 	test_mkdir $DIR/$tdir
 	touch $DIR/$tdir/$tfile || error "touch failed"
-	[[ $($LFS getstripe -c $DIR/$tdir/$tfile) -gt 0 ]] ||
+
+	(( $($LFS getstripe -c $DIR/$tdir/$tfile) > 0 )) || {
+		$LFS getstripe $DIR/$tdir/$tfile
 		error "missing objects"
+	}
 }
 run_test 27i "$LFS getstripe with some objects"
 
@@ -2126,19 +2128,25 @@ test_27n() {
 run_test 27n "create file with some full OSTs"
 
 test_27o() {
-	[[ $OSTCOUNT -lt 2 ]] && skip_env "needs >= 2 OSTs"
-	[ $PARALLEL == "yes" ] && skip "skip parallel run"
+	(( $OSTCOUNT >= 2 )) || skip_env "needs >= 2 OSTs"
+	[[ $PARALLEL == "yes" ]] && skip "skip parallel run"
 	remote_mds_nodsh && skip "remote MDS with nodsh"
 	remote_ost_nodsh && skip "remote OST with nodsh"
 
+	wait_delete_completed
 	reset_enospc
 	rm -f $DIR/$tdir/$tfile
+	stack_trap "rm -rf $DIR/$tdir/*"
 	exhaust_all_precreations 0x215
 
-	touch $DIR/$tdir/$tfile && error "able to create $DIR/$tdir/$tfile"
+	touch $DIR/$tdir/$tfile &&
+	touch $DIR/$tdir/$tfile.2 && {
+		$LFS df
+		$LFS df -i
+		error "able to create $DIR/$tdir/$tfile"
+	}
 
 	reset_enospc
-	rm -rf $DIR/$tdir/*
 }
 run_test 27o "create file with all full OSTs (should error)"
 
@@ -3347,7 +3355,7 @@ test_27M() {
 
 	local orig_count=$(do_facet mds1 $LCTL get_param -n mdd.$FSNAME-MDT0000.append_stripe_count)
 	stack_trap "do_nodes $mdts $LCTL set_param mdd.*.append_stripe_count=$orig_count"
-	do_nodes $mdts $LCTL set_param mdd.*.append_stripe_count=1
+	do_nodes $mdts "$LCTL set_param mdd.*.append_stripe_count=1"
 
 	$LFS setstripe $stripe_opt $DIR/$tdir
 
@@ -3420,8 +3428,9 @@ test_27M() {
 	$LFS setstripe -d $DIR/$tdir
 
 	# rest of tests don't work with FILESET
-	[ -n "$FILESET" ] && exit
+	[[ -z "$FILESET" ]] || return 0
 
+	local pool_root=$($LFS getstripe -d --pool $MOUNT)
 	save_layout_restore_at_exit $MOUNT
 	# Now test that append striping works when layout is from root
 	$LFS setstripe -c 2 $MOUNT
@@ -3472,7 +3481,8 @@ test_27M() {
 	echo 1 >> $DIR/$tdir/${tfile}.13_append
 
 	pool=$($LFS getstripe -p $DIR/$tdir/${tfile}.13_append)
-	[[ -z "$pool" ]] || error "(13) pool found: $pool"
+	[[ "$pool" == "$pool_root" ]] ||
+		error "(13) pool found: '$pool', expect '$pool_root'"
 }
 run_test 27M "test O_APPEND striping"
 

@@ -6678,6 +6678,9 @@ do_check_and_setup_lustre() {
 	fi
 
 	local suite_stripeparams=${TESTSUITE//-/_}_STRIPEPARAMS
+	# allow both lowercase_STRIPEPARAMS and UPPERCASE_STRIPEPARAMS
+	[[ -n "${!suite_stripeparams}" ]] ||
+		suite_stripeparams=${suite_stripeparams^^}
 	if [[ -n "${!suite_stripeparams}" ]]; then
 		save_layout_restore_at_exit $MOUNT
 		setstripe_getstripe $MOUNT ${!suite_stripeparams}
@@ -7639,11 +7642,19 @@ always_except() {
 }
 
 build_test_filter() {
-	EXCEPT="$EXCEPT $(testslist_filter)"
+	local suite_only=${TESTSUITE//-/_}_ONLY
+	local suite_except=${TESTSUITE//-/_}_EXCEPT
+
+	# allow both lowercase_ONLY/EXCEPT and UPPERCASE_ONLY/EXCEPT
+	[[ -n "${!suite_only}" ]] || suite_only=${suite_only^^}
+	[[ -n "${!suite_except}" ]] || suite_except=${suite_except^^}
+	echo "use $suite_only='${!suite_only}' $suite_except='${!suite_except}'"
+
+	EXCEPT="${EXCEPT//[+,]/ } ${!suite_except//[+,]/ } $(testslist_filter)"
 
 	# allow test numbers separated by '+', or ',', in addition to ' '
 	# to avoid issues with multiple arguments handling by shell/autotest
-	for O in ${ONLY//[+,]/ }; do
+	for O in ${ONLY//[+,]/ } ${!suite_only//[+,]/ }; do
 		if [[ $O =~ [0-9]*-[0-9]* ]]; then
 			for ((num=${O%-[0-9]*}; num <= ${O#[0-9]*-}; num++)); do
 				eval ONLY_$num=true
@@ -7655,6 +7666,7 @@ build_test_filter() {
 
 	local nodes=$(comma_list $(facets_nodes mds1,ost1))
 	local exceptions="$LUSTRE/tests/except/$TESTSUITE.*ex"
+	local tgt_except=""
 
 	do_nodes --verbose $nodes "ls $exceptions || true"
 	while read facet op need_ver jira subs; do
@@ -7671,12 +7683,15 @@ build_test_filter() {
 			log "- need $have_ver_code $op $need_ver (${!have_ver_code} $op $need_ver_code) for $jira, skip $subs"
 			for E in $subs; do
 				eval EXCEPT_${E}=true
+				tgt_except+=" $E"
 			done
 		}
 	done < <(do_nodes $nodes "cat $exceptions 2>/dev/null ||true" | sort -u)
 
-	[[ -z "$EXCEPT$ALWAYS_EXCEPT" ]] ||
-		log "excepting tests: $(echo $EXCEPT $ALWAYS_EXCEPT)"
+	[[ -z "$ONLY${!suite_only}" ]] ||
+		log "only running tests: $(echo $ONLY ${!suite_only})"
+	[[ -z "$EXCEPT$ALWAYS_EXCEPT$tgt_except" ]] ||
+		log "excepting tests: $(echo $EXCEPT $ALWAYS_EXCEPT $tgt_except)"
 	[[ -z "$EXCEPT_SLOW" ]] ||
 		log "skipping tests SLOW=no: $(echo $EXCEPT_SLOW)"
 	for E in ${EXCEPT//[+,]/ }; do
@@ -7732,30 +7747,30 @@ run_test() {
 	# need to skip the current test. If so, set the ALWAYS_SKIPPED flag.
 	local isexcept=EXCEPT_$testnum
 	local isexcept_base=EXCEPT_$base
-	if [ ${!isexcept}x != x ]; then
+	if [[ -n ${!isexcept} ]]; then
 		ALWAYS_SKIPPED="y"
 		skip_message="skipping excluded test $testnum"
-	elif [ ${!isexcept_base}x != x ]; then
+	elif [[ -n ${!isexcept_base} ]]; then
 		ALWAYS_SKIPPED="y"
 		skip_message="skipping excluded test $testnum (base $base)"
 	fi
 
 	isexcept=EXCEPT_ALWAYS_$testnum
 	isexcept_base=EXCEPT_ALWAYS_$base
-	if [ ${!isexcept}x != x ]; then
+	if [[ -n ${!isexcept} ]]; then
 		ALWAYS_SKIPPED="y"
 		skip_message="skipping ALWAYS excluded test $testnum"
-	elif [ ${!isexcept_base}x != x ]; then
+	elif [[ -n ${!isexcept_base} ]]; then
 		ALWAYS_SKIPPED="y"
 		skip_message="skipping ALWAYS excluded test $testnum (base $base)"
 	fi
 
 	isexcept=EXCEPT_SLOW_$testnum
 	isexcept_base=EXCEPT_SLOW_$base
-	if [ ${!isexcept}x != x ]; then
+	if [[ -n ${!isexcept} ]]; then
 		ALWAYS_SKIPPED="y"
 		skip_message="skipping SLOW test $testnum"
-	elif [ ${!isexcept_base}x != x ]; then
+	elif [[ -n ${!isexcept_base} ]]; then
 		ALWAYS_SKIPPED="y"
 		skip_message="skipping SLOW test $testnum (base $base)"
 	fi
@@ -7763,10 +7778,14 @@ run_test() {
 	# If there are tests on the ONLY list, check if the current test
 	# is on that list and, if so, check if the test is to be skipped
 	# and if we are supposed to honor the skip lists.
-	if [ -n "$ONLY" ]; then
+	local suite_only=${TESTSUITE//-/_}_ONLY
+
+	# allow both lowercase_ONLY and UPPERCASE_ONLY
+	[[ -n "${!suite_only}" ]] || suite_only=${suite_only^^}
+	if [[ -n "$ONLY" || -n "${!suite_only}" ]]; then
 		local isonly=ONLY_$testnum
 		local isonly_base=ONLY_$base
-		if [[ ${!isonly}x != x || ${!isonly_base}x != x ]]; then
+		if [[ -n ${!isonly} || -n ${!isonly_base} ]]; then
 
 			if [[ -n "$ALWAYS_SKIPPED" &&
 					-n "$HONOR_EXCEPT" ]]; then
@@ -7774,7 +7793,7 @@ run_test() {
 				skip_noexit "$skip_message"
 				return 0
 			else
-				[ -n "$LAST_SKIPPED" ] &&
+				[[ -n "$LAST_SKIPPED" ]] &&
 					echo "" && LAST_SKIPPED=
 				ALWAYS_SKIPPED=
 				run_one_logged $testnum "$testmsg"
@@ -7787,7 +7806,7 @@ run_test() {
 		fi
 	fi
 
-	if [ -n "$ALWAYS_SKIPPED" ]; then
+	if [[ -n "$ALWAYS_SKIPPED" ]]; then
 		LAST_SKIPPED="y"
 		skip_noexit "$skip_message"
 		return 0
@@ -7944,7 +7963,10 @@ run_one_logged() {
 	export tdir=d${testnum}.${TESTSUITE}
 	local test_log=$TESTLOG_PREFIX.$TESTNAME.test_log.$(hostname -s).log
 	local zfs_debug_log=$TESTLOG_PREFIX.$TESTNAME.zfs_log
+	local suite_only=${TESTSUITE//-/_}_ONLY
 	local SAVE_UMASK=$(umask)
+	local repeat_end_sec
+	local repeat
 	local rc=0
 	local node
 	umask 0022
@@ -7954,15 +7976,21 @@ run_one_logged() {
 	rm -f $LOGDIR/err $LOGDIR/ignore $LOGDIR/skip
 	echo
 
-	# process ONLY options:
+	# process options for $ONLY/${TESTSUITE}_ONLY repetition:
 	# - $ONLY_REPEAT will run the subtest $ONLY_REPEAT times
 	# - $ONLY_MINUTES will run the subtest for $ONLY_MINUTES
 	# - $ONLY_REPEAT and $ONLY_MINUTES can be set to run the subtest for
 	#   $ONLY_REPEAT times but not to exceed $ONLY_MINUTES
 	# - if $ONLY_REPEAT and ONLY_MINUTES are unset, subtest will run once
-	local repeat=${ONLY:+$ONLY_REPEAT}
-	if [[ -n "$ONLY" && "$ONLY_MINUTES" ]]; then
-		local repeat_end_sec=$((SECONDS + ONLY_MINUTES * 60))
+	# - allow both lowercase_ONLY and UPPERCASE_ONLY
+	[[ -n "${!suite_only}" ]] || suite_only=${suite_only^^}
+	if [[ (-n "$ONLY" || -n "${!suite_only}") ]]; then
+		[[ -z "$ONLY_REPEAT" ]] || repeat=$ONLY_REPEAT
+
+		[[ -z "$ONLY_MINUTES" ]] ||
+			repeat_end_sec=$((SECONDS + ONLY_MINUTES * 60))
+		echo "repeat=$repeat (ONLY_REPEAT=$ONLY_REPEAT)"
+		echo "repeat_end=$repeat_end_sec (ONLY_MINUTES=$ONLY_MINUTES)"
 	fi
 
 	export ONLY_REPEAT_ITER=1
@@ -7975,7 +8003,8 @@ run_one_logged() {
 		if [[ -n "$append" ]]; then
 			[[ -n "$tdir" ]] && rm -rvf $DIR/$tdir*
 			[[ -n "$tfile" ]] && rm -vf $DIR/$tfile*
-			iter=" (repeat $ONLY_REPEAT_ITER/$repeat iter, $(((SECONDS-before)/60))/$ONLY_MINUTES min)"
+			iter=" (repeat $ONLY_REPEAT_ITER/$repeat iter,"
+			iter+=" $(((SECONDS - before) / 60))/$ONLY_MINUTES min)"
 		fi
 		# loop around subshell so stack_trap EXIT triggers each time
 		(run_one $testnum "$testmsg$iter") 2>&1 | tee -i $append $test_log
