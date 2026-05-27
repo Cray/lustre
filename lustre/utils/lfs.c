@@ -8271,7 +8271,7 @@ static unsigned long str2sec(const char *timestr)
 	while (*timestr) {
 		unsigned long v;
 		int ind;
-		char *ptr;
+		const char *ptr;
 
 		v = strtoul(timestr, &tail, 10);
 		if (v == ULONG_MAX || *tail == '\0')
@@ -9256,7 +9256,8 @@ static void print_quota(char *mnt, struct if_quotactl *qctl, int type,
 
 static int tgt_name2index(const char *tgtname, unsigned int *idx)
 {
-	char *dash, *endp;
+	const char *dash;
+	char *endp;
 
 	/* format is "lustre-OST0001" */
 	dash = memchr(tgtname, '-', LUSTRE_MAXFSNAME + 1);
@@ -9317,6 +9318,8 @@ static int print_obd_quota(char *mnt, struct if_quotactl *qctl, int is_mdt,
 	}
 
 	for (i = 0; i < count; i++) {
+		char name[UUID_MAX+8];
+
 		if (qctl->qc_cmd == LUSTRE_Q_GETQUOTAPOOL) {
 			unsigned int index;
 
@@ -9344,8 +9347,6 @@ static int print_obd_quota(char *mnt, struct if_quotactl *qctl, int is_mdt,
 
 			/* inactive target */
 			if (rc == -ENODATA) {
-				char name[UUID_MAX+8];
-
 				snprintf(name, sizeof(name), "%s[inact]",
 					obd_uuid2str(&qctl->obd_uuid));
 				memset(&qctl->qc_dqinfo, 0,
