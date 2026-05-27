@@ -258,7 +258,7 @@ static int erase_param(const char *const buf, const char *const param,
 
 	/* "key" or "key=<value>" */
 	if (withval) {
-		char *keyend;
+		const char *keyend;
 
 		keyend = strchr(param, '=');
 		if (!keyend)

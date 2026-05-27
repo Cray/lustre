@@ -1308,8 +1308,7 @@ int llapi_get_poollist(const char *name, char **poollist, int list_size,
 		poollist[i] = NULL;
 
 	/* is name a pathname ? */
-	ptr = strchr(name, '/');
-	if (ptr != NULL) {
+	if (strchr(name, '/') != NULL) {
 		char fsname_buf[MAXNAMLEN];
 
 		/* We will need fsname for printing later */

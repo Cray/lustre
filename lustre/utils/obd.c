@@ -2545,7 +2545,7 @@ int jt_lcfg_fork(int argc, char **argv)
 }
 
 static int jt_llog_print_iter(char *logname, long start, long end,
-			     int (record_cb)(const char *record, void *private),
+			     int (record_cb)(char *record, void *private),
 			     void *private, bool reverse, bool raw);
 
 struct erase_callback_data {
@@ -2894,7 +2894,7 @@ err:
 	return rc;
 }
 
-int jt_llog_print_cb(const char *record, void *private)
+int jt_llog_print_cb(char *record, void *private)
 {
 	printf("%s\n", record);
 
@@ -2902,8 +2902,8 @@ int jt_llog_print_cb(const char *record, void *private)
 }
 
 static int
-llog_process_records(int (record_cb)(const char *record, void *private),
-		     const char *record, void *private, bool reverse)
+llog_process_records(int (record_cb)(char *record, void *private),
+		     char *record, void *private, bool reverse)
 {
 	char *ptr = NULL;
 	char *tmp = NULL;
@@ -2921,7 +2921,7 @@ llog_process_records(int (record_cb)(const char *record, void *private),
 				record = ptr + 1;
 		} while (ptr && *(ptr + 1));
 	} else {
-		tmp = (char *)record;
+		tmp = record;
 
 		ptr = strrchr(record, '\n');
 		if (ptr)
@@ -2957,7 +2957,7 @@ out:
  * Return 0 on success (others handled by the caller)
  */
 static int jt_llog_print_iter(char *logname, long start, long end,
-			     int (record_cb)(const char *record, void *private),
+			     int (record_cb)(char *record, void *private),
 			     void *private, bool reverse, bool raw)
 {
 	struct obd_ioctl_data data = { 0 };
@@ -3528,7 +3528,7 @@ struct llog_del_ost_priv {
  * * %0 if ostname is not found
  * * %negative if error
  */
-static int llog_del_ost_cb(const char *record, void *data)
+static int llog_del_ost_cb(char *record, void *data)
 {
 	char ost_filter[MAX_STRING_SIZE] = {'\0'};
 	char log_idxstr[MAX_STRING_SIZE] = {'\0'};
@@ -6126,11 +6126,12 @@ struct llog_pool_list_data {
  * * %0 on success
  * * %negative on error
  */
-static int llog_poollist_cb(const char *record, void *data)
+static int llog_poollist_cb(char *record, void *data)
 {
 	struct llog_pool_list_data *lpld = data;
 	char pool_filter[MAX_STRING_SIZE] = "";
-	char *new_record, *del_record, *del_pool, *found;
+	char *new_record, *del_record, *del_pool;
+	const char *found;
 	char type[10] = "";
 	int filter_len, rc = 0;
 
@@ -6160,7 +6161,7 @@ static int llog_poollist_cb(const char *record, void *data)
 	    (found[filter_len] == ' ' || found[filter_len] == ',')) {
 		struct llog_pool_name *tmp = NULL;
 		struct list_head *head = &lpld->lpld_list_head;
-		char *name;
+		const char *name;
 		int name_len, type_len = strlen(type);
 
 		lpld->lpld_exists = true;
