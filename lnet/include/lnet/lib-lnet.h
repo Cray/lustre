@@ -20,6 +20,7 @@
 #define CFS_FAIL_DELAY_MSG_FORWARD	0xe002
 #define CFS_FAIL_TEST_PING_MD		0xe003
 #define CFS_FAIL_RTR_HEALTH_INC		0xe004
+#define CFS_FAIL_SOCK_CONN		0xe020
 
 #include <lustre_compat/linux/generic-radix-tree.h>
 #include <lustre_compat/linux/hash.h>
