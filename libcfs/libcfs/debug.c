@@ -679,6 +679,9 @@ int libcfs_debug_init(unsigned long bufsize)
 	kernel_param_lock(THIS_MODULE);
 	libcfs_debug_mb = cfs_trace_get_debug_mb();
 	kernel_param_unlock(THIS_MODULE);
+	if (libcfs_debug_raw_pointers)
+		rc = debug_format_buffer_alloc_buffers();
+
 	return rc;
 }
 
@@ -710,6 +713,22 @@ int libcfs_debug_mark_buffer(const char *text)
 
 	return 0;
 }
+
+bool libcfs_debug_raw_pointers;
+module_param(libcfs_debug_raw_pointers, bool, 0644);
+MODULE_PARM_DESC(libcfs_debug_raw_pointers, "Disable pointer hashing");
+
+bool get_debug_raw_pointers(void)
+{
+	return libcfs_debug_raw_pointers;
+}
+EXPORT_SYMBOL(get_debug_raw_pointers);
+
+void set_debug_raw_pointers(bool value)
+{
+	libcfs_debug_raw_pointers = value;
+}
+EXPORT_SYMBOL(set_debug_raw_pointers);
 
 #undef DEBUG_SUBSYSTEM
 #define DEBUG_SUBSYSTEM S_LNET
