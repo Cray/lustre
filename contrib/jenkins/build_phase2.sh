@@ -193,6 +193,8 @@ EL9_DEVEL="python3 python3-devel"
 ZFS7_DEVEL="zfs libzfs2-devel libzpool2 libzfs2 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python-docutils"
 ZFS8_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python2-docutils"
 ZFS9_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel"
+[[ "$JP_NEO_RELEASE" == "NEO7.X" ]] &&
+	ZFS9_DEVEL="zfs libzfs7-devel libzpool7 libzfs7 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python-docutils"
 
 if [ ! -z "$JP_KFI" ]
 then
