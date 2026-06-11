@@ -186,25 +186,31 @@ then
 fi
 
 LUSTRE_DEVEL="openldap-devel gcc libyaml-devel lsof pciutils procps module-init-tools zlib-devel libtool git swig libblkid-devel flex bison"
-EL7_DEVEL=python-devel
-EL8_DEVEL="python3 python3-devel"
-EL9_DEVEL="python3 python3-devel"
+EL7_DEVEL="python-devel libselinux-devel net-snmp-devel libyaml-devel python-docutils"
+EL8_DEVEL="python3 python3-devel libselinux-devel net-snmp-devel libyaml-devel python2-docutils"
+EL9_DEVEL="python3 python3-devel libselinux-devel net-snmp-devel libyaml-devel"
+EL10_DEVEL="python3 python3-devel libselinux-devel net-snmp-devel libyaml-devel"
 
-ZFS7_DEVEL="zfs libzfs2-devel libzpool2 libzfs2 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python-docutils"
-ZFS8_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python2-docutils"
-ZFS9_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel"
-[[ "$JP_NEO_RELEASE" == "NEO7.X" ]] &&
-	ZFS9_DEVEL="zfs libzfs7-devel libzpool7 libzfs7 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python-docutils"
+ZFS7_DEVEL="zfs libzfs2-devel libzpool2 libzfs2 kmod-zfs-devel kmod-zfs"
+[[ ${JP_NEO_RELEASE:3} = "4.X" ]] || [[ ${JP_NEO_RELEASE:3} > "4.3" ]] &&
+    ZFS7_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs"
+
+ZFS8_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs"
+[[ "$JP_NEO_RELEASE" =~ ORNL6.*|LLNL6.* ]]   &&
+	ZFS8_DEVEL="zfs libzfs7-devel libzpool7 libzfs7 kmod-zfs-devel kmod-zfs "
+
+ZFS9_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs"
+[[ "$JP_NEO_RELEASE" == "NEO7.X" ]] || [[ "$JP_NEO_RELEASE" == "TST7.X" ]] &&
+	ZFS9_DEVEL="zfs libzfs7-devel libzpool7 libzfs7 kmod-zfs-devel kmod-zfs"
+
+ZFS10_DEVEL="zfs libzfs7-devel libzpool7 libzfs7 kmod-zfs-devel kmod-zfs"
+
 
 if [ ! -z "$JP_KFI" ]
 then
     o_opt="${o_opt} --with-kfi=$JP_KFI"
     LUSTRE_DEVEL="$LUSTRE_DEVEL cray-kfabric-devel"
 fi
-
-[[ ${JP_NEO_RELEASE:3} = "4.X" ]] || [[ ${JP_NEO_RELEASE:3} > "4.3" ]] &&
-    ZFS7_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs libselinux-devel net-snmp-devel libyaml-devel python-docutils"
-
 
 [[ "${JP_BUILD_TYPE}" == "debug" ]] && DOTDEBUG="*debug"
 
