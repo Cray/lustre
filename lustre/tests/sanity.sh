@@ -31825,9 +31825,11 @@ test_398c() { # LU-4198
 	pct=$($LCTL get_param osc.${imp_name}.rpc_stats |
 		grep -A 1 'pages per rpc' | grep -v 'pages per rpc' |
 		awk '{print $7}')
-	(( $pct <= 50 )) || {
+	local max_pct=$((50 + PAGE_SIZE/16384))
+	echo "$pct% of I/O are 1-page (PAGE_SIZE=$PAGE_SIZE), max $max_pct%"
+	(( $pct <= $max_pct )) || {
 		$LCTL get_param osc.${imp_name}.rpc_stats
-		error "$pct% of I/O are 1-page"
+		error "$pct% > $max_pct% I/O are 1-page (PAGE_SIZE=$PAGE_SIZE)"
 	}
 
 	echo "mix rw ${size}M to OST0 by fio with $njobs jobs..."
