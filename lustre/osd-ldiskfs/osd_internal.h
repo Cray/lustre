@@ -132,7 +132,8 @@ struct osd_object {
 	__u32			oo_destroyed:1,
 				oo_pfid_in_lma:1,
 				oo_compat_dot_created:1,
-				oo_compat_dotdot_created:1;
+				oo_compat_dotdot_created:1,
+				oo_lmv_updated:1;
 
 	/* the i_flags in LMA */
 	__u32                   oo_lma_flags;
