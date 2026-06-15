@@ -81,7 +81,6 @@ enum lnetctl_cmd {
 #define LNET_MAX_NIDS_PER_PEER 128
 
 struct lnet_dlc_network_descr {
-	struct list_head network_on_rule;
 	__u32 nw_id;
 	struct list_head nw_intflist;
 };
@@ -97,8 +96,8 @@ struct lnet_dlc_intf_descr {
  *	Describes an ip2nets rule. This can be on a list of rules.
  */
 struct lustre_lnet_ip2nets {
-	struct lnet_dlc_network_descr ip2nets_net;
-	struct list_head ip2nets_ip_ranges;
+	struct lnet_dlc_network_descr lli_net;
+	struct list_head lli_ip_ranges;
 };
 
 /*

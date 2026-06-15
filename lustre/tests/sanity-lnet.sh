@@ -3003,7 +3003,7 @@ check_tunable_warning() {
 		grep -q "All tunables of NIs of a net should be the same"
 }
 
-test_170() {
+test_net_cpts_tunables_import() {
 	[[ ${NETTYPE} == tcp* ]] || skip "Test written for tcp"
 
 	cleanup_lnet || error "Failed to unload modules before test execution"
@@ -3016,11 +3016,11 @@ test_170() {
 	local rl=$(cat $rlpath)
 	echo 0 > $rlpath
 
-	local IMPORT="do_lnetctl import --old-api"
+	local IMPORT="do_lnetctl import $1" # arg is to provide old-api option
 	local expected="$TMP/sanity-lnet-$testnum-expected.yaml"
 	local actual="$TMP/sanity-lnet-$testnum-actual.yaml"
 
-	echo "Different CPTs"
+	log "Different CPTs"
 	cat <<EOF > $expected
 net:
 -     net type: ${NETTYPE}
@@ -3032,7 +3032,7 @@ net:
                 0: ${FAKE_IF}
           CPT: "[1]"
 EOF
-	$IMPORT <  ${expected} || error "Import failed $?"
+	$IMPORT < ${expected} || error "Import failed $?"
 	cat <<EOF > $expected
 CPT:"[0]"
 CPT:"[1]"
@@ -3041,7 +3041,7 @@ EOF
 	diff $expected $actual || error "Bad parsing"
 	reinit_dlc
 
-	echo "lnd_tunables not read if no tunables"
+	log "lnd_tunables not read if no tunables"
 	cat <<EOF > $expected
 net:
 -     net type: ${NETTYPE}
@@ -3052,11 +3052,11 @@ net:
                 conns_per_peer: 5
                 tos: -1
 EOF
-	$IMPORT <  ${expected} || error "Import failed $?"
+	$IMPORT < ${expected} || error "Import failed $?"
 	$LNETCTL export --backup | grep -q "conns_per_peer: 5" || error "Bad parsing"
 	reinit_dlc
 
-	echo "lnd_tunables cannot be different"
+	log "lnd_tunables cannot be different"
 	cat <<EOF > $expected
 net:
 -     net type: ${NETTYPE}
@@ -3072,12 +3072,12 @@ net:
                 conns_per_peer: 3
                 tos: -1
 EOF
-	$IMPORT <  ${expected} || error "Import failed $?"
+	$IMPORT < ${expected} || error "Import failed $?"
 	$LNETCTL export --backup | grep -q "conns_per_peer: 5" || error "Bad parsing"
 	$LNETCTL export --backup | grep -q "conns_per_peer: 3" || error "Bad parsing"
 	reinit_dlc
 
-	echo "Wrong tunables (lnd_tunables) read from NI if first is empty"
+	log "Wrong tunables (lnd_tunables) read from NI if first is empty"
 	cat <<EOF > $expected
 net:
 -     net type: ${NETTYPE}
@@ -3095,7 +3095,7 @@ net:
                 conns_per_peer: 3
                 tos: -1
 EOF
-	$IMPORT <  ${expected} || error "Import failed $?"
+	$IMPORT < ${expected} || error "Import failed $?"
 	# conns_per_peer has default value for first ni and 3 for second
 	$LNETCTL export --backup | grep "conns_per_peer:" | grep -qv 3 || error "Bad parsing"
 	$LNETCTL export --backup | grep -q "conns_per_peer: 3" || error "Bad parsing"
@@ -3105,7 +3105,7 @@ EOF
 	check_tunable_warning || error "Missing warning"
 	reinit_dlc
 
-	echo "Tunables can be set directly in the net"
+	log "Tunables can be set directly in the net"
 	cat <<EOF > $expected
 net:
 -     net type: ${NETTYPE}
@@ -3123,14 +3123,79 @@ net:
             conns_per_peer: 3
             tos: -1
 EOF
-	$IMPORT <  ${expected} || error "Import failed $?"
+	$IMPORT < ${expected} || error "Import failed $?"
 	(( $($LNETCTL export --backup | grep -c "peer_timeout: 182") == 2 )) ||
 		error "Bad parsing"
 	(( $($LNETCTL export --backup | grep -c "conns_per_peer: 3") == 2 )) ||
 		error "Bad parsing"
 	reinit_dlc
 
-	echo "Show warning if we try to set different tunables (not lnd_tunables) for NIs of a same net"
+	log "Per-NI lnd tunables combined with net-level tunables"
+	cat <<EOF > $expected
+net:
+-     net type: ${NETTYPE}
+      local NI(s):
+        - interfaces:
+                0: ${INTERFACES[0]}
+          lnd tunables:
+                conns_per_peer: 3
+                tos: -1
+      tunables:
+            peer_timeout: 182
+            peer_credits: 8
+            peer_buffer_credits: 0
+            credits: 256
+EOF
+	$IMPORT < ${expected} || error "Import failed $?"
+	# Net-level tunables: must not be dropped by the per-NI lnd tunables:
+	$LNETCTL export --backup | grep -q "conns_per_peer: 3" ||
+		error "Bad parsing (missing per-NI lnd tunables)"
+	$LNETCTL export --backup | grep -q "peer_timeout: 182" ||
+		error "Bad parsing (net-level tunables dropped)"
+	reinit_dlc
+
+	log "Per-NI tunables combined with net-level lnd tunables"
+	cat <<EOF > $expected
+net:
+-     net type: ${NETTYPE}
+      local NI(s):
+        - interfaces:
+                0: ${INTERFACES[0]}
+          tunables:
+                peer_timeout: 182
+                peer_credits: 8
+                peer_buffer_credits: 0
+                credits: 256
+      lnd tunables:
+            conns_per_peer: 3
+            tos: -1
+EOF
+	$IMPORT < ${expected} || error "Import failed $?"
+	# Net-level lnd tunables: must not be dropped by the per-NI tunables:
+	$LNETCTL export --backup | grep -q "peer_timeout: 182" ||
+		error "Bad parsing (missing per-NI tunables)"
+	$LNETCTL export --backup | grep -q "conns_per_peer: 3" ||
+		error "Bad parsing (net-level lnd tunables dropped)"
+	reinit_dlc
+
+	if [[ -z "$1" ]]; then
+		log "Import net block without 'local NI(s):' uses resolver"
+		cat <<EOF > $expected
+net:
+    - net type: ${NETTYPE}
+EOF
+		$IMPORT < ${expected} || error "Import failed $?"
+		$LNETCTL export --backup | grep -q "net type: ${NETTYPE}" ||
+			error "Net not configured from NI-less import"
+
+		log "import --show of net block without 'local NI(s):'"
+		do_lnetctl import --show < ${expected} |
+			grep -q "net type: ${NETTYPE}" ||
+			error "import --show failed for NI-less net"
+		reinit_dlc
+	fi
+
+	log "Show warning if we try to set different tunables (not lnd_tunables) for NIs of a same net"
 	cat <<EOF > $expected
 net:
 -     net type: ${NETTYPE}
@@ -3150,9 +3215,10 @@ net:
                 peer_buffer_credits: 0
                 credits: 256
 EOF
-	$IMPORT <  ${expected} || error "Import failed $?"
+	$IMPORT < ${expected} || error "Import failed $?"
 	# Tunables for the two nis will be the same, a warning will be emitted
 	(( $($LNETCTL export --backup | grep -c "peer_timeout: 182") == 2 )) ||
+		error "Bad parsing"
 	check_tunable_warning || error "Missing warning"
 
 	# Restore console_ratelimit
@@ -3160,7 +3226,135 @@ EOF
 
 	cleanup_lnet
 }
-run_test 170 "Check CPTs and tunables parsing when importing"
+
+test_170() {
+	test_net_cpts_tunables_import
+}
+run_test 170 "Check CPTs and tunables parsing when importing net"
+
+test_171() {
+	test_net_cpts_tunables_import "--old-api"
+}
+run_test 171 "Check CPTs and tunables parsing when importing net (old-api)"
+
+test_172() {
+	[[ ${NETTYPE} == tcp* ]] || skip "Test written for tcp"
+
+	cleanup_lnet || error "Failed to unload modules before test execution"
+	cleanup_netns || error "Failed to cleanup netns before test execution"
+	setup_fakeif || error "Failed to add fake IF"
+	reinit_dlc || return $?
+
+	local ncpts=$(lctl get_param -n cpu_partition_table 2>/dev/null| wc -l)
+	(( ncpts > 1 )) || { cleanup_fakeif; skip "Need several CPTs"; }
+
+	local IMPORT="do_lnetctl import"
+	local expected="$TMP/sanity-lnet-$testnum-expected.yaml"
+	local actual="$TMP/sanity-lnet-$testnum-actual.yaml"
+
+	echo "Different tunables (lnd_tunables) for different nets"
+	cat <<EOF > $expected
+ip2nets:
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+    ip-range:
+        0: "*.*.*.*"
+    tunables:
+        peer_timeout: 182
+        peer_credits: 8
+        peer_buffer_credits: 0
+        credits: 216
+    lnd tunables:
+        conns_per_peer: 3
+        tos: -1
+    CPT: "[0]"
+  - net-spec: ${NETTYPE}1
+    interfaces:
+        0: ${FAKE_IF}
+    ip-range:
+        0: "*.*.*.*"
+    tunables:
+        peer_timeout: 181
+        peer_credits: 8
+        peer_buffer_credits: 0
+        credits: 201
+    lnd tunables:
+        conns_per_peer: 5
+        tos: -1
+    CPT: "[1]"
+EOF
+	$IMPORT < ${expected} || error "Import failed $?"
+	$LNETCTL export --backup | grep "conns_per_peer:" | grep -q 3 \
+		|| error "Bad parsing"
+	$LNETCTL export --backup | grep "conns_per_peer:" | grep -q 5 \
+		|| error "Bad parsing"
+	$LNETCTL export --backup | grep "peer_timeout:" | grep -q 181 \
+		|| error "Bad parsing"
+	$LNETCTL export --backup | grep "peer_timeout:" | grep -q 182 \
+		|| error "Bad parsing"
+	cat <<EOF > $expected
+CPT:"[0]"
+CPT:"[1]"
+EOF
+	$LNETCTL export --backup | grep CPT: | tr -d ' ' > $actual
+	diff $expected $actual || error "Bad parsing"
+	reinit_dlc
+
+	echo "Wrong tunables (lnd_tunables) read from NI if first is empty"
+	cat <<EOF > $expected
+ip2nets:
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+    ip-range:
+        0: "*.*.*.*"
+  - net-spec: ${NETTYPE}1
+    interfaces:
+        0: ${FAKE_IF}
+    ip-range:
+        0: "*.*.*.*"
+    tunables:
+        peer_timeout: 181
+        peer_credits: 8
+        peer_buffer_credits: 0
+        credits: 256
+    lnd tunables:
+        conns_per_peer: 3
+        tos: -1
+EOF
+	$IMPORT < ${expected} || error "Import failed $?"
+	$LNETCTL export --backup | grep "conns_per_peer:" | grep -qv 3 \
+		|| error "Bad parsing"
+	$LNETCTL export --backup | grep -q "conns_per_peer: 3" \
+		|| error "Bad parsing"
+	$LNETCTL export --backup | grep "peer_timeout:" | grep -qv 181 \
+		|| error "Bad parsing"
+	$LNETCTL export --backup | grep -q "peer_timeout: 181" \
+		|| error "Bad parsing"
+	reinit_dlc
+
+	echo "lnd_tunables not read if no tunables"
+	cat <<EOF > $expected
+ip2nets:
+  - net-spec: ${NETTYPE}
+    interfaces:
+        0: ${INTERFACES[0]}
+        1: ${FAKE_IF}
+    ip-range:
+        0: "*.*.*.*"
+        1: "*.*.*.*"
+    lnd tunables:
+        conns_per_peer: 5
+        tos: -1
+EOF
+	$IMPORT < ${expected} || error "Import failed $?"
+	$LNETCTL export --backup | grep -q "conns_per_peer: 5" \
+		|| error "Bad parsing"
+
+	cleanup_lnet
+}
+run_test 172 "Check CPTs and tunables parsing when importing ip2nets"
 
 test_180() {
 	[[ $NETTYPE == o2ib* ]] || skip "Need o2ib NETTYPE"
