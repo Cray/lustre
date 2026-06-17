@@ -736,7 +736,7 @@ test_17i() { #bug 20018
 	ln -s $foo $foo || error "create symlink failed"
 #define OBD_FAIL_MDS_READLINK_EPROTO     0x143
 	do_facet mds$((mdt_idx + 1)) lctl set_param fail_loc=0x80000143
-	ls -l $foo && error "error not detected"
+	readlink $foo && error "error not detected"
 	return 0
 }
 run_test 17i "don't panic on short symlink (should return error)"
