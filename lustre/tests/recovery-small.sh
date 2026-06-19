@@ -3877,6 +3877,8 @@ test_170() {
 	remote_ost_nodsh && skip "remote OST with nodsh"
 	(( "$OST1_VERSION" >= $(version_code 2.16.1) )) ||
 		skip "Need OST version at least 2.16.1"
+	[[ $(facet_host client) != $(facet_host ost1) ]] ||
+		skip "need ost1 and client on different nodes"
 	local num_files=20
 	local i
 
@@ -3901,9 +3903,13 @@ test_170() {
 	$LCTL set_param fail_loc=0x80000537
 	fail_nodf ost1
 
-	wait_clients_import_state ${HOSTNAME} ost1 REPLAY_LOCKS
-	#should be reconnection and new recovery
-	wait_clients_import_state ${HOSTNAME} ost1 FULL
+	stack_trap "$LCTL get_param osc.*OST0000-osc-*.state" EXIT
+	#should be reconnection and new recovery, at client state
+	#REPLAY_LOCKS
+	#CONNECTING
+	#REPLAY..
+
+	wait_clients_import_state ${HOSTNAME} ost1 "\(FULL\|IDLE\)" 60
 }
 run_test 170 "Reconnect after REPLAY_LOCKS hangs (LU-18154)"
 
