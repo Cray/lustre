@@ -5608,6 +5608,39 @@ AC_DEFUN([LC_HAVE_VFS_CREATE_DELEGATE],[
 ]) # LC_HAVE_VFS_CREATE_DELEGATE
 
 #
+# LC_INTERVAL_TREE_CACHED_SUBTREE_SEARCH
+#
+# Linux commit v6.18-rc1-18-gb37491d72b43c
+#   interval_tree: Fix ITSTATIC usage for *_subtree_search()
+#
+AC_DEFUN([LC_SRC_INTERVAL_TREE_CACHED_SUBTREE_SEARCH], [
+	LB2_LINUX_TEST_SRC([itree_cached_subtree_search], [
+		#include <linux/interval_tree_generic.h>
+		struct foo { struct rb_node rb; int last; int a,b;};
+		#define START(n) ((n)->a)
+		#define LAST(n) ((n)->b)
+		struct rb_root_cached tree;
+		/* forward declare functions created by INTERVAL_TREE_DEFINE */
+		void ftree_insert(struct foo *, struct rb_root_cached *);
+		void ftree_remove(struct foo *, struct rb_root_cached *);
+		struct foo *ftree_subtree_search(struct foo *, int, int);
+		struct foo *ftree_iter_first(struct rb_root_cached *, int, int);
+		struct foo *ftree_iter_next(struct foo *, int, int);
+		INTERVAL_TREE_DEFINE(struct foo, rb, int, last,
+			START, LAST, , ftree);
+	],[
+		ftree_insert(NULL, &tree);
+	],[-Werror])
+])
+AC_DEFUN([LC_INTERVAL_TREE_CACHED_SUBTREE_SEARCH], [
+	LB2_MSG_LINUX_TEST_RESULT([if interval_trees use rb_tree_cached],
+	[itree_cached_subtree_search], [
+		AC_DEFINE(HAVE_INTERVAL_TREE_CACHED, 1,
+			[interval trees use rb_tree_cached])
+	])
+]) # LC_INTERVAL_TREE_CACHED_SUBTREE_SEARCH
+
+#
 ## LC_HAVE_ILOOKUP5_NOWAIT_ISNEW
 #
 # Linux commit v6.18-rc1-20-ga27628f436343
@@ -5982,6 +6015,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_HAVE_VFS_MKDIR_DELEGATE
 	LC_SRC_HAVE_INODE_STATE_READ
 	LC_SRC_HAVE_VFS_CREATE_DELEGATE
+	LC_SRC_INTERVAL_TREE_CACHED_SUBTREE_SEARCH
 	LC_SRC_HAVE_ILOOKUP5_NOWAIT_ISNEW
 
 	# kernel patch to extend integrity interface
@@ -6349,6 +6383,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_HAVE_VFS_MKDIR_DELEGATE
 	LC_HAVE_INODE_STATE_READ
 	LC_HAVE_VFS_CREATE_DELEGATE
+	LC_INTERVAL_TREE_CACHED_SUBTREE_SEARCH
 	LC_HAVE_ILOOKUP5_NOWAIT_ISNEW
 
 	# kernel patch to extend integrity interface
