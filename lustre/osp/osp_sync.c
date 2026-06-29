@@ -565,7 +565,6 @@ static int osp_sync_interpret(const struct lu_env *env,
 		 * we tried to destroy object or update attributes,
 		 * but object doesn't exist anymore - cancell llog record
 		 */
-		LASSERT(req->rq_transno == 0);
 		LASSERT(list_empty(&jra->jra_committed_link));
 
 		ptlrpc_request_addref(req);
