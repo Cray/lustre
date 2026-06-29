@@ -590,6 +590,18 @@ void qsd_fini(const struct lu_env *env, struct qsd_instance *qsd)
 	qsd->qsd_stopping = true;
 	write_unlock(&qsd->qsd_lock);
 
+	while (atomic_read(&qsd->qsd_trans_count) > 0) {
+		int count;
+
+		wait_var_event_timeout(&qsd->qsd_trans_count,
+				       !atomic_read(&qsd->qsd_trans_count),
+				       cfs_time_seconds(30));
+		count = atomic_read(&qsd->qsd_trans_count);
+		if (count)
+			CERROR("%s: QSD waiting on %d transactions\n",
+			       qsd->qsd_svname, count);
+	}
+
 	/* remove qsd proc entry */
 	if (qsd->qsd_proc != NULL) {
 		lprocfs_remove(&qsd->qsd_proc);
@@ -690,6 +702,7 @@ struct qsd_instance *qsd_init(const struct lu_env *env, char *svname,
 	qsd->qsd_is_md = is_md;
 	qsd->qsd_updating = false;
 	qsd->qsd_exclusive = excl;
+	atomic_set(&qsd->qsd_trans_count, 0);
 
 	/* copy service name */
 	rc = strscpy(qsd->qsd_svname, svname, sizeof(qsd->qsd_svname));
