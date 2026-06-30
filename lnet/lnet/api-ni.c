@@ -41,7 +41,7 @@ struct lnet the_lnet = {
 };		/* THE state of the network */
 EXPORT_SYMBOL(the_lnet);
 
-#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 17, 53, 0)
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 19, 53, 0)
 static char *ip2nets = "";
 module_param(ip2nets, charp, 0444);
 MODULE_PARM_DESC(ip2nets, "LNET network <- IP table (Deprecated)");
@@ -668,7 +668,7 @@ response_tracking_set(const char *val, cfs_kernel_param_arg_t *kp)
 	return 0;
 }
 
-#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 17, 53, 0)
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 19, 53, 0)
 static char *
 lnet_get_routes(int *should_free)
 {
@@ -690,7 +690,7 @@ lnet_get_routes(int *should_free)
 static const char *
 lnet_get_networks(void)
 {
-#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 17, 53, 0)
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 19, 53, 0)
 	const char *nets, *config;
 	int rc;
 
@@ -3393,7 +3393,7 @@ LNetNIInit(lnet_pid_t requested_pid)
 	if (rc < 0)
 		goto err_empty_list;
 
-#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 17, 53, 0)
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 19, 53, 0)
 	if (!the_lnet.ln_nis_from_mod_params) {
 		int im_a_router = 0;
 
@@ -3471,7 +3471,7 @@ err_acceptor_stop:
 	the_lnet.ln_refcount = 0;
 	lnet_acceptor_stop();
 err_destroy_routes:
-#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 17, 53, 0)
+#if LUSTRE_VERSION_CODE < OBD_OCD_VERSION(2, 19, 53, 0)
 	if (!the_lnet.ln_nis_from_mod_params)
 		lnet_destroy_routes();
 err_shutdown_lndnis:
