@@ -231,6 +231,7 @@ enum llapi_layout_verbose  {
 	VERBOSE_COMPRESS_LEVEL	= 0x400000,
 	VERBOSE_COMPRESS_CHUNK	= 0x800000,
 	VERBOSE_EC_COUNT	= 0x1000000,
+	VERBOSE_EC_MAP		= 0x2000000,
 	VERBOSE_DEFAULT		= VERBOSE_STRIPE_COUNT | VERBOSE_STRIPE_SIZE |
 				  VERBOSE_STRIPE_OFFSET | VERBOSE_POOL |
 				  VERBOSE_OBJID | VERBOSE_GENERATION |
@@ -240,7 +241,7 @@ enum llapi_layout_verbose  {
 				  VERBOSE_COMP_ID | VERBOSE_MIRROR_COUNT |
 				  VERBOSE_MIRROR_ID | VERBOSE_EXT_SIZE |
 				  VERBOSE_INHERIT | VERBOSE_INHERIT_RR |
-				  VERBOSE_EC_COUNT
+				  VERBOSE_EC_COUNT | VERBOSE_EC_MAP
 };
 
 enum {
@@ -374,9 +375,10 @@ struct find_param {
 				 fp_exclude_btime:1,
 				 fp_exclude_perm:1,
 				 fp_stop_on_error:1, /* stop iteration on err */
-				 fp_exclude_nlink:1, /* Once used, we must add*/
-				 fp_exclude_attrs:1, /* a separate flag field */
-				 fp_unused_bit7:1;   /* at end of struct.  */
+				 fp_exclude_nlink:1,
+				 fp_exclude_attrs:1,
+				 fp_ec_map_only:1;   /* --ec-map only dump */
+	/* No spare bits left above; add new flags at the end of the struct. */
 
 	enum llapi_layout_verbose fp_verbose;
 	int			 fp_quiet;

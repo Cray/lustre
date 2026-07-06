@@ -160,6 +160,45 @@ verify_ec_stripe_count() {
 }
 
 #
+# Verify EC raidset map on a parity component.
+#	$1 file
+#	$2 parity component ID (empty to dump whole file)
+#	$3 expected raidset count
+#	$4+ substrings expected in raidset output lines
+#
+verify_ec_raidsets() {
+	local tf=$1
+	local comp_id=$2
+	local expected_count=$3
+	local output
+	local -a cmd
+
+	cmd=($LFS getstripe --ec-map)
+	[[ -n "$comp_id" ]] && cmd+=(-I$comp_id)
+	cmd+=($tf)
+
+	output=$("${cmd[@]}")
+	echo "$output"
+
+	echo "$output" | verify_yaml ||
+		error "verify raidset map failed on $tf: invalid YAML"
+
+	echo "$output" | grep -q "lcme_id:" ||
+		error "verify raidset map failed on $tf: missing lcme_id"
+
+	local count=$(echo "$output" | awk '/lcme_ec_raidset_count:/ { print $2 }')
+	(( count == expected_count )) ||
+		error "$tf raidset count on comp $comp_id: $count != $expected_count"
+
+	shift 3
+	while (( $# > 0 )); do
+		echo "$output" | grep -q "$1" ||
+			error "verify raidset map failed on $tf:missing '$1'"
+		shift
+	done
+}
+
+#
 # Verify component extent with expected start and end extent values
 # for a given file and component ID.
 #
@@ -4357,6 +4396,90 @@ test_31e() {
 		error "Wrong size of parity mirror (expected $expected)"
 }
 run_test 31e "test parity mirror size with multiple PFL components"
+
+test_31f() {
+	(( OSTCOUNT >= 8 )) || skip_env "needs >= 8 OSTs"
+	verify_yaml_available || skip_env "YAML verification not installed"
+	enable_ec
+
+	local tf=$DIR/$tfile
+
+	# 7 data stripes, EC 3+2 -> uneven raidsets (k=3,2,2)
+	$LFS setstripe -E -1 -c 7 --ec 3+2 $tf || error "setstripe failed"
+
+	local parity_mirror_id=$($LFS getstripe $tf |
+		awk '/lcme_mirror_id:/ { id=$2 }
+		     /lcme_flags.*parity/ { print id; exit }')
+	[[ -n "$parity_mirror_id" ]] || error "could not find parity mirror"
+
+	local parity_comp_id=$($LFS getstripe $tf |
+		awk -v mid="$parity_mirror_id" '
+		/lcme_id:/ { id=$2 }
+		/lcme_mirror_id:/ { if ($2 == mid) { print id; exit } }')
+
+	verify_comp_parity $tf $parity_comp_id
+
+	local data_comp_id=$($LFS getstripe $tf |
+		awk '/lcme_id:/ {id=$2}
+		     /lcme_flags:/ {
+			if ($0 !~ /parity/) { print id; exit }
+		     }')
+	[[ -n "$data_comp_id" ]] || error "could not find data component"
+
+	# Whole-file --ec-map (no -I): every parity component, with lcme_id
+	verify_ec_raidsets $tf "" 3 \
+		"lcme_id:.*$parity_comp_id" \
+		'lcme_ec:[[:space:]]*3+2' \
+		'0: { ec_data_count: 3, data_stripes: "0-2", parity_stripes: "0-1" }' \
+		'1: { ec_data_count: 2, data_stripes: "3-4", parity_stripes: "2-3" }' \
+		'2: { ec_data_count: 2, data_stripes: "5-6", parity_stripes: "4-5" }'
+
+	# Filtered --ec-map with -I on parity
+	verify_ec_raidsets $tf $parity_comp_id 3 \
+		"lcme_id:.*$parity_comp_id" \
+		'lcme_ec:[[:space:]]*3+2' \
+		'0: { ec_data_count: 3, data_stripes: "0-2", parity_stripes: "0-1" }' \
+		'1: { ec_data_count: 2, data_stripes: "3-4", parity_stripes: "2-3" }' \
+		'2: { ec_data_count: 2, data_stripes: "5-6", parity_stripes: "4-5" }'
+
+	# -I on data: reverse-lookup parity, same raidset map
+	verify_ec_raidsets $tf $data_comp_id 3 \
+		"lcme_id:.*$data_comp_id" \
+		'lcme_ec:[[:space:]]*3+2' \
+		'0: { ec_data_count: 3, data_stripes: "0-2", parity_stripes: "0-1" }' \
+		'1: { ec_data_count: 2, data_stripes: "3-4", parity_stripes: "2-3" }' \
+		'2: { ec_data_count: 2, data_stripes: "5-6", parity_stripes: "4-5" }'
+}
+run_test 31f "test getstripe EC raidset map"
+
+test_31g() {
+	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
+	verify_yaml_available || skip_env "YAML verification not installed"
+	enable_ec
+
+	local tf=$DIR/$tfile
+	local id out
+
+	# Later PFL component is a template: k+p known, raidsets empty
+	$LFS setstripe -E 1G -c 4 --ec 2+1 -E -1 -c 4 --ec 4+2 $tf ||
+		error "setstripe failed"
+	id=$($LFS getstripe $tf |
+		awk '/lcme_id:/ { id=$2 }
+		     /lcme_flags:/ && /parity/ && !/init/ { print id; exit }')
+	[[ -n "$id" ]] || error "no uninstantiated parity component"
+	verify_ec_raidsets $tf $id 0 \
+		'lcme_ec:[[:space:]]*4+2' \
+		'lcme_ec_raidsets: \[\]'
+
+	# Non-EC: no stdout, warning on stderr
+	$LFS setstripe -c 1 $tf.plain || error "setstripe plain failed"
+	out=$($LFS getstripe --ec-map $tf.plain 2>/dev/null)
+	[[ -z "$out" ]] || error "--ec-map on non-EC file: $out"
+	$LFS getstripe --ec-map $tf.plain 2>&1 >/dev/null |
+		grep -q "no parity component found" ||
+		error "--ec-map on non-EC file missing warning"
+}
+run_test 31g "test getstripe --ec-map empty and uninstantiated"
 
 test_32a() {
 	# Verify that after an OST goes down and comes back, a full

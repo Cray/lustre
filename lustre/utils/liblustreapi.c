@@ -2397,7 +2397,10 @@ static void lov_dump_comp_v1_header(struct find_param *param, char *path,
 			     comp_v1->lcm_entry_count : 0);
 	}
 
-	if (verbose & VERBOSE_DETAIL || yaml)
+	/* --ec-map may still drop every entry; emit "components:" later,
+	 * on the first match, so a non-EC file is not a YAML null key.
+	 */
+	if ((verbose & VERBOSE_DETAIL || yaml) && !param->fp_ec_map_only)
 		llapi_printf(LLAPI_MSG_NORMAL, "components:\n");
 }
 
@@ -2429,6 +2432,123 @@ static void lcme_flags2str(__u32 comp_flags)
 	}
 }
 
+/*
+ * Find the EC counterpart of @src (parity↔data). The link is bidirectional
+ * after bind: each side's lcme_mirror_link_id holds the peer's mirror id.
+ */
+static int comp_md_find_linked_entry(struct lov_comp_md_v1 *comp_v1,
+				     struct lov_comp_md_entry_v1 *src)
+{
+	struct lov_comp_md_entry_v1 *entry;
+	bool src_is_parity = src->lcme_flags & LCME_FL_PARITY;
+	int i;
+
+	if (src->lcme_mirror_link_id == 0)
+		return -1;
+
+	for (i = 0; i < comp_v1->lcm_entry_count; i++) {
+		bool entry_is_parity;
+
+		entry = &comp_v1->lcm_entries[i];
+		entry_is_parity = entry->lcme_flags & LCME_FL_PARITY;
+		if (entry_is_parity == src_is_parity)
+			continue;
+
+		if (mirror_id_of(entry->lcme_id) != src->lcme_mirror_link_id)
+			continue;
+		if (entry->lcme_extent.e_start != src->lcme_extent.e_start ||
+		    entry->lcme_extent.e_end != src->lcme_extent.e_end)
+			continue;
+
+		return i;
+	}
+
+	return -1;
+}
+
+static void dump_comp_ec_raidsets(struct find_param *param,
+				  struct lov_comp_md_entry_v1 *parity_entry,
+				  int data_idx, char **separator)
+{
+	struct lov_comp_md_v1 *comp_v1;
+	struct lov_comp_md_entry_v1 *data_entry;
+	struct lov_user_md *data_lmm;
+	struct ec_split_comp sc;
+	int data_start = 0;
+	int parity_start = 0;
+	uint8_t k, p;
+	int num_raidsets;
+	int i;
+
+	comp_v1 = (void *)&param->fp_lmd->lmd_lmm;
+
+	if (data_idx < 0 || data_idx >= comp_v1->lcm_entry_count)
+		return;
+	data_entry = &comp_v1->lcm_entries[data_idx];
+
+	if (!(parity_entry->lcme_flags & LCME_FL_PARITY))
+		return;
+
+	k = parity_entry->lcme_dstripe_count;
+	p = parity_entry->lcme_cstripe_count;
+	if (k == 0 || p == 0)
+		return;
+
+	/* Later PFL components are templates until first write; k+p is on
+	 * the parity entry, but raidsets need instantiated data stripes.
+	 * Keep lcme_ec_raidsets a YAML sequence (not a string / null).
+	 */
+	if (!(data_entry->lcme_flags & LCME_FL_INIT)) {
+		llapi_printf(LLAPI_MSG_NORMAL, "%s", *separator);
+		llapi_printf(LLAPI_MSG_NORMAL,
+			     "%4slcme_ec:             %u+%u\n",
+			     " ", k, p);
+		llapi_printf(LLAPI_MSG_NORMAL,
+			     "%4slcme_ec_raidset_count: %d\n",
+			     " ", 0);
+		llapi_printf(LLAPI_MSG_NORMAL,
+			     "%4slcme_ec_raidsets: []\n", " ");
+		*separator = "";
+		return;
+	}
+
+	data_lmm = lov_comp_entry(comp_v1, data_idx);
+	if (data_lmm->lmm_magic == LOV_MAGIC_FOREIGN)
+		return;
+
+	ec_split_stripes(data_lmm->lmm_stripe_count, k, &sc);
+	num_raidsets = sc.esc_n0 + sc.esc_n1;
+
+	llapi_printf(LLAPI_MSG_NORMAL, "%s", *separator);
+	/* Top-level EC geometry (k+p), same form as --ec DATA+PARITY */
+	llapi_printf(LLAPI_MSG_NORMAL, "%4slcme_ec:             %u+%u\n",
+		     " ", k, p);
+	llapi_printf(LLAPI_MSG_NORMAL, "%4slcme_ec_raidset_count: %d\n",
+		     " ", num_raidsets);
+
+	llapi_printf(LLAPI_MSG_NORMAL, "%4slcme_ec_raidsets:\n", " ");
+	for (i = 0; i < sc.esc_n0; i++) {
+		llapi_printf(LLAPI_MSG_NORMAL,
+			     "%6s- %d: { ec_data_count: %u, data_stripes: \"%u-%u\", parity_stripes: \"%u-%u\" }\n",
+			     " ", i, sc.esc_k0,
+			     data_start, data_start + sc.esc_k0 - 1,
+			     parity_start, parity_start + p - 1);
+		data_start += sc.esc_k0;
+		parity_start += p;
+	}
+	for (i = 0; i < sc.esc_n1; i++) {
+		llapi_printf(LLAPI_MSG_NORMAL,
+			     "%6s- %d: { ec_data_count: %u, data_stripes: \"%u-%u\", parity_stripes: \"%u-%u\" }\n",
+			     " ", sc.esc_n0 + i, sc.esc_k1,
+			     data_start, data_start + sc.esc_k1 - 1,
+			     parity_start, parity_start + p - 1);
+		data_start += sc.esc_k1;
+		parity_start += p;
+	}
+	/* Lines above already end with '\n'; don't force another. */
+	*separator = "";
+}
+
 static void lov_dump_comp_v1_entry(struct find_param *param,
 				   enum lov_dump_flags flags, int index)
 {
@@ -2441,7 +2561,7 @@ static void lov_dump_comp_v1_entry(struct find_param *param,
 	entry = &comp_v1->lcm_entries[index];
 
 	if (verbose & VERBOSE_COMP_ID || yaml) {
-		if (verbose & VERBOSE_DETAIL || yaml)
+		if (verbose & VERBOSE_DETAIL || yaml || param->fp_ec_map_only)
 			llapi_printf(LLAPI_MSG_NORMAL,
 				     "%slcme_id:             ", "  - ");
 		else if (verbose & ~VERBOSE_COMP_ID)
@@ -2531,6 +2651,40 @@ static void lov_dump_comp_v1_entry(struct find_param *param,
 		separator = "\n";
 	}
 
+	if (verbose & VERBOSE_EC_MAP) {
+		struct lov_comp_md_entry_v1 *parity_entry = NULL;
+		int data_idx = -1;
+		int peer_idx;
+
+		if (entry->lcme_flags & LCME_FL_PARITY) {
+			peer_idx = comp_md_find_linked_entry(comp_v1, entry);
+			if (peer_idx >= 0) {
+				parity_entry = entry;
+				data_idx = peer_idx;
+			} else if (param->fp_ec_map_only &&
+				   param->fp_check_comp_id) {
+				llapi_err_noerrno(LLAPI_MSG_WARN,
+					"warning: cannot find data component for parity component %u\n",
+					entry->lcme_id);
+			}
+		} else if (param->fp_ec_map_only && param->fp_check_comp_id) {
+			/* -I data: follow link to parity, same raidsets */
+			peer_idx = comp_md_find_linked_entry(comp_v1, entry);
+			if (peer_idx >= 0) {
+				parity_entry = &comp_v1->lcm_entries[peer_idx];
+				data_idx = index;
+			} else {
+				llapi_err_noerrno(LLAPI_MSG_WARN,
+					"warning: cannot find parity component for data component %u\n",
+					entry->lcme_id);
+			}
+		}
+
+		if (parity_entry && data_idx >= 0)
+			dump_comp_ec_raidsets(param, parity_entry, data_idx,
+					      &separator);
+	}
+
 	if (verbose & VERBOSE_COMP_START) {
 		llapi_printf(LLAPI_MSG_NORMAL, "%s", separator);
 		if (verbose & ~VERBOSE_COMP_START)
@@ -2554,7 +2708,12 @@ static void lov_dump_comp_v1_entry(struct find_param *param,
 		separator = "\n";
 	}
 
-	if (yaml) {
+	/* fp_ec_map_only skips sub_layout content below (continue after
+	 * this function); do not emit an empty sub_layout: header.
+	 */
+	if (param->fp_ec_map_only) {
+		llapi_printf(LLAPI_MSG_NORMAL, "%s", separator);
+	} else if (yaml) {
 		llapi_printf(LLAPI_MSG_NORMAL, "%s", separator);
 		llapi_printf(LLAPI_MSG_NORMAL, "%4ssub_layout:\n", " ");
 	} else if (verbose & VERBOSE_DETAIL) {
@@ -2574,6 +2733,10 @@ print_last_init_comp(struct find_param *param)
 {
 	/* print all component info */
 	if ((param->fp_verbose & VERBOSE_DEFAULT) == VERBOSE_DEFAULT)
+		return false;
+
+	/* --ec-map dumps every matching component's raidset map */
+	if (param->fp_ec_map_only)
 		return false;
 
 	/* print specific component info */
@@ -2645,6 +2808,7 @@ static void lov_dump_comp_v1(struct find_param *param, char *path,
 	int obdindex = param->fp_obd_index;
 	int i, j, match, ext;
 	bool obdstripe = false;
+	bool comp_matched = false;
 	__u16 mirror_index = 0;
 	__u16 mirror_id = 0;
 
@@ -2691,6 +2855,12 @@ static void lov_dump_comp_v1(struct find_param *param, char *path,
 
 		if (param->fp_check_comp_id &&
 		    param->fp_comp_id != entry->lcme_id)
+			continue;
+
+		/* Whole-file --ec-map: only emit parity components */
+		if (param->fp_ec_map_only &&
+		    !(entry->lcme_flags & LCME_FL_PARITY) &&
+		    !param->fp_check_comp_id)
 			continue;
 
 		if (param->fp_check_comp_start) {
@@ -2778,7 +2948,15 @@ static void lov_dump_comp_v1(struct find_param *param, char *path,
 
 		if (obdindex != OBD_NOT_FOUND && (flags & LDF_SKIP_OBJS))
 			continue;
+		/* First match: header was deferred so a miss is not YAML null. */
+		if (param->fp_ec_map_only && !comp_matched)
+			llapi_printf(LLAPI_MSG_NORMAL, "components:\n");
+		comp_matched = true;
 		lov_dump_comp_v1_entry(param, flags, i);
+
+		/* --ec-map only: no sub-layout fields */
+		if (param->fp_ec_map_only)
+			continue;
 
 		v1 = lov_comp_entry(comp_v1, i);
 		if (v1->lmm_magic == LOV_MAGIC_FOREIGN) {
@@ -2823,6 +3001,16 @@ static void lov_dump_comp_v1(struct find_param *param, char *path,
 					       obdindex, param->fp_max_depth,
 					       param->fp_verbose, flags | ext);
 		}
+	}
+
+	if (param->fp_ec_map_only && !comp_matched) {
+		if (param->fp_check_comp_id)
+			llapi_err_noerrno(LLAPI_MSG_WARN,
+					  "warning: component %u not found\n",
+					  param->fp_comp_id);
+		else
+			llapi_err_noerrno(LLAPI_MSG_WARN,
+					  "warning: no parity component found for --ec-map\n");
 	}
 }
 

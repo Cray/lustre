@@ -435,7 +435,7 @@ command_t cmdlist[] = {
 	 "		   [--component-end|-E[[+-]END_OFFSET]]\n"
 	 "		   [[!] --mirror-index=[+-]MIRROR_INDEX |\n"
 	 "		   [!] --mirror-id=[+-]MIRROR_ID] [--mirror-count|-N]\n"
-	 "		   [--no-follow]\n"
+	 "		   [--ec-map] [--no-follow]\n"
 	 "		   FILENAME|DIRECTORY"},
 	{"setdirstripe", lfs_setdirstripe, 0,
 	 "Create striped directory on specified MDT, same as mkdir.\n"
@@ -4252,6 +4252,8 @@ enum {
 	LFS_MAX_FREE_OPT,
 	LFS_LQA_OPT,
 	LFS_QUOTA_DEFAULT_OPT,
+	LFS_FORCE_NO_EC_OPT,
+	LFS_EC_MAP_OPT,
 };
 
 #ifndef LCME_USER_MIRROR_FLAGS
@@ -8405,6 +8407,8 @@ static int lfs_getstripe_internal(int argc, char **argv,
 	{ .val = 'D',	.name = "default",	.has_arg = no_argument },
 	{ .val = 'E',	.name = "comp-end",	.has_arg = optional_argument },
 	{ .val = 'E',	.name = "component-end", .has_arg = optional_argument },
+	{ .val = LFS_EC_MAP_OPT,
+			.name = "ec-map",	.has_arg = no_argument },
 	{ .val = 'F',	.name = "fid",		.has_arg = no_argument },
 	{ .val = 'g',	.name = "generation",	.has_arg = no_argument },
 /* find	{ .val = 'G',	.name = "group",	.has_arg = required_argument }*/
@@ -8648,6 +8652,18 @@ static int lfs_getstripe_internal(int argc, char **argv,
 				param->fp_max_depth = 0;
 			}
 			break;
+		case LFS_EC_MAP_OPT:
+			/* lcme_id + raidset only (no sub_layout).
+			 * If -v already won, keep the full dump regardless of
+			 * option order (same VERBOSE_DETAIL guard as neighbours).
+			 */
+			if (!(param->fp_verbose & VERBOSE_DETAIL)) {
+				param->fp_ec_map_only = 1;
+				param->fp_verbose |= VERBOSE_EC_MAP |
+						     VERBOSE_COMP_ID;
+				param->fp_max_depth = 0;
+			}
+			break;
 		case 'F':
 			if (!(param->fp_verbose & VERBOSE_DETAIL)) {
 				param->fp_verbose |= VERBOSE_DFID;
@@ -8736,6 +8752,7 @@ static int lfs_getstripe_internal(int argc, char **argv,
 			break;
 		case 'v':
 			param->fp_verbose = VERBOSE_DEFAULT | VERBOSE_DETAIL;
+			param->fp_ec_map_only = 0;
 			break;
 		case 'y':
 			param->fp_yaml = 1;
@@ -8773,8 +8790,10 @@ static int lfs_getstripe_internal(int argc, char **argv,
 
 	if (!param->fp_verbose)
 		param->fp_verbose = VERBOSE_DEFAULT;
-	if (param->fp_quiet)
+	if (param->fp_quiet) {
 		param->fp_verbose = VERBOSE_OBJID;
+		param->fp_ec_map_only = 0;
+	}
 
 	do {
 		int rc2;

@@ -1,4 +1,4 @@
-.TH LFS-GETSTRIPE 1 2025-12-20 Lustre "Lustre User Utilities"
+.TH LFS-GETSTRIPE 1 2026-08-15 Lustre "Lustre User Utilities"
 .SH NAME
 lfs-getstripe \- Lustre client command to print layout parameters of a file
 .SH SYNOPSIS
@@ -44,6 +44,7 @@ lfs-getstripe \- Lustre client command to print layout parameters of a file
 .I MIRROR_INDEX\c
 .RB " | [" ! ] --mirror-id =[ +- ]\c
 .IR MIRROR_ID ]
+.RB [ --ec-map ]
 .RB [ --verbose | -v ]
 .RB [ --yaml | -y ]
 .RB [ --no-follow ]
@@ -328,6 +329,28 @@ size of the first extension component.
 Also print the layout magic, FID sequence, FID object ID, and FID, in
 addition to the normally-printed attributes.
 .TP
+.BR --ec-map
+Print only the EC raidset mapping for parity components, including the
+configured geometry
+.B lcme_ec
+(same
+.B DATA+PARITY
+form as
+.BR --ec )
+and which data stripe indices in the linked data component map to
+which parity stripe indices in the parity component.
+(Default getstripe already includes this mapping on parity components;
+.B --ec-map
+restricts the output to the map.)
+Without
+.BR -I ,
+every parity component is shown.
+With
+.BR -I ,
+only the selected component is shown: a parity component uses its
+linked data component, and a data component reverse-looks up its
+linked parity to print the same map.
+.TP
 .BR -y ", " --yaml
 Always print the layout in YAML format, rather than only using this
 format for composite files.
@@ -388,6 +411,13 @@ Print only the component start for the component with ID of 3:
 .RS
 .EX
 .B # lfs getstripe -I3 --component-start /mnt/lustre/file1
+.EE
+.RE
+.PP
+Print the EC raidset mapping for parity component 131074:
+.RS
+.EX
+.B # lfs getstripe -I131074 --ec-map /mnt/lustre/file1
 .EE
 .RE
 .PP

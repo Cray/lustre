@@ -7,10 +7,11 @@ Contents
         1.1 Definitions
 2. Command interface
         2.1 lfs setstripe
-	2.1.1 raid set aware stripe allocation
-	2.2 lfs getstripe
-	2.3 lfs mirror resync
-	2.4 lfs mirror verify
+                2.1.1 raid set aware stripe allocation
+        2.2 lfs getstripe
+                2.2.1 EC raidset map
+        2.3 lfs mirror resync
+        2.4 lfs mirror verify
 3. Stripe Layout
 
 
@@ -286,6 +287,56 @@ lcme_data_id         0x01
 lcme_flags:          init,stale,parity
   means that this is a parity mirror and that it is stale.
   A stale mirror can not be used to restore missing data.
+
+
+2.2.1 EC raidset map
+--------------------
+The --ec-map option to getstripe prints the raidset mapping between a
+parity component and its linked data component: which data stripes form
+each raid set, and which parity stripes protect them.
+
+Without -I, --ec-map prints the mapping for every parity component in
+the file. Each section is labeled with lcme_id so the output stays
+usable as YAML when multiple components are present. If the file has
+no parity components, a warning is printed and stdout is left empty.
+With -I, only the selected component is shown: if it is a parity
+component the linked data component is used to build the map; if it
+is a data component the linked parity is looked up and the same
+raidset map is printed. A warning is printed if the linked
+counterpart cannot be found.
+
+If the linked data component exists but is not instantiated yet
+(typical for later PFL components at create time), lcme_ec is still
+printed with lcme_ec_raidset_count: 0 and lcme_ec_raidsets: [].
+
+Example:
+A file with 7 data stripes and EC 3+2 has uneven raid sets
+(ec_data_count=3,2,2).
+
+  $ lfs setstripe -E -1 -c 7 --ec 3+2 /mnt/lustre/sahlberg/file
+  $ lfs getstripe --ec-map /mnt/lustre/sahlberg/file
+
+  components:
+  - lcme_id:             131074
+    lcme_ec:             3+2
+    lcme_ec_raidset_count: 3
+    lcme_ec_raidsets:
+      - 0: { ec_data_count: 3, data_stripes: "0-2", parity_stripes: "0-1" }
+      - 1: { ec_data_count: 2, data_stripes: "3-4", parity_stripes: "2-3" }
+      - 2: { ec_data_count: 2, data_stripes: "5-6", parity_stripes: "4-5" }
+
+lcme_ec                 3+2
+  is the configured EC geometry (same form as --ec DATA+PARITY).
+
+lcme_ec_raidset_count    3
+  is the number of raid sets the data stripe set is split into.
+
+lcme_ec_raidsets
+  lists each raid set with:
+    ec_data_count   the number of data stripes in the raid set
+    data_stripes    the range of data stripe indices in the raid set
+    parity_stripes  the range of parity stripe indices in the parity
+                    component for this raid set
 
 
 2.3 lfs mirror resync
