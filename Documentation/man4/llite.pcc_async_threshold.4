@@ -1,0 +1,97 @@
+.TH LLITE.PCC_ASYNC_THRESHOLD 4 2026-11-10 "Lustre" "Lustre Kernel Interfaces"
+.SH NAME
+llite.pcc_async_threshold \- file size threshold for background PCC attach
+.SH SYNOPSIS
+.SY
+.RI "lctl get_param llite." FSNAME *.pcc_async_threshold
+.SY
+.RI "lctl set_param llite." FSNAME *.pcc_async_threshold= SIZE
+.YS
+.SS PROPERTIES
+.TP
+.B Access Permissions
+.br
+.BR 644 " | " -rw-r--r--
+.TP
+.B Scope
+.br
+Per local filesystem mountpoint.
+.TP
+.B Config
+.br
+.B pcc_async_threshold
+is always present for client mountpoints.
+.TP
+.B Default
+.br
+.RB pcc_async_threshold= 268435456 " (256MiB)"
+.TP
+.B Valid Range
+.br
+.RB pcc_async_threshold= 0
+.br
+.RB pcc_async_threshold= 18446744073709551615 " (16EiB)"
+.SH DESCRIPTION
+The
+.B pcc_async_threshold
+parameter controls how a file is copied into a PCC-RO cache when it is
+attached automatically by an
+.B O_RDONLY
+.BR open (2)
+that matches a PCC backend with PCC-RO enabled.
+Files of at least
+.I SIZE
+bytes are copied in the background by a dedicated kernel thread,
+smaller files are copied before
+.BR open (2)
+returns and are attached to the file for later use.
+File descriptors opened before the background copy finishes use the
+uncached OST I/O path until they are closed, while later opens use the
+PCC copy.
+This may duplicate some reads to the Lustre OSTs initially, but reduces
+the initial read latency when an application first accesses a large file.
+The threshold does not apply to files attached with
+.BR lfs-pcc-attach (1),
+which are always copied synchronously.
+.PP
+If
+.BR llite.pcc_attach_thread_max (4)
+background attaches are already running, the file is copied
+synchronously regardless of its size.
+.PP
+The
+.I SIZE
+parameter is specified in bytes by default, but may specify unit suffixes
+.B KMGTP
+for values in
+.BR K ibibytes,
+.BR M ebibytes,
+.BR G ibibytes,
+.BR T ebibytes,
+and
+.BR P ebibytes
+respectively.
+.SH MODULES
+This parameter is in the following modules:
+.EX
+.B llite.*.pcc_async_threshold
+.EE
+.SH EXAMPLES
+Always use a background data copy to import files into the PCC cache:
+.EX
+.RB "mgs# " "lctl set_param -P llite.testfs-*.pcc_async_threshold=0"
+.EE
+.SH AVAILABILITY
+The
+.B llite.pcc_async_threshold
+parameter is part of the
+.BR lustre (7)
+filesystem package since release 2.16.0.
+.\" Added in commit v2_15_64-10-g5be466e873
+.SH SEE ALSO
+.BR lfs-pcc-attach (1),
+.BR open (2),
+.BR read (2),
+.BR llite.pcc_attach_thread_max (4),
+.BR lctl-get_param (8),
+.BR lctl-set_param (8)
