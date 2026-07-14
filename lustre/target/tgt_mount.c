@@ -647,6 +647,8 @@ static int lustre_lwp_setup(struct lustre_cfg *lcfg, struct lustre_sb_info *lsi,
 	rc = lustre_lwp_connect(obd, strstr(lsi->lsi_svname, "-MDT") != NULL);
 	if (rc < 0) {
 		CERROR("%s: connect failed: rc = %d\n", lwpname, rc);
+		/* Not on lsi_lwp_list yet, so umount would not clean it up */
+		class_manual_cleanup(obd);
 		GOTO(out, rc);
 	}
 

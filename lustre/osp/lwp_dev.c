@@ -455,6 +455,10 @@ static struct lu_device *lwp_device_fini(const struct lu_env *env,
 		class_disconnect(m->lpd_exp);
 
 	LASSERT(m->lpd_obd);
+	/* lwp_disconnect() never reaches free_prior; do it here */
+	ldlm_namespace_free_prior(m->lpd_obd->obd_namespace,
+				  m->lpd_obd->u.cli.cl_import,
+				  test_bit(OBDF_FORCE, m->lpd_obd->obd_flags));
 	client_obd_cleanup(m->lpd_obd);
 	ptlrpc_lprocfs_unregister_obd(m->lpd_obd);
 	ptlrpcd_decref();
