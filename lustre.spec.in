@@ -1023,7 +1023,7 @@ fi
 %{_bindir}/lfs_migrate
 /sbin/mount.lustre
 %if %{with servers}
-%ghost /sbin/mount.lustre_tgt
+/sbin/mount.lustre_tgt
 %endif
 @BASH_COMPLETION_DIR@
 %endif
