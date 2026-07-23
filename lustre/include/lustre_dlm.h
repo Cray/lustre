@@ -843,7 +843,6 @@ struct ldlm_flock {
 	__u64 owner;
 	__u64 blocking_owner;
 	struct obd_export *blocking_export;
-	atomic_t blocking_refs;
 	__u32 pid;
 };
 

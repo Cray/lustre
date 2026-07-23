@@ -33,6 +33,7 @@
 
 #define DEBUG_SUBSYSTEM S_LDLM
 
+#include <linux/delay.h>
 #include <linux/interval_tree_generic.h>
 #ifdef HAVE_LINUX_FILELOCK_HEADER
 #include <linux/filelock.h>
@@ -93,8 +94,7 @@ static inline void ldlm_flock_blocking_link(struct ldlm_lock *req,
 	req->l_policy_data.l_flock.blocking_owner =
 		lock->l_policy_data.l_flock.owner;
 	req->l_policy_data.l_flock.blocking_export =
-		lock->l_export;
-	atomic_set(&req->l_policy_data.l_flock.blocking_refs, 0);
+		class_export_get(lock->l_export);
 
 	cfs_hash_add(req->l_export->exp_flock_hash,
 		     &req->l_policy_data.l_flock.owner,
@@ -103,16 +103,21 @@ static inline void ldlm_flock_blocking_link(struct ldlm_lock *req,
 
 static inline void ldlm_flock_blocking_unlink(struct ldlm_lock *req)
 {
+	struct ldlm_flock *flock = &req->l_policy_data.l_flock;
+
 	/* For server only */
 	if (req->l_export == NULL)
 		return;
 
 	check_res_locked(req->l_resource);
 	if (req->l_export->exp_flock_hash != NULL &&
-	    !hlist_unhashed(&req->l_exp_flock_hash))
+	    !hlist_unhashed(&req->l_exp_flock_hash)) {
 		cfs_hash_del(req->l_export->exp_flock_hash,
-			     &req->l_policy_data.l_flock.owner,
-			     &req->l_exp_flock_hash);
+			     &flock->owner, &req->l_exp_flock_hash);
+		class_export_put(flock->blocking_export);
+		flock->blocking_owner = 0;
+		flock->blocking_export = NULL;
+	}
 }
 
 /* Remove cancelled lock from resource interval tree. */
@@ -164,28 +169,57 @@ ldlm_flock_destroy(struct ldlm_lock *lock, enum ldlm_mode mode, __u64 flags)
  * else and at the same time another client has the opposite situation).
  */
 struct ldlm_flock_lookup_cb_data {
-	__u64 *bl_owner;
-	struct ldlm_lock *lock;
-	struct obd_export *exp;
+	__u64			 flcb_owner;
+	struct ldlm_lock	*flcb_req;
+	bool			 flcb_found;
+	bool			 flcb_stop;
+	bool			 flcb_deadlock;
+	__u64			 flcb_blocking_owner;
+	struct lnet_nid		 flcb_blocking_nid;
 };
+
+static int ldlm_flock_lookup_lock_cb(struct cfs_hash *hs,
+				     struct cfs_hash_bd *bd,
+				     struct hlist_node *hnode, void *data)
+{
+	struct ldlm_flock_lookup_cb_data *cb_data = data;
+	struct ldlm_lock *lock;
+	struct ldlm_flock *flock;
+
+	if (cb_data->flcb_found)
+		return CFS_HASH_WALK_STOP;
+
+	lock = hlist_entry(hnode, struct ldlm_lock, l_exp_flock_hash);
+	flock = &lock->l_policy_data.l_flock;
+
+	cb_data->flcb_found = true;
+	cb_data->flcb_deadlock = lock == cb_data->flcb_req;
+	LASSERT(flock->blocking_export != NULL);
+	if (flock->blocking_export->exp_failed) {
+		cb_data->flcb_stop = true;
+		return CFS_HASH_WALK_STOP;
+	}
+	cb_data->flcb_blocking_nid =
+		flock->blocking_export->exp_connection->c_peer.nid;
+	cb_data->flcb_blocking_owner = flock->blocking_owner;
+
+	return CFS_HASH_WALK_STOP;
+}
 
 static int ldlm_flock_lookup_cb(struct obd_export *exp, void *data)
 {
 	struct ldlm_flock_lookup_cb_data *cb_data = data;
-	struct ldlm_lock *lock;
 
-	if (exp->exp_failed)
-		return 0;
-
-	lock = cfs_hash_lookup(exp->exp_flock_hash, cb_data->bl_owner);
-	if (lock == NULL)
+	if (cb_data->flcb_found)
+		return 1;
+	if (exp->exp_failed || exp->exp_flock_hash == NULL)
 		return 0;
 
 	/* Stop on first found lock. Same process can't sleep twice */
-	cb_data->lock = lock;
-	cb_data->exp = class_export_get(exp);
+	cfs_hash_for_each_key(exp->exp_flock_hash, &cb_data->flcb_owner,
+			      ldlm_flock_lookup_lock_cb, data);
 
-	return 1;
+	return cb_data->flcb_found ? 1 : 0;
 }
 
 static int
@@ -193,62 +227,45 @@ ldlm_flock_deadlock(struct ldlm_lock *req, struct ldlm_lock *bl_lock)
 {
 	struct obd_export *req_exp = req->l_export;
 	struct obd_export *bl_exp = bl_lock->l_export;
-	__u64 req_owner = req->l_policy_data.l_flock.owner;
-	__u64 bl_owner = bl_lock->l_policy_data.l_flock.owner;
+	__u64 owner = bl_lock->l_policy_data.l_flock.owner;
+	struct lnet_nid nid;
+	struct obd_device *obd;
 
 	/* For server only */
 	if (req_exp == NULL)
 		return 0;
 
-	class_export_get(bl_exp);
+	obd = bl_exp->exp_obd;
+	nid = bl_exp->exp_connection->c_peer.nid;
 	while (1) {
 		struct ldlm_flock_lookup_cb_data cb_data = {
-			.bl_owner = &bl_owner,
-			.lock = NULL,
-			.exp = NULL,
+			.flcb_owner = owner,
+			.flcb_req = req,
+			.flcb_found = false,
+			.flcb_stop = false,
+			.flcb_deadlock = false,
 		};
-		struct ptlrpc_connection *bl_exp_conn;
-		struct obd_export *bl_exp_new;
-		struct ldlm_lock *lock = NULL;
-		struct ldlm_flock *flock;
 
-		bl_exp_conn = bl_exp->exp_connection;
-		if (bl_exp->exp_flock_hash != NULL) {
-			obd_nid_export_for_each(bl_exp->exp_obd,
-						&bl_exp_conn->c_peer.nid,
-						ldlm_flock_lookup_cb,
-						&cb_data);
-			lock = cb_data.lock;
-		}
-		if (lock == NULL)
+		obd_nid_export_for_each(obd, &nid, ldlm_flock_lookup_cb,
+					&cb_data);
+
+		if (!cb_data.flcb_found)
+			break;
+		if (cb_data.flcb_deadlock)
+			return 1;
+		if (cb_data.flcb_stop)
 			break;
 
-		class_export_put(bl_exp);
-		bl_exp = cb_data.exp;
+		if (CFS_FAIL_CHECK(OBD_FAIL_LDLM_FLOCK_DEADLOCK_PAUSE))
+			mdelay(cfs_fail_val);
 
-		flock = &lock->l_policy_data.l_flock;
-		LASSERT(flock->owner == bl_owner);
-		bl_owner = flock->blocking_owner;
-		bl_exp_new = class_export_get(flock->blocking_export);
-		cfs_hash_put(bl_exp->exp_flock_hash, &lock->l_exp_flock_hash);
-		class_export_put(bl_exp);
-		bl_exp = bl_exp_new;
+		owner = cb_data.flcb_blocking_owner;
+		nid = cb_data.flcb_blocking_nid;
 
-		if (req == lock) {
-			class_export_put(bl_exp);
+		if (owner == req->l_policy_data.l_flock.owner &&
+		    nid_same(&nid, &req_exp->exp_connection->c_peer.nid))
 			return 1;
-		}
-		if (bl_exp->exp_failed)
-			break;
-
-		if (bl_owner == req_owner &&
-		    nid_same(&bl_exp_conn->c_peer.nid,
-			     &req_exp->exp_connection->c_peer.nid)) {
-			class_export_put(bl_exp);
-			return 1;
-		}
 	}
-	class_export_put(bl_exp);
 
 	return 0;
 }
@@ -1086,32 +1103,17 @@ static void
 ldlm_export_flock_get(struct cfs_hash *hs, struct hlist_node *hnode)
 {
 	struct ldlm_lock *lock;
-	struct ldlm_flock *flock;
 
 	lock = hlist_entry(hnode, struct ldlm_lock, l_exp_flock_hash);
 	ldlm_lock_get(lock);
-
-	flock = &lock->l_policy_data.l_flock;
-	LASSERT(flock->blocking_export != NULL);
-	class_export_get(flock->blocking_export);
-	atomic_inc(&flock->blocking_refs);
 }
 
 static void
 ldlm_export_flock_put(struct cfs_hash *hs, struct hlist_node *hnode)
 {
 	struct ldlm_lock *lock;
-	struct ldlm_flock *flock;
 
 	lock = hlist_entry(hnode, struct ldlm_lock, l_exp_flock_hash);
-
-	flock = &lock->l_policy_data.l_flock;
-	LASSERT(flock->blocking_export != NULL);
-	class_export_put(flock->blocking_export);
-	if (atomic_dec_and_test(&flock->blocking_refs)) {
-		flock->blocking_owner = 0;
-		flock->blocking_export = NULL;
-	}
 	ldlm_lock_put(lock);
 }
 

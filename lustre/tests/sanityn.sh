@@ -4384,15 +4384,52 @@ test_73() {
 }
 run_test 73 "getxattr should not cause xattr lock cancellation"
 
-test_74() {
-	[ "$MDS1_VERSION" -lt $(version_code 2.4.93) ] &&
-		skip "Need MDS version at least 2.4.93"
-
+test_74a() {
 	dd if=/dev/zero of=$DIR1/$tfile-1 bs=1K count=1
 	dd if=/dev/zero of=$DIR1/$tfile-2 bs=1K count=1
 	flocks_test 4 $DIR1/$tfile-1 $DIR2/$tfile-2
 }
-run_test 74 "flock deadlock: different mounts =============="
+run_test 74a "flock deadlock: different mounts"
+
+test_74b() {
+	(( MDS1_VERSION >= $(version_code 2.17.60.1) )) ||
+		skip "MDS < 2.17.60.1 crashes on flock deadlock detection race"
+
+	local churn_end=$((SECONDS + 50))
+	local test_end=$((SECONDS + 40))
+	local mdts=$(mdts_nodes)
+	local pid1 pid2
+
+	dd if=/dev/zero of=$DIR1/$tfile-1 bs=1K count=1 ||
+		error "dd $tfile-1 failed"
+	dd if=/dev/zero of=$DIR1/$tfile-2 bs=1K count=1 ||
+		error "dd $tfile-2 failed"
+
+	do_nodes $mdts "$LCTL set_param fail_loc=0x333 fail_val=100"
+	stack_trap "do_nodes $mdts '$LCTL set_param fail_loc=0 fail_val=0'"
+
+	(
+		while ((SECONDS < churn_end)); do
+			echo "W100,200" | flocks_test 6 $DIR2/$tfile-1
+		done
+	) &>/dev/null &
+	pid1=$!
+	(
+		while ((SECONDS < churn_end)); do
+			echo "W100,200" | flocks_test 6 $DIR2/$tfile-2
+		done
+	) &>/dev/null &
+	pid2=$!
+	stack_trap "kill $pid1 $pid2 2>/dev/null || true"
+
+	while ((SECONDS < test_end)); do
+		flocks_test 4 $DIR1/$tfile-1 $DIR2/$tfile-2 ||
+			error "deadlock detection failed"
+	done
+
+	wait $pid1 $pid2
+}
+run_test 74b "flock deadlock detection vs blocking relink race"
 
 # LU-3889
 test_75() {

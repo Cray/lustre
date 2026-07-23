@@ -665,6 +665,7 @@ typedef int (*cfs_hash_for_each_cb_t)(struct cfs_hash *hs,
 				      struct cfs_hash_bd *bd,
 				      struct hlist_node *node,
 				      void *data);
+#define CFS_HASH_WALK_STOP	1
 void *cfs_hash_lookup(struct cfs_hash *hs, const void *key);
 void cfs_hash_for_each(struct cfs_hash *hs, cfs_hash_for_each_cb_t func,
 		       void *data);
