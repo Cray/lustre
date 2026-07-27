@@ -1967,6 +1967,8 @@ out:
 }
 
 #ifdef HAVE_SERVER_SUPPORT
+#define LDLM_REPROCESS_MAX 1000
+
 /**
  * Iterate through all waiting locks on a given resource queue and attempt to
  * grant them.
@@ -1983,6 +1985,7 @@ int ldlm_reprocess_queue(struct ldlm_resource *res, struct list_head *queue,
 	__u64 flags;
 	int rc = LDLM_ITER_CONTINUE;
 	enum ldlm_error err;
+	unsigned int count = 0;
 	LIST_HEAD(bl_ast_list);
 
 	ENTRY;
@@ -2015,9 +2018,17 @@ restart:
 		 * When this is called from recovery done, we always want
 		 * to scan the whole list no matter what 'rc' is returned.
 		 */
-		if (rc != LDLM_ITER_CONTINUE &&
-		    intention == LDLM_PROCESS_RESCAN)
-			break;
+		if (intention == LDLM_PROCESS_RESCAN) {
+			if (rc != LDLM_ITER_CONTINUE)
+				break;
+
+			if (++count >= LDLM_REPROCESS_MAX) {
+				unlock_res(res);
+				cond_resched();
+				lock_res(res);
+				GOTO(restart, rc);
+			}
+		}
 	}
 
 	if (!list_empty(&bl_ast_list)) {
