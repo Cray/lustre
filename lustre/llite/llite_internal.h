@@ -71,6 +71,7 @@ static inline void set_lld_invalid(struct dentry *de, int flag)
 
 struct ll_getname_data {
 	struct dir_context	ctx;
+	struct ll_sb_info *lgd_sbi;	/* for error reporting */
 	char		*lgd_name;	/* points to buf with NAME_MAX+1 size */
 	struct lu_fid	lgd_fid;	/* target fid we are looking for */
 	struct lu_dirent *lgd_lde;	/* dirent currently passed to filldir */

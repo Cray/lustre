@@ -6667,7 +6667,7 @@ run_test 101c "Discard DoM data on close-unlink"
 # test to verify we can open by handle an unlinked file from > 1 client
 # This test opens the file normally on $DIR1, which is on one mount, and then
 # opens it by handle on $DIR2, which is on a different mount.
-test_102() {
+test_102a() {
 	(( "$MDS1_VERSION" >= $(version_code 2.11.57) )) ||
 		skip "Needs MDS version 2.11.57 or later"
 
@@ -6697,7 +6697,7 @@ test_102() {
 			error "check_fhandle_syscalls $tdir.stripe/subdir fail"
 	fi
 }
-run_test 102 "Test open by handle of unlinked file"
+run_test 102a "Test open by handle of unlinked file"
 
 test_102b() {
 	local encdir=$DIR/$tdir/encdir

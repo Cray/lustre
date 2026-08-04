@@ -275,6 +275,28 @@ do_nfs_get_name_filldir(struct ll_getname_data *lgd, const char *name,
 	struct lu_dirent *lde = lgd->lgd_lde;
 	struct lu_fid fid;
 
+	/* a child is never reached through "." or ".." */
+	if (name_is_dot_or_dotdot(name, namelen))
+		return 0;
+
+	/* lgd_name is NAME_MAX + 1, and for a plain directory namelen is
+	 * lde_namelen straight off the wire with nothing bounding it
+	 */
+	if (namelen > NAME_MAX) {
+		CERROR("%s: dirent namelen %d exceeds %d: rc = %d\n",
+		       lgd->lgd_sbi->ll_fsname, namelen, NAME_MAX,
+		       -EOVERFLOW);
+		return 0;
+	}
+
+	/* lde_fid is only meaningful when the server set LUDA_FID */
+	if (!(le32_to_cpu(lde->lde_attrs) & LUDA_FID)) {
+		CDEBUG(D_INODE, DNAME": no LUDA_FID, lde_attrs %#x\n",
+		       encode_fn_dname(namelen, name),
+		       le32_to_cpu(lde->lde_attrs));
+		return 0;
+	}
+
 	fid_le_to_cpu(&fid, &lde->lde_fid);
 	if (lu_fid_eq(&fid, &lgd->lgd_fid)) {
 		memcpy(lgd->lgd_name, name, namelen);
@@ -317,6 +339,8 @@ static int ll_get_name(struct dentry *dentry, char *name, struct dentry *child)
 
 	if (!dir || !S_ISDIR(dir->i_mode))
 		GOTO(out, rc = -ENOTDIR);
+
+	lgd.lgd_sbi = ll_i2sbi(dir);
 
 	if (!dir->i_fop)
 		GOTO(out, rc = -EINVAL);
