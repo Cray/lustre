@@ -272,19 +272,7 @@ static inline int
 do_nfs_get_name_filldir(struct ll_getname_data *lgd, const char *name,
 			int namelen, loff_t hash, u64 ino, unsigned int type)
 {
-	/*
-	 * It is hack to access lde_fid for comparison with lgd_fid.
-	 * So the input 'name' must be part of the 'lu_dirent', and
-	 * so must appear to be a non-const pointer to an empty array.
-	 */
-	char (*n)[0] = (void *)name;
-	/* NOTE: This should be container_of().  However container_of() in
-	 * kernels earlier than v4.13-rc1~37^2~94 cause this to generate a
-	 * warning, which fails when we compile with -Werror.  Those earlier
-	 * kernels don't have container_of_safe, calling that instead will use
-	 * the lustre-local version which doesn't generate the warning.
-	 */
-	struct lu_dirent *lde = container_of_safe(n, struct lu_dirent, lde_name);
+	struct lu_dirent *lde = lgd->lgd_lde;
 	struct lu_fid fid;
 
 	fid_le_to_cpu(&fid, &lde->lde_fid);
@@ -318,7 +306,7 @@ static int ll_get_name(struct dentry *dentry, char *name, struct dentry *child)
 	struct ll_getname_data lgd = {
 		.lgd_name = name,
 		.lgd_fid = ll_i2info(child->d_inode)->lli_fid,
-		.ctx.actor = (filldir_t)ll_nfs_get_name_filldir,
+		.ctx.actor = ll_nfs_get_name_filldir,
 		.lgd_found = 0,
 	};
 	struct md_op_data *op_data;
@@ -339,7 +327,7 @@ static int ll_get_name(struct dentry *dentry, char *name, struct dentry *child)
 		GOTO(out, rc = PTR_ERR(op_data));
 
 	inode_lock(dir);
-	rc = ll_dir_read(dir, &pos, op_data, &lgd.ctx, NULL);
+	rc = ll_dir_read(dir, &pos, op_data, &lgd.ctx, NULL, &lgd.lgd_lde);
 	inode_unlock(dir);
 	ll_finish_md_op_data(op_data);
 	if (!rc && !lgd.lgd_found)

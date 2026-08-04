@@ -6699,6 +6699,52 @@ test_102() {
 }
 run_test 102 "Test open by handle of unlinked file"
 
+test_102b() {
+	local encdir=$DIR/$tdir/encdir
+	local subdir=$encdir/sub
+
+	$LCTL get_param mdc.*.import | grep -q client_encryption ||
+		skip "client encryption not supported"
+
+	mount.lustre --help |& grep -q "test_dummy_encryption:" ||
+		skip "need dummy encryption support"
+
+	# arm the restores before touching either mount, so a failure part
+	# way through cannot leave a client unmounted for later subtests
+	local opts=$MOUNT_OPTS
+
+	stack_trap "mount_client $MOUNT2 $opts || error_noexit 'remount2'"
+	stack_trap "umount_client $MOUNT2 || true"
+	stack_trap "mount_client $MOUNT $opts || error_noexit 'remount'"
+	stack_trap "umount_client $MOUNT || true"
+
+	# both mounts need the key: the handle is resolved on $DIR2, and
+	# ll_get_name() there has to return the plaintext name
+	umount_client $MOUNT2 || error "umount $MOUNT2 failed"
+	umount_client $MOUNT || error "umount $MOUNT failed"
+	mount_client $MOUNT ${MOUNT_OPTS},test_dummy_encryption ||
+		error "mount $MOUNT with test_dummy_encryption failed"
+	mount_client $MOUNT2 ${MOUNT_OPTS},test_dummy_encryption ||
+		error "mount $MOUNT2 with test_dummy_encryption failed"
+
+	# registered last, so LIFO removes the encrypted tree while the key
+	# is still loaded
+	stack_trap "rm -rf $DIR/$tdir"
+
+	mkdir -p $subdir || error "mkdir $subdir failed"
+
+	cancel_lru_locks mdc
+
+	# ll_get_name() is only reached for a disconnected directory handle,
+	# and needs the parent's crypt info loaded on the mount doing the
+	# reconnect, so walk it there first
+	ls $DIR2/$tdir/encdir > /dev/null || error "cannot list encdir on $DIR2"
+
+	check_fhandle_syscalls $subdir $MOUNT2 ||
+		error "check_fhandle_syscalls on an encrypted dir failed"
+}
+run_test 102b "open by handle of a dir inside an encrypted dir"
+
 # Compare file size between first & second mount, ensuring the client correctly
 # glimpses even with unused speculative locks - LU-11670
 test_103() {

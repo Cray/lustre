@@ -180,7 +180,8 @@ void ll_release_dir_folio(struct inode *inode, struct folio *folio,
 }
 
 int ll_dir_read(struct inode *inode, __u64 *ppos, struct md_op_data *op_data,
-		struct dir_context *ctx, int *partial_readdir_rc)
+		struct dir_context *ctx, int *partial_readdir_rc,
+		struct lu_dirent **dirent)
 {
 	struct ll_sb_info *sbi = ll_i2sbi(inode);
 	__u64 pos = *ppos;
@@ -240,10 +241,13 @@ int ll_dir_read(struct inode *inode, __u64 *ppos, struct md_op_data *op_data,
 			fid_le_to_cpu(&fid, &ent->lde_fid);
 			ino = cl_fid_build_ino(&fid, is_api32);
 			type = S_DT(lu_dirent_type_get(ent));
-			/* For ll_nfs_get_name_filldir(), it will try to access
-			 * 'ent' through 'lde_name', so the parameter 'name'
-			 * for 'filldir()' must be part of the 'ent'.
+			/* ll_nfs_get_name_filldir() needs the entry itself,
+			 * which it cannot recover from the emitted name.
+			 * Only valid for the duration of the callback below:
+			 * the folio is unmapped once this loop is done.
 			 */
+			if (dirent)
+				*dirent = ent;
 			ctx->pos = lhash;
 			if (!IS_ENCRYPTED(inode)) {
 				done = !dir_emit(ctx, ent->lde_name, namelen,
@@ -377,7 +381,7 @@ static int ll_iterate(struct file *filp, struct dir_context *ctx)
 	op_data->op_fid3 = pfid;
 
 	ctx->pos = pos;
-	rc = ll_dir_read(inode, &pos, op_data, ctx, &partial_readdir_rc);
+	rc = ll_dir_read(inode, &pos, op_data, ctx, &partial_readdir_rc, NULL);
 	pos = ctx->pos;
 	lfd->lfd_pos = pos;
 	if (!lfd->fd_partial_readdir_rc)

@@ -73,6 +73,7 @@ struct ll_getname_data {
 	struct dir_context	ctx;
 	char		*lgd_name;	/* points to buf with NAME_MAX+1 size */
 	struct lu_fid	lgd_fid;	/* target fid we are looking for */
+	struct lu_dirent *lgd_lde;	/* dirent currently passed to filldir */
 	int		lgd_found;	/* inode matched? */
 };
 
@@ -1298,7 +1299,8 @@ extern const struct file_operations ll_dir_operations;
 extern const struct inode_operations ll_dir_inode_operations;
 extern struct kmem_cache *quota_iter_slab;
 int ll_dir_read(struct inode *inode, __u64 *pos, struct md_op_data *op_data,
-		struct dir_context *ctx, int *partial_readdir_rc);
+		struct dir_context *ctx, int *partial_readdir_rc,
+		struct lu_dirent **dirent);
 int ll_get_mdt_idx(struct inode *inode);
 int ll_get_mdt_idx_by_fid(struct ll_sb_info *sbi, const struct lu_fid *fid);
 struct folio *ll_get_dir_folio(struct inode *dir, struct md_op_data *op_data,
