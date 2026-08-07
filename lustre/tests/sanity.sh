@@ -839,20 +839,25 @@ test_17o() {
 }
 run_test 17o "stat file with incompat LMA feature"
 
-test_17q() {
-	(( $MDS1_VERSION >= $(version_code 2.14.0-ddn212) )) ||
-		skip "Need MDS >= 2.14.0-ddn212 for symlink xattr"
-	local mdts=$(comma_list $(mdts_nodes))
+# LU-17660: "cannot overwrite directory" when creating symlink
+test_17p() {
+	touch $DIR/$tfile
+	test_mkdir $DIR/$tdir
 
-	ln -s foo $DIR/$tfile
-	setfattr -h -n trusted.test -v "$(head -200 /etc/services)" $DIR/$tfile ||
-		error "setfattr large xattr on symlink failed"
-	cancel_lru_locks mdc
-	sysctl -w vm.drop_caches=3
-	do_nodes $mdts sysctl -w vm.drop_caches=3
-	ls -l $DIR/$tfile || error "ls -l failed"
+	# there is a kernel bug in el9.x series (9.0 - 9.4 as we know till now)
+	# kernel, we need to stat the target dir to cache it first
+	if [[ "$CLIENT_OS_ID_LIKE" =~ "rhel" ]]; then
+		if (( $CLIENT_OS_VERSION_CODE >= $(version_code 9.0) &&
+		      $CLIENT_OS_VERSION_CODE <= $(version_code 9.100) )); then
+			echo "stat $DIR/$tdir to cache it in el9.x"
+			stat $DIR/$tdir
+		fi
+	fi
+
+	strace ln -sf $DIR/$tfile $DIR/$tdir/ ||
+		error "Failed to create symlink $DIR/$tfile under $DIR/$tdir/"
 }
-run_test 17q "set large xattr on fast symlink"
+run_test 17p "symlink overwrite directory error message"
 
 test_18() {
 	touch $DIR/$tfile || error "Failed to touch $DIR/$tfile: $?"
