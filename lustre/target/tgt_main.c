@@ -526,12 +526,12 @@ int tgt_init(const struct lu_env *env, struct lu_target *lut,
 	if (rc != 0) {
 		CERROR("%s: can't get statfs data, rc %d\n", tgt_name(lut),
 			rc);
-		GOTO(out, rc);
+		GOTO(out_put, rc);
 	}
 	if (!is_power_of_2(osfs->os_bsize)) {
 		CERROR("%s: blocksize (%d) is not a power of 2\n",
 			tgt_name(lut), osfs->os_bsize);
-		GOTO(out, rc = -EPROTO);
+		GOTO(out_put, rc = -EPROTO);
 	}
 	tgd->tgd_blockbits = fls(osfs->os_bsize) - 1;
 
@@ -540,7 +540,7 @@ int tgt_init(const struct lu_env *env, struct lu_target *lut,
 
 	OBD_ALLOC(lut->lut_client_bitmap, LR_MAX_CLIENTS >> 3);
 	if (lut->lut_client_bitmap == NULL)
-		RETURN(-ENOMEM);
+		GOTO(out_put, rc = -ENOMEM);
 
 	memset(&attr, 0, sizeof(attr));
 	attr.la_valid = LA_MODE;
@@ -611,8 +611,8 @@ int tgt_init(const struct lu_env *env, struct lu_target *lut,
 out:
 	dt_txn_callback_del(lut->lut_bottom, &lut->lut_txn_cb);
 out_put:
-	obd2obt(obd)->obt_lut = NULL;
-	obd2obt(obd)->obt_magic = 0;
+	obt->obt_lut = NULL;
+	obt->obt_magic = 0;
 	if (lut->lut_last_rcvd != NULL) {
 		dt_object_put(env, lut->lut_last_rcvd);
 		lut->lut_last_rcvd = NULL;

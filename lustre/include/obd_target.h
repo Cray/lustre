@@ -64,6 +64,41 @@ struct ost_obd {
 	struct mutex		 ost_health_mutex;
 };
 
+/* tgt_init() zeroes obt_magic when a mount fails while the exports it already
+ * created are still being destroyed, so consumers reachable from export
+ * teardown must use this instead of obd2obt() (see LU-7430).
+ *
+ * Only that deliberate zero is tolerated.  obd->u is a union, so on a device
+ * that is not a target obt_magic aliases some other type's first field - a
+ * pointer, for ost_obd and echo_client_obd - and a corrupted target reads as
+ * garbage too.  Both are bugs worth reporting rather than skipping, so they
+ * assert here.  Use this only where "no target" means there is nothing to do:
+ * paths that answer a request need class_exp2tgt(), which keeps returning NULL
+ * so they can fail the request instead of the node.  NULL is still returned
+ * here if asserts are compiled out.
+ */
+static inline struct obd_device_target *obd2obt_or_null(struct obd_device *obd)
+{
+	struct obd_device_target *obt;
+
+	BUILD_BUG_ON(sizeof(obd->u) < sizeof(*obt));
+
+	if (!obd)
+		return NULL;
+
+	obt = (void *)&obd->u;
+	if (obt->obt_magic == OBT_MAGIC)
+		return obt;
+
+	if (!obt->obt_magic)
+		return NULL;
+
+	LASSERTF(0, "%s: bad obt magic %08x, expected %08x or 0\n",
+		 obd->obd_name, obt->obt_magic, OBT_MAGIC);
+
+	return NULL;
+}
+
 static inline struct obd_device_target *obd2obt(struct obd_device *obd)
 {
 	struct obd_device_target *obt;
@@ -72,8 +107,12 @@ static inline struct obd_device_target *obd2obt(struct obd_device *obd)
 
 	if (!obd)
 		return NULL;
+
 	obt = (void *)&obd->u;
-	LASSERT(obt->obt_magic == OBT_MAGIC);
+	LASSERTF(obt->obt_magic == OBT_MAGIC,
+		 "%s: bad obt magic %08x, expected %08x\n",
+		 obd->obd_name, obt->obt_magic, OBT_MAGIC);
+
 	return obt;
 }
 

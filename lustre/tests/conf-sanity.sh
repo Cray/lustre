@@ -11897,6 +11897,40 @@ test_137() {
 }
 run_test 137 "a new MDT should inherit pools, parameters and failnode"
 
+cleanup_138() {
+	do_facet mds1 "$LCTL set_param fail_loc=0" || true
+	cleanup || true
+}
+
+test_138() {
+	(( MDS1_VERSION >= $(version_code 2.17.56) )) ||
+		skip "need MDS >= 2.17.56 to survive a failed mount"
+
+	stopall
+	combined_mgs_mds || start_mgs
+
+	setup
+	stack_trap cleanup_138 EXIT
+
+	# keep the client's last_rcvd slot so that the next mount recreates
+	# an export for it in tgt_clients_data_init()
+	#define OBD_FAIL_TGT_CLIENT_DEL 0x718
+	do_facet mds1 "$LCTL set_param fail_loc=0x718"
+	stop_mds || error "stop mds failed"
+
+	# fail the last_rcvd update that tgt_server_data_init() does once
+	# those exports exist, so tgt_init() unwinds with the exports still
+	# on their way through the zombie workqueue
+	#define OBD_FAIL_TGT_SRV_DATA_INIT 0x723
+	do_facet mds1 "$LCTL set_param fail_loc=0x723"
+	start_mds && error "MDT mount should have failed"
+	do_facet mds1 "$LCTL set_param fail_loc=0"
+
+	start_mds || error "MDT mount failed"
+	check_mount || error "check_mount failed"
+}
+run_test 138 "MDT mount failure must not LBUG destroying recovery exports"
+
 test_140() {
 	(( MDS1_VERSION >= $(version_code 2.15.55) )) ||
 		skip "need MDS version at least 2.15.55"

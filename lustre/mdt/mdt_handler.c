@@ -7677,8 +7677,12 @@ static int mdt_destroy_export(struct obd_export *exp)
 	 * interaction with the client is possible
 	 */
 	tgt_grant_discard(exp);
-	if (exp_connect_flags(exp) & OBD_CONNECT_GRANT)
-		obd2obt(exp->exp_obd)->obt_lut->lut_tgd.tgd_tot_granted_clients--;
+	if (exp_connect_flags(exp) & OBD_CONNECT_GRANT) {
+		struct lu_target *lut = class_exp2tgt(exp);
+
+		if (lut)
+			lut->lut_tgd.tgd_tot_granted_clients--;
+	}
 
 	if (!(exp->exp_flags & OBD_OPT_FORCE))
 		tgt_grant_sanity_check(exp->exp_obd, __func__);

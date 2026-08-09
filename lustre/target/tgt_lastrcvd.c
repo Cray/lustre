@@ -472,14 +472,15 @@ void tgt_client_free(struct obd_export *exp)
 	ted->ted_lcd = NULL;
 
 	/* Target may have been freed (see LU-7430)
-	 * Slot may be not yet assigned */
-	if (((struct obd_device_target *)(&exp->exp_obd->u))->obt_magic !=
-	    OBT_MAGIC ||
-	    ted->ted_lr_idx < 0)
+	 * Slot may be not yet assigned.  Re-fetch rather than reuse the
+	 * pointer read on entry: it is the one dereferenced below.
+	 */
+	lut = class_exp2tgt(exp);
+	if (!lut || ted->ted_lr_idx < 0)
 		return;
 
 	/* Clear bit when lcd is freed */
-	LASSERT(lut && lut->lut_client_bitmap);
+	LASSERT(lut->lut_client_bitmap);
 	LASSERTF(test_and_clear_bit(ted->ted_lr_idx, lut->lut_client_bitmap),
 		 "%s: client %u bit already clear in bitmap\n",
 		 exp->exp_obd->obd_name, ted->ted_lr_idx);
@@ -2014,6 +2015,8 @@ int tgt_server_data_init(const struct lu_env *env, struct lu_target *tgt)
 
 	/* save it, so mount count and last_transno is current */
 	rc = tgt_server_data_update(env, tgt, 0);
+	if (CFS_FAIL_CHECK(OBD_FAIL_TGT_SRV_DATA_INIT))
+		rc = -EDQUOT;
 	if (rc < 0)
 		GOTO(err_client, rc);
 

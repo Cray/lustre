@@ -487,8 +487,6 @@ static int ofd_init_export(struct obd_export *exp)
  */
 static int ofd_destroy_export(struct obd_export *exp)
 {
-	struct ofd_device *ofd = ofd_exp(exp);
-
 	if (exp->exp_target_data.ted_pending)
 		CERROR("%s: cli %s/%p has %lu pending on destroyed export\n",
 		       exp->exp_obd->obd_name, exp->exp_client_uuid.uuid,
@@ -509,8 +507,12 @@ static int ofd_destroy_export(struct obd_export *exp)
 	 */
 	tgt_grant_discard(exp);
 
-	if (exp_connect_flags(exp) & OBD_CONNECT_GRANT)
-		ofd->ofd_lut.lut_tgd.tgd_tot_granted_clients--;
+	if (exp_connect_flags(exp) & OBD_CONNECT_GRANT) {
+		struct lu_target *lut = class_exp2tgt(exp);
+
+		if (lut)
+			lut->lut_tgd.tgd_tot_granted_clients--;
+	}
 
 	if (!(exp->exp_flags & OBD_OPT_FORCE))
 		tgt_grant_sanity_check(exp->exp_obd, __func__);

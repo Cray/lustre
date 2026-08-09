@@ -161,8 +161,9 @@ static int tgt_check_export_grants(struct obd_export *exp, u64 *dirty,
  */
 void tgt_grant_sanity_check(struct obd_device *obd, const char *func)
 {
-	struct lu_target *lut = obd2obt(obd)->obt_lut;
-	struct tg_grants_data *tgd = &lut->lut_tgd;
+	struct obd_device_target *obt = obd2obt_or_null(obd);
+	struct lu_target *lut;
+	struct tg_grants_data *tgd;
 	struct obd_export *exp;
 	struct tg_export_data *ted;
 	u64		   maxsize;
@@ -173,6 +174,13 @@ void tgt_grant_sanity_check(struct obd_device *obd, const char *func)
 	u64		   fo_tot_pending;
 	u64		   fo_tot_dirty;
 	int		   error;
+
+	/* the target is gone, there is no grant accounting left to check */
+	lut = obt ? obt->obt_lut : NULL;
+	if (!lut)
+		return;
+
+	tgd = &lut->lut_tgd;
 
 	if (list_empty(&obd->obd_exports))
 		return;
