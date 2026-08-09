@@ -3495,7 +3495,7 @@ static inline const char *bulk2type(struct ptlrpc_request *req)
 int target_bulk_io(struct obd_export *exp, struct ptlrpc_bulk_desc *desc)
 {
 	struct ptlrpc_request *req = desc->bd_req;
-	time64_t start = ktime_get_seconds();
+	time64_t start = ktime_get_real_seconds(); /* rq_deadline is REALTIME */
 	time64_t deadline;
 	int rc = 0;
 
@@ -3535,7 +3535,7 @@ int target_bulk_io(struct obd_export *exp, struct ptlrpc_bulk_desc *desc)
 		deadline = req->rq_deadline;
 
 	do {
-		time64_t timeoutl = deadline - ktime_get_seconds();
+		time64_t timeoutl = deadline - ktime_get_real_seconds();
 		time64_t rq_deadline;
 
 		while (timeoutl >= 0 &&
@@ -3555,7 +3555,7 @@ int target_bulk_io(struct obd_export *exp, struct ptlrpc_bulk_desc *desc)
 		if (deadline > rq_deadline)
 			deadline = rq_deadline;
 	} while (rc == -ETIMEDOUT &&
-		 deadline > ktime_get_seconds());
+		 deadline > ktime_get_real_seconds());
 
 	if (rc == -ETIMEDOUT) {
 		DEBUG_REQ(D_ERROR, req, "timeout on bulk %s after %lld%+llds",
