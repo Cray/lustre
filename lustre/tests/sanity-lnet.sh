@@ -8552,6 +8552,72 @@ test_629() {
 }
 run_test 629 "lnet_legacy2yaml: multiple gateways error"
 
+cleanup_630_peers() {
+	local num_peers=$1
+	local i
+
+	for ((i = 0; i < num_peers; i++)); do
+		local prim="200.$((i / 256)).$((i % 256)).0@tcp"
+
+		$LNETCTL peer del --prim_nid $prim > /dev/null 2>&1
+	done
+	return 0
+}
+
+test_630() {
+	[[ ${NETTYPE} == tcp* ]] || skip "Need tcp NETTYPE"
+
+	# "trap -p" in the test subshell shows the cleanup_testsuite EXIT
+	# trap of this script, so stack_trap would chain it and run it when
+	# the test ends (LU-21059)
+	trap - EXIT
+
+	reinit_dlc || return $?
+	add_net "tcp" "${INTERFACES[0]}"
+
+	# lnet_peer_ni_show_dump() did not handle a full reply skb and
+	# dereferenced the NULL from nla_nest_start() (LU-20587).  Add enough
+	# peers with several NIDs that "peer show -v 4" needs many skbs, and
+	# check that it lists every peer once, under a single "peer:" key.
+	local num_peers=300
+	local secondary_nids=3
+	local out=$TMP/sanity-lnet-$testnum-actual.yaml
+	local i
+
+	[[ $SLOW == no ]] || num_peers=1500
+
+	stack_trap "cleanup_630_peers $num_peers"
+	echo "Adding $num_peers peers with $secondary_nids secondary NIDs each"
+	for ((i = 0; i < num_peers; i++)); do
+		local sub="$((i / 256)).$((i % 256))"
+
+		$LNETCTL peer add --prim_nid 200.$sub.0@tcp \
+			--nid "201.$sub.[1-$secondary_nids]@tcp" ||
+			error "peer add 200.$sub.0@tcp failed"
+	done
+
+	stack_trap "rm -f $out"
+	$LNETCTL peer show -v 4 > $out ||
+		error "lnetctl peer show -v 4 failed: rc = $?"
+
+	local hdrs=$(grep -c '^peer:$' $out)
+
+	((hdrs == 1)) || error "found $hdrs 'peer:' keys, expected 1"
+
+	# count the peers of this test only, other nodes can add peers
+	local prims=$(grep -c 'primary nid: 200\.' $out)
+
+	((prims == num_peers)) ||
+		error "found $prims primary NIDs, expected $num_peers"
+
+	for ((i = 0; i < num_peers; i++)); do
+		local prim="200.$((i / 256)).$((i % 256)).0@tcp"
+
+		grep -q "primary nid: $prim" $out || error "$prim is missing"
+	done
+}
+run_test 630 "peer show -v 4 of many peers in many skbs (LU-20587)"
+
 complete_test $SECONDS
 cleanup_testsuite
 exit_status
