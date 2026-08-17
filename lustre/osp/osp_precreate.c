@@ -1051,6 +1051,32 @@ out:
 	RETURN(rc);
 }
 
+/* Record a precreation stop/resume event for osp.*.precreate_state */
+static void osp_pre_record_state(struct osp_device *d, bool stop,
+				 u64 avail_mb, u64 ffree, u32 os_state)
+{
+	struct osp_precreate_hist *oph;
+
+	spin_lock(&d->opd_pre_lock);
+	oph = &d->opd_pre_hist[d->opd_pre_hist_idx];
+	oph->oph_time = ktime_get_real_seconds();
+	oph->oph_avail_mb = avail_mb;
+	oph->oph_ffree = ffree;
+	oph->oph_reserved_mb_low = d->opd_reserved_mb_low;
+	oph->oph_reserved_mb_high = d->opd_reserved_mb_high;
+	oph->oph_reserved_ino_low = d->opd_reserved_ino_low;
+	oph->oph_reserved_ino_high = d->opd_reserved_ino_high;
+	oph->oph_os_state = os_state;
+	oph->oph_stop = stop;
+	d->opd_pre_hist_idx = (d->opd_pre_hist_idx + 1) %
+			      OSP_PRECREATE_HIST_LEN;
+	if (stop)
+		d->opd_pre_stops++;
+	else
+		d->opd_pre_resumes++;
+	spin_unlock(&d->opd_pre_lock);
+}
+
 /**
  * osp_pre_update_msfs() - Update precreate status using statfs data
  * @d: OSP device
@@ -1143,12 +1169,20 @@ static void osp_pre_update_msfs(struct osp_device *d, struct obd_statfs *msfs)
 	if (!d->opd_pre)
 		goto update;
 
+	/* Object precreation skipped on OST if manually disabled */
+	if (d->opd_pre_max_create_count == 0)
+		msfs->os_state |= OS_STATFS_NOCREATE;
+	/* else don't clear flags in new msfs->os_state sent from OST */
+
 	if (msfs->os_state & (OS_STATFS_ENOINO | OS_STATFS_ENOSPC)) {
 		d->opd_pre_status = -ENOSPC;
-		if (!(old_state & (OS_STATFS_ENOINO | OS_STATFS_ENOSPC)))
-			CDEBUG(D_INFO, "%s: full: state=%x: rc = %x\n",
+		if (!(old_state & (OS_STATFS_ENOINO | OS_STATFS_ENOSPC))) {
+			CDEBUG(D_INFO, "%s: full: state=%x: rc = %d\n",
 			       d->opd_obd->obd_name, msfs->os_state,
 			       d->opd_pre_status);
+			osp_pre_record_state(d, true, available_mb,
+					     msfs->os_ffree, msfs->os_state);
+		}
 		CDEBUG(D_INFO, "uncommitted changes=%u in_progress=%u\n",
 		       atomic_read(&d->opd_sync_changes),
 		       atomic_read(&d->opd_sync_rpcs_in_progress));
@@ -1164,15 +1198,12 @@ static void osp_pre_update_msfs(struct osp_device *d, struct obd_statfs *msfs)
 		       "%s: available: state=%x: rc = %d\n",
 		       d->opd_obd->obd_name, msfs->os_state,
 		       d->opd_pre_status);
+		osp_pre_record_state(d, false, available_mb, msfs->os_ffree,
+				     msfs->os_state);
 	} else {
 		/* we only get here if rc == 0 in the caller */
 		d->opd_pre_status = 0;
 	}
-
-	/* Object precreation skipped on OST if manually disabled */
-	if (d->opd_pre_max_create_count == 0)
-		msfs->os_state |= OS_STATFS_NOCREATE;
-	/* else don't clear flags in new msfs->os_state sent from OST */
 
 update:
 	/* copy only new statfs state to make it visible to MDS threads */

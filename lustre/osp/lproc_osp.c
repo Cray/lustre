@@ -1289,6 +1289,49 @@ static int osp_sync_error_list_seq_show(struct seq_file *m, void *data)
 }
 LDEBUGFS_SEQ_FOPS_RO(osp_sync_error_list);
 
+/*
+ * Show the last OSP_PRECREATE_HIST_LEN precreation stop/resume events, as
+ * prealloc_status gives neither the time of a transition nor the space,
+ * inodes and watermarks that caused it
+ */
+static int osp_precreate_state_seq_show(struct seq_file *m, void *data)
+{
+	struct obd_device *dev = m->private;
+	struct osp_device *osp = lu2osp_dev(dev->obd_lu_dev);
+	char state[32];
+	int i, k;
+
+	if (IS_ERR_OR_NULL(osp) || !osp->opd_pre)
+		return -EINVAL;
+
+	spin_lock(&osp->opd_pre_lock);
+	seq_printf(m, "stop_count: %u\n", osp->opd_pre_stops);
+	seq_printf(m, "resume_count: %u\n", osp->opd_pre_resumes);
+	seq_puts(m, "state_history:\n");
+	k = osp->opd_pre_hist_idx;
+	for (i = 0; i < OSP_PRECREATE_HIST_LEN; i++) {
+		struct osp_precreate_hist *oph =
+			&osp->opd_pre_hist[(k + i) % OSP_PRECREATE_HIST_LEN];
+
+		if (oph->oph_time == 0)
+			continue;
+		lprocfs_statfs_state(state, sizeof(state), oph->oph_os_state);
+		seq_printf(m, " - { time: %lld, event: %s, avail_mb: %llu, reserved_mb_low: %u, reserved_mb_high: %u, ffree: %llu, reserved_ino_low: %u, reserved_ino_high: %u, state: \"%s\" }\n",
+			   (s64)oph->oph_time,
+			   oph->oph_stop ? "STOP" : "RESUME",
+			   oph->oph_avail_mb,
+			   oph->oph_reserved_mb_low, oph->oph_reserved_mb_high,
+			   oph->oph_ffree,
+			   oph->oph_reserved_ino_low,
+			   oph->oph_reserved_ino_high,
+			   strim(state));
+	}
+	spin_unlock(&osp->opd_pre_lock);
+
+	return 0;
+}
+LDEBUGFS_SEQ_FOPS_RO(osp_precreate_state);
+
 static struct ldebugfs_vars ldebugfs_osp_obd_vars[] = {
 	{ .name =	"connect_flags",
 	  .fops =	&osp_connect_flags_fops		},
@@ -1302,6 +1345,8 @@ static struct ldebugfs_vars ldebugfs_osp_obd_vars[] = {
 	  .fops =	&osp_state_fops			},
 	{ .name =	"error_list",
 	  .fops =	&osp_sync_error_list_fops	},
+	{ .name =	"precreate_state",
+	  .fops =	&osp_precreate_state_fops	},
 	{ NULL }
 };
 

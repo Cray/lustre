@@ -1,0 +1,109 @@
+.TH OSP.PRECREATE_STATE 4 2026-09-18 Lustre "Lustre Kernel Interfaces"
+.SH NAME
+osp.precreate_state \- history of object precreation stop and resume events
+.SH SYNOPSIS
+.SY
+.BI "lctl get_param osp." TARGET ".precreate_state"
+.YS
+.SS PROPERTIES
+.TP
+.B Access Permissions
+.BR 444 " | " -r--r--r--
+.TP
+.B Scope
+.br
+Per MDS OSP device connected to an OST.
+.SH DESCRIPTION
+An MDS keeps a pool of precreated objects on each OST so that file creation
+does not have to wait for an
+.B OST_CREATE
+RPC. When the free space reported by an OST drops below
+.BI "osp." TARGET ".reserved_mb_low"
+or its free inode count drops below
+.BI "osp." TARGET ".reserved_ino_low" ,
+the OSP stops precreating objects on that OST, and resumes only once the
+corresponding
+.B reserved_mb_high
+or
+.B reserved_ino_high
+watermark is crossed back.
+.PP
+The
+.B precreate_state
+parameter counts such transitions in each direction and reports the last 16
+of them.
+.BI "osp." TARGET ".prealloc_status"
+reports the current state alone, so polling it shows neither when a
+transition happened nor which space or inode value caused it.
+.PP
+Only watermark transitions are recorded. The history is not updated when
+the OST cannot be used at all: the OSP has not connected yet, the import is
+disconnected or deactivated, or an OST_CREATE RPC failed. Read
+.BI "osp." TARGET ".prealloc_status"
+for the error number, and
+.BI "osp." TARGET ".state"
+for the import state.
+.PP
+.B stop_count
+and
+.B resume_count
+are the number of transitions in each direction since the OSP was started.
+They are not reset when the history wraps, so they may be larger than the
+number of entries listed.
+.PP
+.B state_history
+is a YAML list whose entries each report the
+.B time
+of the transition in seconds since the epoch, its direction
+.RB ( event ": " STOP " or " RESUME ),
+the free space
+.RB ( avail_mb )
+and free inode count
+.RB ( ffree )
+seen at that moment, the four watermarks they were compared against, and the
+target
+.B state
+flags, using the same letters as
+.BR lfs-df (1).
+.PP
+Entries are only recorded on a transition, not while precreation stays
+stopped. An OST that is out of space for a whole day produces one
+.B STOP
+entry, not one per statfs refresh.
+.PP
+Only the space and inode watermarks are tracked. A
+.B RESUME
+entry that still has the
+.B N
+flag means the watermark was crossed back, but object creation is separately
+disabled by
+.BI "obdfilter." TARGET ".no_create"
+or
+.BI "osp." TARGET ".max_create_count"
+and does not resume.
+.SH MODULES
+This parameter is in the following modules:
+.EX
+.B osp.*.precreate_state
+.EE
+.SH EXAMPLES
+Show the precreation history of an OST that ran out of space and recovered:
+.EX
+.RB mds# " lctl get_param osp.testfs-OST0001-osc-MDT0000.precreate_state"
+stop_count: 1
+resume_count: 1
+state_history:
+ - { time: 1789012345, event: STOP, avail_mb: 812, reserved_mb_low: 1024, reserved_mb_high: 2049, ffree: 90210, reserved_ino_low: 32, reserved_ino_high: 65, state: "S" }
+ - { time: 1789013901, event: RESUME, avail_mb: 3140, reserved_mb_low: 1024, reserved_mb_high: 2049, ffree: 90480, reserved_ino_low: 32, reserved_ino_high: 65, state: "" }
+.EE
+.SH AVAILABILITY
+The
+.B precreate_state
+parameter is part of the
+.BR lustre (7)
+filesystem package since release 2.18.0.
+.\" Added in commit v2_17_58-xx-gxxxxxxxxxx
+.SH SEE ALSO
+.BR lfs-df (1),
+.BR lustre (7),
+.BR lctl-get_param (8)

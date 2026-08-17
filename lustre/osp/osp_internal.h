@@ -42,6 +42,21 @@ struct osp_id_tracker {
 	atomic_t		 otr_refcount;
 };
 
+#define OSP_PRECREATE_HIST_LEN 16
+
+/* one precreation stop/resume event, see osp.*.precreate_state */
+struct osp_precreate_hist {
+	time64_t			 oph_time;
+	u64				 oph_avail_mb;
+	u64				 oph_ffree;
+	u32				 oph_reserved_mb_low;
+	u32				 oph_reserved_mb_high;
+	u32				 oph_reserved_ino_low;
+	u32				 oph_reserved_ino_high;
+	u32				 oph_os_state;
+	bool				 oph_stop;
+};
+
 struct osp_precreate {
 	/*
 	 * Precreation pool
@@ -68,6 +83,11 @@ struct osp_precreate {
 					 osp_pre_recovering:1,
 	/* force new seq rollover */
 					 osp_pre_force_new_seq:1;
+	/* stop/resume events, protected by opd_pre_lock */
+	struct osp_precreate_hist	 osp_pre_hist[OSP_PRECREATE_HIST_LEN];
+	unsigned int			 osp_pre_hist_idx;
+	unsigned int			 osp_pre_stops;
+	unsigned int			 osp_pre_resumes;
 };
 
 struct osp_update_request_sub {
@@ -288,6 +308,10 @@ struct osp_device {
 #define opd_pre_create_slow		opd_pre->osp_pre_create_slow
 #define opd_pre_recovering		opd_pre->osp_pre_recovering
 #define opd_pre_force_new_seq		opd_pre->osp_pre_force_new_seq
+#define opd_pre_hist			opd_pre->osp_pre_hist
+#define opd_pre_hist_idx		opd_pre->osp_pre_hist_idx
+#define opd_pre_stops			opd_pre->osp_pre_stops
+#define opd_pre_resumes			opd_pre->osp_pre_resumes
 
 extern struct kmem_cache *osp_object_kmem;
 

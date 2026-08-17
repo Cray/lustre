@@ -31352,6 +31352,36 @@ test_253() {
 	if (( oa_status != 0 )); then
 		error "Object allocation still disable after rm"
 	fi
+
+	if (( MDS1_VERSION < $(version_code 2.17.58) )); then
+		echo "MDS < 2.17.58, skip precreate_state check"
+		return 0
+	fi
+
+	local pcs=$TMP/$tfile.precreate_state
+
+	do_facet $SINGLEMDS $LCTL get_param -n \
+		osp.$mdtosc_proc1.precreate_state > $pcs ||
+		error "cannot read precreate_state"
+	stack_trap "rm -f $pcs"
+	cat $pcs
+
+	local stops=$(awk '/^stop_count:/ { print $2 }' $pcs)
+	local resumes=$(awk '/^resume_count:/ { print $2 }' $pcs)
+	local last=$(grep '^ - {' $pcs | tail -1)
+
+	last=${last#*event: }
+	last=${last%%,*}
+
+	(( stops > 0 )) || error "stop_count is $stops, expected non-zero"
+	(( resumes > 0 )) || error "resume_count is $resumes, expected non-zero"
+	[[ "$last" == "RESUME" ]] || error "last event is $last, not RESUME"
+
+	if verify_yaml_available; then
+		verify_yaml < $pcs || error "precreate_state is not valid YAML"
+	else
+		echo "YAML verification not installed"
+	fi
 }
 run_test 253 "Check object allocation limit"
 
