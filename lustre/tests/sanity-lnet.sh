@@ -5689,6 +5689,73 @@ test_502() {
 }
 run_test 502 "Verify lnetctl peer set --health (MR)"
 
+test_503() {
+	[[ ${NETTYPE} == tcp* ]] || skip "Need tcp NETTYPE"
+	reinit_dlc || return $?
+	add_net "tcp" "${INTERFACES[0]}"
+
+	# LUS-13452: lnet_peer_ni_show_dump() used several nla_nest_start()/
+	# nla_put_*() return values without checking them. nla_nest_start()
+	# returns NULL once the netlink reply skb runs out of room, which
+	# happens once enough peers/peer NIs are dumped to overflow a single
+	# skb (the UDSP info nested attributes emitted at -v 4 make this
+	# especially easy to hit with a fairly small peer count). Before the
+	# fix that NULL was dereferenced by the following nla_nest_end()/
+	# nla_put_*() call and crashed the kernel with a NULL pointer
+	# dereference while running "lnetctl peer show -v 4":
+	#
+	#   BUG: kernel NULL pointer dereference, address: 0000000000000000
+	#   RIP: lnet_peer_ni_show_dump+0xbb2/0x1010 [lnet]
+	#
+	# Create enough peers, each with a few secondary NIDs, that the
+	# NLM_F_MULTI dump can't fit in a single reply skb, then make sure
+	# "lnetctl peer show -v 4" not only avoids the crash but returns
+	# every peer that was added (i.e. the multi-skb retry logic doesn't
+	# silently drop or duplicate entries).
+	local num_peers=300
+	local secondary_nids=3
+	local i
+
+	[ "$SLOW" = "yes" ] && num_peers=1500
+
+	echo "Adding $num_peers peers with $secondary_nids secondary NIDs each"
+	for ((i = 0; i < num_peers; i++)); do
+		local oct2=$((i / 256))
+		local oct3=$((i % 256))
+		local prim="200.${oct2}.${oct3}.0@tcp"
+		local nidrange="201.${oct2}.${oct3}.[1-${secondary_nids}]@tcp"
+
+		$LNETCTL peer add --prim_nid ${prim} \
+			--nid ${nidrange} ||
+			error "Failed to add peer $i"
+	done
+
+	echo "Dumping all peers with lnetctl peer show -v 4"
+	local out="$TMP/sanity-lnet-$testnum-actual.yaml"
+
+	$LNETCTL peer show -v 4 > ${out}
+	local rc=$?
+	((rc == 0)) || error "lnetctl peer show -v 4 failed with rc = $rc"
+
+	# Also make sure the multi-skb retry path didn't leak/duplicate the
+	# key table header that is only supposed to be sent once per dump.
+	local hdrs=$(grep -c '^peer:$' ${out})
+	((hdrs <= 1)) ||
+		error "peer key table emitted $hdrs times, expected at most 1"
+
+	for ((i = 0; i < num_peers; i++)); do
+		local oct2=$((i / 256))
+		local oct3=$((i % 256))
+		local prim="200.${oct2}.${oct3}.0@tcp"
+
+		grep -q "primary nid: $prim" $out || error "$prim was missing in the output"
+
+		$LNETCTL peer del --prim_nid ${prim} ||
+			error "Failed to del peer $i"
+	done
+}
+run_test 503 "Verify lnetctl peer show -v 4 doesn't crash on a multi-skb dump (LUS-13452)"
+
 complete_test $SECONDS
 cleanup_testsuite
 exit_status
