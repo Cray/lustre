@@ -631,6 +631,43 @@ static struct yaml_nl_node *get_next_child(struct yaml_nl_node *node,
  * pair. How the YAML document is formated is dependent on the key
  * table's data.
  */
+/* The YAML data for a single Netlink message is written into a growable
+ * buffer (data->start .. data->end). yaml_netlink_msg_parse() only ensures
+ * a small amount of headroom between messages, but a single verbose message
+ * (e.g. 'peer show -v 4') can expand into several KiB of YAML. Grow the
+ * buffer on demand so a single message can never write past data->end and
+ * corrupt the heap. On success *size is resynced to the real free space.
+ */
+static int yaml_netlink_input_grow(struct yaml_netlink_input *data, int *size,
+				   size_t needed)
+{
+	size_t total, off, roff;
+	void *tmp;
+
+	if ((size_t)(data->end - data->buffer) >= needed)
+		return 0;
+
+	total = data->end - data->start;
+	off = data->buffer - data->start;
+	roff = data->read - data->start;
+
+	do {
+		total *= 2;
+	} while (total - off < needed);
+
+	tmp = realloc(data->start, total);
+	if (!tmp)
+		return -1;
+
+	data->start = tmp;
+	data->end = data->start + total;
+	data->buffer = data->start + off;
+	data->read = data->start + roff;
+	*size = data->end - data->buffer;
+
+	return 0;
+}
+
 static void yaml_parse_value_list(struct yaml_netlink_input *data, int *size,
 				  struct nlattr *attr_array[],
 				  struct ln_key_props *parent)
@@ -643,10 +680,23 @@ static void yaml_parse_value_list(struct yaml_netlink_input *data, int *size,
 
 	for (i = 1; i < node->keys.lkl_maxattr; i++) {
 		struct nlattr *attr;
+		size_t needed;
 
 		attr = attr_array[i];
 		if (!attr && !keys[i].lkp_value)
 			continue;
+
+		/* Ensure enough headroom for everything this iteration may
+		 * write (indent, "key: ", the scalar value and separators)
+		 * so we never overflow the buffer mid-message.
+		 */
+		needed = 1024 + data->indent;
+		if (keys[i].lkp_value)
+			needed += strlen(keys[i].lkp_value);
+		if (attr && keys[i].lkp_data_type == NLA_STRING)
+			needed += nla_len(attr);
+		if (yaml_netlink_input_grow(data, size, needed))
+			return;
 
 		/* This function is called for each Netlink nested list.
 		 * Each nested list is treated as a YAML block. It is here
@@ -914,7 +964,7 @@ not_first:
 				((char *)data->buffer)[len++] = '\n';
 			}
 			data->buffer += len;
-			*size += len;
+			*size -= len;
 		} else if (len < 0) {
 unwind:
 			data->buffer -= data->indent + 2;
