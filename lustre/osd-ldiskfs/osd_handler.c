@@ -7031,7 +7031,7 @@ struct osd_it_ea *osd_it_dir_init(const struct lu_env *env,
 	obj_dentry = &oie->oie_dentry;
 	obj_dentry->d_inode = inode;
 	obj_dentry->d_sb = inode->i_sb;
-	obj_dentry->d_name.hash = 0;
+	obj_dentry->__d_name.hash = 0;
 
 	oie->oie_rd_dirent = 0;
 	oie->oie_it_dirent = 0;
@@ -7051,7 +7051,7 @@ struct osd_it_ea *osd_it_dir_init(const struct lu_env *env,
 		file->f_mode |= FMODE_64BITHASH;
 	else
 		file->f_mode |= FMODE_32BITHASH;
-	file->f_path.dentry = obj_dentry;
+	file->__f_path.dentry = obj_dentry;
 	file->f_mapping = inode->i_mapping;
 	file->f_op = inode->i_fop;
 	file->f_inode = inode;

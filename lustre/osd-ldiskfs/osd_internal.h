@@ -1347,19 +1347,19 @@ struct dentry *osd_child_dentry_by_inode(const struct lu_env *env,
                                          struct inode *inode,
                                          const char *name, const int namelen)
 {
-        struct osd_thread_info *info = osd_oti_get(env);
-        struct dentry *child_dentry = &info->oti_child_dentry;
-        struct dentry *obj_dentry = &info->oti_obj_dentry;
+	struct osd_thread_info *info = osd_oti_get(env);
+	struct dentry *child_dentry = &info->oti_child_dentry;
+	struct dentry *obj_dentry = &info->oti_obj_dentry;
 
-        obj_dentry->d_inode = inode;
-        obj_dentry->d_sb = inode->i_sb;
-        obj_dentry->d_name.hash = 0;
+	obj_dentry->d_inode = inode;
+	obj_dentry->d_sb = inode->i_sb;
+	obj_dentry->__d_name.hash = 0;
 
-        child_dentry->d_name.hash = 0;
-        child_dentry->d_parent = obj_dentry;
-        child_dentry->d_name.name = name;
-        child_dentry->d_name.len = namelen;
-        return child_dentry;
+	child_dentry->__d_name.hash = 0;
+	child_dentry->d_parent = obj_dentry;
+	child_dentry->__d_name.name = name;
+	child_dentry->__d_name.len = namelen;
+	return child_dentry;
 }
 
 extern int osd_trans_declare_op2rb[];
