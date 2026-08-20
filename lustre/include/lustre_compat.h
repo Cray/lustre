@@ -817,6 +817,75 @@ static inline void ll_security_release_secctx(char *secdata, u32 seclen,
 })
 #endif
 
+static inline struct page *ll_read_cache_page(struct address_space *mapping,
+					      pgoff_t index, filler_t *filler,
+					      void *data)
+{
+#ifdef HAVE_READ_CACHE_PAGE_WANTS_FILE
+	struct file dummy_file;
+
+	dummy_file.f_ra.ra_pages = 32; /* unused, modified on ra error */
+	dummy_file.private_data = data;
+	return read_cache_page(mapping, index, filler, &dummy_file);
+#else
+	return read_cache_page(mapping, index, filler, data);
+#endif /* HAVE_READ_CACHE_PAGE_WANTS_FILE */
+}
+
+#if defined(HAVE_FOLIO_BATCH) && defined(HAVE_FILEMAP_GET_FOLIOS)
+# define ll_folio_batch_init(batch, n)	folio_batch_init(batch)
+# define ll_filemap_get_folios(m, s, e, fbatch) \
+	 filemap_get_folios(m, &s, e, fbatch)
+# define fbatch_at(fbatch, f)		((fbatch)->folios[(f)])
+# define fbatch_at_npgs(fbatch, f)	folio_nr_pages((fbatch)->folios[(f)])
+# define fbatch_at_pg(fbatch, f, pg)	folio_page((fbatch)->folios[(f)], (pg))
+# define folio_batch_add_page(fbatch, page) \
+	 folio_batch_add(fbatch, page_folio(page))
+# ifndef HAVE_FOLIO_BATCH_REINIT
+static inline void folio_batch_reinit(struct folio_batch *fbatch)
+{
+	fbatch->nr = 0;
+}
+# endif /* HAVE_FOLIO_BATCH_REINIT */
+
+# define folio_index_page(pg)		(page_folio((pg))->index)
+
+#else /* !HAVE_FOLIO_BATCH && !HAVE_FILEMAP_GET_FOLIOS */
+
+# ifdef HAVE_PAGEVEC
+#  define folio_batch			pagevec
+# endif
+# define folio_batch_init(pvec)		pagevec_init(pvec)
+# define folio_batch_reinit(pvec)	pagevec_reinit(pvec)
+# define folio_batch_count(pvec)	pagevec_count(pvec)
+# define folio_batch_space(pvec)	pagevec_space(pvec)
+# define folio_batch_add_page(pvec, page) \
+	 pagevec_add(pvec, page)
+# define folio_batch_release(pvec) \
+	 pagevec_release(((struct pagevec *)pvec))
+# ifdef HAVE_PAGEVEC_INIT_ONE_PARAM
+#  define ll_folio_batch_init(pvec, n)	pagevec_init(pvec)
+# else
+#  define ll_folio_batch_init(pvec, n)	pagevec_init(pvec, n)
+# endif
+#ifdef HAVE_PAGEVEC_LOOKUP_THREE_PARAM
+# define ll_filemap_get_folios(m, s, e, pvec) \
+	 pagevec_lookup(pvec, m, &s)
+#else
+# define ll_filemap_get_folios(m, s, e, pvec) \
+	 pagevec_lookup(pvec, m, s, PAGEVEC_SIZE)
+#endif
+# define fbatch_at(pvec, n)		((pvec)->pages[(n)])
+# define fbatch_at_npgs(pvec, n)	1
+# define fbatch_at_pg(pvec, n, pg)	((pvec)->pages[(n)])
+# define folio_index_page(pg)		((pg)->index)
+
+#endif /* HAVE_FOLIO_BATCH && HAVE_FILEMAP_GET_FOLIOS */
+
+#ifndef HAVE_FLUSH___WORKQUEUE
+#define __flush_workqueue(wq)	flush_scheduled_work()
+#endif
+
 #ifndef HAVE_GENERIC_ERROR_REMOVE_FOLIO
 #ifdef HAVE_FOLIO_BATCH
 #define generic_folio			folio
@@ -855,7 +924,7 @@ static inline void cfs_delete_from_page_cache(struct page *page)
 	if (S_ISREG(page->mapping->host->i_mode)) {
 		generic_error_remove_folio(page->mapping, page_folio(page));
 	} else {
-		loff_t lstart = page->index << PAGE_SHIFT;
+		loff_t lstart = folio_index_page(page) << PAGE_SHIFT;
 		loff_t lend = lstart + PAGE_SIZE - 1;
 		struct address_space *mapping = page->mapping;
 
@@ -866,75 +935,6 @@ static inline void cfs_delete_from_page_cache(struct page *page)
 		put_page(page);
 	}
 }
-#endif
-
-static inline struct page *ll_read_cache_page(struct address_space *mapping,
-					      pgoff_t index, filler_t *filler,
-					      void *data)
-{
-#ifdef HAVE_READ_CACHE_PAGE_WANTS_FILE
-	struct file dummy_file;
-
-	dummy_file.f_ra.ra_pages = 32; /* unused, modified on ra error */
-	dummy_file.private_data = data;
-	return read_cache_page(mapping, index, filler, &dummy_file);
-#else
-	return read_cache_page(mapping, index, filler, data);
-#endif /* HAVE_READ_CACHE_PAGE_WANTS_FILE */
-}
-
-#if defined(HAVE_FOLIO_BATCH) && defined(HAVE_FILEMAP_GET_FOLIOS)
-# define ll_folio_batch_init(batch, n)	folio_batch_init(batch)
-# define ll_filemap_get_folios(m, s, e, fbatch) \
-	 filemap_get_folios(m, &s, e, fbatch)
-# define fbatch_at(fbatch, f)		((fbatch)->folios[(f)])
-# define fbatch_at_npgs(fbatch, f)	folio_nr_pages((fbatch)->folios[(f)])
-# define fbatch_at_pg(fbatch, f, pg)	folio_page((fbatch)->folios[(f)], (pg))
-# define folio_batch_add_page(fbatch, page) \
-	 folio_batch_add(fbatch, page_folio(page))
-# ifndef HAVE_FOLIO_BATCH_REINIT
-static inline void folio_batch_reinit(struct folio_batch *fbatch)
-{
-	fbatch->nr = 0;
-}
-# endif /* HAVE_FOLIO_BATCH_REINIT */
-
-# define folio_index_page(pg)		folio_index(page_folio((pg)))
-
-#else /* !HAVE_FOLIO_BATCH && !HAVE_FILEMAP_GET_FOLIOS */
-
-# ifdef HAVE_PAGEVEC
-#  define folio_batch			pagevec
-# endif
-# define folio_batch_init(pvec)		pagevec_init(pvec)
-# define folio_batch_reinit(pvec)	pagevec_reinit(pvec)
-# define folio_batch_count(pvec)	pagevec_count(pvec)
-# define folio_batch_space(pvec)	pagevec_space(pvec)
-# define folio_batch_add_page(pvec, page) \
-	 pagevec_add(pvec, page)
-# define folio_batch_release(pvec) \
-	 pagevec_release(((struct pagevec *)pvec))
-# ifdef HAVE_PAGEVEC_INIT_ONE_PARAM
-#  define ll_folio_batch_init(pvec, n)	pagevec_init(pvec)
-# else
-#  define ll_folio_batch_init(pvec, n)	pagevec_init(pvec, n)
-# endif
-#ifdef HAVE_PAGEVEC_LOOKUP_THREE_PARAM
-# define ll_filemap_get_folios(m, s, e, pvec) \
-	 pagevec_lookup(pvec, m, &s)
-#else
-# define ll_filemap_get_folios(m, s, e, pvec) \
-	 pagevec_lookup(pvec, m, s, PAGEVEC_SIZE)
-#endif
-# define fbatch_at(pvec, n)		((pvec)->pages[(n)])
-# define fbatch_at_npgs(pvec, n)	1
-# define fbatch_at_pg(pvec, n, pg)	((pvec)->pages[(n)])
-# define folio_index_page(pg)		page_index((pg))
-
-#endif /* HAVE_FOLIO_BATCH && HAVE_FILEMAP_GET_FOLIOS */
-
-#ifndef HAVE_FLUSH___WORKQUEUE
-#define __flush_workqueue(wq)	flush_scheduled_work()
 #endif
 
 #ifdef HAVE_NSPROXY_COUNT_AS_REFCOUNT
@@ -1029,5 +1029,13 @@ static inline int folio_mapcount_page(struct page *page)
 #else /* !HAVE_FOLIO_MAPCOUNT */
 #define folio_mapcount_page(pg)			page_mapcount((pg))
 #endif /* HAVE_FOLIO_MAPCOUNT */
+
+#ifndef QSTR
+#define QSTR(name) QSTR_LEN((name), strlen((name)))
+#endif
+
+#ifndef QSTR_LEN
+#define QSTR_LEN(name, len) ((struct qstr)QSTR_INIT((name), (len)))
+#endif
 
 #endif /* _LUSTRE_COMPAT_H */

@@ -1545,7 +1545,7 @@ static struct dentry *pcc_lookup(struct dentry *base, char *pathname)
 
 		/* look up the current component */
 		inode_lock(parent->d_inode);
-		child = lookup_one_len(component, parent, strlen(component));
+		child = lookup_noperm(&QSTR(component), parent);
 		inode_unlock(parent->d_inode);
 
 		/* repair the path string: put '/' back in place of the NUL */
@@ -2864,7 +2864,8 @@ static int pcc_mmap_pages_convert(struct inode *inode,
 			cfs_delete_from_page_cache(page);
 			/* Add the page into the mapping of the Lustre file. */
 			rc = add_to_page_cache_locked(page, inode->i_mapping,
-						      page->index, GFP_KERNEL);
+						      folio_index_page(page),
+						      GFP_KERNEL);
 			if (rc) {
 				unlock_page(page);
 				folio_batch_release(&fbatch);
@@ -2874,7 +2875,7 @@ static int pcc_mmap_pages_convert(struct inode *inode,
 			unlock_page(page);
 		}
 
-		index = page->index + 1;
+		index = folio_index_page(page) + 1;
 		folio_batch_release(&fbatch);
 		cond_resched();
 	}
@@ -3251,7 +3252,7 @@ pcc_mkdir(struct dentry *base, const char *name, umode_t mode)
 	struct inode *dir = base->d_inode;
 
 	inode_lock(dir);
-	dentry = lookup_one_len(name, base, strlen(name));
+	dentry = lookup_noperm(&QSTR(name), base);
 	if (IS_ERR(dentry))
 		goto out;
 
@@ -3302,7 +3303,7 @@ pcc_create(struct dentry *base, const char *name, umode_t mode)
 	struct inode *dir = base->d_inode;
 
 	inode_lock(dir);
-	dentry = lookup_one_len(name, base, strlen(name));
+	dentry = lookup_noperm(&QSTR(name), base);
 	if (IS_ERR(dentry))
 		goto out;
 
