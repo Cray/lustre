@@ -1123,9 +1123,8 @@ test_26b() {      # bug 10140 - evict dead exports by pinger
 	# must be equal on all the nodes
 	local INTERVAL=$(do_facet mds1 lctl get_param -n ping_interval)
 	local AT_MAX_SAVED=$(at_max_get mds1)
-	local ldlm_enqueue_min=$(do_facet mds1 "find /sys/module \
-				 -name ldlm_enqueue_min")
-	local ENQUEUE_MIN=$(do_facet mds1 cat $ldlm_enqueue_min)
+	local ENQUEUE_MIN=$(do_facet $SINGLEMDS \
+		lctl get_param -n ldlm.ldlm_enqueue_min)
 
 	# set it before the new export got its first exp_deadline,
 	# in case it is large, small at_max has no effect on it.

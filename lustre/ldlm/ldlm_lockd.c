@@ -3221,8 +3221,17 @@ static ssize_t cancel_unused_locks_before_replay_store(struct kobject *kobj,
 }
 LUSTRE_RW_ATTR(cancel_unused_locks_before_replay);
 
+static ssize_t ldlm_enqueue_min_show(struct kobject *kobj,
+				     struct attribute *attr,
+				     char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n", ldlm_enqueue_min);
+}
+LUSTRE_RO_ATTR(ldlm_enqueue_min);
+
 static struct attribute *ldlm_attrs[] = {
 	&lustre_attr_cancel_unused_locks_before_replay.attr,
+	&lustre_attr_ldlm_enqueue_min.attr,
 	NULL,
 };
 
