@@ -961,11 +961,11 @@ void cl_page_completion(const struct lu_env *env,
 	cl_page->cp_sync_io = NULL;
 
 	if (likely(ioret == 0)) {
-		if (anchor->csi_highest_success < cl_page->cp_vmpage->index)
-			anchor->csi_highest_success = cl_page->cp_vmpage->index;
+		if (anchor->csi_highest_success < cl_page_index(cl_page))
+			anchor->csi_highest_success = cl_page_index(cl_page);
 	} else {
-		if (anchor->csi_lowest_failed > cl_page->cp_vmpage->index)
-			anchor->csi_lowest_failed = cl_page->cp_vmpage->index;
+		if (anchor->csi_lowest_failed > cl_page_index(cl_page))
+			anchor->csi_lowest_failed = cl_page_index(cl_page);
 	}
 
 	cl_sync_io_note(env, anchor, ioret);
