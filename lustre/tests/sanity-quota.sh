@@ -4741,6 +4741,7 @@ test_default_quota() {
 	cancel_lru_locks osc
 	cancel_lru_locks mdc
 	sync; sync_all_data || true
+	wait_delete_completed || error "wait_delete_completed failed"
 	if [ $qres_type == "data" ]; then
 		$RUNAS $DD of=$TESTFILE count=$((LIMIT*2 >> 10)) oflag=sync ||
 			quota_error $qtype $qid "write failed, expect succeed"

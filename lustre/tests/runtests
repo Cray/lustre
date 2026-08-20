@@ -96,6 +96,7 @@ test_1() {
 	log "finished at $(date) ($(($(date +%s) - stime)))"
 
 	stopall || error "stopall failed"
+	check_and_cleanup_lustre
 	setupall || error "setupall failed"
 
 	log "comparing $COUNT previously copied files"
@@ -111,6 +112,7 @@ test_1() {
 	$LFS df
 	$LFS df -i
 	stopall || error "stopall failed (2)"
+	check_and_cleanup_lustre
 	setupall || error "setupall failed (2)"
 
 	log "running $RMDIRMANY $dst/d $COUNT"
