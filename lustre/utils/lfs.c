@@ -10094,7 +10094,7 @@ use_qid_value:
 			sprintf(timebuf, "-");
 
 		if ((param->qp_detail & QIF_INODES) && !param->qp_show_default)
-			print_quota_val(numbuf[0], 8, bover, param);
+			print_quota_val(numbuf[0], 8, iover, param);
 		if (param->qp_detail & QIF_ISOFTLIMIT)
 			print_quota_val(numbuf[1], 8, false, param);
 		if (param->qp_detail & QIF_IHARDLIMIT)
