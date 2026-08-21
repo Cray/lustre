@@ -9219,7 +9219,7 @@ static void print_quota(char *mnt, struct if_quotactl *qctl, int type,
 		if ((param->qp_detail & QIF_INODES) && !param->qp_show_default)
 			printf(param->qp_detail & ~QIF_INODES ?
 			       " %7s%c" : "%s", type != QC_OSTIDX ?
-			       numbuf[0] : "-", bover ? '*' : ' ');
+			       numbuf[0] : "-", iover ? '*' : ' ');
 		if (param->qp_detail & QIF_ISOFTLIMIT) {
 			printf(param->qp_detail & ~QIF_ISOFTLIMIT ?
 			       " %7s" : "%s", type != QC_OSTIDX ?
