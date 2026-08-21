@@ -63,6 +63,21 @@
 
 #include "ptlrpc_internal.h"
 
+/*
+ * Upper bound (in seconds) on how long ptlrpcd() sleeps while its set still
+ * holds requests that currently carry no timeout of their own - e.g. requests
+ * waiting for import recovery (rq_waiting), for a security context
+ * (rq_wait_ctx), or for a reply buffer to be unlinked. Such requests are
+ * advanced only by event-driven wakeups on set_waitq, and those wakeups can be
+ * missed (for instance an import that briefly reaches FULL and then re-delays
+ * the request without waking this set again). Without a bound ptlrpcd() would
+ * sleep in wait_woken(MAX_SCHEDULE_TIMEOUT) and could hang indefinitely even
+ * though a request's deadline has already expired. This only bounds the sleep
+ * when the set is non-empty; a fully idle set still sleeps until a new request
+ * arrives.
+ */
+#define PTLRPCD_STUCK_RECHECK	10
+
 /* One of these per CPT. */
 struct ptlrpcd {
 	int			pd_size;
@@ -486,6 +501,16 @@ static int ptlrpcd(void *arg)
 		if (timeout < 0) {
 			ptlrpc_expired_set(set);
 			timeout = 1;
+		} else if (timeout == 0 &&
+			   atomic_read(&set->set_remaining) != 0) {
+			/*
+			 * The set is not empty but no request currently has a
+			 * timeout (all are waiting for recovery, a security
+			 * context, or a reply unlink). These are only advanced
+			 * by set_waitq wakeups which may be lost, so re-check
+			 * periodically instead of sleeping indefinitely.
+			 */
+			timeout = PTLRPCD_STUCK_RECHECK;
 		}
 		timeout = cfs_time_seconds(timeout);
 
