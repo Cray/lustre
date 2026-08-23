@@ -46,7 +46,6 @@ struct jobid_pid_map {
 	time64_t		jp_time;
 	spinlock_t		jp_lock; /* protects jp_jobid */
 	char			jp_jobid[LUSTRE_JOBID_SIZE];
-	unsigned int		jp_joblen;
 	struct kref		jp_refcount;
 	pid_t			jp_pid;
 };
@@ -523,9 +522,11 @@ static bool jobid_name_is_valid(char *jobid)
  * Values fetch from process environment will be cached for some time to avoid
  * the overhead of scanning the environment.
  *
- * Return: -ENOMEM if allocating a new pidmap fails
+ * Return: 0 on success, with the jobid stored in @jobid
+ *         -ENOMEM if allocating a new pidmap fails
  *         -ENOENT if no entry could be found
- *         +ve string length for success (something was returned in jobid)
+ *         -errno reported by the environment lookup, e.g. -EDEADLK
+ *                when the mm cannot be locked
  */
 static int jobid_get_from_cache(char *jobid, size_t joblen)
 {
@@ -540,12 +541,10 @@ static int jobid_get_from_cache(char *jobid, size_t joblen)
 
 		rcu_read_lock();
 		jid = jobid_current();
-		if (jid) {
+		if (jid)
 			strscpy(jobid, jid, joblen);
-			joblen = strlen(jobid);
-		} else {
+		else
 			rc = -ENOENT;
-		}
 		rcu_read_unlock();
 		GOTO(out, rc);
 	}
@@ -609,13 +608,10 @@ static int jobid_get_from_cache(char *jobid, size_t joblen)
 		       pidmap->jp_pid, env_jobid);
 		spin_lock(&pidmap->jp_lock);
 		if (!rc) {
-			pidmap->jp_joblen = env_len;
 			strscpy(pidmap->jp_jobid, env_jobid,
 				sizeof(pidmap->jp_jobid));
-			rc = 0;
 		} else if (rc == -ENOENT) {
 			/* It might have been deleted, clear out old entry */
-			pidmap->jp_joblen = 0;
 			pidmap->jp_jobid[0] = '\0';
 		}
 	}
@@ -626,9 +622,8 @@ static int jobid_get_from_cache(char *jobid, size_t joblen)
 	 * use the old cached value until it can be looked up again properly.
 	 * If a cached missing entry was found, return -ENOENT.
 	 */
-	if (pidmap->jp_joblen) {
+	if (pidmap->jp_jobid[0]) {
 		strscpy(jobid, pidmap->jp_jobid, joblen);
-		joblen = pidmap->jp_joblen;
 		rc = 0;
 	} else if (!rc) {
 		rc = -ENOENT;
@@ -639,7 +634,7 @@ static int jobid_get_from_cache(char *jobid, size_t joblen)
 
 	EXIT;
 out:
-	return rc < 0 ? rc : joblen;
+	return rc;
 }
 
 /*
@@ -747,9 +742,10 @@ static int jobid_interpret_string(const char *jobfmt, char *jobid,
 			}
 			break;
 		case 'j': /* jobid stored in process environment */
-			l = jobid_get_from_cache(jobid, width);
-			if (l < 0)
+			if (jobid_get_from_cache(jobid, width) < 0)
 				l = 0;
+			else
+				l = strlen(jobid);
 			if (*jobfmt == '?') {
 				if (l == 0)
 					jobfmt++;
@@ -944,19 +940,17 @@ static struct cfs_hash_ops jobid_hash_ops = {
  * The per-session and process environment cases expand obd_jobid_name
  * instead when the direct lookup fails, and also when obd_jobid_name
  * contains the jobid escape handled by jobid_interpret_string(), in
- * which case the direct lookup is not attempted at all.
+ * which case the direct lookup is not attempted at all.  That expansion
+ * does not fail, so a failed lookup produces a jobid rather than an
+ * error and the reason for the failure is not reported to the caller.
  *
  * The whole @jobid buffer is always defined: it is zeroed on entry, so
  * it holds a NUL-terminated string, empty if no jobid could be
  * determined.
  *
  * Return:
+ * * %0 on success
  * * %-EINVAL if @joblen is less than 2
- * * %-errno on other errors
- * * %0 or the length reported by a direct per-session or per-process
- *   jobid lookup on success.  That length is strlen(@jobid) for the
- *   per-session case and the cached length for the process environment
- *   one, which can exceed both strlen(@jobid) and @joblen
  */
 int lustre_get_jobid(char *jobid, size_t joblen)
 {
@@ -995,12 +989,8 @@ int lustre_get_jobid(char *jobid, size_t joblen)
 			rc = jobid_get_from_cache(jobid, len);
 
 		/* fall back to jobid_name if jobid_var not available */
-		if (rc < 0) {
-			int rc2 = jobid_interpret_string(obd_jobid_name,
-							 jobid, len);
-			if (!rc2)
-				rc = 0;
-		}
+		if (rc < 0)
+			rc = jobid_interpret_string(obd_jobid_name, jobid, len);
 	}
 
 	RETURN(rc);
