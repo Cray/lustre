@@ -686,6 +686,9 @@ static int jobid_print_current_comm(char *jobid, ssize_t joblen)
  * Unknown escape strings are dropped.  Other characters are copied through,
  * excluding whitespace (to avoid making jobid parsing difficult).
  *
+ * @jobid is always set to a NUL-terminated string, empty if @jobfmt expands
+ * to nothing.
+ *
  * Return: -EOVERFLOW if the expanded string does not fit within @joblen
  *         0 for success
  */
@@ -694,6 +697,7 @@ static int jobid_interpret_string(const char *jobfmt, char *jobid,
 {
 	char c;
 
+	*jobid = '\0';
 	while ((c = *jobfmt++) && joblen > 1) {
 		long width = joblen;
 		char *p;
@@ -932,17 +936,19 @@ static struct cfs_hash_ops jobid_hash_ops = {
  * * %JOBSTATS_SESSION - per-session value set by
  *   /sys/fs/lustre/jobid_this_session
  * * anything else - name of an environment variable to look up in the
- *   process environment, but only for a process that is not a Lustre or
- *   kernel service thread (jobid_name_is_valid())
+ *   process environment, but only if current->comm is non-empty and
+ *   does not start with one of the prefixes jobid_name_is_valid()
+ *   reserves for Lustre and kernel threads, which an ordinary process
+ *   such as irqbalance matches too
  *
  * The per-session and process environment cases expand obd_jobid_name
  * instead when the direct lookup fails, and also when obd_jobid_name
  * contains the jobid escape handled by jobid_interpret_string(), in
  * which case the direct lookup is not attempted at all.
  *
- * A %0 return does not mean @jobid was filled in: several paths,
- * including a service thread with an environment jobid_var, leave the
- * string undefined, so callers must initialize @jobid themselves.
+ * The whole @jobid buffer is always defined: it is zeroed on entry, so
+ * it holds a NUL-terminated string, empty if no jobid could be
+ * determined.
  *
  * Return:
  * * %-EINVAL if @joblen is less than 2
@@ -964,9 +970,10 @@ int lustre_get_jobid(char *jobid, size_t joblen)
 		RETURN(-EINVAL);
 	}
 
+	memset(jobid, 0, joblen);
+
 	if (strcmp(obd_jobid_var, JOBSTATS_DISABLE) == 0) {
 		/* Jobstats isn't enabled */
-		memset(jobid, 0, joblen);
 		RETURN(0);
 	}
 
