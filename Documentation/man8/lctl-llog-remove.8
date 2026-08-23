@@ -1,0 +1,71 @@
+.TH LCTL-LLOG-REMOVE 8 2026-09-05 Lustre "Lustre Configuration Utilities"
+.SH NAME
+lctl-llog-remove, lctl-llog_remove \- remove a log and erase it from disk
+.SH SYNOPSIS
+.SY "lctl llog remove"
+.RB [ --log_id
+.IR ID ]
+.RI { LOGNAME | FID }
+.SY "lctl llog_remove"
+.RB [ --log_id
+.IR ID ]
+.RI { LOGNAME | FID }
+.YS
+.SH DESCRIPTION
+.B lctl llog remove
+removes the log named by
+.I LOGNAME
+or by its
+.IR FID ,
+typically on the MGS.  A plain log is destroyed whole and
+.B --log_id
+is ignored.  For a catalog,
+.B --log_id
+names one plain log inside it to remove, and without it every log in the
+catalog is removed.
+See
+.BR lctl-llog-catlist (8)
+for a list of configuration logs.
+.SH OPTIONS
+.TP
+.BI --log_id " ID"
+The log
+.I ID
+of a plain log inside a catalog, in the bracketed FID form
+.B [SEQ:OID:VER]
+that
+.BR lctl-llog-print (8)
+reports for that catalog.
+It is ignored when
+.I LOGNAME
+names a plain log.
+.SH EXAMPLES
+To remove the
+.B testfs-client
+configuration log from the MGS:
+.RS
+.EX
+.B # lctl llog remove testfs-client
+.EE
+.RE
+.SH AVAILABILITY
+.B lctl llog remove
+is a subcommand of
+.BR lctl (8)
+and is distributed as part of the
+.BR lustre (7)
+filesystem package since release 2.18.0
+.\" Added in commit v2_17_53-90-g6681a33af5
+.\" The llog_cmdlist[] entry was added by v2_16_53-8-gfe4b49635d, but it
+.\" dispatched to jt_llog_check() until the commit above.
+.PP
+The
+.B lctl llog_remove
+spelling has been available since release 0.6.0
+.\" Added in commit 0.0.0-2194-g040033cef2
+.SH SEE ALSO
+.BR lctl (8),
+.BR lctl-llog-cancel (8),
+.BR lctl-llog-catlist (8),
+.BR lctl-llog-info (8),
+.BR lctl-llog-print (8)

@@ -53,10 +53,15 @@ SERVER_MANFILES =				\
 	lctl-lfsck_start.8			\
 	lctl-lfsck-stop.8			\
 	lctl-lfsck_stop.8			\
+	lctl-llog-cancel.8			\
 	lctl-llog_cancel.8			\
+	lctl-llog-catlist.8			\
 	lctl-llog_catlist.8			\
+	lctl-llog-info.8			\
 	lctl-llog_info.8			\
+	lctl-llog-print.8			\
 	lctl-llog_print.8			\
+	lctl-llog-remove.8			\
 	lctl-llog_remove.8			\
 	lctl-del_ost.8				\
 	lctl-nodemap-activate.8			\

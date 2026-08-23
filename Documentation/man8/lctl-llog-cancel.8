@@ -1,1 +1,71 @@
-.so man8/lctl-llog-cancel.8
+.TH LCTL-LLOG-CANCEL 8 2026-09-05 Lustre "Lustre Configuration Utilities"
+.SH NAME
+lctl-llog-cancel, lctl-llog_cancel \- cancel a record in a Lustre log file
+.SH SYNOPSIS
+.SY "lctl llog cancel"
+.B --log_idx
+.I INDEX
+.I LOGNAME
+.SY "lctl llog_cancel"
+.B --log_idx
+.I INDEX
+.I LOGNAME
+.YS
+.SH DESCRIPTION
+.B lctl llog cancel
+is used to cancel the configuration record given by
+.I INDEX
+from the
+.I LOGNAME
+configuration log, typically on the MGS. This is useful if a persistent
+configuration record was set incorrectly or is no longer needed. Note
+that cancelling a record does not "undo" any effect it had on currently
+mounted clients, it only prevents the record from being seen in the future.
+See
+.BR lctl-llog-catlist (8)
+for a list of configuration logs.
+.SH OPTIONS
+.TP
+.BI --log_idx " INDEX"
+The record
+.I INDEX
+number to cancel, as printed by
+.B lctl llog print
+for that log.
+.SH EXAMPLES
+To cancel record 15 from the
+.B testfs-client
+conf_param log:
+.RS
+.EX
+.B # lctl llog cancel --log_idx=15 testfs-client
+.EE
+.RE
+.PP
+To cancel record 22 from the
+.B params
+set_param log:
+.RS
+.EX
+.B # lctl llog cancel --log_idx=22 params
+.EE
+.RE
+.SH AVAILABILITY
+.B lctl llog cancel
+is a subcommand of
+.BR lctl (8)
+and is distributed as part of the
+.BR lustre (7)
+filesystem package since release 2.17.0
+.\" Added in commit v2_16_53-8-gfe4b49635d
+.PP
+The
+.B lctl llog_cancel
+spelling has been available since release 0.10.0
+.\" Added in commit 0.0.0-3210-gc5050e4125
+.SH SEE ALSO
+.BR lctl (8),
+.BR lctl-llog-catlist (8),
+.BR lctl-llog-info (8),
+.BR lctl-llog-print (8),
+.BR lctl-llog-remove (8)

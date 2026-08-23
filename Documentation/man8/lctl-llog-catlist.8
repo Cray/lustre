@@ -1,1 +1,80 @@
-.so man8/lctl-llog-catlist.8
+.TH LCTL-LLOG-CATLIST 8 2026-09-05 Lustre "Lustre Configuration Utilities"
+.SH NAME
+lctl-llog-catlist, lctl-llog_catlist \- list Lustre configuration log files
+.SH SYNOPSIS
+.SY "lctl"
+.RB [ --device
+.IR DEVICE ]
+.B llog catlist
+.SY "lctl"
+.RB [ --device
+.IR DEVICE ]
+.B llog_catlist
+.YS
+.SH DESCRIPTION
+.B lctl llog catlist
+is used to list the configuration log files on the MGS, or other target.
+This is useful to find the names of all the configuration files available.
+The
+.IR FSNAME -client
+logs contains configuration records for the client nodes, the
+.IR FSNAME -MDT XXXX
+logs contain records for the MDT(s), the
+.IR FSNAME -OST XXXX
+logs contain records for the OSTs.  The
+.B lctl conf_param
+parameters are stored in these log files for the specified filesystem.  The
+.B params
+log file contains the
+.B lctl set_param -P
+parameters for all filesystems serviced by this MGS.
+.SH OPTIONS
+.TP
+.BI --device " DEVICE"
+Run the command on
+.IR DEVICE .
+This is an
+.BR lctl (8)
+option and has to precede the subcommand.  The MGS device is used by
+default.
+.SH EXAMPLES
+To list all of the configuration logs on the MGS:
+.RS
+.EX
+.B # lctl llog catlist
+config_log: testfs-OST0000
+config_log: testfs-MDT0000
+config_log: testfs-OST0001
+config_log: testfs-client
+config_log: params
+.EE
+.RE
+.PP
+To list all of the recovery llog files on the MGS:
+.RS
+.EX
+.B # lctl --device testfs-MDT0000 llog catlist
+catalog_log: [0x5:0x1:0x0]:0
+catalog_log: [0x6:0x1:0x0]:0
+catalog_log: [0x7:0x1:0x0]:0
+.EE
+.RE
+.SH AVAILABILITY
+.B lctl llog catlist
+is a subcommand of
+.BR lctl (8)
+and is distributed as part of the
+.BR lustre (7)
+filesystem package since release 2.17.0
+.\" Added in commit v2_16_53-8-gfe4b49635d
+.PP
+The
+.B lctl llog_catlist
+spelling has been available since release 0.9.0
+.\" Added in commit 0.0.0-3210-gc5050e4125
+.SH SEE ALSO
+.BR lctl (8),
+.BR lctl-llog-cancel (8),
+.BR lctl-llog-info (8),
+.BR lctl-llog-print (8),
+.BR lctl-llog-remove (8)

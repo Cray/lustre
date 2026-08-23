@@ -1,1 +1,104 @@
-.so man8/lctl-llog_print.8
+.TH LCTL-LLOG-PRINT 8 2026-09-05 Lustre "Lustre Configuration Utilities"
+.SH NAME
+lctl-llog-print, lctl-llog_print \- print the content of a configuration log
+.SH SYNOPSIS
+.SY "lctl llog print"
+.RB [ --start
+.IR START_INDEX ]
+.RB [ --end
+.IR END_INDEX ]
+.I LOGNAME
+.SY "lctl llog_print"
+.RB [ --start
+.IR START_INDEX ]
+.RB [ --end
+.IR END_INDEX ]
+.I LOGNAME
+.YS
+.SH DESCRIPTION
+.B lctl llog print
+is used to dump the contents of the
+.I LOGNAME
+configuration log on the MGS in YAML format. This is useful for debugging
+configuration problems and to list any permanent configuration options
+saved via
+.B lctl conf_param
+on the MGS. The
+.B lctl llog catlist
+command can be used to list the different configuration logs, and the
+.B lctl llog cancel
+command can be used to cancel configuration records.
+.SH OPTIONS
+.TP
+.BI --end " END_INDEX"
+Stop printing records at
+.IR END_INDEX .
+.I END_INDEX
+is the last record number in the config log to dump,
+including the specified index number.
+.TP
+.BI --start " START_INDEX"
+Start printing records at
+.IR START_INDEX .
+.I START_INDEX
+is the first record number in the config log to dump.
+Note that deactivated records and comment records will not be printed.
+.TP
+.I LOGNAME
+The name of the configuration log, in the form
+.IR FSNAME - TARGET ,
+like
+.B testfs-client
+or
+.BR lustrefs-MDT0000 .
+.SH EXAMPLES
+To print the configuration records from the
+.BR testfs-client
+logfile, and save it to a file for later restoration by
+.BR lctl-set_param (8):
+.RS
+.EX
+.B # lctl llog print testfs-client | tee /root/testfs-client.yaml
+- { index: 3, event: attach, device: testfs-clilov, type: lov,
+    UUID: testfs-clilov_UUID }
+- { index: 6, event: setup, device: testfs-clilov, UUID: }
+- { index: 9, event: attach, device: testfs-clilmv, type: lov,
+    UUID: testfs-clilmv_UUID }
+- { index: 12, event: setup, device: testfs-clilmv, UUID: }
+- { index: 15, add_uuid: nid: 10.211.55.6@tcp(0x200000ad33706),
+    node: 10.211.55.6@tcp }
+:
+.EE
+.RE
+.PP
+To print the first 10
+.B set_param -P
+records from
+.B params:
+.RS
+.EX
+.B # lctl llog print --end=10 params
+- { index: 2, event: set_param, device: general, parameter: osc.*.max_dirty_mb, value: 32 }
+- { index: 4, event: set_param, device: general, parameter: osc.*.checksum_type, value: crc32c }
+.EE
+.RE
+.SH AVAILABILITY
+.B lctl llog print
+is a subcommand of
+.BR lctl (8)
+and is distributed as part of the
+.BR lustre (7)
+filesystem package since release 2.17.0
+.\" Added in commit v2_16_53-8-gfe4b49635d
+.PP
+The
+.B lctl llog_print
+spelling has been available since release 0.10.0
+.\" Added in commit 0.0.0-3210-gc5050e4125
+.SH SEE ALSO
+.BR lctl (8),
+.BR lctl-llog-cancel (8),
+.BR lctl-llog-catlist (8),
+.BR lctl-llog-info (8),
+.BR lctl-llog-remove (8),
+.BR lctl-set_param (8)
