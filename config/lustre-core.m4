@@ -780,35 +780,6 @@ AC_DEFUN([LC_VFS_UNLINK_3ARGS], [
 ]) # LC_VFS_UNLINK_3ARGS
 
 #
-# LC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD
-#
-# Linux commit v3.13-rc1-10-gd57a5f7c6605 replaced bip_sector with bip_iter
-# for struct bio_integrity_payload
-#
-# LB_CHECK_LINUX_HEADER has already run so we can rely on
-# HAVE_LINUX_BIO_INTEGRITY_HEADER being set correctly before
-# this test is run.
-#
-AC_DEFUN([LC_SRC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD], [
-	LB2_LINUX_TEST_SRC([bio_integrity_payload_bip_iter], [
-		#ifdef HAVE_LINUX_BIO_INTEGRITY_HEADER
-		# include <linux/bio-integrity.h>
-		#else
-		# include <linux/bio.h>
-		#endif
-	],[
-		((struct bio_integrity_payload *)0)->bip_iter.bi_size = 0;
-	])
-])
-AC_DEFUN([LC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD], [
-	LB2_MSG_LINUX_TEST_RESULT([if 'bio_integrity_payload.bip_iter' exist],
-	[bio_integrity_payload_bip_iter], [
-		AC_DEFINE(HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD, 1,
-			[bio_integrity_payload.bip_iter exist])
-	])
-]) # LC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD
-
-#
 # LC_HAVE_BVEC_ITER
 #
 # 3.14 move some of its data in struct bio into the new
@@ -1079,6 +1050,37 @@ AC_DEFUN([LC_KEY_MATCH_DATA], [
 		AC_DEFINE(HAVE_KEY_MATCH_DATA, 1, [struct key_match_data exist])
 	])
 ]) # LC_KEY_MATCH_DATA
+
+#
+# LC_HAVE_BLK_INTEGRITY_ITER
+#
+# Linux commit v3.17-rc5-69-g1859308853b1 replaces
+# struct blk_integrity_exchg with struct blk_integrity_iter
+#
+# LB_CHECK_LINUX_HEADER has already run so we can rely on
+# HAVE_LINUX_BLK_INTEGRITY_HEADER being set correctly before
+# this test is run.
+#
+AC_DEFUN([LC_SRC_HAVE_BLK_INTEGRITY_ITER], [
+	LB2_LINUX_TEST_SRC([blk_integrity_iter], [
+		#ifdef HAVE_LINUX_BLK_INTEGRITY_HEADER
+		# include <linux/blk-integrity.h>
+		#else
+		# include <linux/blkdev.h>
+		#endif
+	],[
+		struct blk_integrity_iter iter;
+
+		iter.prot_buf = NULL;
+	])
+])
+AC_DEFUN([LC_HAVE_BLK_INTEGRITY_ITER], [
+	LB2_MSG_LINUX_TEST_RESULT([if struct blk_integrity_iter exist],
+	[blk_integrity_iter], [
+		AC_DEFINE(HAVE_BLK_INTEGRITY_ITER, 1,
+			[kernel has struct blk_integrity_iter])
+	])
+]) # LC_HAVE_BLK_INTEGRITY_ITER
 
 #
 # LC_HAVE_LM_GRANT_2ARGS
@@ -1484,6 +1486,75 @@ AC_DEFUN([LC_HAVE_XATTR_HANDLER_SIMPLIFIED], [
 			[handler pointer is parameter])
 	])
 ]) # LC_HAVE_XATTR_HANDLER_SIMPLIFIED
+
+#
+# LC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD
+#
+# 4.3 replace interval with interval_exp in 'struct blk_integrity'.
+#
+AC_DEFUN([LC_SRC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD], [
+	LB2_LINUX_TEST_SRC([bio_integrity_payload_bip_iter], [
+		#include <linux/bio.h>
+	],[
+		((struct bio_integrity_payload *)0)->bip_iter.bi_size = 0;
+	])
+])
+AC_DEFUN([LC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'bio_integrity_payload.bip_iter' exist],
+	[bio_integrity_payload_bip_iter], [
+		AC_DEFINE(HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD, 1,
+			[bio_integrity_payload.bip_iter exist])
+	])
+]) # LC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD
+
+#
+# LC_BIO_INTEGRITY_PREP_FN
+#
+# Lustre kernel patch extents bio_integrity_prep to accept optional
+# generate/verify_fn as extra args.
+#
+AC_DEFUN([LC_SRC_BIO_INTEGRITY_PREP_FN], [
+	LB2_LINUX_TEST_SRC([bio_integrity_prep_fn], [
+		#include <linux/bio.h>
+	],[
+		bio_integrity_prep_fn(NULL, NULL, NULL);
+	])
+])
+AC_DEFUN([LC_BIO_INTEGRITY_PREP_FN], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'bio_integrity_prep_fn' exists],
+	[bio_integrity_prep_fn], [
+		AC_DEFINE(HAVE_BIO_INTEGRITY_PREP_FN, 1,
+			[kernel has bio_integrity_prep_fn])
+		AC_SUBST(PATCHED_INTEGRITY_INTF)
+	],[
+		AC_SUBST(PATCHED_INTEGRITY_INTF, [#])
+	])
+]) # LC_BIO_INTEGRITY_PREP_FN
+
+# LC_BIO_INTEGRITY_PREP_FN_RETURNS_BOOL
+#
+# 13 kernel integrity API has changed and in 4.13+
+# (as well as in rhel 8.4) bio_integrity_prep() returns boolean true
+# on success.
+#
+AC_DEFUN([LC_SRC_BIO_INTEGRITY_PREP_FN_RETURNS_BOOL], [
+	LB2_LINUX_TEST_SRC([bio_integrity_prep_ret_bool], [
+		#include <linux/bio.h>
+		#include <linux/typecheck.h>
+	],[
+		#pragma GCC diagnostic warning "-Werror"
+		typedef bool (*bio_integrity_prep_type)(struct bio *bio) ;
+
+		typecheck_fn(bio_integrity_prep_type, bio_integrity_prep);
+	])
+])
+AC_DEFUN([LC_BIO_INTEGRITY_PREP_FN_RETURNS_BOOL], [
+	LB2_MSG_LINUX_TEST_RESULT([if 'bio_integrity_prep_fn' returns bool],
+	[bio_integrity_prep_ret_bool], [
+		AC_DEFINE(HAVE_BIO_INTEGRITY_PREP_FN_RETURNS_BOOL, 1,
+			[bio_integrity_prep_fn returns bool])
+	])
+]) # LC_BIO_INTEGRITY_PREP_FN_RETURNS_BOOL
 
 #
 # LC_HAVE_BI_OPF
@@ -4713,27 +4784,6 @@ AC_DEFUN([LC_HAVE_STRUCT_FILE_LOCK_CORE], [
 ]) # LC_HAVE_STRUCT_FILE_LOCK_CORE
 
 #
-# LC_HAVE_CSUM_TYPE_BLK_INTEGRITY
-#
-# Linux commit v6.10-rc3-19-ge9f5f44ad372
-#   block: remove the blk_integrity_profile structure
-#
-AC_DEFUN([LC_SRC_HAVE_CSUM_TYPE_BLK_INTEGRITY], [
-	LB2_LINUX_TEST_SRC([csum_type_blk_integrity], [
-		#include <linux/blkdev.h>
-	],[
-		((struct blk_integrity *)0)->csum_type = 0;
-	],[-Werror])
-])
-AC_DEFUN([LC_HAVE_CSUM_TYPE_BLK_INTEGRITY], [
-	LB2_MSG_LINUX_TEST_RESULT([if 'blk_integrity.csum_type' exists],
-	[csum_type_blk_integrity], [
-		AC_DEFINE(HAVE_CSUM_TYPE_BLK_INTEGRITY, 1,
-			[struct blk_integrity has csum_type field])
-	])
-]) # LC_HAVE_CSUM_TYPE_BLK_INTEGRITY
-
-#
 # LC_HAVE_LINUX_UNALIGNED_HEADER
 #
 # Linux v6.12-rc1-3-g5f60d5f6bbc1
@@ -5505,7 +5555,6 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	# 3.13
 	LC_SRC_VFS_RENAME_5ARGS
 	LC_SRC_VFS_UNLINK_3ARGS
-	LC_SRC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD
 
 	# 3.14
 	LC_SRC_HAVE_BVEC_ITER
@@ -5526,6 +5575,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	# 3.17
 	LC_SRC_HAVE_INTERVAL_BLK_INTEGRITY
 	LC_SRC_KEY_MATCH_DATA
+	LC_SRC_HAVE_BLK_INTEGRITY_ITER
 
 	# 3.18
 	LC_SRC_NFS_FILLDIR_USE_CTX
@@ -5552,6 +5602,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 
 	# 4.3
 	LC_SRC_HAVE_INTERVAL_EXP_BLK_INTEGRITY
+	LC_SRC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD
 	LC_SRC_HAVE_CACHE_HEAD_HLIST
 	LC_SRC_HAVE_XATTR_HANDLER_SIMPLIFIED
 
@@ -5559,6 +5610,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_HAVE_LOCKS_LOCK_FILE_WAIT
 	LC_SRC_HAVE_KEY_PAYLOAD_DATA_ARRAY
 	LC_SRC_HAVE_XATTR_HANDLER_NAME
+	LC_SRC_BIO_INTEGRITY_PREP_FN_RETURNS_BOOL
 	LC_SRC_HAVE_BI_OPF
 	LC_SRC_HAVE_SUBMIT_BIO_2ARGS
 	LC_SRC_HAVE_CLEAN_BDEV_ALIASES
@@ -5765,9 +5817,6 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	# 6.9
 	LC_SRC_HAVE_STRUCT_FILE_LOCK_CORE
 
-	# 6.11
-	LC_SRC_HAVE_CSUM_TYPE_BLK_INTEGRITY
-
 	# 6.12
 	LC_SRC_HAVE_LINUX_UNALIGNED_HEADER
 	LC_SRC_HAVE_WRITE_BEGIN_FOLIO
@@ -5806,6 +5855,9 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_HAVE_MEMDESC_FLAGS_T
 	LC_SRC_HAVE_DENTRY__D_NAME
 	LC_SRC_HAVE_FILE__F_PATH
+
+	# kernel patch to extend integrity interface
+	LC_SRC_BIO_INTEGRITY_PREP_FN
 ])
 
 AC_DEFUN([LC_PROG_LINUX_RESULTS], [
@@ -5853,7 +5905,6 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	# 3.13
 	LC_VFS_RENAME_5ARGS
 	LC_VFS_UNLINK_3ARGS
-	LC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD
 
 	# 3.14
 	LC_HAVE_BVEC_ITER
@@ -5874,6 +5925,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	# 3.17
 	LC_HAVE_INTERVAL_BLK_INTEGRITY
 	LC_KEY_MATCH_DATA
+	LC_HAVE_BLK_INTEGRITY_ITER
 
 	# 3.18
 	LC_PERCPU_COUNTER_INIT
@@ -5900,6 +5952,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 
 	# 4.3
 	LC_HAVE_INTERVAL_EXP_BLK_INTEGRITY
+	LC_HAVE_BIP_ITER_BIO_INTEGRITY_PAYLOAD
 	LC_HAVE_CACHE_HEAD_HLIST
 	LC_HAVE_XATTR_HANDLER_SIMPLIFIED
 
@@ -5961,6 +6014,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_BI_STATUS
 
 	# 4.13
+	LC_BIO_INTEGRITY_PREP_FN_RETURNS_BOOL
 	LC_HAVE_GET_INODE_USAGE
 
 	# 4.14
@@ -6122,9 +6176,6 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	# 6.9
 	LC_HAVE_STRUCT_FILE_LOCK_CORE
 
-	# 6.11
-	LC_HAVE_CSUM_TYPE_BLK_INTEGRITY
-
 	# 6.12
 	LC_HAVE_LINUX_UNALIGNED_HEADER
 	LC_HAVE_WRITE_BEGIN_FOLIO
@@ -6163,6 +6214,9 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_HAVE_MEMDESC_FLAGS_T
 	LC_HAVE_DENTRY__D_NAME
 	LC_HAVE_FILE__F_PATH
+
+	# kernel patch to extend integrity interface
+	LC_BIO_INTEGRITY_PREP_FN
 ])
 
 #
