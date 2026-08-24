@@ -5711,7 +5711,7 @@ dangling:
 			if (IS_ERR(dir)) {
 				rc = PTR_ERR(dir);
 
-				GOTO(trace, rc == -ENOENT ? 0 : rc);
+				GOTO(trace, rc = (rc == -ENOENT ? 0 : rc));
 			}
 		}
 
@@ -5882,8 +5882,12 @@ nodata:
 			dir = lfsck_assistant_object_load(env, lfsck, lso);
 			if (IS_ERR(dir)) {
 				rc = PTR_ERR(dir);
+				/* out: is reached from stop: and only
+				 * reloads dir when it is NULL
+				 */
+				dir = NULL;
 
-				GOTO(stop, rc == -ENOENT ? 0 : rc);
+				GOTO(stop, rc = (rc == -ENOENT ? 0 : rc));
 			}
 		}
 
@@ -5951,7 +5955,7 @@ out:
 			if (IS_ERR(dir)) {
 				rc = PTR_ERR(dir);
 
-				GOTO(trace, rc == -ENOENT ? 0 : rc);
+				GOTO(trace, rc = (rc == -ENOENT ? 0 : rc));
 			}
 		}
 
@@ -5967,7 +5971,7 @@ out:
 			if (IS_ERR(dir)) {
 				rc = PTR_ERR(dir);
 
-				GOTO(trace, rc == -ENOENT ? 0 : rc);
+				GOTO(trace, rc = (rc == -ENOENT ? 0 : rc));
 			}
 		}
 
