@@ -9342,7 +9342,7 @@ t_108_mkfs() {
 	local pool=""
 	[ $# -eq 5 ] && pool=$5
 
-	do_facet $SINGLEMDS $MKFS --fsname=lustre --$mgs \
+	do_facet $SINGLEMDS $MKFS --fsname=$fsname --$mgs \
 		--$role --index=$idx --replace --backfstype=$bkfs \
 		--device-size=200000 --reformat $pool $tmp/images/$facet ||
 		error "failed to mkfs for $facet"
@@ -9350,7 +9350,7 @@ t_108_mkfs() {
 
 t_108_check() {
 	echo "mounting client..."
-	mount -t lustre ${nid}:/lustre $MOUNT ||
+	mount -t lustre ${nid}:/$fsname $MOUNT ||
 		error "failed to mount lustre"
 
 	echo "check list"
@@ -9412,6 +9412,8 @@ test_108a() {
 	local tmp=$TMP/$tdir
 	local rcmd="do_facet $SINGLEMDS"
 	local facets="mdt1 mdt2 ost1 ost2"
+	# the restored images hard-code this fsname, ignore $FSNAME
+	local fsname=lustre
 	local nid=$($rcmd $LCTL list_nids | head -1)
 	local facet
 
@@ -9443,10 +9445,10 @@ test_108a() {
 
 	echo "changing server nid..."
 	$rcmd mount -t lustre -o nosvc lustre-mdt1/mdt1 $tmp/mnt/mdt1
-	$rcmd lctl replace_nids $FSNAME-MDT0000 $nid
-	$rcmd lctl replace_nids $FSNAME-MDT0001 $nid
-	$rcmd lctl replace_nids $FSNAME-OST0000 $nid
-	$rcmd lctl replace_nids $FSNAME-OST0001 $nid
+	$rcmd lctl replace_nids $fsname-MDT0000 $nid
+	$rcmd lctl replace_nids $fsname-MDT0001 $nid
+	$rcmd lctl replace_nids $fsname-OST0000 $nid
+	$rcmd lctl replace_nids $fsname-OST0001 $nid
 	$rcmd umount $tmp/mnt/mdt1
 
 	for facet in $facets; do
@@ -9477,6 +9479,8 @@ test_108b() {
 	local rcmd="do_facet $SINGLEMDS"
 	local facets="mdt1 mdt2 ost1 ost2"
 	local scrub_list="MDT0000 MDT0001 OST0000 OST0001"
+	# the restored images hard-code this fsname, ignore $FSNAME
+	local fsname=lustre
 	local nid=$($rcmd $LCTL list_nids | head -1)
 	local facet
 
@@ -9505,10 +9509,10 @@ test_108b() {
 
 	echo "changing server nid..."
 	$rcmd mount -t lustre -o nosvc,loop $tmp/images/mdt1 $tmp/mnt/mdt1
-	$rcmd lctl replace_nids $FSNAME-MDT0000 $nid
-	$rcmd lctl replace_nids $FSNAME-MDT0001 $nid
-	$rcmd lctl replace_nids $FSNAME-OST0000 $nid
-	$rcmd lctl replace_nids $FSNAME-OST0001 $nid
+	$rcmd lctl replace_nids $fsname-MDT0000 $nid
+	$rcmd lctl replace_nids $fsname-MDT0001 $nid
+	$rcmd lctl replace_nids $fsname-OST0000 $nid
+	$rcmd lctl replace_nids $fsname-OST0001 $nid
 	$rcmd umount $tmp/mnt/mdt1
 
 	for facet in $facets; do
@@ -9518,7 +9522,7 @@ test_108b() {
 	done
 
 	for facet in $scrub_list; do
-		$rcmd $LCTL lfsck_start -M $FSNAME-$facet -t scrub ||
+		$rcmd $LCTL lfsck_start -M $fsname-$facet -t scrub ||
 			error "failed to start OI scrub on $facet"
 	done
 
