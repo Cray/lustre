@@ -552,10 +552,12 @@ static int do_keyctl_update(char *reason, key_serial_t keyid,
 			    const void *payload, size_t plen)
 {
 	while (keyctl_update(keyid, payload, plen)) {
-		if (errno != EAGAIN) {
+		int err = errno;
+
+		if (err != EAGAIN) {
 			logmsg(LL_ERR, "%se key %08x: %s\n",
-			       reason, keyid, strerror(errno));
-			return -1;
+			       reason, keyid, strerror(err));
+			return -err;
 		}
 
 		logmsg(LL_INFO, "key %08x: %sing too soon, try again\n",
@@ -591,14 +593,26 @@ static int error_kernel_key(key_serial_t keyid, int rpc_error, int gss_error,
 	WRITE_BYTES(&p, end, gss_error);
 
 	rc = do_keyctl_update("revok", keyid, buf, p - buf);
-	/* no matter if revoking key was successful or not, always try unlink */
+	if (!rc)
+		return 0;
+	/* Unlink the key when we know it is still ours: if the update was
+	 * denied, or the key is already invalidated, revoked or gone, then the
+	 * key sitting in the keyring under our description may be a new one,
+	 * that we must not evict.
+	 */
+	if (rc == -EACCES || rc == -EKEYEXPIRED || rc == -EKEYREVOKED ||
+	    rc == -ENOKEY) {
+		logmsg(LL_INFO,
+		       "key %08x: no longer ours, not unlinked from %d\n",
+		       keyid, inst_keyring);
+		return rc;
+	}
+
 	rc2 = keyctl_unlink(keyid, inst_keyring);
 	if (rc2) {
-		if (rc2 != ENOENT)
+		if (errno != ENOENT)
 			logmsg(LL_ERR, "unlink key %08x from %d: %s\n",
 			       keyid, inst_keyring, strerror(errno));
-		if (!rc)
-			rc = rc2;
 	} else {
 		logmsg(LL_INFO, "key %08x: unlinked from %d\n",
 		       keyid, inst_keyring);

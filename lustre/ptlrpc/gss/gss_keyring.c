@@ -84,9 +84,36 @@ static inline void keyring_upcall_unlock(struct gss_sec_keyring *gsec_kr)
 #endif
 }
 
-static inline void key_invalidate_locked(struct key *key)
+/* Unlink the key, and then mark it as invalidated so that others cannot find
+ * it during lookup, if we are the ones who invalidated it.
+ * Unlinking must come first: keys are unlinked from a keyring by index key,
+ * that is by type and description, and not by identity. As long as the key is
+ * still valid and linked, a concurrent request_key() finds and reuses it,
+ * instead of linking a new key with the same description in its place. So
+ * unlinking before invalidating guarantees that we cannot evict someone
+ * else's brand new key.
+ * Note that request_key_unlink() looks for the keyring in the current
+ * credentials, which is where request_key() linked the key in the first
+ * place.
+ * Invalidating a key is never enough to get rid of it, because the kernel
+ * garbage collector only reaps invalidated keys when it is notified through
+ * key_schedule_gc_links(), which is not exported to modules. But it is still
+ * needed in case the key could not be unlinked.
+ * The key remains valid and linked for as long as request_key_unlink() runs,
+ * and that can sleep. So a concurrent request_key() may still hand this key
+ * out during that window. But such a caller has to serialize on the key
+ * semaphore, and by the time it gets it KEY_FLAG_INVALIDATED is set, so it
+ * can tell the key is on its way out and ask for a new one instead.
+ * Caller must hold the key write lock. The kernel sets KEY_FLAG_INVALIDATED
+ * in key_invalidate() only, and with the key write lock held as well, so the
+ * test and set below are exclusive even though they are not atomic.
+ */
+static inline void key_invalidate_unlink_locked(struct key *key)
 {
-	set_bit(KEY_FLAG_INVALIDATED, &key->flags);
+	if (!test_bit(KEY_FLAG_INVALIDATED, &key->flags)) {
+		request_key_unlink(key, false);
+		set_bit(KEY_FLAG_INVALIDATED, &key->flags);
+	}
 }
 
 static void ctx_upcall_timeout_kr(cfs_timer_cb_arg_t data)
@@ -95,20 +122,15 @@ static void ctx_upcall_timeout_kr(cfs_timer_cb_arg_t data)
 							     data, gck_timer);
 	struct ptlrpc_cli_ctx *ctx = &(gctx_kr->gck_base.gc_base);
 	struct obd_import *imp = ctx->cc_sec->ps_import;
-	struct key *key	= gctx_kr->gck_key;
 
-	if (key)
-		CDEBUG(D_SEC,
-		       "%s: GSS context (%p) negotiation timeout, invalidating key (%p)\n",
-		       imp->imp_obd->obd_name, ctx, key);
-	else
-		CDEBUG(D_SEC,
-		       "%s: GSS context (%p) negotiation timeout, ignoring already unlinked key\n",
-		       imp->imp_obd->obd_name, ctx);
+	CDEBUG(D_SEC,
+	       "%s: GSS context (%p) negotiation timeout, expiring it, key (%p)\n",
+	       imp->imp_obd->obd_name, ctx, gctx_kr->gck_key);
 
+	/* Just expire the context. Invalidating the key here would only make it
+	 * invisible to lookups, but leave it linked and referenced.
+	 */
 	cli_ctx_expire(ctx);
-	if (key)
-		key_invalidate_locked(key);
 }
 
 static void ctx_start_timer_kr(struct ptlrpc_cli_ctx *ctx, time64_t timeout)
@@ -332,18 +354,17 @@ static void bind_key_ctx(struct key *key, struct ptlrpc_cli_ctx *ctx)
  */
 static void unbind_key_ctx(struct key *key, struct ptlrpc_cli_ctx *ctx)
 {
-	/* give up on invalidated or empty key,
-	 * someone else already took care of it
+	/* The payload is set and cleared under the key semaphore, so it is
+	 * the only reliable indication that someone else already unbound
+	 * this key.
 	 */
-	if (test_bit(KEY_FLAG_INVALIDATED, &key->flags) ||
-	    key_get_payload(key, 0) != ctx) {
+	if (key_get_payload(key, 0) != ctx) {
 		CDEBUG(D_SEC, "key %08x already handled\n", key->serial);
 		return;
 	}
 
 	/* must invalidate the key, or others may find it during lookup */
-	key_invalidate_locked(key);
-	request_key_unlink(key, false);
+	key_invalidate_unlink_locked(key);
 
 	key_set_payload(key, 0, NULL);
 	ctx2gctx_keyring(ctx)->gck_key = NULL;
@@ -993,6 +1014,7 @@ struct ptlrpc_cli_ctx *gss_sec_lookup_ctx_kr(struct ptlrpc_sec *sec,
 	unsigned int is_root = 0, create_new = 0;
 	const struct cred *old_cred = NULL;
 	struct cred *new_cred = NULL;
+	bool retried = false;
 	struct key *key;
 	char desc[24];
 	char *coinfo;
@@ -1146,6 +1168,7 @@ struct ptlrpc_cli_ctx *gss_sec_lookup_ctx_kr(struct ptlrpc_sec *sec,
 
 	CDEBUG(D_SEC, "requesting key for %s\n", desc);
 
+retry:
 	if (vcred->vc_uid) {
 		new_cred = prepare_creds();
 		if (new_cred) {
@@ -1162,16 +1185,15 @@ struct ptlrpc_cli_ctx *gss_sec_lookup_ctx_kr(struct ptlrpc_sec *sec,
 	if (old_cred) {
 		revert_creds(old_cred);
 		put_cred(new_cred);
+		old_cred = NULL;
 	}
-
-	OBD_FREE(coinfo, coinfo_size);
 
 	if (IS_ERR(key)) {
 		CERROR("%s: request key failed for uid %d: rc = %ld\n",
 		       imp->imp_obd->obd_name, vcred->vc_uid,
 		       PTR_ERR(key));
 		ctx = ERR_CAST(key);
-		goto out;
+		goto out_coinfo;
 	}
 	CDEBUG(D_SEC, "obtained key %08x for %s\n", key->serial, desc);
 
@@ -1192,6 +1214,23 @@ struct ptlrpc_cli_ctx *gss_sec_lookup_ctx_kr(struct ptlrpc_sec *sec,
 		 * responsibility to detect & replace dead ctx.
 		 */
 		atomic_inc(&ctx->cc_refcount);
+	} else if (!retried && test_bit(KEY_FLAG_INVALIDATED, &key->flags)) {
+		/* The key was unlinked and invalidated under the key semaphore
+		 * that we have just been granted, so request_key() handed us a
+		 * key that is on its way out. It also means no upcall was
+		 * issued for it, so binding a context to this key would leave
+		 * us waiting for a negotiation that is never going to happen.
+		 * Ask for a brand new key instead. Asking once is enough: this
+		 * key is now invisible to lookups, so we cannot be handed it
+		 * again.
+		 */
+		CDEBUG(D_SEC,
+		       "key %08x is being discarded, requesting a new one\n",
+		       key->serial);
+		retried = true;
+		up_write(&key->sem);
+		key_put(key);
+		goto retry;
 	} else {
 		/* pre initialization with a cli_ctx. this can't be done in
 		 * key_instantiate() because we'v no enough information
@@ -1206,14 +1245,15 @@ struct ptlrpc_cli_ctx *gss_sec_lookup_ctx_kr(struct ptlrpc_sec *sec,
 
 			CDEBUG(D_SEC, "installed key %p <-> ctx %p (sec %p)\n",
 			       key, ctx, sec);
-		} else {
-			CDEBUG(D_SEC, "invalidating key %08x (%p)\n",
-			       key->serial, key);
-			key_invalidate_locked(key);
-		}
 
-		if (is_root)
-			create_new = 1;
+			if (is_root)
+				create_new = 1;
+		} else {
+			CDEBUG(D_SEC,
+			       "invalidating and unlinking key %08x (%p)\n",
+			       key->serial, key);
+			key_invalidate_unlink_locked(key);
+		}
 	}
 
 	up_write(&key->sem);
@@ -1227,6 +1267,9 @@ struct ptlrpc_cli_ctx *gss_sec_lookup_ctx_kr(struct ptlrpc_sec *sec,
 		request_key_unlink(key, true);
 
 	key_put(key);
+
+out_coinfo:
+	OBD_FREE(coinfo, coinfo_size);
 out:
 	if (is_root)
 		mutex_unlock(&gsec_kr->gsk_root_uc_lock);
@@ -1289,10 +1332,10 @@ static void flush_user_ctx_cache_kr(struct ptlrpc_sec *sec, uid_t uid,
 
 		kill_key_locked(key);
 
-		/* kill_key_locked() should usually revoke the key, but we
-		 * invalidate it as well to completely get rid of it.
+		/* kill_key_locked() gets rid of the key if it is bound to a
+		 * listed context. Otherwise we have to do it ourselves.
 		 */
-		key_invalidate_locked(key);
+		key_invalidate_unlink_locked(key);
 
 		up_write(&key->sem);
 		key_put(key);
@@ -1772,6 +1815,14 @@ int gss_kt_update(struct key *key, struct key_preparsed_payload *prep)
 	/* don't proceed if already refreshed */
 	if (cli_ctx_is_refreshed(ctx)) {
 		CWARN("ctx already done refresh\n");
+		/* A dead context here means the upcall raced with the
+		 * negotiation timeout, which only expires the context. The key
+		 * is still bound to it, and userspace relies on a successful
+		 * downcall to mean the kernel got rid of the key, so unbind it
+		 * now, while we hold the key semaphore.
+		 */
+		if (cli_ctx_is_dead(ctx))
+			unbind_key_ctx(key, ctx);
 		RETURN(0);
 	}
 
