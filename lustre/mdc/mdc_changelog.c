@@ -75,7 +75,12 @@ struct chlg_reader_state {
 	unsigned int		    crs_last_catidx;
 	unsigned int		    crs_last_idx;
 	unsigned int		    crs_flags;
-	/* Changelog filter mask (0 = off by default ) */
+	/*
+	 * Changelog filter mask: the record types to deliver, all of them by
+	 * default.  Every bit set means unfiltered; no bit set means nothing
+	 * matches, which is what two masks that do not overlap compose to.
+	 * Zero used to mean unfiltered, so it could not carry that.
+	 */
 	__u64			    crs_user_mask;
 };
 
@@ -219,8 +224,7 @@ static int chlg_read_cat_process_cb(const struct lu_env *env,
 		RETURN(0);
 
 	/* Check if this record type matches the user's mask */
-	if (crs->crs_user_mask &&
-	    !(crs->crs_user_mask & BIT(rec->cr.cr_type)))
+	if (!(crs->crs_user_mask & BIT(rec->cr.cr_type)))
 		RETURN(0);
 
 	CDEBUG(D_HSM, "%llu %02d%-5s %llu 0x%x t="DFID" p="DFID" %.*s\n",
@@ -645,7 +649,7 @@ static int chlg_open(struct inode *inode, struct file *file)
 	init_waitqueue_head(&crs->crs_waitq_prod);
 	init_waitqueue_head(&crs->crs_waitq_cons);
 	crs->crs_prod_task = NULL;
-	crs->crs_user_mask = 0;
+	crs->crs_user_mask = ~0ULL;
 
 	file->private_data = crs;
 	RETURN(0);
@@ -807,11 +811,22 @@ static long chlg_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		}
 		chlg_obd_put(crs->crs_ced, obd);
 
+		/*
+		 * A zero mask is "unrestricted" on either side: the user
+		 * registered none, or the caller asked for none.  So each
+		 * zero reads as all bits and the two are intersected, and an
+		 * intersection may legitimately be empty -- a user allowed
+		 * CREAT asking for "--mask=-mark,-creat" is owed no records,
+		 * not all of them.  That takes a relative mask, or a raw one
+		 * through llapi_changelog_start_user(): cfs_str2mask() seeds
+		 * an absolute mask from CHANGELOG_MINMASK, so two built from
+		 * strings always share BIT(CL_MARK).  crs_user_mask names the
+		 * types to deliver rather than treating zero as "off", so it
+		 * can carry an empty set.
+		 */
 		mutex_lock(&crs->crs_lock);
-		if (in.cf_mask == 0)
-			crs->crs_user_mask = out.cf_mask;
-		else
-			crs->crs_user_mask = in.cf_mask & out.cf_mask;
+		crs->crs_user_mask = (in.cf_mask ? in.cf_mask : ~0ULL) &
+				     (out.cf_mask ? out.cf_mask : ~0ULL);
 		mutex_unlock(&crs->crs_lock);
 
 		CDEBUG(D_INFO,

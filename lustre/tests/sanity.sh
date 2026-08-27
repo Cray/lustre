@@ -25531,6 +25531,80 @@ test_160y() {
 }
 run_test 160y "lfs changelog --user for a user registered without a mask"
 
+test_160z() {
+	[[ $PARALLEL == "yes" ]] && skip "skip parallel run"
+	remote_mds_nodsh && skip "remote MDS with nodsh"
+
+	(( $MDS1_VERSION >= $(version_code v2_17_52-164-g41b55cf230) )) ||
+		skip "Need MDS >= 2.17.52.164 for changelog filtering"
+
+	local mdt="$(facet_svc $SINGLEMDS)"
+	local user="u1"_$testnum
+	local cl_user masked_user oldmask logs count
+
+	mkdir_on_mdt0 $DIR/$tdir || error "mkdir $tdir failed"
+
+	# Widen the mask so CREAT and MKDIR are recorded whatever an earlier
+	# subtest left it at.  Restore it by hand: changelog_register()'s trap
+	# would be saving this value, not the original.
+	oldmask=$(do_facet $SINGLEMDS \
+		  $LCTL get_param -n mdd.$mdt.changelog_mask)
+	stack_trap "do_facet $SINGLEMDS \
+		$LCTL set_param -n mdd.$mdt.changelog_mask=\'$oldmask\'"
+	# this facet only, to match the restore above
+	do_facet $SINGLEMDS $LCTL set_param mdd.$mdt.changelog_mask=ALL
+
+	# a name but no mask
+	changelog_register --user $user || error "changelog_register failed"
+	cl_user="${CL_USERS[$SINGLEMDS]%% *}"
+
+	changelog_users $SINGLEMDS
+	# without this the test would pass while proving nothing
+	changelog_users $SINGLEMDS | grep -q "^$cl_user .*mask=" &&
+		error "$cl_user carries a mask; --mask would be untested"
+
+	changelog_clear 0 || error "changelog_clear failed"
+
+	touch $DIR/$tdir/f1 || error "touch f1 failed"
+	mkdir $DIR/$tdir/d1 || error "mkdir d1 failed"
+
+	# the user restricts nothing, so --mask alone decides
+	logs=$($LFS changelog --user $cl_user --mask creat $mdt |
+		tee >(cat >&2))
+	count=$(grep -c -o "CREAT" <<< $logs)
+	(( count == 1 )) || error "should see 1 CREAT record, but got $count"
+	count=$(grep -c -o "MKDIR" <<< $logs)
+	(( count == 0 )) ||
+		error "--mask creat should hide MKDIR, but got $count"
+
+	# without --mask the user still sees everything
+	logs=$($LFS changelog --user $cl_user $mdt)
+	count=$(grep -c -o "MKDIR" <<< $logs)
+	(( count == 1 )) || error "should see 1 MKDIR record, but got $count"
+
+	# The disjoint case.  "-m creat" is MARK|CREAT; a relative --mask is
+	# seeded from DEFMASK, so "-mark,-creat" shares no bit with it.  The
+	# empty intersection used to read as "no filter".
+	changelog_register -m creat || error "changelog_register -m failed"
+	masked_user="$(awk '{print $NF}' <<<"${CL_USERS[$SINGLEMDS]}")"
+
+	changelog_clear 0 || error "changelog_clear failed"
+	touch $DIR/$tdir/f2 || error "touch f2 failed"
+
+	# the control: this user does have a record to lose
+	logs=$($LFS changelog --user $masked_user $mdt)
+	count=$(grep -c -o "CREAT" <<< $logs)
+	(( count >= 1 )) ||
+		error "$masked_user should see a CREAT record, got $count"
+
+	logs=$($LFS changelog --user $masked_user --mask=-mark,-creat $mdt |
+		tee >(cat >&2))
+	count=$(grep -c -o "CREAT" <<< $logs)
+	(( count == 0 )) ||
+		error "a disjoint --mask should select nothing, got $count"
+}
+run_test 160z "lfs changelog --mask for a user registered without a mask"
+
 test_161a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 
