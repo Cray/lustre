@@ -2031,8 +2031,8 @@ test_27cf() {
 run_test 27cf "'setstripe -o' on inactive OSTs should return error"
 
 test_27cg() {
-	[[ $($LCTL get_param mdc.*.import) =~ connect_flags.*overstriping ]] ||
-		skip "server does not support overstriping"
+	(( $MDS1_VERSION >= $(version_code v2_15_54-2-g9e6225b2e7) )) ||
+		skip "need MDS >= 2.15.54.2 for large overstripe layout"
 	[[ $mds1_FSTYPE != "ldiskfs" ]] && skip_env "ldiskfs only test"
 	large_xattr_enabled || skip_env "ea_inode feature disabled"
 
@@ -3112,8 +3112,8 @@ test_27Cg() {
 run_test 27Cg "test setstripe with wrong OST idx"
 
 test_27Ci() {
-	[[ $($LCTL get_param mdc.*.import) =~ connect_flags.*overstriping ]] ||
-		skip "server does not support overstriping"
+	(( $MDS1_VERSION >= $(version_code v2_15_61-13-g90c093b785) )) ||
+		skip "need MDS >= 2.15.61.13 for overstriped component add"
 	local tf=$DIR/$tfile
 
 	stack_trap "rm -f $DIR/$tfile"
@@ -17970,11 +17970,10 @@ test_119n()
 	# and report EINVAL when attempting unaligned dio.
 	dio_readv_writev_support
 
-	[[ "${ost1_FSTYPE}" == "zfs" ]] ||
-		skip "need ZFS server without unaligned_dio support"
+	[[ "${ost1_FSTYPE}" == "zfs" ]] || skip "ZFS-only test"
 	$LCTL get_param osc.*.import | grep connect_flags: |
 		grep -q "unaligned_dio" &&
-			skip "zfs server without 'unaligned_dio' support"
+			skip "need ZFS server without 'unaligned_dio' support"
 
 	error_string=$(rwv -f $DIR/$tfile -Dw -n2 1024 4096 2>&1) &&
 		error "Allowed unaligned dio with ZFS with unpatched server"
@@ -19713,8 +19712,8 @@ test_124g_run() {
 
 test_124g() {
 	[[ $PARALLEL != "yes" ]] || skip "skip parallel run"
-	(( $MDS1_VERSION >= $(version_code 2.17.50.63) )) ||
-		skip "Need MDS with LFRU support (LU-11509, >= 2.17.50.63)"
+	(( $MDS1_VERSION >= $(version_code v2_17_50-63-g0373d0c40b) )) ||
+		skip "Need MDS >= 2.17.50.63 for LFRU support (LU-11509)"
 
 	local nsdir="ldlm.namespaces.*-MDT0000-mdc-*"
 	local lru_size=$(default_lru_size)
@@ -21372,8 +21371,8 @@ run_test 134b "Server rejects lock request when reaching lock_limit_mb"
 
 test_134c() {
 	remote_mds_nodsh && skip "remote MDS with nodsh"
-	(( $MDS1_VERSION >= $(version_code 2.17.52) )) ||
-		skip "Need MDS version at least 2.17.52"
+	(( $MDS1_VERSION >= $(version_code v2_17_54-99-gd6bf379d87) )) ||
+		skip "Need MDS >= 2.17.54.99 for LDLM memory accounting change"
 
 	local slab=/sys/kernel/slab
 	local lock_sz=$(do_facet mds1 \
@@ -29324,8 +29323,8 @@ run_test 230j "DoM file data not changed after dir migration"
 
 test_230k() {
 	[ $MDSCOUNT -lt 4 ] && skip "needs >= 4 MDTs"
-	(( $MDS1_VERSION >= $(version_code 2.17.56) )) ||
-		skip "Need MDS >= 2.17.56"
+	(( $MDS1_VERSION >= $(version_code v2_17_56-54-g5ad307db23) )) ||
+		skip "need MDS >= 2.17.56.54 for dir migrate layout check fix"
 
 	local total=20
 	local files_on_starting_mdt=0
