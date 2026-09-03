@@ -196,7 +196,7 @@ done
 # is given. It's ugly, but is needed to emulate the prior functionality
 if (( ${#modules[@]} == 0 )) || [[ "${modules[*]}" == "ldiskfs" ]]; then
 	unload_all=true
-	modules=('lnet_selftest' 'ldiskfs' 'libcfs')
+	modules=('lnet_selftest' 'ldiskfs' 'libcfs' 'ec')
 else
 	unload_all=false
 fi
