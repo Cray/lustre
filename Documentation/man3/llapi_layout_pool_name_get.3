@@ -38,7 +38,7 @@ will validate that the
 .I pool_name
 is not longer than the maximum allowed name and only contains
 valid characters (per
-.I llapi_pool_name_validate (3)),
+.BR llapi_pool_name_validate (3)),
 but does not validate that
 .I pool_name
 names an existing non-empty pool, since it is not known a priori which
@@ -57,7 +57,7 @@ return 0 on success, or -1 if an error occurred (in which case, errno is
 set appropriately).
 .SH ERRORS
 Errors from
-.IR llapi_pool_name_validate (3)
+.BR llapi_pool_name_validate (3)
 will be returned on malformed pool names.
 .TP 15
 .B EINVAL

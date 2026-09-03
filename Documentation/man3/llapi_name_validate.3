@@ -5,8 +5,8 @@ llapi_name_validate() \- check string contains only valid characters
 .nf
 .B #include <lustre/lustreapi.h>
 .PP
-.BI "int llapi_name_validate(const char *" name ", const char *" extra_chars \c
-.BI ", int " maxlen );
+.BI "int llapi_name_validate(const char *" name ", const char *" extra_chars ","
+.BI "                        unsigned int " maxlen ");"
 .fi
 .SH DESCRIPTION
 .B llapi_name_validate()

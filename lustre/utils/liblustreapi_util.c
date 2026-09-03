@@ -719,7 +719,7 @@ int llapi_convert_mask2str(char *str, int size, __u64 mask,
 int llapi_name_validate(const char *name, const char *extra_chars,
 			unsigned int maxlen)
 {
-	int len = 0;
+	unsigned int len = 0;
 	int rc;
 
 	if (!name || !*name) {
