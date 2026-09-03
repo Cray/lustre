@@ -231,6 +231,16 @@ again:
 	kfree(node);
 
 	if (rc < 0) {
+		/* The provider is not guaranteed to return a valid negative
+		 * errno (i.e. within [-MAX_ERRNO, -1]). Clamp any out of
+		 * range value to a generic errno so that returning
+		 * ERR_PTR(rc) below always yields a pointer recognized by
+		 * IS_ERR(). Otherwise, callers using IS_ERR() to validate
+		 * the returned peer would fail to detect the error and go on
+		 * to dereference a bogus pointer.
+		 */
+		if (rc < -MAX_ERRNO)
+			rc = -ECONNABORTED;
 		goto err_free_peer;
 	} else if (rc != 1) {
 		rc = -ECONNABORTED;
