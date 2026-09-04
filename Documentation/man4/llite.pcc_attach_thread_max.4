@@ -38,6 +38,16 @@ copy threads when a cache-eligible file is accessed to perform the
 operation.  The specified
 .I THREAD_COUNT
 is the maximum number of background threads started on each mountpoint.
+The limit is advisory: the running count is sampled before the attach is
+set up and is only incremented during that setup, so threads entering the
+attach path at the same time can each pass the check.  The number of
+running threads can exceed
+.I THREAD_COUNT
+by the number of such threads, for as long as their copies take.
+Once the limit is reached the attach is done synchronously inside
+.BR open (2)
+rather than in a background thread, so the opening process blocks until
+the copy finishes.
 The default
 .B 1024
 limit is expected to be sufficient for most uses, but is tunable up or down.
@@ -48,6 +58,7 @@ This parameter is in the following modules:
 .EE
 .SH EXAMPLES
 Permanently limit the number of background copy threads per mountpoint to 16:
+.EX
 .RB "mgs# " "lctl set_param -P llite.*.pcc_attach_thread_max=16"
 .EE
 .PP
@@ -56,7 +67,7 @@ Limit the number of background copy threads to 32 for the
 filesystem on the local
 .BR client :
 .EX
-.RB "client# " "lctl set_param llite.testfs-*.enable_setstripe_gid=32"
+.RB "client# " "lctl set_param llite.testfs-*.pcc_attach_thread_max=32"
 .EE
 .SH AVAILABILITY
 The
@@ -64,7 +75,7 @@ The
 parameter is part of the
 .BR lustre (7)
 filesystem package since release 2.18.0.
-.\" Added in commit 2.17.57-xx
+.\" Added in commit v2_17_57-117-g9106323881
 .SH SEE ALSO
 .BR lfs-pcc-attach (1),
 .BR lctl-get_param (8),

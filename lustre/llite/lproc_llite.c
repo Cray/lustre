@@ -883,7 +883,7 @@ LUSTRE_RW_ATTR(pcc_async_affinity);
 
 static ssize_t
 pcc_attach_thread_max_show(struct kobject *kobj, struct attribute *attr,
-			       char *buffer)
+			   char *buffer)
 {
 	struct ll_sb_info *sbi = container_of(kobj, struct ll_sb_info,
 					      ll_kset.kobj);
@@ -895,7 +895,7 @@ pcc_attach_thread_max_show(struct kobject *kobj, struct attribute *attr,
 
 static ssize_t
 pcc_attach_thread_max_store(struct kobject *kobj, struct attribute *attr,
-				const char *buffer, size_t count)
+			    const char *buffer, size_t count)
 {
 	struct ll_sb_info *sbi = container_of(kobj, struct ll_sb_info,
 					      ll_kset.kobj);

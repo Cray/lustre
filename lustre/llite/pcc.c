@@ -1925,6 +1925,7 @@ static inline int pcc_do_readonly_attach(struct file *file, struct inode *inode,
 {
 	struct pcc_super *super = ll_i2pccs(inode);
 	bool async = true;
+	int active;
 	int rc;
 
 	/* force sync if we're over the active attach limit, so this thread
@@ -1932,16 +1933,18 @@ static inline int pcc_do_readonly_attach(struct file *file, struct inode *inode,
 	 * number of active threads by $NUMTHREADS, but that should be fine
 	 * as long as we avoid unbounded numbers of kthreads.
 	 */
-	if (atomic_read(&super->pccs_attach_thread) >=
-	    super->pccs_attach_thread_max)
-		async = false;
-	/* if the file size is < the async threshold, don't do async */
-	if (max_t(__u64, ll_i2info(inode)->lli_lazysize, i_size_read(inode)) <
-	    super->pccs_async_threshold) {
-		CDEBUG(D_CACHE, "%s: attach thread limit %u hit, using sync\n",
-		       ll_i2sbi(inode)->ll_fsname, super->pccs_attach_thread_max);
+	active = atomic_read(&super->pccs_attach_thread);
+	if (active >= super->pccs_attach_thread_max) {
+		CDEBUG(D_CACHE,
+		       "%s: %d attaches active, limit %u: using sync\n",
+		       ll_i2sbi(inode)->ll_fsname, active,
+		       super->pccs_attach_thread_max);
 		async = false;
 	}
+	/* if the file size is < the async threshold, don't do async */
+	if (max_t(__u64, ll_i2info(inode)->lli_lazysize, i_size_read(inode)) <
+	    super->pccs_async_threshold)
+		async = false;
 
 	if (async) {
 		rc = pcc_readonly_attach_async(file, inode, roid);
@@ -3821,8 +3824,8 @@ static int pcc_attach_data_archive(struct file *file, struct inode *inode,
 	if (direct)
 		file->f_flags |= O_DIRECT;
 
-	CDEBUG(D_CACHE, "Copied data from OSTs to PCC for %pd: rc = %llu\n",
-	       *pcc_dentry, (long long)ret);
+	CDEBUG(D_CACHE, "Copied data from OSTs to PCC for %pd: rc = %zd\n",
+	       *pcc_dentry, ret);
 
 	if (ret < 0)
 		GOTO(out_fput, rc = ret);
