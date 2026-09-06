@@ -655,7 +655,7 @@ sub process {
 				     "title must be writen in all CAPS\n" . $herecurr);
 			}
 # check section number
-			if ($linewds[2] !~ /$section_number/) {
+			if ($linewds[2] !~ /^("?)$section_number[a-z]*\1$/) {
 				$linewds[2] =~ /(.*)/;
 				WARN("TITLE_FORMAT_SECTION_NUMBER",
 				     "Manual section number '$1' does not match with the file extension\n" . $herecurr);
