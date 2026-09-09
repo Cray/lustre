@@ -246,9 +246,15 @@ struct lquota_id_info {
  * original uid and gid, new uid and gid.
  *
  * Given a parent dir and a sub dir, with different uid, gid and project id,
- * need <parent,child> x <user,group,project> x <block,inode> = 12 ids
+ * need <parent,child> x <user,group,project> x <block,inode> = 12 ids.
+ *
+ * The heaviest transaction is a rename() overwriting an existing target,
+ * which needs up to 15 ids, see the OSD_MAX_UGID_CNT comment in
+ * lustre/osd-ldiskfs/osd_internal.h and keep this value in sync with it.
+ * qsd_op_begin() fails the operation with -EINVAL rather than overflowing
+ * lqt_ids.
  */
-#define QUOTA_MAX_TRANSIDS    12
+#define QUOTA_MAX_TRANSIDS    17
 
 /* all qids involved in a single transaction */
 struct lquota_trans {

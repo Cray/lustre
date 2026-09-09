@@ -572,14 +572,6 @@ int osd_declare_qid(const struct lu_env *env, struct osd_thandle *oh,
 
 	if (!found) {
 		/* we need to account for credits for this new ID */
-		if (i >= OSD_MAX_UGID_CNT) {
-			rc = -EOVERFLOW;
-			CERROR("%s: too many qids %u > %u on "DFID": rc = %d\n",
-			       osd_name(dev), i + 1, OSD_MAX_UGID_CNT,
-			       PFID(&fid), rc);
-			RETURN(rc);
-		}
-
 		if (qi->lqi_id.qid_uid == 0) {
 			/* root ID should be always present in the quota file */
 			crd = 1;
@@ -598,10 +590,21 @@ int osd_declare_qid(const struct lu_env *env, struct osd_thandle *oh,
 
 		osd_trans_declare_op(env, oh, OSD_OT_QUOTA, crd);
 
-		oh->ot_id_array[i] = qi->lqi_id.qid_uid;
-		oh->ot_id_types[i] = qi->lqi_type;
-		oh->ot_id_res[i] = res;
-		oh->ot_id_cnt++;
+		if (i < OSD_MAX_UGID_CNT) {
+			oh->ot_id_array[i] = qi->lqi_id.qid_uid;
+			oh->ot_id_types[i] = qi->lqi_type;
+			oh->ot_id_res[i] = res;
+			oh->ot_id_cnt++;
+		} else {
+			/* Credits for this id are reserved above, only its
+			 * deduplication against the following declarations
+			 * of this transaction is lost. Over reserving
+			 * credits is much better than failing the operation,
+			 * but this is not expected to happen, so warn.
+			 */
+			CWARN("%s: more than %u qids for "DFID", quota credits are over reserved\n",
+			      osd_name(dev), OSD_MAX_UGID_CNT, PFID(&fid));
+		}
 	}
 
 	if (unlikely(qsd == NULL))

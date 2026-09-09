@@ -366,17 +366,32 @@ enum osd_full_scrub_ratio {
 
 #define FULL_SCRUB_THRESHOLD_RATE_DEFAULT	60
 
-/* There are at most 15 uid/gid/projids are affected in a transaction, and
- * that's rename case:
- * - 3 for source parent uid & gid & projid;
- * - 3 for source child uid & gid & projid ('..' entry update when
- * child is directory);
- * - 3 for target parent uid & gid & projid;
- * - 3 for target child uid & gid & projid(if the target child exists);
- * - 3 for root uid & gid(last_rcvd, llog, etc);
+/* Entries of oh->ot_id_array are keyed by <id, quota type, inode/block>,
+ * so the same numeric id takes a slot per quota type and one more for
+ * inode and block accounting. Root ids are not free either, only the
+ * <0, 0, 0> combination is short-circuited by osd_declare_inode_qid().
  *
+ * The heaviest transaction is a rename() overwriting an existing target:
+ * - 3 for source parent uid & gid & projid (block, entry removal);
+ * - 3 for target parent uid & gid & projid (block, entry insert/removal);
+ * - 3 for target child uid & gid & projid (block, destroy);
+ * - 3 for target child uid & gid & projid (inode, destroy);
+ * - 3 for the source child, in one of these mutually exclusive ways:
+ *   - its uid & gid & projid (block), when it is a directory and its '..'
+ *     entry is updated;
+ *   - its old projid (inode and block) and its new projid (inode), when a
+ *     non-directory is moved into a parent with the inherit flag and a
+ *     different project id. The block half of the new projid is already
+ *     counted for the target parent, and a directory never gets here,
+ *     mdd_rename_sanity_check() rejects such a rename with -EXDEV;
+ *   - the agent inode old and new projid (inode) plus projid 0 (block),
+ *     when the inserted entry points at an object on another MDT. Such an
+ *     object declares nothing else in this transaction.
+ *
+ * That is 15 ids, and the limit is a bit above it to leave some room for
+ * combinations which are not obvious from the above.
  */
-#define OSD_MAX_UGID_CNT        15
+#define OSD_MAX_UGID_CNT        17
 
 enum osd_op_type {
 	OSD_OT_ATTR_SET		= 0,

@@ -3208,7 +3208,8 @@ int mdd_declare_rename(const struct lu_env *env, struct mdd_device *mdd,
 		     struct mdd_object *mdd_sobj, struct mdd_object *mdd_tobj,
 		     const struct lu_name *sname, const struct lu_name *tname,
 		     struct md_attr *ma, struct linkea_data *ldata,
-		     bool change_projid, struct thandle *handle)
+		     bool change_projid, __u32 new_projid,
+		     struct thandle *handle)
 {
 	struct lu_attr *la = &mdd_env_info(env)->mdi_la_for_fix;
 	int rc;
@@ -3260,8 +3261,14 @@ int mdd_declare_rename(const struct lu_env *env, struct mdd_device *mdd,
 		return rc;
 
 	la->la_valid = LA_CTIME;
-	if (change_projid)
+	if (change_projid) {
 		la->la_valid |= LA_PROJID;
+		/* declare the project id the object will actually get,
+		 * otherwise osd_declare_attr_set() reserves quota for a
+		 * stale value and burns an extra oh->ot_id_array slot
+		 */
+		la->la_projid = new_projid;
+	}
 	rc = mdo_declare_attr_set(env, mdd_sobj, la, handle);
 	if (rc)
 		return rc;
@@ -3441,7 +3448,7 @@ static int mdd_rename(const struct lu_env *env,  struct md_object *src_pobj,
 
 	rc = mdd_declare_rename(env, mdd, mdd_spobj, mdd_tpobj, mdd_sobj,
 				mdd_tobj, lsname, ltname, ma, ldata,
-				change_projid, handle);
+				change_projid, tpattr->la_projid, handle);
 	if (rc)
 		GOTO(stop, rc);
 
