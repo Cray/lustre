@@ -6381,6 +6381,177 @@ test_86()
 }
 run_test 86 "Pre-acquired quota should be released if quota is over limit"
 
+test_87a() {
+	is_project_quota_supported || skip "skip project quota unsupported"
+
+	# only use users and groups that really exist on the servers,
+	# passing raw uid/gid numbers would break setups running an identity
+	# upcall (l_getidentity) on the MDS
+	id $USER0 > /dev/null || skip_env "missing user $USER0"
+	id $USER1 > /dev/null || skip_env "missing user $USER1"
+
+	local -a users=($TSTUSR $TSTUSR2 $USER0 $USER1)
+	local -a groups
+	local nuid
+	local ngid
+	local i
+
+	for ((i = 0; i < ${#users[@]}; i++)); do
+		groups[i]=$(id -gn ${users[i]}) ||
+			error "cannot find the primary group of ${users[i]}"
+		nuid+="$(id -u ${users[i]}) "
+		ngid+="$(id -g ${users[i]}) "
+	done
+
+	nuid=$(echo $nuid | tr ' ' '\n' | sort -u | wc -l)
+	ngid=$(echo $ngid | tr ' ' '\n' | sort -u | wc -l)
+	(( nuid == 4 && ngid == 4 )) ||
+		skip_env "need 4 distinct uids ($nuid) and gids ($ngid)"
+
+	setup_quota_test || error "setup quota failed with $?"
+	quota_init
+
+	# inode quota ids are enforced by the metadata quota slave and block
+	# quota ids by the data quota slave, but both slaves share a single
+	# per transaction id array, so both pools have to be enabled to fill
+	# it up
+	set_mdt_qtype $QTYPE || error "enable mdt quota failed"
+	set_ost_qtype $QTYPE || error "enable ost quota failed"
+
+	# LUS-13485: every distinct <id, quota type, inode/block> triple
+	# touched by a transaction is stored in a fixed size array, both by
+	# osd_declare_qid() in oh->ot_id_array[OSD_MAX_UGID_CNT] and by
+	# qsd_op_begin() in lqt_ids[QUOTA_MAX_TRANSIDS], and overflowing
+	# either of them aborts the transaction.
+	#
+	# Renaming a directory over an existing one touches four objects,
+	# the source parent, the target parent, the renamed directory (its
+	# '..' entry is updated) and the destroyed target. Giving each of
+	# them its own user, group and project id declares
+	#	4 objects * 3 quota types		= 12 block quota ids
+	#	1 destroyed target * 3 quota types	=  3 inode quota ids
+	# i.e. 15 quota ids for a single transaction
+	local spdir=$DIR/$tdir/rename_spdir
+	local tpdir=$DIR/$tdir/rename_tpdir
+	local sobj=$spdir/sobj
+	local tobj=$tpdir/tobj
+	local -a dirs=($spdir $tpdir $sobj $tobj)
+
+	mkdir -p $sobj $tobj || error "mkdir failed"
+	stack_trap "chown -R 0:0 $DIR/$tdir"
+
+	for ((i = 0; i < ${#dirs[@]}; i++)); do
+		chown ${users[i]}:${groups[i]} ${dirs[i]} ||
+			error "chown ${users[i]}:${groups[i]} ${dirs[i]} failed"
+		$LFS project -p $((1000 + i)) ${dirs[i]} ||
+			error "set project id on ${dirs[i]} failed"
+	done
+
+	# use a plain rename(2) instead of mv(1), which hides the real errno
+	# behind a confusing "cannot move to a subdirectory of itself" message
+	echo "renaming $sobj to $tobj"
+	mrename $sobj $tobj ||
+		error "rename with all quota types in use failed"
+
+	stat $tobj > /dev/null || error "$tobj is missing after rename"
+}
+run_test 87a "rename with many quota ids shouldn't fail"
+
+test_87b() {
+	[[ "$mds1_FSTYPE" == "ldiskfs" ]] ||
+		skip "ot_id_array is specific to osd-ldiskfs"
+	is_project_quota_supported || skip "skip project quota unsupported"
+
+	# only use users and groups that really exist on the servers,
+	# passing raw uid/gid numbers would break setups running an identity
+	# upcall (l_getidentity) on the MDS
+	id $USER0 > /dev/null || skip_env "missing user $USER0"
+	id $USER1 > /dev/null || skip_env "missing user $USER1"
+
+	local -a users=($TSTUSR $TSTUSR2 $USER0 $USER1)
+	local -a groups
+	local nuid
+	local ngid
+	local i
+
+	for ((i = 0; i < ${#users[@]}; i++)); do
+		groups[i]=$(id -gn ${users[i]}) ||
+			error "cannot find the primary group of ${users[i]}"
+		nuid+="$(id -u ${users[i]}) "
+		ngid+="$(id -g ${users[i]}) "
+	done
+
+	nuid=$(echo $nuid | tr ' ' '\n' | sort -u | wc -l)
+	ngid=$(echo $ngid | tr ' ' '\n' | sort -u | wc -l)
+	(( nuid == 4 && ngid == 4 )) ||
+		skip_env "need 4 distinct uids ($nuid) and gids ($ngid)"
+
+	setup_quota_test || error "setup quota failed with $?"
+	quota_init
+
+	# LUS-13485: osd_declare_qid() stores every distinct
+	# <id, quota type, inode/block> triple touched by a transaction in
+	# oh->ot_id_array[OSD_MAX_UGID_CNT]. Unlike lqt_ids[], that array is
+	# filled no matter which quota types are actually enforced, so
+	# enforce project quota only to hit the ot_id_array[] limit rather
+	# than the smaller lqt_ids[] one, which test_87a covers.
+	local orig_mdt_qtype=$(mdt_quota_type)
+	local orig_ost_qtype=$(ost_quota_type)
+
+	stack_trap "set_mdt_qtype $orig_mdt_qtype; set_ost_qtype $orig_ost_qtype"
+	set_mdt_qtype "p" || error "enable mdt project quota failed"
+	set_ost_qtype "p" || error "enable ost project quota failed"
+
+	# Renaming a regular file over an existing one, into a parent with
+	# the project inherit flag and a different project id, declares
+	#	source parent		3 block quota ids
+	#	target parent		3 block quota ids
+	#	renamed file		3 project quota ids: its old project
+	#				id for inodes and for blocks, its new
+	#				one for inodes, the block half being
+	#				shared with the target parent
+	#	destroyed target	3 inode + 3 block quota ids
+	# i.e. 15 quota ids, and one more whenever the new project id
+	# declared for the renamed file does not match the target parent.
+	#
+	# The renamed object is a regular file on purpose:
+	# mdd_rename_sanity_check() rejects a rename of a *directory* into a
+	# parent with the inherit flag and a different project id with
+	# -EXDEV, so a directory never gets its project id changed here.
+	local spdir=$DIR/$tdir/rename_spdir
+	local tpdir=$DIR/$tdir/rename_tpdir
+	local sobj=$spdir/sobj
+	local tobj=$tpdir/tobj
+	local -a objs=($spdir $tpdir $sobj $tobj)
+
+	mkdir -p $spdir $tpdir || error "mkdir failed"
+	touch $sobj $tobj || error "touch failed"
+	stack_trap "chown -R 0:0 $DIR/$tdir"
+
+	for ((i = 0; i < ${#objs[@]}; i++)); do
+		chown ${users[i]}:${groups[i]} ${objs[i]} ||
+			error "chown ${users[i]}:${groups[i]} ${objs[i]} failed"
+		$LFS project -p $((1000 + i)) ${objs[i]} ||
+			error "set project id on ${objs[i]} failed"
+	done
+
+	# set the inherit flag last, so that it does not interfere with the
+	# project ids assigned above
+	$LFS project -s $tpdir || error "set inherit flag on $tpdir failed"
+
+	# use a plain rename(2) instead of mv(1), which hides the real errno
+	# behind a confusing "cannot move to a subdirectory of itself" message
+	echo "renaming $sobj to $tobj"
+	mrename $sobj $tobj ||
+		error "rename changing the project id failed"
+
+	stat $tobj > /dev/null || error "$tobj is missing after rename"
+	(( $($LFS project -d $tpdir | awk '{print $1}') ==
+	   $($LFS project $tobj | awk '{print $1}') )) ||
+		error "$tobj did not inherit the project id of $tpdir"
+}
+run_test 87b "rename changing a project id shouldn't hit too many qids"
+
 # interop quota
 test_88()
 {
