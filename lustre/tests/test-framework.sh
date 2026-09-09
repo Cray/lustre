@@ -417,6 +417,17 @@ get_lustre_env() {
 		lustre_os_release mds1
 		lustre_os_release ost1
 		lustre_os_release client
+
+		# /sbin/mount.lustre_tgt is only installed on servers since
+		# v2_17_57-80-g58adf0b4aaf, mounting with "-t lustre_tgt" on
+		# older servers falls through to mount(2) without "device="
+		local tgt_ver=$(version_code v2_17_57-80-g58adf0b4aaf)
+
+		if [[ "$MOUNT_TGT" =~ lustre_tgt ]] &&
+		   (( MGS_VERSION < tgt_ver || MDS1_VERSION < tgt_ver ||
+		      OST1_VERSION < tgt_ver )); then
+			export MOUNT_TGT=$MOUNT_CMD
+		fi
 	fi
 
 	# Prefer using "mds1" directly instead of SINGLEMDS.
