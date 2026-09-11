@@ -1038,9 +1038,21 @@ test_24b() {
 
 	dmesg -c > /dev/null
 	mkdir -p $DIR/$tdir
-	lfs setstripe $DIR/$tdir -S 0 -i 0 -c 1 ||
+	$LFS setstripe $DIR/$tdir -S 0 -i 0 -c 1 ||
 		error "$LFS setstripe failed"
 	cancel_lru_locks osc
+
+	# a write that failed puts the whole OSC into forced sync i/o, which
+	# leaves no dirty page behind.  test_24a's eviction does exactly that,
+	# so spend one successful write here to clear it.
+	dd if=/dev/zero of=$DIR/$tdir/$tfile-warmup bs=4k count=1 conv=fsync ||
+		error "warmup write failed"
+
+	#define OBD_FAIL_OSC_DELAY_IO		0x414
+	# writeback is otherwise free to flush the pages before the eviction
+	# arrives, leaving nothing to discard
+	$LCTL set_param fail_loc=0x414 fail_val=10
+
 	multiop_bg_pause $DIR/$tdir/$tfile-1 Ow8192_yc ||
 		error "mulitop Ow8192_yc failed"
 
@@ -1057,7 +1069,7 @@ test_24b() {
 	kill -USR1 $MULTI_PID2
 	wait $MULTI_PID2
 	rc2=$?
-	lctl set_param fail_loc=0x0
+	$LCTL set_param fail_loc=0x0
 	client_reconnect
 	[ $rc1 -eq 0 -o $rc2 -eq 0 ] &&
 	error_ignore bz5494 "multiop didn't fail fsync: $rc1 or close: $rc2" ||
