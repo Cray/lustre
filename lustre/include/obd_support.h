@@ -644,6 +644,7 @@ extern bool obd_enable_fname_encoding;
 #define OBD_FAIL_LLITE_DIO_BUFFER_ALLOC		    0x1438
 #define OBD_FAIL_LLITE_DIO_DRAIN_RETRY		    0x1439
 #define OBD_FAIL_LOV_INVALID_OSTIDX2		    0x1442
+#define OBD_FAIL_LLITE_GETATTR_PAUSE		    0x143a
 
 #define OBD_FAIL_FID_INDIR	0x1501
 #define OBD_FAIL_FID_INLMA	0x1502

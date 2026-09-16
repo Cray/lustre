@@ -6154,6 +6154,9 @@ static int ll_inode_revalidate(struct dentry *dentry, enum ldlm_intent_flags op)
 	CDEBUG(D_VFSTRACE, "VFS Op:inode="DFID"(%p),name="DNAME"\n",
 	       PFID(ll_inode2fid(inode)), inode, encode_fn_dentry(dentry));
 
+	if (S_ISREG(inode->i_mode))
+		CFS_FAIL_TIMEOUT(OBD_FAIL_LLITE_GETATTR_PAUSE, cfs_fail_val);
+
 	/* Call getattr by fid */
 	if ((exp_connect_flags2(exp) & OBD_CONNECT2_GETATTR_PFID) &&
 		!d_lustre_invalid(dentry)) {
