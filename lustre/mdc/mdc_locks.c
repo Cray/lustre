@@ -1396,50 +1396,60 @@ int mdc_revalidate_lock(struct obd_export *exp, struct lookup_intent *it,
 	struct lustre_handle lockh;
 	union ldlm_policy_data policy;
 	enum ldlm_mode mode;
+	__u64 granted = 0;
 
 	ENTRY;
+	switch (it->it_op) {
+	case IT_GETATTR:
+		/* File attributes are held under multiple bits:
+		 * nlink is under lookup lock, size and times are
+		 * under UPDATE lock and recently we've also got
+		 * a separate permissions lock for owner/group/acl that
+		 * were protected by lookup lock before.
+		 * Getattr must provide all of that information,
+		 * so we need to ensure we have all of those locks.
+		 * Unfortunately, if the bits are split across multiple
+		 * locks, there's no easy way to match all of them here,
+		 * so an extra RPC would be performed to fetch all
+		 * of those bits at once for now.
+		 */
+		/* For new MDTs(> 2.4), UPDATE|PERM should be enough,
+		 * but for old MDTs (< 2.4), permission is covered
+		 * by LOOKUP lock, so it needs to match all bits here.
+		 */
+		policy.l_inodebits.bits = MDS_INODELOCK_UPDATE |
+					  MDS_INODELOCK_PERM;
+		break;
+	case IT_READDIR:
+		policy.l_inodebits.bits = MDS_INODELOCK_UPDATE;
+		break;
+	case IT_LAYOUT:
+		policy.l_inodebits.bits = MDS_INODELOCK_LAYOUT;
+		break;
+	default:
+		policy.l_inodebits.bits = MDS_INODELOCK_LOOKUP;
+		break;
+	}
+
 	if (it->it_lock_handle) {
 		lockh.cookie = it->it_lock_handle;
-		mode = ldlm_revalidate_lock_handle(&lockh, bits);
+		mode = ldlm_revalidate_lock_handle(&lockh, &granted);
+		if (mode && (granted & policy.l_inodebits.bits) !=
+			    policy.l_inodebits.bits) {
+			ldlm_lock_decref(&lockh, mode);
+			mode = 0;
+		}
 	} else {
 		fid_build_reg_res_name(fid, &res_id);
-		switch (it->it_op) {
-		case IT_GETATTR:
-			/* File attributes are held under multiple bits:
-			 * nlink is under lookup lock, size and times are
-			 * under UPDATE lock and recently we've also got
-			 * a separate permissions lock for owner/group/acl that
-			 * were protected by lookup lock before.
-			 * Getattr must provide all of that information,
-			 * so we need to ensure we have all of those locks.
-			 * Unfortunately, if the bits are split across multiple
-			 * locks, there's no easy way to match all of them here,
-			 * so an extra RPC would be performed to fetch all
-			 * of those bits at once for now.
-			 */
-			/* For new MDTs(> 2.4), UPDATE|PERM should be enough,
-			 * but for old MDTs (< 2.4), permission is covered
-			 * by LOOKUP lock, so it needs to match all bits here.
-			 */
-			policy.l_inodebits.bits = MDS_INODELOCK_UPDATE |
-						  MDS_INODELOCK_PERM;
-			break;
-		case IT_READDIR:
-			policy.l_inodebits.bits = MDS_INODELOCK_UPDATE;
-			break;
-		case IT_LAYOUT:
-			policy.l_inodebits.bits = MDS_INODELOCK_LAYOUT;
-			break;
-		default:
-			policy.l_inodebits.bits = MDS_INODELOCK_LOOKUP;
-			break;
-		}
-
 		mode = mdc_lock_match(exp, LDLM_FL_BLOCK_GRANTED, fid,
 				      LDLM_IBITS, &policy,
 				      LCK_CR | LCK_CW | LCK_PR | LCK_PW,
 				      &lockh);
+		granted = policy.l_inodebits.bits;
 	}
+
+	if (bits)
+		*bits = granted;
 
 	if (mode) {
 		it->it_lock_handle = lockh.cookie;
