@@ -1780,7 +1780,7 @@ test_35() { # bug 17645
 }
 run_test 35 "-EINTR cp_ast vs. bl_ast race does not evict client"
 
-test_36() { #bug 16417
+test_36a() { #bug 16417
 	local SIZE
 	local SIZE_B
 	local i
@@ -1819,7 +1819,52 @@ test_36() { #bug 16417
 		let i=i+1
 	done
 }
-run_test 36 "handle ESTALE/open-unlink correctly"
+run_test 36a "handle ESTALE/open-unlink correctly"
+
+test_36b() {
+	[ "$MDS1_VERSION" -ge $(version_code 2.10.53) ] ||
+		skip "Need DoM feature on MDS"
+
+	local dir=$DIR1/$tdir
+	local max=$($LCTL get_param -n llite.*.statahead_max | head -n 1)
+
+	test_mkdir $dir
+	stack_trap "$LCTL set_param llite.*.statahead_max=$max"
+	# large enough to prefetch the whole (small) test directory in a
+	# single statahead window, well ahead of "ls"'s own stat() loop
+	$LCTL set_param llite.*.statahead_max=32
+
+	# plain files that sort alphabetically BEFORE $tfile (f${testnum}...)
+	# so "ls -l" processes them first and the one-shot pause below
+	# fires on one of these, not on $tfile itself
+	createmany -o $dir/a 8
+
+	$LFS setstripe -E 1M -L mdt -E eof -c 1 $dir/$tfile ||
+		error "setstripe DoM $tfile failed"
+	echo "old" > $dir/$tfile || error "create $tfile failed"
+
+	cancel_lru_locks mdc
+
+	#define OBD_FAIL_LLITE_GETATTR_PAUSE	0x143a
+	stack_trap "$LCTL set_param fail_loc=0 fail_val=0"
+	$LCTL set_param fail_val=3 fail_loc=0x8000143a
+
+	(ls -l $dir) &
+	local lspid=$!
+	sleep 1
+
+	rm -f $DIR2/$tdir/$tfile || error "unlink $tfile on client2 failed"
+	echo "new" > $DIR2/$tdir/$tfile || error "recreate $tfile on client2 failed"
+
+	wait $lspid
+	local rc=$?
+	$LCTL set_param fail_loc=0 fail_val=0
+
+	(( rc == 0 )) ||
+		error "ls -l hit stale FID via statahead after unlink+recreate race"
+	return 0
+}
+run_test 36b "statahead cached lock handle must not resurrect a stale FID after unlink+recreate"
 
 test_37() { # bug 18695
 	test_mkdir $DIR1/$tdir
