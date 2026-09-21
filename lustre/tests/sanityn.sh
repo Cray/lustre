@@ -7189,6 +7189,8 @@ test_116() {
 run_test 116 "DNE: Set default LMV layout from a remote client"
 
 test_120() {
+	[ "$ost1_FSTYPE" == ldiskfs ] || skip "osd-ldiskfs specific test"
+
 	local WCE=$(do_facet ost1 lctl get_param "osd-*.$FSNAME-OST0000.writethrough_cache_enable")
 
 	# the issue reproduces without the osd cache as well but we would need to
