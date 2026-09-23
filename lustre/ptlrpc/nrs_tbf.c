@@ -392,13 +392,69 @@ nrs_tbf_cli_reset(struct nrs_tbf_head *head,
 	nrs_tbf_cli_reset_value(head, cli);
 }
 
+/* Renders the legacy single rate */
+static void
+nrs_tbf_rule_dump_rate(struct nrs_tbf_rule *rule, struct seq_file *m)
+{
+	seq_printf(m, "%llu", rule->tr_rpc_rate);
+}
+
 static int
 nrs_tbf_rule_dump(struct nrs_tbf_rule *rule, struct seq_file *m)
 {
-	seq_printf(m, "%s %s %llu, ref %d\n", rule->tr_name,
-		   rule->tr_conds_str, rule->tr_rpc_rate,
-		   kref_read(&rule->tr_ref) - 1);
+	seq_printf(m, "%s %s ", rule->tr_name, rule->tr_conds_str);
+	nrs_tbf_rule_dump_rate(rule, m);
+	seq_printf(m, ", ref %d\n", kref_read(&rule->tr_ref) - 1);
+
 	return 0;
+}
+
+static void nrs_tbf_yaml_put_string(struct seq_file *m, const char *str)
+{
+	seq_putc(m, '"');
+	for (; *str; str++) {
+		unsigned char c = *str;
+
+		switch (c) {
+		case '"':
+		case '\\':
+			seq_putc(m, '\\');
+			seq_putc(m, c);
+			break;
+		default:
+			if (c < 0x20 || c == 0x7f)
+				seq_printf(m, "\\x%02x", (unsigned int)c);
+			else
+				seq_putc(m, c);
+		}
+	}
+	seq_putc(m, '"');
+}
+
+/* YAML-formatted rule dump, including per-rule stats */
+static void
+nrs_tbf_rule_dump_yaml(struct nrs_tbf_rule *rule, struct seq_file *m, u64 now)
+{
+	u64 start = READ_ONCE(rule->tr_stat_start_ns);
+
+	seq_puts(m, "      - name: ");
+	nrs_tbf_yaml_put_string(m, rule->tr_name);
+	seq_putc(m, '\n');
+	seq_puts(m, "        conditions: ");
+	nrs_tbf_yaml_put_string(m, rule->tr_conds_str);
+	seq_putc(m, '\n');
+	seq_puts(m, "        rate: ");
+	nrs_tbf_rule_dump_rate(rule, m);
+	seq_putc(m, '\n');
+	seq_printf(m, "        ref: %d\n", kref_read(&rule->tr_ref) - 1);
+	seq_printf(m, "        enqueue: %llu\n",
+		   READ_ONCE(rule->tr_stat_enqueue));
+	seq_printf(m, "        dispatch: %llu\n",
+		   READ_ONCE(rule->tr_stat_dispatch));
+	seq_printf(m, "        exhausted: %llu\n",
+		   READ_ONCE(rule->tr_stat_exhausted));
+	seq_printf(m, "        elapsed_ms: %llu\n",
+		   now > start ? (now - start) / NSEC_PER_MSEC : 0);
 }
 
 static int
@@ -421,6 +477,23 @@ nrs_tbf_rule_dump_all(struct nrs_tbf_head *head, struct seq_file *m)
 	spin_unlock(&head->th_rule_lock);
 
 	return rc;
+}
+
+static void
+nrs_tbf_rule_dump_all_yaml(struct nrs_tbf_head *head, struct seq_file *m)
+{
+	struct nrs_tbf_rule *rule;
+	u64 now = ktime_get_ns();
+
+	LASSERT(head != NULL);
+	spin_lock(&head->th_rule_lock);
+	list_for_each_entry(rule, &head->th_list, tr_linkage) {
+		LASSERT((rule->tr_flags & NTRS_STOPPING) == 0);
+		nrs_tbf_rule_dump_yaml(rule, m, now);
+		if (seq_has_overflowed(m))
+			break;
+	}
+	spin_unlock(&head->th_rule_lock);
 }
 
 static struct nrs_tbf_rule *
@@ -721,6 +794,37 @@ nrs_tbf_rule_stop(struct ptlrpc_nrs_policy *policy,
 	return 0;
 }
 
+static void nrs_tbf_rule_stat_zero(struct nrs_tbf_rule *rule)
+{
+	WRITE_ONCE(rule->tr_stat_enqueue, 0);
+	WRITE_ONCE(rule->tr_stat_dispatch, 0);
+	WRITE_ONCE(rule->tr_stat_exhausted, 0);
+	WRITE_ONCE(rule->tr_stat_start_ns, ktime_get_ns());
+}
+
+static int
+nrs_tbf_rule_reset_stat(struct ptlrpc_nrs_policy *policy,
+			struct nrs_tbf_head *head,
+			struct nrs_tbf_cmd *cmd)
+{
+	struct nrs_tbf_rule *rule;
+
+	if (cmd->tc_name != NULL) {
+		rule = nrs_tbf_rule_find(head, cmd->tc_name);
+		if (rule == NULL)
+			return -ENOENT;
+		nrs_tbf_rule_stat_zero(rule);
+		kref_put(&rule->tr_ref, nrs_tbf_rule_fini);
+	} else {
+		spin_lock(&head->th_rule_lock);
+		list_for_each_entry(rule, &head->th_list, tr_linkage)
+			nrs_tbf_rule_stat_zero(rule);
+		spin_unlock(&head->th_rule_lock);
+	}
+
+	return 0;
+}
+
 static int
 nrs_tbf_command(struct ptlrpc_nrs_policy *policy,
 		struct nrs_tbf_head *head,
@@ -745,6 +849,14 @@ nrs_tbf_command(struct ptlrpc_nrs_policy *policy,
 	case NRS_CTL_TBF_STOP_RULE:
 		rc = nrs_tbf_rule_stop(policy, head, cmd);
 		/* Take it as a success, if not exists at all */
+		return rc == -ENOENT ? 0 : rc;
+	case NRS_CTL_TBF_RESET_STAT:
+		rc = nrs_tbf_rule_reset_stat(policy, head, cmd);
+		/*
+		 * A rule may exist on only one of the reg/hp queues. Treat a
+		 * missing rule as success so that ptlrpc_nrs_policy_control()
+		 * does not abort partway through the CPTs.
+		 */
 		return rc == -ENOENT ? 0 : rc;
 	default:
 		return -EFAULT;
@@ -1683,6 +1795,7 @@ struct nrs_tbf_rule *nrs_tbf_rule_alloc(struct ptlrpc_nrs_policy *policy,
 	INIT_LIST_HEAD(&rule->tr_linkage);
 	spin_lock_init(&rule->tr_rule_lock);
 	rule->tr_head = head;
+	rule->tr_stat_start_ns = ktime_get_ns();
 
 	LASSERT(start->u.tc_start.ts_conds_str);
 	OBD_STRNDUP(rule->tr_conds_str,
@@ -2063,6 +2176,22 @@ static int nrs_tbf_ctl(struct ptlrpc_nrs_policy *policy,
 		break;
 
 	/**
+	 * Read rules in YAML format with per-rule stats.
+	 */
+	case NRS_CTL_TBF_RD_RULE_YAML: {
+		struct nrs_tbf_head *head = policy->pol_private;
+		struct seq_file *m = arg;
+		struct ptlrpc_service_part *svcpt;
+
+		svcpt = policy->pol_nrs->nrs_svcpt;
+		seq_printf(m, "  - cpt: %d\n", svcpt->scp_cpt);
+		seq_puts(m, "    rules:\n");
+
+		nrs_tbf_rule_dump_all_yaml(head, m);
+		}
+		break;
+
+	/**
 	 * Write RPC rate of a policy instance.
 	 */
 	case NRS_CTL_TBF_WR_RULE: {
@@ -2283,6 +2412,7 @@ struct ptlrpc_nrs_request *nrs_tbf_req_get(struct ptlrpc_nrs_policy *policy,
 						 &cli->tc_node);
 			}
 			TBF_CLI_DEBUG(cli, "TBF dequeues");
+			rule->tr_stat_dispatch++;
 		} else {
 			ktime_t time;
 
@@ -2295,6 +2425,7 @@ struct ptlrpc_nrs_request *nrs_tbf_req_get(struct ptlrpc_nrs_policy *policy,
 					return nrs_tbf_req_get(policy,
 							       peek, force);
 			}
+			rule->tr_stat_exhausted++;
 			policy->pol_nrs->nrs_throttling = 1;
 			head->th_deadline = deadline;
 			time = ktime_set(0, 0);
@@ -2357,8 +2488,10 @@ static int nrs_tbf_req_add(struct ptlrpc_nrs_policy *policy,
 				  &cli->tc_list);
 	}
 
-	if (rc == 0)
+	if (rc == 0) {
 		TBF_CLI_DEBUG(cli, "TBF enqueues");
+		cli->tc_rule->tr_stat_enqueue++;
+	}
 
 	return rc;
 }
@@ -2480,6 +2613,44 @@ no_hp:
 
 	return rc;
 }
+
+static int
+ptlrpc_lprocfs_nrs_tbf_rule_yaml_seq_show(struct seq_file *m, void *data)
+{
+	struct ptlrpc_service *svc = m->private;
+	int rc;
+
+	/*
+	 * "lctl get_param -y" appends the first line of a multi-line value to
+	 * "<param>: ", so keep that line empty to make the output valid YAML
+	 * (same approach as nrs_policies parameter).
+	 */
+	seq_puts(m, "\nregular_requests:\n");
+	rc = ptlrpc_nrs_policy_control(svc, PTLRPC_NRS_QUEUE_REG,
+				       NRS_POL_NAME_TBF,
+				       NRS_CTL_TBF_RD_RULE_YAML,
+				       false, m);
+	if (rc == -ENODEV)
+		seq_puts(m, "  []\n");
+	else if (rc != 0)
+		return rc;
+
+	if (seq_has_overflowed(m) || !nrs_svc_has_hp(svc))
+		return 0;
+
+	seq_puts(m, "high_priority_requests:\n");
+	rc = ptlrpc_nrs_policy_control(svc, PTLRPC_NRS_QUEUE_HP,
+				       NRS_POL_NAME_TBF,
+				       NRS_CTL_TBF_RD_RULE_YAML,
+				       false, m);
+	if (rc == -ENODEV) {
+		seq_puts(m, "  []\n");
+		rc = 0;
+	}
+
+	return rc;
+}
+LDEBUGFS_SEQ_FOPS_RO(ptlrpc_lprocfs_nrs_tbf_rule_yaml);
 
 static int nrs_tbf_id_parse(struct nrs_tbf_cmd *cmd, char *token)
 {
@@ -2618,6 +2789,7 @@ nrs_tbf_parse_value_pairs(struct nrs_tbf_cmd *cmd, char *buffer)
 			return -EINVAL;
 		break;
 	case NRS_CTL_TBF_STOP_RULE:
+	case NRS_CTL_TBF_RESET_STAT:
 		break;
 	default:
 		return -EINVAL;
@@ -2640,6 +2812,15 @@ nrs_tbf_parse_cmd(char *buffer, unsigned long count, __u32 type_flag)
 
 	val = buffer;
 	token = strsep(&val, " ");
+
+	/* "reset_stat" with no rule name resets all rules */
+	if ((val == NULL || strlen(val) == 0) &&
+	    strcmp(token, "reset_stat") == 0) {
+		cmd->tc_cmd = NRS_CTL_TBF_RESET_STAT;
+		cmd->tc_name = NULL;
+		goto out;
+	}
+
 	if (val == NULL || strlen(val) == 0)
 		GOTO(out_free_cmd, rc = -EINVAL);
 
@@ -2651,12 +2832,15 @@ nrs_tbf_parse_cmd(char *buffer, unsigned long count, __u32 type_flag)
 		cmd->tc_cmd = NRS_CTL_TBF_STOP_RULE;
 	else if (strcmp(token, "change") == 0)
 		cmd->tc_cmd = NRS_CTL_TBF_CHANGE_RULE;
+	else if (strcmp(token, "reset_stat") == 0)
+		cmd->tc_cmd = NRS_CTL_TBF_RESET_STAT;
 	else
 		GOTO(out_free_cmd, rc = -EINVAL);
 
 	/* Name of the rule */
 	token = strsep(&val, " ");
-	if ((val == NULL && cmd->tc_cmd != NRS_CTL_TBF_STOP_RULE))
+	if ((val == NULL && cmd->tc_cmd != NRS_CTL_TBF_STOP_RULE &&
+	     cmd->tc_cmd != NRS_CTL_TBF_RESET_STAT))
 		GOTO(out_free_cmd, rc = -EINVAL);
 
 	rc = check_rule_name(token);
@@ -2754,21 +2938,24 @@ ptlrpc_lprocfs_nrs_tbf_rule_seq_write(struct file *file,
 
 	val = kernbuf;
 	token = strsep(&val, " ");
-	if (val == NULL)
-		GOTO(out_free_kernbuff, rc = -EINVAL);
 
 	if (strcmp(token, "reg") == 0) {
 		queue = PTLRPC_NRS_QUEUE_REG;
 	} else if (strcmp(token, "hp") == 0) {
 		queue = PTLRPC_NRS_QUEUE_HP;
 	} else {
-		kernbuf[strlen(token)] = ' ';
+		/*
+		 * No queue specified, undo the strsep() split, which only
+		 * happened if val is non-NULL.
+		 */
+		if (val)
+			val[-1] = ' ';
 		val = kernbuf;
 	}
-	length = strlen(val);
 
-	if (length == 0)
+	if (!val || *val == '\0') /* "reg"/"hp" with no command */
 		GOTO(out_free_kernbuff, rc = -EINVAL);
+	length = strlen(val);
 
 	if (queue == PTLRPC_NRS_QUEUE_HP && !nrs_svc_has_hp(svc))
 		GOTO(out_free_kernbuff, rc = -ENODEV);
@@ -2814,6 +3001,9 @@ static int nrs_tbf_lprocfs_init(struct ptlrpc_service *svc)
 	struct ldebugfs_vars nrs_tbf_lprocfs_vars[] = {
 		{ .name		= "nrs_tbf_rule",
 		  .fops		= &ptlrpc_lprocfs_nrs_tbf_rule_fops,
+		  .data = svc },
+		{ .name		= "nrs_tbf_rule_yaml",
+		  .fops		= &ptlrpc_lprocfs_nrs_tbf_rule_yaml_fops,
 		  .data = svc },
 		{ NULL }
 	};

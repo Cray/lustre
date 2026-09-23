@@ -183,6 +183,18 @@ struct nrs_tbf_rule {
 	struct kref			 tr_ref;
 	/** Generation of the rule. */
 	__u64				 tr_generation;
+	/**
+	 * Per-rule statistics (per-CPT). Updated under scp_req_lock, read and
+	 * reset without it. A reset that races with a concurrent increment
+	 * may be lost for that counter (the counter keeps its pre-reset value
+	 * plus one while tr_stat_start_ns is reset), so stats should be
+	 * re-checked after a "reset_stat" issued while traffic is flowing.
+	 */
+	__u64				 tr_stat_enqueue;
+	__u64				 tr_stat_dispatch;
+	__u64				 tr_stat_exhausted;
+	/** Timestamp (ns) when stats were last reset / rule created. */
+	__u64				 tr_stat_start_ns;
 };
 
 #define NRS_TBF_TYPE_JOBID	"jobid"
@@ -287,6 +299,7 @@ enum nrs_tbf_cmd_type {
 	NRS_CTL_TBF_START_RULE = 0,
 	NRS_CTL_TBF_STOP_RULE,
 	NRS_CTL_TBF_CHANGE_RULE,
+	NRS_CTL_TBF_RESET_STAT,
 };
 
 struct nrs_tbf_cmd {
@@ -352,6 +365,10 @@ struct nrs_tbf_req {
  * Read the TBF policy type preset by proc entry "nrs_policies".
  */
 #define NRS_CTL_TBF_RD_TYPE_FLAG PTLRPC_NRS_CTL_POL_SPEC_03
+/**
+ * Read the data of a TBF policy in YAML format with per-rule stats.
+ */
+#define NRS_CTL_TBF_RD_RULE_YAML PTLRPC_NRS_CTL_POL_SPEC_04
 
 /** @} tbf */
 #endif

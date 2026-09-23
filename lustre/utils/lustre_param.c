@@ -797,6 +797,8 @@ paths_loop:
 	for (i = 0; i < paths.gl_pathc; i++) {
 		char *param_name = NULL, *tmp;
 		char pathname[PATH_MAX], param_dir[PATH_MAX + 2];
+		char yaml_path[PATH_MAX];
+		char *read_path;
 		struct lctl_param_file *lpf;
 		struct stat st;
 		struct stat lst; /* for finding symlinks */
@@ -894,7 +896,26 @@ op_switch:
 		case GET_PARAM:
 			if (!S_ISREG(st.st_mode))
 				break;
-			rc = read_param(paths.gl_pathv[i],
+			read_path = paths.gl_pathv[i];
+
+			/*
+			 * With --yaml, if a sibling parameter "<param>_yaml"
+			 * exists it is read in place of <param>, so it is
+			 * possible to implement a YAML rendering of a parameter
+			 * whose format must stay unchanged (e.g. nrs_tbf_rule
+			 * -> nrs_tbf_rule_yaml). The _yaml parameter is
+			 * implemented as a separate file, so a wildcard that
+			 * matches will print both parameters.
+			 */
+			if (popt->po_yaml) {
+				int n = snprintf(yaml_path, sizeof(yaml_path),
+						 "%s_yaml", paths.gl_pathv[i]);
+
+				if (n > 0 && n < (int)sizeof(yaml_path) &&
+				    access(yaml_path, R_OK) == 0)
+					read_path = yaml_path;
+			}
+			rc = read_param(read_path,
 					&lpf->lpf_val,
 					popt->po_find_pattern != NULL);
 			if (rc) {

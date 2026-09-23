@@ -125,6 +125,14 @@ to print parameters that are both readable and writable.
 Some paramters can be presented in a YAML format but are not by default. This
 will format the parameter data in YAML. If the YAML provides a source: field
 it can be suppressed with the -n option.
+If a parameter
+.I PARAM
+has a sibling parameter named
+.IR PARAM_yaml ,
+that sibling is read in its place when this option is given. This lets the
+kernel provide a YAML rendering of a parameter whose default output format
+must remain unchanged, for example
+.BR nrs_tbf_rule .
 .SH EXAMPLES
 Use wildcards to obtain all matching parameters:
 .RS
