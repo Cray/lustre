@@ -7768,7 +7768,23 @@ static int mdt_connect_internal(const struct lu_env *env,
 
 	if ((data->ocd_connect_flags & OBD_CONNECT_MDS_MDS) &&
 	    !(data->ocd_connect_flags & OBD_CONNECT_LIGHTWEIGHT)) {
-		atomic_inc(&mdt->mdt_mds_mds_conns);
+		struct mdt_export_data *med = &exp->exp_mdt_data;
+
+		/* Count each MDS-MDS export only once: a reconnect reuses
+		 * the export counted at the initial connect, while
+		 * mdt_obd_disconnect() decrements the counter only once.
+		 * An export recovered from last_rcvd after an MDT restart
+		 * has never been counted, so count it on its first
+		 * reconnect (LU-13522).  The flag is tested and changed
+		 * under exp_lock, as in mdt_mds_mds_uncount(), so that a
+		 * concurrent count and uncount can't both act on it.
+		 */
+		spin_lock(&exp->exp_lock);
+		if (!med->med_mds_mds_counted) {
+			med->med_mds_mds_counted = true;
+			atomic_inc(&mdt->mdt_mds_mds_conns);
+		}
+		spin_unlock(&exp->exp_lock);
 		mdt_enable_slc(mdt);
 	}
 
@@ -7911,6 +7927,29 @@ static int mdt_export_cleanup(struct obd_export *exp)
 	RETURN(rc);
 }
 
+/* Undo the MDS-MDS connection count done by mdt_connect_internal() for @med,
+ * so that the counter is decremented exactly once per counted export, both
+ * when the export is disconnected and when a connect fails after counting it.
+ */
+static void mdt_mds_mds_uncount(struct mdt_device *mdt,
+				struct obd_export *exp)
+{
+	struct mdt_export_data *med = &exp->exp_mdt_data;
+	bool counted;
+
+	/* Test and clear under exp_lock: two concurrent disconnects of the
+	 * same export (eviction racing with a reconnect) must not both
+	 * decrement the counter.
+	 */
+	spin_lock(&exp->exp_lock);
+	counted = med->med_mds_mds_counted;
+	med->med_mds_mds_counted = false;
+	spin_unlock(&exp->exp_lock);
+
+	if (counted && atomic_dec_and_test(&mdt->mdt_mds_mds_conns))
+		mdt_disable_slc(mdt);
+}
+
 static int mdt_obd_disconnect(struct obd_export *exp)
 {
 	struct obd_connect_data *data = &exp->exp_connect_data;
@@ -7922,10 +7961,6 @@ static int mdt_obd_disconnect(struct obd_export *exp)
 	LASSERT(exp);
 	class_export_get(exp);
 
-	if (OCD_HAS_FLAG(data, MDS_MDS) && !OCD_HAS_FLAG(data, LIGHTWEIGHT) &&
-	    atomic_dec_and_test(&mdt->mdt_mds_mds_conns))
-		mdt_disable_slc(mdt);
-
 	if (!OCD_HAS_FLAG(data, MDS_MDS) && !OCD_HAS_FLAG(data, LIGHTWEIGHT) &&
 	    !OCD_HAS_FLAG2(data, DMV_IMP_INHERIT) &&
 	    atomic_dec_and_test(&mdt->mdt_dmv_old_client_count))
@@ -7934,6 +7969,12 @@ static int mdt_obd_disconnect(struct obd_export *exp)
 	rc = server_disconnect_export(exp);
 	if (rc != 0)
 		CDEBUG(D_IOCTL, "server disconnect error: rc = %d\n", rc);
+
+	/* Uncount after server_disconnect_export() has set exp_disconnected,
+	 * so a reconnect racing with an eviction either sees the export as
+	 * disconnected or is uncounted here.
+	 */
+	mdt_mds_mds_uncount(mdt, exp);
 
 	tgt_grant_discard(exp);
 
@@ -8021,6 +8062,7 @@ static int mdt_obd_connect(const struct lu_env *env,
 	}
 out:
 	if (rc != 0) {
+		mdt_mds_mds_uncount(mdt, lexp);
 		class_disconnect(lexp);
 		nodemap_del_member(lexp);
 		*exp = NULL;

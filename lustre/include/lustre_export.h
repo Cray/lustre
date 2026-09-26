@@ -98,6 +98,8 @@ struct mdt_export_data {
 	/** List of all files opened by client on this MDT */
 	struct list_head	med_open_head;
 	spinlock_t		med_open_lock; /* med_open_head, mfd_list */
+	/** this MDS-MDS export is counted in mdt_mds_mds_conns */
+	bool			med_mds_mds_counted;
 };
 
 struct ec_export_data { /* echo client */
