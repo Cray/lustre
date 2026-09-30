@@ -405,21 +405,6 @@ AS_IF([test "x$enable_gss" != xno], [
 ])
 ]) # LC_CONFIG_GSS
 
-#
-# LC_CONFIG_XARRAY_MULTI
-#
-# Xarray multi-tier support. The kernel must support CONFIG_XARRAY_MULTI.
-# Since device zone support depends on this the chances are very small
-# its disabled but just in case.
-#
-AC_DEFUN([LC_SRC_CONFIG_XARRAY_MULTI], [
-	LB2_SRC_CHECK_CONFIG_IM([XARRAY_MULTI])
-])
-AC_DEFUN([LC_CONFIG_XARRAY_MULTI], [
-	LB2_TEST_CHECK_CONFIG_IM([XARRAY_MULTI],[],[AC_MSG_ERROR(
-[Lustre quota requires that CONFIG_XARRAY_MULTI is enabled in your kernel.])])
-]) # LC_CONFIG_XARRAY_MULTI
-
 # LC_OPENSSL_HMAC
 #
 # OpenSSL 1.0+ return int for HMAC functions but older SLES11 versions do not
@@ -2642,6 +2627,26 @@ AC_DEFUN([LC_INODE_TIMESPEC64], [
 			[inode times are using timespec64])
 	])
 ]) # LC_INODE_TIMESPEC64
+
+#
+# LC_XARRAY_SUPPORT
+#
+# 4.19-rc5 kernel commit 3159f943aafdbacb2f94c38fdaadabf2bbde2a14
+# replaced the radix tree implementation with XArrays. This change
+# introduced functionality needed for general XArray support
+#
+AC_DEFUN([LC_SRC_XARRAY_SUPPORT], [
+	LB2_LINUX_TEST_SRC([xarray_support], [
+		#include <linux/xarray.h>
+	],[
+		xa_is_value(NULL);
+	],[-Werror])
+])
+AC_DEFUN([LC_XARRAY_SUPPORT], [
+	LB2_MSG_LINUX_TEST_RESULT([if the kernel supports XArray],
+				  [xarray_support], [],
+			        [AC_MSG_ERROR([kernel doesn't support XArray])])
+]) # LC_XARRAY_SUPPORT
 
 #
 # LC_UAPI_LINUX_MOUNT_H
@@ -5650,7 +5655,6 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_CONFIG_FHANDLE
 	LC_SRC_POSIX_ACL_CONFIG
 	LC_SRC_HAVE_PROJECT_QUOTA
-	LC_SRC_CONFIG_XARRAY_MULTI
 
 	# 3.1
 	LC_SRC_LM_XXX_LOCK_MANAGER_OPS
@@ -5793,6 +5797,9 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	# 4.18
 	LC_SRC_INODE_TIMESPEC64
 	LC_SRC_ALLOC_FILE_PSEUDO
+
+	# 4.19
+	LC_SRC_XARRAY_SUPPORT
 
 	# 4.20
 	LC_SRC_UAPI_LINUX_MOUNT_H
@@ -6009,7 +6016,6 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 
 	# 3.10
 	LC_HAVE_PROJECT_QUOTA
-	LC_CONFIG_XARRAY_MULTI
 
 	# 3.11
 	LC_INVALIDATE_RANGE
@@ -6151,6 +6157,9 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	# 4.18
 	LC_ALLOC_FILE_PSEUDO
 	LC_INODE_TIMESPEC64
+
+	# 4.19
+	LC_XARRAY_SUPPORT
 
 	# 4.20
 	LC_UAPI_LINUX_MOUNT_H
