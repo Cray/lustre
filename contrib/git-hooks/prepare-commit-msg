@@ -33,8 +33,9 @@ grep -q "^#" "$1" || exit 0
 # Add a commented-out Test-Parameters: line. This will let the developer
 # uncomment it out if they think it's appropriate.
 echo "#" >> "$1"
-echo "# If this patch makes only non-functional changes, or test-only" >> "$1"
-echo "# changes, consider adding this 'Test-Parameters' in the" >> "$1"
+echo "# If this patch makes only test, documentation or build changes, or" >> "$1"
+echo "# low-risk changes fully covered by sanity or the patch's own tests," >> "$1"
+echo "# consider adding this 'Test-Parameters' in the" >> "$1"
 echo "# commit message:" >> "$1"
 echo "#" >> "$1"
 echo "# Test-Parameters: trivial" >> "$1"
