@@ -563,6 +563,7 @@ int nodemap_lookup_by_sha(gss_buffer_desc *sha, char *nodemap_name,
 	struct obd_ioctl_data data;
 	char rawbuf[MAX_IOC_BUFLEN];
 	char *buf = rawbuf;
+	bool retried = false;
 	int rc;
 
 	if (!sha->value || !sha->length || !nodemap_name ||
@@ -579,10 +580,6 @@ int nodemap_lookup_by_sha(gss_buffer_desc *sha, char *nodemap_name,
 		}
 	}
 
-	memset(&data, 0, sizeof(data));
-	data.ioc_dev = srv_ioc_dev;
-	data.ioc_version = OBD_IOCTL_VERSION;
-
 	lustre_cfg_bufs_reset(&bufs, NULL);
 	lustre_cfg_bufs_set(&bufs, 1, sha->value, sha->length);
 
@@ -597,6 +594,11 @@ int nodemap_lookup_by_sha(gss_buffer_desc *sha, char *nodemap_name,
 							  bufs.lcfg_buflen));
 	if (rc)
 		goto out;
+
+retry:
+	memset(&data, 0, sizeof(data));
+	data.ioc_dev = srv_ioc_dev;
+	data.ioc_version = OBD_IOCTL_VERSION;
 	data.ioc_type = LUSTRE_CFG_TYPE;
 	data.ioc_plen1 = lustre_cfg_len(lcfg->lcfg_bufcount,
 					lcfg->lcfg_buflens);
@@ -612,6 +614,20 @@ int nodemap_lookup_by_sha(gss_buffer_desc *sha, char *nodemap_name,
 	rc = l_ioctl(OBD_DEV_ID, OBD_IOC_NODEMAP, buf);
 	if (rc < 0) {
 		rc = -errno;
+		/* support the case where the MDS/OSS device has been restarted
+		 * and possibly changed index.
+		 */
+		if (!retried && (rc == -ENOTTY || rc == -EINVAL)) {
+			int rc2;
+
+			retried = true;
+			srv_ioc_dev = -1;
+			rc2 = set_srv_ioc_dev();
+			if (rc2 == 0)
+				goto retry;
+			printerr(LL_ERR, "no device for ioctl: %s\n",
+				 strerror(-rc2));
+		}
 		printerr(LL_ERR, "nodemap ioctl failed: %s\n", strerror(-rc));
 		goto out;
 	}

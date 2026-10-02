@@ -9700,6 +9700,8 @@ dyn_nm_helper() {
 	do_facet mgs $LCTL nodemap_set_fileset --name default \
 		--fileset "/deffset" ||
 			error "setting fileset on default failed"
+	stack_trap "do_facet mgs $LCTL nodemap_fileset_del \
+		    --name default --all" EXIT
 	raise=$(do_facet mgs $LCTL get_param -n \
 		nodemap.default.child_raise_privileges)
 	if [[ -n "$raise" ]]; then
@@ -11927,6 +11929,27 @@ cleanup_79() {
 	wait_ssk
 }
 
+# Check that file $1 exists, through mount point $2, but only wait for $3 secs.
+check_file_79() {
+	local file=$1
+	local mnt=$2
+	local max=${3:-120}
+	local pid
+	local i
+
+	test -f $file < /dev/null &> /dev/null &
+	pid=$!
+	for ((i = 0; i < max; i++)); do
+		kill -0 $pid 2>/dev/null || break
+		sleep 1
+	done
+	if kill -0 $pid 2>/dev/null; then
+		umount -f $mnt
+		error "stat $file still running after ${max}s"
+	fi
+	wait $pid || error "failed to get $file"
+}
+
 test_79() {
 	client_ip=$(host_nids_address $HOSTNAME $NETTYPE)
 	client_nid=$(h2nettype $client_ip)
@@ -11979,7 +12002,7 @@ test_79() {
 		error "remount failed (1)"
 	wait_ssk
 
-	[[ -f $DIR/this_is_c0 ]] || error "failed to get c0"
+	check_file_79 $DIR/this_is_c0 $MOUNT
 
 	# test banlist support with gss identification
 	banprop=$(do_facet mgs $LCTL get_param nodemap.c0.banlist)
@@ -12033,7 +12056,7 @@ test_79() {
 		error "remount failed (2)"
 	wait_ssk
 
-	[[ -f $DIR/this_is_nm0 ]] || error "failed to get nm0"
+	check_file_79 $DIR/this_is_nm0 $MOUNT
 
 	do_facet mds1 $LCTL get_param nodemap.*.exports
 	count=$(do_facet mds1 $LCTL get_param -n nodemap.nm0.exports |
@@ -12054,12 +12077,13 @@ test_79() {
 		error "$count exps for $client_nid on nm0 ($mds1_mdtcnt) (2)"
 
 	# mount client on DIR2 with c0 key, should see c0 fileset
+	mkdir -p $MOUNT2 || true
 	$MOUNT_CMD -o $MOUNT_OPTS,skpath=$SK_PATH/nodemap/c0.key \
 		$MGSNID:/$FSNAME $MOUNT2 ||
 			error "remount failed (3)"
 	wait_ssk
 
-	[[ -f $DIR2/this_is_c0 ]] || error "failed to get c0 in $DIR2"
+	check_file_79 $DIR2/this_is_c0 $MOUNT2
 
 	do_facet mds1 $LCTL get_param nodemap.*.exports
 	count=$(do_facet mds1 $LCTL get_param -n nodemap.c0.exports |
@@ -12074,7 +12098,7 @@ test_79() {
 			error "remount failed (4)"
 	wait_ssk
 
-	[[ -f $DIR/this_is_nm0 ]] || error "failed to get nm0 in $DIR"
+	check_file_79 $DIR/this_is_nm0 $MOUNT
 
 	do_facet mds1 $LCTL get_param nodemap.*.exports
 	count=$(do_facet mds1 $LCTL get_param -n nodemap.nm0.exports |
