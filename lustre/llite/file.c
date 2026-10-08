@@ -772,21 +772,29 @@ void ll_dir_finish_open(struct inode *inode, struct ptlrpc_request *req)
 		RETURN_EXIT;
 
 	for (rd_pgs = 0; rd_pgs < nfolios; rd_pgs++) {
+		/* the reply holds only rep_size bytes */
+		unsigned int len = min_t(unsigned int, rep_size, PAGE_SIZE);
+
 		folio = filemap_alloc_folio(gfp, 0, NULL);
 		if (IS_ERR_OR_NULL(folio))
 			break;
 		folio_pool[rd_pgs] = folio;
 
 		dp = kmap_local_folio(folio, 0);
+		memcpy(dp, data, len);
+		if (len < PAGE_SIZE)
+			memset((char *)dp + len, 0, PAGE_SIZE - len);
 		CDEBUG(D_INFO, "folio %p - %p - %p -> %llu %llu\n", folio, dp,
 		       data, dp->ldp_hash_start, dp->ldp_hash_end);
-		memcpy(dp, data, PAGE_SIZE);
 		kunmap_local(dp);
 
-		data += PAGE_SIZE;
+		data += len;
+		rep_size -= len;
 	}
 	if (rd_pgs == 0)
 		goto exit;
+	/* only the lu_pages in folios actually allocated were copied */
+	lu_pgs = min_t(unsigned int, lu_pgs, rd_pgs * LU_PAGE_COUNT);
 
 	folio = folio_pool[0];
 	dp = kmap_local_folio(folio, 0);
