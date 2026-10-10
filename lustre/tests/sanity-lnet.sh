@@ -4459,6 +4459,81 @@ test_228() {
 }
 run_test 228 "Routes should stay up when health is decremented"
 
+# assumes 1 router, 1 peer
+do_router_drop_health_test() {
+	local router=${ROUTERS[0]}
+	local rpeer=${RPEERS[0]}
+	local rpeer_nids=( ${RPEER_NIDS[$rpeer]} )
+	local rpeer_nid=${rpeer_nids[0]}
+	local max_health=1000
+	local health
+
+	local show="$LNETCTL peer show --nid $rpeer_nid -v 2"
+	# Parse with sed: awk's $NF is eaten by the extra shell expansion
+	# do_node/pdsh add, leaving a bare print that emits the whole line.
+	local get_state="$show | sed -n 's/^ *state: *//p'"
+	local get_health="$show | sed -n 's/^ *health value: *//p'"
+	local recovq="$LNETCTL debug recovery -p"
+	local in_recovq="$recovq | grep -wc \"nid-0: $rpeer_nid\""
+	local set_health="$LNETCTL peer set --nid $rpeer_nid"
+
+	do_lnetctl ping $rpeer_nid ||
+		error "Failed to ping $rpeer_nid"
+
+	# Stopping LNet on the peer makes the router mark the peer NI down
+	# via lnet_notify(), which deliberately leaves health untouched.
+	do_node $rpeer "$LNETCTL lnet unconfigure" ||
+		error "Failed to stop LNet on $rpeer"
+
+	wait_update $router "$get_state" "down" 60 ||
+		error "$router never marked $rpeer_nid down"
+
+	# The teardown also fails an in-flight send, which is charged normally
+	# and queues the NI for recovery.  Reset health to reproduce the state
+	# seen in the field: down, at max health, and off the recovery queue.
+	do_node $router "$set_health --health $max_health" ||
+		error "Failed to reset health of $rpeer_nid"
+
+	wait_update $router "$in_recovq" "0" 30 ||
+		error "$rpeer_nid never left the recovery queue"
+
+	health=$(do_node $router "$get_health")
+	((health == max_health)) ||
+		error "Expect health $max_health before drops, got $health"
+
+	# The router now drops everything routed to $rpeer. Each drop must be
+	# charged to the peer NI, otherwise it stays at max health, is never
+	# queued for recovery, and the router never pings $rpeer again.
+	check_route_aliveness "$HOSTNAME" "up" ||
+		error "Route went down, the ping would not reach $router"
+
+	do_lnetctl ping $rpeer_nid &&
+		error "Ping should fail while $rpeer_nid is down"
+
+	wait_update_cond $router "$get_health" "-lt" "$max_health" 30 ||
+		error "Routed drop was not charged to $rpeer_nid health"
+
+	wait_update $router "$in_recovq" "1" 30 || {
+		do_node $router "$recovq"
+		error "$rpeer_nid was never queued for recovery on $router"
+	}
+
+	return 0
+}
+
+test_229() {
+	# aarf=0 keeps the route up when the routed peer goes down, so the
+	# message still reaches the router and hits its drop path.
+	setup_router_test avoid_asym_router_failure=0 || return $?
+
+	do_basic_rtr_test || return $?
+
+	do_router_drop_health_test || return $?
+
+	cleanup_router_test || return $?
+}
+run_test 229 "Routed drops decrement peer health and trigger recovery"
+
 test_230() {
 	[[ ${NETTYPE} == tcp* ]] || skip "Need tcp NETTYPE"
 
