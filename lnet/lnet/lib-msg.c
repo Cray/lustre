@@ -503,7 +503,7 @@ lnet_handle_remote_failure_locked(struct lnet_peer_ni *lpni)
 					     ktime_get_seconds());
 }
 
-static void
+void
 lnet_handle_remote_failure(struct lnet_peer_ni *lpni)
 {
 	/* lpni could be NULL if we're in the LOLND case */

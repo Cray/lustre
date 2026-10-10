@@ -776,6 +776,7 @@ void lnet_finalize(struct lnet_msg *msg, int rc);
 bool lnet_send_error_simulation(struct lnet_msg *msg,
 				enum lnet_msg_hstatus *hstatus);
 void lnet_handle_remote_failure_locked(struct lnet_peer_ni *lpni);
+void lnet_handle_remote_failure(struct lnet_peer_ni *lpni);
 
 void lnet_drop_message(struct lnet_ni *ni, int cpt, void *private,
 		       unsigned int nob, __u32 msg_type);

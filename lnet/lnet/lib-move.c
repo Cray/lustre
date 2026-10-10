@@ -844,6 +844,12 @@ lnet_post_send_locked(struct lnet_msg *msg, int do_send)
 			CNETERR("Dropping message for %s: peer not alive\n",
 				libcfs_idstr(&msg->msg_target));
 			msg->msg_health_status = LNET_MSG_STATUS_REMOTE_DROPPED;
+			/* With do_send false the caller discards the message
+			 * without lnet_finalize(), so account the drop here or
+			 * the peer NI stays at max health and never recovers.
+			 */
+			if (!do_send)
+				lnet_handle_remote_failure(lp);
 		} else {
 			CNETERR("Dropping message for %s: exceeded message deadline\n",
 				libcfs_idstr(&msg->msg_target));
