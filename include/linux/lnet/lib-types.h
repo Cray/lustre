@@ -472,7 +472,7 @@ struct lnet_net {
 	__u32			net_id;
 
 	/* round robin selection */
-	__u32			net_seq;
+	u64			net_seq;
 
 	/* total number of CPTs in the array */
 	__u32			net_ncpts;
@@ -1434,7 +1434,7 @@ struct lnet_ni {
 	int			ni_dev_cpt;
 
 	/* sequence number used to round robin over nis within a net */
-	__u32			ni_seq;
+	u64			ni_seq;
 
 	/*
 	 * health value
@@ -1592,7 +1592,7 @@ struct lnet_peer_ni {
 	/* status of the peer NI as reported by the peer */
 	__u32			lpni_ns_status;
 	/* sequence number used to round robin over peer nis within a net */
-	__u32			lpni_seq;
+	u64			lpni_seq;
 	/* sequence number used to round robin over gateways */
 	__u32			lpni_gw_seq;
 	/* returned RC ping features. Protected with lpni_lock */
@@ -1727,7 +1727,7 @@ struct lnet_peer {
 	 * sequence number used to round robin traffic to this peer's
 	 * nets/NIs
 	 */
-	__u32			 lp_send_seq;
+	u64			 lp_send_seq;
 
 	/* cached peer aliveness */
 	bool			 lp_alive;
@@ -1825,7 +1825,7 @@ struct lnet_peer_net {
 	time64_t		lpn_next_ping;
 
 	/* selection sequence number */
-	__u32			lpn_seq;
+	u64			lpn_seq;
 
 	/* relative peer net selection priority */
 	__u32			lpn_sel_priority;
@@ -2162,7 +2162,7 @@ struct lnet {
 	/* LND instances */
 	struct list_head		ln_nets;
 	/* Sequence number used to round robin sends across all nets */
-	__u32				ln_net_seq;
+	u64				ln_net_seq;
 	/*
 	 * Count of NIs/nets with restricted CPT configurations.
 	 * When 0, lnet_nid2cpt() can use fast hash-only path even

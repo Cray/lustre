@@ -1184,7 +1184,7 @@ lnet_select_peer_ni(struct lnet_ni *best_ni, struct lnet_nid *dst_nid,
 		lpni_sel_prio = lpni->lpni_sel_priority;
 
 		if (best_lpni)
-			CDEBUG(D_NET, "n:[%s, %s] h:[%d, %d] p:[%d, %d] c:[%d, %d] s:[%d, %d]\n",
+			CDEBUG(D_NET, "n:[%s, %s] h:[%d, %d] p:[%d, %d] c:[%d, %d] s:[%llu, %llu]\n",
 				libcfs_nidstr(&lpni->lpni_nid),
 				libcfs_nidstr(&best_lpni->lpni_nid),
 				lpni_healthv, best_lpni_healthv,
@@ -1555,7 +1555,7 @@ lnet_get_best_ni(struct lnet_net *local_net, struct lnet_ni *best_ni,
 		 * shorter distance, available credits, then round-robin.
 		 */
 		if (best_ni)
-			CDEBUG(D_NET, "compare ni %s [f:%s, c:%d, d:%d, s:%d, p:%u, g:%u, h:%d] with best_ni %s [f:%s, c:%d, d:%d, s:%d, p:%u, g:%u, h:%d]\n",
+			CDEBUG(D_NET, "compare ni %s [f:%s, c:%d, d:%d, s:%llu, p:%u, g:%u, h:%d] with best_ni %s [f:%s, c:%d, d:%d, s:%llu, p:%u, g:%u, h:%d]\n",
 			       libcfs_nidstr(&ni->ni_nid),
 			       ni_fatal ? "y" : "n", ni_credits, distance,
 			       ni->ni_seq, ni_sel_prio, ni_dev_prio, ni_healthv,
@@ -1724,7 +1724,7 @@ lnet_handle_send(struct lnet_send_data *sd)
 	best_ni->ni_net->net_seq = the_lnet.ln_net_seq;
 	best_ni->ni_seq = best_ni->ni_net->net_seq;
 
-	CDEBUG(D_NET, "%s NI seq info: [%d:%d:%d:%u] %s LPNI seq info [%d:%d:%d:%u]\n",
+	CDEBUG(D_NET, "%s NI seq info: [%llu:%llu:%d:%u] %s LPNI seq info [%llu:%llu:%d:%u]\n",
 	       libcfs_nidstr(&best_ni->ni_nid),
 	       best_ni->ni_seq, best_ni->ni_net->net_seq,
 	       atomic_read(&best_ni->ni_tx_credits),
@@ -2118,7 +2118,7 @@ lnet_handle_find_routed_path(struct lnet_send_data *sd,
 				if (!best_lpn)
 					goto use_lpn;
 				else
-					CDEBUG(D_NET, "n[%s, %s] h[%d, %d], p[%u, %u], s[%d, %d]\n",
+					CDEBUG(D_NET, "n[%s, %s] h[%d, %d], p[%u, %u], s[%llu, %llu]\n",
 					       libcfs_net2str(lpn->lpn_net_id),
 					       libcfs_net2str(best_lpn->lpn_net_id),
 					       lpn->lpn_healthv,
@@ -2374,7 +2374,7 @@ lnet_find_best_ni_on_local_net(struct lnet_peer *peer, int md_cpt,
 			goto select_lpn;
 		else
 			CDEBUG(D_NET,
-			       "n[%s, %s] ph[%d, %d], pp[%u, %u], nh[%d, %d], np[%u, %u], ps[%u, %u], ns[%u, %u]\n",
+			       "n[%s, %s] ph[%d, %d], pp[%u, %u], nh[%d, %d], np[%u, %u], ps[%llu, %llu], ns[%llu, %llu]\n",
 			       libcfs_net2str(lpn->lpn_net_id),
 			       libcfs_net2str(best_lpn->lpn_net_id),
 			       lpn->lpn_healthv,
