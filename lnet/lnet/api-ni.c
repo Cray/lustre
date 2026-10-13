@@ -196,6 +196,11 @@ module_param(lnet_latency_stats_enabled, uint, 0644);
 MODULE_PARM_DESC(lnet_latency_stats_enabled,
 		 "Accumulate per-operation latency statistics");
 
+unsigned int lnet_routed_resend = 1;
+module_param(lnet_routed_resend, uint, 0644);
+MODULE_PARM_DESC(lnet_routed_resend,
+		 "(0|1) Only charge health for a failed routed message|Resend it as well (default)");
+
 unsigned int lnet_response_tracking = 3;
 static int response_tracking_set(const char *val, const struct kernel_param *kp);
 

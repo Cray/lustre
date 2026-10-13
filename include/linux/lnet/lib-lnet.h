@@ -595,6 +595,7 @@ extern unsigned int lnet_response_tracking;
 extern unsigned lnet_transaction_timeout;
 extern unsigned lnet_retry_count;
 extern unsigned int lnet_latency_stats_enabled;
+extern unsigned int lnet_routed_resend;
 extern unsigned int lnet_lnd_timeout;
 extern unsigned int lnet_numa_range;
 extern unsigned int lnet_health_sensitivity;
