@@ -408,6 +408,8 @@ lnet_complete_msg_locked(struct lnet_msg *msg, int cpt)
 		 * receiving, so we should return back to lnet_finalize()
 		 * to make sure we are locking the correct partition.
 		 */
+		if (rc < 0)
+			msg->msg_ev.status = rc;
 		return rc;
 
 	} else if (status == 0 &&	/* OK so far */
@@ -432,6 +434,8 @@ lnet_complete_msg_locked(struct lnet_msg *msg, int cpt)
 		 *   so we should return back to lnet_finalize() to make
 		 *   sure we are locking the correct partition.
 		 */
+		if (rc < 0)
+			msg->msg_ev.status = rc;
 		return rc;
 	}
 
@@ -625,11 +629,14 @@ lnet_resend_msg_locked(struct lnet_msg *msg)
 	       lnet_msgtyp2str(msg->msg_type),
 	       lnet_health_error2str(msg->msg_health_status), msg);
 
+	msg->msg_health_status = LNET_MSG_STATUS_OK;
+
 	list_add_tail(&msg->msg_list, the_lnet.ln_mt_resendqs[msg->msg_tx_cpt]);
 
 	complete(&the_lnet.ln_mt_wait_complete);
 }
 
+/* @msg may be NULL to only claim a worker slot and drain @containerq. */
 static int
 lnet_check_finalize_recursion_locked(struct lnet_msg *msg,
 				     struct list_head *containerq,
@@ -638,7 +645,8 @@ lnet_check_finalize_recursion_locked(struct lnet_msg *msg,
 	int my_slot = -1;
 	int i;
 
-	list_add_tail(&msg->msg_list, containerq);
+	if (msg)
+		list_add_tail(&msg->msg_list, containerq);
 
 	for (i = 0; i < nworkers; i++) {
 		if (workers[i] == current)
@@ -800,6 +808,13 @@ lnet_health_check(struct lnet_msg *msg)
 		lpni = msg->msg_rxpeer;
 		attempt_local_resend = attempt_remote_resend = false;
 	}
+
+	/* A routed message holds a router buffer until it is finalized, so the
+	 * retries can starve a router of buffers during a drop storm. Health
+	 * is still charged, only the resend is skipped.
+	 */
+	if (msg->msg_routing && !lnet_routed_resend)
+		attempt_local_resend = attempt_remote_resend = false;
 
 	if (!lo)
 		LASSERT(ni && lpni);
@@ -1106,13 +1121,70 @@ lnet_send_error_simulation(struct lnet_msg *msg,
 }
 EXPORT_SYMBOL(lnet_send_error_simulation);
 
-void
-lnet_finalize(struct lnet_msg *msg, int status)
+/* Queue @msg, if any, on the finalizing queue of @cpt's container and complete
+ * every message on it. Returns the message whose completion broke off and has
+ * to be fed back here, possibly on a different CPT, or NULL if nothing is left
+ * for the caller to do.
+ */
+static struct lnet_msg *
+lnet_drain_finalizing_queue(struct lnet_msg *msg, int cpt)
 {
 	struct lnet_msg_container *container;
 	int my_slot;
-	int cpt;
-	int rc;
+	int rc = 0;
+
+	lnet_net_lock(cpt);
+
+	container = the_lnet.ln_msg_containers[cpt];
+
+	/* Recursion breaker.  Don't complete the message here if I am (or
+	 * enough other threads are) already completing messages */
+	my_slot = lnet_check_finalize_recursion_locked(msg,
+						&container->msc_finalizing,
+						container->msc_nfinalizers,
+						container->msc_finalizers);
+
+	/* enough threads are resending */
+	if (my_slot == -1) {
+		lnet_net_unlock(cpt);
+		return NULL;
+	}
+
+drain:
+	while ((msg = list_first_entry_or_null(&container->msc_finalizing,
+					       struct lnet_msg,
+					       msg_list)) != NULL) {
+		list_del_init(&msg->msg_list);
+
+		/* NB drops and regains the lnet lock if it actually does
+		 * anything, so my finalizing friends can chomp along too */
+		rc = lnet_complete_msg_locked(msg, cpt);
+		if (rc != 0)
+			break;
+	}
+
+	if (unlikely(!list_empty(&the_lnet.ln_delay_rules))) {
+		lnet_net_unlock(cpt);
+		lnet_delay_rule_check();
+		lnet_net_lock(cpt);
+
+		/* The check above dropped the lock: a thread which found no
+		 * free slot in that window left its message for us.
+		 */
+		if (rc == 0 && !list_empty(&container->msc_finalizing))
+			goto drain;
+	}
+
+	container->msc_finalizers[my_slot] = NULL;
+	lnet_net_unlock(cpt);
+
+	return rc != 0 ? msg : NULL;
+}
+
+void
+lnet_finalize(struct lnet_msg *msg, int status)
+{
+	int cpt = 0;
 
 	LASSERT(!in_interrupt());
 
@@ -1145,61 +1217,48 @@ lnet_finalize(struct lnet_msg *msg, int status)
 	if (msg->msg_md != NULL)
 		lnet_msg_detach_md(msg, status);
 
-again:
-	if (!msg->msg_tx_committed && !msg->msg_rx_committed) {
-		/* not committed to network yet */
-		LASSERT(!msg->msg_onactivelist);
-		lnet_msg_free(msg);
-		return;
+	for (;;) {
+		if (msg) {
+			if (!msg->msg_tx_committed && !msg->msg_rx_committed) {
+				/* not committed to network yet */
+				LASSERT(!msg->msg_onactivelist);
+				lnet_msg_free(msg);
+				return;
+			}
+
+			/*
+			 * NB: routed message can be committed for both
+			 * receiving and sending, we should finalize in LIFO
+			 * order and keep counters correct.
+			 * (finalize sending first then finalize receiving)
+			 */
+			cpt = msg->msg_tx_committed ? msg->msg_tx_cpt
+						    : msg->msg_rx_cpt;
+		}
+
+		msg = lnet_drain_finalizing_queue(msg, cpt);
+		if (!msg)
+			return;
+
+		/* A routed message dropped because the next hop is not alive
+		 * only reports its failure here, so skipping the health check
+		 * would black-hole the peer. Only a message committed for
+		 * sending has a next hop to charge, otherwise the check would
+		 * punish msg_rxpeer, the previous hop.
+		 */
+		if (msg->msg_tx_committed && lnet_is_health_check(msg) &&
+		    !lnet_health_check(msg)) {
+			/* queued for resend, but keep draining the container */
+			msg = NULL;
+			continue;
+		}
+
+		/* The error has served the health check. Both completion
+		 * cases only run on a zero status, so restoring it keeps the
+		 * receive and route counters of this message intact.
+		 */
+		msg->msg_ev.status = 0;
 	}
-
-	/*
-	 * NB: routed message can be committed for both receiving and sending,
-	 * we should finalize in LIFO order and keep counters correct.
-	 * (finalize sending first then finalize receiving)
-	 */
-	cpt = msg->msg_tx_committed ? msg->msg_tx_cpt : msg->msg_rx_cpt;
-	lnet_net_lock(cpt);
-
-	container = the_lnet.ln_msg_containers[cpt];
-
-	/* Recursion breaker.  Don't complete the message here if I am (or
-	 * enough other threads are) already completing messages */
-	my_slot = lnet_check_finalize_recursion_locked(msg,
-						&container->msc_finalizing,
-						container->msc_nfinalizers,
-						container->msc_finalizers);
-
-	/* enough threads are resending */
-	if (my_slot == -1) {
-		lnet_net_unlock(cpt);
-		return;
-	}
-
-	rc = 0;
-	while ((msg = list_first_entry_or_null(&container->msc_finalizing,
-					       struct lnet_msg,
-					       msg_list)) != NULL) {
-		list_del_init(&msg->msg_list);
-
-		/* NB drops and regains the lnet lock if it actually does
-		 * anything, so my finalizing friends can chomp along too */
-		rc = lnet_complete_msg_locked(msg, cpt);
-		if (rc != 0)
-			break;
-	}
-
-	if (unlikely(!list_empty(&the_lnet.ln_delay_rules))) {
-		lnet_net_unlock(cpt);
-		lnet_delay_rule_check();
-		lnet_net_lock(cpt);
-	}
-
-	container->msc_finalizers[my_slot] = NULL;
-	lnet_net_unlock(cpt);
-
-	if (rc != 0)
-		goto again;
 }
 EXPORT_SYMBOL(lnet_finalize);
 

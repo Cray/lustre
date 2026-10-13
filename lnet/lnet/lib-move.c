@@ -3227,10 +3227,14 @@ lnet_send(struct lnet_nid *src_nid, struct lnet_msg *msg,
 
 	rc = lnet_select_pathway(src_nid, dst_nid, msg, rtr_nid);
 	if (rc < 0) {
-		if (rc == -EHOSTUNREACH)
-			msg->msg_health_status = LNET_MSG_STATUS_REMOTE_ERROR;
-		else
-			msg->msg_health_status = LNET_MSG_STATUS_LOCAL_ERROR;
+		if (msg->msg_health_status == LNET_MSG_STATUS_OK) {
+			if (rc == -EHOSTUNREACH)
+				msg->msg_health_status =
+					LNET_MSG_STATUS_REMOTE_ERROR;
+			else
+				msg->msg_health_status =
+					LNET_MSG_STATUS_LOCAL_ERROR;
+		}
 		return rc;
 	}
 

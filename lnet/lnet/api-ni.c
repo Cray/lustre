@@ -235,6 +235,11 @@ module_param_call(lnet_retry_count, retry_count_set, param_get_int,
 MODULE_PARM_DESC(lnet_retry_count,
 		 "Maximum number of times to retry transmitting a message");
 
+unsigned int lnet_routed_resend = 1;
+module_param(lnet_routed_resend, uint, 0644);
+MODULE_PARM_DESC(lnet_routed_resend,
+		 "(0|1) Only charge health for a failed routed message|Resend it as well (default)");
+
 unsigned int lnet_response_tracking = 3;
 static int response_tracking_set(const char *val, cfs_kernel_param_arg_t *kp);
 
