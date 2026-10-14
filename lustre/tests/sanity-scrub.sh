@@ -1586,11 +1586,20 @@ reconnect_failure_domain_name() {
 
 test_23() {
 	local num
+	local mds_named=false
 
 	[[ "$ost1_FSTYPE" == ldiskfs ]] || skip "ldiskfs only test"
 
 	(( OST1_VERSION >= $(version_code 2.17.58.64) )) ||
 		skip "need OST >= 2.17.58.64 for failure_domain name link"
+
+	# MDTs also name and relink the failure_domain file since 2.17.61.85.
+	# Only exercise the MDT when both the fstype and MDS version support
+	# it, so an interop run with a newer OST and an older MDS still checks
+	# the OSTs.
+	[[ "$mds1_FSTYPE" == ldiskfs ]] &&
+		(( MDS1_VERSION >= $(version_code 2.17.61.85) )) &&
+		mds_named=true
 
 	# the failure_domain file is created on first mount, so start with
 	# freshly formatted targets built by the version under test
@@ -1598,9 +1607,13 @@ test_23() {
 	setupall > /dev/null
 	stopall
 
-	# the OST creates a named failure_domain local file
+	# the OST, and the MDT since 2.17.61.85, create a named
+	# failure_domain local file
 	for ((num = 1; num <= OSTCOUNT; num++)); do
 		check_failure_domain_name ost$num $(ostdevname $num)
+	done
+	$mds_named && for ((num = 1; num <= MDSCOUNT; num++)); do
+		check_failure_domain_name mds$num $(mdsdevname $num)
 	done
 
 	# Case 1: the name is lost but the inode is not reconnected (a crash,
@@ -1609,10 +1622,16 @@ test_23() {
 	for ((num = 1; num <= OSTCOUNT; num++)); do
 		drop_failure_domain_name ost$num $(ostdevname $num)
 	done
+	$mds_named && for ((num = 1; num <= MDSCOUNT; num++)); do
+		drop_failure_domain_name mds$num $(mdsdevname $num)
+	done
 	setupall > /dev/null
 	stopall
 	for ((num = 1; num <= OSTCOUNT; num++)); do
 		check_failure_domain_name ost$num $(ostdevname $num)
+	done
+	$mds_named && for ((num = 1; num <= MDSCOUNT; num++)); do
+		check_failure_domain_name mds$num $(mdsdevname $num)
 	done
 
 	# Case 2: e2fsck reconnected the nameless inode into /lost+found.
@@ -1622,10 +1641,17 @@ test_23() {
 		drop_failure_domain_name ost$num $(ostdevname $num)
 		reconnect_failure_domain_name ost$num $(ostdevname $num)
 	done
+	$mds_named && for ((num = 1; num <= MDSCOUNT; num++)); do
+		drop_failure_domain_name mds$num $(mdsdevname $num)
+		reconnect_failure_domain_name mds$num $(mdsdevname $num)
+	done
 	setupall > /dev/null
 	stopall
 	for ((num = 1; num <= OSTCOUNT; num++)); do
 		check_failure_domain_name ost$num $(ostdevname $num)
+	done
+	$mds_named && for ((num = 1; num <= MDSCOUNT; num++)); do
+		check_failure_domain_name mds$num $(mdsdevname $num)
 	done
 
 	setupall > /dev/null

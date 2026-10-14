@@ -892,6 +892,47 @@ static ssize_t no_create_store(struct kobject *kobj, struct attribute *attr,
 LUSTRE_RW_ATTR(no_create);
 
 /**
+ * failure_domain_show() - Show the failure domain of the MDT.
+ * @kobj: object containing the MDT device.
+ * @attr: not used.
+ * @buf: buffer to write the failure domain to.
+ *
+ * Return: number of bytes written to buffer.
+ */
+static ssize_t failure_domain_show(struct kobject *kobj,
+				   struct attribute *attr, char *buf)
+{
+	struct obd_device *obd = container_of(kobj, struct obd_device,
+					      obd_kset.kobj);
+
+	return tgt_failure_domain_show(obd, buf);
+}
+
+/**
+ * failure_domain_store() - Set the failure domain for the MDT.
+ * @kobj: object containing the MDT device.
+ * @attr: not used.
+ * @buffer: buffer with the failure domain to set.
+ * @count: number of bytes in buffer.
+ *
+ * This is used to interface to userspace administrative tools to set
+ * the MDT's failure domain, so the MDS can keep mirror and EC parity
+ * stripes in different fault domains from the data stripes (LU-19066).
+ *
+ * Return: @count on success or negative number on error.
+ */
+static ssize_t failure_domain_store(struct kobject *kobj,
+				    struct attribute *attr,
+				    const char *buffer, size_t count)
+{
+	struct obd_device *obd = container_of(kobj, struct obd_device,
+					      obd_kset.kobj);
+
+	return tgt_failure_domain_store(obd, buffer, count);
+}
+LUSTRE_RW_ATTR(failure_domain);
+
+/**
  * Show MDT async commit count.
  *
  * @m		seq_file handle
@@ -1405,6 +1446,7 @@ static struct attribute *mdt_attrs[] = {
 	&lustre_attr_ir_factor.attr,
 	&lustre_attr_num_exports.attr,
 	&lustre_attr_grant_check_threshold.attr,
+	&lustre_attr_failure_domain.attr,
 	&lustre_attr_commit_on_sharing.attr,
 	&lustre_attr_evict_client.attr,
 	&lustre_attr_eviction_count.attr,

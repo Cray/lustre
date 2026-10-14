@@ -588,6 +588,13 @@ int tgt_init(const struct lu_env *env, struct lu_target *lut,
 	     struct obd_device *obd, struct dt_device *dt,
 	     struct tgt_opc_slice *slice,
 	     int request_fail_id, int reply_fail_id);
+int tgt_failure_domain_read(const struct lu_env *env, struct dt_device *dt,
+			    __u32 *domain);
+int tgt_failure_domain_write(const struct lu_env *env, struct dt_device *dt,
+			     __u32 domain);
+ssize_t tgt_failure_domain_show(struct obd_device *obd, char *buf);
+ssize_t tgt_failure_domain_store(struct obd_device *obd,
+				 const char *buffer, size_t count);
 void tgt_fini(const struct lu_env *env, struct lu_target *lut);
 int tgt_client_alloc(struct obd_export *exp);
 void tgt_client_free(struct obd_export *exp);

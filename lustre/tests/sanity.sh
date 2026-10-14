@@ -41374,6 +41374,36 @@ test_856() {
 }
 run_test 856 "Setting and getting failure_domain"
 
+test_857() {
+	local mdtidx=0
+	local param=mdt.$(mdtname_from_index $mdtidx).failure_domain
+	local facet=mds$((mdtidx + 1))
+	local domain=42
+
+	(( $MDS1_VERSION >= $(version_code 2.17.61.85) )) ||
+		skip "need MDS >= 2.17.61.85 for MDT os_failure_domain"
+	(( $CLIENT_VERSION >= $(version_code 2.17.56) )) ||
+		skip "need client >= 2.17.56 for lfs df --output=domain"
+
+	local saved=$(do_facet $facet $LCTL get_param -n $param)
+	stack_trap "do_facet $facet $LCTL set_param -n $param=$saved"
+
+	# test we can get and set the failure_domain on the MDT
+	do_facet $facet "$LCTL set_param $param=$domain"
+	local found=$(do_facet $facet $LCTL get_param -n $param)
+	(( $found == $domain )) ||
+		error "Found failure_domain $found, expect $domain"
+
+	# Test it reads back from 'lfs df' (may be cached for a few seconds)
+	wait_update_facet client \
+		"$LFS df --mdt=$mdtidx --output=domain $MOUNT" "$domain" ||
+	{
+		found=$($LFS df --mdt=$mdtidx --output=domain $MOUNT)
+		error "'lfs df' found failure-domain $found, expect $domain"
+	}
+}
+run_test 857 "Setting and getting MDT failure_domain"
+
 test_860() {
 	local file=$DIR/$tfile
 	local size

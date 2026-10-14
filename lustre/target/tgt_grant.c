@@ -404,6 +404,12 @@ int tgt_statfs_internal(const struct lu_env *env, struct lu_target *lut,
 		if (from_cache)
 			*from_cache = 1;
 	}
+
+	/* dt_statfs() does not report the failure domain, and it is not part
+	 * of the cached statfs data, so set it for both paths (LU-19066).
+	 */
+	osfs->os_failure_domain =
+		READ_ONCE(obd2obt(lut->lut_obd)->obt_failure_domain);
 	GOTO(out, rc);
 
 out:

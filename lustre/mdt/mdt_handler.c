@@ -606,6 +606,12 @@ static int mdt_statfs(struct tgt_session_info *tsi)
 		spin_unlock(&mdt->mdt_lock);
 	}
 
+	/* dt_statfs() does not fill in the failure domain, so set it here
+	 * for both freshly read and cached statfs data (LU-19066).
+	 */
+	osfs->os_failure_domain =
+		READ_ONCE(obd2obt(mdt->mdt_lut.lut_obd)->obt_failure_domain);
+
 	/* tgd_blockbit is recordsize bits set during mkfs.
 	 * This once set does not change. However, 'zfs set'
 	 * can be used to change the MDT blocksize. Instead

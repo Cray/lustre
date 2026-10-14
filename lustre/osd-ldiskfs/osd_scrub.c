@@ -1567,7 +1567,7 @@ static const struct osd_lf_map osd_lf_maps[] = {
 		.olm_name	= FAILURE_DOMAIN,
 		.olm_fid	= {
 			.f_seq	= FID_SEQ_LOCAL_FILE,
-			.f_oid	= OFD_FAILURE_DOMAIN_OID,
+			.f_oid	= FAILURE_DOMAIN_OID,
 		},
 		.olm_flags	= OLF_SHOW_NAME,
 		.olm_namelen	= sizeof(FAILURE_DOMAIN) - 1,

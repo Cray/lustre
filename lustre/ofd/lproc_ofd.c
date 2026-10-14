@@ -594,7 +594,7 @@ LUSTRE_RW_ATTR(readonly);
 
 /**
  * failure_domain_show() - Show the failure domain of the OFD.
- * @kobj: Object containing the ODF device.
+ * @kobj: Object containing the OFD device.
  * @attr: not used.
  * @buf: Buffer to write the failure domain to.
  *
@@ -605,62 +605,30 @@ static ssize_t failure_domain_show(struct kobject *kobj,
 {
 	struct obd_device *obd = container_of(kobj, struct obd_device,
 					      obd_kset.kobj);
-	struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
-	unsigned int bytes;
 
-	spin_lock(&ofd->ofd_flags_lock);
-	bytes = ofd->ofd_failure_domain;
-	spin_unlock(&ofd->ofd_flags_lock);
-
-	return scnprintf(buf, PAGE_SIZE, "%u\n", bytes);
+	return tgt_failure_domain_show(obd, buf);
 }
 
 /**
  * failure_domain_store() - Set failure domain for the OFD.
- * @kobj: Object containing the ODF device.
+ * @kobj: Object containing the OFD device.
  * @attr: not used.
- * @buf: Buffer to write the failure domain to.
+ * @buffer: Buffer with the failure domain to set.
  * @count: number of bytes in buffer.
  *
  * This is used to interface to userspace administrative tools to
  * set the OST's failure domain.
  *
- * Return: 0 on success or negative number for failure.
+ * Return: @count on success or negative number for failure.
  */
 static ssize_t failure_domain_store(struct kobject *kobj,
 				    struct attribute *attr,
 				    const char *buffer, size_t count)
 {
-	struct lu_env env;
 	struct obd_device *obd = container_of(kobj, struct obd_device,
 					      obd_kset.kobj);
-	struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
-	unsigned int val, old_val;
-	int rc;
 
-	rc = kstrtouint(buffer, 0, &val);
-	if (rc)
-		return rc;
-
-	spin_lock(&ofd->ofd_flags_lock);
-	old_val = ofd->ofd_failure_domain;
-	ofd->ofd_failure_domain = val;
-	spin_unlock(&ofd->ofd_flags_lock);
-
-	rc = lu_env_init(&env, LCT_LOCAL);
-	if (rc)
-		goto failure;
-	rc = ofd_failure_domain_write(&env, ofd);
-	lu_env_fini(&env);
-	if (rc)
-		goto failure;
-
-	return count;
- failure:
-	spin_lock(&ofd->ofd_flags_lock);
-	ofd->ofd_failure_domain = old_val;
-	spin_unlock(&ofd->ofd_flags_lock);
-	return rc;
+	return tgt_failure_domain_store(obd, buffer, count);
 }
 LUSTRE_RW_ATTR(failure_domain);
 

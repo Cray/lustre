@@ -211,6 +211,189 @@ void tgt_cancel_slc_locks(struct lu_target *lut, __u64 transno)
 	}
 }
 
+/**
+ * tgt_failure_domain_read() - load a target's failure domain from disk
+ * @env: execution environment
+ * @dt: target's bottom OSD device
+ * @domain: filled with the stored failure domain
+ *
+ * The failure domain is a single administrator-assigned value that
+ * identifies which hardware fault domain a target belongs to, so that
+ * the MDS can separate data and mirror/EC parity stripes (LU-19066).
+ * It is persisted in the "failure_domain" local file, creating it if
+ * needed, and defaults to 0.  On a read-only device the file is only
+ * read if it already exists, so that an rdonly_dev or snapshot mount of
+ * a target formatted before the file existed still works.
+ *
+ * Return:
+ * * %0 on success
+ * * %negative value on error
+ */
+int tgt_failure_domain_read(const struct lu_env *env, struct dt_device *dt,
+			    __u32 *domain)
+{
+	struct lu_buf buf;
+	struct lu_fid fid;
+	struct dt_object *fd;
+	loff_t off = 0;
+	int rc;
+
+	*domain = 0;
+	buf.lb_buf = domain;
+	buf.lb_len = sizeof(*domain);
+	lu_local_obj_fid(&fid, FAILURE_DOMAIN_OID);
+
+	if (dt->dd_rdonly) {
+		fd = dt_locate(env, dt, &fid);
+		if (IS_ERR(fd))
+			return PTR_ERR(fd);
+		if (!dt_object_exists(fd)) {
+			dt_object_put(env, fd);
+			return 0;
+		}
+	} else {
+		struct dt_object_format dof;
+		struct lu_attr attr;
+
+		memset(&attr, 0, sizeof(attr));
+		attr.la_valid = LA_MODE;
+		attr.la_mode = S_IFREG | 0644;
+		dof.dof_type = dt_mode_to_dft(S_IFREG);
+		fd = dt_find_or_create(env, dt, &fid, &dof, &attr);
+		if (IS_ERR(fd))
+			return PTR_ERR(fd);
+	}
+
+	rc = dt_record_read(env, fd, &buf, &off);
+	/* a freshly created or empty file means the default domain 0 */
+	if (rc == -EFAULT) {
+		*domain = 0;
+		rc = 0;
+	}
+	dt_object_put(env, fd);
+
+	return rc;
+}
+EXPORT_SYMBOL(tgt_failure_domain_read);
+
+/**
+ * tgt_failure_domain_write() - store a target's failure domain to disk
+ * @env: execution environment
+ * @dt: target's bottom OSD device
+ * @domain: failure domain value to store
+ *
+ * Return:
+ * * %0 on success
+ * * %-EROFS if the device is read-only
+ * * %negative value on error
+ */
+int tgt_failure_domain_write(const struct lu_env *env, struct dt_device *dt,
+			     __u32 domain)
+{
+	struct dt_object_format dof;
+	struct lu_attr attr;
+	struct lu_buf buf;
+	struct lu_fid fid;
+	struct dt_object *fd;
+	struct thandle *th;
+	loff_t off = 0;
+	int rc;
+
+	if (dt->dd_rdonly)
+		return -EROFS;
+
+	memset(&attr, 0, sizeof(attr));
+	attr.la_valid = LA_MODE;
+	attr.la_mode = S_IFREG | 0644;
+	dof.dof_type = dt_mode_to_dft(S_IFREG);
+	buf.lb_buf = &domain;
+	buf.lb_len = sizeof(domain);
+
+	lu_local_obj_fid(&fid, FAILURE_DOMAIN_OID);
+	fd = dt_find_or_create(env, dt, &fid, &dof, &attr);
+	if (IS_ERR(fd))
+		return PTR_ERR(fd);
+
+	th = dt_trans_create(env, dt);
+	if (IS_ERR(th))
+		GOTO(out_put, rc = PTR_ERR(th));
+
+	rc = dt_declare_record_write(env, fd, &buf, off, th);
+	if (rc)
+		GOTO(out_stop, rc);
+
+	rc = dt_trans_start_local(env, dt, th);
+	if (rc)
+		GOTO(out_stop, rc);
+
+	rc = dt_record_write(env, fd, &buf, &off, th);
+out_stop:
+	dt_trans_stop(env, dt, th);
+out_put:
+	dt_object_put(env, fd);
+
+	return rc;
+}
+EXPORT_SYMBOL(tgt_failure_domain_write);
+
+/**
+ * tgt_failure_domain_show() - show a target's failure domain
+ * @obd: the target OBD device
+ * @buf: buffer to fill
+ *
+ * Shared by the obdfilter.*.failure_domain and mdt.*.failure_domain
+ * sysfs handlers (LU-19066).
+ *
+ * Return: number of bytes written to @buf
+ */
+ssize_t tgt_failure_domain_show(struct obd_device *obd, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%u\n",
+			 READ_ONCE(obd2obt(obd)->obt_failure_domain));
+}
+EXPORT_SYMBOL(tgt_failure_domain_show);
+
+/**
+ * tgt_failure_domain_store() - set a target's failure domain
+ * @obd: the target OBD device
+ * @buffer: user-supplied value
+ * @count: length of @buffer
+ *
+ * Store the new value in memory and persist it, reverting on error.
+ * Shared by the OST and MDT sysfs handlers (LU-19066).
+ *
+ * Return: @count on success or a negative value on error
+ */
+ssize_t tgt_failure_domain_store(struct obd_device *obd,
+				 const char *buffer, size_t count)
+{
+	struct lu_target *lut = obd2obt(obd)->obt_lut;
+	struct lu_env env;
+	unsigned int val, old_val;
+	int rc;
+
+	rc = kstrtouint(buffer, 0, &val);
+	if (rc)
+		return rc;
+
+	old_val = READ_ONCE(obd2obt(obd)->obt_failure_domain);
+	WRITE_ONCE(obd2obt(obd)->obt_failure_domain, val);
+
+	rc = lu_env_init(&env, LCT_LOCAL);
+	if (rc)
+		goto failure;
+	rc = tgt_failure_domain_write(&env, lut->lut_bottom, val);
+	lu_env_fini(&env);
+	if (rc)
+		goto failure;
+
+	return count;
+failure:
+	WRITE_ONCE(obd2obt(obd)->obt_failure_domain, old_val);
+	return rc;
+}
+EXPORT_SYMBOL(tgt_failure_domain_store);
+
 int tgt_init(const struct lu_env *env, struct lu_target *lut,
 	     struct obd_device *obd, struct dt_device *dt,
 	     struct tgt_opc_slice *slice, int request_fail_id,
@@ -263,6 +446,23 @@ int tgt_init(const struct lu_env *env, struct lu_target *lut,
 
 	spin_lock_init(&lut->lut_slc_locks_guard);
 	INIT_LIST_HEAD(&lut->lut_slc_locks);
+
+	/* Load the persistent failure_domain for OST and MDT targets.  This
+	 * must be done before the OBDF_REPLAYABLE early return below so that a
+	 * non-replayable (failout) target also loads its stored value.  The
+	 * obdecho target has no backing device (dt == NULL) and the MGS has no
+	 * failure_domain, so skip both.
+	 */
+	if (dt != NULL &&
+	    (strcmp(obd->obd_type->typ_name, LUSTRE_OST_NAME) == 0 ||
+	     strcmp(obd->obd_type->typ_name, LUSTRE_MDT_NAME) == 0)) {
+		rc = tgt_failure_domain_read(env, dt, &obt->obt_failure_domain);
+		if (rc) {
+			CERROR("%s: cannot load failure_domain: rc = %d\n",
+			       obd->obd_name, rc);
+			GOTO(out_put, rc);
+		}
+	}
 
 	/* last_rcvd initialization is needed by replayable targets only */
 	if (!test_bit(OBDF_REPLAYABLE, obd->obd_flags))

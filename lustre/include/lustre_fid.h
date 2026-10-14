@@ -199,7 +199,7 @@ enum local_oid {
 	 * SLAVE_LLOG_CATALOGS_OID	= 4124UL,
 	 */
 	BATCHID_COMMITTED_OID	= 4125UL,
-	OFD_FAILURE_DOMAIN_OID	= 4126UL,
+	FAILURE_DOMAIN_OID	= 4126UL,
 	/* maintenance certified-clients set for current recovery only:
 	 * lr_maint_data_header plus lr_maint_client for each client
 	 */

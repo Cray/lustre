@@ -1,11 +1,15 @@
 .TH OBDFILTER...FAILURE_DOMAIN 4 2026-10-07 Lustre "Lustre Kernel Interfaces"
 .SH NAME
-obdfilter.failure_domain \- control the failure_domain for OSTs
+obdfilter.failure_domain, mdt.failure_domain \- control the failure_domain for OSTs and MDTs
 .SH SYNOPSIS
 .SY
 .BI "lctl get_param obdfilter." FSNAME "-OST*.failure_domain"
 .SY
 .BI "lctl set_param obdfilter." FSNAME "-OST*.failure_domain=" DOMAIN_NUMBER
+.SY
+.BI "lctl get_param mdt." FSNAME "-MDT*.failure_domain"
+.SY
+.BI "lctl set_param mdt." FSNAME "-MDT*.failure_domain=" DOMAIN_NUMBER
 .YS
 .SS PROPERTIES
 .TP
@@ -15,15 +19,17 @@ obdfilter.failure_domain \- control the failure_domain for OSTs
 .TP
 .B Scope
 .br
-Per-OST device.
+Per-OST or per-MDT device.
 .TP
 .B Config
 .br
-Always present on OST devices.
+Always present on OST and MDT devices.
 .TP
 .B Default
 .br
 .RB "obdfilter." FSNAME "-OST*.failure_domain="
+.br
+.RB "mdt." FSNAME "-MDT*.failure_domain="
 .br
 .TP
 .B Valid Range
@@ -81,7 +87,19 @@ so that the copies of the data do not depend on the same resources.
 This does not apply between the data and parity components of an
 erasure coded file, which follow the RAID set rules above.
 
-When used it is recommended that failure-domain is configured for all OSTs.
+The same parameter exists for MDTs as
+.RB "mdt." FSNAME "-MDT*.failure_domain"
+and identifies the failure-domain of each MDT, so that the MDS can take
+MDT fault domains into account when placing remote directories and DNE
+striped-directory shards, in the same way as for OST objects.
+The MDT value is reported in
+.I obd_statfs
+and shown by
+.RB "lfs df --output=domain,target" ,
+and the numerical values share the same namespace as the OST failure-domains.
+
+When used it is recommended that failure-domain is configured for all OSTs
+and MDTs.
 
 Failure-domain constraints are applied only by the default round-robin
 and QoS allocators.
@@ -95,6 +113,7 @@ uniqueness is left to the caller for those paths.
 This parameter is in the following modules:
 .EX
 .RB "obdfilter." FSNAME "-OST*.failure_domain"
+.RB "mdt." FSNAME "-MDT*.failure_domain"
 .EE
 .SH EXAMPLES
 .PP
@@ -117,12 +136,22 @@ Get the failure domain of all OSTs:
 	lustrewt-OST0002_UUID    19776188         257  /mnt/l[OST:2]
 	...
 .EE
+.PP
+Set the failure domain to 1 for an MDT:
+.EX
+.RB "mds# " "lctl set_param mdt.lustrewt-MDT0000.failure_domain=1"
+.PP
+Get the failure domain of an MDT:
+.EX
+.RB "mds# " "lctl get_param mdt.lustrewt-MDT0000.failure_domain"
+	1
+.EE
 .SH AVAILABILITY
 .B obdfilter.*.failure_domain
 is part of the
 .BR lustre (7)
 filesystem package since release 2.18.0.
-.\" Added in 2.17.51.xxx
+.\" Added in commit 2.17.51
 .SH SEE ALSO
 .BR lfs-df (1),
 .BR lfs-mirror-create (1),

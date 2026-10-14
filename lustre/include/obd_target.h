@@ -24,6 +24,8 @@
 struct obd_device_target {
 	__u32			obt_magic;
 	__u32			obt_instance;
+	/* hardware fault domain this target is in, for layout allocation */
+	__u32			obt_failure_domain;
 	struct lu_target       *obt_lut;
 	__u64			obt_mount_count;
 	struct obd_job_stats	obt_jobstats;
