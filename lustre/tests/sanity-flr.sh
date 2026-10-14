@@ -2730,6 +2730,30 @@ test_44i() {
 }
 run_test 44i "strict SOM is not trusted after the file is written"
 
+test_44j() {
+	local tf=$DIR/$tdir/$tfile
+	local size1
+	local size2
+
+	test_mkdir $DIR/$tdir
+	stack_trap "rm -f $tf"
+	$LFS mirror create -N2 $tf || error "create mirrored file $tf failed"
+	dd if=/dev/urandom of=$tf bs=1M count=3 conv=fsync ||
+		error "write $tf failed"
+	$LFS mirror resync $tf || error "mirror resync $tf failed"
+	size1=$(stat -c %s $tf)
+	(( 0x$($LFS getsom -f $tf) & 0x1 )) ||
+		skip "MDS did not set strict SOM on $tf"
+
+	# Remount to drop the stripe attributes cached on this client, so
+	# only the strict SOM size from the MDS is valid in the inode.
+	remount_client $MOUNT
+	$MULTIOP $tf oyc || error "fsync $tf failed"
+	size2=$(stat -c %s $tf)
+	(( size2 == size1 )) || error "size $size2 != $size1 after fsync"
+}
+run_test 44j "flush does not shrink a strict SOM size"
+
 test_45() {
 	[ $OSTCOUNT -lt 2 ] && skip "needs >= 2 OSTs"
 

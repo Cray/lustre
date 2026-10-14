@@ -1743,7 +1743,26 @@ out:
 	return rc;
 }
 
-static int ll_merge_attr_nolock(const struct lu_env *env, struct inode *inode)
+/**
+ * ll_merge_attr_nolock() - merge the stripe attributes into the inode
+ * @env: execution environment
+ * @inode: inode to update
+ * @grow_only: do not shrink i_size if some stripe size is unknown
+ *
+ * A stripe that this client never held a lock on only has the size last
+ * cached for it, 0 if never seen (cat_kms_partial), so after a write, which
+ * only locks the stripes it covers, the merged size can be less than a
+ * valid i_size, e.g. a strict SOM size from the MDS.  A write never makes
+ * a file shorter, so the size merged after such a write only grows i_size.
+ * If every stripe was locked, the merge may shrink i_size, e.g. after a
+ * truncate on another client.  After a truncate on another client that
+ * changed the layout, a write merge can keep a stale larger i_size until a
+ * glimpse, which only affects the lazy SOM size sent at close.
+ *
+ * Return: 0 on success, negative errno on failure
+ */
+static int ll_merge_attr_nolock(const struct lu_env *env, struct inode *inode,
+				bool grow_only)
 {
 	struct ll_inode_info *lli = ll_i2info(inode);
 	struct cl_object *obj = lli->lli_clob;
@@ -1816,7 +1835,9 @@ static int ll_merge_attr_nolock(const struct lu_env *env, struct inode *inode)
 		attr->cat_size = round_up(attr->cat_size,
 					  LUSTRE_ENCRYPTION_UNIT_SIZE);
 	}
-	i_size_write(inode, attr->cat_size);
+	if (!grow_only || !attr->cat_kms_partial ||
+	    attr->cat_size > i_size_read(inode))
+		i_size_write(inode, attr->cat_size);
 	inode->i_blocks = attr->cat_blocks;
 
 	inode_set_mtime(inode, mtime, 0);
@@ -1833,23 +1854,68 @@ int ll_merge_attr(const struct lu_env *env, struct inode *inode)
 	int rc;
 
 	ll_inode_size_lock(inode);
-	rc = ll_merge_attr_nolock(env, inode);
+	rc = ll_merge_attr_nolock(env, inode, false);
 	ll_inode_size_unlock(inode);
 
 	return rc;
 }
 
-/* Use to update size and blocks on inode for LSOM if there is no contention */
+/* Merge the attributes after a write, which never makes a file shorter */
+int ll_merge_attr_write(const struct lu_env *env, struct inode *inode)
+{
+	int rc;
+
+	ll_inode_size_lock(inode);
+	rc = ll_merge_attr_nolock(env, inode, true);
+	ll_inode_size_unlock(inode);
+
+	return rc;
+}
+
+/* Update size and blocks for LSOM after a sync write, if not contended */
 int ll_merge_attr_try(const struct lu_env *env, struct inode *inode)
 {
 	int rc = 0;
 
 	if (ll_inode_size_trylock(inode)) {
-		rc = ll_merge_attr_nolock(env, inode);
+		rc = ll_merge_attr_nolock(env, inode, true);
 		ll_inode_size_unlock(inode);
 	}
 
 	return rc;
+}
+
+/**
+ * ll_merge_blocks_try() - update i_blocks for LSOM if there is no contention
+ * @env: execution environment
+ * @inode: inode to update
+ *
+ * A flush or OST sync holds no lock on the stripes, so their size and
+ * blocks are only what this client last cached, which can be less than a
+ * valid i_size (e.g. a strict SOM size from the MDS).  Only update
+ * i_blocks, and while i_size and i_blocks came from the MDS only grow
+ * i_blocks, e.g. after this client wrote to the file.
+ */
+void ll_merge_blocks_try(const struct lu_env *env, struct inode *inode)
+{
+	struct ll_inode_info *lli = ll_i2info(inode);
+	struct cl_object *obj = lli->lli_clob;
+	struct cl_attr *attr = vvp_env_new_attr(env);
+	bool from_mds;
+	int rc;
+
+	if (!ll_inode_size_trylock(inode))
+		return;
+
+	from_mds = (lli->lli_attr_valid & (OBD_MD_FLSIZE | OBD_MD_FLBLOCKS)) ==
+		   (OBD_MD_FLSIZE | OBD_MD_FLBLOCKS);
+	cl_object_attr_lock(obj);
+	rc = cl_object_attr_get(env, obj, attr);
+	cl_object_attr_unlock(obj);
+	if (!rc && (!from_mds || attr->cat_blocks > inode->i_blocks))
+		inode->i_blocks = attr->cat_blocks;
+
+	ll_inode_size_unlock(inode);
 }
 
 /*
@@ -2473,7 +2539,7 @@ out:
 
 	/* update inode size */
 	if (io->ci_type == CIT_WRITE)
-		ll_merge_attr(env, inode);
+		ll_merge_attr_write(env, inode);
 
 	if (io->ci_dio_aio) {
 		/* set the number of bytes successfully moved in the aio */
@@ -2837,7 +2903,7 @@ static ssize_t ll_do_tiny_write(struct kiocb *iocb, struct iov_iter *iter)
 
 		env = cl_env_get(&refcheck);
 		if (!IS_ERR(env)) {
-			ll_merge_attr(env, inode);
+			ll_merge_attr_write(env, inode);
 			cl_env_put(env, &refcheck);
 		}
 

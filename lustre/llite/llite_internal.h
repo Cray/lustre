@@ -1487,7 +1487,9 @@ int ll_dir_getstripe(struct inode *inode, void **plmm, int *plmm_size,
 int ll_mdsync(struct inode *inode);
 int ll_fsync(struct file *file, loff_t start, loff_t end, int data);
 int ll_merge_attr(const struct lu_env *env, struct inode *inode);
+int ll_merge_attr_write(const struct lu_env *env, struct inode *inode);
 int ll_merge_attr_try(const struct lu_env *env, struct inode *inode);
+void ll_merge_blocks_try(const struct lu_env *env, struct inode *inode);
 int ll_fid2path(struct inode *inode, void __user *arg);
 int __ll_fid2path(struct inode *inode, struct getinfo_fid2path *gfout,
 		  size_t outsize, __u32 pathlen_orig);

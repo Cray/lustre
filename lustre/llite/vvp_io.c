@@ -1409,7 +1409,10 @@ static void vvp_io_write_end(const struct lu_env *env,
 
 	vvp_io_rw_end(env, ios);
 
-	/* Update size and blocks for LSOM (best effort) */
+	/* Update size and blocks for LSOM (best effort), the write only
+	 * locked the stripes it covers, so i_size is not shrunk while some
+	 * stripe size is unknown
+	 */
 	if (!io->ci_ignore_layout && cl_io_is_sync_write(io))
 		ll_merge_attr_try(env, inode);
 }
@@ -1869,9 +1872,9 @@ static void vvp_io_fsync_end(const struct lu_env *env,
 	struct inode *inode = vvp_object_inode(ios->cis_obj);
 	struct cl_io *io = ios->cis_io;
 
-	/* Update size and blocks for LSOM (best effort) */
+	/* Update blocks for LSOM (best effort) */
 	if (!io->ci_ignore_layout)
-		ll_merge_attr_try(env, inode);
+		ll_merge_blocks_try(env, inode);
 }
 
 static int vvp_io_read_ahead_prep(const struct lu_env *env,

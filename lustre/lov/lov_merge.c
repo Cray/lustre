@@ -34,6 +34,7 @@ int lov_merge_lvb_kms(struct lov_stripe_md *lsm, int index,
 	s64 current_mtime = LLONG_MIN;
 	s64 current_atime = LLONG_MIN;
 	s64 current_ctime = LLONG_MIN;
+	bool partial = false;
 	int i;
 	int rc = 0;
 
@@ -54,6 +55,7 @@ int lov_merge_lvb_kms(struct lov_stripe_md *lsm, int index,
 			tmpsize = loi->loi_kms;
 		} else {
 			tmpsize = 0;
+			partial = true;
 		}
 		lov_size = lov_stripe_size(lsm, index, tmpsize, i);
 		if (lov_size > kms)
@@ -82,6 +84,7 @@ int lov_merge_lvb_kms(struct lov_stripe_md *lsm, int index,
 		       loi->loi_lvb.lvb_blocks);
 	}
 
+	attr->cat_kms_partial = partial;
 	if (!rc) {
 		attr->cat_kms    = kms;
 		attr->cat_size   = size;

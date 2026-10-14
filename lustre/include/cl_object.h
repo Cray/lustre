@@ -127,6 +127,12 @@ struct cl_attr {
 
 	unsigned int cat_kms_valid:1;
 	/**
+	 * No lock was ever granted to this client on some stripe, so its size
+	 * is only what was last cached for it (0 if never seen), and cat_size
+	 * may be too small.
+	 */
+	unsigned int cat_kms_partial:1;
+	/**
 	 * Known minimal size, in bytes.
 	 *
 	 * This is only valid when at least one DLM lock is held.

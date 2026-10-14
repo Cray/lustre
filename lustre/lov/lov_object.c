@@ -1084,6 +1084,7 @@ static int lov_attr_get_composite(const struct lu_env *env,
 	attr->cat_size = 0;
 	attr->cat_blocks = 0;
 	attr->cat_kms = 0;
+	attr->cat_kms_partial = 0;
 
 	lov_foreach_layout_entry(lov, entry) {
 		struct cl_attr *lov_attr = NULL;
@@ -1121,6 +1122,8 @@ static int lov_attr_get_composite(const struct lu_env *env,
 		if (!lsm_entry_is_parity(lov->lo_lsm, index)) {
 			if (lov_attr->cat_kms_valid)
 				attr->cat_kms_valid = 1;
+			if (lov_attr->cat_kms_partial)
+				attr->cat_kms_partial = 1;
 			if (attr->cat_size < lov_attr->cat_size) {
 				attr->cat_size = lov_attr->cat_size;
 				got_data_size = true;
