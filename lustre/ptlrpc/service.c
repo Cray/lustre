@@ -2013,6 +2013,15 @@ ptlrpc_server_mark_in_progress_obsolete(struct ptlrpc_request *req)
 }
 #endif
 
+static int ptlrpc_hpreq_check(struct ptlrpc_request *req)
+{
+	return 1;
+}
+
+static struct ptlrpc_hpreq_ops ptlrpc_hpreq_common = {
+	.hpreq_check       = ptlrpc_hpreq_check,
+};
+
 /**
  * ptlrpc_server_hpreq_init() - Check request can be assigned with high priority
  * @svcpt: the PTLRPC service partition
@@ -2037,7 +2046,9 @@ static int ptlrpc_server_hpreq_init(struct ptlrpc_service_part *svcpt,
 		LASSERT(rc == 0);
 	}
 
-	if (req->rq_export != NULL && req->rq_ops != NULL) {
+	/* ptlrpc_hpreq_check() needs no export, every other check derefs it */
+	if (req->rq_ops != NULL &&
+	    (req->rq_export != NULL || req->rq_ops == &ptlrpc_hpreq_common)) {
 		/*
 		 * Perform request specific check. We should do this
 		 * check before the request is added into exp_hp_rpcs
@@ -2078,15 +2089,6 @@ static void ptlrpc_server_hpreq_fini(struct ptlrpc_request *req)
 	EXIT;
 }
 
-static int ptlrpc_hpreq_check(struct ptlrpc_request *req)
-{
-	return 1;
-}
-
-static struct ptlrpc_hpreq_ops ptlrpc_hpreq_common = {
-	.hpreq_check       = ptlrpc_hpreq_check,
-};
-
 /* Hi-Priority RPC check by RPC operation code. */
 int ptlrpc_hpreq_handler(struct ptlrpc_request *req)
 {
@@ -2096,8 +2098,8 @@ int ptlrpc_hpreq_handler(struct ptlrpc_request *req)
 	 * Check for export to let only reconnects for not yet evicted
 	 * export to become a HP rpc.
 	 */
-	if ((req->rq_export != NULL) &&
-	    (opc == OBD_PING || opc == MDS_CONNECT || opc == OST_CONNECT))
+	if ((req->rq_export != NULL && opc == OBD_PING) ||
+	    opc == MDS_CONNECT || opc == OST_CONNECT)
 		req->rq_ops = &ptlrpc_hpreq_common;
 
 	return 0;
