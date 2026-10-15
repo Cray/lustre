@@ -1,0 +1,9 @@
+# ---
+# summary: fail with the client unmounted
+# start: unmounted
+# expect: must_fail
+# ...
+
+test_6a() {
+	error "deliberate failure"
+}

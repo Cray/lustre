@@ -1,0 +1,32 @@
+# ---
+# summary: check that root dir striping does not break parent dir one
+# commit:
+#   - 'd8b08f467de9 ("LU-12055 lod: ignore root layout if parent''s one includes pool")'
+# description: >
+#   When the parent directory layout names a pool, a new file must not
+#   inherit the stripe index from the root directory layout.  A root
+#   layout outside the pool made file creation fail.
+# keywords: [lod, pool]
+# duration: 14
+# requires:
+#   ostcount: 2
+#   mds1_version: v2_12_52-112-gd8b08f467de9
+#   reason: root layout ignored if parent has a pool
+# modifies: [pools, layout]
+# observes: []
+# ...
+
+test_27I() {
+	local pool=$TESTNAME
+	local ostrange="1 1 1"
+
+	save_layout_restore_at_exit $MOUNT
+	$LFS setstripe -c 2 -i 0 $MOUNT
+	pool_add $pool || error "pool_add failed"
+	pool_add_targets $pool $ostrange ||
+		error "pool_add_targets failed"
+	test_mkdir $DIR/$tdir
+	$LFS setstripe -p $pool $DIR/$tdir
+	$MULTIOP $DIR/$tdir/$tfile Oc || error "multiop failed"
+	$LFS getstripe $DIR/$tdir/$tfile
+}

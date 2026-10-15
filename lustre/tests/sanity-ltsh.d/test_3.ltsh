@@ -1,0 +1,45 @@
+# ---
+# subtests:
+#   3a:
+#     summary: fsck finds corruption
+#     start: stopped
+#     fsck: each
+#     requires:
+#       ost1_fstype: ldiskfs
+#     expect: must_fail
+#   3b:
+#     summary: reformat after the corruption
+#     start: formatted
+#     end: stopped
+#   3c:
+#     summary: no fsck after a failed subtest
+#     fsck: each
+#     expect: must_fail
+#   3d:
+#     summary: fsck ran after 3a but not after 3c
+#     requires:
+#       ost1_fstype: ldiskfs
+# ...
+
+# 3a leaves the OST corrupted until the reformat of 3b
+test_3a() {
+	do_facet ost1 "$DEBUGFS -w -R 'clri <13>' $(ostdevname 1)" ||
+		error "debugfs clri failed"
+}
+
+test_3b() {
+	:
+}
+
+test_3c() {
+	error false "deliberate failure"
+}
+
+test_3d() {
+	local log=$TESTLOG_PREFIX.test_3X.test_log.$(hostname -s).log
+
+	[[ -f ${log/3X/3a} && -f ${log/3X/3c} ]] || skip "no test_3a/3c logs"
+	grep -q "e2fsck .* -n" ${log/3X/3a} || error "no fsck after test_3a"
+	! grep -q "e2fsck .* -n" ${log/3X/3c} ||
+		error "fsck after failed test_3c"
+}

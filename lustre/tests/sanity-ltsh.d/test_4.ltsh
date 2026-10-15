@@ -1,0 +1,24 @@
+# ---
+# subtests:
+#   4a:
+#     summary: must_fail subtest that fails
+#     expect: must_fail
+#   4b:
+#     summary: should_fail subtest that passes
+#     expect: should_fail
+#   4c:
+#     summary: should_fail subtest that fails
+#     expect: should_fail
+# ...
+
+test_4a() {
+	error false "deliberate failure"
+}
+
+test_4b() {
+	:
+}
+
+test_4c() {
+	error false "deliberate failure"
+}

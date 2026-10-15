@@ -1,6 +1,6 @@
 ---
 name: lustre-test-scripts
-description: Use when writing, changing, running or verifying Lustre tests in lustre/tests - "add a sanity test for this", "write a regression test", "make sanity/271c more robust", "run sanity 56", "does the test fail without the fix", "use fail_loc to inject an error", "which subtest number should I use", "add a version check". Covers running suites with auster, subtest structure, bash style, version checks for interop, fault injection with fail_loc, subtest numbering, cleanup, and proving that a test catches the bug.
+description: Use when writing, changing, running or verifying Lustre tests in lustre/tests - "add a sanity test for this", "write a regression test", "make sanity/271c more robust", "run sanity 56", "does the test fail without the fix", "use fail_loc to inject an error", "which subtest number should I use", "add a version check", "move this subtest to a .ltsh file". Covers running suites with auster, subtest structure and .ltsh subtest files, bash style, version checks for interop, fault injection with fail_loc, subtest numbering, cleanup, and proving that a test catches the bug.
 ---
 
 # Lustre test scripts
@@ -119,6 +119,62 @@ run_test 123b "open after foo is set does not fail"
 - Pick an appropriate suite for each new subtest, not always `sanity.sh`.
 - Suite-specific helpers stay in the suite; only genuinely shared code
   goes in `test-framework.sh`.
+
+## Subtest files
+
+New subtests go in their own file, `lustre/tests/$TESTSUITE.d/test_NNN.ltsh`,
+not in `$TESTSUITE.sh`.  `lustre/tests/README-ltsh.md` describes the
+format and every header field; read it first.
+
+- A file holds one subtest, or a handful of strongly-related ones that
+  use the same helpers or were added by one patch (230i and 230j), with
+  no `run_test` line: the framework runs file subtests in number order
+  between those of the suite.  Split large groups like sanity.sh
+  test_27* or test_56* over several files, since every subtest in a
+  changed file is run again.
+- The YAML header at the top gives `summary:` (the `run_test`
+  description), `jira:` (the patch's ticket), `keywords:` (commit
+  components and features, e.g. `[lmv, dne, recovery]`), `duration:`
+  (typical seconds), and `requires:` instead of the skip checks at the
+  top of the function (`mdtcount`, `ostcount`, `mdsnodes`,
+  `mds1_version`, `fstype`, free space or inodes), with `reason:` for
+  the skip message.
+- Give `modifies:` and `observes:`, the shared state the subtest
+  changes and reads, from the lists in README-ltsh.md, or `[]` for
+  none.  Without both, the subtest is not run with `PARALLEL=yes`.
+- Declare `start:` and `end:` if the subtest needs or leaves the
+  filesystem other than mounted, e.g. `start: formatted` and `end:
+  stopped` for most of conf-sanity.
+- When choosing the subtest number, also check the subtests already in
+  `$TESTSUITE.d/`, and open Gerrit changes to that directory
+  (`file:^lustre/tests/sanity.d/.*`).
+- Helpers must not be named `test_*`: use `sub_test_123()`.  EXIT
+  handlers use `stack_trap`, not `trap`.
+- The file is sourced inside a function, so set globals at its top
+  level with `declare -g`: a plain assignment can set a caller's local
+  of the same name instead.
+
+To move a subtest from `$TESTSUITE.sh` to a file:
+
+- Move the subtests with the helpers only they use, and remove them
+  from the suite; helpers other subtests still use stay there.  If the
+  suite runs subtests out of number order (43A before 43a), moving only
+  some of them changes their order: move them together, or check the
+  new order works.
+- The move loses the subtest's history.  `git log -L` on its function
+  and `run_test` line gives it: list the commits that added or
+  substantially changed it in `commit:`, as `'<12-char hash>
+  ("<summary>")'` with any `'` in the summary doubled, and write
+  `description:` from them and their tickets.
+  Set `duration:` to the subtest's mean time in recent CI runs.
+- Convert each version check to `requires:`, using `git describe
+  --match 'v[0-9]*' --exclude '*_0' --abbrev=12` of the commit that
+  added the feature.
+  Keep what the old check allowed: look for backports on the release
+  branches (e.g. b2_15) before tightening it.
+- Exceptions for some configurations only (`always_except`,
+  `EXCEPT_SLOW` under a condition) stay in the suite.
+- Run the moved subtests together with their neighbours in the suite.
 
 ## Style
 

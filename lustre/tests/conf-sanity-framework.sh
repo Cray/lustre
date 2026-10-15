@@ -68,6 +68,25 @@ reformat() {
 	formatall
 }
 
+# conf-sanity.d/*.ltsh subtests set up and reformat the filesystem the same
+# way as subtests in conf-sanity.sh, and are not remounted after them
+start_servers() {
+	start_mds && start_ost
+}
+
+# stop the client and targets, leaving a separate MGS running, as
+# reformat_and_config() and cleanup() do
+stop_servers() {
+	! is_mounted $MOUNT || umount_client $MOUNT || return 200
+	cleanup_nocli
+}
+
+LTSH_FORMAT=reformat_and_config
+LTSH_SETUP=setup
+LTSH_SERVERS=start_servers
+LTSH_CLEANUP=stop_servers
+LTSH_RESTORE_MOUNT=false
+
 start_mgs () {
 	echo "start mgs service on $(facet_active_host mgs)"
 	start mgs $(mgsdevname) $MGS_MOUNT_OPTS "$@"

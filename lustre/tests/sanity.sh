@@ -3341,26 +3341,6 @@ test_27H() {
 }
 run_test 27H "Set specific OSTs stripe"
 
-test_27I() {
-	[ $PARALLEL == "yes" ] && skip "skip parallel run"
-	[[ $OSTCOUNT -lt 2 ]] && skip_env "needs >= 2 OSTs"
-	[[ $MDS1_VERSION -gt $(version_code 2.12.52) ]] ||
-		skip "Need MDS version newer than 2.12.52"
-	local pool=$TESTNAME
-	local ostrange="1 1 1"
-
-	save_layout_restore_at_exit $MOUNT
-	$LFS setstripe -c 2 -i 0 $MOUNT
-	pool_add $pool || error "pool_add failed"
-	pool_add_targets $pool $ostrange ||
-		error "pool_add_targets failed"
-	test_mkdir $DIR/$tdir
-	$LFS setstripe -p $pool $DIR/$tdir
-	$MULTIOP $DIR/$tdir/$tfile Oc || error "multiop failed"
-	$LFS getstripe $DIR/$tdir/$tfile
-}
-run_test 27I "check that root dir striping does not break parent dir one"
-
 test_27Ia() {
 	(( $MDS1_VERSION >= $(version_code 2.15.61.225) )) ||
 		skip "need MDS >= 2.15.61.255 for pool inheritance fix"
@@ -29512,39 +29492,6 @@ test_230h() {
 	true
 }
 run_test 230h "migrate .. and root"
-
-test_230i() {
-	[ $PARALLEL == "yes" ] && skip "skip parallel run"
-	[ $MDSCOUNT -lt 2 ] && skip_env "needs >= 2 MDTs"
-	[ $MDS1_VERSION -lt $(version_code 2.11.52) ] &&
-		skip "Need MDS version at least 2.11.52"
-
-	mkdir -p $DIR/$tdir/migrate_dir
-
-	$LFS migrate -m 1 $DIR/$tdir/migrate_dir/ ||
-		error "migration fails with a tailing slash"
-
-	$LFS migrate -m 0 $DIR/$tdir/migrate_dir// ||
-		error "migration fails with two tailing slashes"
-}
-run_test 230i "lfs migrate -m tolerates trailing slashes"
-
-test_230j() {
-	[ $MDSCOUNT -lt 2 ] && skip "needs >= 2 MDTs"
-	[ $MDS1_VERSION -lt $(version_code 2.13.52) ] &&
-		skip "Need MDS version at least 2.11.52"
-
-	$LFS mkdir -i 0 -c 1 $DIR/$tdir || error "mkdir $tdir failed"
-	$LFS setstripe -E 1M -L mdt $DIR/$tdir/$tfile ||
-		error "create $tfile failed"
-	cat /etc/passwd > $DIR/$tdir/$tfile
-
-	$LFS migrate -m 1 $DIR/$tdir || error "migrate failed"
-
-	cmp /etc/passwd $DIR/$tdir/$tfile ||
-		error "DoM file mismatch after migration"
-}
-run_test 230j "DoM file data not changed after dir migration"
 
 test_230k() {
 	[ $MDSCOUNT -lt 4 ] && skip "needs >= 4 MDTs"

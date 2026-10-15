@@ -1,0 +1,59 @@
+# ---
+# keywords: [lmv, dne, migrate]
+# requires:
+#   mdtcount: 2
+# subtests:
+#   230i:
+#     summary: lfs migrate -m tolerates trailing slashes
+#     commit:
+#       - 'e110f9ed6ea5 ("LU-7576 llapi: use dirname() in opendir_parent()")'
+#       - '169738e30a7e ("LU-4684 migrate: migrate striped directory")'
+#     description: >
+#       "lfs migrate -m" opened the parent of the directory with a path
+#       that still ended in "/", so it failed to find the name to
+#       migrate.  Check migration with one and two trailing slashes.
+#     keywords: [lfs, llapi]
+#     duration: 2
+#     requires:
+#       mds1_version: v2_11_55-8-g169738e30a7e
+#       reason: directory migration
+#   230j:
+#     summary: DoM file data not changed after dir migration
+#     commit:
+#       - '8deea7888c0c ("LU-11508 mdt: reject DoM file migration")'
+#       - 'a336d7c7c1cd ("LU-11025 dne: directory restripe and auto split")'
+#       - 'ab115a8ec982 ("LU-16434 tests: replace ''-m'' with ''-i'' in sanity/230j")'
+#     description: >
+#       Migrating a directory to another MDT must keep the data of a
+#       Data-on-MDT file in it.  DoM file migration was first rejected
+#       to avoid data loss, and later supported with directory restripe.
+#     keywords: [dom, mdt]
+#     duration: 2
+#     modifies: []
+#     observes: []
+#     requires:
+#       mds1_version: v2_13_54-18-ga336d7c7c1cd
+#       reason: DoM file migration
+# ...
+
+test_230i() {
+	mkdir -p $DIR/$tdir/migrate_dir
+
+	$LFS migrate -m 1 $DIR/$tdir/migrate_dir/ ||
+		error "migration fails with a tailing slash"
+
+	$LFS migrate -m 0 $DIR/$tdir/migrate_dir// ||
+		error "migration fails with two tailing slashes"
+}
+
+test_230j() {
+	$LFS mkdir -i 0 -c 1 $DIR/$tdir || error "mkdir $tdir failed"
+	$LFS setstripe -E 1M -L mdt $DIR/$tdir/$tfile ||
+		error "create $tfile failed"
+	cat /etc/passwd > $DIR/$tdir/$tfile
+
+	$LFS migrate -m 1 $DIR/$tdir || error "migrate failed"
+
+	cmp /etc/passwd $DIR/$tdir/$tfile ||
+		error "DoM file mismatch after migration"
+}

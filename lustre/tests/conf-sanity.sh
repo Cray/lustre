@@ -12535,54 +12535,6 @@ test_150() {
 }
 run_test 150 "test setting max_cached_mb to a %"
 
-test_151a() {
-	(( MDS1_VERSION >= $(version_code 2.15.58) )) ||
-		skip "need MDS version at least 2.15.58"
-	[[ "$ost1_FSTYPE" == ldiskfs ]] || skip "ldiskfs only test"
-
-	cleanup
-	if ! combined_mgs_mds ; then
-		stop mgs
-	fi
-
-	echo "Damage ost1 local config log"
-	do_facet ost1 "$DEBUGFS -w -R 'punch CONFIGS/$FSNAME-OST0000 0 1' \
-		      $(ostdevname 1) || return \$?" ||
-		error "do_facet ost1 failed with $?"
-
-	# expect OST to fail mount with no MGS and bad local config
-	start_ost && error "OST start should fail"
-
-	if ! combined_mgs_mds ; then
-		start_mgs
-	fi
-	start_mds || error "MDS start failed"
-	# now it should start with MGS config
-	start_ost || error "OST start failed"
-	reformat_and_config
-}
-run_test 151a "damaged local config doesn't prevent mounting"
-
-test_151b() {
-	(( MDS1_VERSION >= $(version_code 2.15.63) )) ||
-		skip "need MDS version at least 2.15.63"
-	[[ "$ost1_FSTYPE" == ldiskfs ]] || skip "ldiskfs only test"
-
-	cleanup
-	if ! combined_mgs_mds ; then
-		stop mgs
-	fi
-
-	start_mgsmds || error "MDS start failed"
-
-	# start despite -ENOSPC errors
-#define OBD_FAIL_LLOG_BACKUP_ENOSPC 0x131e
-	do_facet ost1 $LCTL set_param fail_loc=0x131e
-	start_ost || error "OST start failed"
-	reformat_and_config
-}
-run_test 151b "-ENOSPC doesn't affect mount"
-
 test_152() {
 	(( MDS1_VERSION >= $(version_code 2.15.59.53) )) ||
 		skip "need MDS >= 2.15.59.53 for sequence allocation retry"
@@ -12632,39 +12584,6 @@ test_152() {
 	(( stripes == $nost )) || error "$tf-2 $stripes != $nost"
 }
 run_test 152 "seq allocation error in OSP"
-
-test_153a() {
-	reformat_and_config
-
-	start_mds || error "MDS start failed"
-	start_ost || error "OST start failed"
-
-	local nid=$($LCTL list_nids | grep ${NETTYPE} | head -n1)
-	local net=${nid#*@}
-	local mgs_nid=$(do_facet mgs $LCTL list_nids | head -1)
-	local ost1_nid=$(do_facet ost1 $LCTL list_nids | head -1)
-	local fake_pnid="192.168.252.112@${net}"
-	local fake_nids="${fake_pnid},${fake_pnid}2"
-	local fake_failover="10.252.252.113@${net},10.252.252.113@${net}2"
-	local nids_and_failover="$fake_nids:$fake_failover:$ost1_nid:$mgs_nid"
-	local period=0
-	local pid
-	local rc
-
-	mount -t lustre $nids_and_failover:/lustre $MOUNT &
-	pid=$!
-	while (( period < 30 )); do
-		[[ -n "$(ps -p $pid -o pid=)" ]] || break
-		echo "waiting for mount ..."
-		sleep 5
-		period=$((period + 5))
-	done
-	$LCTL get_param mgc.MGC${fake_pnid}.import | grep "uptodate:"
-	check_mount || error "check_mount failed"
-	umount $MOUNT
-	cleanup || error "cleanup failed with rc $?"
-}
-run_test 153a "bypass invalid NIDs quickly"
 
 #LU-17367
 test_153b() {
@@ -12746,41 +12665,6 @@ test_153b() {
 	umount $MOUNT
 }
 run_test 153b "added IPv6 NID support"
-
-test_153c() {
-	reformat_and_config
-
-	start_mds || error "MDS start failed"
-	start_ost || error "OST start failed"
-
-	local nid=$($LCTL list_nids | grep ${NETTYPE} | head -n1)
-	local net=${nid#*@}
-	local fake_pnid="192.168.252.112@${net}"
-	local fake_failover="192.168.252.113@${net}:192.168.252.115@${net}"
-	local nids_and_failover="$fake_pnid:$fake_failover"
-	local period=0
-	local pid
-	local rc
-
-	umount_client $MOUNT
-	mount -t lustre $nids_and_failover:/lustre $MOUNT &
-	pid=$!
-	while (( period < 30 )); do
-		[[ -n "$(ps -p $pid -o pid=)" ]] || break
-		echo "waiting for mount ..."
-		sleep 5
-		period=$((period + 5))
-	done
-	$LCTL get_param mgc.MGC${fake_pnid}.import | grep "sec_ago"
-	conn=$($LCTL get_param mgc.MGC${fake_pnid}.import |
-		awk '/connection_attempts:/ {print $2}')
-	echo "connection attempts: $conn"
-	(( conn > 2)) || error "too few connection attempts"
-	echo "Waiting for mount to fail"
-	wait $pid
-	cleanup || error "cleanup failed with rc $?"
-}
-run_test 153c "don't stuck on unreached NID"
 
 test_154() {
 	[ "$mds1_FSTYPE" == "ldiskfs" ] || skip "ldiskfs only test"

@@ -58,6 +58,7 @@ export fs_STRIPEPARAMS=${fs_STRIPEPARAMS:-""}
 LUSTRE=${LUSTRE:-$(cd $(dirname ${BASH_SOURCE[0]})/..; echo $PWD)}
 . $LUSTRE/tests/functions.sh
 . $LUSTRE/tests/yaml.sh
+. $LUSTRE/tests/ltsh.sh
 
 export LD_LIBRARY_PATH=${LUSTRE}/utils/.libs:${LUSTRE}/utils:${LD_LIBRARY_PATH}
 
@@ -7482,7 +7483,7 @@ testslist_filter () {
 	var=${TESTSUITE//-/_}_STOP_AT
 	[ x"${!var}" != x ] && stop_at=${!var}
 
-	sed -n 's/^test_\([^ (]*\).*/\1/p' $script |
+	sed -n 's/^test_\([^ (]*\).*/\1/p' $script | ltsh_merge_list |
 	awk ' BEGIN { if ("'${start_at:-0}'" != 0) flag = 1 }
 	    /^'${start_at}'$/ {flag = 0}
 	    {if (flag == 1) print $0}
@@ -8051,6 +8052,8 @@ build_test_filter() {
 	local suite_only=${TESTSUITE//-/_}_ONLY
 	local suite_except=${TESTSUITE//-/_}_EXCEPT
 
+	ltsh_init
+
 	# allow both lowercase_ONLY/EXCEPT and UPPERCASE_ONLY/EXCEPT
 	[[ -n "${!suite_only}" ]] || suite_only=${suite_only^^}
 	[[ -n "${!suite_except}" ]] || suite_except=${suite_except^^}
@@ -8140,7 +8143,21 @@ export ALWAYS_SKIPPED=
 # - ONLY= env variable with space-separated list of test numbers to run
 # - EXCEPT= env variable with space-separated list of test numbers to exclude
 #
+# Subtests from $TESTSUITE.d/*.ltsh files that sort before this subtest
+# are run first, and those after the last subtest in $TESTSUITE.sh after it.
+#
 run_test() {
+	local rc
+
+	[[ -n "$LTSH_RUNNING" ]] || ltsh_run_before $1
+	run_test_filtered "$@"
+	rc=$?
+	ltsh_run_after $1
+
+	return $rc
+}
+
+run_test_filtered() {
 	assert_DIR
 	local testnum=$1
 	local testmsg=$2
@@ -8274,7 +8291,12 @@ trace() {
 }
 
 complete_test() {
-	local duration=$1
+	local before=$SECONDS
+
+	# in case the last subtest in $TESTSUITE.sh was not run
+	ltsh_run_before
+
+	local duration=$(($1 + SECONDS - before))
 
 	banner "test complete, duration $duration sec"
 	[ -f "$TESTSUITELOG" ] && grep -E .FAIL $TESTSUITELOG || true
@@ -8378,6 +8400,7 @@ run_one() {
 	fi
 
 	banner "test $testnum: $testmsg"
+	ltsh_check $testnum
 	test_${testnum} || error "test_$testnum failed with $?"
 	cd $SAVE_PWD
 	check_nodes_after_test
@@ -8441,6 +8464,7 @@ run_one_logged() {
 		local iter
 
 		log_sub_test_begin $TESTNAME
+		ltsh_prepare $testnum
 		# remove temp files between repetitions to avoid test failures
 		if [[ -n "$append" ]]; then
 			[[ -n "$tdir" ]] && rm -rvf $DIR/$tdir*
@@ -8457,6 +8481,7 @@ run_one_logged() {
 		# loop around subshell so stack_trap EXIT triggers each time
 		(run_one $testnum "$testmsg$iter") 2>&1 | tee -i $append $test_log
 		rc=${PIPESTATUS[0]}
+		ltsh_finish $testnum $rc
 		local append=-a
 		local duration_sub=$((SECONDS - before_sub))
 		local test_error

@@ -1,0 +1,80 @@
+# ---
+# subtests:
+#   1a:
+#     summary: reformat at the end
+#     end: formatted
+#   1b:
+#     summary: start formatted with no reformat after 1a
+#     start: formatted
+#     end: mounted
+#   1c:
+#     summary: servers up and client unmounted, 1b did not reformat
+#     start: unmounted
+#   1d: client mounted again
+#   1e:
+#     summary: fsck after the subtest
+#     fsck: each
+#   1f: client mounted again after fsck stopped the filesystem
+#   1g:
+#     summary: too little free space
+#     requires:
+#       free_space: 1000T
+#       reason: a huge file
+#   1h:
+#     summary: MDS version too new
+#     requires:
+#       mds1_version: v99_99_99-1-g0123456789ab
+#       reason: a future feature
+#   1i:
+#     summary: too few MDS nodes
+#     requires:
+#       mdsnodes: 1000
+# ...
+
+test_1a() {
+	touch $DIR/$tfile || error "touch $DIR/$tfile failed"
+}
+
+test_1b() {
+	! is_mounted $MOUNT || error "$MOUNT mounted after start: formatted"
+	setupall
+	[[ ! -e $DIR/f1a.$TESTSUITE ]] || error "f1a.$TESTSUITE not removed"
+}
+
+test_1c() {
+	local log=$TESTLOG_PREFIX.test_1X.test_log.$(hostname -s).log
+
+	if [[ -f ${log/1X/1a} && -f ${log/1X/1b} ]]; then
+		grep -q "reformat for test_1a" ${log/1X/1a} ||
+			error "no reformat after test_1a"
+		! grep -q "reformat for test_1b" ${log/1X/1b} ||
+			error "reformat again before test_1b"
+	fi
+	! is_mounted $MOUNT || error "$MOUNT mounted after start: unmounted"
+	[[ -n "$(do_facet mds1 $LCTL get_param -n mdt.*.uuid)" ]] ||
+		error "MDT not running"
+}
+
+test_1d() {
+	is_mounted $MOUNT || error "$MOUNT not mounted"
+}
+
+test_1e() {
+	touch $DIR/$tfile || error "touch $DIR/$tfile failed"
+}
+
+test_1f() {
+	is_mounted $MOUNT || error "$MOUNT not mounted after fsck"
+}
+
+test_1g() {
+	error "not skipped for free_space"
+}
+
+test_1h() {
+	error "not skipped for mds1_version"
+}
+
+test_1i() {
+	error "not skipped for mdsnodes"
+}

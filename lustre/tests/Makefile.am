@@ -16,6 +16,7 @@ noinst_DATA += zfs_mdt1_2_11.tar.bz2 zfs_mdt2_2_11.tar.bz2
 noinst_DATA += zfs_ost1_2_11.tar.bz2 zfs_ost2_2_11.tar.bz2
 noinst_SCRIPTS = leak_finder.pl llmount.sh llmountcleanup.sh functions.sh
 noinst_SCRIPTS += test-framework.sh runvmstat runiozone runtests sanity.sh
+noinst_SCRIPTS += ltsh.sh sanity-ltsh.sh
 noinst_SCRIPTS += acceptance-small.sh conf-sanity.sh conf-sanity-framework.sh
 noinst_SCRIPTS += insanity.sh oos.sh oos2.sh dne_sanity.sh sanity-compr.sh
 noinst_SCRIPTS += recovery-small.sh replay-dual.sh sanity-quota.sh
@@ -48,6 +49,8 @@ nobase_noinst_SCRIPTS += racer/*.sh
 nobase_noinst_DATA = acl/*.test
 nobase_noinst_DATA += clientapi/simple_test.c
 nobase_noinst_DATA += except/*.ex
+nobase_noinst_DATA += *.d/*.ltsh
+noinst_DATA += README-ltsh.md ltsh.awk
 nobase_noinst_DATA += lcov-merge.sh.in
 
 EXTRA_DIST = $(noinst_SCRIPTS) $(noinst_DATA) \

@@ -49,7 +49,7 @@ liblustreapi library in C, test scripts in bash, and Rust bindings in
 | `lustre/fid/`, `lustre/fld/` | FID sequence allocation, FID location database |
 | `lustre/quota/`, `lfsck/`, `ec/` | quota, online checker, erasure-code math |
 | `lustre/utils/` | `lfs`, `lctl`, `mkfs.lustre`, `mount.lustre`, liblustreapi |
-| `lustre/tests/` | test suites and `test-framework.sh` |
+| `lustre/tests/` | test suites, `test-framework.sh`, and subtest files in `$TESTSUITE.d/` (`README-ltsh.md`) |
 | `lnet/` | networking: `lnet/lnet/`, LNDs in `lnet/klnds/`, `lnet/libcfs/`, `lnet/utils/` |
 | `lustre_compat/`, `include/lustre_compat/` | kernel compatibility code and headers |
 | `include/uapi/linux/{lustre,lnet}/` | headers shared with userspace (ABI) |

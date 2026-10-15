@@ -1,0 +1,10 @@
+# ---
+# summary: a "modifies" name not in README-ltsh.md is a header error
+# modifies: [no_such_state]
+# observes: []
+# expect: must_fail
+# ...
+
+test_5() {
+	:
+}

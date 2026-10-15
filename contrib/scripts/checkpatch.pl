@@ -4011,7 +4011,7 @@ sub process {
 		}
 
 # check we are in a valid source file if not then ignore this hunk
-		next if ($realfile !~ /\.(h|c|rs|s|S|sh|dtsi|dts)$/);
+		next if ($realfile !~ /\.(h|c|rs|s|S|sh|ltsh|dtsi|dts)$/);
 
 # check for using SPDX-License-Identifier on the wrong line number
 		if ($realline != $checklicenseline &&
@@ -4066,6 +4066,11 @@ sub process {
 
 			# URL ($rawline is used in case the URL is in a comment)
 			} elsif ($rawline =~ /^\+.*\b[a-z][\w\.\+\-]*:\/\/\S+/i) {
+				$msg_type = "";
+
+			# commit reference in Fixes: format, maybe in a comment
+			# or quoted
+			} elsif ($rawline =~ /^\+.*\b[0-9a-f]{12,40} \("[^"].*"\)'?\s*$/) {
 				$msg_type = "";
 
 			# Otherwise set the alternate message types

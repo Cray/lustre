@@ -1,0 +1,12 @@
+# ---
+# summary: helper named test_* is a header error
+# expect: must_fail
+# ...
+
+test_2() {
+	:
+}
+
+test_2_helper() {
+	:
+}

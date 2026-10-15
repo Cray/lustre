@@ -71,13 +71,13 @@ if [[ -x "$SHELLCHECK" && "$SHELLCHECK_RUN" == "yes" ]]; then
 	# Add header
 	echo "#" >> "$1"
 	echo "# shellcheck output:" >> "$1"
-	# Get file that needs to be shellchecked. We only consider *.sh files
+	# Get file to be shellchecked. Only consider *.sh and *.ltsh files
 	# Example Start --
 	#       modified:   lustre/tests/sanity.sh
 	#       modified:   contrib/git-hooks/prepare-commit-msg
-	#            new:   lustre/utils/liblustreapi_error.c
+	#       new file:   lustre/utils/liblustreapi_error.c
 	# Example End   --
-	mod_files=($(awk '/modified:.*\.sh|new:.*\.sh/ { print $3 }' $1))
+	mod_files=($(awk '/(modified|new file):.*\.(lt)?sh$/ { print $NF }' $1))
 	for cur_file in ${mod_files[@]}; do
 		# Shebangs should prefer bash over regular sh. This allows
 		# scripts to freely use bash-isms and lowers the risks of
@@ -94,8 +94,8 @@ if [[ -x "$SHELLCHECK" && "$SHELLCHECK_RUN" == "yes" ]]; then
 		# Example 'git show' output End   --
 		range=($(git show $cur_file | awk '/^@@/ { print $3 }' | \
 			sed -e 's/+//' -e 's/,/ /'))
-		start_line=${range[0]}
-		end_line=$((start_line + ${range[1]}))
+		start_line=${range[0]:-1}
+		end_line=$((start_line + ${range[1]:-0}))
 
 		# 'shellcheck' reports errors/warnings/notes as below:
 		# Example start ---
@@ -108,7 +108,10 @@ if [[ -x "$SHELLCHECK" && "$SHELLCHECK_RUN" == "yes" ]]; then
 		#        sanity-lnet.sh:2411:8: warning: Declare and assign \
 		#        separately to avoid masking return values. [SC2155]
 		# Example end   ---
-		$SHELLCHECK $SHELLCHECK_OPTS $cur_file |
+		# *.ltsh subtest files are sourced by bash and have no #! line
+		sc_opts=$SHELLCHECK_OPTS
+		[[ "$cur_file" != *.ltsh ]] || sc_opts+=" --shell=bash"
+		$SHELLCHECK $sc_opts $cur_file |
 			while IFS=": " read -r file line char mtype msg; do
 			# Only filter out "errors" reported by shellcheck
 			# We ignore "warnings" and "notes" for now.

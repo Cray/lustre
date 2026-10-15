@@ -1,0 +1,8 @@
+# ---
+# summary: reformat with formatall at the end
+# end: formatted
+# ...
+
+test_7a() {
+	:
+}

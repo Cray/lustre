@@ -1,0 +1,68 @@
+# ---
+# keywords: [mgc, llog]
+# start: stopped
+# end: formatted
+# requires:
+#   ost1_fstype: ldiskfs
+# subtests:
+#   151a:
+#     summary: damaged local config doesn't prevent mounting
+#     commit:
+#       - '6a6e4ee20fe5 ("LU-17184 mgc: remove damaged local configs")'
+#     description: >
+#       Damage the OST local config llog and check the OST still mounts.
+#       A damaged llog could not be erased, and blocked the mount even
+#       with the MGS running.
+#     duration: 295
+#     requires:
+#       mds1_version: v2_15_58-184-g6a6e4ee20fe5
+#       reason: removing damaged local config logs
+#     modifies: [config]
+#   151b:
+#     summary: -ENOSPC doesn't affect mount
+#     commit:
+#       - '96d8987a36b9 ("LU-14714 mgc: server to mount without local config")'
+#     description: >
+#       Make the llog backup fail with -ENOSPC so the local config copy is
+#       empty or partial, and check the OST still mounts using the MGS
+#       config.
+#     duration: 235
+#     requires:
+#       mds1_version: v2_15_64-124-g96d8987a36b9
+#       reason: mount without local config
+#     modifies: [fail_loc, config]
+# ...
+
+test_151a() {
+	if ! combined_mgs_mds ; then
+		stop mgs
+	fi
+
+	echo "Damage ost1 local config log"
+	do_facet ost1 "$DEBUGFS -w -R 'punch CONFIGS/$FSNAME-OST0000 0 1' \
+		      $(ostdevname 1) || return \$?" ||
+		error "do_facet ost1 failed with $?"
+
+	# expect OST to fail mount with no MGS and bad local config
+	start_ost && error "OST start should fail"
+
+	if ! combined_mgs_mds ; then
+		start_mgs
+	fi
+	start_mds || error "MDS start failed"
+	# now it should start with MGS config
+	start_ost || error "OST start failed"
+}
+
+test_151b() {
+	if ! combined_mgs_mds ; then
+		stop mgs
+	fi
+
+	start_mgsmds || error "MDS start failed"
+
+	# start despite -ENOSPC errors
+	#define OBD_FAIL_LLOG_BACKUP_ENOSPC 0x131e
+	do_facet ost1 $LCTL set_param fail_loc=0x131e
+	start_ost || error "OST start failed"
+}

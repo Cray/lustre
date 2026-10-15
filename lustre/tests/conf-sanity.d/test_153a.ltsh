@@ -1,0 +1,89 @@
+# ---
+# keywords: [ptlrpc, lnet]
+# start: formatted
+# end: stopped
+# fsck: last
+# subtests:
+#   153a:
+#     summary: bypass invalid NIDs quickly
+#     commit:
+#       - '94d05d0737db ("LU-17379 mgc: try MGS nodes faster")'
+#       - 'ee977b903911 ("LU-17906 pltrpc: don''t use non-uptodate peer at connect")'
+#     description: >
+#       Mount with invalid MGS and failover NIDs listed first.  The client
+#       must try all NIDs quickly on the first round, skipping ones not
+#       yet discovered, and mount within 30s.
+#     keywords: [mgc, mgs, mount]
+#     duration: 323
+#   153c:
+#     summary: don't stuck on unreached NID
+#     commit:
+#       - 'ee977b903911 ("LU-17906 pltrpc: don''t use non-uptodate peer at connect")'
+#     description: >
+#       Mount using only unreachable NIDs.  A connect RPC to an
+#       undiscovered peer used to stay stuck in LNet until discovery
+#       timed out, so other NIDs were never tried.  Check that several
+#       connection attempts are made.
+#     duration: 570
+# ...
+
+# Wait up to 30s for the background mount process $1 to finish
+wait_mount_test_153() {
+	local pid=$1
+	local period=0
+
+	while (( period < 30 )); do
+		[[ -n "$(ps -p $pid -o pid=)" ]] || break
+		echo "waiting for mount ..."
+		sleep 5
+		period=$((period + 5))
+	done
+}
+
+test_153a() {
+	start_mds || error "MDS start failed"
+	start_ost || error "OST start failed"
+
+	local nid=$($LCTL list_nids | grep ${NETTYPE} | head -n1)
+	local net=${nid#*@}
+	local mgs_nid=$(do_facet mgs $LCTL list_nids | head -1)
+	local ost1_nid=$(do_facet ost1 $LCTL list_nids | head -1)
+	local fake_pnid="192.168.252.112@${net}"
+	local fake_nids="${fake_pnid},${fake_pnid}2"
+	local fake_failover="10.252.252.113@${net},10.252.252.113@${net}2"
+	local nids_and_failover="$fake_nids:$fake_failover:$ost1_nid:$mgs_nid"
+	local pid
+
+	mount -t lustre $nids_and_failover:/$FSNAME $MOUNT &
+	pid=$!
+	wait_mount_test_153 $pid
+	$LCTL get_param mgc.MGC${fake_pnid}.import | grep "uptodate:"
+	check_mount || error "check_mount failed"
+	umount $MOUNT
+	cleanup || error "cleanup failed with rc $?"
+}
+
+test_153c() {
+	start_mds || error "MDS start failed"
+	start_ost || error "OST start failed"
+
+	local nid=$($LCTL list_nids | grep ${NETTYPE} | head -n1)
+	local net=${nid#*@}
+	local fake_pnid="192.168.252.112@${net}"
+	local fake_failover="192.168.252.113@${net}:192.168.252.115@${net}"
+	local nids_and_failover="$fake_pnid:$fake_failover"
+	local pid
+
+	umount_client $MOUNT
+	mount -t lustre $nids_and_failover:/$FSNAME $MOUNT &
+	pid=$!
+	wait_mount_test_153 $pid
+	$LCTL get_param mgc.MGC${fake_pnid}.import | grep "sec_ago"
+	local conn=$($LCTL get_param mgc.MGC${fake_pnid}.import |
+		awk '/connection_attempts:/ {print $2}')
+	echo "connection attempts: $conn"
+	(( conn > 2)) || error "too few connection attempts"
+	echo "Waiting for mount to fail"
+	wait $pid
+	cleanup || error "cleanup failed with rc $?"
+}
