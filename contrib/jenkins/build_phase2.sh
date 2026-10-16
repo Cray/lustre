@@ -200,7 +200,7 @@ ZFS8_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs"
 	ZFS8_DEVEL="zfs libzfs7-devel libzpool7 libzfs7 kmod-zfs-devel kmod-zfs "
 
 ZFS9_DEVEL="zfs libzfs5-devel libzpool5 libzfs5 kmod-zfs-devel kmod-zfs"
-[[ "$JP_NEO_RELEASE" == "NEO7.X" ]] || [[ "$JP_NEO_RELEASE" == "TST7.X" ]] &&
+[[ "$JP_NEO_RELEASE" == "NEO7.X" ]] || [[ "$JP_NEO_RELEASE" == "TST7.X" ]] || [[ "$JP_NEO_RELEASE" == "CSL7.X" ]] &&
 	ZFS9_DEVEL="zfs libzfs7-devel libzpool7 libzfs7 kmod-zfs-devel kmod-zfs"
 
 ZFS10_DEVEL="zfs libzfs7-devel libzpool7 libzfs7 kmod-zfs-devel kmod-zfs"
