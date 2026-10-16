@@ -93,7 +93,7 @@ enum {
 enum ptlrpc_gss_proc {
 	PTLRPC_GSS_PROC_DATA            = 0,
 	PTLRPC_GSS_PROC_INIT            = 1,
-	PTLRPC_GSS_PROC_CONTINUE_INIT   = 2,
+	/* was PTLRPC_GSS_PROC_CONTINUE_INIT   = 2  */
 	PTLRPC_GSS_PROC_DESTROY         = 3,
 	PTLRPC_GSS_PROC_ERR             = 4,
 };

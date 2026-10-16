@@ -1021,13 +1021,13 @@ static int handle_krb(struct svc_nego_data *snd)
 					       NULL);
 
 	if (snd->maj_stat == GSS_S_CONTINUE_NEEDED) {
-		printerr(LL_WARN,
-			 "gss_accept_sec_context GSS_S_CONTINUE_NEEDED\n");
-
-		/* Save the context handle for future calls */
-		snd->out_handle.length = sizeof(snd->ctx);
-		memcpy(snd->out_handle.value, &snd->ctx, sizeof(snd->ctx));
-		return 0;
+		/* Lustre clients never send PTLRPC_GSS_PROC_CONTINUE_INIT,
+		 * so a multi-round negotiation cannot be completed.
+		 */
+		printerr(LL_ERR,
+			 "ERROR: gss_accept_sec_context GSS_S_CONTINUE_NEEDED unsupported\n");
+		snd->maj_stat = GSS_S_FAILURE;
+		goto out_err;
 	} else if (snd->maj_stat != GSS_S_COMPLETE) {
 		printerr(LL_ERR, "ERROR: gss_accept_sec_context failed\n");
 		pgsserr("handle_krb: gss_accept_sec_context",
@@ -1229,16 +1229,13 @@ int handle_channel_request(int fd)
 	printerr(LL_DEBUG, "in_tok:\n");
 	print_hexl(3, snd.in_tok.value, snd.in_tok.length);
 
-	if (snd.in_handle.length != 0) { /* CONTINUE_INIT case */
-		if (snd.in_handle.length != sizeof(snd.ctx)) {
-			printerr(LL_ERR,
-				 "ERROR: input handle has unexpected length %zu\n",
-				 snd.in_handle.length);
-			goto out_err;
-		}
-		/* in_handle is the context id stored in the out_handle
-		 * for the GSS_S_CONTINUE_NEEDED case below.  */
-		memcpy(&snd.ctx, snd.in_handle.value, snd.in_handle.length);
+	/* Multi-round negotiation (CONTINUE_INIT) is not supported */
+	if (snd.in_handle.length != 0) {
+		printerr(LL_ERR,
+			 "ERROR: unexpected input handle of length %zu\n",
+			 snd.in_handle.length);
+		rc = -EINVAL;
+		goto out_err;
 	}
 
 	rc = -1;

@@ -1965,7 +1965,10 @@ int gss_svc_handle_init(struct ptlrpc_request *req, struct gss_wire_ctx *gw)
 		RETURN(rc);
 	}
 
-	if (gw->gw_proc == PTLRPC_GSS_PROC_INIT && gw->gw_handle.len != 0) {
+	/* Lustre clients only send PROC_INIT with an empty handle,
+	 * multi-round negotiation is not supported.
+	 */
+	if (gw->gw_handle.len != 0) {
 		rc = SECSVC_DROP;
 		CDEBUG(D_SEC, "proc %u: invalid handle length %u: rc = %d\n",
 		       gw->gw_proc, gw->gw_handle.len, rc);
@@ -2419,7 +2422,6 @@ int gss_svc_accept(struct ptlrpc_sec_policy *policy, struct ptlrpc_request *req)
 
 	switch (ghdr->gh_proc) {
 	case PTLRPC_GSS_PROC_INIT:
-	case PTLRPC_GSS_PROC_CONTINUE_INIT:
 		rc = gss_svc_handle_init(req, gw);
 		break;
 	case PTLRPC_GSS_PROC_DATA:
