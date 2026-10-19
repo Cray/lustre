@@ -243,6 +243,7 @@ extern bool obd_enable_fname_encoding;
 #define OBD_FAIL_MDS_CONNECT_VS_EVICT	 0x174
 #define OBD_FAIL_MDS_DELAY_OPEN		 0x175
 #define OBD_FAIL_MDS_LL_PCCRO		 0x176
+#define OBD_FAIL_MDS_LOV_SET		 0x177
 
 /* CMD */
 #define OBD_FAIL_MDS_IS_SUBDIR_NET		0x180

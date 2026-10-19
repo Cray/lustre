@@ -3812,6 +3812,44 @@ test_27X() {
 }
 run_test 27X "lfs migrate honors --overstripe-count option"
 
+test_27Y() {
+	local mdts=$(mdts_nodes)
+	local file=$DIR/$tfile
+	local pfl=$DIR/$tfile.pfl
+
+	stack_trap "do_nodes $mdts $LCTL set_param fail_loc=0" EXIT
+
+	# mknod creates regular files without layout
+	$MULTIOP $file m || error "mknod $file failed"
+	$MULTIOP $pfl m || error "mknod $pfl failed"
+
+	# the layout is created on the first write open
+	#define OBD_FAIL_MDS_LOV_SET 0x177
+	do_nodes $mdts $LCTL set_param fail_loc=0x80000177
+	echo foo >> $file && error "first open of $file should fail"
+	do_nodes $mdts $LCTL set_param fail_loc=0
+
+	# LBUG in lod_ah_init() if the striping allocated by the failed
+	# attempt is not freed
+	echo bar >> $file || error "second open of $file failed"
+	[[ "$(cat $file)" == "bar" ]] ||
+		error "$file: unexpected content '$(cat $file)'"
+	$LFS getstripe $file
+
+	# setstripe on a file without layout opens it by FID with the layout
+	do_nodes $mdts $LCTL set_param fail_loc=0x80000177
+	$LFS setstripe -E 1M -c 1 -E eof -c -1 $pfl &&
+		error "first setstripe of $pfl should fail"
+	do_nodes $mdts $LCTL set_param fail_loc=0
+
+	$LFS setstripe -E 1M -c 1 -E eof -c -1 $pfl ||
+		error "second setstripe of $pfl failed"
+	$LFS getstripe $pfl
+	(( $($LFS getstripe --component-count $pfl) == 2 )) ||
+		error "$pfl should have 2 components"
+}
+run_test 27Y "free striping when layout creation fails"
+
 # createtest also checks that device nodes are created and
 # then visible correctly (#2091)
 test_28() { # bug 2091

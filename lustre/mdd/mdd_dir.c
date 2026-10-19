@@ -2396,6 +2396,10 @@ static int mdd_create_data(const struct lu_env *env, struct md_object *pobj,
 	if (rc)
 		GOTO(stop, rc);
 
+	/* fail after LOV declare allocated the striping, as ENOSPC would */
+	if (CFS_FAIL_CHECK(OBD_FAIL_MDS_LOV_SET))
+		GOTO(stop, rc = -ENOSPC);
+
 	rc = mdd_trans_start(env, mdd, handle);
 	if (rc)
 		GOTO(stop, rc);
