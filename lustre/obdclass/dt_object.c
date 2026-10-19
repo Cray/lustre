@@ -930,7 +930,7 @@ static int dt_index_page_build(const struct lu_env *env, struct dt_object *obj,
 
 	GOTO(out, rc);
 out:
-	if (rc >= 0 && lip->lip_nr > 0)
+	if ((rc >= 0 || rc == -EAGAIN) && lip->lip_nr > 0)
 		/* one more container */
 		ii->ii_count++;
 	if (rc > 0)
@@ -972,6 +972,8 @@ EXPORT_SYMBOL(rdpg_page_put);
  * \param arg    - is an opaq argument passed to the filler function
  *
  * \retval sum (in bytes) of all filled lu_pages
+ * \retval -EAGAIN on 0 bytes copied into containers but index read to
+ *         be continued
  * \retval -ve errno on failure
  */
 int dt_index_walk(const struct lu_env *env, struct dt_object *obj,
@@ -1042,12 +1044,12 @@ int dt_index_walk(const struct lu_env *env, struct dt_object *obj,
 			rc = filler(env, obj, lp,
 				    min_t(size_t, bytes, LU_PAGE_SIZE),
 				    iops, it, rdpg->rp_attrs, arg);
-			if (rc < 0)
+			if (rc < 0 && rc != -EAGAIN)
 				break;
 			/* one more lu_page */
 			nlupgs++;
-			if (rc > 0)
-				/* end of index */
+			if (rc > 0 || rc == -EAGAIN)
+				/* index end or the iterator stopped early */
 				break;
 		}
 		rdpg_page_put(rdpg, pageidx, addr);
@@ -1057,7 +1059,11 @@ out:
 	iops->put(env, it);
 	iops->fini(env, it);
 
-	if (rc >= 0)
+	/*
+	 * -EAGAIN is returned if nothing was copied into the
+	 * containers and the index read has to be continued
+	 */
+	if (rc >= 0 || (rc == -EAGAIN && nlupgs > 0))
 		rc = min_t(size_t, nlupgs * LU_PAGE_SIZE, rdpg->rp_count);
 
 	RETURN(rc);
@@ -1076,6 +1082,7 @@ EXPORT_SYMBOL(dt_index_walk);
  * \param rdpg - is the lu_rdpg descriptor
  *
  * \retval on success, return sum (in bytes) of all filled containers
+ * \retval -EAGAIN on 0 bytes copied into containers but index read to be continued
  * \retval appropriate error otherwise.
  */
 int dt_index_read(const struct lu_env *env, struct dt_device *dev,
