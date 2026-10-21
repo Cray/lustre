@@ -7552,6 +7552,7 @@ again1:
 		dt_read_unlock(env, obj);
 		lfsck_object_put(env, obj);
 		pos++;
+		CFS_FAIL_TIMEOUT(OBD_FAIL_LFSCK_ORPHAN_IT_DELAY, cfs_fail_val);
 		goto again1;
 	}
 
