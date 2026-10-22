@@ -1,4 +1,4 @@
-.TH LLAPI_FID2PATH_AT 3 2025-09-02 "Lustre User API" "Lustre Library Functions"
+.TH LLAPI_FID2PATH_AT 3 2026-10-26 "Lustre User API" "Lustre Library Functions"
 .SH NAME
 llapi_fid2path_at \- resolve a File Identifier to a pathname
 .SH SYNOPSIS
@@ -10,22 +10,111 @@ llapi_fid2path_at \- resolve a File Identifier to a pathname
 .fi
 .SH DESCRIPTION
 .BR llapi_fid2path_at()
-stores the pathname corresponding to the given File Identifier into
+stores the pathname corresponding to the given File Identifier
+.I fid
+into
 .IR path .
+.I pathlen
+is the size of
+.I path
+in bytes, including the NUL terminator.
 The lookup is performed relative to the filesystem referenced by
 .IR mnt_fd .
 If
-.I recno
-or
 .I linkno
-are non-NULL, they are used to select and return a specific directory entry or
-hardlink of the FID.
+is non-NULL, it is used to select and return a specific hardlink of the FID.
+Links are counted starting at 0.
+On success, if another hardlink exists after the returned hardlink,
+the value pointed to by
+.I linkno
+is incremented.
+If no more hardlinks exist,
+.RI * linkno
+is left unchanged.
+If
+.I linkno
+is NULL, the first link is returned.
+If
+.RI * linkno
+is greater than or equal to the number of hardlinks,
+the first link is returned and
+.RI * linkno
+is left unchanged.
+The
+.I recno
+parameter is currently ignored,
+and if it is non-NULL the value it points to is left unchanged.
 .SH RETURN VALUES
 Returns 0 on success or a negative errno value on failure.
 .SH ERRORS
 .TP 15
+.B -EBADF
+.I mnt_fd
+is an invalid file descriptor.
+.TP
+.B -EINVAL
+An invalid FID was passed in
+.IR fid .
+.TP
+.B -ENOENT
+The FID does not exist.
+.TP
 .B -ENOMEM
 Not enough memory to process the request.
+.TP
+.B -ENOTTY
+.I mnt_fd
+refers to an object that does not support this operation.
+.TP
+.B -EOVERFLOW
+.I path
+is not big enough for pathname resolution.
+.TP
+.B -EPERM
+The caller lacks
+.B CAP_DAC_READ_SEARCH
+capability, and the
+.B user_fid2path
+mount option is not enabled.
+.TP
+.B -ERANGE
+.I path
+is not big enough to hold the returned path.
+.SH EXAMPLES
+This prints all of the hardlinks of a file.
+Paths are printed relative to the filesystem root.
+The
+.I mount_fd
+argument comes from
+.BR llapi_root_path_open (3):
+.PP
+.EX
+#include <stdio.h>
+#include <string.h>
+#include <lustre/lustreapi.h>
+\&
+void print_paths(int mount_fd, struct lu_fid fid)
+{
+	int linkno = 0;
+	int linktmp;
+	int rc;
+\&
+	do {
+		char path[4096] = { 0 };
+\&
+		linktmp = linkno;
+\&
+		rc = llapi_fid2path_at(mount_fd, &fid, path, sizeof(path),
+		                       NULL, &linkno);
+		if (rc) {
+			fprintf(stderr, "llapi_fid2path_at(): %s\\n", strerror(-rc));
+			return;
+		}
+\&
+		printf("%s\\n", path);
+	} while (linktmp != linkno);
+}
+.EE
 .SH AVAILABILITY
 .B llapi_fid2path_at()
 is part of the
@@ -34,5 +123,6 @@ user application interface library since release 2.14.50
 .\" Added in commit v2_14_50-43-gc45558bf56
 .SH SEE ALSO
 .BR llapi_fid2path (3),
+.BR llapi_root_path_open (3),
 .BR llapi_layout (7),
 .BR lustreapi (7)
