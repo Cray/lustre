@@ -371,7 +371,7 @@ again:
 	}
 
 	if (!scrub->os_full_speed && !osd_scrub_has_window(it))
-		wait_var_event(scrub, osd_scrub_wakeup(scrub, it));
+		wait_var_event_idle(scrub, osd_scrub_wakeup(scrub, it));
 
 	if (kthread_should_stop())
 		GOTO(out, rc = SCRUB_NEXT_EXIT);
@@ -489,9 +489,9 @@ static int osd_scrub_main(void *args)
 	if (!scrub->os_full_speed) {
 		struct osd_otable_it *it = dev->od_otable_it;
 
-		wait_var_event(scrub,
-			       it->ooi_user_ready ||
-			       kthread_should_stop());
+		wait_var_event_idle(scrub,
+				    it->ooi_user_ready ||
+				    kthread_should_stop());
 
 		if (kthread_should_stop())
 			GOTO(post, rc = 0);
@@ -577,7 +577,7 @@ noenv:
 	spin_unlock(&scrub->os_lock);
 	if (xchg(&scrub->os_task, NULL) == NULL)
 		/* scrub_stop is waiting, we need to synchronize */
-		wait_var_event(scrub, kthread_should_stop());
+		wait_var_event_idle(scrub, kthread_should_stop());
 	wake_up_var(scrub);
 	return rc;
 }

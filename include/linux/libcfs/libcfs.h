@@ -83,6 +83,15 @@ int debugfs_doint(const struct ctl_table *table, int write,
 #define NUM_CACHEPAGES cfs_totalram_pages()
 #endif
 
+/* like wait_var_event(), but TASK_IDLE: no hung task warning for kthreads */
+#define wait_var_event_idle(var, condition)				\
+do {									\
+	might_sleep();							\
+	if (condition)							\
+		break;							\
+	___wait_var_event(var, condition, TASK_IDLE, 0, 0, schedule());	\
+} while (0)
+
 #define wait_var_event_warning(var, condition, format, ...)		\
 do {									\
 	int counter = 4;						\
