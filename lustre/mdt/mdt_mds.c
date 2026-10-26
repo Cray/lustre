@@ -151,6 +151,9 @@ static int ldlm_enqueue_hpreq_check(struct ptlrpc_request *req)
 	int rc = 0;
 	ENTRY;
 
+	if (!req->rq_export)
+		RETURN(0);
+
 	if ((lustre_msg_get_flags(req->rq_reqmsg) & (MSG_REPLAY|MSG_RESENT)) !=
 	    MSG_RESENT)
 		RETURN(0);

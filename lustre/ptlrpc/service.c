@@ -1917,6 +1917,15 @@ ptlrpc_server_mark_in_progress_obsolete(struct ptlrpc_request *req)
 }
 #endif
 
+static int ptlrpc_hpreq_check(struct ptlrpc_request *req)
+{
+	return 1;
+}
+
+static struct ptlrpc_hpreq_ops ptlrpc_hpreq_common = {
+	.hpreq_check       = ptlrpc_hpreq_check,
+};
+
 /**
  * ptlrpc_server_hpreq_init() - Check request can be assigned with high priority
  * @svcpt: the PTLRPC service partition
@@ -1941,7 +1950,8 @@ static int ptlrpc_server_hpreq_init(struct ptlrpc_service_part *svcpt,
 		LASSERT(rc == 0);
 	}
 
-	if (req->rq_export != NULL && req->rq_ops != NULL) {
+	/* handler responsible for the export checks */
+	if (req->rq_ops != NULL) {
 		/*
 		 * Perform request specific check. We should do this
 		 * check before the request is added into exp_hp_rpcs
@@ -1982,14 +1992,30 @@ static void ptlrpc_server_hpreq_fini(struct ptlrpc_request *req)
 	EXIT;
 }
 
-static int ptlrpc_hpreq_check(struct ptlrpc_request *req)
+/* Is the target named in a connect request in recovery? */
+static bool ptlrpc_connect_tgt_recovering(struct ptlrpc_request *req)
 {
-	return 1;
-}
+	struct obd_device *obd;
+	bool recovering;
+	char *str;
 
-static struct ptlrpc_hpreq_ops ptlrpc_hpreq_common = {
-	.hpreq_check       = ptlrpc_hpreq_check,
-};
+	/* the capsule is normally set up later, by the request handler */
+	req_capsule_init(&req->rq_pill, req, RCL_SERVER);
+	req_capsule_set(&req->rq_pill, &RQF_CONNECT);
+
+	str = req_capsule_client_get(&req->rq_pill, &RMF_TGTUUID);
+	if (!str)
+		return false;
+
+	obd = class_str2obd(str);
+	if (!obd)
+		return false;
+
+	recovering = test_bit(OBDF_RECOVERING, obd->obd_flags);
+	class_decref(obd, "find", current);
+
+	return recovering;
+}
 
 /* Hi-Priority RPC check by RPC operation code. */
 int ptlrpc_hpreq_handler(struct ptlrpc_request *req)
@@ -1997,11 +2023,14 @@ int ptlrpc_hpreq_handler(struct ptlrpc_request *req)
 	int opc = lustre_msg_get_opc(req->rq_reqmsg);
 
 	/*
-	 * Check for export to let only reconnects for not yet evicted
-	 * export to become a HP rpc.
+	 * Pings and connects of known exports are HP.  A connect without
+	 * an export is HP only if its target is in recovery, to let the
+	 * recovering clients reconnect, but not boost new mounts.
 	 */
-	if ((req->rq_export != NULL) &&
-	    (opc == OBD_PING || opc == MDS_CONNECT || opc == OST_CONNECT))
+	if ((req->rq_export != NULL &&
+	     (opc == OBD_PING || opc == MDS_CONNECT || opc == OST_CONNECT)) ||
+	    ((opc == MDS_CONNECT || opc == OST_CONNECT) &&
+	     ptlrpc_connect_tgt_recovering(req)))
 		req->rq_ops = &ptlrpc_hpreq_common;
 
 	return 0;
