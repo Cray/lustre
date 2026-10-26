@@ -12763,8 +12763,9 @@ test_63c() {
 
 	stack_trap "set_default_debug"
 	set_default_debug "rpctrace+dlmtrace+inode+entry" "" 512
-	# write to multi-striped file, expect one MDT+OSTCOUNT OST sync
-	# MDT (create/setstripe+truncate), OST (8*OSTCOUNT*write)
+	# write to multi-striped file, expect one MDT sync per stripe and at
+	# least one OST sync per stripe (background writeback may add more)
+	# MDT (create/setstripe + truncate), OST (n*OSTCOUNT*write)
 	mdt_before=$mdt_after
 	ost_before=$ost_after
 	$LFS setstripe -c $OSTCOUNT -S 1M $dir/$tfile-striped
@@ -12776,9 +12777,8 @@ test_63c() {
 	ost_after=$(calc_stats osc.*.stats ost_sync)
 	(( $mdt_after == $mdt_before + 2 )) ||
 		error "expect MDT striped $mdt_after == $mdt_before + 2"
-	(( $ost_after >= $ost_before + $stripes &&
-	   $ost_after < $ost_before + 2 * $stripes )) ||
-		error "expect OST striped $ost_after == $ost_before + $stripes"
+	(( $ost_after >= $ost_before + $stripes )) ||
+		error "expect OST striped $ost_after >= $((ost_before + stripes))"
 
 	# read file, expect no MDT or OST sync
 	# MDT(open), OST(2*OSTCOUNT*read)
