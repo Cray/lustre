@@ -2584,10 +2584,11 @@ unlock_rename:
  * determine lock order of sobj and tobj
  *
  * there are three situations we need to lock tobj before sobj:
- * 1. sobj is child of tobj
+ * 1. sobj is a subdir of tobj
  * 2. sobj and tobj are stripes of a directory, and stripe index of sobj is
  *    larger than that of tobj
- * 3. apart from the first two situations, tobj.fid < sobj.fid
+ * 3. apart from the first two situations, tobj.fid < sobj.fid, unless tobj
+ *    is a subdir of sobj: an ancestor is always locked first
  *
  * \retval	1 lock tobj before sobj
  * \retval	0 lock sobj before tobj
@@ -2616,7 +2617,7 @@ static int mdt_rename_determine_lock_order(struct mdt_thread_info *info,
 	if (fid_is_root(mdt_object_fid(tobj)))
 		return 1;
 
-	/* check whether sobj is child of tobj */
+	/* check whether sobj is a subdir of tobj */
 	rc = mdo_is_subdir(info->mti_env, mdt_object_child(sobj),
 			   mdt_object_fid(tobj));
 	if (rc < 0)
@@ -2675,9 +2676,28 @@ static int mdt_rename_determine_lock_order(struct mdt_thread_info *info,
 
 order_by_fid:
 	/* To avoid AB/BA deadlock given two phase locking */
-	if (lu_fid_cmp(rr->rr_fid1, rr->rr_fid2) > 0)
+	if (lu_fid_cmp(rr->rr_fid1, rr->rr_fid2) <= 0)
+		return 0;
+
+	/*
+	 * Never lock a dir before its ancestor: rename onto an existing dir
+	 * takes the parent then the target dir EX, so locking tobj before
+	 * its ancestor sobj may deadlock with it (LUS-13443). Siblings are
+	 * not ancestors of each other, and a direct child of sobj needs no
+	 * walk up the tree.
+	 */
+	if (lu_fid_eq(spfid, tpfid))
 		return 1;
-	return 0;
+
+	if (lu_fid_eq(tpfid, mdt_object_fid(sobj)))
+		return 0;
+
+	rc = mdo_is_subdir(info->mti_env, mdt_object_child(tobj),
+			   mdt_object_fid(sobj));
+	if (rc < 0)
+		return rc;
+
+	return rc == 1 ? 0 : 1;
 }
 
 /* Helper function for mdt_reint_rename so we don't need to opencode
