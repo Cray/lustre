@@ -4,8 +4,8 @@
 # Analyzes a lustre-release commit and reports, as JSON:
 #
 #   updated_tests   suite -> [ test_N, ... ] for every subtest that changed or was added. A
-#                   subtest is only reported when the post-image still has its run_test line,
-#                   so renamed/removed tests and test_* helpers are excluded.
+#                   subtest of SUITE.sh is only reported when the post-image still has its
+#                   run_test line, so renamed/removed tests and test_* helpers are excluded.
 #   affected_files  { m: [...], a: [...], d: [...] } modified/added/deleted paths
 #   SkipTesting     true when every affected path is non-functional (docs, licenses, ...)
 #
@@ -14,6 +14,10 @@
 # code and helper functions defined between tests, are not attributed to any subtest. Blank
 # lines, comments, test_N() definition lines and run_test lines (test descriptions) do not
 # count as changes; renames are reported through the new run_test line.
+#
+# Subtests in lustre/tests/SUITE.d/*.ltsh files (see lustre/tests/README-ltsh.md) belong to
+# SUITE and have no run_test lines.  These files are small, so any change to one counts for
+# all of its test_N() subtests.
 #
 # The analysis reads the pre- and post-image blobs from the repository, it does not need a
 # checkout and does not run anything from the tree being analyzed.
@@ -35,6 +39,8 @@ TEST_DEF_RE = re.compile(r"^(?:function\s+)?test_([A-Za-z0-9_]+)\s*\(\)")
 HUNK_RE     = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
 RUN_TEST_RE = re.compile(r"^run_test\s+([A-Za-z0-9_]+)\b", re.M)
 SUITE_DIR   = "lustre/tests/"
+LTSH_RE     = re.compile(r"^lustre/tests/([^/]+)\.d/[^/]+\.ltsh$")
+LTSH_TEST_RE = re.compile(r"^test_([0-9]+[A-Za-z]*)\s*\(\)")
 
 # These tests are wrappers for complete suites rather than individual subtests.
 IGNORED_TESTS = [ "test_sanity", "test_sanityn" ]
@@ -165,6 +171,13 @@ def suite_tests(repo, rev, path):
     return sorted((t for t in hit & run_tests if t not in IGNORED_TESTS), key=natural_key)
 
 
+def ltsh_tests(repo, rev, path):
+    # returns [ test_N, ... ] of the .ltsh subtest file at path
+    names = { "test_" + m.group(1) for m in
+              map(LTSH_TEST_RE.match, blob_lines(repo, rev, path)) if m }
+    return sorted(names, key=natural_key)
+
+
 def suite_path(path):
     # only lustre/tests/*.sh and lustre/tests/runtests are suites
     if not path.startswith(SUITE_DIR) or "/" in path[len(SUITE_DIR):]:
@@ -176,11 +189,17 @@ def suite_path(path):
 def updated_tests(repo, rev, affected):
     tests = {}
     for path in affected["m"] + affected["a"]:
-        if not suite_path(path):
+        ltsh = LTSH_RE.match(path)
+        if ltsh:
+            suite, names = ltsh.group(1), ltsh_tests(repo, rev, path)
+        elif suite_path(path):
+            suite = re.sub(r"\.sh$", "", os.path.basename(path))
+            names = suite_tests(repo, rev, path)
+        else:
             continue
-        names = suite_tests(repo, rev, path)
         if names:
-            tests[re.sub(r"\.sh$", "", os.path.basename(path))] = names
+            tests[suite] = sorted(set(tests.get(suite, [ ])) | set(names),
+                                  key=natural_key)
     if NFS_SUITE in tests:
         for target in NFS_TARGETS:
             tests[target] = list(tests[NFS_SUITE])
