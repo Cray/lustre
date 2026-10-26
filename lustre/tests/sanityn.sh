@@ -7388,6 +7388,105 @@ test_122() {
 }
 run_test 122 "directory size is consistent across mounts"
 
+test_126() {
+	(( MDSCOUNT >= 2 )) || skip "needs >= 2 MDTs"
+
+	# parent on MDT1 has a bigger FID than its subdir on MDT0
+	$LFS mkdir -i 1 $DIR/$tdir || error "mkdir $tdir failed"
+	$LFS mkdir -i 0 $DIR/$tdir/sub || error "mkdir sub failed"
+	$LFS mkdir -i 0 $DIR/$tdir/src || error "mkdir src failed"
+	touch $DIR/$tdir/file || error "touch file failed"
+	cancel_lru_locks mdc
+	# with "sub" cached, rename #1 is sent straight to MDT0, which holds
+	# "sub", instead of to MDT1 first and back with -EXDEV
+	stat $DIR/$tdir/sub > /dev/null || error "stat sub failed"
+	# rename #2 must reach the MDS while #1 is stalled, so its lookups
+	# must not wait for the locks #1 holds
+	stat $DIR2/$tdir/file $DIR2/$tdir/sub > /dev/null ||
+		error "stat on $DIR2 failed"
+
+	# rename #1 locks $tdir and stalls before the EX lock of "sub"
+#define OBD_FAIL_MDS_RENAME2             0x154
+	do_facet mds1 $LCTL set_param fail_loc=0x80000154
+	stack_trap "do_facet mds1 $LCTL set_param fail_loc=0"
+	mrename $DIR/$tdir/src $DIR/$tdir/sub &
+	local pid1=$!
+	# CFS_FAILED | CFS_FAIL_ONCE | OBD_FAIL_MDS_RENAME2
+	wait_update_facet mds1 "$LCTL get_param -n fail_loc" \
+		"$((0xc0000154))" 10 ||
+		error "rename #1 did not reach OBD_FAIL_MDS_RENAME2"
+
+	# a PR waiter on $tdir queues behind rename #1: rename #1 has
+	# cancelled the UPDATE lock on $tdir of this mount
+	stat $DIR/$tdir > /dev/null &
+	local pid2=$!
+	sleep 1
+
+	# rename #2 must not lock "sub" before its parent $tdir
+	stack_trap "rm -f $TMP/$tfile.err"
+	mrename $DIR2/$tdir/file $DIR2/$tdir/sub/file 2> $TMP/$tfile.err &
+	local pid3=$!
+
+	local pid
+	local i
+
+	for ((i = 0; i < 30; i++)); do
+		for pid in $pid1 $pid2 $pid3; do
+			kill -0 $pid 2> /dev/null && break
+		done || break
+		sleep 1
+	done
+	for pid in $pid1 $pid2 $pid3; do
+		! kill -0 $pid 2> /dev/null || error "rename deadlock"
+	done
+	wait $pid1 || error "rename #1 failed"
+	wait $pid2 || error "stat $tdir failed"
+	# rename #2 runs after #1 has replaced "sub", so it may find its
+	# target dir gone
+	wait $pid3 || grep -q "No such file or directory" $TMP/$tfile.err ||
+		error "rename #2 failed: $(cat $TMP/$tfile.err)"
+}
+run_test 126 "rename into subdir vs rename onto subdir deadlock"
+
+test_127() {
+	# parent created after its subdir has a bigger FID (LU-20985)
+	test_mkdir -c1 -i0 $DIR/$tfile-sub || error "mkdir sub failed"
+	test_mkdir -c1 -i0 $DIR/$tdir || error "mkdir $tdir failed"
+	mv $DIR/$tfile-sub $DIR/$tdir/sub || error "mv sub failed"
+	touch $DIR/$tdir/a $DIR/$tdir/sub/b || error "touch failed"
+	stat $DIR2/$tdir/a $DIR2/$tdir/sub/b > /dev/null
+
+	# rename #1 stalls after locking its first parent
+#define OBD_FAIL_MDS_RENAME              0x153
+	do_facet mds1 $LCTL set_param fail_loc=0x80000153
+	stack_trap "do_facet mds1 $LCTL set_param fail_loc=0"
+	mrename $DIR/$tdir/a $DIR/$tdir/sub/b &
+	local pid1=$!
+	# CFS_FAILED | CFS_FAIL_ONCE | OBD_FAIL_MDS_RENAME
+	wait_update_facet mds1 "$LCTL get_param -n fail_loc" \
+		"$((0xc0000153))" 10 ||
+		error "rename #1 did not reach OBD_FAIL_MDS_RENAME"
+
+	mrename $DIR2/$tdir/sub/b $DIR2/$tdir/a &
+	local pid2=$!
+
+	local pid
+	local i
+
+	for ((i = 0; i < 30; i++)); do
+		for pid in $pid1 $pid2; do
+			kill -0 $pid 2> /dev/null && break
+		done || break
+		sleep 1
+	done
+	for pid in $pid1 $pid2; do
+		! kill -0 $pid 2> /dev/null || error "rename deadlock"
+	done
+	wait $pid1 || error "rename #1 failed"
+	wait $pid2 || error "rename #2 failed"
+}
+run_test 127 "rename into subdir vs rename out of subdir deadlock"
+
 test_200() {
 	remote_ost_nodsh && skip "remote OST with nodsh" && return
 
