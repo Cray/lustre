@@ -911,8 +911,8 @@ ksocknal_launch_packet(struct lnet_ni *ni, struct ksock_tx *tx,
 int
 ksocknal_send(struct lnet_ni *ni, void *private, struct lnet_msg *lntmsg)
 {
-	/* '1' for consistency with code that checks !mpflag to restore */
-	unsigned int mpflag = 1;
+	bool vmflush = lntmsg->msg_vmflush;
+	unsigned int mpflag = 0;
 	int type = lntmsg->msg_type;
 	struct lnet_processid *target = &lntmsg->msg_target;
 	unsigned int payload_niov = lntmsg->msg_niov;
@@ -981,7 +981,7 @@ ksocknal_send(struct lnet_ni *ni, void *private, struct lnet_msg *lntmsg)
 	/* We can't test lntsmg->msg_vmflush again as lntmsg may
 	 * have been freed.
 	 */
-	if (!mpflag)
+	if (vmflush)
 		memalloc_noreclaim_restore(mpflag);
 
 	if (rc == 0)

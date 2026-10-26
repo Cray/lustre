@@ -2831,8 +2831,8 @@ static int __tgt_brw_write(struct tgt_session_info *tsi)
 	struct tgt_thread_big_cache *tbc = req->rq_svc_thread->t_data;
 	bool wait_sync = false;
 	const char *obd_name = exp->exp_obd->obd_name;
-	/* '1' for consistency with code that checks !mpflag to restore */
-	unsigned int mpflags = 1;
+	bool memalloc = false;
+	unsigned int mpflags = 0;
 	ktime_t kstart;
 	int nob = 0;
 
@@ -2914,13 +2914,15 @@ static int __tgt_brw_write(struct tgt_session_info *tsi)
 
 	if ((remote_nb[0].rnb_flags & OBD_BRW_MEMALLOC) &&
 	    exp->exp_connection &&
-	    LNetIsPeerLocal(&exp->exp_connection->c_peer.nid))
+	    LNetIsPeerLocal(&exp->exp_connection->c_peer.nid)) {
+		memalloc = true;
 		mpflags = memalloc_noreclaim_save();
+	}
 
 	/* it is incorrect to return ENOSPC when granted space has been used */
 	if (unlikely(!(remote_nb[0].rnb_flags & OBD_BRW_FROM_GRANT))) {
 		if (CFS_FAIL_CHECK(OBD_FAIL_OST_ENOSPC_VALID))
-			RETURN(err_serious(-ENOSPC));
+			GOTO(out, rc = err_serious(-ENOSPC));
 	}
 
 	req_capsule_set_size(&req->rq_pill, &RMF_RCS, RCL_SERVER,
@@ -3141,7 +3143,7 @@ out:
 				      obd_export_nid2str(exp), rc);
 	}
 
-	if (mpflags)
+	if (memalloc)
 		memalloc_noreclaim_restore(mpflags);
 
 	RETURN(rc);
