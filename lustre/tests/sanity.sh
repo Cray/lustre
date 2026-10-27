@@ -7623,6 +7623,122 @@ test_51c() {
 }
 run_test 51c "exceed 64k subdirectory count per dir stripe, verify nlink count"
 
+# At the end of its FID sequence an OSP sends no more precreates until
+# its pool is used up and it moves to a new sequence, so its pool would
+# never refill while sub_51d_wait_precreate waits.  Use up the objects
+# left on those OSTs with files in $fill, outside the counted $tdir.
+# usage: sub_51d_use_seq_end mdtidx width fill
+sub_51d_use_seq_end() {
+	local idx=$1
+	local width=$2
+	local fill=$3
+	local osps=$(printf "osp.$FSNAME-OST*-osc-MDT%04x" $idx)
+	local seqend
+	local ost
+
+	(( width > 0 )) || return 0
+	# print "ostidx:objects_left" for each OSP at the end of its sequence
+	seqend=($(do_facet mds$((idx + 1)) "$LCTL get_param \
+		$osps.prealloc_next_id $osps.prealloc_last_id" |
+		awk -F'[.=]' -v width=$width '
+		/prealloc_next_id/ { next_id[$2] = $4 }
+		/prealloc_last_id/ { last_id[$2] = $4 }
+		END { for (osp in last_id) {
+			left = last_id[osp] - next_id[osp] + 1;
+			# next_id is 1 when the pool is used up to the end
+			if (last_id[osp] < width || next_id[osp] <= 1 ||
+			    left <= 0)
+				continue;
+			match(osp, /-OST[0-9a-f]+-/);
+			print substr(osp, RSTART + 4, RLENGTH - 5) ":" left }
+		}'))
+
+	for ost in ${seqend[@]}; do
+		local left=${ost#*:}
+
+		ost=$((16#${ost%:*}))
+		echo "MDT$idx OST$ost at end of sequence, use $left objects"
+		[[ -d $fill ]] || $LFS mkdir -i $idx -c 1 $fill ||
+			error "mkdir $fill on MDT$idx failed"
+		$LFS setstripe -i $ost -c 1 $fill ||
+			error "setstripe $fill on OST$ost failed"
+		createmany -o $fill/f$ost- $left > /dev/null ||
+			error "create $left files on OST$ost failed"
+		unlinkmany $fill/f$ost- $left > /dev/null ||
+			error "unlink $left files on OST$ost failed"
+	done
+}
+
+# Wait until every OSP of each listed MDT has at least $need objects
+# precreated, so LOD round-robin does not skip OSTs whose precreate pool
+# is still filling and unbalance the objects (LU-21043).
+# usage: sub_51d_wait_precreate need count mdtidx...
+#   need: objects one OST may be asked for by one MDT in one pass
+#   count: create_count set by the test on the OSPs of these MDTs
+sub_51d_wait_precreate() {
+	local need=$1
+	local count=$2
+	shift 2
+	local begin=$SECONDS
+	# objects in each FID sequence an OST gives to an OSP
+	local width=$(do_nodes $(osts_nodes) \
+		"$LCTL get_param -n seq.cli-*OST*-super.width" |
+		sort -n | head -n 1)
+	local idx
+
+	# the highest-numbered MDTs are usually the slowest to fill
+	for idx in $(printf "%s\n" "$@" | sort -rnu); do
+		local facet=mds$((idx + 1))
+		local osps=$(printf "osp.$FSNAME-OST*-osc-MDT%04x" $idx)
+		local fill=$DIR/$tdir.fill.$idx
+		# the OSP refills its pool when fewer than about create_count/2
+		# objects remain, so do not wait for more than that
+		local want=$((need < count / 2 ? need : count / 2))
+		# objects available = prealloc_last_id - prealloc_next_id + 1
+		# for each OSP of this MDT; print the minimum.  next_id is 1
+		# when the pool is used up to the end of the sequence.
+		local check="$LCTL get_param $osps.prealloc_next_id \
+			$osps.prealloc_last_id | awk -F'[.=]' -v w=${width:-0} '
+			/prealloc_next_id/ { next_id[\\\$2] = \\\$4 }
+			/prealloc_last_id/ { last_id[\\\$2] = \\\$4 }
+			END { min = -1;
+			      for (osp in last_id) {
+				      avail = last_id[osp] - next_id[osp] + 1;
+				      if ((osp in next_id) == 0 ||
+					  (w > 0 && next_id[osp] == 1 &&
+					   last_id[osp] >= w))
+					      avail = 0;
+				      if (min < 0 || avail < min)
+					      min = avail;
+			      }
+			      print min }'"
+		local end=$((SECONDS + 180))
+		local param=$osps.create_count
+		local cc
+
+		while true; do
+			# the OSP lowers create_count if the OST is slow or
+			# reconnects, so set it again between short waits
+			cc=$(do_facet $facet "$LCTL get_param -n $param" |
+			     sort -n | head -n 1)
+			if (( cc < count )); then
+				echo "MDT$idx create_count $cc, reset to $count"
+				do_facet $facet \
+					"$LCTL set_param $param=$count" ||
+					error "MDT$idx set create_count failed"
+			fi
+			wait_update_facet_cond $facet "$check" -ge $want 10 &&
+				break
+			(( SECONDS < end )) ||
+				error "MDT$idx OSPs precreated < $want objects"
+
+			sub_51d_use_seq_end $idx ${width:-0} $fill
+		done
+		rm -rf $fill
+	done
+	echo "waited $((SECONDS - begin))s for $need precreated objects"
+}
+
 test_51d_sub() {
 	local stripecount=$1
 	local nfiles=$2
@@ -7695,7 +7811,7 @@ test_51d() {
 	local per_ost=100
 	local nfiles=$((per_ost * OSTCOUNT))
 	local mdts=$(comma_list $(mdts_nodes))
-	local param="osp.*.create_count"
+	local param="create_count"
 	local qos_old=$(do_facet mds1 \
 		"$LCTL get_param -n lod.$FSNAME-*.qos_threshold_rr" | head -n 1)
 
@@ -7705,28 +7821,51 @@ test_51d() {
 		'$LCTL set_param lod.$FSNAME-*.qos_threshold_rr=${qos_old%%%}'"
 
 	test_mkdir $DIR/$tdir
-	local dirstripes=$(lfs getdirstripe -c $DIR/$tdir)
-	(( dirstripes > 0 )) || dirstripes=1
+	# files are only created on the MDTs holding the stripes of $tdir
+	local mdtidx=($($LFS getdirstripe $DIR/$tdir |
+		awk '/^lmv_stripe_count/ { off = $4 }
+		     /\[0x/ { print $1; n++ }
+		     END { if (n == 0) print off }' | sort -nu))
+	local nmdts=${#mdtidx[@]}
+
+	(( nmdts > 0 )) || error "no MDT found for $DIR/$tdir"
+	echo "$tdir is on MDT ${mdtidx[*]}"
 
 	# Ensure enough OST objects precreated for tests to pass without
 	# running out of objects.  This is an LOV r-r OST algorithm test,
 	# not an OST object precreation test.
-	local old=$(do_facet mds1 "$LCTL get_param -n $param" | head -n 1)
-	(( old >= nfiles )) ||
-	{
-		local create_count=$((nfiles * OSTCOUNT / dirstripes))
+	local create_count=$((nfiles * OSTCOUNT / nmdts))
+	local idx
 
-		do_nodes $mdts "$LCTL set_param $param=$create_count"
-		stack_trap "do_nodes $mdts $LCTL set_param $param=$old"
+	for idx in ${mdtidx[@]}; do
+		local facet=mds$((idx + 1))
+		local osps=$(printf "osp.$FSNAME-OST*-osc-MDT%04x" $idx)
+		local old=$(do_facet $facet \
+			    "$LCTL get_param -n $osps.$param" | head -n 1)
 
-		# trigger precreation from all MDTs for all OSTs
-		for ((i = 0; i < $MDSCOUNT * 2; i++ )); do
-			$LFS setstripe -c -1 $DIR/$tdir/wide.$i
-		done
-	}
+		do_facet $facet "$LCTL set_param $osps.$param=$create_count" ||
+			error "set $osps.$param=$create_count failed"
+		stack_trap "do_facet $facet $LCTL set_param $osps.$param=$old"
+		# the OSP rounds create_count down, use the value it keeps
+		create_count=$(do_facet $facet \
+			       "$LCTL get_param -n $osps.$param" |
+			       sort -n | tail -n 1)
+	done
+
+	# trigger precreation from the MDTs of $tdir for all OSTs
+	for ((i = 0; i < $MDSCOUNT * 2; i++ )); do
+		$LFS setstripe -c -1 $DIR/$tdir/wide.$i
+	done
 
 	for ((stripecount = 3; stripecount <= $OSTCOUNT; stripecount++)); do
-		sleep 8  # allow object precreation to catch up
+		# Each pass creates nfiles * stripecount objects, which RR
+		# spreads evenly over OSTCOUNT OSTs and name hashing spreads
+		# over the nmdts MDTs of $tdir.  Add 50% for uneven hashing
+		# (about +25% at 12 MDTs with 800 files) and 1 for rounding.
+		local need=$((nfiles * stripecount * 3 /
+			      (OSTCOUNT * nmdts * 2) + 1))
+
+		sub_51d_wait_precreate $need $create_count ${mdtidx[@]}
 		test_51d_sub $stripecount $nfiles
 	done
 }
