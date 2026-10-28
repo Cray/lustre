@@ -111,7 +111,8 @@ static void vvp_object_size_unlock(struct cl_object *obj)
  * Helper function that if necessary adjusts file size (inode->i_size), when
  * position at the offset \a pos is accessed. File size can be arbitrary stale
  * on a Lustre client, but client at least knows KMS. If accessed area is
- * inside [0, KMS], set file size to KMS, otherwise glimpse file size.
+ * inside [0, KMS], extend file size to KMS and clamp it to the object size,
+ * otherwise glimpse file size.
  *
  * Locking: i_size_lock is used to serialize changes to inode size and to
  * protect consistency between inode size and cl_object
@@ -126,6 +127,7 @@ static int vvp_prep_size(const struct lu_env *env, struct cl_object *obj,
 	struct inode   *inode = vvp_object_inode(obj);
 	loff_t          pos   = start + count - 1;
 	loff_t kms;
+	loff_t isize;
 	int result;
 
 	/*
@@ -186,12 +188,29 @@ static int vvp_prep_size(const struct lu_env *env, struct cl_object *obj,
 		 * someone does a read outside of kms - glimpse needed.
 		 * size might to be wrong due lock cancelation in middle.
 		 * b=11081
+		 *
+		 * KMS is a lower bound only: osc_lock_lvb_update() clamps
+		 * it to the end of the granted lock and sub-objects with
+		 * no valid KMS contribute 0. So extend i_size up to KMS,
+		 * and clamp it to cat_size, which is always >= KMS and is
+		 * lowered only by an authoritative update such as another
+		 * client's truncate. i_size is sampled once: it also has
+		 * writers outside ll_inode_size_lock().
 		 */
-		i_size_write(inode, kms);
-		CDEBUG(D_VFSTRACE,
-		       DFID" updating i_size %llu\n",
-		       PFID(lu_object_fid(&obj->co_lu)),
-		       (__u64)i_size_read(inode));
+		isize = i_size_read(inode);
+		if (isize < kms) {
+			i_size_write(inode, kms);
+			CDEBUG(D_VFSTRACE,
+			       DFID" updating i_size %llu\n",
+			       PFID(lu_object_fid(&obj->co_lu)),
+			       (__u64)kms);
+		} else if (isize > attr->cat_size) {
+			i_size_write(inode, attr->cat_size);
+			CDEBUG(D_VFSTRACE,
+			       DFID" shrinking i_size %llu\n",
+			       PFID(lu_object_fid(&obj->co_lu)),
+			       (__u64)attr->cat_size);
+		}
 	}
 
 	vvp_object_size_unlock(obj);
