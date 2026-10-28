@@ -1201,6 +1201,17 @@ test_29() {
 }
 run_test 29 "peer show has one peer key when 0@lo is the first peer"
 
+test_30() {
+	stack_trap "echo test_30 cleanup" EXIT
+
+	local exit_trap=$(trap -p EXIT)
+
+	echo "$exit_trap"
+	[[ $exit_trap != *cleanup_testsuite* ]] ||
+		error "stack_trap chains the cleanup_testsuite EXIT trap"
+}
+run_test 30 "stack_trap in a test does not chain the suite EXIT trap"
+
 add_net() {
 	local net="$1"
 	local if="$2"

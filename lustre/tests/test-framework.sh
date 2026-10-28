@@ -8368,6 +8368,11 @@ run_one() {
 	local SAVE_UMASK=`umask`
 	umask 0022
 
+	# The subshell does not run the EXIT trap of the test script, but
+	# "trap -p" still prints it. Clear the trap. Otherwise stack_trap in
+	# the test chains the script EXIT trap and runs it when the test ends.
+	trap - EXIT
+
 	if ! grep -q $DIR /proc/mounts; then
 		$SETUP
 	fi
