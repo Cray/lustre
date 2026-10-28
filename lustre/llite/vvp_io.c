@@ -196,6 +196,12 @@ static int vvp_prep_size(const struct lu_env *env, struct cl_object *obj,
 
 	vvp_object_size_unlock(obj);
 
+	/* Wake a stat() parked in ll_getattr_dentry(), now that i_size
+	 * has been adjusted. Lets a test observe the size this function
+	 * publishes rather than the one a later glimpse would restore.
+	 */
+	CFS_RACE(OBD_FAIL_LLITE_STAT_SIZE_RACE);
+
 	return result;
 }
 

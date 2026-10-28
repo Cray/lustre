@@ -5772,6 +5772,12 @@ fill_attr:
 	CFS_FAIL_TIMEOUT_RESET(OBD_FAIL_LLITE_STAT_RACE1,
 			       OBD_FAIL_LLITE_STAT_RACE2, 1);
 
+	/* Park here until a concurrent IO thread has passed through
+	 * vvp_prep_size(), so that the size this stat() is about to
+	 * report is the one that function has left behind.
+	 */
+	CFS_RACE(OBD_FAIL_LLITE_STAT_SIZE_RACE);
+
 	/*
 	 * ll_merge_attr() does not update inode's timestamps
 	 * atomically. Protect against intermediate values

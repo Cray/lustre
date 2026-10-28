@@ -680,6 +680,62 @@ test_16i() {
 }
 run_test 16i "read after truncate file"
 
+test_16j() {
+	local tf=$DIR/$tdir/$tfile
+	local tf2=$DIR2/$tdir/$tfile
+	local sz=$((2 * 1024 * 1024))
+	local size
+	local elapsed
+	local start
+
+	(( $OSTCOUNT >= 1 )) || skip "needs >= 1 OST"
+
+	test_mkdir $DIR/$tdir
+
+	# two components, the file size lives in the second one
+	$LFS setstripe -E 1M -c 1 -E -1 -c 1 $tf || error "setstripe failed"
+	dd if=/dev/zero of=$tf bs=1M count=2 || error "dd failed"
+
+	# mount 2 learns the size by a glimpse, which sets no KMS, then
+	# reads the head of the file so that the only KMS it has comes
+	# from the lock granted on the first component
+	size=$(stat -c %s $tf2)
+	(( size == sz )) || error "wrong size on mount 2: $size != $sz"
+	dd if=$tf2 of=/dev/null bs=4k count=1 ||
+		error "dd read on mount 2 failed"
+
+	#define OBD_FAIL_LLITE_STAT_SIZE_RACE	0x1440
+	$LCTL set_param fail_loc=0x80001440
+	start=$SECONDS
+	# The stat() parks after merging the attributes and before it
+	# samples i_size; the read wakes it only once vvp_prep_size() has
+	# had its say. An i_size forced down to KMS is then what stat()
+	# reports, i.e. the end of the first component instead of the
+	# real file size.
+	#
+	# The racing read must miss the page cache, otherwise
+	# ll_do_fast_read() serves it without entering the cl_io path,
+	# vvp_prep_size() is never called and the stat() just waits out
+	# the cfs_race() timeout. Read a different offset, still inside
+	# the first component and below KMS.
+	size=$(stat -c %s $tf2 &
+	       sleep 1
+	       dd if=$tf2 of=/dev/null bs=4k count=1 skip=100 2>/dev/null
+	       wait)
+	$LCTL set_param fail_loc=0
+	elapsed=$((SECONDS - start))
+
+	# cfs_race() gives up after 5s. If the stat() waited that long the
+	# read never reached vvp_prep_size() and the race did not happen,
+	# so a PASS here would mean nothing.
+	(( elapsed < 5 )) ||
+		error "read did not reach vvp_prep_size(), waited ${elapsed}s"
+
+	(( size == sz )) ||
+		error "read shrank the size seen by stat: $size != $sz"
+}
+run_test 16j "concurrent read must not shrink i_size to KMS"
+
 test_17() { # bug 3513, 3667
 	remote_ost_nodsh && skip "remote OST with nodsh" && return
 
