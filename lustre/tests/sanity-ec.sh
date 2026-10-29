@@ -3952,15 +3952,16 @@ test_12d() {
 run_test 12d "resync skips holed raidsets"
 
 test_12e() {
-	# Punch overlapping holes on both data stripes; the overlap [8k, 16k)
-	# leaves a matching hole in the parity stripe after resync.
+	# Punch overlapping holes on both data stripes; the overlap leaves a
+	# matching hole in the parity stripe after resync.  Resync aligns parity
+	# coverage to the client PAGE_SIZE, so size everything in pages.
 	(( OSTCOUNT >= 3 )) || skip_env "needs >= 3 OSTs"
 	enable_ec
 
 	local tf=${DIR}/${tdir}/$tfile
 	local stripe_size=$((1024 * 1024))
 	local stripe_set_size=$((2 * stripe_size))
-	local punch_len=$((12 * 1024))
+	local punch_len=$((3 * PAGE_SIZE))
 
 	test_mkdir $DIR/$tdir
 	stack_trap "rm -f $tf"
@@ -3983,11 +3984,12 @@ test_12e() {
 	check_mirror_lseek -d $tf $parity_mirror_id 0 0
 	check_mirror_lseek -l $tf $parity_mirror_id 0 $stripe_size
 
-	# Punch data0 [4k, 16k) and data1 [8k, 20k); overlap is [8k, 16k).
+	# Punch data0 pages [1, 4) and data1 pages [2, 5); overlap is [2, 4).
 	local fallocate_out
-	fallocate_out=$(fallocate -p --offset 4096 -l $punch_len $tf 2>&1) ||
+	fallocate_out=$(fallocate -p --offset $PAGE_SIZE -l $punch_len \
+		$tf 2>&1) ||
 		skip_eopnotsupp "$fallocate_out|fallocate punch data0 failed"
-	fallocate_out=$(fallocate -p --offset $((stripe_size + 8192)) \
+	fallocate_out=$(fallocate -p --offset $((stripe_size + 2 * PAGE_SIZE)) \
 		-l $punch_len $tf 2>&1) ||
 		skip_eopnotsupp "$fallocate_out|fallocate punch data1 failed"
 
@@ -3998,25 +4000,25 @@ test_12e() {
 	$LFS getstripe $tf | grep lcme_flags | grep stale &&
 		error "stale component after resync following punch"
 
-	# Parity: [0, 8k) and [16k, ...) have data; [8k, 16k) is a hole.
+	# Parity: pages [0, 2) and [4, ...) have data; [2, 4) is a hole.
 	check_mirror_lseek -d $tf $parity_mirror_id 0 0
-	check_mirror_lseek -l $tf $parity_mirror_id 0 $((8 * 1024))
-	check_mirror_lseek -d $tf $parity_mirror_id $((8 * 1024)) \
-		$((16 * 1024))
+	check_mirror_lseek -l $tf $parity_mirror_id 0 $((2 * PAGE_SIZE))
+	check_mirror_lseek -d $tf $parity_mirror_id $((2 * PAGE_SIZE)) \
+		$((4 * PAGE_SIZE))
 
 	$LFS mirror verify $tf || error "mirror verify failed after punch resync"
 }
 run_test 12e "overlapping data holes punch parity gap verify"
 
 test_12f() {
-	# Write 2k (EOF not 4k-aligned), resync, and verify parity is written
-	# through the enclosing 4k block: data at [0, 4k), hole from 4k on.
+	# Write 2k (EOF not page-aligned), resync, and verify parity is written
+	# through the enclosing client page: data at [0, PAGE_SIZE), hole after.
 	(( OSTCOUNT >= 3 )) || skip_env "needs >= 3 OSTs"
 	enable_ec
 
 	local tf=${DIR}/${tdir}/$tfile
 	local write_len=$((2 * 1024))
-	local parity_len=$((4 * 1024))
+	local parity_len=$PAGE_SIZE
 
 	test_mkdir $DIR/$tdir
 	stack_trap "rm -f $tf"
@@ -4036,8 +4038,8 @@ test_12f() {
 		grep "lcme_mirror_id" | awk '{print $2}')
 
 	# osd-zfs has no hole-punch, so resync zero-fills the whole parity
-	# stripe [0, stripe_size) before writing [0, 4k); SEEK_HOLE then
-	# reports stripe_size instead of 4k. Keep SEEK_DATA checks (incl.
+	# stripe [0, stripe_size) before writing [0, PAGE_SIZE); SEEK_HOLE then
+	# reports stripe_size instead of PAGE_SIZE. Keep SEEK_DATA checks (incl.
 	# past i_size) and rely on mirror verify for hole-or-zero (LU-20435).
 	# Drop the zfs guard once osd-zfs hole-punch is implemented.
 	check_mirror_lseek -d $tf $parity_mirror_id 0 0
@@ -4049,7 +4051,7 @@ test_12f() {
 
 	$LFS mirror verify $tf || error "mirror verify failed after resync"
 }
-run_test 12f "short write resync parity spans [0, 4k) verify"
+run_test 12f "short write resync parity spans [0, PAGE_SIZE) verify"
 
 test_12g() {
 	# EC-only stale resync must emit --stats YAML (lamigo liveness).
