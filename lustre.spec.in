@@ -87,7 +87,7 @@
 %if %{defined kobjdir}
 	%define _take_kobj 1
 %endif
-%{!?kdir:    %global kdir    /lib/modules/%{_kver}/source}
+%{!?kdir:    %global kdir    %(d="/lib/modules/%{_kver}"; [ -d "$d/source/include/linux" ] && echo "$d/source" || echo "$d/build")}
 %{!?kobjdir: %global kobjdir %(if [ "%{kdir}" = "/lib/modules/%{_kver}/source" ]; then echo "/lib/modules/%{_kver}/build"; else echo "%{kdir}"; fi)}
 
 %if %{defined _take_kver}

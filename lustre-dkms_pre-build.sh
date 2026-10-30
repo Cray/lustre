@@ -23,6 +23,7 @@ case $1 in
     lustre-client)
 	SERVER="--disable-server --enable-client"
 	ksrc="$(dirname $4)/source"
+	[ -d "$ksrc/include/linux" ] || ksrc="$4"
 	KERNEL_STUFF="--with-linux=$(realpath $ksrc) --with-linux-obj=$(realpath $4)"
 	name=$1
 	flavor=$(echo $3 | tr '-' '\n' | tail -1)
