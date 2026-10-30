@@ -4846,8 +4846,6 @@ run_test 26b "EC data integrity with patterned data and 4M stripes"
 
 # Test 27: PFL lazy instantiation with EC
 test_27a() {
-	(( OSTCOUNT >= 5 )) || skip "needs >= 5 OSTs"
-
 	enable_ec
 
 	local tf=$DIR/$tdir/$tfile
@@ -4856,20 +4854,23 @@ test_27a() {
 
 	test_mkdir $DIR/$tdir
 
-	# Create EC file with PFL: [0, 1M], [1M, 8M], [8M, EOF]
-	# Use 4+1 so parity count stays valid for all component stripe counts
-	$LFS setstripe -E 1M -c 4 -E 8M -c 4 -E -1 -c 4 --ec 4+1 $tf ||
+	# Create EC file with PFL: [0, R], [R, 2R], [2R, EOF], where R is the
+	# ${EC_DSTRIPE}M row width of 1M stripes, so every EC component
+	# starts on a row
+	$LFS setstripe -E ${EC_DSTRIPE}M -S 1M -c $EC_DSTRIPE \
+		-E $((2 * EC_DSTRIPE))M -S 1M -c $EC_DSTRIPE \
+		-E -1 -S 1M -c $EC_DSTRIPE $EC_ARG $tf ||
 		error "setstripe failed"
 
 	verify_mirror_count $tf 2
 	verify_comp_count $tf 6
 
 	# Component layout:
-	# ids[0]: data [0, 1M]    ids[3]: parity [0, 1M]
-	# ids[1]: data [1M, 8M]   ids[4]: parity [1M, 8M]
-	# ids[2]: data [8M, EOF]  ids[5]: parity [8M, EOF]
+	# ids[0]: data [0, R]     ids[3]: parity [0, R]
+	# ids[1]: data [R, 2R]    ids[4]: parity [R, 2R]
+	# ids[2]: data [2R, EOF]  ids[5]: parity [2R, EOF]
 
-	# Write only to the first component (< 1M)
+	# Write only to the first component (< R)
 	dd if=/dev/urandom of=$tf bs=512K count=1 ||
 		error "write to first component failed"
 
@@ -4905,8 +4906,9 @@ test_27a() {
 	# Save parity checksum after first resync
 	local parity_sum1=$($LFS mirror read -N2 $tf | md5sum)
 
-	# Now write to the second component extent (at 2M)
-	dd if=/dev/urandom of=$tf bs=1M count=1 seek=2 conv=notrunc ||
+	# Now write to the second component extent (at R + 1M)
+	dd if=/dev/urandom of=$tf bs=1M count=1 seek=$((EC_DSTRIPE + 1)) \
+		conv=notrunc ||
 		error "write to second component failed"
 	verify_flr_state $tf "wp"
 
@@ -4919,8 +4921,9 @@ test_27a() {
 	[[ "$parity_sum1" != "$parity_sum2" ]] ||
 		error "parity unchanged after writing to second component"
 
-	# Write to the third component extent (at 10M)
-	dd if=/dev/urandom of=$tf bs=1M count=1 seek=10 conv=notrunc ||
+	# Write to the third component extent (at 2R + 2M)
+	dd if=/dev/urandom of=$tf bs=1M count=1 seek=$((2 * EC_DSTRIPE + 2)) \
+		conv=notrunc ||
 		error "write to third component failed"
 	verify_flr_state $tf "wp"
 
@@ -5254,14 +5257,13 @@ test_30b() {
 	# Note: we do NOT attempt resync while the OST is down because
 	# designated writes to a downed OST enter uninterruptible kernel
 	# sleep and cannot be timed out.
-	(( OSTCOUNT >= 4 )) || skip "need >= 4 OSTs"
 	enable_ec
 
 	local tf=$DIR/$tfile
 
 	stack_trap "rm -f $tf" EXIT
 
-	$LFS setstripe -E -1 -S 1M -c 2 --ec 2+1 $tf ||
+	$LFS setstripe -E -1 -S 1M -c $EC_DSTRIPE $EC_ARG $tf ||
 		error "setstripe failed"
 
 	dd if=/dev/urandom of=$tf bs=1M count=4 || error "write failed"
@@ -5327,14 +5329,13 @@ test_31a() {
 	# Inject OBD_FAIL_OST_BRW_WRITE_BULK on a parity OST during
 	# resync. The data mirror must remain intact regardless of
 	# whether the resync succeeds or fails.
-	(( OSTCOUNT >= 4 )) || skip "need >= 4 OSTs"
 	enable_ec
 
 	local tf=$DIR/$tfile
 
 	stack_trap "rm -f $tf" EXIT
 
-	$LFS setstripe -E -1 -S 1M -c 2 --ec 2+1 $tf ||
+	$LFS setstripe -E -1 -S 1M -c $EC_DSTRIPE $EC_ARG $tf ||
 		error "setstripe failed"
 
 	dd if=/dev/urandom of=$tf bs=1M count=4 || error "write failed"
@@ -6750,16 +6751,15 @@ test_41d() {
 run_test 41d "test mmap reads with EC recovery"
 
 test_41e() {
-	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
 	enable_ec
 
 	local tf=$DIR/$tfile
 
 	stack_trap "rm -f $tf"
 
-	# Create EC file with 4+2 configuration
-	$LFS setstripe -E eof -S 1M -c 4 --ec 4+2 $tf ||
-		error "setstripe --ec 4+2 failed"
+	# Create EC file with the default EC layout
+	$LFS setstripe -E eof -S 1M -c $EC_DSTRIPE $EC_ARG $tf ||
+		error "setstripe $EC_ARG failed"
 
 	# Write 8MB of data using Direct I/O
 	dd if=/dev/urandom of=$tf bs=1M count=8 oflag=direct ||
@@ -6792,7 +6792,6 @@ test_41e() {
 run_test 41e "test Direct I/O reads with recovery"
 
 test_41g() {
-	(( OSTCOUNT >= 8 )) || skip_env "needs >= 8 OSTs"
 	enable_ec
 
 	local tf=$DIR/$tfile
@@ -6822,15 +6821,14 @@ test_41g() {
 run_test 41g "test DIO recovery with 2+1 EC"
 
 test_41h() {
-	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
 	enable_ec
 
 	local tf=$DIR/$tfile
 
 	stack_trap "rm -f $tf"
 
-	$LFS setstripe -E eof -S 1M -c 4 --ec 4+2 $tf ||
-		error "setstripe --ec 4+2 failed"
+	$LFS setstripe -E eof -S 1M -c $EC_DSTRIPE $EC_ARG $tf ||
+		error "setstripe $EC_ARG failed"
 
 	# Write 16MB with DIO -- spans multiple raid sets
 	dd if=/dev/urandom of=$tf bs=1M count=16 oflag=direct ||
@@ -6852,15 +6850,14 @@ test_41h() {
 run_test 41h "test DIO recovery spanning multiple raid sets"
 
 test_41i() {
-	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
 	enable_ec
 
 	local tf=$DIR/$tfile
 
 	stack_trap "rm -f $tf"
 
-	$LFS setstripe -E eof -S 1M -c 4 --ec 4+2 $tf ||
-		error "setstripe --ec 4+2 failed"
+	$LFS setstripe -E eof -S 1M -c $EC_DSTRIPE $EC_ARG $tf ||
+		error "setstripe $EC_ARG failed"
 
 	dd if=/dev/urandom of=$tf bs=1M count=8 || error "dd failed"
 	$LFS mirror resync $tf || error "mirror resync failed"
@@ -7102,16 +7099,15 @@ test_41n() {
 run_test 41n "test AIO vs buffered recovery on same file"
 
 test_42a() {
-	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
 	enable_ec
 
 	local tf=$DIR/$tfile
 
 	stack_trap "rm -f $tf"
 
-	# Create EC file with 4+2 configuration, 1M stripe size
-	$LFS setstripe -E eof -S 1M -c 4 --ec 4+2 $tf ||
-		error "setstripe --ec 4+2 failed"
+	# Create EC file with the default EC layout, 1M stripe size
+	$LFS setstripe -E eof -S 1M -c $EC_DSTRIPE $EC_ARG $tf ||
+		error "setstripe $EC_ARG failed"
 
 	# Write file smaller than one stripe (512K with 1M stripe)
 	# This tests if recovery works when file doesn't span all data OSTs
@@ -7135,7 +7131,6 @@ test_42a() {
 run_test 42a "test recovery with file smaller than stripe size"
 
 test_42d() {
-	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
 	enable_ec
 
 	local tf=$DIR/$tfile
@@ -7143,30 +7138,34 @@ test_42d() {
 	stack_trap "rm -f $tf"
 
 	# Create PFL file with EC - two components with different extents
-	# Component 1: [0, 4M] with 4+2 EC
-	# Component 2: [4M, EOF] with 4+2 EC
-	$LFS setstripe -E 4M -S 1M -c 4 --ec 4+2 \
-		-E eof -S 1M -c 4 --ec 4+2 $tf ||
+	# Component 1: [0, EC_DSTRIPE M] (one raid set), default EC layout
+	# Component 2: [EC_DSTRIPE M, EOF], default EC layout
+	$LFS setstripe -E ${EC_DSTRIPE}M -S 1M -c $EC_DSTRIPE $EC_ARG \
+		-E eof -S 1M -c $EC_DSTRIPE $EC_ARG $tf ||
 		error "setstripe with PFL failed"
 
-	# Write data that spans the component boundary
-	# Write 6M total: 4M in first component, 2M in second component
-	dd if=/dev/urandom of=$tf bs=1M count=6 || error "dd failed"
+	# Write data that spans the component boundary:
+	# EC_DSTRIPE MiB in first component, 2M in second component
+	dd if=/dev/urandom of=$tf bs=1M count=$((EC_DSTRIPE + 2)) ||
+		error "dd failed"
 
 	# Resync to update parity
 	$LFS mirror resync $tf || error "mirror resync failed"
 
 	# Get checksums before failure
 	local sum_full=$(md5sum $tf | awk '{print $1}')
-	# Read from first component only (0-4M)
-	local sum_comp1=$(dd if=$tf bs=1M count=4 2>/dev/null |
+	# Read from first component only (0 to EC_DSTRIPE MiB)
+	local sum_comp1=$(dd if=$tf bs=1M count=$EC_DSTRIPE 2>/dev/null |
 		md5sum | awk '{print $1}')
-	# Read from second component only (4M-6M)
-	local sum_comp2=$(dd if=$tf bs=1M skip=4 count=2 2>/dev/null |
-		md5sum | awk '{print $1}')
-	# Read spanning the boundary (2M-6M, crosses at 4M)
-	local sum_span=$(dd if=$tf bs=1M skip=2 count=4 2>/dev/null |
-		md5sum | awk '{print $1}')
+	# Read from second component only (the last 2M)
+	local sum_comp2=$(dd if=$tf bs=1M skip=$EC_DSTRIPE count=2 \
+		2>/dev/null | md5sum | awk '{print $1}')
+	# Read spanning the boundary, from the middle of the first
+	# component to EOF
+	local half=$((EC_DSTRIPE / 2))
+	local span=$((EC_DSTRIPE + 2 - half))
+	local sum_span=$(dd if=$tf bs=1M skip=$half count=$span \
+		2>/dev/null | md5sum | awk '{print $1}')
 
 	ec_start_read_fault $tf
 	stack_trap "ec_stop_read_fault"
@@ -7180,21 +7179,21 @@ test_42d() {
 	# served from the cache the full-file read just filled and never
 	# reaches the faulted OST.
 	cancel_lru_locks osc
-	local sum_comp1_after=$(dd if=$tf bs=1M count=4 2>/dev/null |
+	local sum_comp1_after=$(dd if=$tf bs=1M count=$EC_DSTRIPE 2>/dev/null |
 		md5sum | awk '{print $1}')
 	[[ "$sum_comp1" == "$sum_comp1_after" ]] ||
 		error "component 1 checksum changed: $sum_comp1 vs" \
 			"$sum_comp1_after"
 
 	cancel_lru_locks osc
-	local sum_comp2_after=$(dd if=$tf bs=1M skip=4 count=2 \
+	local sum_comp2_after=$(dd if=$tf bs=1M skip=$EC_DSTRIPE count=2 \
 		2>/dev/null | md5sum | awk '{print $1}')
 	[[ "$sum_comp2" == "$sum_comp2_after" ]] ||
 		error "component 2 checksum changed: $sum_comp2 vs" \
 			"$sum_comp2_after"
 
 	cancel_lru_locks osc
-	local sum_span_after=$(dd if=$tf bs=1M skip=2 count=4 \
+	local sum_span_after=$(dd if=$tf bs=1M skip=$half count=$span \
 		2>/dev/null | md5sum | awk '{print $1}')
 	[[ "$sum_span" == "$sum_span_after" ]] ||
 		error "boundary-spanning checksum changed: $sum_span vs" \
@@ -7205,16 +7204,15 @@ test_42d() {
 run_test 42d "test recovery at PFL component boundaries"
 
 test_43a() {
-	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
 	enable_ec
 
 	local tf=$DIR/$tfile
 
 	stack_trap "rm -f $tf"
 
-	# Create EC file with 4+2 configuration
-	$LFS setstripe -E eof -S 1M -c 4 --ec 4+2 $tf ||
-		error "setstripe --ec 4+2 failed"
+	# Create EC file with the default EC layout
+	$LFS setstripe -E eof -S 1M -c $EC_DSTRIPE $EC_ARG $tf ||
+		error "setstripe $EC_ARG failed"
 
 	# Write 8MB of data
 	dd if=/dev/urandom of=$tf bs=1M count=8 || error "dd failed"
@@ -7236,18 +7234,17 @@ test_43a() {
 
 	echo "** Single OST failure recovery successful"
 }
-run_test 43a "test recovery with single OST failure (1 of 6 OSTs)"
+run_test 43a "test recovery with single data OST failure"
 
 test_44a() {
-	(( OSTCOUNT >= 6 )) || skip_env "needs >= 6 OSTs"
 	enable_ec
 
 	local tf=$DIR/$tfile
 
 	stack_trap "rm -f $tf"
 
-	$LFS setstripe -E eof -S 1M -c 4 --ec 4+2 $tf ||
-		error "setstripe --ec 4+2 failed"
+	$LFS setstripe -E eof -S 1M -c $EC_DSTRIPE $EC_ARG $tf ||
+		error "setstripe $EC_ARG failed"
 
 	dd if=/dev/urandom of=$tf bs=1M count=8 conv=fsync ||
 		error "dd failed"
