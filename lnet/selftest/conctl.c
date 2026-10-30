@@ -949,7 +949,8 @@ static int lst_sessions_cmd(struct sk_buff *skb, struct genl_info *info)
 				ssize_t len;
 
 				item = nla_next(item, &rem);
-				if (nla_type(item) != LN_SCALAR_ATTR_VALUE)
+				if (!nla_ok(item, rem) ||
+				    nla_type(item) != LN_SCALAR_ATTR_VALUE)
 					GOTO(err_conf, rc = -EINVAL);
 
 				len = nla_strscpy(name, item, sizeof(name));
@@ -957,8 +958,8 @@ static int lst_sessions_cmd(struct sk_buff *skb, struct genl_info *info)
 					rc = len;
 			} else if (nla_strcmp(item, "timeout") == 0) {
 				item = nla_next(item, &rem);
-				if (nla_type(item) !=
-				    LN_SCALAR_ATTR_INT_VALUE)
+				if (!nla_ok(item, rem) ||
+				    !lnet_nla_is_int(item))
 					GOTO(err_conf, rc = -EINVAL);
 
 				timeout = nla_get_s64(item);
@@ -1158,9 +1159,10 @@ static int lst_groups_show_start(struct netlink_callback *cb)
 	}
 	glist->lggl_verbose = true;
 
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		NL_SET_ERR_MSG(extack, "no configuration");
-		GOTO(report_err, rc);
+		GOTO(report_err, rc = -EINVAL);
 	}
 
 	nla_for_each_nested(groups, params, rem) {
@@ -1217,7 +1219,8 @@ static int lst_groups_show_start(struct netlink_callback *cb)
 						continue;
 
 					attr = nla_next(attr, &rem3);
-					if (nla_type(attr) !=
+					if (!nla_ok(attr, rem3) ||
+					    nla_type(attr) !=
 					    LN_SCALAR_ATTR_VALUE) {
 						NL_SET_ERR_MSG(extack,
 							       "invalid config param");

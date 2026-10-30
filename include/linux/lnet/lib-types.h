@@ -2327,6 +2327,13 @@ static const struct nla_policy scalar_attr_policy[LN_SCALAR_MAX + 1] = {
 	[LN_SCALAR_ATTR_KEY_FORMAT]	= { .type = NLA_U16 },
 };
 
+/* an integer value attribute must carry the whole s64 it is read as */
+static inline bool lnet_nla_is_int(const struct nlattr *attr)
+{
+	return nla_type(attr) == LN_SCALAR_ATTR_INT_VALUE &&
+	       nla_len(attr) >= sizeof(s64);
+}
+
 int lnet_genl_send_scalar_list(struct sk_buff *msg, u32 portid, u32 seq,
 			       const struct genl_family *family,
 			       u8 version, int flags, u8 cmd,

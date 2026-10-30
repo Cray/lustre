@@ -820,7 +820,7 @@ ksocknal_nl_set(int cmd, struct nlattr *attr, int type, void *data)
 	if (cmd != LNET_CMD_NETS)
 		return -EOPNOTSUPP;
 
-	if (!attr || nla_type(attr) != LN_SCALAR_ATTR_INT_VALUE)
+	if (!attr || !lnet_nla_is_int(attr))
 		return -EINVAL;
 
 	switch (type) {

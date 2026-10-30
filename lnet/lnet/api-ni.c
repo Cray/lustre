@@ -3170,6 +3170,10 @@ nla_extract_val(struct nlattr **attr, int *rem,
 
 	ENTRY;
 	*attr = nla_next(*attr, rem);
+	if (!nla_ok(*attr, *rem)) {
+		NL_SET_ERR_MSG(extack, "Missing value for attribute");
+		RETURN(rc);
+	}
 	if (nla_type(*attr) != attr_type) {
 		CDEBUG(D_NET, "nla_type %d expect %d\n", nla_type(*attr),
 		       attr_type);
@@ -3188,7 +3192,7 @@ nla_extract_val(struct nlattr **attr, int *rem,
 		}
 		break;
 	case LN_SCALAR_ATTR_INT_VALUE:
-		if (ret_size == sizeof(u64)) {
+		if (ret_size == sizeof(u64) && lnet_nla_is_int(*attr)) {
 			*(u64 *)ret = nla_get_s64(*attr);
 			rc = 0;
 		}
@@ -6146,7 +6150,8 @@ static int lnet_net_show_start(struct netlink_callback *cb)
 	}
 
 	params = genlmsg_data(gnlh);
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		NL_SET_ERR_MSG(extack, "invalid configuration");
 		GOTO(report_err, rc = -EINVAL);
 	}
@@ -6164,7 +6169,8 @@ static int lnet_net_show_start(struct netlink_callback *cb)
 				continue;
 
 			net = nla_next(net, &rem2);
-			if (nla_type(net) != LN_SCALAR_ATTR_VALUE) {
+			if (!nla_ok(net, rem2) ||
+			    nla_type(net) != LN_SCALAR_ATTR_VALUE) {
 				NL_SET_ERR_MSG(extack, "invalid config param");
 				GOTO(report_err, rc = -EINVAL);
 			}
@@ -6652,7 +6658,8 @@ static int lnet_genl_parse_tunables(struct nlattr *settings,
 			type = LNET_NET_LOCAL_NI_TUNABLES_ATTR_CREDITS;
 
 		param = nla_next(param, &rem);
-		if (nla_type(param) != LN_SCALAR_ATTR_INT_VALUE)
+		if (!nla_ok(param, rem) ||
+		    !lnet_nla_is_int(param))
 			return -EINVAL;
 
 		num = nla_get_s64(param);
@@ -6706,6 +6713,9 @@ static int lnet_genl_parse_lnd_tunables(struct nlattr *settings,
 				continue;
 
 			param = nla_next(param, &rem);
+			if (!nla_ok(param, rem))
+				return -EINVAL;
+
 			rc = lnd->lnd_nl_set(LNET_CMD_NETS, param, i, tun);
 			if (rc < 0)
 				return rc;
@@ -6776,7 +6786,8 @@ lnet_genl_parse_local_ni(struct nlattr *entry, struct genl_info *info,
 			int rem4;
 
 			settings = nla_next(settings, &rem3);
-			if (nla_type(settings) !=
+			if (!nla_ok(settings, rem3) ||
+			    nla_type(settings) !=
 			    LN_SCALAR_ATTR_LIST) {
 				GENL_SET_ERR_MSG(info,
 						 "invalid interfaces");
@@ -6785,7 +6796,8 @@ lnet_genl_parse_local_ni(struct nlattr *entry, struct genl_info *info,
 
 			nla_for_each_nested(intf, settings, rem4) {
 				intf = nla_next(intf, &rem4);
-				if (nla_type(intf) !=
+				if (!nla_ok(intf, rem4) ||
+				    nla_type(intf) !=
 				    LN_SCALAR_ATTR_VALUE) {
 					GENL_SET_ERR_MSG(info,
 							 "cannot parse interface");
@@ -6806,7 +6818,8 @@ lnet_genl_parse_local_ni(struct nlattr *entry, struct genl_info *info,
 			char nidstr[LNET_NIDSTR_SIZE];
 
 			settings = nla_next(settings, &rem3);
-			if (nla_type(settings) != LN_SCALAR_ATTR_VALUE) {
+			if (!nla_ok(settings, rem3) ||
+			    nla_type(settings) != LN_SCALAR_ATTR_VALUE) {
 				GENL_SET_ERR_MSG(info, "cannot parse NID");
 				GOTO(out, rc = -EINVAL);
 			}
@@ -6837,7 +6850,8 @@ lnet_genl_parse_local_ni(struct nlattr *entry, struct genl_info *info,
 			int rem4;
 
 			settings = nla_next(settings, &rem3);
-			if (nla_type(settings) != LN_SCALAR_ATTR_LIST) {
+			if (!nla_ok(settings, rem3) ||
+			    nla_type(settings) != LN_SCALAR_ATTR_LIST) {
 				GENL_SET_ERR_MSG(info,
 						 "cannot parse health stats");
 				GOTO(out, rc = -EINVAL);
@@ -6852,8 +6866,8 @@ lnet_genl_parse_local_ni(struct nlattr *entry, struct genl_info *info,
 				}
 
 				health = nla_next(health, &rem4);
-				if (nla_type(health) !=
-				    LN_SCALAR_ATTR_INT_VALUE) {
+				if (!nla_ok(health, rem4) ||
+				    !lnet_nla_is_int(health)) {
 					GENL_SET_ERR_MSG(info,
 							 "invalid health config format");
 					GOTO(out, rc = -EINVAL);
@@ -6864,7 +6878,8 @@ lnet_genl_parse_local_ni(struct nlattr *entry, struct genl_info *info,
 			}
 		} else if (nla_strcmp(settings, "tunables") == 0) {
 			settings = nla_next(settings, &rem3);
-			if (nla_type(settings) !=
+			if (!nla_ok(settings, rem3) ||
+			    nla_type(settings) !=
 			    LN_SCALAR_ATTR_LIST) {
 				GENL_SET_ERR_MSG(info,
 						 "invalid tunables");
@@ -6879,7 +6894,8 @@ lnet_genl_parse_local_ni(struct nlattr *entry, struct genl_info *info,
 			}
 		} else if ((nla_strcmp(settings, "lnd tunables") == 0)) {
 			settings = nla_next(settings, &rem3);
-			if (nla_type(settings) !=
+			if (!nla_ok(settings, rem3) ||
+			    nla_type(settings) !=
 			    LN_SCALAR_ATTR_LIST) {
 				GENL_SET_ERR_MSG(info,
 						 "lnd tunables should be list\n");
@@ -6935,7 +6951,8 @@ lnet_genl_parse_local_ni(struct nlattr *entry, struct genl_info *info,
 			int rem4;
 
 			settings = nla_next(settings, &rem3);
-			if (nla_type(settings) != LN_SCALAR_ATTR_LIST) {
+			if (!nla_ok(settings, rem3) ||
+			    nla_type(settings) != LN_SCALAR_ATTR_LIST) {
 				GENL_SET_ERR_MSG(info,
 						 "CPT should be list");
 				GOTO(out, rc = -EINVAL);
@@ -6944,15 +6961,15 @@ lnet_genl_parse_local_ni(struct nlattr *entry, struct genl_info *info,
 			nla_for_each_nested(cpt, settings, rem4) {
 				s64 core;
 
-				if (nla_type(cpt) !=
-				    LN_SCALAR_ATTR_INT_VALUE) {
+				if (!lnet_nla_is_int(cpt)) {
 					GENL_SET_ERR_MSG(info,
 							 "invalid CPT config");
 					GOTO(out, rc = -EINVAL);
 				}
 
 				core = nla_get_s64(cpt);
-				if (core >= LNET_CPT_NUMBER) {
+				if (core < 0 || core >= LNET_CPT_NUMBER ||
+				    conf->lic_ncpts >= LNET_MAX_SHOW_NUM_CPT) {
 					GENL_SET_ERR_MSG(info,
 							 "invalid CPT value");
 					GOTO(out, rc = -ERANGE);
@@ -7073,7 +7090,8 @@ static int lnet_net_cmd(struct sk_buff *skb, struct genl_info *info)
 		return -ENOMSG;
 	}
 
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		GENL_SET_ERR_MSG(info, "invalid configuration");
 		return -EINVAL;
 	}
@@ -7099,7 +7117,8 @@ static int lnet_net_cmd(struct sk_buff *skb, struct genl_info *info)
 				memset(conf, 0, sizeof(*conf));
 				if (nla_strcmp(entry, "ip2net") == 0) {
 					entry = nla_next(entry, &rem2);
-					if (nla_type(entry) !=
+					if (!nla_ok(entry, rem2) ||
+					    nla_type(entry) !=
 					    LN_SCALAR_ATTR_VALUE) {
 						GENL_SET_ERR_MSG(info,
 								 "ip2net has invalid key");
@@ -7120,7 +7139,8 @@ static int lnet_net_cmd(struct sk_buff *skb, struct genl_info *info)
 					char tmp[LNET_NIDSTR_SIZE];
 
 					entry = nla_next(entry, &rem2);
-					if (nla_type(entry) !=
+					if (!nla_ok(entry, rem2) ||
+					    nla_type(entry) !=
 					    LN_SCALAR_ATTR_VALUE) {
 						GENL_SET_ERR_MSG(info,
 								 "net type has invalid key");
@@ -7218,7 +7238,8 @@ __must_hold(&the_lnet.ln_api_mutex)
 			char nidstr[LNET_NIDSTR_SIZE];
 
 			props = nla_next(props, &rem);
-			if (nla_type(props) != LN_SCALAR_ATTR_VALUE) {
+			if (!nla_ok(props, rem) ||
+			    nla_type(props) != LN_SCALAR_ATTR_VALUE) {
 				GENL_SET_ERR_MSG(info,
 						 "invalid secondary NID");
 				GOTO(report_err, rc = -EINVAL);
@@ -7244,7 +7265,8 @@ __must_hold(&the_lnet.ln_api_mutex)
 			int rem2;
 
 			props = nla_next(props, &rem);
-			if (nla_type(props) !=
+			if (!nla_ok(props, rem) ||
+			    nla_type(props) !=
 			      LN_SCALAR_ATTR_LIST) {
 				GENL_SET_ERR_MSG(info,
 						 "invalid health configuration");
@@ -7260,8 +7282,8 @@ __must_hold(&the_lnet.ln_api_mutex)
 				}
 
 				health = nla_next(health, &rem2);
-				if (nla_type(health) !=
-				    LN_SCALAR_ATTR_INT_VALUE) {
+				if (!nla_ok(health, rem2) ||
+				    !lnet_nla_is_int(health)) {
 					GENL_SET_ERR_MSG(info,
 							 "invalid health config format");
 					GOTO(report_err, rc = -EINVAL);
@@ -7342,7 +7364,8 @@ static int lnet_peer_ni_cmd(struct sk_buff *skb, struct genl_info *info)
 		return -ENOMSG;
 	}
 
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		GENL_SET_ERR_MSG(info, "invalid configuration");
 		mutex_unlock(&the_lnet.ln_api_mutex);
 		return -EINVAL;
@@ -7368,7 +7391,8 @@ static int lnet_peer_ni_cmd(struct sk_buff *skb, struct genl_info *info)
 				char nidstr[LNET_NIDSTR_SIZE];
 
 				pnid_prop = nla_next(pnid_prop, &rem2);
-				if (nla_type(pnid_prop) !=
+				if (!nla_ok(pnid_prop, rem2) ||
+				    nla_type(pnid_prop) !=
 				    LN_SCALAR_ATTR_VALUE) {
 					GENL_SET_ERR_MSG(info,
 							  "invalid primary NID type");
@@ -7416,8 +7440,8 @@ static int lnet_peer_ni_cmd(struct sk_buff *skb, struct genl_info *info)
 				}
 			} else if (nla_strcmp(pnid_prop, "Multi-Rail") == 0) {
 				pnid_prop = nla_next(pnid_prop, &rem2);
-				if (nla_type(pnid_prop) !=
-				    LN_SCALAR_ATTR_INT_VALUE) {
+				if (!nla_ok(pnid_prop, rem2) ||
+				    !lnet_nla_is_int(pnid_prop)) {
 					GENL_SET_ERR_MSG(info,
 							  "invalid MR flag param");
 					GOTO(report_err, rc = -EINVAL);
@@ -7430,8 +7454,8 @@ static int lnet_peer_ni_cmd(struct sk_buff *skb, struct genl_info *info)
 				struct lnet_peer *lp;
 
 				pnid_prop = nla_next(pnid_prop, &rem2);
-				if (nla_type(pnid_prop) !=
-				    LN_SCALAR_ATTR_INT_VALUE) {
+				if (!nla_ok(pnid_prop, rem2) ||
+				    !lnet_nla_is_int(pnid_prop)) {
 					GENL_SET_ERR_MSG(info,
 							  "invalid peer state param");
 					GOTO(report_err, rc = -EINVAL);
@@ -7460,7 +7484,8 @@ static int lnet_peer_ni_cmd(struct sk_buff *skb, struct genl_info *info)
 				}
 
 				pnid_prop = nla_next(pnid_prop, &rem2);
-				if (nla_type(pnid_prop) !=
+				if (!nla_ok(pnid_prop, rem2) ||
+				    nla_type(pnid_prop) !=
 				    LN_SCALAR_ATTR_LIST) {
 					GENL_SET_ERR_MSG(info,
 							  "invalid NIDs list");
@@ -7676,6 +7701,11 @@ static int lnet_route_show_start(struct netlink_callback *cb)
 		struct nlattr *attr;
 		int rem;
 
+		if (!nla_ok(params, msg_len)) {
+			NL_SET_ERR_MSG(extack, "invalid configuration");
+			GOTO(report_err, rc = -EINVAL);
+		}
+
 		nla_for_each_nested(attr, params, rem) {
 			struct lnet_route_properties tmp = {
 				.lrp_gateway		= LNET_ANY_NID,
@@ -7697,7 +7727,8 @@ static int lnet_route_show_start(struct netlink_callback *cb)
 					char nw[LNET_NIDSTR_SIZE];
 
 					route = nla_next(route, &rem2);
-					if (nla_type(route) !=
+					if (!nla_ok(route, rem2) ||
+					    nla_type(route) !=
 					    LN_SCALAR_ATTR_VALUE) {
 						NL_SET_ERR_MSG(extack,
 							       "invalid net param");
@@ -7721,7 +7752,8 @@ static int lnet_route_show_start(struct netlink_callback *cb)
 					char gw[LNET_NIDSTR_SIZE];
 
 					route = nla_next(route, &rem2);
-					if (nla_type(route) !=
+					if (!nla_ok(route, rem2) ||
+					    nla_type(route) !=
 					    LN_SCALAR_ATTR_VALUE) {
 						NL_SET_ERR_MSG(extack,
 							       "invalid gateway param");
@@ -7744,8 +7776,8 @@ static int lnet_route_show_start(struct netlink_callback *cb)
 					rc = 0;
 				} else if (nla_strcmp(route, "hop") == 0) {
 					route = nla_next(route, &rem2);
-					if (nla_type(route) !=
-					    LN_SCALAR_ATTR_INT_VALUE) {
+					if (!nla_ok(route, rem2) ||
+					    !lnet_nla_is_int(route)) {
 						NL_SET_ERR_MSG(extack,
 							       "invalid hop param");
 						GOTO(report_err, rc = -EINVAL);
@@ -7756,8 +7788,8 @@ static int lnet_route_show_start(struct netlink_callback *cb)
 						clamp_t(s32, tmp.lrp_hop, 1, 127);
 				} else if (nla_strcmp(route, "priority") == 0) {
 					route = nla_next(route, &rem2);
-					if (nla_type(route) !=
-					    LN_SCALAR_ATTR_INT_VALUE) {
+					if (!nla_ok(route, rem2) ||
+					    !lnet_nla_is_int(route)) {
 						NL_SET_ERR_MSG(extack,
 							       "invalid priority param");
 						GOTO(report_err, rc = -EINVAL);
@@ -8032,6 +8064,11 @@ static int lnet_peer_ni_show_start(struct netlink_callback *cb)
 		struct nlattr *attr;
 		int rem;
 
+		if (!nla_ok(params, msg_len)) {
+			NL_SET_ERR_MSG(extack, "invalid configuration");
+			GOTO(report_err, rc = -EINVAL);
+		}
+
 		nla_for_each_nested(attr, params, rem) {
 			struct nlattr *nid;
 			int rem2;
@@ -8048,7 +8085,8 @@ static int lnet_peer_ni_show_start(struct netlink_callback *cb)
 					continue;
 
 				nid = nla_next(nid, &rem2);
-				if (nla_type(nid) != LN_SCALAR_ATTR_VALUE) {
+				if (!nla_ok(nid, rem2) ||
+				    nla_type(nid) != LN_SCALAR_ATTR_VALUE) {
 					NL_SET_ERR_MSG(extack,
 						       "invalid primary nid param");
 					GOTO(report_err, rc = -EINVAL);
@@ -8728,7 +8766,8 @@ static int lnet_route_cmd(struct sk_buff *skb, struct genl_info *info)
 		return -ENOMSG;
 	}
 
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		GENL_SET_ERR_MSG(info, "invalid configuration");
 		mutex_unlock(&the_lnet.ln_api_mutex);
 		return -EINVAL;
@@ -8756,7 +8795,8 @@ static int lnet_route_cmd(struct sk_buff *skb, struct genl_info *info)
 
 			if (nla_strcmp(route_prop, "net") == 0) {
 				route_prop = nla_next(route_prop, &rem2);
-				if (nla_type(route_prop) !=
+				if (!nla_ok(route_prop, rem2) ||
+				    nla_type(route_prop) !=
 				    LN_SCALAR_ATTR_VALUE) {
 					GENL_SET_ERR_MSG(info,
 							 "net is invalid key");
@@ -8790,7 +8830,8 @@ static int lnet_route_cmd(struct sk_buff *skb, struct genl_info *info)
 				}
 			} else if (nla_strcmp(route_prop, "gateway") == 0) {
 				route_prop = nla_next(route_prop, &rem2);
-				if (nla_type(route_prop) !=
+				if (!nla_ok(route_prop, rem2) ||
+				    nla_type(route_prop) !=
 				    LN_SCALAR_ATTR_VALUE) {
 					GENL_SET_ERR_MSG(info,
 							 "gateway is invalid key");
@@ -8812,7 +8853,8 @@ static int lnet_route_cmd(struct sk_buff *skb, struct genl_info *info)
 				}
 			} else if (nla_strcmp(route_prop, "state") == 0) {
 				route_prop = nla_next(route_prop, &rem2);
-				if (nla_type(route_prop) !=
+				if (!nla_ok(route_prop, rem2) ||
+				    nla_type(route_prop) !=
 				    LN_SCALAR_ATTR_VALUE) {
 					GENL_SET_ERR_MSG(info,
 							 "state is invalid key");
@@ -8830,8 +8872,8 @@ static int lnet_route_cmd(struct sk_buff *skb, struct genl_info *info)
 				}
 			} else if (nla_strcmp(route_prop, "notify_time") == 0) {
 				route_prop = nla_next(route_prop, &rem2);
-				if (nla_type(route_prop) !=
-				    LN_SCALAR_ATTR_INT_VALUE) {
+				if (!nla_ok(route_prop, rem2) ||
+				    !lnet_nla_is_int(route_prop)) {
 					GENL_SET_ERR_MSG(info,
 							 "notify_time is invalid key");
 					GOTO(report_err, rc = -EINVAL);
@@ -8845,8 +8887,8 @@ static int lnet_route_cmd(struct sk_buff *skb, struct genl_info *info)
 				}
 			} else if (nla_strcmp(route_prop, "hop") == 0) {
 				route_prop = nla_next(route_prop, &rem2);
-				if (nla_type(route_prop) !=
-				    LN_SCALAR_ATTR_INT_VALUE) {
+				if (!nla_ok(route_prop, rem2) ||
+				    !lnet_nla_is_int(route_prop)) {
 					GENL_SET_ERR_MSG(info,
 							 "hop has invalid key");
 					GOTO(report_err, rc = -EINVAL);
@@ -8860,8 +8902,8 @@ static int lnet_route_cmd(struct sk_buff *skb, struct genl_info *info)
 				}
 			} else if (nla_strcmp(route_prop, "priority") == 0) {
 				route_prop = nla_next(route_prop, &rem2);
-				if (nla_type(route_prop) !=
-				    LN_SCALAR_ATTR_INT_VALUE) {
+				if (!nla_ok(route_prop, rem2) ||
+				    !lnet_nla_is_int(route_prop)) {
 					GENL_SET_ERR_MSG(info,
 							 "priority has invalid key");
 					GOTO(report_err, rc = -EINVAL);
@@ -9009,7 +9051,8 @@ static int lnet_ping_show_start(struct netlink_callback *cb)
 				s64 timeout;
 
 				top = nla_next(top, &rem);
-				if (nla_type(top) != LN_SCALAR_ATTR_INT_VALUE) {
+				if (!nla_ok(top, rem) ||
+				    !lnet_nla_is_int(top)) {
 					NL_SET_ERR_MSG(extack,
 						       "invalid timeout param");
 					GOTO(report_err, rc = -EINVAL);
@@ -9027,7 +9070,8 @@ static int lnet_ping_show_start(struct netlink_callback *cb)
 				char nidstr[LNET_NIDSTR_SIZE + 1];
 
 				top = nla_next(top, &rem);
-				if (nla_type(top) != LN_SCALAR_ATTR_VALUE) {
+				if (!nla_ok(top, rem) ||
+				    nla_type(top) != LN_SCALAR_ATTR_VALUE) {
 					NL_SET_ERR_MSG(extack,
 						       "invalid source param");
 					GOTO(report_err, rc = -EINVAL);
@@ -9809,7 +9853,8 @@ static int lnet_peer_fail_cmd(struct sk_buff *skb, struct genl_info *info)
 		return -ENOMSG;
 	}
 
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		GENL_SET_ERR_MSG(info, "invalid configuration");
 		return -EINVAL;
 	}
@@ -9936,7 +9981,8 @@ static int lnet_debug_recovery_show_start(struct netlink_callback *cb)
 	}
 
 	params = genlmsg_data(gnlh);
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		NL_SET_ERR_MSG(extack, "invalid configuration");
 		RETURN(-EINVAL);
 	}
@@ -10157,7 +10203,8 @@ static int lnet_fault_show_start(struct netlink_callback *cb)
 		RETURN(-ENOMSG);
 	}
 
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		NL_SET_ERR_MSG(extack, "invalid configuration");
 		RETURN(-EINVAL);
 	}
@@ -10409,7 +10456,8 @@ static int lnet_fault_cmd(struct sk_buff *skb, struct genl_info *info)
 		RETURN(-ENOMSG);
 	}
 
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		GENL_SET_ERR_MSG(info, "invalid configuration");
 		RETURN(-EINVAL);
 	}
@@ -10568,7 +10616,8 @@ static int lnet_routing_cmd(struct sk_buff *skb, struct genl_info *info)
 		RETURN(-ENOMSG);
 	}
 
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		GENL_SET_ERR_MSG(info, "invalid configuration");
 		RETURN(-EINVAL);
 	}
@@ -10618,7 +10667,8 @@ static int lnet_buffers_cmd(struct sk_buff *skb, struct genl_info *info)
 		RETURN(-ENOMSG);
 	}
 
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		GENL_SET_ERR_MSG(info, "invalid configuration");
 		RETURN(-EINVAL);
 	}
@@ -10679,7 +10729,8 @@ static int lnet_numa_cmd(struct sk_buff *skb, struct genl_info *info)
 		RETURN(-ENOMSG);
 	}
 
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		GENL_SET_ERR_MSG(info, "invalid configuration");
 		RETURN(-EINVAL);
 	}
@@ -10965,7 +11016,8 @@ static int lnet_stats_cmd(struct sk_buff *skb, struct genl_info *info)
 		RETURN(-ENOMSG);
 	}
 
-	if (!(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
+	if (!nla_ok(params, msg_len) ||
+	    !(nla_type(params) & LN_SCALAR_ATTR_LIST)) {
 		GENL_SET_ERR_MSG(info, "invalid configuration");
 		RETURN(-EINVAL);
 	}

@@ -473,6 +473,10 @@ kfilnd_nl_set(int cmd, struct nlattr *attr, int type, void *data)
 
 	lnd_kfi = &tunables->lnd_tun_u.lnd_kfi;
 
+	if (type != LNET_NET_KFILND_TUNABLES_ATTR_TRAFFIC_CLASS &&
+	    !lnet_nla_is_int(attr))
+		return -EINVAL;
+
 	switch (type) {
 	case LNET_NET_KFILND_TUNABLES_ATTR_PROV_MAJOR:
 		lnd_kfi->lnd_prov_major_version = nla_get_s64(attr);
