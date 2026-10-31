@@ -628,13 +628,19 @@ static int ofd_preprw_read(const struct lu_env *env, struct obd_export *exp,
 				 lnb + j, maxlnb, dbt);
 		if (unlikely(rc < 0))
 			GOTO(buf_put, rc);
-		LASSERT(rc <= PTLRPC_MAX_BRW_PAGES);
 		/* correct index for local buffers to continue with */
 		j += rc;
 		*nr_local += rc;
 		maxlnb -= rc;
-		LASSERT(j <= PTLRPC_MAX_BRW_PAGES);
+		if (unlikely(j > PTLRPC_MAX_BRW_PAGES))
+			GOTO(buf_put, rc = -EPROTO);
 		tot_bytes += rnb[i].rnb_len;
+	}
+
+	if (unlikely(*nr_local <= 0 || *nr_local > PTLRPC_MAX_BRW_PAGES)) {
+		CERROR("%s: bulk read of "DFID" maps to %d buffers: rc = %d\n",
+		       exp->exp_obd->obd_name, PFID(fid), *nr_local, -EPROTO);
+		GOTO(buf_put, rc = -EPROTO);
 	}
 
 	ofd_read_lock(env, fo);
@@ -647,7 +653,6 @@ static int ofd_preprw_read(const struct lu_env *env, struct obd_export *exp,
 			GOTO(unlock, rc);
 	}
 
-	LASSERT(*nr_local > 0 && *nr_local <= PTLRPC_MAX_BRW_PAGES);
 	rc = dt_read_prep(env, ofd_object_child(fo), lnb, *nr_local);
 	if (unlikely(rc))
 		GOTO(unlock, rc);
@@ -804,7 +809,6 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 				 rnb + i, lnb + j, maxlnb, dbt);
 		if (unlikely(rc < 0))
 			GOTO(err_nolock, rc);
-		LASSERT(rc <= PTLRPC_MAX_BRW_PAGES);
 		/* correct index for local buffers to continue with */
 		for (k = 0; k < rc; k++) {
 			lnb[j+k].lnb_flags = rnb[i].rnb_flags;
@@ -815,10 +819,16 @@ static int ofd_preprw_write(const struct lu_env *env, struct obd_export *exp,
 		j += rc;
 		*nr_local += rc;
 		maxlnb -= rc;
-		LASSERT(j <= PTLRPC_MAX_BRW_PAGES);
+		if (unlikely(j > PTLRPC_MAX_BRW_PAGES))
+			GOTO(err_nolock, rc = -EPROTO);
 		tot_bytes += rnb[i].rnb_len;
 	}
-	LASSERT(*nr_local > 0 && *nr_local <= PTLRPC_MAX_BRW_PAGES);
+	if (unlikely(*nr_local <= 0 || *nr_local > PTLRPC_MAX_BRW_PAGES)) {
+		CERROR("%s: BRW to "DOSTID" maps to %d buffers: rc = %d\n",
+		       exp->exp_obd->obd_name, POSTID(&obj->ioo_oid),
+		       *nr_local, -EPROTO);
+		GOTO(err_nolock, rc = -EPROTO);
+	}
 
 	ofd_read_lock(env, fo);
 	if (!ofd_object_exists(fo)) {
