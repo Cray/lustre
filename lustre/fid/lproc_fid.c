@@ -74,7 +74,7 @@ ldebugfs_fid_write_common(const char __user *buffer, size_t count,
 	RETURN(0);
 }
 
-#ifdef CONFIG_LUSTRE_FS_SERVER
+#if IS_ENABLED(CONFIG_LUSTRE_FS_SERVER)
 /*
  * Server side debugfs stuff.
  */
@@ -590,7 +590,7 @@ ldebugfs_client_fid_server_seq_show(struct seq_file *m, void *unused)
 	if (seq->lcs_exp) {
 		cli = &seq->lcs_exp->exp_obd->u.cli;
 		seq_printf(m, "%s\n", cli->cl_target_uuid.uuid);
-#ifdef CONFIG_LUSTRE_FS_SERVER
+#if IS_ENABLED(CONFIG_LUSTRE_FS_SERVER)
 	} else {
 		seq_printf(m, "%s\n", seq->lcs_srv->lss_name);
 #endif /* CONFIG_LUSTRE_FS_SERVER */

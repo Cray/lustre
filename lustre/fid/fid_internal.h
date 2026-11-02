@@ -16,8 +16,10 @@
 #ifndef __FID_INTERNAL_H
 #define __FID_INTERNAL_H
 
-#ifdef CONFIG_LUSTRE_FS_SERVER
-# define HAVE_SEQ_SERVER
+#if IS_ENABLED(CONFIG_LUSTRE_FS_SERVER)
+#include <lu_target.h>
+
+#define HAVE_SEQ_SERVER
 
 struct req_capsule;
 
