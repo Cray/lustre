@@ -2259,8 +2259,12 @@ static int scale64_rem(u64 mult, u32 div, u64 *base, u32 *remp)
 	u64 quot;
 	u32 rem, rem2;
 
-	if (!tmp)
+	/* Zero input must also initialize the caller's remainder. */
+	if (!tmp) {
+		if (remp)
+			*remp = 0;
 		return 0;
+	}
 	if (mult > tmp)
 		swap(mult, tmp);
 
