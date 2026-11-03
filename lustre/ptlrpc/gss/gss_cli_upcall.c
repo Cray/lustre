@@ -334,6 +334,10 @@ int gss_do_ctx_init_rpc(char *buffer, unsigned long count)
 	conn_cnt = imp->imp_conn_cnt;
 	spin_unlock(&imp->imp_lock);
 
+	/* Let a test unmount the client while an OSC negotiation waits here */
+	if (!strcmp(obd->obd_type->typ_name, LUSTRE_OSC_NAME))
+		CFS_FAIL_TIMEOUT(OBD_FAIL_SEC_CTX_INIT_PAUSE, cfs_fail_val);
+
 	rc = ptlrpc_queue_wait(req);
 	if (rc) {
 		/* rc is still the RPC status */
@@ -348,11 +352,14 @@ int gss_do_ctx_init_rpc(char *buffer, unsigned long count)
 		 * timeout, caller might try the negotiation repeatedly,
 		 * leave recovery decisions to general ptlrpc layer.
 		 *
+		 * -ESHUTDOWN is also not a timeout. The import is closing, and
+		 * a retry cannot succeed.
+		 *
 		 * FIXME maybe some other error code shouldn't be treated
 		 * as timeout.
 		 */
 		status = rc;
-		if (rc != -EACCES)
+		if (rc != -EACCES && rc != -ESHUTDOWN)
 			status = -ETIMEDOUT;
 		CDEBUG(D_SEC,
 		       "%s: ctx init req got %d, returning to userspace status %lld\n",

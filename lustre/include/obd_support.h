@@ -597,6 +597,7 @@ extern bool obd_enable_fname_encoding;
 #define OBD_FAIL_SEC_CTX_INIT_CONT_NET   0x1202
 #define OBD_FAIL_SEC_CTX_FINI_NET        0x1203
 #define OBD_FAIL_SEC_CTX_HDL_PAUSE       0x1204
+#define OBD_FAIL_SEC_CTX_INIT_PAUSE      0x1206
 
 #define OBD_FAIL_LLOG                               0x1300
 /* was	OBD_FAIL_LLOG_ORIGIN_CONNECT_NET            0x1301 until 2.4 */

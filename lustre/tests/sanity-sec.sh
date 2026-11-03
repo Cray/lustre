@@ -9622,6 +9622,52 @@ test_66d() {
 }
 run_test 66d "EC parity resync covers the last encryption unit"
 
+test_67() {
+	$GSS || skip "need GSS"
+
+	local submount=${MOUNT}_$tdir
+	local inst
+	local ns
+
+	mkdir -p $submount || error "mkdir $submount failed"
+	stack_trap "rmdir $submount"
+	stack_trap "do_nodes $(osts_nodes) $LCTL set_param fail_loc=0"
+	stack_trap "$LCTL set_param fail_loc=0 fail_val=0"
+
+	# Hold the first OSC context negotiation of the new mount for longer
+	# than the forced umount takes
+	local hold=20
+
+	#define OBD_FAIL_SEC_CTX_INIT_PAUSE	0x1206
+	$LCTL set_param fail_loc=0x80001206 fail_val=$hold
+	local start=$SECONDS
+	mount_client $submount ${MOUNT_OPTS} || error "mount $submount failed"
+	stack_trap "umount_client $submount 2>/dev/null || true"
+	inst=$($LFS getname -i $submount) || error "getname $submount failed"
+
+	# Drop the reply to the held request, so that it stays in flight
+	#define OBD_FAIL_SEC_CTX_INIT_NET	0x1201
+	do_nodes $(osts_nodes) $LCTL set_param fail_loc=0x1201
+
+	# A forced umount does not wait for the held OSC connect
+	umount_client $submount -f || error "umount $submount failed"
+
+	# The held request must release the OSC devices when the hold ends.
+	# The hold can start some seconds after the mount, so poll. Without
+	# the fix, the request goes out and keeps the devices until its reply
+	# timeout, which is after the deadline.
+	local deadline=$((start + hold + 8))
+
+	while ns=$(ls /sys/fs/lustre/ldlm/namespaces | grep -- "-osc-$inst$") &&
+	      (( SECONDS < deadline )); do
+		sleep 0.5
+	done
+	echo "OSC namespaces left after $((SECONDS - start))s: ${ns:-none}"
+	do_nodes $(osts_nodes) $LCTL set_param fail_loc=0
+	[[ -z "$ns" ]] || error "namespaces left after umount: $ns"
+}
+run_test 67 "ctx init after umount does not hold OSC devices"
+
 cleanup_68() {
 	lctl set_param fail_loc=0 fail_val=0
 	mount_client $MOUNT ${MOUNT_OPTS} || error "re-mount $MOUNT failed"

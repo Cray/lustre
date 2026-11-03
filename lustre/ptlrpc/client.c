@@ -1395,8 +1395,18 @@ static int ptlrpc_import_delay_req(struct obd_import *imp,
 	LASSERT(status);
 	*status = 0;
 
-	if (req->rq_ctx_init || req->rq_ctx_fini) {
-		/* always allow ctx init/fini rpc go through */
+	if (req->rq_ctx_init &&
+	    (imp->imp_state == LUSTRE_IMP_CLOSED ||
+	     test_bit(OBDF_STOPPING, imp->imp_obd->obd_flags))) {
+		/* The device is shutting down. The import invalidation may
+		 * have finished, and then nothing waits for this request. The
+		 * request would hold the import, and thus keep the device and
+		 * its namespace name, after the cleanup is complete.
+		 */
+		DEBUG_REQ(D_SEC, req, "ctx init on a closing import");
+		*status = -ESHUTDOWN;
+	} else if (req->rq_ctx_init || req->rq_ctx_fini) {
+		/* otherwise let ctx init/fini rpc go through */
 	} else if (imp->imp_state == LUSTRE_IMP_NEW) {
 		DEBUG_REQ(D_ERROR, req, "Uninitialized import");
 		*status = -EIO;
