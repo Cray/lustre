@@ -50,13 +50,26 @@ static void *nss_pw_buf;
 static int nss_grent_buf_len;
 static void *nss_grent_buf;
 static int g_n_nss_modules;
-static int grent_mod_no = -1;
+static int g_n_only_module = -1;
+
+/* the module is used for user id lookup */
+#define NSS_MODULE_FL_USER	0x1
+/* the module is used for fetching supplementary groups */
+#define NSS_MODULE_FL_GROUP	0x2
+/* once user id is found by this module, only this module is used
+ * for fetching supplementary groups
+ */
+#define NSS_MODULE_FL_ONLY	0x4
 
 struct nss_module {
 	char name[NSS_MODULE_NAME_SIZE];
 	int (*getpwuid)(struct nss_module *mod, uid_t, struct passwd *pwd);
+	int (*setgrent)(struct nss_module *mod);
 	int (*getgrent)(struct nss_module *mod, struct group *result);
 	void (*endgrent)(struct nss_module *mod);
+	void (*grouplist)(struct nss_module *mod, const char *user, gid_t gid,
+			  gid_t *groups, unsigned int *ngroups,
+			  unsigned int maxgroups);
 	void (*fini)(struct nss_module *mod);
 
 	union {
@@ -65,15 +78,21 @@ struct nss_module {
 			int  (*l_getpwuid)(uid_t, struct passwd *pwd,
 					   char *buffer, size_t buflen,
 					   int *errnop);
+			int  (*l_setgrent)(int stayopen);
 			int  (*l_getgrent)(struct group *result, char *buffer,
 					   size_t buflen, int *errnop);
 			int  (*l_endgrent)(void);
+			int  (*l_initgroups_dyn)(const char *user, gid_t group,
+						 long *start, long *size,
+						 gid_t **groups, long limit,
+						 int *errnop);
 		} lib;
 		struct {
 			FILE *f_passwd;
 			FILE *f_group;
 		} files;
 	} u;
+	unsigned int flags;
 };
 
 static struct nss_module g_nss_modules[NSS_MODULES_MAX_NR];
@@ -135,48 +154,21 @@ static struct passwd *getpwuid_nss(uid_t uid)
 	for (i = 0; i < g_n_nss_modules; i++) {
 		struct nss_module *mod = g_nss_modules + i;
 
-		if (mod->getpwuid(mod, uid, &pw) == 0)
+		if (!(mod->flags & NSS_MODULE_FL_USER))
+			continue;
+		if (mod->getpwuid(mod, uid, &pw) == 0) {
+			if ((mod->flags & NSS_MODULE_FL_ONLY) &&
+			    (mod->flags & NSS_MODULE_FL_GROUP))
+				g_n_only_module = i;
 			return &pw;
+		}
 	}
 	return NULL;
-}
-
-/**
- * getgrent() replacement.
- *  simulate getgrent(3) across nss modules
- */
-static struct group *getgrent_nss(void)
-{
-	static struct group grp;
-
-	if (grent_mod_no < 0)
-		grent_mod_no = 0;
-
-	while (grent_mod_no < g_n_nss_modules) {
-		struct nss_module *mod = g_nss_modules + grent_mod_no;
-
-		if (mod->getgrent(mod, &grp) == 0)
-			return &grp;
-		mod->endgrent(mod);
-		grent_mod_no++;
-	}
-	return NULL;
-}
-
-/** endgrent() replacement */
-static void endgrent_nss(void)
-{
-	if (grent_mod_no < g_n_nss_modules
-		&& grent_mod_no >= 0) {
-		struct nss_module *mod = g_nss_modules+grent_mod_no;
-
-		mod->endgrent(mod);
-	}
-	grent_mod_no = -1;
 }
 
 /** lookup symbol in dynamically loaded nss module */
-static void *get_nss_sym(struct nss_module *mod, const char *op)
+static void *get_nss_sym(struct nss_module *mod, const char *op,
+			 bool optional)
 {
 	void *res;
 	int bytes;
@@ -189,7 +181,7 @@ static void *get_nss_sym(struct nss_module *mod, const char *op)
 		return NULL;
 	}
 	res = dlsym(mod->u.lib.l_ptr, symbuf);
-	if (res == NULL)
+	if (res == NULL && !optional)
 		errlog("cannot find symbol %s in nss module \"%s\": %s\n",
 			symbuf, mod->name, dlerror());
 	return res;
@@ -206,6 +198,11 @@ static void enlarge_nss_buffer(void **buf, int *bufsize)
 			*bufsize);
 		exit(-1);
 	}
+}
+
+static int setgrent_nss_lib(struct nss_module *mod)
+{
+	return mod->u.lib.l_setgrent(1);
 }
 
 static int getpwuid_nss_lib(struct nss_module *nss, uid_t uid,
@@ -258,6 +255,69 @@ static void endgrent_nss_lib(struct nss_module *mod)
 	mod->u.lib.l_endgrent();
 }
 
+static void grouplist_plain(struct nss_module *mod, const char *user,
+			    gid_t skipgroup, gid_t *groups,
+			    unsigned int *ngroups, unsigned int maxgroups)
+{
+	struct group gr;
+
+	mod->setgrent(mod);
+
+	while (mod->getgrent(mod, &gr) == 0 && *ngroups < maxgroups) {
+		int i;
+
+		if (gr.gr_gid == skipgroup)
+			continue;
+		if (!gr.gr_mem)
+			continue;
+		for (i = 0; gr.gr_mem[i]; i++) {
+			if (!strcmp(gr.gr_mem[i], user)) {
+				groups[*ngroups] = gr.gr_gid;
+				(*ngroups)++;
+				break;
+			}
+		}
+	}
+
+	mod->endgrent(mod);
+}
+
+static void grouplist_nss_lib(struct nss_module *mod, const char *user,
+			      gid_t skipgroup, gid_t *groups,
+			      unsigned int *ngroups, unsigned int maxgroups)
+{
+	long start_groups = *ngroups;
+	long size_groups = maxgroups;
+	gid_t *groups_array = groups;
+	int err = 0;
+	int ret;
+
+	/* initgroups_dyn is optional in NSS */
+	if (mod->u.lib.l_initgroups_dyn == NULL) {
+		grouplist_plain(mod, user, skipgroup, groups, ngroups,
+				maxgroups);
+		return;
+	}
+
+	ret = mod->u.lib.l_initgroups_dyn(user, skipgroup, &start_groups,
+					  &size_groups, &groups_array,
+					  maxgroups, &err);
+	if (ret != NSS_STATUS_SUCCESS) {
+		if (ret == NSS_STATUS_UNAVAIL) /* fallback to plain search */
+			grouplist_plain(mod, user, skipgroup, groups, ngroups,
+					maxgroups);
+		else if (ret != NSS_STATUS_NOTFOUND) /* NOTFOUND: no groups */
+			errlog("%s: initgroups() lookup failed, rc = %d, err = %d\n",
+			       mod->name, ret, err);
+		return;
+	}
+	if (groups != groups_array) {
+		errlog("Array was reallocated\n");
+		exit(-1);
+	}
+	*ngroups = (unsigned int)start_groups;
+}
+
 /** destroy a "shared lib" nss module */
 static void fini_nss_lib_module(struct nss_module *mod)
 {
@@ -282,8 +342,10 @@ static int init_nss_lib_module(struct nss_module *mod, char *name)
 		 name);
 
 	mod->getpwuid = getpwuid_nss_lib;
+	mod->setgrent = setgrent_nss_lib;
 	mod->getgrent = getgrent_nss_lib;
 	mod->endgrent = endgrent_nss_lib;
+	mod->grouplist = grouplist_nss_lib;
 	mod->fini = fini_nss_lib_module;
 
 	mod->u.lib.l_ptr = dlopen(lib_file_name, RTLD_NOW);
@@ -291,16 +353,23 @@ static int init_nss_lib_module(struct nss_module *mod, char *name)
 		errlog("dl error %s\n", dlerror());
 		exit(1);
 	}
-	mod->u.lib.l_getpwuid = get_nss_sym(mod, "getpwuid_r");
-	if (mod->getpwuid == NULL)
+	mod->u.lib.l_getpwuid = get_nss_sym(mod, "getpwuid_r", false);
+	if (mod->u.lib.l_getpwuid == NULL)
 		exit(1);
 
-	mod->u.lib.l_getgrent = get_nss_sym(mod, "getgrent_r");
-	if (mod->getgrent == NULL)
+	/* NULL: grouplist_nss_lib() falls back to a getgrent scan */
+	mod->u.lib.l_initgroups_dyn = get_nss_sym(mod, "initgroups_dyn", true);
+
+	mod->u.lib.l_setgrent = get_nss_sym(mod, "setgrent", false);
+	if (mod->u.lib.l_setgrent == NULL)
 		exit(1);
 
-	mod->u.lib.l_endgrent = get_nss_sym(mod, "endgrent");
-	if (mod->endgrent == NULL)
+	mod->u.lib.l_getgrent = get_nss_sym(mod, "getgrent_r", false);
+	if (mod->u.lib.l_getgrent == NULL)
+		exit(1);
+
+	mod->u.lib.l_endgrent = get_nss_sym(mod, "endgrent", false);
+	if (mod->u.lib.l_endgrent == NULL)
 		exit(1);
 
 	return 0;
@@ -328,6 +397,11 @@ static int getpwuid_lustre_nss(struct nss_module *mod, uid_t uid,
 	return -1;
 }
 
+static int setgrent_lustre_nss(struct nss_module *mod)
+{
+	return 0;
+}
+
 static int getgrent_lustre_nss(struct nss_module *mod, struct group *gr)
 {
 	struct group *pos;
@@ -337,7 +411,7 @@ static int getgrent_lustre_nss(struct nss_module *mod, struct group *gr)
 		*gr = *pos;
 		return 0;
 	}
-	return 1;
+	return -ENOENT;
 }
 
 static void endgrent_lustre_nss(struct nss_module *mod)
@@ -349,8 +423,10 @@ static int init_lustre_module(struct nss_module *mod)
 {
 	mod->fini = fini_lustre_nss_module;
 	mod->getpwuid = getpwuid_lustre_nss;
+	mod->setgrent = setgrent_lustre_nss;
 	mod->getgrent = getgrent_lustre_nss;
 	mod->endgrent = endgrent_lustre_nss;
+	mod->grouplist = grouplist_plain;
 
 	mod->u.files.f_passwd = fopen(LUSTRE_PASSWD, "r");
 	if (mod->u.files.f_passwd == NULL)
@@ -405,12 +481,37 @@ static void fini_nss(void)
 	free(nss_grent_buf);
 }
 
+/**
+ * Remove dups and skipgroup from given group array.
+ * The array must be sorted prior to the call.
+ */
+static void remove_dups(gid_t *groups, gid_t skipgroup,
+			unsigned int *ngroups)
+{
+	gid_t *dst = groups;
+	gid_t *src = groups;
+	gid_t * const end = groups + *ngroups;
+
+	while (src < end) {
+		if (*src == skipgroup) {
+			src++;
+			continue;
+		}
+		if (dst > groups && *src == *(dst - 1)) {
+			src++;
+			continue;
+		}
+		*dst++ = *src++;
+	}
+
+	*ngroups = dst - groups;
+}
+
 /** get supplementary group info and fill downcall data */
 static int get_groups_nss(struct identity_downcall_data *data,
 			  unsigned int maxgroups)
 {
 	struct passwd *pw;
-	struct group *gr;
 	gid_t *groups;
 	unsigned int ngroups = 0;
 	char *pw_name;
@@ -425,25 +526,27 @@ static int get_groups_nss(struct identity_downcall_data *data,
 
 	data->idd_gid = pw->pw_gid;
 	pw_name = strdup(pw->pw_name);
+	if (pw_name == NULL) {
+		data->idd_err = errno ? errno : ENOMEM;
+		errlog("strdup failed\n");
+		return -1;
+	}
 	groups = data->idd_groups;
 
-	while ((gr = getgrent_nss()) != NULL && ngroups < maxgroups) {
-		if (gr->gr_gid == pw->pw_gid)
-			continue;
-		if (!gr->gr_mem)
-			continue;
-		for (i = 0; gr->gr_mem[i]; i++) {
-			if (!strcmp(gr->gr_mem[i], pw_name)) {
-				groups[ngroups++] = gr->gr_gid;
-				break;
-			}
-		}
-	}
+	for (i = 0; i < g_n_nss_modules; i++) {
+		struct nss_module *mod = g_nss_modules + i;
 
-	endgrent_nss();
+		if (!(mod->flags & NSS_MODULE_FL_GROUP))
+			continue;
+		if (g_n_only_module >= 0 && i != g_n_only_module)
+			continue;
+		mod->grouplist(mod, pw_name, pw->pw_gid, groups, &ngroups,
+			       maxgroups);
+	}
 
 	if (ngroups > 0)
 		qsort(groups, ngroups, sizeof(*groups), compare_gids);
+	remove_dups(groups, pw->pw_gid, &ngroups);
 	data->idd_ngroups = ngroups;
 
 	free(pw_name);
@@ -712,19 +815,56 @@ static char *striml(char *s)
 	return s;
 }
 
-static void check_new_nss_module(struct nss_module *mod)
+static void check_new_module(const char *name)
 {
 	int i;
+
+	if (strlen(name) == 0) {
+		errlog("Empty module name\n");
+		exit(-1);
+	}
 
 	for (i = 0; i < g_n_nss_modules; i++) {
 		struct nss_module *pos = g_nss_modules + i;
 
-		if (!strcmp(mod->name, pos->name)) {
+		if (!strcmp(name, pos->name)) {
 			errlog("attempt to initialize \"%s\" module twice\n",
-				pos->name);
+				name);
 			exit(-1);
 		}
 	}
+}
+
+/**
+ * Parse module options and set module lookup flags.
+ */
+static void parse_mod_options(struct nss_module *mod, char *opts)
+{
+	char *opt;
+
+	/* clear default flags if the module has options */
+	mod->flags = 0;
+
+	while ((opt = strsep(&opts, ",")) != NULL) {
+		if (strlen(opt) == 0) {
+			continue;
+		} else if (!strcmp(opt, "user")) {
+			mod->flags |= NSS_MODULE_FL_USER;
+		} else if (!strcmp(opt, "group")) {
+			mod->flags |= NSS_MODULE_FL_GROUP;
+		} else if (!strcmp(opt, "only")) {
+			mod->flags |= NSS_MODULE_FL_ONLY;
+		} else {
+			errlog("Unknown module option \"%s\"", opt);
+			exit(-1);
+		}
+	}
+
+	/* Enable both user and group lookup for this module if none
+	 * set explicitly.
+	 */
+	if (!(mod->flags & (NSS_MODULE_FL_USER | NSS_MODULE_FL_GROUP)))
+		mod->flags |= NSS_MODULE_FL_USER | NSS_MODULE_FL_GROUP;
 }
 
 #define ONE_DAY (24 * 60 * 60)
@@ -789,13 +929,23 @@ out_close:
  *    lustre [/etc/lustre/passwd and /etc/lustre/group]
  *    ldap
  *
+ * Module lookup can be restricted with options in brackets:
+ *    [user]   use this module for user id lookup only
+ *    [group]  use this module for supplementary group lookup only
+ *    [only]   once the user is found here, use only this module for
+ *             supplementary groups; needs both user and group lookup
+ *             enabled on the module, ignored otherwise
+ * e.g. lookup lustre[only] ldap
+ *
+ * Modules of several lookup lines are appended.
+ *
  * Other common nss modules: nis sss db files
  * Since historically 'files' has been used exclusively
  *  to mean 'lustre auth files' and disabled using local auth
  *  via libnss_files users must select 'nss_files' to explicitly
  *  enable libnss_files, which is an uncommon configuration.
  */
-static int lookup_db_line_nss(char *line, struct timeval *start)
+static int parse_lookup_line_nss(char *line, struct timeval *start)
 {
 	char *p, *tok;
 	int ret = 0;
@@ -805,17 +955,44 @@ static int lookup_db_line_nss(char *line, struct timeval *start)
 	    sizeof(L_GETIDENTITY_LOOKUP_CMD) - 1))
 		return -EAGAIN;
 
-	tok = strtok(p, " \t");
+	tok = strsep(&p, " \t");
 	if (tok == NULL || strcmp(tok, L_GETIDENTITY_LOOKUP_CMD))
 		return -EIO;
 
-	while ((tok = strtok(NULL, " \t\n")) != NULL) {
-		struct nss_module *newmod = NULL;
+	while ((tok = strsep(&p, " \t\n")) != NULL) {
+		struct nss_module *newmod;
+		const char *mod_name;
+		int tok_len = strlen(tok);
+		char *opt_start, *opt_end;
 
-		if (g_n_nss_modules < NSS_MODULES_MAX_NR)
-			newmod = &g_nss_modules[g_n_nss_modules];
-		else
+		if (tok_len == 0)
+			continue;
+
+		if (g_n_nss_modules >= NSS_MODULES_MAX_NR)
 			return -ERANGE;
+
+		newmod = &g_nss_modules[g_n_nss_modules];
+		newmod->flags = NSS_MODULE_FL_USER | NSS_MODULE_FL_GROUP;
+
+		opt_start = strchr(tok, '[');
+		if (opt_start != NULL) {
+			*opt_start++ = '\0';
+			opt_end = strchr(opt_start, ']');
+			if (opt_end != NULL) {
+				*opt_end++ = '\0';
+				if (*opt_end != '\0') {
+					errlog("Module options parse error\n");
+					exit(-1);
+				}
+				parse_mod_options(newmod, opt_start);
+			} else {
+				errlog("Module options parse error -- unbalanced []\n");
+				exit(-1);
+			}
+		}
+
+		mod_name = !strcmp(tok, "nss_files") ? "files" : tok;
+		check_new_module(mod_name);
 
 		if (!strcmp(tok, "lustre"))
 			ret = init_lustre_module(newmod);
@@ -827,7 +1004,7 @@ static int lookup_db_line_nss(char *line, struct timeval *start)
 
 		if (ret)
 			break;
-		check_new_nss_module(newmod);
+
 		g_n_nss_modules++;
 	}
 
@@ -853,7 +1030,7 @@ int get_perms(struct identity_downcall_data *data, struct timeval *start)
 	while (fgets(line, sizeof(line), fp)) {
 		if (comment_line(line))
 			continue;
-		ret = lookup_db_line_nss(line, start); /* lookup parsed */
+		ret = parse_lookup_line_nss(line, start); /* lookup parsed */
 		if (ret == 0)
 			continue;
 		if (parse_perm_line(data, line, sizeof(line))) {

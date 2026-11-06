@@ -11192,6 +11192,63 @@ test_85() {
 }
 run_test 85 "forbid squashing to UID/GID 0"
 
+# $1: uid, $2: perm.conf content (printf format),
+# $3: pattern the output must match, $4: pattern it must not match
+check_87() {
+	local out
+
+	do_facet mds1 "printf '$2\n' > $CONFDIR/perm.conf"
+	out=$(do_facet mds1 "$L_GETIDENTITY -d $1 2>&1" | head -1)
+	echo "'$2': '$out'"
+	[[ "$out" == $3 ]] || error "'$2': got '$out', expected '$3'"
+	[[ -z "$4" || "$out" != $4 ]] ||
+		error "'$2': got '$out', must not match '$4'"
+}
+
+test_87() {
+	local uid=60787
+	local sgid=60788
+	local user=t87usr
+	local f
+
+	(( MDS1_VERSION >= $(version_code 2.17.0) )) ||
+		skip "need MDS >= 2.17.0 for l_getidentity lookup options"
+	[[ "$L_GETIDENTITY" != NONE ]] &&
+		do_facet mds1 "[[ -x $L_GETIDENTITY ]]" ||
+		skip_env "l_getidentity not found on mds1"
+
+	# l_getidentity reads fixed paths in $CONFDIR
+	do_facet mds1 "mkdir -p $CONFDIR"
+	for f in perm.conf passwd group; do
+		f=$CONFDIR/$f
+		do_facet mds1 "[[ ! -e $f ]] || mv $f $f.t87" ||
+			error "cannot save $f"
+		stack_trap "do_facet mds1 'rm -f $f; [[ ! -e $f.t87 ]] ||
+			mv $f.t87 $f'" EXIT
+	done
+
+	# user and its supplementary group exist only in the lustre files,
+	# root is a member of that group there too
+	do_facet mds1 "echo '$user:x:$uid:$uid::/:/bin/false' > $CONFDIR/passwd"
+	do_facet mds1 "printf '$user:x:$uid:\nt87grp:x:$sgid:$user,root\n' > \
+		$CONFDIR/group"
+
+	check_87 $uid "lookup lustre" "uid=$uid gid=$uid,$sgid"
+	# files: NOTFOUND for user and groups, lustre answers
+	check_87 $uid "lookup files lustre" "uid=$uid gid=$uid,$sgid"
+	# modules of several lookup lines are appended
+	check_87 $uid "lookup files\nlookup lustre" "uid=$uid gid=$uid,$sgid"
+	check_87 $uid "lookup lustre[user] files" "uid=$uid gid=$uid"
+	# no module looks the user up
+	check_87 $uid "lookup lustre[group] files" "*no such user $uid*"
+	# root is found in files, [only] skips its lustre group
+	check_87 0 "lookup files lustre" "uid=0 gid=*,$sgid*"
+	check_87 0 "lookup files[only] lustre" "uid=0 gid=*" "*,$sgid*"
+	# [only] is ignored on a module that does not look up groups
+	check_87 0 "lookup files[user,only] lustre" "uid=0 gid=*,$sgid*"
+}
+run_test 87 "l_getidentity lookup modules and options"
+
 cleanup_100() {
 	local orig_sk_path="$1"
 	local test_key="$orig_sk_path/$FSNAME-test100.key"

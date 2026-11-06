@@ -1,4 +1,4 @@
-.TH L_GETIDENTITY 8 2024-08-29 Lustre "Lustre Configuration Utilities"
+.TH L_GETIDENTITY 8 2026-11-17 Lustre "Lustre Configuration Utilities"
 .SH NAME
 l_getidentity \- Handle Lustre user/group cache upcall
 .SH SYNOPSIS
@@ -34,10 +34,13 @@ is one of:
 .B [no]rmtown
 .PP
 .BR nss (5)
-modules can be enabled for auth handling by adding a 
-.B lookup 
-command with a list of nss modules to the first line of
-.BR perm.conf
+modules can be enabled for auth handling by adding a
+.B lookup
+command with a list of nss modules to
+.BR perm.conf .
+Modules of several
+.B lookup
+lines are appended.
 .PP
 At the time of writing, known 
 .BR nss (5)
@@ -48,8 +51,32 @@ additional modules may be documented in
 or installed separately.
 .PP
 .BR nss (5)
-modules are searched in order. Once an entry is found in
-the module no further modules are searched.
+modules are searched in order. The user is taken from the first
+module that knows the UID; supplementary groups are collected from
+all modules. Supplementary groups come from the module's
+.B initgroups_dyn
+method, or from a scan of all group entries if the module has none.
+.PP
+A module name may be followed by options in brackets, separated by
+commas, for example
+.BR ldap[user] :
+.TP
+.B user
+use the module for the user lookup only.
+.TP
+.B group
+use the module for the supplementary group lookup only.
+.TP
+.B only
+once the user is found in this module, take supplementary groups from
+this module only. It has an effect only on a module that does both
+user and group lookups, i.e. without
+.B user
+or
+.B group
+or with both; otherwise it is ignored.
+.PP
+A module without options does both lookups.
 .PP
 A special
 .B lustre
@@ -66,6 +93,30 @@ was needed to use the
 .B files
 module.
 This alias is now deprecated and will be removed in a future release.
+.PP
+Note for sites moving from
+.BR l_getidentity_nss :
+there the
+.B files
+module reads
+.B /etc/lustre/passwd
+and
+.BR /etc/lustre/group ,
+here it is the
+.BR nss (5)
+.B files
+module (the system
+.B /etc/passwd
+and
+.BR /etc/group ).
+Replace
+.B files
+with
+.B lustre
+when moving a
+.B perm.conf
+from
+.BR l_getidentity_nss .
 .SH OPTIONS
 .TP
 .B -d
@@ -113,7 +164,22 @@ files.
 .P
 In this configuration root is local to the cluster
 and all other perms are delegated to ldap.
+.PP
+Look users up in ldap, then in the lustre files; take supplementary
+groups from the lustre files only:
+.RS
+.EX
+.B lookup ldap[user] lustre
 .EE
+.RE
+.PP
+Users known to the lustre files get groups only from them, others are
+found in ldap and get groups from both modules:
+.RS
+.EX
+.B lookup lustre[only] ldap
+.EE
+.RE
 .SH AVAILABILITY
 .B l_getidentity
 is part of the
