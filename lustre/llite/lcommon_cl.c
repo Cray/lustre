@@ -57,6 +57,8 @@ int cl_setattr_ost(struct inode *inode, const struct iattr *attr,
 	ENTRY;
 
 	obj = ll_i2info(inode)->lli_clob;
+	if (unlikely(!obj))
+		RETURN(-EIO);
 
 	env = cl_env_get(&refcheck);
 	if (IS_ERR(env))
