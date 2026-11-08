@@ -423,7 +423,11 @@ void lustre_assert_wire_constants(void)
 		 (long long)MGS_SET_INFO);
 	LASSERTF(MGS_CONFIG_READ == 256, "found %lld\n",
 		 (long long)MGS_CONFIG_READ);
-	LASSERTF(MGS_LAST_OPC == 257, "found %lld\n",
+	LASSERTF(MGS_SET_PARAM == 257, "found %lld\n",
+		 (long long)MGS_SET_PARAM);
+	LASSERTF(MGS_IR_HANDOVER == 258, "found %lld\n",
+		 (long long)MGS_IR_HANDOVER);
+	LASSERTF(MGS_LAST_OPC == 259, "found %lld\n",
 		 (long long)MGS_LAST_OPC);
 	LASSERTF(SEC_CTX_INIT == 801, "found %lld\n",
 		 (long long)SEC_CTX_INIT);
@@ -5112,6 +5116,28 @@ void lustre_assert_wire_constants(void)
 		 (long long)(int)offsetof(struct mgs_nidtbl_entry, u.nidlist[0]));
 	LASSERTF((int)sizeof(((struct mgs_nidtbl_entry *)0)->u.nidlist[0]) == 20, "found %lld\n",
 		 (long long)(int)sizeof(((struct mgs_nidtbl_entry *)0)->u.nidlist[0]));
+
+	/* Checks for struct mgs_set_param_body */
+	LASSERTF((int)sizeof(struct mgs_set_param_body) == 24, "found %lld\n",
+		 (long long)(int)sizeof(struct mgs_set_param_body));
+	LASSERTF((int)offsetof(struct mgs_set_param_body, mspb_flags) == 0, "found %lld\n",
+		 (long long)(int)offsetof(struct mgs_set_param_body, mspb_flags));
+	LASSERTF((int)sizeof(((struct mgs_set_param_body *)0)->mspb_flags) == 4, "found %lld\n",
+		 (long long)(int)sizeof(((struct mgs_set_param_body *)0)->mspb_flags));
+	LASSERTF((int)offsetof(struct mgs_set_param_body, mspb_padding) == 4, "found %lld\n",
+		 (long long)(int)offsetof(struct mgs_set_param_body, mspb_padding));
+	LASSERTF((int)sizeof(((struct mgs_set_param_body *)0)->mspb_padding) == 4, "found %lld\n",
+		 (long long)(int)sizeof(((struct mgs_set_param_body *)0)->mspb_padding));
+	LASSERTF((int)offsetof(struct mgs_set_param_body, mspb_base) == 8, "found %lld\n",
+		 (long long)(int)offsetof(struct mgs_set_param_body, mspb_base));
+	LASSERTF((int)sizeof(((struct mgs_set_param_body *)0)->mspb_base) == 8, "found %lld\n",
+		 (long long)(int)sizeof(((struct mgs_set_param_body *)0)->mspb_base));
+	LASSERTF((int)offsetof(struct mgs_set_param_body, mspb_time) == 16, "found %lld\n",
+		 (long long)(int)offsetof(struct mgs_set_param_body, mspb_time));
+	LASSERTF((int)sizeof(((struct mgs_set_param_body *)0)->mspb_time) == 8, "found %lld\n",
+		 (long long)(int)sizeof(((struct mgs_set_param_body *)0)->mspb_time));
+	LASSERTF(MSPB_REPLAY == 0x00000001UL, "found 0x%.8xUL\n",
+		 (unsigned int)MSPB_REPLAY);
 
 	/* Checks for struct mgs_config_body */
 	LASSERTF((int)sizeof(struct mgs_config_body) == 80, "found %lld\n",

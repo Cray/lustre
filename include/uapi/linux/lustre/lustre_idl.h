@@ -2781,6 +2781,8 @@ enum mgs_cmd {
 	MGS_TARGET_DEL	= 254,
 	MGS_SET_INFO	= 255,
 	MGS_CONFIG_READ	= 256,
+	MGS_SET_PARAM	= 257,	/* set_param -P forwarded by a follower */
+	MGS_IR_HANDOVER	= 258,	/* IR version from an acting MGS leader */
 	MGS_LAST_OPC,
 	MGS_FIRST_OPC	= MGS_CONNECT
 };
@@ -2855,6 +2857,22 @@ enum mgs_cfg_type {
 	MGS_CFG_T_MAX
 };
 
+/* MGS_SET_PARAM, with the parameter in RMF_STRING */
+struct mgs_set_param_body {
+	__u32	mspb_flags;	/* MSPB_* */
+	__u32	mspb_padding;
+	/* MSPB_REPLAY: time of the newest record the acting leader had from
+	 * MGS0, by MGS0's clock, and when it took the parameter, by its own
+	 */
+	__s64	mspb_base;
+	__s64	mspb_time;
+};
+
+enum mgs_set_param_flags {
+	/* a parameter an acting MGS leader took while MGS0 was down */
+	MSPB_REPLAY	= 0x00000001,
+};
+
 struct mgs_config_body {
 	char     mcb_name[MTI_NAME_MAXLEN]; /* logname */
 	__u64    mcb_offset;    /* next index of config log to request */
@@ -2881,6 +2899,14 @@ struct mgs_config_res {
 #define CM_SKIP        0x04
 #define CM_UPGRADE146  0x08
 #define CM_EXCLUDE     0x10
+/* written by an acting MGS leader while MGS0 was down, for MGS0, with
+ * cm_canceltime the time of the newest record from MGS0 it had (LU-19916)
+ */
+#define CM_ACTING      0x20
+/* written by MGS0 for an acting leader, with cm_canceltime the time the
+ * acting leader took it (LU-19916)
+ */
+#define CM_REPLAYED    0x40
 #define CM_START_SKIP (CM_START | CM_SKIP)
 
 struct cfg_marker {

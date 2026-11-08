@@ -98,6 +98,8 @@ static struct ll_rpc_opcode {
 	{ MGS_TARGET_DEL,   "mgs_target_del" },
 	{ MGS_SET_INFO,     "mgs_set_info" },
 	{ MGS_CONFIG_READ,  "mgs_config_read" },
+	{ MGS_SET_PARAM,    "mgs_set_param" },
+	{ MGS_IR_HANDOVER,  "mgs_ir_handover" },
 	{ OBD_PING,			 "obd_ping" },
 	{ 401, /* was OBD_LOG_CANCEL */ "llog_cancel" },
 	{ 402, /* was OBD_QC_CALLBACK */ "obd_quota_callback" },

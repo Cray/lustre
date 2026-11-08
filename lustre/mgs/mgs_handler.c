@@ -1368,7 +1368,10 @@ out:
 	RETURN(rc);
 }
 
-static struct tgt_handler mgs_mgs_handlers[] = {
+/* sized to the end of the slice, so that an opcode with no handler gets
+ * -EOPNOTSUPP from tgt_handler_find_check()
+ */
+static struct tgt_handler mgs_mgs_handlers[MGS_LAST_OPC - MGS_FIRST_OPC] = {
 TGT_RPC_HANDLER(MGS_FIRST_OPC,
 		0,			MGS_CONNECT,	 mgs_connect,
 		&RQF_CONNECT, LUSTRE_OBD_VERSION),

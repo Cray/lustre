@@ -77,6 +77,8 @@ opcodes = {
     254: 'MGS_TARGET_DEL',
     255: 'MGS_SET_INFO',
     256: 'MGS_CONFIG_READ',
+    257: 'MGS_SET_PARAM',           # set_param -P forwarded by a follower
+    258: 'MGS_IR_HANDOVER',         # IR version from an acting MGS leader
 
     400: 'OBD_PING',
     401: 'OBD_LOG_CANCEL',          # obsolete since 1.5

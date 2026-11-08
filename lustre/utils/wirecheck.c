@@ -2332,6 +2332,18 @@ check_mgs_nidtbl_entry(void)
 }
 
 static void
+check_mgs_set_param_body(void)
+{
+	BLANK_LINE();
+	CHECK_STRUCT(mgs_set_param_body);
+	CHECK_MEMBER(mgs_set_param_body, mspb_flags);
+	CHECK_MEMBER(mgs_set_param_body, mspb_padding);
+	CHECK_MEMBER(mgs_set_param_body, mspb_base);
+	CHECK_MEMBER(mgs_set_param_body, mspb_time);
+	CHECK_VALUE_X(MSPB_REPLAY);
+}
+
+static void
 check_mgs_config_body(void)
 {
 	BLANK_LINE();
@@ -3812,6 +3824,8 @@ main(int argc, char **argv)
 	CHECK_VALUE(MGS_TARGET_DEL);
 	CHECK_VALUE(MGS_SET_INFO);
 	CHECK_VALUE(MGS_CONFIG_READ);
+	CHECK_VALUE(MGS_SET_PARAM);
+	CHECK_VALUE(MGS_IR_HANDOVER);
 	CHECK_VALUE(MGS_LAST_OPC);
 
 	CHECK_VALUE(SEC_CTX_INIT);
@@ -3956,6 +3970,7 @@ main(int argc, char **argv)
 	check_mgs_target_info();
 	check_mgs_target_nidlist();
 	check_mgs_nidtbl_entry();
+	check_mgs_set_param_body();
 	check_mgs_config_body();
 	check_mgs_config_res();
 	check_getinfo_fid2path();
