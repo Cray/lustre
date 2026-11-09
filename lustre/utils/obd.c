@@ -3902,8 +3902,7 @@ int jt_del_ost(int argc, char **argv)
 	char ostname[MAX_OBD_NAME + 1];
 	long last_index;
 	__u32 index;
-	int rc, start = 0, dryrun = 0;
-	char c;
+	int rc, start = 0, dryrun = 0, c;
 
 	static struct option long_opts[] = {
 	{ .val = 'h',	.name = "help",		.has_arg = no_argument },
