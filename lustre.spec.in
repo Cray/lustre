@@ -757,16 +757,24 @@ WITH_KFI=""
 
 WITH_O2IB=""
 %if %{with mofed}
-	o2ib_path=$(find -H %{mofed_default_path} -type d -name ofed_scripts | xargs dirname)
-	if [ -z "$o2ib_path" ]; then
+	ofed_dir="%{mofed_default_path}"
+	if ! [ -e "$ofed_dir" ]; then
+		echo "ERROR: could not find OFED devel dir: $ofed_dir"
+		exit 1
+	fi
+
+	kver_dir="$ofed_dir/%{_arch}/%{_kver}"
+	arch_dirs=$(ls -d "$ofed_dir"/%{_arch}/* 2>/dev/null | sort -rV)
+	for path in "$ofed_dir" "$kver_dir" "$ofed_dir"/default $arch_dirs; do
+		if [ -f "$path/Module.symvers" ]; then
+			WITH_O2IB="--with-o2ib=${path}"
+			break
+		fi
+	done
+	if [ -z "$WITH_O2IB" ]; then
 		echo "ERROR: could not find OFED devel headers"
 		exit 1
 	fi
-	if [ $(echo $o2ib_path | wc -w) -ge 2 ]; then
-		echo "ERROR: multiple OFED versions installed"
-		exit 1
-	fi
-	WITH_O2IB="--with-o2ib=${o2ib_path}"
 %else
 %if %{without o2ib}
 	WITH_O2IB="--with-o2ib=no"
