@@ -1059,6 +1059,7 @@ int lfs_find_parse(int argc, char **argv, struct find_param *param,
 	 * default below prints.
 	 */
 	int prev_optind = optind ? optind : 1;
+	int word;
 	int optidx = 0;
 	int pathstart = -1;
 	int pathend = -1;
@@ -1106,6 +1107,8 @@ int lfs_find_parse(int argc, char **argv, struct find_param *param,
 		if (isoption && pathstart != -1 && pathend == -1)
 			pathend = prev_optind;
 
+		/* the word getopt was in: optind stays on it inside -abc */
+		word = prev_optind;
 		prev_optind = optind;
 
 		/* what to scan is not a test, and has no negation */
@@ -1967,7 +1970,7 @@ int lfs_find_parse(int argc, char **argv, struct find_param *param,
 			break;
 		default:
 			fprintf(stderr, "%s: unrecognized option '%s'\n",
-				progname, argv[optind - 1]);
+				progname, argv[word]);
 			fallthrough;
 		case 'h':
 			ret = CMD_HELP;

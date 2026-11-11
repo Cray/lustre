@@ -11197,6 +11197,22 @@ test_56acc() {
 }
 run_test 56acc "check parsing error for lfs find -perm"
 
+test_56acd() {
+	local dir=$DIR/$tdir
+	local opt
+	local out
+
+	test_mkdir $dir
+	# -lxy: 'l' is taken, then 'x' is rejected inside the word
+	for opt in -lxy --bogus; do
+		out=$($LFS find $dir $opt x 2>&1 >/dev/null) &&
+			error "lfs find $opt: should have failed"
+		[[ "$out" =~ "unrecognized option '$opt'" ]] ||
+			error "lfs find $opt: wrong option named: $out"
+	done
+}
+run_test 56acd "lfs find names the unrecognized option"
+
 test_56Ba() { # was test_56ba
 	[ $MDS1_VERSION -lt $(version_code 2.10.50) ] &&
 		skip "Need MDS version at least 2.10.50"
