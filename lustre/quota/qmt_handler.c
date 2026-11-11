@@ -43,7 +43,13 @@ static int qmt_get(const struct lu_env *env, struct qmt_device *qmt,
 
 	ENTRY;
 
-	LASSERT(!is_default || id->qid_uid == 0);
+	if (is_default && id->qid_uid) {
+		int rc = -EPROTO;
+
+		CERROR("%s: default quota requested for non-zero id %llu: rc = %d\n",
+		       qmt->qmt_svname, id->qid_uid, rc);
+		RETURN(rc);
+	}
 
 	/* look-up lqe structure containing quota settings */
 	lqe = qmt_pool_lqe_lookup_lqa(env, qmt, rtype, qtype, id, pool_name,
