@@ -441,7 +441,7 @@ static int qsd_acquire_local(struct lquota_entry *lqe, __u64 space)
 	 * the user is over quota, however, the lqe_edquot could be stale
 	 * sometimes due to the race reply of dqacq vs. id lock glimpse
 	 * (see LU-4505), so we revalidate it every 5 seconds. */
-	} else if (lqe->lqe_edquot &&
+	} else if (lqe->lqe_edquot && lqe->lqe_pending_req == 0 &&
 		   (lqe->lqe_edquot_time > ktime_get_seconds() - 5)) {
 		rc = -EDQUOT;
 	} else {
