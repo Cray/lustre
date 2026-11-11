@@ -4133,7 +4133,7 @@ test_190() {
 
 	# and must report each of them instead of silently skipping it
 	local tgt
-	local re=": (Resource temporarily|Connection timed out)"
+	local re=": (Resource temporarily|Connection timed out|Input/output error)"
 
 	for tgt in $tgts; do
 		grep -qE "$FSNAME-${tgt}_UUID.*$re" $out ||
