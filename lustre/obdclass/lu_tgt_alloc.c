@@ -615,7 +615,8 @@ struct lu_qos_rr_stream *lu_rr_start(struct lu_qos_rr *lqr,
 		if (count && start >= count)
 			atomic_sub(start - start % count,
 				   &lqrs->lqrs_start_idx);
-		if (count &&
+		/* with a stride of count - 1, a shift repeats the start */
+		if (count && (stride + 1) % count &&
 		    ++lqrs->lqrs_layouts >= count / gcd(stride, count)) {
 			lqrs->lqrs_layouts = 0;
 			++lqrs->lqrs_offset_idx;

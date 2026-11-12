@@ -160,6 +160,9 @@ struct rr_test {
 	unsigned int	adjacent_same_oss;
 	unsigned int	adjacent_same_pair;
 	bool		no_first;
+	bool		check_repeat;
+	unsigned int	prev_first;
+	unsigned int	first_repeat;
 };
 
 /*
@@ -243,9 +246,11 @@ static void rr_alloc(struct rr_test *rt, struct lu_qos_rr *lqr,
 	struct lu_qos_rr_stream *lqrs;
 	bool oss_used[MAX_OSTS];
 	bool oss_avoid = false;
+	int start_count = lqr->lqr_start_count;
 	bool mirrored = false;
 	unsigned int found = 0;
 	unsigned int base = 0;
+	bool reseeded;
 	unsigned int i;
 
 	/* the domains and OSSs of other mirrors can't be used, as for FLR */
@@ -265,6 +270,7 @@ static void rr_alloc(struct rr_test *rt, struct lu_qos_rr *lqr,
 			oss_avoid = true;
 
 	lqrs = lu_rr_start(lqr, rt->ost_count, rt->stripes, key, cont);
+	reseeded = lqr->lqr_start_count > start_count;
 	if (lqr->lqr_fdoms)
 		base = lu_rr_reserve(lqrs, rt->stripes);
 	for (i = 0; i < rt->ost_count * rt->stripes_per_ost &&
@@ -304,6 +310,11 @@ static void rr_alloc(struct rr_test *rt, struct lu_qos_rr *lqr,
 		if (found++ == 0 && !rt->no_first) {
 			rt->objs0[ost]++;
 			rt->objs0c[comp][ost]++;
+			/* consecutive layouts should start on different OSTs */
+			if (rt->check_repeat && !reseeded &&
+			    ost == rt->prev_first)
+				rt->first_repeat++;
+			rt->prev_first = ost;
 		}
 		rt->objs[ost]++;
 	}
@@ -412,6 +423,12 @@ static int rr_check(struct rr_test *rt, bool check_first)
 		       rt->mirror_same_oss);
 		rc = -EDOM;
 	}
+	if (check_first && rt->first_repeat) {
+		printf("ost=%u oss=%u stripes=%u: %u layouts start on the OST of the previous one\n",
+		       rt->ost_count, rt->oss_count, rt->stripes,
+		       rt->first_repeat);
+		rc = -EDOM;
+	}
 
 	if (rc || verbose) {
 		for (i = 0; i < rt->ost_count; i++)
@@ -440,6 +457,8 @@ static int rr_test_one(unsigned int ost_count, unsigned int oss_count,
 	rt.fdom_count = fdom_count;
 	rt.stripes = stripes;
 	rt.stripes_per_ost = (stripes - 1) / ost_count + 1;
+	rt.check_repeat = mdt_count == 1 && !unusable && !fdom_count &&
+			  !npattern && !mirrors;
 
 	/* spread the unusable OSTs, which still use up an RR index */
 	for (i = 0; i < unusable; i++)
