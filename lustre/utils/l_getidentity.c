@@ -29,6 +29,7 @@
 #include <limits.h>
 #include <ctype.h>
 #include <nss.h>
+#include <gnu/lib-names.h>
 #include <dlfcn.h>
 
 #include <libcfs/util/param.h>
@@ -51,6 +52,7 @@ static int nss_grent_buf_len;
 static void *nss_grent_buf;
 static int g_n_nss_modules;
 static int g_n_only_module = -1;
+static int nss_errno;
 
 /* the module is used for user id lookup */
 #define NSS_MODULE_FL_USER	0x1
@@ -60,6 +62,18 @@ static int g_n_only_module = -1;
  * for fetching supplementary groups
  */
 #define NSS_MODULE_FL_ONLY	0x4
+
+/* <nss.h> declares the NSS module function types since glibc 2.32 */
+#ifndef NSS_DECLARE_MODULE_FUNCTIONS
+typedef enum nss_status nss_getpwuid_r(uid_t, struct passwd *, char *,
+				       size_t, int *);
+typedef enum nss_status nss_setgrent(int);
+typedef enum nss_status nss_getgrent_r(struct group *, char *, size_t,
+				       int *);
+typedef enum nss_status nss_endgrent(void);
+typedef enum nss_status nss_initgroups_dyn(const char *, gid_t, long *, long *,
+					   gid_t **, long, int *);
+#endif
 
 struct nss_module {
 	char name[NSS_MODULE_NAME_SIZE];
@@ -75,17 +89,12 @@ struct nss_module {
 	union {
 		struct {
 			void *l_ptr;
-			int  (*l_getpwuid)(uid_t, struct passwd *pwd,
-					   char *buffer, size_t buflen,
-					   int *errnop);
-			int  (*l_setgrent)(int stayopen);
-			int  (*l_getgrent)(struct group *result, char *buffer,
-					   size_t buflen, int *errnop);
-			int  (*l_endgrent)(void);
-			int  (*l_initgroups_dyn)(const char *user, gid_t group,
-						 long *start, long *size,
-						 gid_t **groups, long limit,
-						 int *errnop);
+			/* named after the <nss.h> types, see NSS_LIB_SYM */
+			nss_getpwuid_r *getpwuid_r;
+			nss_setgrent *setgrent;
+			nss_getgrent_r *getgrent_r;
+			nss_endgrent *endgrent;
+			nss_initgroups_dyn *initgroups_dyn;
 		} lib;
 		struct {
 			FILE *f_passwd;
@@ -97,7 +106,13 @@ struct nss_module {
 
 static struct nss_module g_nss_modules[NSS_MODULES_MAX_NR];
 
-#define NSS_LIB_NAME_PATTERN "libnss_%s.so.2"
+/* glibc nss_module.c: "libnss_%s.so%s", suffix taken from LIBNSS_FILES_SO */
+#define NSS_LIB_NAME_PATTERN "libnss_%s.so%s"
+#define NSS_SHLIB_REVISION (LIBNSS_FILES_SO + sizeof("libnss_files.so") - 1)
+
+/* resolve _nss_<module>_<fn> into u.lib.<fn>, typed as nss_<fn> */
+#define NSS_LIB_SYM(mod, fn, optional) \
+	((mod)->u.lib.fn = (nss_##fn *)get_nss_sym(mod, #fn, optional))
 
 /*
  * permission file format is like this:
@@ -142,7 +157,10 @@ static void errlog(const char *fmt, ...)
 
 static int compare_gids(const void *v1, const void *v2)
 {
-	return (*(gid_t *)v1 - *(gid_t *)v2);
+	gid_t a = *(const gid_t *)v1;
+	gid_t b = *(const gid_t *)v2;
+
+	return (a > b) - (a < b);
 }
 
 /** getpwuid() replacement */
@@ -156,6 +174,7 @@ static struct passwd *getpwuid_nss(uid_t uid)
 
 		if (!(mod->flags & NSS_MODULE_FL_USER))
 			continue;
+		memset(&pw, 0, sizeof(pw));
 		if (mod->getpwuid(mod, uid, &pw) == 0) {
 			if ((mod->flags & NSS_MODULE_FL_ONLY) &&
 			    (mod->flags & NSS_MODULE_FL_GROUP))
@@ -181,9 +200,12 @@ static void *get_nss_sym(struct nss_module *mod, const char *op,
 		return NULL;
 	}
 	res = dlsym(mod->u.lib.l_ptr, symbuf);
-	if (res == NULL && !optional)
+	if (res == NULL && !optional) {
+		const char *e = dlerror();
+
 		errlog("cannot find symbol %s in nss module \"%s\": %s\n",
-			symbuf, mod->name, dlerror());
+		       symbuf, mod->name, e ? e : "unknown error");
+	}
 	return res;
 }
 
@@ -202,48 +224,44 @@ static void enlarge_nss_buffer(void **buf, int *bufsize)
 
 static int setgrent_nss_lib(struct nss_module *mod)
 {
-	return mod->u.lib.l_setgrent(1);
+	return mod->u.lib.setgrent(1) == NSS_STATUS_SUCCESS ? 0 : -1;
 }
 
 static int getpwuid_nss_lib(struct nss_module *nss, uid_t uid,
 			    struct passwd *pw)
 {
-	int tmp_errno, err;
+	enum nss_status err;
+	int tmp_errno;
 
 	while (1) {
-		err = nss->u.lib.l_getpwuid(uid, pw, nss_pw_buf,
+		tmp_errno = 0;
+		err = nss->u.lib.getpwuid_r(uid, pw, nss_pw_buf,
 				nss_pw_buf_len, &tmp_errno);
-		if (err == NSS_STATUS_TRYAGAIN) {
-			if (tmp_errno == ERANGE) {
-				/* buffer too small */
-				enlarge_nss_buffer(&nss_pw_buf,
-						&nss_pw_buf_len);
-			}
-			continue;
-		}
-		break;
+		/* as glibc, retry only ERANGE; other TRYAGAIN fails module */
+		if (err != NSS_STATUS_TRYAGAIN || tmp_errno != ERANGE)
+			break;
+		enlarge_nss_buffer(&nss_pw_buf, &nss_pw_buf_len);
 	}
 	if (err == NSS_STATUS_SUCCESS)
 		return 0;
+	/* modules leave errnop untouched on NOTFOUND */
+	if (err != NSS_STATUS_NOTFOUND && tmp_errno != 0)
+		nss_errno = tmp_errno;
 	return -ENOENT;
 }
 
 static int getgrent_nss_lib(struct nss_module *nss, struct group *gr)
 {
-	int tmp_errno, err;
+	enum nss_status err;
+	int tmp_errno;
 
 	while (1) {
-		err = nss->u.lib.l_getgrent(gr, nss_grent_buf,
+		tmp_errno = 0;
+		err = nss->u.lib.getgrent_r(gr, nss_grent_buf,
 				nss_grent_buf_len, &tmp_errno);
-		if (err == NSS_STATUS_TRYAGAIN) {
-			if (tmp_errno == ERANGE) {
-				/* buffer too small */
-				enlarge_nss_buffer(&nss_grent_buf,
-						&nss_grent_buf_len);
-			}
-			continue;
-		}
-		break;
+		if (err != NSS_STATUS_TRYAGAIN || tmp_errno != ERANGE)
+			break;
+		enlarge_nss_buffer(&nss_grent_buf, &nss_grent_buf_len);
 	}
 	if (err == NSS_STATUS_SUCCESS)
 		return 0;
@@ -252,7 +270,7 @@ static int getgrent_nss_lib(struct nss_module *nss, struct group *gr)
 
 static void endgrent_nss_lib(struct nss_module *mod)
 {
-	mod->u.lib.l_endgrent();
+	(void)mod->u.lib.endgrent();
 }
 
 static void grouplist_plain(struct nss_module *mod, const char *user,
@@ -261,6 +279,7 @@ static void grouplist_plain(struct nss_module *mod, const char *user,
 {
 	struct group gr;
 
+	memset(&gr, 0, sizeof(gr));
 	mod->setgrent(mod);
 
 	while (mod->getgrent(mod, &gr) == 0 && *ngroups < maxgroups) {
@@ -289,19 +308,19 @@ static void grouplist_nss_lib(struct nss_module *mod, const char *user,
 	long start_groups = *ngroups;
 	long size_groups = maxgroups;
 	gid_t *groups_array = groups;
+	enum nss_status ret;
 	int err = 0;
-	int ret;
 
 	/* initgroups_dyn is optional in NSS */
-	if (mod->u.lib.l_initgroups_dyn == NULL) {
+	if (mod->u.lib.initgroups_dyn == NULL) {
 		grouplist_plain(mod, user, skipgroup, groups, ngroups,
 				maxgroups);
 		return;
 	}
 
-	ret = mod->u.lib.l_initgroups_dyn(user, skipgroup, &start_groups,
-					  &size_groups, &groups_array,
-					  maxgroups, &err);
+	ret = mod->u.lib.initgroups_dyn(user, skipgroup, &start_groups,
+					&size_groups, &groups_array,
+					maxgroups, &err);
 	if (ret != NSS_STATUS_SUCCESS) {
 		if (ret == NSS_STATUS_UNAVAIL) /* fallback to plain search */
 			grouplist_plain(mod, user, skipgroup, groups, ngroups,
@@ -328,7 +347,8 @@ static void fini_nss_lib_module(struct nss_module *mod)
 /** load and initialize a "shared lib" nss module */
 static int init_nss_lib_module(struct nss_module *mod, char *name)
 {
-	char lib_file_name[sizeof(NSS_LIB_NAME_PATTERN) + sizeof(mod->name)];
+	char lib_file_name[sizeof(NSS_LIB_NAME_PATTERN) + sizeof(mod->name) +
+			   sizeof(LIBNSS_FILES_SO)];
 
 	if (strlen(name) >= sizeof(mod->name)) {
 		errlog("module name (%s) too long\n", name);
@@ -339,7 +359,7 @@ static int init_nss_lib_module(struct nss_module *mod, char *name)
 	mod->name[sizeof(mod->name) - 1] = '\0';
 
 	snprintf(lib_file_name, sizeof(lib_file_name), NSS_LIB_NAME_PATTERN,
-		 name);
+		 name, NSS_SHLIB_REVISION);
 
 	mod->getpwuid = getpwuid_nss_lib;
 	mod->setgrent = setgrent_nss_lib;
@@ -348,28 +368,20 @@ static int init_nss_lib_module(struct nss_module *mod, char *name)
 	mod->grouplist = grouplist_nss_lib;
 	mod->fini = fini_nss_lib_module;
 
-	mod->u.lib.l_ptr = dlopen(lib_file_name, RTLD_NOW);
+	mod->u.lib.l_ptr = dlopen(lib_file_name, RTLD_LAZY);
 	if (mod->u.lib.l_ptr == NULL) {
 		errlog("dl error %s\n", dlerror());
 		exit(1);
 	}
-	mod->u.lib.l_getpwuid = get_nss_sym(mod, "getpwuid_r", false);
-	if (mod->u.lib.l_getpwuid == NULL)
+	if (NSS_LIB_SYM(mod, getpwuid_r, false) == NULL)
 		exit(1);
 
 	/* NULL: grouplist_nss_lib() falls back to a getgrent scan */
-	mod->u.lib.l_initgroups_dyn = get_nss_sym(mod, "initgroups_dyn", true);
+	NSS_LIB_SYM(mod, initgroups_dyn, true);
 
-	mod->u.lib.l_setgrent = get_nss_sym(mod, "setgrent", false);
-	if (mod->u.lib.l_setgrent == NULL)
-		exit(1);
-
-	mod->u.lib.l_getgrent = get_nss_sym(mod, "getgrent_r", false);
-	if (mod->u.lib.l_getgrent == NULL)
-		exit(1);
-
-	mod->u.lib.l_endgrent = get_nss_sym(mod, "endgrent", false);
-	if (mod->u.lib.l_endgrent == NULL)
+	if (NSS_LIB_SYM(mod, setgrent, false) == NULL ||
+	    NSS_LIB_SYM(mod, getgrent_r, false) == NULL ||
+	    NSS_LIB_SYM(mod, endgrent, false) == NULL)
 		exit(1);
 
 	return 0;
@@ -399,6 +411,10 @@ static int getpwuid_lustre_nss(struct nss_module *mod, uid_t uid,
 
 static int setgrent_lustre_nss(struct nss_module *mod)
 {
+	if (mod->u.files.f_passwd)
+		rewind(mod->u.files.f_passwd);
+	if (mod->u.files.f_group)
+		rewind(mod->u.files.f_group);
 	return 0;
 }
 
@@ -443,22 +459,18 @@ static int init_lustre_module(struct nss_module *mod)
 /** load and initialize the "nss" system */
 static void init_nss(void)
 {
-	nss_pw_buf_len = sysconf(_SC_GETPW_R_SIZE_MAX);
-	if (nss_pw_buf_len == -1) {
-		perror("sysconf");
-		exit(1);
-	}
+	long len;
+
+	len = sysconf(_SC_GETPW_R_SIZE_MAX);
+	nss_pw_buf_len = len > 0 ? len : 1024;
 	nss_pw_buf = malloc(nss_pw_buf_len);
 	if (nss_pw_buf == NULL) {
 		perror("pw buffer allocation");
 		exit(1);
 	}
 
-	nss_grent_buf_len = sysconf(_SC_GETGR_R_SIZE_MAX);
-	if (nss_grent_buf_len == -1) {
-		perror("sysconf");
-		exit(1);
-	}
+	len = sysconf(_SC_GETGR_R_SIZE_MAX);
+	nss_grent_buf_len = len > 0 ? len : 1024;
 	nss_grent_buf = malloc(nss_grent_buf_len);
 	if (nss_grent_buf == NULL) {
 		perror("grent buffer allocation");
@@ -519,7 +531,7 @@ static int get_groups_nss(struct identity_downcall_data *data,
 
 	pw = getpwuid_nss(data->idd_uid);
 	if (pw == NULL) {
-		data->idd_err = errno ? errno : EIDRM;
+		data->idd_err = nss_errno ? nss_errno : EIDRM;
 		errlog("no such user %u\n", data->idd_uid);
 		return -1;
 	}
@@ -1175,6 +1187,10 @@ downcall:
 			cfs_free_param_data(&path);
 			if (data)
 				free(data);
+			fini_nss();
+			g_n_nss_modules = 0;
+			g_n_only_module = -1;
+			nss_errno = 0;
 			goto retry;
 		}
 		rc = -1;
