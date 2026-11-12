@@ -6705,7 +6705,11 @@ test_73c() {
 	(( $OST1_VERSION >= $(version_code 2.16.54) )) ||
 		skip "Need OST version at least 2.16.54 to don't LBUG"
 
-	cleanup
+	# Reload LNet on the servers too, so ost1 starts without the peers
+	# that earlier tests left (73b adds ~100 unreachable ones). Each
+	# net add below pushes the new NIDs to the known peers and waits
+	# for a Push in flight, up to the LND timeout per net.
+	LOAD_MODULES_REMOTE=true cleanup
 	LOAD_MODULES_REMOTE=true load_modules
 
 	INTERFACES=( $(lnet_if_list) )
