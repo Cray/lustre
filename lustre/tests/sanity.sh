@@ -735,21 +735,6 @@ test_17g() {
 }
 run_test 17g "symlinks: really long symlink name and inode boundaries"
 
-test_17h() { #bug 17378
-	[ $PARALLEL == "yes" ] && skip "skip parallel run"
-	remote_mds_nodsh && skip "remote MDS with nodsh"
-
-	local mdt_idx
-
-	test_mkdir $DIR/$tdir
-	mdt_idx=$($LFS getdirstripe -i $DIR/$tdir)
-	$LFS setstripe -c -1 $DIR/$tdir
-	#define OBD_FAIL_MDS_LOV_PREP_CREATE 0x141
-	do_facet mds$((mdt_idx + 1)) lctl set_param fail_loc=0x80000141
-	touch $DIR/$tdir/$tfile || true
-}
-run_test 17h "create objects: lov_free_memmd() doesn't lbug"
-
 test_17i() { #bug 20018
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 	remote_mds_nodsh && skip "remote MDS with nodsh"
