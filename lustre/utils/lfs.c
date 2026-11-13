@@ -6502,8 +6502,8 @@ create_mirror:
 	}
 
 	/* Validate EC options */
-#if LUSTRE_VERSION_CODE > OBD_OCD_VERSION(2, 17, 90, 0)
-#error "Remove LFS_EC_OK check for 2.18 release"
+#if LUSTRE_VERSION_CODE >= OBD_OCD_VERSION(2, 18, 53, 0)
+#error "Remove LFS_EC_OK check after 2.18 release"
 #endif
 	if (lsa.lsa_has_ec) {
 		static bool ec_warning_printed;
