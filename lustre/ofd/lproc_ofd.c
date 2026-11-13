@@ -752,6 +752,40 @@ static ssize_t sync_journal_store(struct kobject *kobj, struct attribute *attr,
 }
 LUSTRE_RW_ATTR(sync_journal);
 
+/**
+ * force_sync_store() - Free delayed object destroys and commit the OST.
+ * @kobj: Kernel object (OFD device)
+ * @attr: Pointer to struct attribute
+ * @buffer: ignored, any value triggers the sync
+ * @count: @buffer length
+ *
+ * The delayed object free runs before the sync, so the space of destroys
+ * that already committed is released when the write returns.
+ *
+ * Return:
+ * * %@count on success
+ * * %negative number on error
+ */
+static ssize_t force_sync_store(struct kobject *kobj, struct attribute *attr,
+				const char *buffer, size_t count)
+{
+	struct obd_device *obd = container_of(kobj, struct obd_device,
+					      obd_kset.kobj);
+	struct ofd_device *ofd = ofd_dev(obd->obd_lu_dev);
+	struct lu_env env;
+	int rc;
+
+	rc = lu_env_init(&env, LCT_DT_THREAD);
+	if (rc)
+		return rc;
+
+	rc = ofd_device_sync(&env, ofd);
+	lu_env_fini(&env);
+
+	return rc == 0 ? count : rc;
+}
+LUSTRE_WO_ATTR(force_sync);
+
 static ssize_t brw_size_show(struct kobject *kobj, struct attribute *attr,
 			     char *buf)
 {
@@ -1295,6 +1329,7 @@ static struct attribute *ofd_attrs[] = {
 	&lustre_attr_evict_client.attr,
 	&lustre_attr_eviction_count.attr,
 	&lustre_attr_failure_domain.attr,
+	&lustre_attr_force_sync.attr,
 	&lustre_attr_fstype.attr,
 	&lustre_attr_grant_check_threshold.attr,
 	&lustre_attr_grant_compat_disable.attr,

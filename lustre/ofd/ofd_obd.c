@@ -1235,7 +1235,7 @@ out:
 }
 
 /* this should sync the whole device */
-static int ofd_device_sync(const struct lu_env *env, struct ofd_device *ofd)
+int ofd_device_sync(const struct lu_env *env, struct ofd_device *ofd)
 {
 	lu_objects_destroy_delayed();
 

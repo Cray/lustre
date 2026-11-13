@@ -323,6 +323,7 @@ int ofd_destroy_by_fid(const struct lu_env *env, struct ofd_device *ofd,
 int ofd_statfs(const struct lu_env *env,  struct obd_export *exp,
 	       struct obd_statfs *osfs, time64_t max_age, __u32 flags);
 int ofd_obd_disconnect(struct obd_export *exp);
+int ofd_device_sync(const struct lu_env *env, struct ofd_device *ofd);
 
 /* ofd_fs.c */
 u64 ofd_seq_last_oid(struct ofd_seq *oseq);

@@ -1,0 +1,59 @@
+.TH OBDFILTER...FORCE_SYNC 4 2026-11-07 Lustre "Lustre Kernel Interfaces"
+.SH NAME
+obdfilter.force_sync \- commit an OST and free its destroyed objects
+.SH SYNOPSIS
+.SY
+.BI "lctl set_param obdfilter." FSNAME "-OST*.force_sync=1"
+.YS
+.SS PROPERTIES
+.TP
+.B Access Permissions
+.br
+.BR 200 " | " --w-------
+.TP
+.B Scope
+.br
+Per-OST device.
+.TP
+.B Config
+.br
+Always present on OST devices.
+.TP
+.B Default
+.br
+Not applicable, the parameter is write-only.
+.TP
+.B Valid Range
+.br
+Any value is accepted and ignored.
+.SH DESCRIPTION
+Writing to this parameter makes the OST run the delayed free of objects
+whose destroy has already committed, and then commit all pending
+transactions on the backing filesystem before the write returns.
+The value written is ignored.
+.PP
+This differs from the
+.B osd-*.*.force_sync
+parameters, which only commit pending transactions and do not run the
+delayed object free.
+The test framework uses it so that space and quota used by deleted files
+are released without waiting for the background free to run.
+.SH MODULES
+This parameter is in the following modules:
+.EX
+.RB "obdfilter." FSNAME "-OST*.force_sync"
+.EE
+.SH EXAMPLES
+.PP
+Free destroyed objects and commit an OST:
+.EX
+.RB "oss# " "lctl set_param obdfilter.lustrewt-OST0000.force_sync=1"
+.EE
+.SH AVAILABILITY
+.B obdfilter.*.force_sync
+is part of the
+.BR lustre (7)
+filesystem package since release 2.18.0.
+.\" Added in 2.17.51.xxx
+.SH SEE ALSO
+.BR lctl-set_param (8)
