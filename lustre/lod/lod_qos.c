@@ -2338,7 +2338,8 @@ static int lod_alloc_ost_list(const struct lu_env *env, struct lod_object *lo,
 	     i++, array_idx = (array_idx + 1) % lod_comp->llc_stripe_count) {
 		__u32 ost_idx = lod_comp->llc_ostlist.op_array[array_idx];
 
-		if (!test_bit(ost_idx, m->lod_ost_bitmap)) {
+		if (ost_idx >= m->lod_ost_descs.ltd_tgts_size ||
+		    !test_bit(ost_idx, m->lod_ost_bitmap)) {
 			rc = -EINVAL;
 			break;
 		}
