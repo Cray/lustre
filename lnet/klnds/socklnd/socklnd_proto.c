@@ -131,7 +131,7 @@ ksocknal_queue_tx_msg_v2(struct ksock_conn *conn, struct ksock_tx *tx_msg)
 	ksocknal_next_tx_carrier(conn);
 
 	/* use new_tx to replace the noop zc-ack packet */
-	list_splice(&tx->tx_list, &tx_msg->tx_list);
+	list_replace(&tx->tx_list, &tx_msg->tx_list);
 
 	return tx;
 }
