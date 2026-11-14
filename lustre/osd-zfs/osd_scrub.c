@@ -507,6 +507,9 @@ static int osd_scrub_main(void *args)
 			GOTO(post, rc = 0);
 
 		scrub->os_pos_current = it->ooi_pos;
+	} else if (scrub->os_pos_current > 1) {
+		/* dmu_object_next() never returns the start position */
+		scrub->os_pos_current--;
 	}
 
 	CDEBUG(D_LFSCK, "%s: OI scrub start, flags = 0x%x, pos = %llu\n",
@@ -1788,8 +1791,10 @@ static int osd_otable_it_load(const struct lu_env *env,
 	if (hash > OSD_OTABLE_MAX_HASH)
 		hash = OSD_OTABLE_MAX_HASH;
 
-	/* The hash is the last checkpoint position, start from the next one. */
-	it->ooi_pos = hash + 1;
+	/* The hash is the last checkpoint position, dmu_object_next() starts
+	 * from the next one.
+	 */
+	it->ooi_pos = max_t(__u64, hash, 1);
 	it->ooi_prefetched = 0;
 	it->ooi_prefetched_dnode = 0;
 	it->ooi_user_ready = 1;

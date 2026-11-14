@@ -431,6 +431,28 @@ static int osd_object_init0(const struct lu_env *env, struct osd_object *obj)
 	RETURN(0);
 }
 
+/* undo osd_object_init0() so the object can be set up from another dnode */
+static void osd_object_reset(struct osd_object *obj)
+{
+	struct lu_object_header *h = obj->oo_dt.do_lu.lo_header;
+
+	osd_object_sa_fini(obj);
+	if (obj->oo_sa_xattr) {
+		nvlist_free(obj->oo_sa_xattr);
+		obj->oo_sa_xattr = NULL;
+	}
+	if (obj->oo_dn) {
+		osd_dnode_rele(obj->oo_dn);
+		obj->oo_dn = NULL;
+	}
+	memset(&obj->oo_attr, 0, sizeof(obj->oo_attr));
+	obj->oo_lma_flags = 0;
+#ifdef ZFS_PROJINHERIT
+	obj->oo_with_projid = 0;
+#endif
+	h->loh_attr &= ~(LOHA_EXISTS | S_IFMT);
+}
+
 static int osd_check_lma(const struct lu_env *env, struct osd_object *obj)
 {
 	struct osd_thread_info	*info = osd_oti_get(env);
@@ -524,6 +546,7 @@ static int osd_object_init(const struct lu_env *env, struct lu_object *l,
 	struct osd_idmap_cache *idc;
 	char *name = info->oti_str;
 	uint64_t oid;
+	uint64_t oid2;
 	int rc = 0;
 	int rc1;
 	bool remote = false;
@@ -603,8 +626,19 @@ zget:
 	if (rc != -EREMCHG)
 		GOTO(out, rc);
 
-	osd_scrub_refresh_mapping(env, osd, fid, oid, DTO_INDEX_DELETE, true,
-				  NULL);
+	/* the OI scrub may have repaired the mapping since it was read */
+	down_read(&scrub->os_rwsem);
+	rc1 = osd_fid_lookup(env, osd, fid, &oid2);
+	if (!rc1 && oid2 == oid)
+		osd_scrub_refresh_mapping(env, osd, fid, oid,
+					  DTO_INDEX_DELETE, true, NULL);
+	up_read(&scrub->os_rwsem);
+
+	if (!rc1 && oid2 != oid) {
+		osd_object_reset(obj);
+		oid = oid2;
+		goto zget;
+	}
 
 trigger:
 	/* We still have chance to get the valid dnode: for the object that is
@@ -621,8 +655,7 @@ trigger:
 				    NULL, name, 8, 3, (void *)zde);
 		if (!rc) {
 			oid = zde->lzd_reg.zde_dnode;
-			osd_dnode_rele(obj->oo_dn);
-			obj->oo_dn = NULL;
+			osd_object_reset(obj);
 			remote = true;
 			goto zget;
 		}
