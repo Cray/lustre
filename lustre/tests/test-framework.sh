@@ -734,6 +734,9 @@ init_test_env() {
 	export PARALLEL_TUNEFS=${PARALLEL_TUNEFS:-$PARALLEL_OPS}
 	export PARALLEL_TUNEFS_TARGETS=${PARALLEL_TUNEFS_TARGETS:-"mdt ost"}
 
+	# seconds a target stays down in a SOFT failover
+	export FAILOVER_DELAY=${FAILOVER_DELAY:-0}
+
 	export BLCKSIZE=${BLCKSIZE:-4096}
 	export MACHINEFILE=${MACHINEFILE:-$TMP/$(basename $0 .sh).machines}
 	get_lustre_env
@@ -3597,7 +3600,7 @@ remount_facet() {
 reboot_facet() {
 	local facet=$1
 	local node=$(facet_active_host $facet)
-	local sleep_time=${2:-10}
+	local sleep_time=${2:-$FAILOVER_DELAY}
 
 	if [ "$FAILURE_MODE" = HARD ]; then
 		if ! power_management_available; then
@@ -4713,7 +4716,7 @@ facet_failover() {
 			fi
 		fi
 	else
-		sleep 10
+		sleep ${sleep_time:-$FAILOVER_DELAY}
 	fi
 
 	if [[ " ${affecteds[@]} " =~ " $SINGLEMDS " ]]; then
