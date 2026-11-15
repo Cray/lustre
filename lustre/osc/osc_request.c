@@ -1293,9 +1293,6 @@ out:
 	return rc;
 }
 #else /* !CONFIG_CRC_T10DIF */
-#define obd_dif_ip_fn NULL
-#define obd_dif_crc_fn NULL
-
 static int osc_checksum_bulk_t10pi(const char *obd_name, int nob,
 				   size_t pg_count, struct brw_page **pga,
 				   int opc, obd_dif_csum_fn *fn,

@@ -125,8 +125,13 @@ extern const char *const cksum_name[];
 
 typedef __be16 (obd_dif_csum_fn) (void *, unsigned int);
 
+#if IS_ENABLED(CONFIG_CRC_T10DIF)
 __be16 obd_dif_crc_fn(void *data, unsigned int len);
 __be16 obd_dif_ip_fn(void *data, unsigned int len);
+#else
+#define obd_dif_crc_fn NULL
+#define obd_dif_ip_fn NULL
+#endif
 int obd_page_dif_generate_buffer(const char *obd_name, struct folio *folio,
 				 __s32 pgno, __u32 offset, __u32 length,
 				 __be16 *guard_start, int guard_number,
