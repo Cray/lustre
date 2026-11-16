@@ -876,9 +876,9 @@ void lustre_lnet_free_list(struct nid_node *head);
  */
 int yaml_lnet_configure(int flags, const char **msg);
 
-int yaml_lnet_fault_rule(yaml_document_t *results, __u32 opc, char *src,
-			 char *dst, char *local_nid,
-			 struct lnet_fault_attr *attr);
+int yaml_lnet_fault_rule(yaml_document_t *results, int version, __u32 opc,
+			 char *src, char *dst, char *local_nid,
+			 __u64 latency_ns, struct lnet_fault_attr *attr);
 
 /*
  * Note: Emitter object setup with this function should always call

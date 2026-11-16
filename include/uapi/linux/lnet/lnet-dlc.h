@@ -28,7 +28,7 @@
 #endif
 
 #define LNET_GENL_NAME		"lnet"
-#define LNET_GENL_VERSION	0x05
+#define LNET_GENL_VERSION	0x06
 
 /* enum lnet_commands	      - Supported core LNet Netlink commands
  *

@@ -1854,7 +1854,9 @@ yaml_emitter_set_output_netlink(yaml_emitter_t *sender, struct nl_sock *nl,
  * @request:	emitter object
  *
  * Return	Netlink family version level queried from the kernel or
- *		a negative error code
+ *		a negative error code. This is unlike other libyaml
+ *		functions which return true / false but zero (false)
+ *		is a valid Netlink family version.
  */
 YAML_DECLARE(int)
 yaml_emitter_get_output_version(yaml_emitter_t *request)
@@ -1862,26 +1864,52 @@ yaml_emitter_get_output_version(yaml_emitter_t *request)
 	struct yaml_netlink_output *out = NULL;
 	struct genl_family *family;
 	struct nl_cache *ctrl;
+	struct nl_sock *sk;
 	int rc;
 
 	if (!request || !request->write_handler_data)
 		return -EINVAL;
 
-	out = request->write_handler_data;
-	rc = genl_ctrl_alloc_cache(out->ctrl, &ctrl);
-	if (rc < 0)
-		return rc;
+	sk = nl_socket_alloc();
+	if (!sk) {
+		request->problem = "socket allocation failed";
+		request->error = YAML_MEMORY_ERROR;
+		return -ENOMEM;
+	}
 
+	rc = genl_connect(sk);
+	if (rc < 0) {
+		yaml_emitter_set_writer_error(request,
+					      "socket failed to connect");
+		nl_socket_free(sk);
+		return -ENODEV;
+	}
+
+	rc = genl_ctrl_alloc_cache(sk, &ctrl);
+	if (rc < 0) {
+		yaml_emitter_set_writer_error(request,
+					      "netlink setup failed");
+		nl_socket_free(sk);
+		return rc;
+	}
+
+	out = request->write_handler_data;
 	family = genl_ctrl_search(ctrl, out->family_id);
 	if (!family) {
+		yaml_emitter_set_writer_error(request,
+					      "family doesn't exist");
 		rc = -ENOENT;
 		goto free_cache;
 	}
 
 	rc = genl_family_get_version(family);
+	if (rc < 0)
+		yaml_emitter_set_writer_error(request,
+					      "failed to get version");
 	genl_family_put(family);
 free_cache:
 	nl_cache_free(ctrl);
+	nl_socket_free(sk);
 	return rc;
 }
 

@@ -2633,8 +2633,9 @@ fault_simul_rule_add(__u32 opc, char *name, int argc, char **argv)
 		return -1;
 	}
 
-	rc = yaml_lnet_fault_rule(&results, opc, fa_src, fa_dst, fa_local_nid,
-				  &attr);
+	/* latency in seconds only supported. */
+	rc = yaml_lnet_fault_rule(&results, OLD_NETFAULT_VERSION, opc, fa_src,
+				  fa_dst, fa_local_nid, 0, &attr);
 	if (rc <= 0) {
 		if (rc == -EOPNOTSUPP)
 			goto old_api;
@@ -2753,7 +2754,8 @@ fault_simul_rule_del(__u32 opc, char *name, int argc, char **argv)
 		return -1;
 	}
 
-	rc = yaml_lnet_fault_rule(&results, opc, fa_src, fa_dst, NULL, NULL);
+	rc = yaml_lnet_fault_rule(&results, OLD_NETFAULT_VERSION, opc, fa_src,
+				  fa_dst, NULL, 0, NULL);
 	if (rc <= 0) {
 		if (rc == -EOPNOTSUPP)
 			goto old_api;
@@ -2817,7 +2819,8 @@ fault_simul_rule_reset(__u32 opc, char *name, int argc, char **argv)
 	yaml_document_t results;
 	int rc;
 
-	rc = yaml_lnet_fault_rule(&results, opc, NULL, NULL, NULL, NULL);
+	rc = yaml_lnet_fault_rule(&results, OLD_NETFAULT_VERSION, opc, NULL,
+				  NULL, NULL, 0, NULL);
 	if (rc <= 0) {
 		if (rc == -EOPNOTSUPP)
 			goto old_api;
@@ -2895,7 +2898,8 @@ fault_simul_rule_list(__u32 opc, char *name, int argc, char **argv)
 	int pos, rc;
 	int i = 2;
 
-	rc = yaml_lnet_fault_rule(&results, opc, NULL, NULL, NULL, NULL);
+	rc = yaml_lnet_fault_rule(&results, OLD_NETFAULT_VERSION, opc, NULL,
+				  NULL, NULL, 0, NULL);
 	if (rc < 0) {
 		if (rc == -EOPNOTSUPP)
 			goto old_api;

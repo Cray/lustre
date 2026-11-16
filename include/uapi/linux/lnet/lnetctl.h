@@ -16,6 +16,8 @@
 /** \addtogroup lnet_fault_simulation
  * @{ */
 
+#define OLD_NETFAULT_VERSION	5
+
 enum {
 	LNET_CTL_DROP_ADD = 0,
 	LNET_CTL_DROP_DEL = 1,

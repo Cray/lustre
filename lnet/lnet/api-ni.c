@@ -12,6 +12,7 @@
 
 #include <linux/ctype.h>
 #include <linux/log2.h>
+#include <linux/kernel.h>
 #include <linux/ktime.h>
 #include <linux/moduleparam.h>
 #include <linux/uaccess.h>
@@ -10305,6 +10306,10 @@ static const struct ln_key_list fault_attr_list = {
 			.lkp_value		= "la_latency",
 			.lkp_data_type		= NLA_U32
 		},
+		[LNET_FAULT_ATTR_LA_NS_LATENCY]	= {
+			.lkp_value		= "la_latency",
+			.lkp_data_type		= NLA_U64
+		},
 		[LNET_FAULT_ATTR_LS_DELAYED]	= {
 			.lkp_value		= "ls_delayed",
 			.lkp_data_type		= NLA_U64
@@ -10406,12 +10411,20 @@ static int lnet_fault_show_dump(struct sk_buff *msg,
 					  prop->stat.u.drop.ds_dropped,
 					  LNET_FAULT_ATTR_PAD);
 		} else if (opc == LNET_CTL_DELAY_LIST) {
+			s64 latency_ns;
+
 			nla_put_u32(msg, LNET_FAULT_ATTR_LA_RATE,
 				    prop->attr.u.delay.la_rate);
 			nla_put_u32(msg, LNET_FAULT_ATTR_LA_INTERVAL,
 				    prop->attr.u.delay.la_interval);
-			nla_put_u32(msg, LNET_FAULT_ATTR_LA_LATENCY,
-				    prop->attr.u.delay.la_latency);
+			latency_ns = ktime_to_ns(prop->attr.u.delay.la_latency);
+			if (gnlh->version > OLD_NETFAULT_VERSION)
+				nla_put_u64_64bit(msg, LNET_FAULT_ATTR_LA_NS_LATENCY,
+						  latency_ns,
+						  LNET_FAULT_ATTR_PAD);
+			else
+				nla_put_u32(msg, LNET_FAULT_ATTR_LA_LATENCY,
+					    DIV_ROUND_UP(latency_ns, NSEC_PER_SEC));
 			nla_put_u64_64bit(msg, LNET_FAULT_ATTR_LS_DELAYED,
 					  prop->stat.u.delay.ls_delayed,
 					  LNET_FAULT_ATTR_PAD);
@@ -10466,7 +10479,7 @@ static int lnet_fault_cmd(struct sk_buff *skb, struct genl_info *info)
 	fattr.fa_dst = LNET_ANY_NID;
 
 	nla_for_each_attr(entry, params, msg_len, rem) {
-		u64 tmp;
+		s64 tmp;
 
 		CDEBUG(D_NET, "attr type: %d\n", nla_type(entry));
 		if (nla_type(entry) != LN_SCALAR_ATTR_VALUE)
@@ -10569,8 +10582,10 @@ static int lnet_fault_cmd(struct sk_buff *skb, struct genl_info *info)
 					     &tmp, sizeof(tmp), extack);
 			if (rc < 0)
 				GOTO(report_error, rc);
-
-			fattr.u.delay.la_latency = tmp;
+			if (gnlh->version < 6)
+				fattr.u.delay.la_latency = ktime_set(tmp, 0);
+			else
+				fattr.u.delay.la_latency = ns_to_ktime(tmp);
 		}
 	}
 

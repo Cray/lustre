@@ -358,7 +358,8 @@ command_t fault_delay_cmds[] = {
 	 "\t--interval i:  Delay messages at specified time interval (seconds).\n"
 	 "\t--portal p:    Delay messages on specified portal.\n"
 	 "\t--message m:   Delay messages of specified type <PUT|ACK|GET|REPLY>.\n"
-	 "\t--latency:     Delay sending a message (delay only).\n"},
+	 "\t--latency:     Delay sending a message in seconds (delay only).\n"
+	 "\t--latency_ns:  Delay sending a message in nanoseconds (delay only).\n"},
 	{"del", jt_fault_delay_del, 0, "delete LNet delay rules\n"
 	 "\t--all:         Delete all delay rules\n"
 	 "\t--source nid:  Delete delay rule with specified source NID\n"
@@ -7470,6 +7471,7 @@ static int jt_fault_add(__u32 opc, int argc, char **argv)
 	{ .name = "health_error", .has_arg = required_argument, .val = 'e' },
 	{ .name = "interval",	.has_arg = required_argument, .val = 'i' },
 	{ .name = "latency",	.has_arg = required_argument, .val = 'l' },
+	{ .name = "latency_ns",	.has_arg = required_argument, .val = 'L' },
 	{ .name = "message",	.has_arg = required_argument, .val = 'm' },
 	{ .name = "random",	.has_arg = no_argument,       .val = 'n' },
 	{ .name = "local_nid",	.has_arg = required_argument, .val = 'o' },
@@ -7482,7 +7484,8 @@ static int jt_fault_add(__u32 opc, int argc, char **argv)
 	};
 	char *optstr, *cmd;
 	char *fa_src = NULL, *fa_dst = NULL, *fa_local_nid = NULL;
-	int opt, rc = 0;
+	__u64 latency_ns = 0;
+	int version = LNET_GENL_VERSION, opt, rc = 0;
 	struct lnet_fault_attr attr;
 	yaml_document_t results;
 	yaml_emitter_t debug;
@@ -7492,7 +7495,7 @@ static int jt_fault_add(__u32 opc, int argc, char **argv)
 		cmd = "drop";
 		rc = check_cmd(fault_drop_cmds, "drop", "add", 2, argc, argv);
 	} else {
-		optstr = "d:l:m:o:p:r:s:";
+		optstr = "d:l:L:m:o:p:r:s:";
 		cmd = "delay";
 		rc = check_cmd(fault_delay_cmds, "delay", "add", 2, argc, argv);
 	}
@@ -7523,8 +7526,12 @@ static int jt_fault_add(__u32 opc, int argc, char **argv)
 				attr.u.delay.la_interval = strtoul(optarg,
 								   NULL, 0);
 			break;
-		case 'l': /* seconds to wait before activating rule */
+		case 'l': /* per-message delay in seconds */
 			attr.u.delay.la_latency = strtoul(optarg, NULL, 0);
+			version = OLD_NETFAULT_VERSION;
+			break;
+		case 'L': /* per-message delay in nanoseconds */
+			latency_ns = strtoull(optarg, NULL, 0);
 			break;
 		case 'm': /* message types to filter */
 			rc = fault_attr_msg_parse(optarg, &attr.fa_msg_mask);
@@ -7591,8 +7598,13 @@ static int jt_fault_add(__u32 opc, int argc, char **argv)
 			return -1;
 		}
 
-		if (attr.u.delay.la_latency == 0) {
+		if (attr.u.delay.la_latency == 0 && latency_ns == 0) {
 			fprintf(stderr, "latency cannot be zero\n");
+			return -1;
+		}
+
+		if (attr.u.delay.la_latency != 0 && latency_ns != 0) {
+			fprintf(stderr, "latency cannot be seconds and nanoseconds\n");
 			return -1;
 		}
 	}
@@ -7604,8 +7616,8 @@ static int jt_fault_add(__u32 opc, int argc, char **argv)
 		return -1;
 	}
 
-	rc = yaml_lnet_fault_rule(&results, opc, fa_src, fa_dst, fa_local_nid,
-				  &attr);
+	rc = yaml_lnet_fault_rule(&results, version, opc, fa_src,
+				  fa_dst, fa_local_nid, latency_ns, &attr);
 	if (rc < 0)
 		return rc;
 
@@ -7685,7 +7697,8 @@ static int jt_fault_del_common(__u32 opc, int argc, char **argv)
 		return -1;
 	}
 
-	rc = yaml_lnet_fault_rule(&results, opc, fa_src, fa_dst, NULL, NULL);
+	rc = yaml_lnet_fault_rule(&results, LNET_GENL_VERSION, opc, fa_src,
+				  fa_dst, NULL, 0, NULL);
 	if (rc < 0)
 		return rc;
 
@@ -7726,7 +7739,8 @@ static int jt_fault_reset_common(__u32 opc, int argc, char **argv)
 	if (rc)
 		return rc;
 
-	rc = yaml_lnet_fault_rule(&results, opc, NULL, NULL, NULL, NULL);
+	rc = yaml_lnet_fault_rule(&results, LNET_GENL_VERSION, opc, NULL, NULL,
+				  NULL, 0, NULL);
 	if (rc < 0)
 		return rc;
 
@@ -7767,7 +7781,8 @@ static int jt_fault_show_common(__u32 opc, int argc, char **argv)
 	if (rc)
 		return rc;
 
-	rc = yaml_lnet_fault_rule(&results, opc, NULL, NULL, NULL, NULL);
+	rc = yaml_lnet_fault_rule(&results, LNET_GENL_VERSION, opc, NULL, NULL,
+				  NULL, 0, NULL);
 	if (rc < 0)
 		return rc;
 

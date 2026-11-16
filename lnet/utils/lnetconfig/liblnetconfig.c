@@ -758,9 +758,9 @@ fault_opc_to_str(__u32 opc)
 	}
 }
 
-int yaml_lnet_fault_rule(yaml_document_t *results, __u32 opc, char *src,
-			 char *dst, char *local_nid,
-			 struct lnet_fault_attr *attr)
+int yaml_lnet_fault_rule(yaml_document_t *results, int version, __u32 opc,
+			 char *src, char *dst, char *local_nid,
+			 __u64 latency_ns, struct lnet_fault_attr *attr)
 {
 	struct nl_sock *sk = NULL;
 	struct lnet_nid fa_local_nid;
@@ -826,8 +826,8 @@ skip_options:
 		goto free_reply;
 
 	rc = yaml_netlink_setup_emitter(&output, sk, LNET_GENL_NAME,
-					LNET_GENL_VERSION, flags,
-					LNET_CMD_FAULT, false);
+					version, flags, LNET_CMD_FAULT,
+					false);
 	if (rc == 0)
 		goto emitter_error;
 
@@ -921,6 +921,8 @@ skip_options:
 		if (rc == 0)
 			goto emitter_error;
 	} else if (opc == LNET_CTL_DELAY_ADD) {
+		__u64 latency = attr->u.delay.la_latency;
+
 		rc = lnet_yaml_uint_mapping(&event, &output, "la_rate",
 					    &attr->u.delay.la_rate,
 					    sizeof(attr->u.delay.la_rate));
@@ -933,9 +935,31 @@ skip_options:
 		if (rc == 0)
 			goto emitter_error;
 
+		/* Test if we wanted to use new nanoseconds. */
+		if (version > OLD_NETFAULT_VERSION) {
+			/* The kernel's family version is queried so that a
+			 * nanosecond request can be refused by a kernel that
+			 * only supports seconds level resolution.
+			 */
+			rc = yaml_emitter_get_output_version(&output);
+			if (rc < 0) {
+				rc = 0;
+				goto emitter_error;
+			}
+
+			/* Fail the request if the kernel only supports
+			 * seconds.
+			 */
+			if (rc <= OLD_NETFAULT_VERSION) {
+				output.error = YAML_EMITTER_ERROR;
+				output.problem = "Incorrect version for argument";
+				rc = 0;
+				goto emitter_error;
+			}
+			latency = latency_ns;
+		}
 		rc = lnet_yaml_uint_mapping(&event, &output, "la_latency",
-					    &attr->u.delay.la_latency,
-					    sizeof(attr->u.delay.la_latency));
+					    &latency, sizeof(latency));
 		if (rc == 0)
 			goto emitter_error;
 	}

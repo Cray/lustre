@@ -11,8 +11,9 @@
 
 #define DEBUG_SUBSYSTEM S_LNET
 
+#include <linux/hrtimer.h>
+#include <linux/kernel.h>
 #include <linux/random.h>
-#include <linux/timer.h>
 
 #include <linux/lnet/lib-lnet.h>
 #include <uapi/linux/lnet/lnetctl.h>
@@ -44,7 +45,7 @@ struct lnet_drop_rule {
 
 static void
 lnet_fault_attr_to_attr4(struct lnet_fault_large_attr *attr,
-			 struct lnet_fault_attr *attr4)
+			 struct lnet_fault_attr *attr4, int opc)
 {
 	if (!attr)
 		return;
@@ -55,12 +56,23 @@ lnet_fault_attr_to_attr4(struct lnet_fault_large_attr *attr,
 	attr4->fa_ptl_mask = attr->fa_ptl_mask;
 	attr4->fa_msg_mask = attr->fa_msg_mask;
 
-	memcpy(&attr4->u, &attr->u, sizeof(attr4->u));
+	if (opc == LNET_CTL_DELAY_ADD ||
+	    opc == LNET_CTL_DELAY_DEL ||
+	    opc == LNET_CTL_DELAY_RESET ||
+	    opc == LNET_CTL_DELAY_LIST) {
+		attr4->u.delay.la_rate = attr->u.delay.la_rate;
+		attr4->u.delay.la_interval = attr->u.delay.la_interval;
+		attr4->u.delay.la_latency =
+			DIV_ROUND_UP_ULL(ktime_to_ns(attr->u.delay.la_latency),
+					 NSEC_PER_SEC);
+	} else {
+		memcpy(&attr4->u, &attr->u, sizeof(attr->u));
+	}
 }
 
 static void
 lnet_fault_attr4_to_attr(struct lnet_fault_attr *attr4,
-			 struct lnet_fault_large_attr *attr)
+			 struct lnet_fault_large_attr *attr, int opc)
 {
 	if (!attr4)
 		return;
@@ -83,7 +95,17 @@ lnet_fault_attr4_to_attr(struct lnet_fault_attr *attr4,
 	attr->fa_ptl_mask = attr4->fa_ptl_mask;
 	attr->fa_msg_mask = attr4->fa_msg_mask;
 
-	memcpy(&attr->u, &attr4->u, sizeof(attr->u));
+	if (opc == LNET_CTL_DELAY_ADD ||
+	    opc == LNET_CTL_DELAY_DEL ||
+	    opc == LNET_CTL_DELAY_RESET ||
+	    opc == LNET_CTL_DELAY_LIST) {
+		attr->u.delay.la_rate = attr4->u.delay.la_rate;
+		attr->u.delay.la_interval = attr4->u.delay.la_interval;
+		attr->u.delay.la_latency =
+			ktime_set(attr4->u.delay.la_latency, 0);
+	} else {
+		memcpy(&attr->u, &attr4->u, sizeof(attr->u));
+	}
 }
 
 static bool
@@ -566,7 +588,7 @@ lnet_drop_rule_match(struct lnet_hdr *hdr,
 
 /* LNet Delay Simulation */
 
-/** timestamp (second) to send delayed message */
+/** timestamp (nanosecond) to send delayed message */
 #define msg_delay_send		 msg_ev.hdr_data
 
 struct lnet_delay_rule {
@@ -591,14 +613,16 @@ struct lnet_delay_rule {
 	time64_t			dl_delay_time;
 	/** baseline to caculate dl_delay_time */
 	time64_t			dl_time_base;
-	/** seconds until we send the next delayed message */
-	time64_t			dl_msg_send;
+	/** the next time in nanoseconds (monotonic) when we send the next
+	 * delayed message
+	 */
+	ktime_t				dl_msg_send;
 	/** delayed message list */
 	struct list_head		dl_msg_list;
 	/** statistic of delayed messages */
 	struct lnet_fault_stat		dl_stat;
 	/** timer to wakeup delay_daemon */
-	struct timer_list		dl_timer;
+	struct hrtimer			dl_timer;
 };
 
 struct delay_daemon_data {
@@ -655,8 +679,8 @@ delay_rule_match(struct lnet_delay_rule *rule, struct lnet_nid *src,
 		 struct lnet_msg *msg)
 {
 	struct lnet_fault_large_attr *attr = &rule->dl_attr;
-	bool delay;
 	time64_t now = ktime_get_seconds();
+	bool delay;
 
 	if (!lnet_fault_attr_match(attr, src, NULL,
 				   dst, type, portal))
@@ -706,11 +730,12 @@ delay_rule_match(struct lnet_delay_rule *rule, struct lnet_nid *src,
 	rule->dl_stat.u.delay.ls_delayed++;
 
 	list_add_tail(&msg->msg_list, &rule->dl_msg_list);
-	msg->msg_delay_send = now + attr->u.delay.la_latency;
-	if (rule->dl_msg_send == -1) {
-		rule->dl_msg_send = msg->msg_delay_send;
-		mod_timer(&rule->dl_timer,
-			  jiffies + cfs_time_seconds(attr->u.delay.la_latency));
+	msg->msg_delay_send = ktime_get_ns() +
+			      ktime_to_ns(attr->u.delay.la_latency);
+	if (ktime_compare(rule->dl_msg_send, KTIME_MAX) == 0) {
+		rule->dl_msg_send = ns_to_ktime(msg->msg_delay_send);
+		hrtimer_start(&rule->dl_timer, attr->u.delay.la_latency,
+			      HRTIMER_MODE_REL_SOFT);
 	}
 
 	spin_unlock(&rule->dl_lock);
@@ -761,9 +786,9 @@ delayed_msg_check(struct lnet_delay_rule *rule, bool all,
 {
 	struct lnet_msg *msg;
 	struct lnet_msg *tmp;
-	time64_t now = ktime_get_seconds();
+	s64 now = ktime_get_ns();
 
-	if (!all && rule->dl_msg_send > now)
+	if (!all && ktime_to_ns(rule->dl_msg_send) > now)
 		return;
 
 	spin_lock(&rule->dl_lock);
@@ -776,18 +801,19 @@ delayed_msg_check(struct lnet_delay_rule *rule, bool all,
 	}
 
 	if (list_empty(&rule->dl_msg_list)) {
-		timer_delete(&rule->dl_timer);
-		rule->dl_msg_send = -1;
-
+		hrtimer_cancel(&rule->dl_timer);
+		rule->dl_msg_send = KTIME_MAX;
 	} else if (!list_empty(msg_list)) {
 		/* dequeued some timedout messages, update timer for the
-		 * next delayed message on rule */
+		 * next delayed message on rule
+		 */
+		ktime_t delay;
+
 		msg = list_first_entry(&rule->dl_msg_list,
 				       struct lnet_msg, msg_list);
-		rule->dl_msg_send = msg->msg_delay_send;
-		mod_timer(&rule->dl_timer,
-			  jiffies +
-			  cfs_time_seconds(msg->msg_delay_send - now));
+		rule->dl_msg_send = ns_to_ktime(msg->msg_delay_send);
+		delay = ns_to_ktime(msg->msg_delay_send - now);
+		hrtimer_start(&rule->dl_timer, delay, HRTIMER_MODE_REL_SOFT);
 	}
 	spin_unlock(&rule->dl_lock);
 }
@@ -910,11 +936,11 @@ lnet_delay_rule_daemon(void *arg)
 	return 0;
 }
 
-static void
-delay_timer_cb(cfs_timer_cb_arg_t data)
+static enum hrtimer_restart delay_timer_cb(struct hrtimer *timer)
 {
-	struct lnet_delay_rule *rule = cfs_from_timer(rule, data, dl_timer);
-
+	struct lnet_delay_rule *rule = container_of(timer,
+						    struct lnet_delay_rule,
+						    dl_timer);
 	spin_lock_bh(&delay_dd.dd_lock);
 	if (list_empty(&rule->dl_sched_link) && delay_dd.dd_running) {
 		kref_get(&rule->dl_refcount);
@@ -922,6 +948,7 @@ delay_timer_cb(cfs_timer_cb_arg_t data)
 		wake_up(&delay_dd.dd_waitq);
 	}
 	spin_unlock_bh(&delay_dd.dd_lock);
+	return HRTIMER_NORESTART;
 }
 
 /**
@@ -951,8 +978,12 @@ lnet_delay_rule_add(struct lnet_fault_large_attr *attr)
 		RETURN(-EINVAL);
 	}
 
-	if (attr->u.delay.la_latency == 0) {
-		CDEBUG(D_NET, "delay latency cannot be zero\n");
+	if (ktime_to_ns(attr->u.delay.la_latency) <= 0 ||
+	    ktime_to_ns(attr->u.delay.la_latency) >
+	    (s64)(U32_MAX * NSEC_PER_SEC)) {
+		CDEBUG(D_NET, "delay latency %lld ns out of range (1..%lld)\n",
+		       ktime_to_ns(attr->u.delay.la_latency),
+		       (s64)(U32_MAX * NSEC_PER_SEC));
 		RETURN(-EINVAL);
 	}
 
@@ -982,9 +1013,8 @@ lnet_delay_rule_add(struct lnet_fault_large_attr *attr)
 		wait_event(delay_dd.dd_ctl_waitq, delay_dd.dd_running);
 	}
 
-	cfs_timer_setup(&rule->dl_timer, delay_timer_cb,
-			(unsigned long)rule, 0);
-
+	hrtimer_setup(&rule->dl_timer, delay_timer_cb, CLOCK_MONOTONIC,
+		      HRTIMER_MODE_REL_SOFT);
 	spin_lock_init(&rule->dl_lock);
 	INIT_LIST_HEAD(&rule->dl_msg_list);
 	INIT_LIST_HEAD(&rule->dl_sched_link);
@@ -999,7 +1029,7 @@ lnet_delay_rule_add(struct lnet_fault_large_attr *attr)
 		rule->dl_delay_at = get_random_u32_below(attr->u.delay.la_rate);
 	}
 
-	rule->dl_msg_send = -1;
+	rule->dl_msg_send = KTIME_MAX;
 
 	lnet_net_lock(LNET_LOCK_EX);
 	kref_init(&rule->dl_refcount);
@@ -1079,7 +1109,7 @@ lnet_delay_rule_del(struct lnet_nid *src, struct lnet_nid *dst, bool shutdown)
 	list_for_each_entry_safe(rule, tmp, &rule_list, dl_link) {
 		list_del_init(&rule->dl_link);
 
-		timer_delete_sync(&rule->dl_timer);
+		hrtimer_cancel(&rule->dl_timer);
 		delayed_msg_check(rule, true, &msg_list);
 		/* -1 for the_lnet.ln_delay_rules */
 		kref_put(&rule->dl_refcount, delay_rule_free);
@@ -1211,7 +1241,7 @@ lnet_fault_ctl(int opc, struct libcfs_ioctl_data *data)
 
 	attr4 = (struct lnet_fault_attr *)data->ioc_inlbuf1;
 
-	lnet_fault_attr4_to_attr(attr4, &attr);
+	lnet_fault_attr4_to_attr(attr4, &attr, opc);
 
 	switch (opc) {
 	default:
@@ -1241,7 +1271,7 @@ lnet_fault_ctl(int opc, struct libcfs_ioctl_data *data)
 			return -EINVAL;
 
 		rc = lnet_drop_rule_list(data->ioc_count, &attr, stat);
-		lnet_fault_attr_to_attr4(&attr, attr4);
+		lnet_fault_attr_to_attr4(&attr, attr4, opc);
 		return rc;
 
 	case LNET_CTL_DELAY_ADD:
@@ -1268,7 +1298,7 @@ lnet_fault_ctl(int opc, struct libcfs_ioctl_data *data)
 			return -EINVAL;
 
 		rc = lnet_delay_rule_list(data->ioc_count, &attr, stat);
-		lnet_fault_attr_to_attr4(&attr, attr4);
+		lnet_fault_attr_to_attr4(&attr, attr4, opc);
 		return rc;
 	}
 }

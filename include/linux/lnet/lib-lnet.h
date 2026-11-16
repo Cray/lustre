@@ -811,7 +811,7 @@ struct lnet_fault_large_attr {
 		struct {
 			u32		la_rate;
 			u32		la_interval;
-			u32		la_latency;
+			ktime_t		la_latency;
 		} delay;
 		u64			space[8];
 	} u;
