@@ -14,6 +14,7 @@
 #define DEBUG_SUBSYSTEM S_RPC
 
 #include <obd_support.h>
+#include <lustre_disk.h>
 #include <lustre_net.h>
 #include <lustre_lib.h>
 #include <obd.h>
@@ -788,6 +789,19 @@ int ptlrpc_error(struct ptlrpc_request *req)
 	return ptlrpc_send_error(req, 0);
 }
 
+/* fail_val bits 16-31 select the OST, see cfs_fail_index(), 0 for any */
+static bool ptlrpc_delay_ping_target(struct obd_import *imp)
+{
+	unsigned int ost = cfs_fail_val >> 16;
+	__u32 idx;
+
+	if (ost == 0)
+		return true;
+
+	return server_name2index(obd2cli_tgt(imp->imp_obd), &idx, NULL) ==
+	       LDD_F_SV_TYPE_OST && cfs_fail_index(ost, idx);
+}
+
 /**
  * ptl_send_rpc() - Send request @request.
  * @request: Request to send
@@ -1078,7 +1092,10 @@ int ptl_send_rpc(struct ptlrpc_request *request, int noreply)
 		  lustre_msg_get_flags(request->rq_reqmsg));
 
 	if (unlikely(opc == OBD_PING &&
-	    CFS_FAIL_TIMEOUT(OBD_FAIL_PTLRPC_DELAY_SEND_FAIL, cfs_fail_val))) {
+	    CFS_FAIL_PRECHECK(OBD_FAIL_PTLRPC_DELAY_SEND_FAIL) &&
+	    ptlrpc_delay_ping_target(imp) &&
+	    CFS_FAIL_TIMEOUT(OBD_FAIL_PTLRPC_DELAY_SEND_FAIL,
+			     cfs_fail_val & 0xffff))) {
 		DEBUG_REQ(D_INFO, request, "Simulate delay send failure");
 		GOTO(skip_send, rc);
 	}

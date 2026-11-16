@@ -4201,15 +4201,21 @@ test_200() {
 	timeout=$(do_node "$rcli" "$LCTL get_param -n timeout")
 	(( timeout > 4 )) && delay=$((3 * timeout / 4)) || delay=3
 
+	local fail_val=$delay
+
+	# Delay only a ping to OST0000, not one the pinger sends to another
+	# target with a longer timeout
+	(( $(version_code $(lustre_build_version_node $rcli)) >=
+	   $(version_code 2.17.61.120) )) &&
+		fail_val=$(((1 << 16) | delay))
+
 	do_node "$rcli" "$LCTL clear"
 	log "delay ping ${delay}s"
 
 	#define OBD_FAIL_PTLRPC_DELAY_SEND_FAIL    0x535
-	do_node "$rcli" "$LCTL set_param fail_loc=0x80000535 fail_val=${delay}"
-	# Send ping that will be delayed for ${delay} seconds
-	# This races with the pinger, but it is okay if a ping sent by pinger
-	# thread is delayed instead
-	do_node "$rcli" "$LCTL set_param osc.*OST0000*.ping=1"
+	do_node "$rcli" "$LCTL set_param fail_val=$fail_val \
+			 fail_loc=0x80000535; \
+			 $LCTL set_param osc.*OST0000*.ping=1"
 
 	local logfile="$TMP/lustre-log-${TESTNAME}.log"
 
@@ -4243,7 +4249,8 @@ test_200() {
 			continue
 		fi
 
-		expired=$(grep "Request sent has timed out .* o400->" $logfile)
+		expired=$(grep "Request sent has timed out .* o400->.*OST0000" \
+			  $logfile)
 		if [[ -z $expired ]]; then
 			reason="RPC did not time out"
 			continue
