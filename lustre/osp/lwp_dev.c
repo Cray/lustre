@@ -257,6 +257,8 @@ static int lwp_init0(const struct lu_env *env, struct lwp_device *lwp,
 	if (rc) {
 		CERROR("%s: sptlrpc_lprocfs_cliobd_attached failed. %d\n",
 		       lwp->lpd_obd->obd_name, rc);
+		lprocfs_obd_cleanup(lwp->lpd_obd);
+		client_obd_cleanup(lwp->lpd_obd);
 		ptlrpcd_decref();
 		RETURN(rc);
 	}
@@ -356,10 +358,10 @@ static struct lu_device *lwp_device_fini(const struct lu_env *env,
 		class_disconnect(m->lpd_exp);
 
 	LASSERT(m->lpd_obd);
+	ptlrpc_lprocfs_unregister_obd(m->lpd_obd);
+
 	rc = client_obd_cleanup(m->lpd_obd);
 	LASSERTF(rc == 0, "error %d\n", rc);
-
-	ptlrpc_lprocfs_unregister_obd(m->lpd_obd);
 
 	ptlrpcd_decref();
 
@@ -510,6 +512,7 @@ out_dis:
 		class_disconnect(*exp);
 		*exp = NULL;
 		lwp->lpd_exp = NULL;
+		lwp->lpd_connects--;
 	}
 
 out_sem:
