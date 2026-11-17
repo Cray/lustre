@@ -18415,6 +18415,54 @@ test_119w()
 }
 run_test 119w "unaligned DIO read fails on a short user copy"
 
+test_119x()
+{
+	(( $CLIENT_VERSION >= $(version_code 2.17.61.120) )) ||
+		skip "Need client >= 2.17.61.120 for DIO read error fix"
+	unaligned_dio_or_skip
+
+	local file=$DIR/$tfile
+	local tmp=$TMP/$tfile
+	local off=$((16 * PAGE_SIZE + 1000))
+	local len=$((6 * PAGE_SIZE))
+	local rc
+	local p
+
+	stack_trap "rm -f $tmp.* $file.pool"
+	for p in B C; do
+		head -c $len /dev/zero | tr '\0' $p > $tmp.$p ||
+			error "(0) cannot create pattern $p"
+	done
+	$LFS setstripe -c 1 -i 0 $file || error "(1) setstripe $file failed"
+	dd if=$tmp.B of=$file bs=$len count=1 seek=$off oflag=seek_bytes \
+		conv=fsync status=none || error "(2) write B failed"
+	# leave pattern C in the bounce pages the read will get from the pool
+	$LFS setstripe -c 1 -i 0 $file.pool ||
+		error "(3) setstripe $file.pool failed"
+	dd if=$tmp.C of=$file.pool bs=$len count=1 seek=$off \
+		oflag=direct,seek_bytes status=none ||
+		error "(4) unaligned DIO write C failed"
+
+	# without parallel DIO the read error also reaches the reader directly
+	local pdio=$($LCTL get_param -n llite.*.parallel_dio | head -n1)
+
+	$LCTL set_param llite.*.parallel_dio=1
+	stack_trap "$LCTL set_param llite.*.parallel_dio=$pdio"
+
+	#define OBD_FAIL_OST_BRW_READ_BULK	0x20f
+	do_facet ost1 $LCTL set_param fail_loc=0x20f
+	stack_trap "do_facet ost1 $LCTL set_param fail_loc=0"
+	dd if=$file of=$tmp.out bs=$len count=1 skip=$off \
+		iflag=direct,skip_bytes status=none
+	rc=$?
+	do_facet ost1 $LCTL set_param fail_loc=0
+
+	local nc=$(tr -cd C < $tmp.out | wc -c)
+
+	(( rc != 0 )) || error "(5) failed read succeeded, $nc bytes of C"
+}
+run_test 119x "unaligned DIO read reports a failed read"
+
 test_120a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 	remote_mds_nodsh && skip "remote MDS with nodsh"

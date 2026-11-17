@@ -1346,8 +1346,12 @@ static void cl_sub_dio_end(const struct lu_env *env, struct cl_sync_io *anchor)
 		 * here at the end, write copies *to* the kernel
 		 * buffer from userspace at the start
 		 */
-		if (!sdio->csd_write && sdio->csd_bytes > 0)
-			ret = ll_dio_user_copy(sdio);
+		if (!sdio->csd_write && sdio->csd_bytes > 0 && ret == 0) {
+			ssize_t rc = ll_dio_user_copy(sdio);
+
+			if (rc < 0)
+				ret = rc;
+		}
 		ll_free_dio_buffer(cdp);
 		/* handle freeing here rather than in cl_sub_dio_free
 		 * because we have the unmodified iovec pointer
