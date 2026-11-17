@@ -78,7 +78,7 @@ static inline void d_make_discardable(struct dentry *dentry)
 	vfs_mkdir((id), (inode), (dentry), (mode))
 #endif /* HAVE_VFS_MKDIR_DELEGATE */
 
-#ifdef HAVE_IOPS_MKDIR_RETURNS_DENTRY
+#ifdef HAVE_VFS_MKDIR_RETURNS_DENTRY
 #define ll_vfs_mkdir(id, inode, dentry, mode)	\
 	VFS_MKDIR_DELEGATE((id), (inode), (dentry), (mode))
 #else
@@ -90,7 +90,7 @@ static inline void d_make_discardable(struct dentry *dentry)
 	}								\
 	(dentry);							\
 })
-#endif /* HAVE_IOPS_MKDIR_RETURNS_DENTRY */
+#endif /* HAVE_VFS_MKDIR_RETURNS_DENTRY */
 
 #ifndef ATTR_CTIME_SET /* added in v6.17-rc7-14-gafc5b36e29 */
 #define ATTR_CTIME_SET (1 << 28) /* safe for at least v4.18..v6.17 */
@@ -238,11 +238,14 @@ static inline s64 inode_get_ctime_ns(struct inode *inode)
 #endif
 
 #ifndef HAVE_VFS_MMAP_PREPARE
+/* RHEL 10.3's call_mmap() also handles .mmap_prepare, which ext4 uses */
 static inline int vfs_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	return file->f_op->mmap(file, vma);
+	return call_mmap(file, vma);
 }
+#endif
 
+#ifndef HAVE_CAN_MMAP_FILE
 static inline bool can_mmap_file(struct file *file)
 {
 	return file->f_op->mmap;

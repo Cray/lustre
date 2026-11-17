@@ -3216,6 +3216,36 @@ AC_DEFUN([LC_HAVE_IOPS_MKDIR_RETURNS_DENTRY], [
 ]) # LC_HAVE_IOPS_MKDIR_RETURNS_DENTRY
 
 #
+# LC_HAVE_VFS_MKDIR_RETURNS_DENTRY
+#
+# Linux v6.14-rc4-14-gc54b386969a5
+#   VFS: Change vfs_mkdir() to return the dentry.
+#
+# Upstream came with LC_HAVE_IOPS_MKDIR_RETURNS_DENTRY, but RHEL 10.3
+# backports only the inode_operations change.
+#
+# This test fails once vfs_mkdir() takes a delegate argument, so
+# LC_HAVE_VFS_MKDIR_DELEGATE defines HAVE_VFS_MKDIR_RETURNS_DENTRY too.
+#
+AC_DEFUN([LC_SRC_HAVE_VFS_MKDIR_RETURNS_DENTRY], [
+	LB2_LINUX_TEST_SRC([vfs_mkdir_returns_dentry], [
+		#include <linux/fs.h>
+	],[
+		struct dentry *dentry;
+
+		dentry = vfs_mkdir(&nop_mnt_idmap, NULL, NULL, 0700);
+		(void)dentry;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_VFS_MKDIR_RETURNS_DENTRY], [
+	LB2_MSG_LINUX_TEST_RESULT([if vfs_mkdir() returns dentry],
+	[vfs_mkdir_returns_dentry], [
+		AC_DEFINE(HAVE_VFS_MKDIR_RETURNS_DENTRY, 1,
+			[vfs_mkdir() returns dentry])
+	])
+]) # LC_HAVE_VFS_MKDIR_RETURNS_DENTRY
+
+#
 # LC_HAVE_TRY_LOOKUP_NOPERM
 #
 # Linux commit v6.15-rc1-5-g06c567403ae5
@@ -3509,6 +3539,33 @@ AC_DEFUN([LC_HAVE_VFS_MMAP_PREPARE],[
 ]) # LC_HAVE_VFS_MMAP_PREPARE
 
 #
+# LC_HAVE_CAN_MMAP_FILE
+#
+# Linux commit v6.16-rc2-3-gb013ed403197
+#   fs: consistently use can_mmap_file() helper
+#
+# Upstream came with LC_HAVE_VFS_MMAP_PREPARE, but RHEL 10.3 backports
+# only can_mmap_file().
+#
+AC_DEFUN([LC_SRC_HAVE_CAN_MMAP_FILE],[
+	LB2_LINUX_TEST_SRC([can_mmap_file], [
+		#include <linux/fs.h>
+	],[
+		struct file *file = NULL;
+		bool rc = can_mmap_file(file);
+
+		(void)rc;
+	],[-Werror])
+])
+AC_DEFUN([LC_HAVE_CAN_MMAP_FILE],[
+	LB2_MSG_LINUX_TEST_RESULT([if can_mmap_file() exists],
+	[can_mmap_file], [
+		AC_DEFINE(HAVE_CAN_MMAP_FILE, 1,
+			  [can_mmap_file() exists])
+	])
+]) # LC_HAVE_CAN_MMAP_FILE
+
+#
 # LC_HAVE_MEMDESC_FLAGS_T
 #
 # Linux commit v6.17-rc4-147-g53fbef56e07d
@@ -3615,6 +3672,8 @@ AC_DEFUN([LC_HAVE_VFS_MKDIR_DELEGATE],[
 	[vfs_mkdir_delegate], [
 		AC_DEFINE(HAVE_VFS_MKDIR_DELEGATE, 1,
 			  [vfs_mkdir() takes delegate])
+		AC_DEFINE(HAVE_VFS_MKDIR_RETURNS_DENTRY, 1,
+			[vfs_mkdir() returns dentry])
 	])
 ]) # LC_HAVE_VFS_MKDIR_DELEGATE
 
@@ -4134,6 +4193,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_HAVE_WAIT_ON_PAGE_LOCKED
 	LC_SRC_HAVE_HRTIMER_SETUP
 	LC_SRC_HAVE_IOPS_MKDIR_RETURNS_DENTRY
+	LC_SRC_HAVE_VFS_MKDIR_RETURNS_DENTRY
 
 	# 6.16
 	LC_SRC_HAVE_TRY_LOOKUP_NOPERM
@@ -4147,6 +4207,7 @@ AC_DEFUN([LC_PROG_LINUX_SRC], [
 	LC_SRC_FS_STRUCT_HAS_SEQLOCK
 	LC_SRC_HAVE_NETIF_GET_FLAGS
 	LC_SRC_HAVE_VFS_MMAP_PREPARE
+	LC_SRC_HAVE_CAN_MMAP_FILE
 	LC_SRC_HAVE_WQ_PERCPU
 
 	# 6.18
@@ -4370,6 +4431,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_HAVE_WAIT_ON_PAGE_LOCKED
 	LC_HAVE_HRTIMER_SETUP
 	LC_HAVE_IOPS_MKDIR_RETURNS_DENTRY
+	LC_HAVE_VFS_MKDIR_RETURNS_DENTRY
 
 	# 6.16
 	LC_HAVE_TRY_LOOKUP_NOPERM
@@ -4383,6 +4445,7 @@ AC_DEFUN([LC_PROG_LINUX_RESULTS], [
 	LC_FS_STRUCT_HAS_SEQLOCK
 	LC_HAVE_NETIF_GET_FLAGS
 	LC_HAVE_VFS_MMAP_PREPARE
+	LC_HAVE_CAN_MMAP_FILE
 	LC_HAVE_WQ_PERCPU
 
 	# 6.18
