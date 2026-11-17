@@ -28,6 +28,7 @@
 /createdestroy
 /createmany
 /createtest
+/dio_mprotect_race
 /directio
 /expand_truncate_test
 /fadvise_dontneed_helper

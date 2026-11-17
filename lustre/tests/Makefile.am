@@ -77,6 +77,7 @@ THETESTS += foreign_symlink_striping lov_getstripe_old io_scope io_uring_probe
 THETESTS += fadvise_dontneed_helper llapi_root_test llapi_pool_test aheadmany
 THETESTS += llapi_scan_test llapi_scan_device_test
 THETESTS += monitor_lustrefs test_parity_read lod_rr_test
+THETESTS += dio_mprotect_race
 
 if LIBAIO
 THETESTS += aiocp
@@ -124,6 +125,7 @@ llapi_fid_test_LDADD = $(LIBLUSTREAPI)
 llapi_fid2mdtidx_test_LDADD = $(LIBLUSTREAPI)
 llapi_root_test_LDADD = $(LIBLUSTREAPI) -lpthread
 rw_seq_cst_vs_drop_caches_LDADD = $(PTHREAD_LIBS)
+dio_mprotect_race_LDADD = $(PTHREAD_LIBS)
 sendfile_grouplock_LDADD = $(LIBLUSTREAPI)
 swap_lock_test_LDADD = $(LIBLUSTREAPI)
 swap_single_stripe_LDADD = $(LIBLUSTREAPI)

@@ -18463,6 +18463,29 @@ test_119x()
 }
 run_test 119x "unaligned DIO read reports a failed read"
 
+test_119y()
+{
+	(( $CLIENT_VERSION >= $(version_code 2.17.61.120) )) ||
+		skip "Need client >= 2.17.61.120 for DIO short copy fix"
+	unaligned_dio_or_skip
+	which dio_mprotect_race > /dev/null 2>&1 ||
+		skip_env "no dio_mprotect_race"
+
+	local file=$DIR/$tfile
+	local rc
+
+	stack_trap "rm -f $file $file.pool"
+	$LFS setstripe -c 1 -i 0 $file || error "(0) setstripe $file failed"
+	$LFS setstripe -c 1 -i 0 $file.pool ||
+		error "(1) setstripe $file.pool failed"
+
+	dio_mprotect_race -i ${SANITY_119Y_ITERS:-100} $file $file.pool
+	rc=$?
+	(( rc != 2 )) || error "(2) dio_mprotect_race failed to run"
+	(( rc == 0 )) || error "(3) DIO write raced by mprotect sent other data"
+}
+run_test 119y "racing mprotect does not let a DIO write send other data"
+
 test_120a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 	remote_mds_nodsh && skip "remote MDS with nodsh"
