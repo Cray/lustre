@@ -180,17 +180,23 @@ int ptlrpc_resend(struct obd_import *imp)
 
 /*
  * Go through all requests in delayed list and wake their threads
- * for resending
+ * for resending. Caller must hold imp->imp_lock.
  */
-void ptlrpc_wake_delayed(struct obd_import *imp)
+void ptlrpc_wake_delayed_nolock(struct obd_import *imp)
 {
 	struct ptlrpc_request *req;
 
-	spin_lock(&imp->imp_lock);
+	assert_spin_locked(&imp->imp_lock);
 	list_for_each_entry(req, &imp->imp_delayed_list, rq_list) {
 		DEBUG_REQ(D_HA, req, "waking (set %p):", req->rq_set);
 		ptlrpc_client_wake_req(req);
 	}
+}
+
+void ptlrpc_wake_delayed(struct obd_import *imp)
+{
+	spin_lock(&imp->imp_lock);
+	ptlrpc_wake_delayed_nolock(imp);
 	spin_unlock(&imp->imp_lock);
 }
 

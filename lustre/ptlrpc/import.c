@@ -71,6 +71,15 @@ static void import_set_state_nolock(struct obd_import *imp,
 		ktime_get_real_seconds();
 	imp->imp_state_hist_idx = (imp->imp_state_hist_idx + 1) %
 		IMP_STATE_HIST_LEN;
+
+	/* IDLE reconnect is over, honour rq_no_delay again (LU-20287) */
+	if (state == LUSTRE_IMP_DISCON && imp->imp_initiated_at) {
+		imp->imp_initiated_at = 0;
+		ptlrpc_wake_delayed_nolock(imp);
+	} else if (state == LUSTRE_IMP_FULL &&
+		   list_empty(&imp->imp_delayed_list)) {
+		imp->imp_initiated_at = 0;
+	}
 }
 
 static void import_set_state(struct obd_import *imp,
@@ -1335,13 +1344,16 @@ static int ptlrpc_connect_interpret(const struct lu_env *env,
 		struct ptlrpc_request *free_req;
 		struct ptlrpc_request *tmp;
 
-		/* abort all delayed requests initiated connection */
+		/* fail no_resend requests waiting for this connect; rq_no_delay
+		 * ones get -EAGAIN as ptlrpc_import_delay_req() returns
+		 */
 		list_for_each_entry_safe(free_req, tmp, &imp->imp_delayed_list,
 					 rq_list) {
 			spin_lock(&free_req->rq_lock);
 			if (free_req->rq_no_resend) {
 				free_req->rq_err = 1;
-				free_req->rq_status = -EIO;
+				free_req->rq_status = free_req->rq_no_delay ?
+						      -EAGAIN : -EIO;
 				ptlrpc_client_wake_req(free_req);
 			}
 			spin_unlock(&free_req->rq_lock);
@@ -2284,8 +2296,7 @@ static void ptlrpc_reset_reqs_generation(struct obd_import *imp)
 			rq_list) {
 		spin_lock(&old->rq_lock);
 		if (old->rq_import_generation == imp->imp_generation - 1 &&
-		    ((imp->imp_initiated_at == imp->imp_generation) ||
-		     !old->rq_no_resend))
+		    (imp_idle_reconnect_pending(imp) || !old->rq_no_resend))
 			old->rq_import_generation = imp->imp_generation;
 		spin_unlock(&old->rq_lock);
 	}

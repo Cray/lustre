@@ -289,6 +289,22 @@ struct obd_import {
 	__u32			  imp_conn_restricted_net;
 };
 
+/**
+ * imp_idle_reconnect_pending() - IDLE reconnect window is still open
+ * @imp: import to check
+ *
+ * True from IDLE wake (or the disconnect-idle race) until the import
+ * reaches FULL with no delayed requests left, or goes DISCON.  While
+ * true, rq_no_delay/rq_no_resend requests wait for the reconnect
+ * instead of failing (LU-18154).
+ *
+ * Return: true if an IDLE reconnect has not finished yet
+ */
+static inline bool imp_idle_reconnect_pending(struct obd_import *imp)
+{
+	return imp->imp_initiated_at == imp->imp_generation;
+}
+
 /* import.c : adaptive timeout handling.
  *
  * Lustre tracks how long RPCs take to complete. This information is reported

@@ -129,6 +129,7 @@ int ptlrpc_init_portals(void);
 void ptlrpc_exit_portals(void);
 
 void ptlrpc_request_handle_notconn(struct ptlrpc_request *);
+void ptlrpc_wake_delayed_nolock(struct obd_import *imp);
 void lustre_assert_wire_constants(void);
 bool ptlrpc_import_in_recovery(struct obd_import *imp);
 bool ptlrpc_import_in_recovery_disconnect(struct obd_import *imp, bool d);

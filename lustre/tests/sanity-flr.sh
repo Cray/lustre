@@ -1593,6 +1593,44 @@ test_33f() {
 }
 run_test 33f "read waits when no mirror is available"
 
+test_33h() { # LU-20287
+	(( OSTCOUNT >= 2 )) || skip "need >= 2 OSTs"
+
+	local old
+	local tf=$DIR/$tfile
+	local out=$TMP/$tfile.out
+
+	stack_trap "rm -f $tf $out"
+
+	# prefer mirror on OST0000 so the read hits the idle/dead OSC first
+	$LFS setstripe -N -c1 -i0 --flags=prefer -N -c1 -i1 $tf ||
+		error "setstripe $tf failed"
+	echo -n "data" > $tf || error "write $tf failed"
+	$LFS mirror resync $tf || error "resync $tf failed"
+	verify_flr_state $tf "ro"
+
+	old=$($LCTL get_param -n osc.*.idle_timeout | head -n1)
+	$LCTL set_param osc.*.idle_timeout=10 ||
+		error "set idle_timeout failed"
+	stack_trap "$LCTL set_param osc.*.idle_timeout=$old"
+
+	cancel_lru_locks osc
+	wait_osc_import_state client ost1 IDLE
+
+	# OST down while the OSC is still IDLE: the next read wakes it,
+	# the connect fails, and ndelay must fail fast with -EAGAIN
+	stop_osts 1
+	stack_trap "start_osts 1; wait_osc_import_ready client ost1"
+
+	# without the fix the ndelay RPC gets -EIO and the read fails;
+	# connect to a stopped OST fails within INITIAL_CONNECT_TIMEOUT
+	timeout --signal=KILL 30 cat $tf > $out ||
+		error "read timed out or failed after IDLE connect fail"
+	[[ $(cat $out) == "data" ]] ||
+		error "expected data, got '$(cat $out)'"
+}
+run_test 33h "FLR read fails over after a failed IDLE reconnect"
+
 test_34a() {
 	(( $OSTCOUNT >= 4 )) || skip "need >= 4 OSTs"
 

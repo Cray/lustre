@@ -1446,7 +1446,7 @@ static int ptlrpc_import_delay_req(struct obd_import *imp,
 			DEBUG_REQ(D_ERROR, req, "invalidate in flight");
 			*status = -EIO;
 		} else if (req->rq_no_delay &&
-			   imp->imp_generation != imp->imp_initiated_at) {
+			   !imp_idle_reconnect_pending(imp)) {
 			/* ignore nodelay for requests initiating connections */
 			*status = -EAGAIN;
 		} else if (req->rq_allow_replay &&
@@ -2239,8 +2239,7 @@ int ptlrpc_check_set(const struct lu_env *env, struct ptlrpc_request_set *set)
 				/* ignore on just initiated connections */
 				if (ptlrpc_no_resend(req) &&
 				    !req->rq_wait_ctx &&
-				    imp->imp_generation !=
-				    imp->imp_initiated_at) {
+				    !imp_idle_reconnect_pending(imp)) {
 					req->rq_status = -ENOTCONN;
 					ptlrpc_rqphase_move(req,
 							    RQ_PHASE_INTERPRET);
