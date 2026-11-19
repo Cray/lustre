@@ -861,7 +861,7 @@ wait:
 	}
 
 	if (it)
-		wait_var_event(scrub, osd_scrub_wakeup(scrub, it));
+		wait_var_event_idle(scrub, osd_scrub_wakeup(scrub, it));
 
 	if (!ooc || osd_scrub_has_window(scrub, ooc))
 		*noslot = false;
@@ -1027,7 +1027,7 @@ wait:
 			sf->sf_flags &= ~(SF_RECREATED | SF_INCONSISTENT |
 					  SF_UPGRADE | SF_AUTO);
 			sf->sf_status = SS_COMPLETED;
-			wait_var_event(
+			wait_var_event_idle(
 				scrub,
 				kthread_should_stop() ||
 				!scrub->os_partial_scan ||
@@ -1054,7 +1054,7 @@ wait:
 
 full:
 	if (!preload) {
-		wait_var_event(scrub,
+		wait_var_event_idle(scrub,
 			       kthread_should_stop() ||
 			       !scrub->os_in_join);
 
@@ -1226,7 +1226,7 @@ static int osd_scrub_main(void *args)
 		struct osd_otable_it *it = dev->od_otable_it;
 		struct osd_otable_cache *ooc = &it->ooi_cache;
 
-		wait_var_event(scrub,
+		wait_var_event_idle(scrub,
 			       it->ooi_user_ready || kthread_should_stop());
 		if (kthread_should_stop())
 			GOTO(post, rc = 0);
@@ -1289,7 +1289,7 @@ noenv:
 	spin_unlock(&scrub->os_lock);
 	if (xchg(&scrub->os_task, NULL) == NULL)
 		/* scrub_stop() is waiting, we need to synchronize */
-		wait_var_event(scrub, kthread_should_stop());
+		wait_var_event_idle(scrub, kthread_should_stop());
 	wake_up_var(scrub);
 
 	/* a running iterator can be using os_ls_fids, so let's release
