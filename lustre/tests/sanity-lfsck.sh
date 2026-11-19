@@ -6652,6 +6652,58 @@ test_46() {
 		error "(8) $stripe_info files w/o stripe info"
 }
 run_test 46 "run long OBD_IDX_READ"
+test_63() {
+	local hung=/proc/sys/kernel/hung_task
+	local timeout warnings panic
+	local nlines
+	local msgs
+
+	do_facet $SINGLEMDS "test -w ${hung}_timeout_secs" ||
+		skip "no hung task detector on $SINGLEMDS"
+
+	check_mount_and_prep
+	rm -rf $DIR/$tdir
+	test_mkdir -i 0 -c 1 $DIR/$tdir
+	# more inodes than one scrub window (SCRUB_WINDOW_SIZE, 1024), so the
+	# OI scrub runs ahead of the stalled LFSCK and has to wait for it
+	createmany -o $DIR/$tdir/f 2048 || error "(1) createmany failed"
+
+	read timeout warnings panic <<< $(do_facet $SINGLEMDS \
+		"cat ${hung}_timeout_secs ${hung}_warnings ${hung}_panic" |
+		tr '\n' ' ')
+	# some kernels leave these sysctls empty after boot
+	[ -n "$timeout" ] || timeout=120
+	[ -n "$warnings" ] || warnings=10
+	[ -n "$panic" ] || panic=0
+	stack_trap "do_facet $SINGLEMDS 'echo $timeout > ${hung}_timeout_secs; \
+		echo $warnings > ${hung}_warnings; echo $panic > ${hung}_panic'"
+	do_facet $SINGLEMDS "echo 0 > ${hung}_panic; \
+		echo -1 > ${hung}_warnings; echo 3 > ${hung}_timeout_secs"
+	nlines=$(do_facet $SINGLEMDS "dmesg | wc -l")
+
+	#define OBD_FAIL_LFSCK_DELAY1		0x1600
+	do_facet $SINGLEMDS $LCTL set_param fail_val=1 fail_loc=0x1600
+	stack_trap "do_facet $SINGLEMDS $LCTL set_param fail_val=0 fail_loc=0"
+	$START_NAMESPACE -r || error "(2) Fail to start LFSCK for namespace"
+
+	# the OI scrub preloads ahead of LFSCK, then waits for it to catch up
+	# for several hung task check periods
+	sleep 15
+
+	msgs=$(do_facet $SINGLEMDS "dmesg | tail -n +$((nlines + 1))" |
+	       grep "task OI_scrub.*blocked for more than")
+	do_facet $SINGLEMDS $LCTL set_param fail_val=0 fail_loc=0
+
+	wait_update_facet $SINGLEMDS "$LCTL get_param -n \
+		mdd.${MDT_DEV}.lfsck_namespace |
+		awk '/^status/ { print \\\$2 }'" "completed" $LTIME || {
+		$SHOW_NAMESPACE
+		error "(3) unexpected status"
+	}
+
+	[[ -z "$msgs" ]] || error "(4) OI scrub thread reported hung: $msgs"
+}
+run_test 63 "OI scrub waiting for LFSCK is not reported as hung task"
 
 # restore MDS/OST size
 MDSSIZE=${SAVED_MDSSIZE}
