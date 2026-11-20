@@ -37052,6 +37052,14 @@ test_413A() {
 }
 run_test 413A "get and set qos_rr_index on all clients"
 
+# the client caches the MDT NOCREATE state, and later QoS or round-robin
+# mkdir skips such MDTs until the client sees them usable again
+clear_mdt_no_create() {
+	do_nodes $(mdts_nodes) $LCTL set_param mdt.*.no_create=0
+	wait_update $HOSTNAME "$LFS df $MOUNT |
+		grep -c 'MDT:[0-9]*\] [A-Z]*N' || true" 0 30
+}
+
 test_413Aa() {
 	(( MDSCOUNT >= 2 )) || skip "needs >= 2 MDTs"
 	(( MDS1_VERSION >= $(version_code v2_15_59-4-g1dbcd0bab8) )) ||
@@ -37067,7 +37075,7 @@ test_413Aa() {
 	# mark every MDT NOCREATE, so no MDT is usable for QoS mkdir
 	do_nodes $(mdts_nodes) $LCTL set_param mdt.*.no_create=1 ||
 		error "set no_create"
-	stack_trap "do_nodes $(mdts_nodes) $LCTL set_param mdt.*.no_create=0"
+	stack_trap clear_mdt_no_create
 	sleep 2
 	$LFS df $MOUNT > /dev/null || error "lfs df"
 
