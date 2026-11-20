@@ -34,6 +34,6 @@ ln -s ${RESULTS} $LATEST_REPO
 /build/bin/get_srcrepodata.sh > ${RESULTS}/srcrepodata
 
 # Save artifact manifest and location
-sha1sum $(ls ${RESULTS}/*.rpm 2>/dev/null) > packages.txt
+sha512sum $(ls ${RESULTS}/*.rpm 2>/dev/null) > packages.txt || exit 1
 
 echo "Complete Storage"
