@@ -1650,6 +1650,7 @@ static ssize_t __ll_dio_user_copy(struct cl_sub_dio *sdio)
 	size_t original_count = count;
 	int short_copies = 0;
 	bool mm_used = false;
+	ssize_t result;
 	unsigned int i = 0;
 	int status = 0;
 	int rw;
@@ -1769,7 +1770,13 @@ static ssize_t __ll_dio_user_copy(struct cl_sub_dio *sdio)
 		 */
 		flush_dcache_folio(folio);
 
-		copied = folio_iter(folio, pgno, offset, bytes, iter, rw);
+		/* test hook: no data copied from page cfs_fail_val on */
+		if (i >= cfs_fail_val &&
+		    CFS_FAIL_CHECK(OBD_FAIL_LLITE_DIO_COPY_SHORT))
+			copied = 0;
+		else
+			copied = folio_iter(folio, pgno, offset, bytes, iter,
+					    rw);
 		pos += copied;
 		count -= copied;
 
@@ -1812,11 +1819,15 @@ out:
 	if (mm_used)
 		kthread_unuse_mm(mm);
 
+	/* a short copy fails the whole sdio, read or write */
+	if (count)
+		result = status ?: -EFAULT;
+	else
+		result = original_count;
+
 	/* For write operations, update state and wake any waiting threads */
 	if (rw == WRITE) {
 		unsigned long flags;
-		ssize_t result = original_count - count ?
-			original_count - count : status;
 
 		spin_lock_irqsave(&sdio->csd_write_lock, flags);
 		/* Store result (bytes copied or error) for waiting threads */
@@ -1830,8 +1841,7 @@ out:
 		wake_up_all(&sdio->csd_write_waitq);
 	}
 
-	/* the total bytes copied, or status */
-	RETURN(original_count - count ? original_count - count : status);
+	RETURN(result);
 }
 
 struct dio_user_copy_data {

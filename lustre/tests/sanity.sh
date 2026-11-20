@@ -18277,6 +18277,144 @@ test_119u()
 }
 run_test 119u "DIO write fallback over 64MiB"
 
+test_119v()
+{
+	(( $CLIENT_VERSION >= $(version_code 2.17.61.120) )) ||
+		skip "Need client >= 2.17.61.120 for DIO short copy fix"
+	unaligned_dio_or_skip
+	[[ -x $(which strace 2> /dev/null) ]] || skip_env "no strace"
+
+	local file=$DIR/$tfile
+	local tmp=$TMP/$tfile
+	# 6 pages written at an unaligned offset fill 7 bounce pages
+	local off=$((16 * PAGE_SIZE + 1000))
+	local len=$((6 * PAGE_SIZE))
+	# pattern A must cover off + len, whatever the page size
+	local size=$((32 * PAGE_SIZE))
+	# the copy into the bounce pages from this one on comes back short
+	local fail_page=2
+	# SANITY_119V_INJECT=false does the same I/O without the fault
+	local inject=${SANITY_119V_INJECT:-true}
+	local p
+
+	stack_trap "rm -f $tmp.*"
+	for p in A B C; do
+		head -c $size /dev/zero | tr '\0' $p > $tmp.$p ||
+			error "cannot create pattern $p"
+	done
+
+	# pattern A in a one-stripe file, written out and dropped from cache
+	$LFS setstripe -c 1 -i 0 $file || error "setstripe $file failed"
+	dd if=$tmp.A of=$file bs=$size count=1 conv=fsync status=none ||
+		error "write A failed"
+	cancel_lru_locks osc
+
+	# put pattern C into the obd page pool: an unaligned DIO write of the
+	# same geometry returns its bounce pages to the top of the pool, and
+	# the next unaligned DIO write gets the same pages in the same order
+	$LFS setstripe -c 1 -i 0 $file.pool ||
+		error "setstripe $file.pool failed"
+	dd if=$tmp.C of=$file.pool bs=$len count=1 seek=$off \
+		oflag=direct,seek_bytes conv=notrunc status=none ||
+		error "unaligned DIO write C failed"
+
+	local saved_debug=$($LCTL get_param -n debug)
+
+	stack_trap "$LCTL set_param -n debug='$saved_debug'"
+	$LCTL set_param -n debug=+vfstrace
+	$LCTL clear
+	if $inject; then
+		#define OBD_FAIL_LLITE_DIO_COPY_SHORT	0x143b
+		$LCTL set_param fail_loc=0x143b fail_val=$fail_page
+		stack_trap "$LCTL set_param fail_loc=0 fail_val=0"
+	fi
+
+	# one unaligned DIO write() of pattern B over pattern A
+	strace -o $tmp.strace -e trace=write dd if=$tmp.B of=$file bs=$len \
+		count=1 seek=$off oflag=direct,seek_bytes conv=notrunc
+	local rc=$?
+	local floc=$($LCTL get_param -n fail_loc)
+
+	if $inject; then
+		$LCTL set_param fail_loc=0 fail_val=0
+	fi
+	$LCTL dk $tmp.dk > /dev/null
+	grep '^write(1,' $tmp.strace
+
+	local ret=$(awk -F' = ' '/^write\(1,/ { print $2; exit }' $tmp.strace)
+
+	echo "dd rc=$rc, write($len bytes at $off) = $ret, fail_loc=$floc"
+	# the copy into the bounce pages, with the short copies if injected
+	grep -v 'DEBUG MARKER' $tmp.dk | grep __ll_dio_user_copy ||
+		error "write did not go through the DIO bounce pages"
+	if $inject; then
+		(( floc == (0x40000000 | 0x143b) )) ||
+			error "fail_loc 0x143b did not fire: fail_loc=$floc"
+	fi
+
+	# read the region back from the OST, B or the old A are expected
+	cancel_lru_locks osc
+	dd if=$file of=$tmp.region bs=$len count=1 skip=$off \
+		iflag=skip_bytes status=none || error "read back failed"
+
+	local nb=$(tr -cd B < $tmp.region | wc -c)
+	local na=$(tr -cd A < $tmp.region | wc -c)
+	local nc=$(tr -cd C < $tmp.region | wc -c)
+	local nz=$(tr -cd '\000' < $tmp.region | wc -c)
+	local nx=$((len - nb - na - nc - nz))
+
+	echo "region $off+$len: B=$nb A=$na C=$nc zero=$nz other=$nx"
+	if (( nb != len )); then
+		local first=$(cmp -l -n $len $tmp.B $tmp.region |
+			      awk '{ print $1 - 1; exit }')
+		local skip=$((first > 16 ? first - 16 : 0))
+
+		echo "first non-B byte at $first (file offset $((off + first)))"
+		od -A d -t x1z -j $skip -N 64 $tmp.region
+	fi
+	(( na + nb == len )) ||
+		error "foreign data: C=$nc zero=$nz other=$nx, write() = $ret"
+	[[ $ret != "$len" ]] || (( nb == len )) ||
+		error "write() = $ret, but only $nb of $len bytes are B"
+}
+run_test 119v "unaligned DIO write does not send uncopied data"
+
+test_119w()
+{
+	(( $CLIENT_VERSION >= $(version_code 2.17.61.120) )) ||
+		skip "Need client >= 2.17.61.120 for DIO short copy fix"
+	unaligned_dio_or_skip
+
+	local file=$DIR/$tfile
+	local tmp=$TMP/$tfile
+	local off=$((16 * PAGE_SIZE + 1000))
+	local len=$((6 * PAGE_SIZE))
+	local floc
+	local rc
+
+	stack_trap "rm -f $tmp.*"
+	head -c $len /dev/zero | tr '\0' B > $tmp.B ||
+		error "(0) cannot create pattern B"
+	$LFS setstripe -c 1 -i 0 $file || error "(1) setstripe $file failed"
+	dd if=$tmp.B of=$file bs=$len count=1 seek=$off oflag=seek_bytes \
+		conv=fsync status=none || error "(2) write B failed"
+
+	# the copy out of the bounce pages from the third one on is short
+	#define OBD_FAIL_LLITE_DIO_COPY_SHORT	0x143b
+	$LCTL set_param fail_loc=0x143b fail_val=2
+	stack_trap "$LCTL set_param fail_loc=0 fail_val=0"
+	dd if=$file of=$tmp.out bs=$len count=1 skip=$off \
+		iflag=direct,skip_bytes status=none
+	rc=$?
+	floc=$($LCTL get_param -n fail_loc)
+	$LCTL set_param fail_loc=0 fail_val=0
+
+	(( floc == (0x40000000 | 0x143b) )) ||
+		error "(3) fail_loc 0x143b did not fire: fail_loc=$floc"
+	(( rc != 0 )) || error "(4) read succeeded with a short user copy"
+}
+run_test 119w "unaligned DIO read fails on a short user copy"
+
 test_120a() {
 	[ $PARALLEL == "yes" ] && skip "skip parallel run"
 	remote_mds_nodsh && skip "remote MDS with nodsh"
