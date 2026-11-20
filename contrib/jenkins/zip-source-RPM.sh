@@ -7,11 +7,9 @@ SHA=${GIT_COMMIT:0:6}
 zipFile=lustre-${JP_BRANCH}.B${BUILD_NUMBER}.g${SHA}.zip
 logFile=git-log-${JP_BRANCH#cray-}.txt
 
-sha1sum rpmbuild/lustre-*.src.rpm > rpmbuild/SHA1SUM.txt
-sha256sum rpmbuild/lustre-*.src.rpm > rpmbuild/SHA256SUM.txt
+sha512sum rpmbuild/lustre-*.src.rpm > rpmbuild/SHA512SUM.txt || exit 1
 zip -r $zipFile rpmbuild/lustre-*.src.rpm
-zip -g $zipFile rpmbuild/SHA1SUM.txt
-zip -g $zipFile rpmbuild/SHA256SUM.txt
+zip -g $zipFile rpmbuild/SHA512SUM.txt
 zip -g $zipFile $logFile
 
 echo "Complet creation of lustre source zip"
